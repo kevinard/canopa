@@ -220,6 +220,7 @@ pub(super) enum ForegroundEffect {
         action: crate::config::PanelAction,
     },
     LaunchInstalledApp(String),
+    LauncherAction(super::launcher::Target, usize),
     SendDmenuResponse {
         responder: super::messages::IpcResponder,
         response: crate::ipc::protocol::IpcResponse,
@@ -283,6 +284,7 @@ impl PartialEq for ForegroundEffect {
                     && left_action == right_action
             }
             (LaunchInstalledApp(left), LaunchInstalledApp(right)) => left == right,
+            (LauncherAction(left, la), LauncherAction(right, ra)) => left == right && la == ra,
             (
                 SendDmenuResponse { response: left, .. },
                 SendDmenuResponse {
@@ -734,6 +736,22 @@ impl Foreground {
         self.panel.module_detail_session_for_mut(id)
     }
 
+    pub(super) fn launcher(&self) -> Option<&super::launcher::Session> {
+        self.active_panel_window()?;
+        self.panel.launcher()
+    }
+
+    pub(super) fn launcher_event(
+        &mut self,
+        event: super::launcher::Event,
+    ) -> Vec<ForegroundEffect> {
+        if self.active_panel_window().is_none() {
+            return vec![];
+        }
+        let effects = self.panel.launcher_event(event);
+        self.apply_panel_runtime_effects(effects)
+    }
+
     pub(super) fn panel_search_focus_pending(&self) -> bool {
         self.panel.search_focus_pending()
     }
@@ -1095,6 +1113,9 @@ impl Foreground {
                 }
                 super::panel_runtime::PanelRuntimeEffect::RunPanelAction(action) => {
                     foreground_effects.extend(self.panel_action_requested(action));
+                }
+                super::panel_runtime::PanelRuntimeEffect::LauncherAction(target, action) => {
+                    foreground_effects.push(ForegroundEffect::LauncherAction(target, action));
                 }
                 super::panel_runtime::PanelRuntimeEffect::LaunchInstalledApp(id) => {
                     foreground_effects.push(ForegroundEffect::LaunchInstalledApp(id));

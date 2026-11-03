@@ -24,8 +24,8 @@
 // Named panel menus can be opened from bar or module actions.
 // Use launch for desktop applications; command actions are bounded automation.
 menus {
-    menu "Applications" show-icons=#true prompt="Search applications" {
-        source "installed-apps"
+    menu "Applications" show-icons=#true prompt="Search apps, files, or = calculation" {
+        source "launcher"
     }
     // Cancel is first so Enter never ends the session by default.
     menu "Log out?" prompt="Unsaved work may be lost" {

@@ -29,8 +29,17 @@ impl App {
         self.modules.has_capability(predicate)
     }
 
+    fn has_launcher_menu(&self) -> bool {
+        self.config.menus.iter().any(|menu| {
+            matches!(
+                menu.source.as_ref().map(|source| &source.kind),
+                Some(crate::config::MenuSourceKind::Launcher(_))
+            )
+        })
+    }
+
     fn needs_niri_subscription(&self) -> bool {
-        self.has_capability(|capabilities| capabilities.needs_niri)
+        self.has_capability(|capabilities| capabilities.needs_niri) || self.has_launcher_menu()
     }
 
     fn needs_ipc_subscription(&self) -> bool {
@@ -104,6 +113,41 @@ impl App {
         };
 
         iced::Subscription::batch([
+            if self.has_launcher_menu() {
+                self.launcher_clipboard
+                    .saved_subscription()
+                    .map(Message::LauncherClipboardLoaded)
+            } else {
+                iced::Subscription::none()
+            },
+            if self.has_launcher_menu() {
+                self.launcher_clipboard
+                    .subscription()
+                    .map(Message::LauncherClipboardObserved)
+            } else {
+                iced::Subscription::none()
+            },
+            self.launcher_preferences
+                .subscription(
+                    self.config
+                        .menus
+                        .iter()
+                        .filter_map(|menu| match menu.source.as_ref().map(|s| &s.kind) {
+                            Some(crate::config::MenuSourceKind::Launcher(config)) => {
+                                Some(config.clone())
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                )
+                .map(Message::LauncherPreferences),
+            self.launcher_history
+                .subscription()
+                .map(Message::LauncherHistory),
+            self.foreground.launcher().map_or_else(
+                iced::Subscription::none,
+                super::launcher::Session::subscription,
+            ),
             self.configuration.subscription(),
             self.canopa_accessibility.as_ref().map_or_else(
                 iced::Subscription::none,

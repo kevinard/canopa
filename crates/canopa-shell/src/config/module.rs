@@ -516,6 +516,7 @@ pub struct MenuConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuSourceKind {
     InstalledApps,
+    Launcher(crate::launcher::Config),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

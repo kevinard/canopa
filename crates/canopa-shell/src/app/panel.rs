@@ -885,6 +885,59 @@ impl App {
                 self.panel_icons.complete(loaded);
                 Task::none()
             }
+            PanelEvent::Launcher(event) => self.handle_launcher_event(event),
+            PanelEvent::FocusLauncher(target) => {
+                if self
+                    .foreground
+                    .launcher()
+                    .is_some_and(|active| active.accepts(&target))
+                {
+                    let menu = self.foreground.active_panel_menu_render_state();
+                    if let Some(position) = menu.entries.iter().position(|entry| matches!(&entry.target, super::panel_menu_session::PanelMenuEntryTarget::Launcher(current) if current.identity() == target.identity())) {
+                        return self.handle_panel_event(PanelEvent::FocusIndex(position));
+                    }
+                }
+                Task::none()
+            }
+            PanelEvent::LauncherAction(action) => {
+                let menu = self.foreground.active_panel_menu_render_state();
+                if let Some(position) = menu.focused_index
+                    && let Some(entry) = menu.entries.get(position)
+                    && let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) =
+                        &entry.target
+                {
+                    return self
+                        .handle_panel_event(PanelEvent::ActivateLauncher(target.clone(), action));
+                }
+                Task::none()
+            }
+            PanelEvent::LauncherSearchChanged { session, query } => {
+                if self
+                    .foreground
+                    .launcher()
+                    .is_some_and(|active| active.id == session)
+                {
+                    self.handle_panel_event(PanelEvent::SearchChanged(query))
+                } else {
+                    Task::none()
+                }
+            }
+            PanelEvent::LauncherActions(target) => {
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::LauncherActions(target),
+                    ));
+                Task::batch(self.apply_foreground_effects(effects))
+            }
+            PanelEvent::ActivateLauncher(target, action) => {
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::ActivateLauncher(target, action),
+                    ));
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             PanelEvent::InstalledAppsLoaded { generation, apps } => {
                 let effects =
                     self.foreground

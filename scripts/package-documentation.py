@@ -31,9 +31,12 @@ FILES = {
            ("pinentry", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("polkit", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("widgets", ("README.md", "LICENSE")),
+           ("launcher", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
            ("settings", ("README.md", "LICENSE-MIT", "LICENSE-APACHE")),
        ) for name in names},
     "crates/canopa-shell/config/default.kdl": "share/canopa-shell/default.kdl",
+    "docs/shell/launcher.md": "share/canopa-shell/launcher.md",
+    "crates/canopa-shell/examples/launcher-projects.py": "share/canopa-shell/examples/launcher-projects.py",
     "crates/canopa-notify/examples/config.kdl": "share/canopa-notify/config.kdl",
 }
 LINK = re.compile(r"(?P<image>!?)\[(?P<label>[^\]\n]*)\]\((?P<url>[^)\n]+)\)")

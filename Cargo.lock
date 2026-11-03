@@ -914,6 +914,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-launcher"
+version = "0.1.0"
+dependencies = [
+ "canopa-file",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "canopa-notify"
 version = "0.1.0"
 dependencies = [
@@ -1103,6 +1115,7 @@ dependencies = [
  "assert_cmd",
  "canopa-config",
  "canopa-file",
+ "canopa-launcher",
  "canopa-session-ui",
  "canopa-theme",
  "canopa-ui",
@@ -1128,6 +1141,7 @@ dependencies = [
  "canopa-assets",
  "canopa-config",
  "canopa-file",
+ "canopa-launcher",
  "canopa-notify-client",
  "canopa-panel-protocol",
  "canopa-theme",
@@ -1135,6 +1149,7 @@ dependencies = [
  "canopa-widgets",
  "chrono",
  "futures-util",
+ "gio",
  "iced",
  "iced_layershell",
  "image",

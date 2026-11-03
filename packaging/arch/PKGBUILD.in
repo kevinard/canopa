@@ -39,7 +39,7 @@ package_canopa() {
         alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
         gst-plugins-base-libs gst-plugins-good gst-libav at-spi2-core
         fontconfig ttf-dejavu pipewire-pulse wireplumber upower udisks2
-        foot xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome)
+        foot libqalculate coreutils tzdata wl-clipboard xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome)
     optdepends=('stasis: automatic idle locking, display power and suspend policy'
         'networkmanager: Wi-Fi management' 'iwd: Wi-Fi management with networkd'
         'xwayland-satellite: legacy X11 applications' 'poppler: PDF previews'

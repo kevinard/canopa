@@ -8,6 +8,8 @@ license = "MIT"
 [features]
 default = ["desktop"]
 desktop = [
+    "dep:canopa-launcher",
+    "dep:gio",
     "dep:canopa-assets",
     "dep:canopa-file",
     "dep:canopa-notify-client",
@@ -50,6 +52,8 @@ name = "menu_cli"
 required-features = ["desktop"]
 
 [dependencies]
+canopa-launcher = { workspace = true, optional = true }
+gio = { workspace = true, optional = true }
 canopa-widgets.workspace = true
 futures-util.workspace = true
 canopa-assets = { workspace = true, optional = true }

@@ -33,8 +33,48 @@ impl Notices {
 }
 
 impl Desktop {
+    pub(super) fn present_requested_preview(&mut self, id: window::Id) -> Task<Message> {
+        let ready = self
+            .windows
+            .get(&id)
+            .is_some_and(|window| window.size_confirmed)
+            && self
+                .active(id)
+                .is_some_and(|tab| !tab.loading && tab.browser.is_some());
+        if !ready {
+            return Task::none();
+        }
+        let Some(path) = self
+            .active_mut(id)
+            .and_then(|tab| tab.preview_after_load.take())
+        else {
+            return Task::none();
+        };
+        if self
+            .active(id)
+            .and_then(|tab| tab.browser.as_ref())
+            .and_then(|browser| browser.focused())
+            != Some(path.as_path())
+        {
+            if let Some(tab) = self.active_mut(id) {
+                tab.error = Some("The requested Quick Look file is unavailable".into());
+            }
+            return Task::none();
+        }
+        self.toggle_preview(id)
+    }
     pub(super) fn open_requested(&mut self, opening: crate::activation::Opening) -> Task<Message> {
         let task = match opening.presentation.view.clone() {
+            crate::presentation::View::QuickLook(path) => {
+                let directory = path.parent().unwrap_or(&path).to_path_buf();
+                self.new_target_window_with_preview(
+                    vec![crate::presentation::BrowserTarget {
+                        directory,
+                        selected: vec![path],
+                    }],
+                    true,
+                )
+            }
             crate::presentation::View::Browsers(mut targets) => {
                 if targets.is_empty() {
                     targets.push(crate::presentation::BrowserTarget {

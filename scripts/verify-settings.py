@@ -10,7 +10,8 @@ import shutil
 import subprocess
 import tempfile
 import time
-from PIL import Image
+import struct
+import zlib
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('desktop',ROOT/'scripts/validate-desktop.py')
@@ -72,25 +73,25 @@ def verify(args):
             session.run([str(args.binary),'init-session','--defaults-file',str(ROOT/'packaging/niri/defaults.kdl')])
             session.env['NIRI_CONFIG']=str(profile)
             name=session.start_niri(f'include "{profile}"\nanimations {{ off; }}\nxwayland-satellite {{ off; }}\nwindow-rule {{ match app-id="org.canopa.Settings"; open-maximized true; }}\n')
-            app=launch();session.capture('displays-dark.png')
+            app=launch();session.screenshot('displays-dark.png')
             check('ordinary shared-theme settings window')
             # Every key is sent in one native gesture, exercising synchronous Tab
             # traversal before queued text reaches the destination field.
-            key(*tabs(2),'-k','Return',*tabs(3),'-M','ctrl','-k','a','-m','ctrl','us,fr','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(2),'-k','Return',*tabs(4),'-M','ctrl','-k','a','-m','ctrl','us,fr','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:'us,fr' in input_file.read_text(),'saved input layouts')
             session.wait_for(lambda:len(json.loads(session.run(['niri','msg','--json','keyboard-layouts']))['names'])==2,'live keyboard layouts')
-            time.sleep(.2);session.capture('input-dark.png');check('batched keyboard navigation and validated live input save')
+            time.sleep(.2);session.screenshot('input-dark.png');check('batched keyboard navigation and validated live input save')
             close(app);app=launch()
             original=displays.read_bytes()
-            key(*tabs(9),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.25)<.001,'temporary display scale')
-            time.sleep(.3);session.capture('display-confirmation.png')
+            time.sleep(.3);session.screenshot('display-confirmation.png')
             key('-k','Escape')
             session.wait_for(lambda:abs(scale()-1.)<.001,'Escape display rollback')
             assert displays.read_bytes()==original
             check('real compositor trial and Escape rollback without persistence')
             close(app);app=launch()
-            key(*tabs(9),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.25)<.001,'second temporary display scale')
             time.sleep(.5);key('-M','ctrl','-k','Return','-m','ctrl')
             session.wait_for(lambda:'scale 1.25' in displays.read_text(),'confirmed display save')
@@ -99,7 +100,7 @@ def verify(args):
             session.wait_for(lambda:abs(scale()-1.25)<.001,'persisted output reload')
             check('explicit confirmation survives compositor configuration reload')
             app=launch()
-            key(*tabs(9),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(10),'-k','Right','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:abs(scale()-1.5)<.001,'crash trial scale')
             saved=displays.read_bytes();app.kill();app.wait(timeout=10)
             session.processes.remove(app)
@@ -110,12 +111,12 @@ def verify(args):
             session.run(['niri','msg','output',name,'scale','1'])
             session.wait_for(lambda:abs(scale()-1.)<.001,'native fixture scale')
             app=launch()
-            key(*tabs(3),'-k','Return',*tabs(2),'-k','space','-k','Tab','-M','ctrl','-k','a','-m','ctrl','#f38ba8','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(3),'-k','Return',*tabs(3),'-k','space','-k','Tab','-M','ctrl','-k','a','-m','ctrl','#f38ba8','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:config.exists() and '#f38ba8' in config.read_text(),'shared appearance save',timeout=30)
-            time.sleep(.5);session.capture('personalization-light.png')
+            time.sleep(.5);session.screenshot('personalization-light.png')
             assert 'light' in config.read_text();check('native light/accent preference save through owning validators')
             key('-M','ctrl','3','-m','ctrl');time.sleep(.2)
-            key(*tabs(5),'-M','ctrl','-k','a','-m','ctrl','%H:%M:%S','-M','ctrl','-k','s','-m','ctrl')
+            key(*tabs(6),'-M','ctrl','-k','a','-m','ctrl','%H:%M:%S','-M','ctrl','-k','s','-m','ctrl')
             session.wait_for(lambda:'%H:%M:%S' in config.read_text(),'native lockscreen preference save')
             wallpaper=args.tools_dir.resolve()/'canopa-wallpaper'
             session.start([str(wallpaper),'daemon'],'wallpaper.log')
@@ -124,17 +125,21 @@ def verify(args):
                 return reply.returncode==0 and bool(json.loads(reply.stdout).get('outputs'))
             session.wait_for(wallpaper_ready,'private wallpaper owner')
             library=home/'Pictures/Wallpapers';library.mkdir(parents=True)
-            Image.new('RGB',(64,64),(40,80,110)).save(library/'fixture.png')
+            def png_chunk(kind, payload):
+                return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload))
+            image=(b'\x89PNG\r\n\x1a\n'+png_chunk(b'IHDR',struct.pack('>IIBBBBB',64,64,8,2,0,0,0))
+                   +png_chunk(b'IDAT',zlib.compress((b'\0'+bytes((40,80,110))*64)*64))+png_chunk(b'IEND',b''))
+            (library/'fixture.png').write_bytes(image)
             key('-M','ctrl','3','-m','ctrl');time.sleep(.2)
-            key(*tabs(4),'-k','Return')
+            key(*tabs(5),'-k','Return')
             session.wait_for(lambda:any(w.get('app_id')=='org.canopa.WallpaperPicker' for w in windows()),'existing wallpaper picker')
-            time.sleep(.3);session.capture('wallpaper-picker.png')
+            time.sleep(.3);session.screenshot('wallpaper-picker.png')
             key('-k','Escape')
             session.wait_for(lambda:not any(w.get('app_id')=='org.canopa.WallpaperPicker' for w in windows()),'closed wallpaper picker')
             check('lockscreen preference save and existing wallpaper picker launch')
             close(app);app=launch()
             key(*tabs(4),'-k','Return');time.sleep(2.2)
-            session.capture('power.png')
+            session.screenshot('power.png')
             check('power page and explicit unavailable backend presentation')
             if args.stasis:
                 close(app)
@@ -149,28 +154,28 @@ def verify(args):
                     return json.loads(process.stdout) if process.returncode==0 and json.loads(process.stdout).get('alt')!='not_running' else None
                 session.wait_for(info,'real Stasis policy')
                 app=launch();key('-M','ctrl','4','-m','ctrl');time.sleep(1)
-                session.capture('power-stasis-before-pause.png')
-                key('-k','Tab','-k','Return')
+                session.screenshot('power-stasis-before-pause.png')
+                key(*tabs(2),'-k','Return')
                 session.wait_for(lambda:info() and info().get('alt')=='manually_inhibited','native idle pause')
-                time.sleep(.2);key('-k','Tab','-k','Return')
+                time.sleep(.2);key(*tabs(2),'-k','Return')
                 session.wait_for(lambda:info() and info().get('alt')!='manually_inhibited','native idle resume')
                 close(app);app=launch()
                 key('-M','ctrl','4','-m','ctrl');time.sleep(1)
-                key(*tabs(3),'-M','ctrl','-k','a','-m','ctrl','presentation','-k','Tab','-k','Return')
+                key(*tabs(4),'-M','ctrl','-k','a','-m','ctrl','presentation','-k','Tab','-k','Return')
                 session.wait_for(lambda:info() and info().get('profile')=='presentation','native idle profile selection')
                 time.sleep(.3)
                 key('-M','shift','-k','Tab','-m','shift','-M','ctrl','-k','a','-m','ctrl','none','-k','Tab','-k','Return')
                 session.wait_for(lambda:info() and info().get('profile')=='default','native idle default profile restoration')
                 check('native Stasis profile selection and default restoration')
                 close(app);app=launch()
-                key('-M','ctrl','4','-m','ctrl');time.sleep(1);key(*tabs(5),'-M','ctrl','-k','a','-m','ctrl','720','-M','ctrl','-k','s','-m','ctrl')
+                key('-M','ctrl','4','-m','ctrl');time.sleep(1);key(*tabs(6),'-M','ctrl','-k','a','-m','ctrl','720','-M','ctrl','-k','s','-m','ctrl')
                 session.wait_for(lambda:'timeout 720' in idle.read_text(),'native idle timeout save')
                 assert '  lock_screen:\n    timeout 720' in idle.read_text()
                 assert '    lock_screen:\n      timeout 120' in idle.read_text()
                 assert policy.poll() is None
                 assert 'CANOPA_LOCK' in idle.read_text()
                 assert 'presentation:\n  mode "overlay"\n  debounce_seconds 10\nend\n' in idle.read_text()
-                session.capture('power-stasis.png')
+                session.screenshot('power-stasis.png')
                 check('real Stasis pause/resume and native timeout reload preserve commands')
             result['status']='passed'
             for file in (config,displays,input_file):
@@ -178,7 +183,7 @@ def verify(args):
         except Exception as error:
             result['error']=str(error)
             if isinstance(error,subprocess.CalledProcessError): result['diagnostics']=error.stderr
-            try: session.capture('failure.png')
+            try: session.screenshot('failure.png')
             except Exception: pass
             raise
         finally:

@@ -57,6 +57,18 @@ Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to qu
 and Reboot/Power off use `systemctl` without force options. These ordinary button
 actions and menus can be rebound in the configuration.
 
+The bundled Applications menu searches applications, open windows, file/folder
+names, desktop controls, arithmetic and unit conversions using the same panel
+facilities. Use `files budget`,
+`apps firefox`, `= 12*(8+3)`, or `10 km to miles` to search or calculate. Enter
+copies a calculator result. File actions include Copy path, reveal, Open with and
+Quick Look. Recent/frequent selections improve ranking; history can be cleared or
+disabled. Use `web query`, paste a URL, or try `time in Tokyo` and `timestamp 0`.
+Tab searches a result's actions, including Pin and Set alias. The Launcher page
+in Settings manages extensions, keywords, search templates and last provider status.
+Configured executable extensions add results and named actions. See the [launcher guide](../../docs/shell/launcher.md)
+for file coverage, refresh behavior, calculator setup, and extension configuration.
+
 ### Bar text and icons
 
 Bars use defaults of 12 logical pixels for status text and 20 for icons, including
@@ -181,7 +193,7 @@ printf 'First\nSecond\n' | canopa-shell --dmenu --prompt 'Choose' --no-custom
 The IPC commands require a running bar. Selection input is bounded to 1 MiB.
 
 `--open-menu NAME` opens any named menu in the running bar's configuration,
-including menus with `source "installed-apps"`. Names are exact and case-sensitive;
+including menus with `source "installed-apps"` or `source "launcher"`. Names are exact and case-sensitive;
 quote names containing spaces and use `--open-menu=NAME` or `--toggle-menu=NAME`
 for names starting with `-`. The request uses a bar on Niri's focused output,
 falling back to one deterministic bar surface if that output has no bar or focus

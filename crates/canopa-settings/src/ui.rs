@@ -1,5 +1,6 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod focus;
+mod launcher;
 use crate::{
     display::{Monitor, TrialRequest, transform_name},
     input::Input,
@@ -23,26 +24,25 @@ use std::{
     time::Duration,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Page {
-    Displays,
-    Input,
-    Personal,
-    Power,
-}
-impl Page {
-    const ALL: [Self; 4] = [Self::Displays, Self::Input, Self::Personal, Self::Power];
-    fn label(self) -> &'static str {
-        match self {
-            Self::Displays => "Displays",
-            Self::Input => "Keyboard & pointer",
-            Self::Personal => "Personalization",
-            Self::Power => "Power & idle",
-        }
-    }
-}
+use crate::Page;
 #[derive(Clone, Debug)]
 enum Message {
+    LauncherLoaded(Result<crate::launcher::Model, String>),
+    LauncherStored(Result<crate::launcher::Model, String>),
+    LauncherCatalog(Result<canopa_launcher::Catalog, String>),
+    LauncherRefresh,
+    ClipboardLoaded(Result<crate::launcher::ClipboardEditor, String>),
+    ClipboardStored(Result<crate::launcher::ClipboardEditor, String>),
+    ClipboardRecording(bool),
+    ClipboardImages(bool),
+    ClipboardLimit(String),
+    ClipboardSave,
+    LauncherEnabled(String, bool),
+    LauncherKeyword(String, String),
+    LauncherTemplate(String),
+    LauncherSearch(usize, bool, String),
+    LauncherRemoveSearch(usize),
+    LauncherAddSearch,
     BackendChanged,
     ReloadSaved,
     Page(Page),
@@ -163,6 +163,9 @@ fn frame(reader: &mut BufReader<ChildStdout>) -> Result<serde_json::Value> {
 
 struct State {
     paths: Paths,
+    launcher: crate::launcher::Model,
+    clipboard: Option<crate::launcher::ClipboardEditor>,
+    clipboard_notice: String,
     page: Page,
     notice: String,
     busy: bool,
@@ -252,6 +255,9 @@ impl State {
             .unwrap_or_default();
         let state = Self {
             paths,
+            launcher: Default::default(),
+            clipboard: None,
+            clipboard_notice: String::new(),
             page: Page::Displays,
             notice,
             busy: false,
@@ -276,7 +282,14 @@ impl State {
         };
         (
             state,
-            task(|| Client::discover()?.outputs(), Message::Outputs),
+            Task::batch([
+                task(|| Client::discover()?.outputs(), Message::Outputs),
+                task(crate::launcher::Model::load, Message::LauncherLoaded),
+                task(
+                    crate::launcher::ClipboardEditor::load,
+                    Message::ClipboardLoaded,
+                ),
+            ]),
         )
     }
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -303,6 +316,105 @@ impl State {
             return Task::none();
         }
         match message {
+            Message::LauncherLoaded(result) => match result {
+                Ok(model) => self.launcher = model,
+                Err(error) => self.notice = error,
+            },
+            Message::LauncherStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(model) => {
+                        self.launcher = model;
+                        self.notice = "Launcher preferences saved.".into();
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
+            Message::ClipboardLoaded(result) => match result {
+                Ok(editor) => self.clipboard = Some(editor),
+                Err(error) => self.clipboard_notice = error,
+            },
+            Message::ClipboardStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(editor) => {
+                        self.clipboard = Some(editor);
+                        self.clipboard_notice = "Clipboard settings saved.".into();
+                    }
+                    Err(error) => self.clipboard_notice = error,
+                }
+            }
+            Message::ClipboardRecording(enabled) if !self.busy => {
+                if let Some(editor) = &mut self.clipboard {
+                    editor.recording = enabled;
+                }
+            }
+            Message::ClipboardImages(enabled) if !self.busy => {
+                if let Some(editor) = &mut self.clipboard {
+                    editor.images = enabled;
+                }
+            }
+            Message::ClipboardLimit(value) if !self.busy => {
+                if let Some(editor) = &mut self.clipboard
+                    && value.len() <= 2
+                    && value.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    editor.limit = value;
+                }
+            }
+            Message::ClipboardSave
+                if self.page == Page::Launcher && !self.busy && self.trial.is_none() =>
+            {
+                if let Some(editor) = self.clipboard.clone() {
+                    self.busy = true;
+                    self.clipboard_notice.clear();
+                    return task(move || editor.save(), Message::ClipboardStored);
+                }
+            }
+            Message::LauncherCatalog(Ok(catalog)) => self.launcher.catalog = catalog,
+            Message::LauncherRefresh if self.page == Page::Launcher && !self.busy => {
+                return task(
+                    || {
+                        Ok(canopa_launcher::Catalog::read(
+                            &canopa_launcher::catalog_path()?,
+                        )?)
+                    },
+                    Message::LauncherCatalog,
+                );
+            }
+            Message::LauncherEnabled(id, value) if !self.busy => {
+                if let Some(pref) = self.launcher.extension(&id) {
+                    pref.enabled = value;
+                }
+            }
+            Message::LauncherKeyword(id, value) if !self.busy => {
+                if let Some(pref) = self.launcher.extension(&id) {
+                    pref.keyword = value;
+                }
+            }
+            Message::LauncherTemplate(value) if !self.busy => {
+                self.launcher.draft.web_template = value
+            }
+            Message::LauncherSearch(index, template, value) if !self.busy => {
+                if let Some(search) = self.launcher.draft.searches.get_mut(index) {
+                    if template {
+                        search.template = value;
+                    } else {
+                        search.keyword = value;
+                    }
+                }
+            }
+            Message::LauncherRemoveSearch(index)
+                if !self.busy && index < self.launcher.draft.searches.len() =>
+            {
+                self.launcher.draft.searches.remove(index);
+            }
+            Message::LauncherAddSearch if !self.busy && self.launcher.draft.searches.len() < 16 => {
+                self.launcher.draft.searches.push(canopa_launcher::Search {
+                    keyword: String::new(),
+                    template: "https://example.com/?q={query}".into(),
+                })
+            }
             Message::ReloadSaved if !self.busy && self.trial.is_none() => {
                 let page = self.page;
                 let (mut reloaded, work) = Self::boot();
@@ -492,6 +604,10 @@ impl State {
                 self.busy = true;
                 let paths = self.paths.clone();
                 match self.page {
+                    Page::Launcher => {
+                        let model = self.launcher.clone();
+                        return task(move || model.save(), Message::LauncherStored);
+                    }
                     Page::Displays => {
                         let mut monitors = self.monitors.clone();
                         for (monitor, position) in monitors.iter_mut().zip(&self.positions) {
@@ -659,6 +775,10 @@ impl State {
     }
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = Vec::new();
+        if self.page == Page::Launcher {
+            subscriptions
+                .push(iced::time::every(Duration::from_secs(2)).map(|_| Message::LauncherRefresh));
+        }
         if self.page == Page::Displays || self.trial.is_some() {
             subscriptions.push(Subscription::run(niri_events));
         }
@@ -728,8 +848,10 @@ impl State {
             Page::Input => self.input_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
+            Page::Launcher => self.launcher_view(),
         });
-        let available = !self.busy
+        let available = (self.page != Page::Launcher || self.launcher.loaded)
+            && !self.busy
             && self.trial.is_none()
             && (self.page != Page::Power || self.idle_available)
             && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input));
@@ -1349,19 +1471,30 @@ fn niri_events() -> impl iced::futures::Stream<Item = Message> {
     )
 }
 pub fn run() -> Result<()> {
-    iced::application(State::boot, State::update, State::view)
-        .title("Canopa Settings")
-        .theme(|state: &State| canopa_ui::theme(state.personal.appearance.clone()))
-        .subscription(State::subscription)
-        .window(iced::window::Settings {
-            size: iced::Size::new(1000., 780.),
-            min_size: Some(iced::Size::new(760., 600.)),
-            platform_specific: iced::window::settings::PlatformSpecific {
-                application_id: "org.canopa.Settings".into(),
-                ..Default::default()
-            },
+    run_page(Page::Displays)
+}
+pub fn run_page(page: Page) -> Result<()> {
+    iced::application(
+        move || {
+            let (mut state, task) = State::boot();
+            state.page = page;
+            (state, task)
+        },
+        State::update,
+        State::view,
+    )
+    .title("Canopa Settings")
+    .theme(|state: &State| canopa_ui::theme(state.personal.appearance.clone()))
+    .subscription(State::subscription)
+    .window(iced::window::Settings {
+        size: iced::Size::new(1000., 780.),
+        min_size: Some(iced::Size::new(760., 600.)),
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: "org.canopa.Settings".into(),
             ..Default::default()
-        })
-        .run()
-        .map_err(anyhow::Error::msg)
+        },
+        ..Default::default()
+    })
+    .run()
+    .map_err(anyhow::Error::msg)
 }

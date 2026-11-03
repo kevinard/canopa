@@ -9,6 +9,8 @@ pub(super) enum SelectedMenuEntry {
     DmenuValue(String),
     CustomValue(String),
     SniMenuItem(String),
+    Launcher(super::launcher::Target, usize),
+    LauncherMenuChanged,
     None,
 }
 
@@ -19,6 +21,7 @@ pub(super) enum PanelMenuEntryTarget {
     DmenuValue(String),
     DmenuCustomValue(String),
     SniMenuItem(String),
+    Launcher(super::launcher::Target),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +53,11 @@ pub(super) enum PanelMenuSource {
         show_icons: bool,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
     },
+    Launcher {
+        prompt: Option<String>,
+        show_icons: bool,
+        session: Box<super::launcher::Session>,
+    },
     Dmenu(crate::ipc::protocol::DmenuRequest),
     SniMenu {
         tree: crate::surface::menu_popup::MenuTree,
@@ -63,6 +71,7 @@ pub(super) struct PanelMenuSession {
     search_query: String,
     focused_index: Option<usize>,
     hovered_index: Option<usize>,
+    selection_explicit: bool,
     menu_path: Vec<usize>,
     entries_cache: RefCell<Option<(String, Arc<[PanelMenuEntry]>)>>,
 }
@@ -79,14 +88,19 @@ impl PanelMenuSession {
             search_query: String::new(),
             focused_index,
             hovered_index: None,
+            selection_explicit: false,
             menu_path: Vec::new(),
             entries_cache: RefCell::new(None),
         }
     }
 
     pub(super) fn set_search_query(&mut self, query: String) {
+        if let PanelMenuSource::Launcher { session, .. } = &mut self.source {
+            session.search_changed(&query);
+        }
         self.search_query = query;
         self.focused_index = Some(0);
+        self.selection_explicit = false;
         self.clear_entries_cache();
     }
 
@@ -94,14 +108,13 @@ impl PanelMenuSession {
         if self.search_query.is_empty() {
             return false;
         }
-        self.search_query.clear();
-        self.focused_index = Some(0);
-        self.clear_entries_cache();
+        self.set_search_query(String::new());
         true
     }
 
     pub(super) fn focus_index(&mut self, index: usize) {
         self.focused_index = Some(index);
+        self.selection_explicit = true;
     }
 
     pub(super) fn hover_index(&mut self, index: usize) {
@@ -117,6 +130,7 @@ impl PanelMenuSession {
     }
 
     pub(super) fn move_focus(&mut self, delta: isize) {
+        self.selection_explicit = true;
         let entries = self.entries();
         if entries.is_empty() {
             self.focused_index = None;
@@ -138,6 +152,13 @@ impl PanelMenuSession {
     }
 
     pub(super) fn back(&mut self) -> bool {
+        if let PanelMenuSource::Launcher { session, .. } = &mut self.source
+            && let Some(query) = session.leave_child()
+        {
+            self.set_search_query(query);
+            return true;
+        }
+
         if self.clear_search() {
             return true;
         }
@@ -181,6 +202,7 @@ impl PanelMenuSession {
             PanelMenuEntryTarget::DmenuValue(value) => SelectedMenuEntry::DmenuValue(value),
             PanelMenuEntryTarget::DmenuCustomValue(value) => SelectedMenuEntry::CustomValue(value),
             PanelMenuEntryTarget::SniMenuItem(item_id) => SelectedMenuEntry::SniMenuItem(item_id),
+            PanelMenuEntryTarget::Launcher(target) => self.activate_launcher(target, 0),
         }
     }
 
@@ -225,6 +247,9 @@ impl PanelMenuSession {
         match &self.source {
             PanelMenuSource::Configured(menu) => menu.prompt.clone(),
             PanelMenuSource::InstalledApps { prompt, .. } => prompt.clone(),
+            PanelMenuSource::Launcher {
+                prompt, session, ..
+            } => session.prompt().or_else(|| prompt.clone()),
             PanelMenuSource::Dmenu(request) => request.prompt.clone(),
             PanelMenuSource::SniMenu { .. } => None,
         }
@@ -233,7 +258,8 @@ impl PanelMenuSession {
     fn show_icons(&self) -> bool {
         match &self.source {
             PanelMenuSource::Configured(menu) => menu.show_icons,
-            PanelMenuSource::InstalledApps { show_icons, .. } => *show_icons,
+            PanelMenuSource::InstalledApps { show_icons, .. }
+            | PanelMenuSource::Launcher { show_icons, .. } => *show_icons,
             PanelMenuSource::Dmenu(request) => dmenu_request_show_icons(request),
             PanelMenuSource::SniMenu { .. } => false,
         }
@@ -244,7 +270,8 @@ impl PanelMenuSession {
             PanelMenuSource::SniMenu { search_enabled, .. } => *search_enabled,
             PanelMenuSource::Configured(_)
             | PanelMenuSource::InstalledApps { .. }
-            | PanelMenuSource::Dmenu(_) => true,
+            | PanelMenuSource::Dmenu(_)
+            | PanelMenuSource::Launcher { .. } => true,
         }
     }
 
@@ -261,7 +288,8 @@ impl PanelMenuSession {
     }
 
     fn can_go_back(&self) -> bool {
-        !self.menu_path.is_empty() && self.search_query.is_empty()
+        self.launcher().is_some_and(|session| session.in_child())
+            || (!self.menu_path.is_empty() && self.search_query.is_empty())
     }
 
     fn entries(&self) -> Arc<[PanelMenuEntry]> {
@@ -281,6 +309,7 @@ impl PanelMenuSession {
             PanelMenuSource::InstalledApps { apps, .. } => {
                 installed_app_entries(apps, &self.search_query).into()
             }
+            PanelMenuSource::Launcher { session, .. } => session.entries().into(),
             PanelMenuSource::Dmenu(request) => {
                 dmenu_entry_views(request, &self.search_query).into()
             }
@@ -314,6 +343,99 @@ impl PanelMenuSession {
         } else {
             SelectedMenuEntry::None
         }
+    }
+
+    pub(super) fn launcher(&self) -> Option<&super::launcher::Session> {
+        match &self.source {
+            PanelMenuSource::Launcher { session, .. } => Some(session),
+            _ => None,
+        }
+    }
+
+    pub(super) fn launcher_actions(&mut self, target: Option<super::launcher::Target>) -> bool {
+        let target = target.or_else(|| {
+            self.focused_index
+                .and_then(|index| self.entries().get(index).cloned())
+                .and_then(|entry| {
+                    if let PanelMenuEntryTarget::Launcher(target) = entry.target {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                })
+        });
+        let Some(target) = target else {
+            return false;
+        };
+        let PanelMenuSource::Launcher { session, .. } = &mut self.source else {
+            return false;
+        };
+        if !session.enter_actions(target) {
+            return false;
+        }
+        self.set_search_query(String::new());
+        true
+    }
+    pub(super) fn activate_launcher(
+        &mut self,
+        target: super::launcher::Target,
+        action: usize,
+    ) -> SelectedMenuEntry {
+        let PanelMenuSource::Launcher { session, .. } = &mut self.source else {
+            return SelectedMenuEntry::None;
+        };
+        if !session.accepts(&target) || action >= target.result.actions.len() {
+            return SelectedMenuEntry::None;
+        }
+        if let crate::launcher::Action::EditAlias { shortcut } =
+            &target.result.actions[action].action
+        {
+            let alias = shortcut.alias.clone();
+            session.enter_alias(shortcut.clone());
+            self.set_search_query(alias);
+            return SelectedMenuEntry::LauncherMenuChanged;
+        }
+        if let crate::launcher::Action::ChooseApplication { path } =
+            &target.result.actions[action].action
+        {
+            session.enter_open_with(path.clone());
+            self.set_search_query(String::new());
+            return SelectedMenuEntry::LauncherMenuChanged;
+        }
+        session.action_running = true;
+        SelectedMenuEntry::Launcher(target, action)
+    }
+
+    pub(super) fn apply_launcher(&mut self, event: super::launcher::Event) -> bool {
+        let entries = self.entries();
+        let selected = self
+            .focused_index
+            .and_then(|position| entries.get(position))
+            .and_then(|entry| {
+                if let PanelMenuEntryTarget::Launcher(target) = &entry.target {
+                    Some((target.provider, target.result.id.clone()))
+                } else {
+                    None
+                }
+            });
+        let PanelMenuSource::Launcher { session, .. } = &mut self.source else {
+            return false;
+        };
+        if !session.apply(event) {
+            return false;
+        }
+        self.search_query = session.query().to_owned();
+        self.clear_entries_cache();
+        let entries = self.entries();
+        if !self.selection_explicit {
+            self.focused_index = (!entries.is_empty()).then_some(0);
+            self.hovered_index = None;
+            return true;
+        }
+        self.focused_index = selected.and_then(|identity| entries.iter().position(|entry| matches!(&entry.target, PanelMenuEntryTarget::Launcher(target) if target.identity() == (identity.0, identity.1.as_str()))))
+            .or_else(|| (!entries.is_empty()).then(|| self.focused_index.unwrap_or(0).min(entries.len() - 1)));
+        self.hovered_index = None;
+        true
     }
 
     fn clear_entries_cache(&self) {
@@ -603,7 +725,7 @@ fn menu_item_at_path<'a>(
     }
 }
 
-fn installed_app_entries(
+pub(super) fn installed_app_entries(
     apps: &[crate::desktop_apps::DesktopApplication],
     query: &str,
 ) -> Vec<PanelMenuEntry> {

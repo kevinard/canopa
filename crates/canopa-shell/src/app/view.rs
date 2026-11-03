@@ -560,9 +560,17 @@ fn render_panel_menu_model<'a>(
     let menu_row_gap = metrics.gap;
 
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
+    let launcher_session = model.launcher_session;
     let search = crate::theme::input(placeholder, &model.search_query)
         .id(model.search_input_id.clone())
-        .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
+        .on_input(move |query| {
+            Message::Panel(match launcher_session {
+                Some(session) => {
+                    super::messages::PanelEvent::LauncherSearchChanged { session, query }
+                }
+                None => super::messages::PanelEvent::SearchChanged(query),
+            })
+        })
         .width(Length::Fill);
     let back_slot: Element<'_, Message> = if model.can_go_back {
         crate::theme::button(crate::theme::text("<").size(crate::theme::title_size()))
@@ -614,7 +622,15 @@ fn render_panel_menu_model<'a>(
             .spacing(8)
             .width(Length::Fill)
             .align_y(iced::Alignment::Center);
-        if model.show_icons {
+        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target
+            && let Some(thumbnail) = &target.thumbnail
+        {
+            row_content = row_content.push(
+                iced::widget::image(thumbnail.clone())
+                    .width(Length::Fixed(28.0))
+                    .height(Length::Fixed(24.0)),
+            );
+        } else if model.show_icons {
             row_content = row_content.push(panel_menu_icon_element(
                 entry.icon.as_deref().and_then(|name| model.icons.get(name)),
             ));
@@ -625,18 +641,31 @@ fn render_panel_menu_model<'a>(
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::None),
         );
+        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
+            row_content = row_content.push(
+                crate::theme::text(target.result.description.clone())
+                    .size(crate::theme::label_size())
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .width(Length::Fill),
+            );
+        }
         if entry.is_submenu {
             row_content = row_content.push(crate::theme::text(">"));
         }
+        let activation = if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) =
+            &entry.target
+        {
+            super::messages::PanelEvent::ActivateLauncher(target.clone(), 0)
+        } else {
+            super::messages::PanelEvent::ActivateIndex(index)
+        };
         let keyboard_focus = model.keyboard_focus;
         let row = iced::widget::button(
             container(row_content)
                 .height(Length::Fill)
                 .align_y(iced::Alignment::Center),
         )
-        .on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
-            index,
-        )))
+        .on_press(Message::Panel(activation))
         .padding(canopa_ui::content_padding(metrics.row))
         .width(Length::Fill)
         // Rendering, virtual spacers and keyboard reveal must use one pitch,
@@ -659,9 +688,16 @@ fn render_panel_menu_model<'a>(
             }
         });
         let row = container(row).padding(canopa_ui::padding(metrics.row.margin));
+        let focus = if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) =
+            &entry.target
+        {
+            super::messages::PanelEvent::FocusLauncher(target.clone())
+        } else {
+            super::messages::PanelEvent::FocusIndex(index)
+        };
         list = list.push(crate::surface::pointer_focus::pointer_focus(
             row,
-            Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
+            Message::Panel(focus),
         ));
     }
 
@@ -688,10 +724,58 @@ fn render_panel_menu_model<'a>(
         left: model.ui.padding.left.px(),
         right: model.ui.padding.right.px(),
     });
+    let mut content = column![header, menu_scroll.height(Length::Fill)];
+    if let Some(entry) = model
+        .focused_index
+        .and_then(|position| model.menu_entries.get(position))
+        && let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target
+    {
+        let mut actions = column![].spacing(4);
+        if target.result.actions.len() > 1 {
+            actions = actions.push(
+                crate::theme::button(crate::theme::text("Search actions · Tab")).on_press(
+                    Message::Panel(super::messages::PanelEvent::LauncherActions(Some(
+                        target.clone(),
+                    ))),
+                ),
+            );
+        }
+        for chunk in target
+            .result
+            .actions
+            .iter()
+            .enumerate()
+            .skip(1)
+            .take(4)
+            .collect::<Vec<_>>()
+            .chunks(2)
+        {
+            let mut action_row = row![].spacing(8);
+            for (position, action) in chunk {
+                action_row = action_row.push(
+                    crate::theme::button(crate::theme::text(format!(
+                        "{} · Ctrl+{}",
+                        action.label,
+                        position + 1
+                    )))
+                    .width(Length::Fill)
+                    .on_press(Message::Panel(
+                        super::messages::PanelEvent::ActivateLauncher(target.clone(), *position),
+                    )),
+                );
+            }
+            actions = actions.push(action_row);
+        }
+        content = content.push(container(actions).padding([4, 12]));
+    }
+    if !model.launcher_status.is_empty() {
+        content = content.push(
+            container(crate::theme::text(model.launcher_status).size(crate::theme::label_size()))
+                .padding([4, 12]),
+        );
+    }
     panel_frame(
-        column![header, menu_scroll.height(Length::Fill)]
-            .height(Length::Fill)
-            .into(),
+        content.height(Length::Fill).into(),
         text_color,
         model.title,
         model.drawer,

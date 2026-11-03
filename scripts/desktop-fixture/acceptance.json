@@ -1,6 +1,11 @@
 {
   "scenarios": [
     {
+      "id": "shell-launcher-fractional",
+      "script": "verify-shell-launcher.py",
+      "args": ["--binary", "{shell}", "--files-binary", "{files}", "--scale", "1.25", "--output", "{artifacts}"]
+    },
+    {
       "id": "files-filemanager1-dark",
       "script": "verify-files-manager.py",
       "args": [

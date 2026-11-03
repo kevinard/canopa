@@ -1,5 +1,11 @@
 # Canopa configuration
 
+The shell's [unified launcher](shell/launcher.md) supports application search,
+file/folder names, open windows, desktop controls, arithmetic, unit conversions,
+and executable extensions through a `launcher`
+menu source. Its guide describes roots, exclusions, refresh behavior, and the
+extension protocol.
+
 Canopa Shell, Notify, Files, Wallpaper, Lock, Greeter, Polkit and Pinentry discover `~/.config/canopa/config.kdl`, or
 `$XDG_CONFIG_HOME/canopa/config.kdl` when that variable is an absolute path.
 An empty or relative XDG value falls back to `$HOME/.config`.

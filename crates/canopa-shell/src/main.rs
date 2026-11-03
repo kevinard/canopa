@@ -12,6 +12,7 @@ mod external_panel;
 mod focused_window_icons;
 mod icon_theme;
 mod ipc;
+mod launcher;
 mod modules;
 mod niri;
 mod surface;
@@ -27,6 +28,8 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::Run(_) => "run",
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
+        cli::Command::ClipboardFrame(_) => "clipboard-frame",
+        cli::Command::LauncherExtension(..) => "launcher-extension",
         cli::Command::Reload => "reload",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
@@ -37,11 +40,21 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
 }
 
 fn main() {
-    let diagnostics = diagnostics::init();
     let command = cli::parse();
+    if let cli::Command::ClipboardFrame(kind) = command {
+        std::process::exit(i32::from(launcher::clipboard::write_frame(kind).is_err()));
+    }
+    let diagnostics = diagnostics::init();
     diagnostics::log_startup(cli_mode_label(&command), &diagnostics);
 
     match command {
+        cli::Command::ClipboardFrame(_) => unreachable!(),
+        cli::Command::LauncherExtension(mode, template) => {
+            if let Err(error) = launcher::bundled::run(&mode, template.as_deref()) {
+                eprintln!("canopa-shell: {error}");
+                std::process::exit(1);
+            }
+        }
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::Reload => std::process::exit(run_reload_cli()),
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),

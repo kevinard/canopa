@@ -93,3 +93,30 @@ fn folder_root_and_properties_have_explicit_distinct_intent() {
         View::Properties(vec![PathBuf::from("/tmp/a")])
     );
 }
+
+#[test]
+fn quick_look_preserves_raw_paths_and_validates_before_admission() {
+    let request = Presentation::quick_look("file:///tmp/raw-%FF%23.txt".into()).unwrap();
+    assert_eq!(
+        request.view,
+        View::QuickLook(PathBuf::from(OsString::from_vec(
+            b"/tmp/raw-\xff#.txt".to_vec()
+        )))
+    );
+    let encoded = serde_json::to_vec(&request).unwrap();
+    let decoded: Presentation = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(request, decoded);
+    let relative = Presentation::quick_look("notes.txt".into()).unwrap();
+    assert_eq!(
+        relative.view,
+        View::QuickLook(std::env::current_dir().unwrap().join("notes.txt"))
+    );
+    for path in [
+        "file://other-host/tmp/a",
+        "file:///tmp/%00",
+        "file:///tmp/%GG",
+        "/",
+    ] {
+        assert!(Presentation::quick_look(path.into()).is_err(), "{path}");
+    }
+}

@@ -14,6 +14,7 @@ pub struct BrowserTarget {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum View {
+    QuickLook(#[serde(with = "crate::path_serde")] PathBuf),
     Browsers(Vec<BrowserTarget>),
     Properties(#[serde(with = "crate::path_serde::sequence")] Vec<PathBuf>),
 }
@@ -33,6 +34,23 @@ pub enum FileManagerRequest {
 }
 
 impl Presentation {
+    pub fn quick_look(path: PathBuf) -> io::Result<Self> {
+        let path = if path.as_os_str().as_bytes().starts_with(b"file://") {
+            crate::file_clipboard::local_path(
+                path.to_str()
+                    .ok_or_else(|| io::Error::other("File URI must be UTF-8"))?,
+            )
+            .map_err(|_| io::Error::other("Quick Look requires a local file URI"))?
+        } else {
+            std::path::absolute(path)?
+        };
+        let request = Self {
+            view: View::QuickLook(path),
+            startup_id: String::new(),
+        };
+        request.validate()?;
+        Ok(request)
+    }
     pub fn open(paths: Vec<PathBuf>) -> Self {
         Self {
             view: View::Browsers(
@@ -106,6 +124,9 @@ impl Presentation {
         }
         let valid_path = |path: &PathBuf| !path.as_os_str().as_bytes().contains(&0);
         let valid = match &self.view {
+            View::QuickLook(path) => {
+                path.is_absolute() && valid_path(path) && path.parent().is_some()
+            }
             View::Browsers(targets) => {
                 targets.len() <= 64
                     && targets.iter().map(|t| t.selected.len()).sum::<usize>() <= 64

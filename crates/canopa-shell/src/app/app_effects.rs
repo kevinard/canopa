@@ -108,7 +108,8 @@ pub(super) fn app_effects_for_foreground(
                 y: *y,
             }])
         }
-        ForegroundEffect::RetirePanelWindow { .. }
+        ForegroundEffect::LauncherAction(..)
+        | ForegroundEffect::RetirePanelWindow { .. }
         | ForegroundEffect::CloseTooltipsForSurface(_)
         | ForegroundEffect::CloseAllTooltips
         | ForegroundEffect::RequestPanelSearchFocus

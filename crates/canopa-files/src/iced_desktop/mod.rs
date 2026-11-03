@@ -232,6 +232,7 @@ struct Tab {
     scan_cancel: Cancellation,
     target: PathBuf,
     initial_selection: Vec<PathBuf>,
+    preview_after_load: Option<PathBuf>,
     revision: u64,
     loading: bool,
     error: Option<String>,
@@ -438,6 +439,7 @@ impl Desktop {
             scan_cancel: Cancellation::default(),
             target: path,
             initial_selection: Vec::new(),
+            preview_after_load: None,
             revision: 0,
             loading: false,
             error: None,
@@ -472,6 +474,13 @@ impl Desktop {
         &mut self,
         targets: Vec<crate::presentation::BrowserTarget>,
     ) -> Task<Message> {
+        self.new_target_window_with_preview(targets, false)
+    }
+    fn new_target_window_with_preview(
+        &mut self,
+        targets: Vec<crate::presentation::BrowserTarget>,
+        preview: bool,
+    ) -> Task<Message> {
         let settings = window::Settings {
             size: Size::new(1000.0, 640.0),
             min_size: Some(Size::new(280.0, 220.0)),
@@ -487,6 +496,11 @@ impl Desktop {
             .into_iter()
             .map(|target| {
                 let mut tab = self.new_tab(target.directory);
+                tab.preview_after_load = if preview {
+                    target.selected.first().cloned()
+                } else {
+                    None
+                };
                 tab.initial_selection = target.selected;
                 tab
             })
@@ -540,6 +554,9 @@ impl Desktop {
             tab.initial_selection.clear();
             Vec::new()
         };
+        if tab.revision != 0 {
+            tab.preview_after_load = None;
+        }
         tab.dismiss_search();
         tab.revision += 1;
         tab.scan_cancel.cancel();
@@ -970,7 +987,11 @@ impl Desktop {
                 }
                 // Column count changes reorder the ordinary Row's widget tree.
                 // Restore from the Browser model into the rebuilt current list.
-                return Task::batch([self.restore_scroll(id), self.load_columns(id)]);
+                return Task::batch([
+                    self.restore_scroll(id),
+                    self.load_columns(id),
+                    self.present_requested_preview(id),
+                ]);
             }
             Message::Modifiers(id, modifiers) => {
                 self.drag.modifiers(modifiers);
@@ -996,6 +1017,9 @@ impl Desktop {
                     return Task::none();
                 };
                 tab.loading = false;
+                if !active_tab {
+                    tab.preview_after_load = None;
+                }
                 match Arc::try_unwrap(result).unwrap_or_else(|shared| (*shared).clone()) {
                     Ok(scan) => {
                         tab.list_epoch += 1;
@@ -1053,9 +1077,16 @@ impl Desktop {
                             } else {
                                 Task::none()
                             };
-                        return Task::batch([scroll, self.load_columns(id), menu, refresh]);
+                        return Task::batch([
+                            scroll,
+                            self.load_columns(id),
+                            menu,
+                            refresh,
+                            self.present_requested_preview(id),
+                        ]);
                     }
                     Err(error) => {
+                        tab.preview_after_load = None;
                         tab.menu_after_load = None;
                         tab.error = Some(error);
                         return self.load_columns(id);
@@ -1104,6 +1135,7 @@ impl Desktop {
                     return Task::none();
                 }
                 if window.active != index {
+                    window.tabs[window.active].preview_after_load = None;
                     window.tabs[window.active].columns.clear();
                     window.active = index;
                 }
@@ -1502,6 +1534,7 @@ impl Desktop {
                 let tab = self.new_tab(path.clone());
                 let window = self.windows.get_mut(&id).unwrap();
                 window.tabs[window.active].columns.clear();
+                window.tabs[window.active].preview_after_load = None;
                 window.tabs.push(tab);
                 window.active = window.tabs.len() - 1;
                 return self.navigate(id, path, Navigation::Visit, None);

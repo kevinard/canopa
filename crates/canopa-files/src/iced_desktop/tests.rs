@@ -504,3 +504,55 @@ fn shared_backend_activity_prevents_last_window_exit_until_retirement() {
     drop(removal);
     assert_eq!(desktop.update(Message::ActivityPoll).units(), 1);
 }
+
+#[test]
+fn requested_quick_look_waits_for_source_size_and_never_previews_a_neighbor() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("a.txt");
+    fs::write(&path, "fixture").unwrap();
+    for exists in [true, false] {
+        let requested = if exists {
+            path.clone()
+        } else {
+            root.path().join("missing.txt")
+        };
+        let (mut desktop, _) = desktop(root.path(), vec![root.path().to_owned()]);
+        let old: std::collections::HashSet<_> = desktop.windows.keys().copied().collect();
+        let _task = desktop.new_target_window_with_preview(
+            vec![crate::presentation::BrowserTarget {
+                directory: root.path().to_owned(),
+                selected: vec![requested.clone()],
+            }],
+            true,
+        );
+        let source = *desktop.windows.keys().find(|id| !old.contains(id)).unwrap();
+        let tab = desktop.active(source).unwrap().id;
+        let _task = desktop.update(Message::Loaded(
+            source,
+            tab,
+            1,
+            Navigation::Visit,
+            Arc::new(Ok(Scan {
+                directory: Directory::read(root.path()).unwrap(),
+                selected: vec![requested],
+            })),
+        ));
+        assert!(desktop.previews.is_empty());
+        let _task = desktop.update(Message::Resized(source, Size::new(1000.0, 640.0)));
+        if exists {
+            assert_eq!(desktop.previews.len(), 1);
+            assert_eq!(desktop.previews.values().next().unwrap().source, source);
+        } else {
+            assert!(desktop.previews.is_empty());
+            assert!(
+                desktop
+                    .active(source)
+                    .unwrap()
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .contains("unavailable")
+            );
+        }
+    }
+}

@@ -159,6 +159,9 @@ impl super::App {
                     let effects = self.surfaces.close_tooltip_overlays();
                     tasks.extend(self.apply_registry_effects(effects));
                 }
+                super::foreground::ForegroundEffect::LauncherAction(target, action) => {
+                    tasks.push(self.run_launcher_action(target, action));
+                }
                 super::foreground::ForegroundEffect::RequestPanelSearchFocus => {
                     tasks.push(super::panel::request_panel_search_focus());
                 }

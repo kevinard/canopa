@@ -5,8 +5,15 @@ use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(version, about = "Canopa desktop settings")]
+#[command(
+    version,
+    about = "Canopa desktop settings",
+    args_conflicts_with_subcommands = true
+)]
 struct Cli {
+    /// Open the settings window at this page.
+    #[arg(long, value_enum)]
+    page: Option<canopa_settings::Page>,
     #[command(subcommand)]
     command: Option<Operation>,
 }
@@ -41,7 +48,12 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    anyhow::ensure!(
+        cli.page.is_none() || cli.command.is_none(),
+        "--page is only available when opening the settings window"
+    );
+    match cli.command {
         Some(Operation::InitSession {
             directory,
             defaults_file,
@@ -85,10 +97,26 @@ fn run() -> Result<()> {
         }
         None => {
             #[cfg(feature = "desktop")]
-            canopa_settings::ui::run()?;
+            canopa_settings::ui::run_page(cli.page.unwrap_or(canopa_settings::Page::Displays))?;
             #[cfg(not(feature = "desktop"))]
             anyhow::bail!("this build does not include the desktop interface");
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn requested_page_is_explicit_and_does_not_mix_with_operations() {
+        assert_eq!(
+            Cli::try_parse_from(["canopa-settings", "--page", "input"])
+                .unwrap()
+                .page,
+            Some(canopa_settings::Page::Input)
+        );
+        assert!(Cli::try_parse_from(["canopa-settings", "--page", "unknown"]).is_err());
+        assert!(Cli::try_parse_from(["canopa-settings", "--page", "power", "outputs"]).is_err());
+    }
 }

@@ -314,3 +314,33 @@ fn a_headless_owner_refuses_browsers_and_stays_available_for_orderly_quit() {
     ));
     assert!(owner.try_exit());
 }
+
+#[test]
+fn quick_look_forwards_exact_local_path_to_the_existing_owner() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let state = root.path().join("state");
+    let Claim::Primary(owner) =
+        Instance::launch(&state, root.path(), None, Command::Resident, true).unwrap()
+    else {
+        panic!()
+    };
+    let claim = Instance::launch(
+        &state,
+        root.path(),
+        None,
+        Command::QuickLook("file:///tmp/raw-%FF.txt".into()),
+        true,
+    )
+    .unwrap();
+    assert!(matches!(claim, Claim::Forwarded));
+    let opening = owner.take_openings().pop().unwrap();
+    assert_eq!(
+        opening.presentation.view,
+        canopa_files::presentation::View::QuickLook(PathBuf::from(OsString::from_vec(
+            b"/tmp/raw-\xff.txt".to_vec()
+        )))
+    );
+    owner.presented(opening);
+    assert!(owner.take_openings().is_empty());
+}

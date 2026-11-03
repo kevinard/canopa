@@ -234,6 +234,7 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
                     keyboard::Key::Character("2") => Some(Page::Input),
                     keyboard::Key::Character("3") => Some(Page::Personal),
                     keyboard::Key::Character("4") => Some(Page::Power),
+                    keyboard::Key::Character("5") => Some(Page::Launcher),
                     _ => None,
                 };
                 let shortcut = if modifiers.control()

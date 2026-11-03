@@ -64,3 +64,17 @@ editing; symlink-managed configuration remains read-only. Legacy-only applicatio
 configuration must be explicitly migrated before creating a common Canopa file,
 so a new appearance file cannot silently hide existing shell/notification settings.
 See [configuration](configuration.md) and [installation](installation.md).
+
+The launcher can open a particular page with `canopa-settings --page displays`,
+`--page input`, `--page personal`, `--page power`, or `--page launcher`. The option selects the initial
+page only; normal Apply controls remain responsible for writes. It cannot be
+combined with command-line operations such as `outputs` or `check`.
+
+The Launcher page manages extension enablement/keywords and web search templates,
+and shows extension actions and last status. Save applies preferences to the
+existing launcher panel automatically; concurrent pins and aliases are preserved.
+
+In the Settings window, Ctrl+5 selects Launcher and Ctrl+S saves extension and
+web search edits. The **Clipboard history** section has its own **Save clipboard
+settings** button. It controls recording, whether to include images, and the
+maximum number of recent copies. Browse those copies with `clip` in Applications.

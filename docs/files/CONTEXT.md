@@ -62,6 +62,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Launcher Quick Look admission](adr/0158-launcher-quick-look-admission.md).
 - [Saved-only Rename restoration retains original history binding](adr/0157-saved-only-rename-history-binding.md).
 
 - [XXH3-128 content fingerprints without development-history compatibility](adr/0156-fast-content-fingerprints.md).

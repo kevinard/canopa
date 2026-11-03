@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/canopa-settings",
+  "crates/canopa-launcher",
   "crates/canopa-portal",
   "crates/canopa-cli",
   "crates/canopa-session",
@@ -37,6 +38,7 @@ rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+canopa-launcher = { path = "crates/canopa-launcher" }
 canopa-session-ui = { path = "crates/canopa-session-ui" }
 canopa-widgets = { path = "crates/canopa-widgets" }
 canopa-assets = { path = "crates/canopa-assets" }

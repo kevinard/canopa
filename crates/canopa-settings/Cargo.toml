@@ -10,6 +10,7 @@ default = ["desktop"]
 desktop = ["dep:iced", "dep:canopa-ui"]
 
 [dependencies]
+canopa-launcher.workspace = true
 anyhow.workspace = true
 canopa-config.workspace = true
 canopa-file.workspace = true

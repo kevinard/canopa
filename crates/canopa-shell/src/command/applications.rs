@@ -63,11 +63,23 @@ fn executable_path(program: &str) -> Option<std::path::PathBuf> {
 }
 
 async fn launch_through_niri(path: &Path, argv: &[String]) -> io::Result<()> {
+    niri_action(
+        path,
+        niri_ipc::Action::Spawn {
+            command: argv.to_vec(),
+        },
+    )
+    .await
+}
+pub async fn focus_window(id: u64) -> io::Result<()> {
+    let path = std::env::var_os(niri_ipc::socket::SOCKET_PATH_ENV)
+        .ok_or_else(|| io::Error::other("Niri is unavailable"))?;
+    niri_action(Path::new(&path), niri_ipc::Action::FocusWindow { id }).await
+}
+async fn niri_action(path: &Path, action: niri_ipc::Action) -> io::Result<()> {
     tokio::time::timeout(Duration::from_secs(2), async {
         let mut stream = tokio::net::UnixStream::connect(path).await?;
-        let request = niri_ipc::Request::Action(niri_ipc::Action::Spawn {
-            command: argv.to_vec(),
-        });
+        let request = niri_ipc::Request::Action(action);
         let mut request = serde_json::to_vec(&request)?;
         request.push(b'\n');
         stream.write_all(&request).await?;
@@ -139,9 +151,38 @@ pub async fn spawn_desktop_application_fire_and_forget(
     }
 }
 
+#[cfg(not(test))]
+pub async fn open_desktop_application(
+    app: &crate::desktop_apps::DesktopApplication,
+    uris: &[String],
+) -> io::Result<SpawnResult> {
+    if app.dbus_activatable {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let connection = zbus::Connection::session()
+                .await
+                .map_err(io::Error::other)?;
+            dbus_application_request(&connection, app, Some(uris)).await
+        })
+        .await
+        .map_err(|_| io::Error::other("Application Open timed out"))??;
+        Ok(SpawnResult::Spawned)
+    } else {
+        let mut argv = desktop_launch_argv(app)?;
+        argv.extend_from_slice(uris);
+        launch_application(&argv).await
+    }
+}
+
 async fn activate_dbus_application(
     connection: &zbus::Connection,
     app: &crate::desktop_apps::DesktopApplication,
+) -> io::Result<()> {
+    dbus_application_request(connection, app, None).await
+}
+async fn dbus_application_request(
+    connection: &zbus::Connection,
+    app: &crate::desktop_apps::DesktopApplication,
+    uris: Option<&[String]>,
 ) -> io::Result<()> {
     // The specification defines this from the selected filename, not its
     // symlink target or the discovery ID's directory prefix.
@@ -158,7 +199,10 @@ async fn activate_dbus_application(
         let proxy = zbus::Proxy::new(connection, name, path, "org.freedesktop.Application").await?;
         // Default D-Bus call flags allow the bus to start a missing owner.
         let platform_data = std::collections::HashMap::<String, zbus::zvariant::Value<'_>>::new();
-        proxy.call::<_, _, ()>("Activate", &(platform_data,)).await
+        match uris {
+            Some(uris) => proxy.call::<_, _, ()>("Open", &(uris, platform_data)).await,
+            None => proxy.call::<_, _, ()>("Activate", &(platform_data,)).await,
+        }
     }
     .await;
     result.map_err(|error| match error {
@@ -242,10 +286,25 @@ mod tests {
 
     struct BusApplication {
         activations: tokio::sync::mpsc::UnboundedSender<()>,
+        opened: tokio::sync::mpsc::UnboundedSender<Vec<String>>,
         reject: bool,
     }
     #[zbus::interface(name = "org.freedesktop.Application")]
     impl BusApplication {
+        fn open(
+            &self,
+            uris: Vec<String>,
+            _platform_data: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        ) -> zbus::fdo::Result<()> {
+            if self.reject {
+                return Err(zbus::fdo::Error::AccessDenied(
+                    "private fixture diagnostic".into(),
+                ));
+            }
+            self.opened.send(uris).unwrap();
+            Ok(())
+        }
+
         fn activate(
             &self,
             _platform_data: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
@@ -265,12 +324,14 @@ mod tests {
         let bus = crate::test_bus::TestBus::new();
         let service = bus.connect().await;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (opened, mut opened_rx) = tokio::sync::mpsc::unbounded_channel();
         service
             .object_server()
             .at(
                 "/org/example/Fixture_With_Dashes",
                 BusApplication {
                     activations: tx,
+                    opened,
                     reject: false,
                 },
             )
@@ -307,12 +368,24 @@ mod tests {
                 .expect("an acknowledged activation has been delivered");
             assert!(rx.try_recv().is_err(), "exactly one activation per request");
         }
+        let uris = vec!["file:///tmp/two%20words%FF.txt".to_owned()];
+        dbus_application_request(&client, &app, Some(&uris))
+            .await
+            .unwrap();
+        assert_eq!(opened_rx.try_recv().unwrap(), uris);
+        assert!(rx.try_recv().is_err());
         let application = service
             .object_server()
             .interface::<_, BusApplication>("/org/example/Fixture_With_Dashes")
             .await
             .unwrap();
         application.get_mut().await.reject = true;
+        assert!(
+            dbus_application_request(&client, &app, Some(&uris))
+                .await
+                .is_err()
+        );
+        assert!(opened_rx.try_recv().is_err());
         let error = activate_dbus_application(&client, &app).await.unwrap_err();
         assert!(error.to_string().contains("AccessDenied"));
         assert!(!error.to_string().contains("private fixture diagnostic"));
@@ -351,6 +424,39 @@ mod tests {
         .unwrap_err();
         assert!(error.to_string().contains("niri rejected"));
         server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn focus_window_uses_exact_id_and_requires_compositor_acknowledgement() {
+        for reply in [
+            b"{\"Ok\":\"Handled\"}\n".as_slice(),
+            b"{\"Err\":\"window gone\"}\n".as_slice(),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let socket = dir.path().join("niri.sock");
+            let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+            let reply = reply.to_vec();
+            let accepted = reply.starts_with(b"{\"Ok\"");
+            let server = std::thread::spawn(move || {
+                let (mut client, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                std::io::BufReader::new(client.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                assert!(matches!(
+                    serde_json::from_str(&line).unwrap(),
+                    niri_ipc::Request::Action(niri_ipc::Action::FocusWindow { id: 42 })
+                ));
+                client.write_all(&reply).unwrap();
+            });
+            assert_eq!(
+                niri_action(&socket, niri_ipc::Action::FocusWindow { id: 42 })
+                    .await
+                    .is_ok(),
+                accepted
+            );
+            server.join().unwrap();
+        }
     }
 
     #[test]
