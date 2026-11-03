@@ -5,6 +5,15 @@
 /.worktrees/
 *.pdb
 **/mutants.out*/
+# Scratch plans and notes are Markdown; generated run output stays local.
+/.scratch/**/*
+!/.scratch/**/
+!/.scratch/**/*.md
+# Keep generated documentation copies and local evidence archives out as well.
+/.scratch/artifacts/
+/.scratch/**/cache/
+/.scratch/**/docs-bundle*/
+/.scratch/**/compositor/
 /.scratch/notify/freedesktop-completion-review/niribar-work/
 /.scratch/notify/freedesktop-completion-review/ACTIVE-IMPLEMENTATION.md
 /.scratch/notify/freedesktop-completion-review/NIRIBAR-CHANGED-FILES.txt
@@ -14,6 +23,7 @@
 # Files crash tests can retain private output beside the workspace/crate.
 /.canopa-*/
 /crates/canopa-files/.canopa-*/
+/crates/canopa-files/.tmp*/
 # Keep plans and investigation notes, not local logs, binaries or source archives.
 /.scratch/file-manager/*
 !/.scratch/file-manager/*.md
