@@ -552,9 +552,9 @@ impl App {
                         LockUi::prepare_background(&self.settings, &name, width, height).ok();
                 }
                 match &record.background {
-                    Some(image) => ui.render_with_hits(&self.settings, image.clone()),
+                    Some(image) => ui.render_on_output(&self.settings, &name, image.clone()),
                     None => LockUi::prepare_background(&self.settings, &name, width, height)
-                        .and_then(|image| ui.render_with_hits(&self.settings, image)),
+                        .and_then(|image| ui.render_on_output(&self.settings, &name, image)),
                 }
             } else if let Some(image) = record
                 .background
@@ -584,7 +584,7 @@ impl App {
                         fallback.background.image = None;
                         fallback.outputs.clear();
                         match LockUi::prepare_background(&fallback, &name, width, height)
-                            .and_then(|image| ui.render_with_hits(&fallback, image))
+                            .and_then(|image| ui.render_on_output(&fallback, &name, image))
                         {
                             Ok(image) => image,
                             Err(_) => continue,

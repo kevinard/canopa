@@ -14,19 +14,30 @@ pub enum Anchor {
     BottomRight,
 }
 impl Anchor {
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name {
-            "top-left" => Self::TopLeft,
-            "top-center" => Self::TopCenter,
-            "top-right" => Self::TopRight,
-            "center-left" => Self::CenterLeft,
-            "center" => Self::Center,
-            "center-right" => Self::CenterRight,
-            "bottom-left" => Self::BottomLeft,
-            "bottom-center" => Self::BottomCenter,
-            "bottom-right" => Self::BottomRight,
-            _ => return None,
-        })
+    pub const ALL: [Self; 9] = [
+        Self::TopLeft,
+        Self::TopCenter,
+        Self::TopRight,
+        Self::CenterLeft,
+        Self::Center,
+        Self::CenterRight,
+        Self::BottomLeft,
+        Self::BottomCenter,
+        Self::BottomRight,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::TopLeft => "top-left",
+            Self::TopCenter => "top-center",
+            Self::TopRight => "top-right",
+            Self::CenterLeft => "center-left",
+            Self::Center => "center",
+            Self::CenterRight => "center-right",
+            Self::BottomLeft => "bottom-left",
+            Self::BottomCenter => "bottom-center",
+            Self::BottomRight => "bottom-right",
+        }
     }
     fn axes(self) -> (u8, u8) {
         match self {
@@ -149,8 +160,10 @@ impl Layout {
                 }
                 continue;
             }
-            let anchor =
-                Anchor::parse(name).ok_or_else(|| anyhow::anyhow!("unknown layout region"))?;
+            let anchor = Anchor::ALL
+                .into_iter()
+                .find(|anchor| anchor.key() == name)
+                .ok_or_else(|| anyhow::anyhow!("unknown layout region"))?;
             let mut region = Region {
                 anchor,
                 widgets: Vec::new(),
@@ -209,18 +222,8 @@ impl Layout {
         let mut seen = HashSet::new();
         for name in self.regions.iter().flat_map(|r| &r.widgets) {
             ensure!(
-                [
-                    "clock",
-                    "date",
-                    "authentication",
-                    "username",
-                    "avatar",
-                    "keyboard",
-                    "battery",
-                    "media",
-                    "weather"
-                ]
-                .contains(&name.as_str())
+                matches!(name.as_str(), "clock" | "date" | "authentication")
+                    || crate::settings::PASSIVE_WIDGETS.contains(&name.as_str())
                     || custom.contains_key(name),
                 "unknown layout widget"
             );

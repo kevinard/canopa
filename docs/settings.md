@@ -2,7 +2,7 @@
 
 Open **Canopa Settings** from the launcher, press Super+Comma in the packaged
 session, or run `canopa settings`. The window uses the shared Canopa appearance.
-Tab/Shift+Tab navigate controls. Ctrl+1 through Ctrl+6 select pages, and Ctrl+S
+Tab/Shift+Tab navigate controls. Ctrl+1 through Ctrl+7 select pages, and Ctrl+S
 applies the selected page. Closing the
 window leaves the independent desktop services running.
 
@@ -110,8 +110,8 @@ Light/dark appearance and an optional accent update the shared configuration.
 The wallpaper button opens the existing picker, including per-monitor previews
 and saved assignments. Its default library is `~/Pictures/Wallpapers`; add local
 images there when no wallpaper folder is configured. Picker startup errors appear
-in Settings. Lockscreen fields include clock/date formats, font,
-avatar, background dimming and standard widgets. The owning application schemas
+in Settings. Lockscreen fields include clock/date formats, font, avatar and
+background dimming. The owning application schemas
 validate the entire candidate; unrelated namespaces, custom fields and comments
 are retained. The Settings portal receives its explicit reload request; other
 applications use their existing live-reload contracts. A currently active lock
@@ -126,6 +126,33 @@ both preferences.
 session. It adds an animation override to the compositor configuration, which
 Niri validates before applying. **Use Niri animation settings** removes the
 override and restores the effect of your existing Niri settings.
+
+## Widgets
+
+Open **Widgets** in Settings or press Ctrl+7. Choose **Bar layout** or **Lock
+screen layout**. Select a widget in the diagram or with **Placed widget**. Use
+**Zone** or **Region** to move it, **Earlier** and **Later** to reorder it, and
+**Add widget** or **Remove widget** to change what appears. On the lock screen,
+you can also set the selected region to flow in a row. **Preview monitor** uses
+that monitor's proportions and visibility. **Preview scale** changes the size
+of the sample widgets in the diagram.
+
+For the bar, select the screen edge and choose **All monitors**, **Selected
+monitors**, or **All except selected monitors**. Duplicate a bar to give another
+monitor its own layout. A duplicate starts with an empty monitor selection so
+you can assign it before saving. Give each bar a distinct monitor target if you
+want one bar per screen. The editor lists built-in modules with defaults
+and modules already declared in your configuration. Module styling, actions and
+panel settings remain editable in KDL.
+
+For the lock screen, select a monitor, select a placed widget, then choose
+**Hide this widget on the preview monitor**. The authentication box can move
+between regions and remains available on every screen. The diagram uses sample
+data. Configured script widgets become available once defined in KDL. See
+[lockscreen layout and widgets](session-tools.md#layout-and-custom-widgets).
+
+**Save changes** validates and saves the drafts. Shell applies the bar layout
+through its live reload. Lock screen changes take effect the next time you lock.
 
 ## Power and idle
 
@@ -148,7 +175,8 @@ so a new appearance file cannot silently hide existing shell/notification settin
 See [configuration](configuration.md) and [installation](installation.md).
 
 The launcher can open a particular page with `canopa-settings --page displays`,
-`--page input`, `--page personal`, `--page power`, `--page launcher`, or `--page shortcuts`. The option selects the initial
+`--page input`, `--page personal`, `--page power`, `--page launcher`,
+`--page shortcuts`, or `--page widgets`. The option selects the initial
 page only; normal Apply controls remain responsible for writes. It cannot be
 combined with command-line operations such as `outputs` or `check`.
 

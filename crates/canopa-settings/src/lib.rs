@@ -7,16 +7,18 @@ pub enum Page {
     Power,
     Launcher,
     Shortcuts,
+    Widgets,
 }
 #[cfg(feature = "desktop")]
 impl Page {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Displays,
         Self::Input,
         Self::Personal,
         Self::Power,
         Self::Launcher,
         Self::Shortcuts,
+        Self::Widgets,
     ];
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -26,6 +28,7 @@ impl Page {
             Self::Power => "Power & idle",
             Self::Launcher => "Launcher",
             Self::Shortcuts => "Shortcuts",
+            Self::Widgets => "Widgets",
         }
     }
 }
@@ -41,3 +44,5 @@ pub mod shortcuts;
 pub mod storage;
 #[cfg(feature = "desktop")]
 pub mod ui;
+#[cfg(feature = "desktop")]
+mod widget_layouts;

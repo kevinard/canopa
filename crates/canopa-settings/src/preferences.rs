@@ -92,50 +92,49 @@ impl Personal {
                 .as_ref()
                 .map(|v| v.to_string_lossy().into_owned().into()),
         );
-        if lock.get("widgets").is_none() {
-            lock.nodes_mut().push(kdl::KdlNode::new("widgets"));
-        }
-        let widgets = lock.get_mut("widgets").context("missing lock widgets")?;
-        widgets.entries_mut().clear();
-        for widget in &self.lock.widgets {
-            widgets.push(widget.clone());
-        }
         Ok(document.to_string())
     }
     pub fn save(&self, snapshot: &Snapshot) -> Result<Snapshot> {
-        if snapshot.text.is_empty() {
-            for component in [
-                canopa_config::Component::Shell,
-                canopa_config::Component::Notifications,
-            ] {
-                ensure!(
-                    !matches!(
-                        canopa_config::Request::Discover.resolve(component)?,
-                        canopa_config::Request::File {
-                            format: canopa_config::Format::Legacy,
-                            ..
-                        }
-                    ),
-                    "migrate existing legacy application configuration before creating shared settings; see the configuration guide"
-                );
-            }
-        }
-        let text = self.text(snapshot)?;
-        snapshot.save(&text, |path| {
-            crate::storage::command(
-                companion("canopa"),
-                &[
-                    "config".into(),
-                    "check".into(),
-                    "--file".into(),
-                    path.to_string_lossy().into_owned(),
-                ],
-            )?;
-            Ok(())
-        })
+        save_common(snapshot, &self.text(snapshot)?)
     }
 }
-fn block<'a>(document: &'a mut kdl::KdlDocument, name: &str) -> Result<&'a mut kdl::KdlDocument> {
+
+pub(crate) fn save_common(snapshot: &Snapshot, text: &str) -> Result<Snapshot> {
+    if snapshot.text.is_empty() {
+        for component in [
+            canopa_config::Component::Shell,
+            canopa_config::Component::Notifications,
+        ] {
+            ensure!(
+                !matches!(
+                    canopa_config::Request::Discover.resolve(component)?,
+                    canopa_config::Request::File {
+                        format: canopa_config::Format::Legacy,
+                        ..
+                    }
+                ),
+                "migrate existing legacy application configuration before creating shared settings; see the configuration guide"
+            );
+        }
+    }
+    snapshot.save(text, |path| {
+        crate::storage::command(
+            companion("canopa"),
+            &[
+                "config".into(),
+                "check".into(),
+                "--file".into(),
+                path.to_string_lossy().into_owned(),
+            ],
+        )?;
+        Ok(())
+    })
+}
+
+pub(crate) fn block<'a>(
+    document: &'a mut kdl::KdlDocument,
+    name: &str,
+) -> Result<&'a mut kdl::KdlDocument> {
     if document.get(name).is_none() {
         document.nodes_mut().push(kdl::KdlNode::new(name));
     }

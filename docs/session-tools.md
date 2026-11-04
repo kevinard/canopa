@@ -298,6 +298,20 @@ At small sizes, regions shrink to fit and other widgets overlapping authenticati
 are hidden. Without `layout`, the existing central clock/authentication and bottom
 widget stack remain; enabled custom widgets join the bottom stack.
 
+Use the [Widgets editor](settings.md#widgets) to arrange the layout. To hide
+passive widgets on a particular screen, add a list to that output's override.
+Existing image and fit fields can share the same block.
+
+```kdl
+lockscreen {
+    output "DP-1" { hide-widgets "username" "media"; }
+}
+```
+
+`hide-widgets` also accepts `clock`, `date` and configured custom widget names.
+Authentication and its keyboard layout switcher stay available. The single
+lockscreen accessibility tree omits passive widget labels hidden on any output.
+
 Custom widgets share a bounded command reader from `canopa-widgets`. `command`
 also accepts a shell-word string (for example `command "uptime -p"`); it is parsed
 as argv without shell expansion. Use explicit `sh -c` only when shell syntax is

@@ -3,6 +3,7 @@ mod focus;
 mod launcher;
 mod profiles;
 mod shortcuts;
+mod widget_layouts;
 use crate::{
     display::{Monitor, TrialHandle, transform_name},
     input::Input,
@@ -49,6 +50,8 @@ enum Message {
     Refresh,
     Outputs(std::result::Result<HashMap<String, Output>, String>),
     DisplayProfiles(profiles::Action),
+    WidgetLayouts(widget_layouts::Action),
+    OpenLockWidgetEditor,
     Enabled(usize, bool),
     Mode(usize, String),
     Scale(usize, f64),
@@ -64,7 +67,6 @@ enum Message {
     CompositorMotion(bool),
     CompositorMotionStored(Result<bool, String>),
     Dim(f64),
-    Widget(String, bool),
     IdleTime(bool, usize, String),
     IdleAction(&'static str),
     Profile(String),
@@ -97,6 +99,7 @@ struct State {
     positions: Vec<(String, String)>,
     display_dirty: bool,
     display_profiles: profiles::Editor,
+    widget_layouts: widget_layouts::View,
     input: Input,
     input_source: Option<Snapshot>,
     personal: Personal,
@@ -199,6 +202,7 @@ impl State {
             positions: vec![],
             display_dirty: false,
             display_profiles: profiles::Editor::default(),
+            widget_layouts: widget_layouts::View::default(),
             input,
             input_source,
             personal,
@@ -243,7 +247,6 @@ impl State {
                     | Message::TextScale(..)
                     | Message::ReducedMotion(..)
                     | Message::Dim(..)
-                    | Message::Widget(..)
                     | Message::IdleTime(..)
                     | Message::Profile(..)
                     | Message::Wallpaper
@@ -363,9 +366,18 @@ impl State {
                 return task(|| Client::discover()?.outputs(), Message::Outputs);
             }
             Message::DisplayProfiles(action) => return self.update_profiles(action),
+            Message::WidgetLayouts(action) => self.update_widget_layouts(action),
+            Message::OpenLockWidgetEditor if !self.busy && self.trial.is_none() => {
+                self.widget_layouts.lock = true;
+                self.widget_layouts.widget = None;
+                return self.update(Message::Page(Page::Widgets));
+            }
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 self.page = page;
                 self.idle_available = false;
+                if page == Page::Widgets && self.widget_layouts.editor.is_none() {
+                    return widget_layouts::View::load(&self.paths);
+                }
                 if page == Page::Shortcuts && self.shortcuts.is_none() {
                     let paths = self.paths.clone();
                     return task(
@@ -529,12 +541,6 @@ impl State {
                 }
             }
             Message::Dim(value) => self.personal.lock.dim = value as u8,
-            Message::Widget(name, value) => {
-                self.personal.lock.widgets.retain(|v| v != &name);
-                if value {
-                    self.personal.lock.widgets.push(name);
-                }
-            }
             Message::IdleTime(battery, index, value) => {
                 if battery {
                     self.idle_battery[index] = value;
@@ -609,6 +615,7 @@ impl State {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
                     }
+                    Page::Widgets => return self.save_widget_layouts(),
                     Page::Shortcuts => {
                         let Some(Ok(editor)) = self.shortcuts.clone() else {
                             self.busy = false;
@@ -705,6 +712,9 @@ impl State {
                                     self.personal = personal;
                                 }
                                 self.common_source = Some(snapshot);
+                                if !self.widget_layouts.dirty() {
+                                    self.widget_layouts.editor = None;
+                                }
                             }
                             Page::Power => self.idle_source = Some(snapshot),
                             _ => {}
@@ -778,7 +788,7 @@ impl State {
             subscriptions
                 .push(iced::time::every(Duration::from_secs(2)).map(|_| Message::LauncherRefresh));
         }
-        if self.page == Page::Displays || self.trial.is_some() {
+        if matches!(self.page, Page::Displays | Page::Widgets) || self.trial.is_some() {
             subscriptions.push(Subscription::run(niri_events));
         }
         if self.page == Page::Power {
@@ -849,6 +859,7 @@ impl State {
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),
             Page::Shortcuts => self.shortcuts_view(),
+            Page::Widgets => self.widget_layouts_view(),
         });
         let available = (self.page != Page::Launcher || self.launcher.loaded)
             && !self.busy
@@ -856,6 +867,7 @@ impl State {
             && (self.page != Page::Power || self.idle_available)
             && (self.page != Page::Shortcuts
                 || (matches!(self.shortcuts, Some(Ok(_))) && self.paths.active()))
+            && (self.page != Page::Widgets || self.widget_layouts.dirty())
             && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input));
         let footer = row![
             self.action(
@@ -1095,18 +1107,6 @@ impl State {
         .into()
     }
     fn personal_view(&self) -> Element<'_, Message> {
-        let mut widgets = row![].spacing(16);
-        for name in ["keyboard", "battery", "media", "username"] {
-            widgets = widgets.push(toggle(
-                format!("lock-widget-{name}"),
-                name,
-                self.personal.lock.widgets.iter().any(|w| w == name),
-                Message::Widget(
-                    name.into(),
-                    !self.personal.lock.widgets.iter().any(|w| w == name),
-                ),
-            ));
-        }
         let content = column![
             text("Appearance").size(22),
             toggle(
@@ -1166,8 +1166,11 @@ impl State {
                 1.,
                 Message::Dim
             ),
-            text("Lockscreen widgets"),
-            widgets
+            self.action(
+                "Edit lock screen widgets…",
+                Some(Message::OpenLockWidgetEditor),
+                false
+            )
         ];
         let mut content = content.push(text("Window and workspace motion").size(22));
         if let Some(reduced) = self.compositor_motion {
@@ -1300,7 +1303,7 @@ fn button<'a>(
 }
 fn toggle<'a>(
     id: impl Into<String>,
-    label: &'a str,
+    label: impl Into<String>,
     value: bool,
     message: Message,
 ) -> Element<'a, Message> {
@@ -1311,7 +1314,7 @@ fn toggle<'a>(
         None,
         false,
         checkbox(value)
-            .label(label)
+            .label(label.into())
             .on_toggle(move |_| message.clone()),
     )
 }

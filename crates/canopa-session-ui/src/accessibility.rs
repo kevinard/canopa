@@ -155,6 +155,9 @@ impl Accessibility {
     ) {
         let visible = |name: &str| {
             settings.widgets.iter().any(|n| n == name)
+                // One accessibility tree represents every lock surface. Do not
+                // read out a widget the user chose to hide on any monitor.
+                && !settings.hidden_widgets.values().flatten().any(|n| n == name)
                 && settings
                     .layout
                     .regions
@@ -241,14 +244,6 @@ impl Accessibility {
             nodes.push((INPUT, node));
             nodes.push((TEXT, text));
         }
-        let visible = |name: &str| {
-            settings.widgets.iter().any(|n| n == name)
-                && settings
-                    .layout
-                    .regions
-                    .iter()
-                    .any(|r| r.widgets.iter().any(|n| n == name))
-        };
         for (index, (_, value)) in view
             .custom
             .iter()

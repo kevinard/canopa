@@ -7,6 +7,10 @@ use std::{
     path::PathBuf,
 };
 
+pub const PASSIVE_WIDGETS: &[&str] = &[
+    "username", "avatar", "keyboard", "battery", "media", "weather",
+];
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Background {
@@ -17,6 +21,7 @@ pub struct Background {
 pub struct Settings {
     pub background: Background,
     pub outputs: BTreeMap<String, Background>,
+    pub hidden_widgets: BTreeMap<String, Vec<String>>,
     pub appearance: Appearance,
     pub color: Rgb,
     pub font: String,
@@ -55,6 +60,7 @@ impl Settings {
             appearance: appearance.clone(),
             background: Background::default(),
             outputs: BTreeMap::new(),
+            hidden_widgets: BTreeMap::new(),
             font: appearance
                 .typography()
                 .family
@@ -108,18 +114,8 @@ impl Settings {
                 ensure!(
                     !name.is_empty()
                         && name.len() <= 64
-                        && ![
-                            "clock",
-                            "date",
-                            "authentication",
-                            "username",
-                            "avatar",
-                            "keyboard",
-                            "battery",
-                            "media",
-                            "weather"
-                        ]
-                        .contains(&name.as_str())
+                        && !matches!(name.as_str(), "clock" | "date" | "authentication")
+                        && !PASSIVE_WIDGETS.contains(&name.as_str())
                         && !value.custom.contains_key(&name)
                         && value.custom.len() < 32,
                     "invalid, reserved or duplicate custom widget name"
@@ -128,24 +124,6 @@ impl Settings {
                 continue;
             }
             if name == "output" {
-                let output = string(node)?;
-                ensure!(
-                    !output.is_empty() && !value.outputs.contains_key(&output),
-                    "duplicate or empty output name"
-                );
-                let children = node
-                    .children()
-                    .ok_or_else(|| anyhow::anyhow!("output requires a block"))?;
-                let mut background = Background::default();
-                let mut fields = HashSet::new();
-                for field in children.nodes() {
-                    ensure!(
-                        fields.insert(field.name().value()),
-                        "duplicate output setting"
-                    );
-                    parse_background(&mut background, field, source)?;
-                }
-                value.outputs.insert(output, background);
                 continue;
             }
             ensure!(seen.insert(name), "duplicate session setting");
@@ -245,22 +223,7 @@ impl Settings {
                     value.dim = n as u8;
                 }
                 "widgets" if component != Component::Wallpaper => {
-                    value.widgets.clear();
-                    for entry in node.entries() {
-                        ensure!(
-                            entry.name().is_none() && entry.ty().is_none(),
-                            "invalid widget entry"
-                        );
-                        let widget = entry
-                            .value()
-                            .as_string()
-                            .ok_or_else(|| anyhow::anyhow!("expected widget name"))?;
-                        ensure!(
-                            !value.widgets.iter().any(|v| v == widget),
-                            "duplicate enabled widget"
-                        );
-                        value.widgets.push(widget.to_owned());
-                    }
+                    value.widgets = widget_names(node)?;
                 }
                 _ => bail!("unknown session setting"),
             }
@@ -272,20 +235,41 @@ impl Settings {
             .filter(|n| n.name().value() == "output")
         {
             let output = string(node)?;
+            ensure!(
+                !output.is_empty() && !value.outputs.contains_key(&output),
+                "duplicate or empty output name"
+            );
+            let children = node
+                .children()
+                .ok_or_else(|| anyhow::anyhow!("output requires a block"))?;
             let mut background = value.background.clone();
-            for field in node.children().unwrap().nodes() {
-                parse_background(&mut background, field, source)?;
+            let mut fields = HashSet::new();
+            for field in children.nodes() {
+                ensure!(
+                    fields.insert(field.name().value()),
+                    "duplicate output setting"
+                );
+                if component == Component::Lockscreen && field.name().value() == "hide-widgets" {
+                    let widgets = widget_names(field)?;
+                    ensure!(
+                        widgets.iter().all(|name| {
+                            matches!(name.as_str(), "clock" | "date")
+                                || PASSIVE_WIDGETS.contains(&name.as_str())
+                                || value.custom.contains_key(name)
+                        }),
+                        "only passive widgets can be hidden on an output"
+                    );
+                    value.hidden_widgets.insert(output.clone(), widgets);
+                } else {
+                    parse_background(&mut background, field, source)?;
+                }
             }
             value.outputs.insert(output, background);
         }
         if component != Component::Wallpaper {
             for widget in &value.widgets {
                 ensure!(
-                    [
-                        "battery", "media", "keyboard", "username", "weather", "avatar"
-                    ]
-                    .contains(&widget.as_str())
-                        || value.custom.contains_key(widget),
+                    PASSIVE_WIDGETS.contains(&widget.as_str()) || value.custom.contains_key(widget),
                     "unknown enabled widget"
                 );
                 if !explicit_layout && value.custom.contains_key(widget) {
@@ -305,6 +289,34 @@ impl Settings {
     pub fn for_output(&self, name: &str) -> &Background {
         self.outputs.get(name).unwrap_or(&self.background)
     }
+
+    pub fn hidden_on(&self, output: &str) -> &[String] {
+        self.hidden_widgets.get(output).map_or(&[], Vec::as_slice)
+    }
+}
+
+fn widget_names(node: &kdl::KdlNode) -> Result<Vec<String>> {
+    ensure!(
+        node.ty().is_none() && node.children().is_none(),
+        "expected a list of widgets"
+    );
+    let mut names = Vec::new();
+    for entry in node.entries() {
+        ensure!(
+            entry.name().is_none() && entry.ty().is_none(),
+            "invalid widget entry"
+        );
+        let name = entry
+            .value()
+            .as_string()
+            .ok_or_else(|| anyhow::anyhow!("expected widget name"))?;
+        ensure!(
+            !names.iter().any(|existing| existing == name),
+            "duplicate widget"
+        );
+        names.push(name.to_owned());
+    }
+    Ok(names)
 }
 fn string(node: &kdl::KdlNode) -> Result<String> {
     ensure!(

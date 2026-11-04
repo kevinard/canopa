@@ -108,10 +108,8 @@ impl SessionView {
         width: u32,
         height: u32,
     ) -> Result<RgbImage> {
-        self.render_over(
-            settings,
-            Self::prepare_background(settings, name, width, height)?,
-        )
+        let image = Self::prepare_background(settings, name, width, height)?;
+        Ok(self.render_on_output(settings, name, image)?.0)
     }
     pub fn prepare_background(
         settings: &Settings,
@@ -146,18 +144,38 @@ impl SessionView {
         settings: &Settings,
         image: RgbImage,
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
+        self.render_on_output(settings, "", image)
+    }
+
+    pub fn render_on_output(
+        &self,
+        settings: &Settings,
+        output: &str,
+        image: RgbImage,
+    ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
         let (width, height) = image.dimensions();
         let scale = (width as f32 / 1280.)
             .min(height as f32 / 800.)
             .clamp(0.2, 3.);
-        self.render_at_scale(settings, image, scale)
+        self.render_filtered(settings, image, scale, settings.hidden_on(output))
     }
+
     /// Ordinary dialogs choose their logical scale; fullscreen consumers derive it above.
     pub fn render_at_scale(
         &self,
         settings: &Settings,
+        image: RgbImage,
+        scale: f32,
+    ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
+        self.render_filtered(settings, image, scale, &[])
+    }
+
+    fn render_filtered(
+        &self,
+        settings: &Settings,
         mut image: RgbImage,
         scale: f32,
+        hidden: &[String],
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
         anyhow::ensure!(
             scale.is_finite() && (0.2..=4.).contains(&scale),
@@ -186,7 +204,12 @@ impl SessionView {
             },
         );
         content.insert("authentication".to_owned(), Content::Authentication);
-        for widget in &settings.widgets {
+        content.retain(|name, _| name == "authentication" || !hidden.contains(name));
+        for widget in settings
+            .widgets
+            .iter()
+            .filter(|name| !hidden.contains(name))
+        {
             let value = match widget.as_str() {
                 "username" => Some(self.username.clone()),
                 "keyboard" => Some(self.layout.clone()).filter(|s| !s.is_empty()),
@@ -540,6 +563,61 @@ fn wrap(text: &str, columns: usize, maximum: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monitor_visibility_hides_passive_content_and_keeps_authentication() {
+        use canopa_config::Component;
+        let nodes = r#"
+widgets "username"
+layout {
+    top-left "username"
+    bottom-center "authentication"
+}
+output "DP-1" { hide-widgets "username"; }
+"#;
+        let settings = Settings::parse(
+            &nodes.parse().unwrap(),
+            Default::default(),
+            None,
+            Component::Lockscreen,
+        )
+        .unwrap();
+        let view = SessionView::preview(&settings, "Sample user".into()).unwrap();
+        let visible = view.render(&settings, "eDP-1", 640, 400).unwrap();
+        let hidden = view.render(&settings, "DP-1", 640, 400).unwrap();
+        let background = image::Rgb([settings.color.0, settings.color.1, settings.color.2]);
+        assert!(
+            visible
+                .enumerate_pixels()
+                .any(|(_, y, pixel)| y < 100 && *pixel != background)
+        );
+        assert!(
+            hidden
+                .enumerate_pixels()
+                .all(|(_, y, pixel)| y >= 100 || *pixel == background)
+        );
+        assert!(
+            hidden
+                .enumerate_pixels()
+                .any(|(_, y, pixel)| y > 250 && *pixel != background)
+        );
+        assert!(
+            Settings::parse(
+                &nodes
+                    .replace(
+                        "hide-widgets \"username\"",
+                        "hide-widgets \"authentication\""
+                    )
+                    .parse()
+                    .unwrap(),
+                Default::default(),
+                None,
+                Component::Lockscreen
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn consumer_avatars_are_circular_blend_alpha_and_return_to_initials_or_static_fallback() {
         let mut settings = Settings::load(
