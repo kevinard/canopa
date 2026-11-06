@@ -3,10 +3,10 @@
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
-import tempfile
 import tomllib
+
+from vendor_test_workspace import workspace as test_workspace, write_if_changed
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,13 +18,12 @@ def main():
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str((ROOT / "target").resolve())
     env.setdefault("CARGO_INCREMENTAL", "1")
-    with tempfile.TemporaryDirectory(prefix="canopa-pipe-tests-") as directory:
-        snapshot = Path(directory)
-        shutil.copyfile(ROOT / "vendor/winit/src/platform_impl/linux/wayland/drag_drop/pipes.rs", snapshot / "lib.rs")
-        shutil.copyfile(ROOT / "Cargo.lock", snapshot / "Cargo.lock")
-        (snapshot / "Cargo.toml").write_text('[package]\nname="canopa-native-pipe-tests"\nversion="0.0.0"\nedition="2021"\n'
+    with test_workspace("pipes") as snapshot:
+        write_if_changed(snapshot / "lib.rs", (ROOT / "vendor/winit/src/platform_impl/linux/wayland/drag_drop/pipes.rs").read_bytes())
+        write_if_changed(snapshot / "Cargo.lock", (ROOT / "Cargo.lock").read_bytes())
+        write_if_changed(snapshot / "Cargo.toml", ('[workspace]\n[package]\nname="canopa-native-pipe-tests"\nversion="0.0.0"\nedition="2021"\n'
             '[lib]\npath="lib.rs"\n[dependencies]\n'
-            f'rustix={{version="={version}",features=["event","pipe","fs"]}}\n')
+            f'rustix={{version="={version}",features=["event","pipe","fs"]}}\n').encode())
         metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--offline", "--format-version", "1",
             "--manifest-path", str(snapshot / "Cargo.toml")], cwd=ROOT, env=env, text=True))
         for p in metadata["packages"]:

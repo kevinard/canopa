@@ -1,0 +1,152 @@
+--- a/src/screencasting/sources.rs
++++ b/src/screencasting/sources.rs
+@@ -47,6 +47,7 @@
+     pub position: (i32, i32),
+     pub size: (i32, i32),
+     pub mapping_id: Option<String>,
++    pub physical_scale: Option<f64>,
+ }
+ 
+ #[derive(Clone)]
+@@ -97,6 +98,7 @@
+                 position: (0, 0),
+                 size: (1, 1),
+                 mapping_id: None,
++                physical_scale: None,
+             }),
+         }
+     }
+@@ -113,7 +115,7 @@
+         .ok_or_else(|| fdo::Error::LimitsExceeded("capture identities exhausted".into()))
+ }
+ fn target_metadata(niri: &Niri, target: &CastTarget) -> fdo::Result<Metadata> {
+-    let (position, size) = match target {
++    let (position, size, physical_scale) = match target {
+         CastTarget::Output { output, .. } => {
+             let output = output
+                 .upgrade()
+@@ -123,7 +125,11 @@
+                 .global_space
+                 .output_geometry(&output)
+                 .ok_or_else(unavailable)?;
+-            ((geo.loc.x, geo.loc.y), (geo.size.w, geo.size.h))
++            (
++                (geo.loc.x, geo.loc.y),
++                (geo.size.w, geo.size.h),
++                Some(output.current_scale().fractional_scale()),
++            )
+         }
+         CastTarget::Window { id } => {
+             let (_, mapped) = niri
+@@ -132,7 +138,14 @@
+                 .find(|(_, mapped)| mapped.id().get() == *id)
+                 .ok_or_else(unavailable)?;
+             let bbox = mapped.window.bbox_with_popups();
+-            ((0, 0), (bbox.size.w, bbox.size.h))
++            // The cast output determines the pixels in this recording, even
++            // when logical window dimensions stay fixed across output scaling.
++            let scale = niri
++                .casting
++                .mapped_cast_output
++                .get(&mapped.window)
++                .map(|output| output.current_scale().fractional_scale());
++            ((0, 0), (bbox.size.w, bbox.size.h), scale)
+         }
+         CastTarget::Nothing => return Err(unavailable()),
+     };
+@@ -144,6 +157,7 @@
+         position,
+         size,
+         mapping_id: None,
++        physical_scale,
+     })
+ }
+ fn resolve(niri: &Niri, request: Request, expected: Option<u64>) -> fdo::Result<Target> {
+--- a/src/screencasting/sources/mapping.rs
++++ b/src/screencasting/sources/mapping.rs
+@@ -1,4 +1,4 @@
+-//! Absolute input bindings to selected, live producer streams. Region dimensions
++//! Absolute input bindings to selected, live producer streams. Region dimensions and scale
+ //! remain fixed for one lease, matching EI's immutable device region contract.
+ 
+ use std::collections::HashSet;
+@@ -49,7 +49,7 @@
+         Ok(Self { session, regions })
+     }
+ 
+-    pub fn descriptors(&self) -> Vec<(u64, String, (i32, i32))> {
++    pub fn descriptors(&self) -> Vec<(u64, String, (i32, i32), f64)> {
+         self.regions
+             .iter()
+             .map(|r| {
+@@ -57,6 +57,7 @@
+                     r.stream.get(),
+                     r.metadata.mapping_id.clone().unwrap(),
+                     r.metadata.size,
++                    r.metadata.physical_scale.expect("active scaled binding"),
+                 )
+             })
+             .collect()
+@@ -68,6 +69,7 @@
+                 m.source_id == r.metadata.source_id
+                     && m.mapping_id == r.metadata.mapping_id
+                     && m.size == r.metadata.size
++                    && m.physical_scale == r.metadata.physical_scale
+             })
+         })
+     }
+@@ -154,7 +156,12 @@
+         return Err(unavailable());
+     }
+     let metadata = niri.casting.sources.metadata(niri, session, stream)?;
+-    if metadata.mapping_id.is_none() || metadata.source_id.is_none() {
++    if metadata.mapping_id.is_none()
++        || metadata.source_id.is_none()
++        || !metadata
++            .physical_scale
++            .is_some_and(|scale| scale.is_finite() && scale > 0. && scale <= 64.)
++    {
+         return Err(unavailable());
+     }
+     Ok(metadata)
+--- a/src/dbus/remote_input.rs
++++ b/src/dbus/remote_input.rs
+@@ -39,7 +39,7 @@
+     Symbols(TypedReader),
+ }
+ 
+-pub type MappingDescriptors = Vec<(u64, String, (i32, i32))>;
++pub type MappingDescriptors = Vec<(u64, String, (i32, i32), f64)>;
+ 
+ const MAX_LEASES: usize = 8;
+ const MAX_KEYMAP: usize = 1024 * 1024;
+@@ -172,7 +172,7 @@
+     }
+ 
+     /// Bind absolute input to fixed, started streams of this capture session.
+-    /// Region sizes are immutable for this lease; resize/source loss retires it.
++    /// Region sizes and physical scales are immutable; changes retire the source.
+     async fn open_mapped_pointer(
+         &self,
+         session: zvariant::ObjectPath<'_>,
+@@ -209,7 +209,7 @@
+ 
+     #[zbus(property)]
+     fn mapped_pointer_version(&self) -> u32 {
+-        1
++        2
+     }
+ 
+     #[zbus(property)]
+--- a/src/dbus/mutter_screen_cast.rs
++++ b/src/dbus/mutter_screen_cast.rs
+@@ -258,6 +258,9 @@
+         }
+         if let Some(id) = metadata.mapping_id {
+             values.insert("mapping-id", Value::from(id));
++        }
++        if let Some(scale) = metadata.physical_scale {
++            values.insert("canopa-physical-scale", Value::from(scale));
+         }
+         Ok(values)
+     }

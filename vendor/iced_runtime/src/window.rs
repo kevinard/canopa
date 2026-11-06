@@ -13,11 +13,21 @@ use crate::task::{self, Task};
 pub use raw_window_handle;
 /// Optional native drag transport, negotiated offers and bounded byte I/O.
 pub mod drag_drop;
+/// Focus-scoped compositor shortcut inhibition and actual permission state.
+pub mod keyboard_shortcuts;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
+/// Request focus-scoped compositor shortcut inhibition. Other backends and
+/// retired windows return None. Observe the guard's actual state before capture.
+pub fn inhibit_keyboard_shortcuts(id:Id)->Task<Option<keyboard_shortcuts::Inhibitor>> {
+    task::oneshot(move |channel|crate::Action::Window(Action::InhibitKeyboardShortcuts(id,channel)))
+}
+
 /// An operation to be performed on some window.
 pub enum Action {
+    /// Request an inhibitor for an ordinary window, when natively supported.
+    InhibitKeyboardShortcuts(Id,oneshot::Sender<Option<keyboard_shortcuts::Inhibitor>>),
     /// Opt in to native data-device transport for an ordinary window.
     EnableDragDrop(Id, oneshot::Sender<Option<drag_drop::DragDrop>>),
     /// Open a new window with some [`Settings`].
@@ -26,6 +36,12 @@ pub enum Action {
     /// Open an auxiliary window above an existing parent before mapping it.
     /// Returns `None` when the parent is gone or the backend is unsupported.
     OpenTransient(Id, Settings, Id, oneshot::Sender<Option<Id>>),
+
+    /// Open a portal dialog with an exported Wayland parent handle and modal hint.
+    OpenDialog(Id, Settings, String, bool, Option<String>, oneshot::Sender<Option<Id>>),
+
+    /// Obtain a fresh outgoing token from recent user input, when supported.
+    RequestActivationToken(Id, oneshot::Sender<Option<String>>),
 
     /// Close the window and exits the application.
     Close(Id),
@@ -305,6 +321,28 @@ pub fn open_transient(parent: Id, settings: Settings) -> (Id, Task<Option<Id>>) 
             crate::Action::Window(Action::OpenTransient(id, settings, parent, channel))
         }),
     )
+}
+
+/// Opens an out-of-process dialog. The Wayland parent handle excludes the
+/// `wayland:` prefix. Unsupported compositors may display an unparented window;
+/// unsupported adapters return `None` without opening a surface.
+pub fn open_dialog(parent_handle: String, modal: bool, settings: Settings) -> (Id, Task<Option<Id>>) {
+    open_dialog_with_activation(parent_handle, modal, None, settings)
+}
+
+/// Opens a dialog using an incoming startup activation token, when supplied.
+pub fn open_dialog_with_activation(parent_handle: String, modal: bool, activation_token: Option<String>, settings: Settings) -> (Id, Task<Option<Id>>) {
+    let id = Id::unique();
+    (id, task::oneshot(move |channel| {
+        crate::Action::Window(Action::OpenDialog(id, settings, parent_handle, modal, activation_token, channel))
+    }))
+}
+
+/// Requests a token for a subsequent launch from recent input on this window.
+/// Unsupported adapters return `None`. Callers must bound their wait and ignore
+/// late results after their chosen action or request has changed.
+pub fn request_activation_token(id: Id) -> Task<Option<String>> {
+    task::oneshot(move |channel| crate::Action::Window(Action::RequestActivationToken(id, channel)))
 }
 
 /// Closes the window with `id`.

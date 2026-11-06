@@ -1,0 +1,72 @@
+--- a/src/eis.rs
++++ b/src/eis.rs
+@@ -193,6 +193,26 @@
+         self.0.read()
+     }
+ 
++    /// Reads at most 2048 bytes in one call, for a bounded server request loop.
++    ///
++    /// Drain [`Self::pending_request`] between calls. The internal byte buffer is
++    /// limited to the maximum EI message size (1 MiB); client requests cannot
++    /// carry file descriptors. This does not bound the work or queues of a
++    /// request converter. The server must enforce those limits separately.
++    ///
++    /// Returns zero when no bytes are available. Unlike [`Self::read`], a
++    /// successful call does not imply that the socket was drained to WouldBlock.
++    /// Use level-triggered readiness or continue reading after processing requests.
++    ///
++    /// # Errors
++    ///
++    /// Returns `UnexpectedEof` for peer closure, `InvalidData` when the buffer is
++    /// full or descriptors are received, or any underlying I/O error. An error
++    /// terminates the protocol connection; do not continue parsing afterwards.
++    pub fn read_chunk(&self) -> io::Result<usize> {
++        self.0.read_chunk()
++    }
++
+     /// Returns a request that is readily available.
+     // XXX iterator
+     pub fn pending_request(&self) -> Option<PendingRequestResult<Request>> {
+--- a/src/wire/backend.rs
++++ b/src/wire/backend.rs
+@@ -170,6 +170,40 @@
+         }
+     }
+ 
++    /// Read one bounded chunk for an EIS request loop. EI requests carry no FDs.
++    pub(crate) fn read_chunk(&self) -> io::Result<usize> {
++        let mut read = self.0.read.lock().unwrap();
++        if read.buf.len() >= MAX_MSGLEN as usize || !read.fds.is_empty() {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "EIS request buffer exceeds limits",
++            ));
++        }
++        let mut buf = [0; 2048];
++        let available = buf.len().min(MAX_MSGLEN as usize - read.buf.len());
++        let mut fds = VecDeque::new();
++        let count = match util::recv_with_fds(&self.0.socket, &mut buf[..available], &mut fds) {
++            Ok(count) => count,
++            #[allow(unreachable_patterns)]
++            Err(Errno::WOULDBLOCK | Errno::AGAIN) => return Ok(0),
++            Err(error) => return Err(error.into()),
++        };
++        if !fds.is_empty() {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "EIS client requests must not carry file descriptors",
++            ));
++        }
++        if count == 0 {
++            return Err(io::Error::new(
++                io::ErrorKind::UnexpectedEof,
++                "unexpected EOF reading ei socket",
++            ));
++        }
++        read.buf.extend(&buf[..count]);
++        Ok(count)
++    }
++
+     /// Returns a message that is readily available.
+     pub(crate) fn pending<T: wire::MessageEnum>(
+         &self,

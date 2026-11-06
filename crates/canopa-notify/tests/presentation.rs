@@ -1,7 +1,5 @@
-#[path = "support/daemon.rs"]
-mod daemon_support;
-#[path = "support/notifications.rs"]
-mod notifications;
+use crate::daemon_support;
+use crate::notifications;
 
 #[cfg(feature = "gui")]
 use canopa_notify::IcedLayerShellBannerPresenter;

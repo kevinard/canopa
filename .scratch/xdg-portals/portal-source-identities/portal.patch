@@ -1,0 +1,1033 @@
+--- a/crates/canopa-portal/src/screencast_capture.rs
++++ b/crates/canopa-portal/src/screencast_capture.rs
+@@ -5,10 +5,12 @@
+ use tokio::sync::{Semaphore, oneshot, watch};
+ use zbus::{Connection, names::OwnedUniqueName};
+ 
++mod monitor;
+ #[cfg(test)]
+-mod tests;
++pub(crate) mod tests;
+ mod transport;
+ mod worker;
++pub use monitor::Monitor;
+ 
+ const SERVICE: &str = "org.gnome.Mutter.ScreenCast";
+ const PATH: &str = "/org/gnome/Mutter/ScreenCast";
+@@ -20,7 +22,7 @@
+ 
+ #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+ pub enum Source {
+-    Monitor(String),
++    Monitor(Monitor),
+     Window(u64),
+ }
+ #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+@@ -114,11 +116,14 @@
+         );
+         let mut seen = HashSet::new();
+         for source in &self.sources {
+-            anyhow::ensure!(seen.insert(source), "Duplicate capture source");
++            let target = match source {
++                Source::Monitor(monitor) => (Some(monitor.name()), 0),
++                Source::Window(id) => (None, *id),
++            };
++            anyhow::ensure!(seen.insert(target), "Duplicate capture source");
+             anyhow::ensure!(
+                 match source {
+-                    Source::Monitor(name) =>
+-                        !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control),
++                    Source::Monitor(monitor) => monitor.valid(),
+                     Source::Window(id) => *id != 0,
+                 },
+                 "Invalid capture source"
+--- a/crates/canopa-portal/src/screencast_capture/worker.rs
++++ b/crates/canopa-portal/src/screencast_capture/worker.rs
+@@ -86,6 +86,16 @@
+     let _watch =
+         tokio::time::timeout(CALL_TIME, observe(connection, &input, stop.clone())).await??;
+     anyhow::ensure!(!*stopped.borrow(), "Capture cancelled");
++    if input
++        .sources
++        .iter()
++        .any(|source| matches!(source, Source::Monitor(monitor) if monitor.identity().is_some()))
++    {
++        anyhow::ensure!(
++            monitor::supported(connection, &input.compositor).await?,
++            "Capture monitor identities unavailable"
++        );
++    }
+     // Keep awaiting the creation reply after caller/pipe loss so a returned
+     // session can still be stopped. A timed-out mutation can remain ambiguous.
+     let session: OwnedObjectPath = call(
+@@ -118,21 +128,27 @@
+                     "cursor-mode",
+                     Value::from(input.cursor.compositor_value()),
+                 )]);
++                if let Source::Monitor(monitor) = source
++                    && let Some(identity) = monitor.identity()
++                {
++                    properties.insert("canopa-source-id", Value::from(identity));
++                }
+                 let stream: OwnedObjectPath = match source {
+-                    Source::Monitor(name) => {
++                    Source::Monitor(monitor) => {
+                         call(
+                             connection,
+                             &input.compositor,
+                             &session,
+                             SESSION,
+                             "RecordMonitor",
+-                            &(name, properties),
++                            &(monitor.name(), properties),
+                             remaining(end)?,
+                         )
+                         .await?
+                     }
+                     Source::Window(id) => {
+                         properties.insert("window-id", Value::from(*id));
++                        properties.insert("canopa-source-id", Value::from(*id));
+                         call(
+                             connection,
+                             &input.compositor,
+@@ -153,35 +169,9 @@
+                     .build()
+                     .await?;
+                 let mut added = tokio::time::timeout(remaining(end)?, proxy.receive_signal("PipeWireStreamAdded")).await??;
+-                let geometry = if matches!(source, Source::Monitor(_)) {
+-                    let value: OwnedValue = call(
+-                        connection,
+-                        &input.compositor,
+-                        proxy.path().as_str(),
+-                        "org.freedesktop.DBus.Properties",
+-                        "Get",
+-                        &(STREAM, "Parameters"),
+-                        remaining(end)?,
+-                    )
+-                    .await?;
+-                    let mut parameters =
+-                        std::collections::HashMap::<String, OwnedValue>::try_from(value)?;
+-                    let position: (i32, i32) = parameters
+-                        .remove("position")
+-                        .ok_or_else(|| anyhow::anyhow!("Missing capture position"))?
+-                        .try_into()?;
+-                    let size: (i32, i32) = parameters
+-                        .remove("size")
+-                        .ok_or_else(|| anyhow::anyhow!("Missing capture size"))?
+-                        .try_into()?;
+-                    let geometry = Geometry { position, size };
+-                    anyhow::ensure!(geometry.valid(), "Invalid capture geometry");
+-                    Some(geometry)
+-                } else {
+-                    // Niri26.04 reports placeholder1x1 window parameters.
+-                    None
+-                };
+                 let source = source.clone();
++                let path = proxy.path().to_owned();
++                let compositor = input.compositor.as_str();
+                 waiting.push(async move {
+                     let message = added
+                         .next()
+@@ -189,6 +179,7 @@
+                         .ok_or_else(|| anyhow::anyhow!("Capture stream disappeared"))?;
+                     let (node,): (u32,) = message.body().deserialize()?;
+                     anyhow::ensure!(node != 0 && node != u32::MAX, "Invalid capture node");
++                    let geometry = stream_geometry(connection, compositor, path.as_str(), &source, end).await?;
+                     Ok::<_, anyhow::Error>((
+                         index,
+                         Stream {
+@@ -263,6 +254,50 @@
+     result
+ }
+ 
++async fn stream_geometry(
++    connection: &Connection,
++    owner: &str,
++    path: &str,
++    source: &Source,
++    end: std::time::Instant,
++) -> anyhow::Result<Option<Geometry>> {
++    let Source::Monitor(monitor) = source else {
++        // Legacy Niri reports placeholder window geometry. The capture mapping
++        // extension will supply window regions separately to pointer workers.
++        return Ok(None);
++    };
++    let value: OwnedValue = call(
++        connection,
++        owner,
++        path,
++        "org.freedesktop.DBus.Properties",
++        "Get",
++        &(STREAM, "Parameters"),
++        remaining(end)?,
++    )
++    .await?;
++    let mut parameters = std::collections::HashMap::<String, OwnedValue>::try_from(value)?;
++    if let Some(expected) = monitor.identity() {
++        let actual = u64::try_from(
++            parameters
++                .remove("canopa-source-id")
++                .ok_or_else(|| anyhow::anyhow!("Missing capture source identity"))?,
++        )?;
++        anyhow::ensure!(actual == expected, "Capture monitor identity changed");
++    }
++    let position = parameters
++        .remove("position")
++        .ok_or_else(|| anyhow::anyhow!("Missing capture position"))?
++        .try_into()?;
++    let size = parameters
++        .remove("size")
++        .ok_or_else(|| anyhow::anyhow!("Missing capture size"))?
++        .try_into()?;
++    let geometry = Geometry { position, size };
++    anyhow::ensure!(geometry.valid(), "Invalid capture geometry");
++    Ok(Some(geometry))
++}
++
+ fn remaining(end: std::time::Instant) -> anyhow::Result<Duration> {
+     let remaining = end.saturating_duration_since(std::time::Instant::now());
+     anyhow::ensure!(!remaining.is_zero(), "Capture start timed out");
+--- a/crates/canopa-portal/src/screencast_capture/tests.rs
++++ b/crates/canopa-portal/src/screencast_capture/tests.rs
+@@ -1,5 +1,5 @@
+ use super::*;
+-mod fake;
++pub(crate) mod fake;
+ 
+ async fn launch(
+     fixture: &fake::Fixture,
+@@ -252,7 +252,7 @@
+         Source::Window(0),
+         Source::Monitor("".into()),
+         Source::Monitor("bad\nname".into()),
+-        Source::Monitor("x".repeat(257)),
++        Source::Monitor("x".repeat(257).into()),
+     ] {
+         input.sources = vec![source];
+         assert!(input.validate().is_err());
+@@ -268,3 +268,196 @@
+     assert_eq!(Cursor::Embedded.compositor_value(), 1);
+     assert_eq!(Cursor::Metadata.compositor_value(), 2);
+ }
++
++#[test]
++fn monitor_serialization_preserves_live_identity_and_rejects_connector_aliases() {
++    let pinned = Source::Monitor(Monitor::pinned("DP-1", 77).unwrap());
++    let bytes = serde_json::to_vec(&pinned).unwrap();
++    assert_eq!(serde_json::from_slice::<Source>(&bytes).unwrap(), pinned);
++    assert_ne!(
++        pinned,
++        Source::Monitor(Monitor::pinned("DP-1", 78).unwrap())
++    );
++    let legacy = Source::Monitor("DP-1".into());
++    assert_eq!(
++        serde_json::to_string(&legacy).unwrap(),
++        r#"{"Monitor":"DP-1"}"#
++    );
++    for value in [
++        r#"{"Monitor":{"name":"DP-1","identity":0}}"#,
++        r#"{"Monitor":{"name":"DP-1","identity":77,"extra":true}}"#,
++        r#"{"Monitor":{"name":"bad\nname","identity":77}}"#,
++    ] {
++        assert!(serde_json::from_str::<Source>(value).is_err());
++    }
++    for alias in [
++        legacy,
++        Source::Monitor(Monitor::pinned("DP-1", 78).unwrap()),
++    ] {
++        let input = Input {
++            compositor: ":1.1".into(),
++            backend: ":1.2".into(),
++            caller: ":1.3".into(),
++            sources: vec![pinned.clone(), alias],
++            cursor: Cursor::Hidden,
++        };
++        assert!(input.validate().is_err());
++    }
++}
++
++#[tokio::test]
++async fn monitor_inventory_negotiates_live_ids_and_does_not_downgrade_errors() {
++    use std::sync::atomic::Ordering;
++    let fixture = fake::Fixture::new().await;
++    let owner = Owner::resolve(&fixture.backend).await.unwrap();
++    let legacy = owner
++        .monitors(&fixture.backend, vec!["DP-1".into()])
++        .await
++        .unwrap();
++    assert_eq!(legacy, [Monitor::from("DP-1")]);
++    fixture.state.source_version.store(1, Ordering::SeqCst);
++    fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++    let initial = owner
++        .monitors(&fixture.backend, vec!["DP-1".into()])
++        .await
++        .unwrap();
++    assert_eq!(initial, [Monitor::pinned("DP-1", 77).unwrap()]);
++    fixture.state.monitor_identity.store(78, Ordering::SeqCst);
++    assert_ne!(
++        owner
++            .monitors(&fixture.backend, vec!["DP-1".into()])
++            .await
++            .unwrap(),
++        initial
++    );
++    fixture.state.monitor_identity.store(0, Ordering::SeqCst);
++    assert!(
++        owner
++            .monitors(&fixture.backend, vec!["DP-1".into()])
++            .await
++            .is_err()
++    );
++    fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++    assert!(
++        owner
++            .monitors(&fixture.backend, vec!["missing".into()])
++            .await
++            .is_err()
++    );
++    fixture.state.identity_failure.store(true, Ordering::SeqCst);
++    assert!(
++        owner
++            .monitors(&fixture.backend, vec!["DP-1".into()])
++            .await
++            .is_err()
++    );
++    fixture
++        .state
++        .identity_failure
++        .store(false, Ordering::SeqCst);
++    fixture.state.source_version.store(2, Ordering::SeqCst);
++    assert!(
++        owner
++            .monitors(&fixture.backend, vec!["DP-1".into()])
++            .await
++            .is_err()
++    );
++}
++
++#[tokio::test]
++async fn pinned_monitor_reaches_record_and_geometry_is_read_after_start() {
++    use std::sync::atomic::Ordering;
++    let fixture = fake::Fixture::new().await;
++    fixture.state.source_version.store(1, Ordering::SeqCst);
++    fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++    fixture.state.resize_on_start.store(true, Ordering::SeqCst);
++    let source = Source::Monitor(Monitor::pinned("DP-1", 77).unwrap());
++    let (stop, ready, task) = launch(&fixture, vec![source.clone()]).await;
++    let streams = tokio::time::timeout(Duration::from_secs(3), ready)
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(streams[0].source, source);
++    assert_eq!(streams[0].geometry.unwrap().size, (1024, 768));
++    assert_eq!(
++        *fixture.state.identity_preconditions.lock().unwrap(),
++        [Some(77)]
++    );
++    stop.send_replace(true);
++    task.await.unwrap().unwrap();
++    assert_eq!(fixture.state.stops.load(Ordering::SeqCst), 1);
++}
++
++#[tokio::test]
++async fn monitor_replacement_after_consent_or_invalid_stream_echo_never_reaches_ready() {
++    use std::sync::atomic::Ordering;
++    for ignored_precondition in [false, true] {
++        let fixture = fake::Fixture::new().await;
++        fixture.state.source_version.store(1, Ordering::SeqCst);
++        fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++        fixture
++            .state
++            .ignore_precondition
++            .store(ignored_precondition, Ordering::SeqCst);
++        let gate = Arc::new(Semaphore::new(0));
++        *fixture.state.record_gate.lock().unwrap() = Some(gate.clone());
++        let (_stop, ready, task) = launch(
++            &fixture,
++            vec![Source::Monitor(Monitor::pinned("DP-1", 77).unwrap())],
++        )
++        .await;
++        tokio::time::timeout(Duration::from_secs(3), fixture.state.recording.notified())
++            .await
++            .unwrap();
++        fixture.state.monitor_identity.store(78, Ordering::SeqCst);
++        gate.add_permits(1);
++        assert!(
++            tokio::time::timeout(Duration::from_secs(3), task)
++                .await
++                .unwrap()
++                .unwrap()
++                .is_err()
++        );
++        assert!(ready.await.is_err());
++        assert_eq!(fixture.state.stops.load(Ordering::SeqCst), 1);
++        assert_eq!(
++            fixture.state.starts.load(Ordering::SeqCst),
++            u32::from(ignored_precondition)
++        );
++    }
++    let fixture = fake::Fixture::new().await;
++    fixture.state.source_version.store(1, Ordering::SeqCst);
++    fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++    fixture
++        .state
++        .wrong_stream_identity
++        .store(true, Ordering::SeqCst);
++    let (_stop, ready, task) = launch(
++        &fixture,
++        vec![Source::Monitor(Monitor::pinned("DP-1", 77).unwrap())],
++    )
++    .await;
++    assert!(task.await.unwrap().is_err());
++    assert!(ready.await.is_err());
++    assert_eq!(fixture.state.stops.load(Ordering::SeqCst), 1);
++}
++
++#[tokio::test]
++async fn pinned_capture_cannot_fall_back_to_a_legacy_record_call() {
++    let fixture = fake::Fixture::new().await;
++    let (_stop, ready, task) = launch(
++        &fixture,
++        vec![Source::Monitor(Monitor::pinned("DP-1", 77).unwrap())],
++    )
++    .await;
++    assert!(task.await.unwrap().is_err());
++    assert!(ready.await.is_err());
++    assert!(fixture.state.recorded.lock().unwrap().is_empty());
++    assert_eq!(
++        fixture
++            .state
++            .stops
++            .load(std::sync::atomic::Ordering::SeqCst),
++        0
++    );
++}
+--- a/crates/canopa-portal/src/screencast_capture/tests/fake.rs
++++ b/crates/canopa-portal/src/screencast_capture/tests/fake.rs
+@@ -3,7 +3,7 @@
+     process::{Child, Command, Stdio},
+     sync::{
+         Arc, Mutex,
+-        atomic::{AtomicBool, AtomicU32, Ordering},
++        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+     },
+ };
+ use tokio::sync::{Notify, Semaphore};
+@@ -12,6 +12,8 @@
+     object_server::SignalEmitter,
+     zvariant::{OwnedObjectPath, OwnedValue, Value},
+ };
++type LogicalPair = (i32, i32);
++
+ const SERVICE: &str = "org.gnome.Mutter.ScreenCast";
+ const PATH: &str = "/org/gnome/Mutter/ScreenCast";
+ pub struct Bus {
+@@ -51,6 +53,13 @@
+ #[derive(Default)]
+ pub struct State {
+     pub stops: AtomicU32,
++    pub source_version: AtomicU32,
++    pub monitor_identity: AtomicU64,
++    pub identity_failure: AtomicBool,
++    pub ignore_precondition: AtomicBool,
++    pub wrong_stream_identity: AtomicBool,
++    pub resize_on_start: AtomicBool,
++    pub identity_preconditions: Mutex<Vec<Option<u64>>>,
+     pub starts: AtomicU32,
+     pub recorded: Mutex<Vec<(String, u32)>>,
+     pub close_on_start: AtomicBool,
+@@ -120,6 +129,28 @@
+         Ok(path.try_into().unwrap())
+     }
+     #[zbus(property)]
++    fn canopa_source_version(&self) -> zbus::fdo::Result<u32> {
++        if self.0.identity_failure.load(Ordering::SeqCst) {
++            return Err(zbus::fdo::Error::Failed("Source queries failed".into()));
++        }
++        match self.0.source_version.load(Ordering::SeqCst) {
++            0 => Err(zbus::fdo::Error::UnknownProperty(
++                "Legacy capture service".into(),
++            )),
++            version => Ok(version),
++        }
++    }
++    fn monitor_info(&self, name: &str) -> zbus::fdo::Result<(u64, LogicalPair, LogicalPair)> {
++        if name != "DP-1" {
++            return Err(zbus::fdo::Error::Failed("Missing monitor".into()));
++        }
++        Ok((
++            self.0.monitor_identity.load(Ordering::SeqCst),
++            (-640, 0),
++            (640, 480),
++        ))
++    }
++    #[zbus(property)]
+     fn version(&self) -> i32 {
+         4
+     }
+@@ -141,11 +172,32 @@
+         }
+         let mode =
+             u32::try_from(properties.get("cursor-mode").unwrap().try_clone().unwrap()).unwrap();
++        let expected = properties
++            .get("canopa-source-id")
++            .map(|v| u64::try_from(v.try_clone().unwrap()).unwrap());
++        self.state
++            .identity_preconditions
++            .lock()
++            .unwrap()
++            .push(expected);
++        let monitor = !label.starts_with("window:");
+         self.state.recorded.lock().unwrap().push((label, mode));
+         self.state.recording.notify_one();
+         let gate = self.state.record_gate.lock().unwrap().clone();
+         if let Some(gate) = gate {
+             let _permit = gate.acquire().await.unwrap();
++        }
++        let identity = if monitor {
++            self.state.monitor_identity.load(Ordering::SeqCst)
++        } else {
++            expected.unwrap_or(0)
++        };
++        if monitor
++            && self.state.source_version.load(Ordering::SeqCst) == 1
++            && !self.state.ignore_precondition.load(Ordering::SeqCst)
++            && expected.is_some_and(|expected| expected != identity)
++        {
++            return Err(zbus::fdo::Error::Failed("Source identity changed".into()));
+         }
+         let index = self.streams.lock().unwrap().len() as u32 + 1;
+         let path: OwnedObjectPath = format!("{}/Stream/u{index}", emitter.path())
+@@ -153,7 +205,13 @@
+             .unwrap();
+         connection
+             .object_server()
+-            .at(path.clone(), FakeStream)
++            .at(
++                path.clone(),
++                FakeStream {
++                    state: self.state.clone(),
++                    identity,
++                },
++            )
+             .await?;
+         self.streams.lock().unwrap().push((
+             path.clone(),
+@@ -227,22 +285,38 @@
+     #[zbus(signal)]
+     async fn closed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+ }
+-struct FakeStream;
++struct FakeStream {
++    state: Arc<State>,
++    identity: u64,
++}
+ #[zbus::interface(name = "org.gnome.Mutter.ScreenCast.Stream")]
+ impl FakeStream {
+     #[zbus(signal)]
+     async fn pipe_wire_stream_added(emitter: &SignalEmitter<'_>, node_id: u32) -> zbus::Result<()>;
+     #[zbus(property)]
+     fn parameters(&self) -> std::collections::HashMap<&str, OwnedValue> {
+-        std::collections::HashMap::from([
++        let size = if self.state.resize_on_start.load(Ordering::SeqCst)
++            && self.state.starts.load(Ordering::SeqCst) != 0
++        {
++            (1024_i32, 768_i32)
++        } else {
++            (640_i32, 480_i32)
++        };
++        let mut values = std::collections::HashMap::from([
+             (
+                 "position",
+                 Value::from((-640_i32, 0_i32)).try_into_owned().unwrap(),
+             ),
+-            (
+-                "size",
+-                Value::from((640_i32, 480_i32)).try_into_owned().unwrap(),
+-            ),
+-        ])
+-    }
+-}
++            ("size", Value::from(size).try_into_owned().unwrap()),
++        ]);
++        if self.state.source_version.load(Ordering::SeqCst) != 0 {
++            let identity =
++                self.identity + u64::from(self.state.wrong_stream_identity.load(Ordering::SeqCst));
++            values.insert(
++                "canopa-source-id",
++                Value::from(identity).try_into_owned().unwrap(),
++            );
++        }
++        values
++    }
++}
+--- a/crates/canopa-portal/src/screencast/production.rs
++++ b/crates/canopa-portal/src/screencast/production.rs
+@@ -23,18 +23,66 @@
+     pub items: Vec<Item>,
+     pub socket: PathBuf,
+     pub compositor_pid: u32,
++    #[serde(default)]
++    pub compositor_owner: Option<String>,
+     pub types: u32,
+     pub activation_token: Option<String>,
+ }
+ pub(crate) async fn refresh(input: &DialogInput) -> anyhow::Result<Vec<Item>> {
+-    inventory(&input.socket, input.compositor_pid, input.types).await
++    if input.types == 0 {
++        return catalog::read(&input.socket, input.compositor_pid, input.types).await;
++    }
++    let connection = tokio::time::timeout(Duration::from_secs(5), Connection::session()).await??;
++    refresh_from(input, &connection).await
++}
++async fn refresh_from(input: &DialogInput, connection: &Connection) -> anyhow::Result<Vec<Item>> {
++    let owner = Owner::resolve(connection).await?;
++    anyhow::ensure!(
++        input.compositor_owner.as_deref() == Some(owner.unique_name()),
++        "Capture compositor changed during review"
++    );
++    inventory(
++        connection,
++        Some(&owner),
++        &input.socket,
++        input.compositor_pid,
++        input.types,
++    )
++    .await
+ }
+ pub(crate) async fn inventory(
++    connection: &Connection,
++    owner: Option<&Owner>,
+     socket: &std::path::Path,
+     pid: u32,
+     types: u32,
+ ) -> anyhow::Result<Vec<Item>> {
+-    catalog::read(socket, pid, types).await
++    tokio::time::timeout(Duration::from_secs(5), async {
++        let mut items = catalog::read(socket, pid, types).await?;
++        if types != 0 {
++            let owner = owner.ok_or_else(|| anyhow::anyhow!("Capture owner unavailable"))?;
++            anyhow::ensure!(
++                owner.process_id(connection).await? == pid,
++                "Capture source owner changed"
++            );
++            let names = items
++                .iter()
++                .filter_map(|item| match &item.source {
++                    Source::Monitor(monitor) => Some(monitor.name().to_owned()),
++                    Source::Window(_) => None,
++                })
++                .collect();
++            let mut monitors = owner.monitors(connection, names).await?.into_iter();
++            for item in &mut items {
++                if matches!(item.source, Source::Monitor(_)) {
++                    item.source =
++                        Source::Monitor(monitors.next().expect("one identity per monitor"));
++                }
++            }
++        }
++        Ok(items)
++    })
++    .await?
+ }
+ pub struct Production {
+     process: Arc<DialogProcess>,
+@@ -155,7 +203,14 @@
+             let owner = Owner::resolve(&connection).await?;
+             let pid = owner.process_id(&connection).await?;
+             let socket = self.socket()?;
+-            let items = catalog::read(socket, pid, request.options.types).await?;
++            let items = inventory(
++                &connection,
++                Some(&owner),
++                socket,
++                pid,
++                request.options.types,
++            )
++            .await?;
+             anyhow::ensure!(!items.is_empty(), "No capture sources available");
+             let input = DialogInput {
+                 app_id: request.app_id.clone(),
+@@ -165,6 +220,7 @@
+                 items,
+                 socket: socket.clone(),
+                 compositor_pid: pid,
++                compositor_owner: Some(owner.unique_name().to_owned()),
+                 types: request.options.types,
+                 activation_token: request.activation_token.clone(),
+             };
+@@ -188,7 +244,14 @@
+                     && (request.options.multiple || selected.len() == 1),
+                 "Invalid capture selection"
+             );
+-            let current = catalog::read(socket, pid, request.options.types).await?;
++            let current = inventory(
++                &connection,
++                Some(&owner),
++                socket,
++                pid,
++                request.options.types,
++            )
++            .await?;
+             anyhow::ensure!(
+                 selected
+                     .iter()
+--- a/crates/canopa-portal/src/screencast/production/catalog.rs
++++ b/crates/canopa-portal/src/screencast/production/catalog.rs
+@@ -75,7 +75,7 @@
+             );
+             let model = label(output.get("model"), "Display");
+             items.push(Item {
+-                source: Source::Monitor(name.clone()),
++                source: Source::Monitor(name.clone().into()),
+                 title: name.clone(),
+                 subtitle: format!("Display · {model}"),
+             });
+@@ -206,4 +206,70 @@
+             server.await.unwrap();
+         }
+     }
+-}
++    #[tokio::test]
++    async fn inventory_carries_live_monitor_identity_from_the_pinned_bus_and_ipc_owner() {
++        use crate::screencast_capture::tests::fake;
++        use std::sync::atomic::Ordering;
++        let fixture = fake::Fixture::new().await;
++        fixture.state.source_version.store(1, Ordering::SeqCst);
++        fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++        let owner = Owner::resolve(&fixture.backend).await.unwrap();
++        let directory = tempfile::tempdir().unwrap();
++        let socket = directory.path().join("ipc.sock");
++        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
++        let server = tokio::spawn(async move {
++            for _ in 0..2 {
++                let (mut stream, _) = listener.accept().await.unwrap();
++                let mut line = Vec::new();
++                BufReader::new(&mut stream)
++                    .read_until(b'\n', &mut line)
++                    .await
++                    .unwrap();
++                assert_eq!(line, b"\"Outputs\"\n");
++                stream.write_all(b"{\"Ok\":{\"Outputs\":{\"DP-1\":{\"logical\":{},\"model\":\"Display\"}}}}\n").await.unwrap();
++            }
++        });
++        let initial = inventory(
++            &fixture.backend,
++            Some(&owner),
++            &socket,
++            std::process::id(),
++            1,
++        )
++        .await
++        .unwrap();
++        assert_eq!(
++            initial[0].source,
++            Source::Monitor(crate::screencast_capture::Monitor::pinned("DP-1", 77).unwrap())
++        );
++        fixture.state.monitor_identity.store(78, Ordering::SeqCst);
++        let current = inventory(
++            &fixture.backend,
++            Some(&owner),
++            &socket,
++            std::process::id(),
++            1,
++        )
++        .await
++        .unwrap();
++        assert_eq!(initial[0].title, current[0].title);
++        assert_ne!(initial[0].source, current[0].source);
++        server.await.unwrap();
++        let input = DialogInput {
++            app_id: "fixture".into(),
++            parent_window: String::new(),
++            modal: false,
++            multiple: false,
++            items: initial,
++            socket,
++            compositor_pid: std::process::id(),
++            compositor_owner: Some(":1.9999999".into()),
++            types: 1,
++            activation_token: None,
++        };
++        let error = super::super::refresh_from(&input, &fixture.backend)
++            .await
++            .unwrap_err();
++        assert!(error.to_string().contains("compositor changed"), "{error}");
++    }
++}
+--- a/crates/canopa-portal/src/screencast/remote/production.rs
++++ b/crates/canopa-portal/src/screencast/remote/production.rs
+@@ -309,7 +309,7 @@
+                 .sources
+                 .as_ref()
+                 .map_or((0, false), |options| (options.types, options.multiple));
+-            let items = inventory(&socket, pid, types).await?;
++            let items = inventory(&connection, owner.as_ref(), &socket, pid, types).await?;
+             anyhow::ensure!(
+                 types == 0 || !items.is_empty(),
+                 "No capture sources available"
+@@ -335,6 +335,9 @@
+                         items,
+                         socket: socket.clone(),
+                         compositor_pid: pid,
++                        compositor_owner: owner
++                            .as_ref()
++                            .map(|owner| owner.unique_name().to_owned()),
+                         types,
+                         activation_token: request.activation_token.clone(),
+                     },
+@@ -356,7 +359,7 @@
+                     selected.devices & !devices == 0 && selected.devices & !1 == 0,
+                     "Invalid input approval"
+                 );
+-                let current = inventory(&socket, pid, types).await?;
++                let current = inventory(&connection, owner.as_ref(), &socket, pid, types).await?;
+                 if let Some(options) = &request.sources {
+                     let unique: HashSet<_> = selected.sources.iter().collect();
+                     anyhow::ensure!(
+--- a/crates/canopa-portal/src/screencast_ui.rs
++++ b/crates/canopa-portal/src/screencast_ui.rs
+@@ -574,6 +574,7 @@
+                 items: items.clone(),
+                 socket: "/unused".into(),
+                 compositor_pid: 1,
++                compositor_owner: None,
+                 types: 3,
+                 activation_token: None,
+             },
+@@ -588,6 +589,27 @@
+             completed: false,
+             output: Arc::new(Mutex::new(None)),
+         }
++    }
++    #[test]
++    fn replacement_monitor_clears_consent_even_when_its_connector_and_title_are_unchanged() {
++        use crate::screencast_capture::Monitor;
++        let mut app = dialog(false);
++        app.items[0].source = Source::Monitor(Monitor::pinned("DP-1", 77).unwrap());
++        let _ = app.update(Message::Toggle(0));
++        assert!(app.valid());
++        let mut replacement = app.items.clone();
++        replacement[0].source = Source::Monitor(Monitor::pinned("DP-1", 78).unwrap());
++        let _ = app.update(Message::Loaded(Ok(replacement)));
++        assert!(app.selected.is_empty());
++        assert!(!app.valid());
++        let _ = app.update(Message::Share);
++        assert!(app.output.lock().unwrap().is_none());
++        let _ = app.update(Message::Toggle(0));
++        let _ = app.update(Message::Share);
++        assert_eq!(
++            app.output.lock().unwrap().as_ref().unwrap().sources,
++            [Source::Monitor(Monitor::pinned("DP-1", 78).unwrap())]
++        );
+     }
+     fn key(name: keyboard::key::Named) -> Message {
+         modified_key(name, keyboard::Modifiers::empty())
+--- a/crates/canopa-portal/tests/screencast_capture.rs
++++ b/crates/canopa-portal/tests/screencast_capture.rs
+@@ -316,3 +316,49 @@
+         3
+     );
+ }
++
++#[tokio::test]
++async fn real_worker_preserves_monitor_identity_and_rejects_same_name_replacement() {
++    use canopa_portal::screencast_capture::Monitor;
++    use std::sync::atomic::Ordering;
++    let fixture = fake::Fixture::new().await;
++    fixture.state.source_version.store(1, Ordering::SeqCst);
++    fixture.state.monitor_identity.store(77, Ordering::SeqCst);
++    let recorder = recorder(&fixture);
++    let owner = Owner::resolve(&fixture.backend).await.unwrap();
++    let source = Source::Monitor(Monitor::pinned("DP-1", 77).unwrap());
++    let (_cancel, cancelled) = watch::channel(false);
++    let recording = recorder
++        .start(
++            &fixture.backend,
++            &owner,
++            fixture.caller.unique_name().unwrap().to_owned(),
++            vec![source.clone()],
++            Cursor::Hidden,
++            cancelled.clone(),
++        )
++        .await
++        .unwrap();
++    assert_eq!(recording.streams()[0].source, source);
++    assert_eq!(
++        *fixture.state.identity_preconditions.lock().unwrap(),
++        [Some(77)]
++    );
++    recording.stop().await.unwrap();
++    fixture.state.monitor_identity.store(78, Ordering::SeqCst);
++    assert!(
++        recorder
++            .start(
++                &fixture.backend,
++                &owner,
++                fixture.caller.unique_name().unwrap().to_owned(),
++                vec![source],
++                Cursor::Hidden,
++                cancelled
++            )
++            .await
++            .is_err()
++    );
++    assert_eq!(fixture.state.starts.load(Ordering::SeqCst), 1);
++    assert_eq!(fixture.state.stops.load(Ordering::SeqCst), 2);
++}
+--- /dev/null
++++ b/crates/canopa-portal/src/screencast_capture/monitor.rs
+@@ -0,0 +1,153 @@
++//! A connector label is a location; a live identity also distinguishes replacement.
++use super::*;
++use futures_util::{StreamExt, TryStreamExt, stream};
++use zbus::zvariant::OwnedValue;
++
++#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
++#[serde(try_from = "Wire", into = "Wire")]
++pub struct Monitor {
++    name: String,
++    identity: Option<u64>,
++}
++
++#[derive(Serialize, Deserialize)]
++#[serde(untagged)]
++enum Wire {
++    Legacy(String),
++    Pinned(Pinned),
++}
++#[derive(Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Pinned {
++    name: String,
++    identity: u64,
++}
++impl Monitor {
++    pub fn pinned(name: impl Into<String>, identity: u64) -> anyhow::Result<Self> {
++        let monitor = Self {
++            name: name.into(),
++            identity: Some(identity),
++        };
++        anyhow::ensure!(monitor.valid(), "Invalid capture monitor identity");
++        Ok(monitor)
++    }
++    pub fn name(&self) -> &str {
++        &self.name
++    }
++    pub fn identity(&self) -> Option<u64> {
++        self.identity
++    }
++    pub(super) fn valid(&self) -> bool {
++        !self.name.is_empty()
++            && self.name.len() <= 256
++            && !self.name.chars().any(char::is_control)
++            && self.identity != Some(0)
++    }
++}
++impl From<String> for Monitor {
++    fn from(name: String) -> Self {
++        Self {
++            name,
++            identity: None,
++        }
++    }
++}
++impl From<&str> for Monitor {
++    fn from(name: &str) -> Self {
++        name.to_owned().into()
++    }
++}
++impl TryFrom<Wire> for Monitor {
++    type Error = anyhow::Error;
++    fn try_from(wire: Wire) -> Result<Self, Self::Error> {
++        match wire {
++            Wire::Legacy(name) => Ok(name.into()),
++            Wire::Pinned(Pinned { name, identity }) => Self::pinned(name, identity),
++        }
++    }
++}
++impl From<Monitor> for Wire {
++    fn from(monitor: Monitor) -> Self {
++        match monitor.identity {
++            Some(identity) => Self::Pinned(Pinned {
++                name: monitor.name,
++                identity,
++            }),
++            None => Self::Legacy(monitor.name),
++        }
++    }
++}
++
++pub(super) async fn supported(connection: &Connection, owner: &str) -> anyhow::Result<bool> {
++    let result: anyhow::Result<OwnedValue> = worker::call(
++        connection,
++        owner,
++        PATH,
++        "org.freedesktop.DBus.Properties",
++        "Get",
++        &(SERVICE, "CanopaSourceVersion"),
++        CALL_TIME,
++    )
++    .await;
++    let value = match result {
++        Ok(value) => value,
++        Err(error) if error.downcast_ref::<zbus::Error>().is_some_and(|e| {
++            matches!(e, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.freedesktop.DBus.Error.UnknownProperty")
++        }) => return Ok(false),
++        Err(error) => return Err(error),
++    };
++    anyhow::ensure!(
++        u32::try_from(value)? == 1,
++        "Unsupported capture source identities"
++    );
++    Ok(true)
++}
++
++impl Owner {
++    pub(crate) fn unique_name(&self) -> &str {
++        self.0.as_str()
++    }
++
++    /// Preserve the order and identity of the inventory belonging to this owner.
++    /// Only a missing extension permits legacy view-only capture by connector.
++    pub async fn monitors(
++        &self,
++        connection: &Connection,
++        names: Vec<String>,
++    ) -> anyhow::Result<Vec<Monitor>> {
++        anyhow::ensure!(names.len() <= MAX_SOURCES, "Too many capture monitors");
++        anyhow::ensure!(
++            names.iter().all(|name| Monitor::from(name.clone()).valid()),
++            "Invalid capture monitor"
++        );
++        if names.is_empty() {
++            return Ok(Vec::new());
++        }
++        if !supported(connection, self.0.as_str()).await? {
++            return Ok(names.into_iter().map(Monitor::from).collect());
++        }
++        tokio::time::timeout(
++            CALL_TIME,
++            stream::iter(names.into_iter().map(|name| async move {
++                let (identity, position, size): (u64, (i32, i32), (i32, i32)) = worker::call(
++                    connection,
++                    self.0.as_str(),
++                    PATH,
++                    SERVICE,
++                    "MonitorInfo",
++                    &(name.as_str(),),
++                    CALL_TIME,
++                )
++                .await?;
++                anyhow::ensure!(
++                    Geometry { position, size }.valid(),
++                    "Invalid live capture monitor geometry"
++                );
++                Monitor::pinned(name, identity)
++            }))
++            .buffered(4)
++            .try_collect(),
++        )
++        .await?
++    }
++}

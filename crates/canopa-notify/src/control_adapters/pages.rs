@@ -207,6 +207,7 @@ fn present(page: Page, settings: bool) -> PanelContent {
 
 fn navigation(generation: u64, direction: Direction) -> PanelAction {
     PanelAction {
+        request_activation_token: false,
         key: PAGE_KEY.into(),
         label: match direction {
             Direction::First => "First page",

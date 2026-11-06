@@ -205,3 +205,57 @@ fn dimensions_encoding_pixels_and_cancellation_have_independent_limits() {
     cancelled.set(false);
     assert!(images.load(&path).is_some());
 }
+
+#[test]
+fn owned_payloads_share_format_attempt_encoded_and_pixel_limits_with_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("pixels.png");
+    png(&path, 8, 8);
+    let bytes = std::fs::read(&path).unwrap();
+    let mut batch = RasterBatch::new(
+        policy(),
+        RasterBudget {
+            file_attempts: 2,
+            encoded_bytes: bytes.len() * 2,
+            pixel_bytes: 256,
+        },
+        &|| false,
+    );
+    let image = batch.decode(bytes.clone()).unwrap();
+    assert_eq!(image.pixels, [11, 22, 33, 255].repeat(64));
+    assert!(
+        batch.load(&path).is_none(),
+        "owned output consumes the shared pixel budget"
+    );
+    let mut batch = RasterBatch::new(
+        policy(),
+        RasterBudget {
+            file_attempts: 1,
+            ..budget()
+        },
+        &|| false,
+    );
+    assert!(batch.decode(vec![0; 32]).is_none());
+    assert!(
+        batch.decode(bytes).is_none(),
+        "failed owned payload consumes an attempt"
+    );
+}
+
+#[cfg(feature = "svg")]
+#[test]
+fn svg_output_is_bounded_and_external_images_are_not_resolved() {
+    let policy = || canopa_assets::svg::Policy {
+        max_encoded_bytes: 4096,
+        max_dimension: 64,
+        max_pixels: 4096,
+        output_side: 16,
+        foreground: [10, 20, 30],
+    };
+    let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='32' height='16'><rect width='32' height='16' fill='currentColor'/><image href='file:///definitely-not-an-image.png' width='32' height='16'/></svg>";
+    let image = canopa_assets::svg::rasterize(svg, policy()).unwrap();
+    assert_eq!((image.width, image.height), (16, 8));
+    assert_eq!(&image.pixels[..4], &[10, 20, 30, 255]);
+    let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='65' height='1'/>";
+    assert!(canopa_assets::svg::rasterize(svg, policy()).is_none());
+}

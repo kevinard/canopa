@@ -21,3 +21,33 @@ fn graphical_stack_does_not_enable_linux_theme_detection() {
     assert!(!workspace_manifest.contains("linux-theme-detection"));
     assert!(!crate_manifest.contains("mundy"));
 }
+
+#[test]
+fn notification_portal_activation_uses_the_existing_notify_service_and_a_dedicated_descriptor() {
+    let descriptor =
+        std::fs::read_to_string("../../packaging/portal/canopa-notify.portal").unwrap();
+    assert!(
+        descriptor
+            .lines()
+            .any(|line| line == "DBusName=org.freedesktop.impl.portal.desktop.canopa.notify")
+    );
+    assert!(
+        descriptor
+            .lines()
+            .any(|line| line == "Interfaces=org.freedesktop.impl.portal.Notification;")
+    );
+    let activation = std::fs::read_to_string(
+        "../../packaging/portal/org.freedesktop.impl.portal.desktop.canopa.notify.service",
+    )
+    .unwrap();
+    assert!(
+        activation
+            .lines()
+            .any(|line| line == "Exec=/usr/bin/env canopa-notify daemon --service")
+    );
+    assert!(
+        activation
+            .lines()
+            .any(|line| line == "SystemdService=canopa-notify.service")
+    );
+}

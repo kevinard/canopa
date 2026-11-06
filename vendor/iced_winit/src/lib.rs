@@ -34,6 +34,7 @@ mod event_batch;
 mod proxy;
 mod transient;
 mod drag_drop;
+mod keyboard_shortcuts;
 mod window;
 
 pub use clipboard::Clipboard;
@@ -308,6 +309,7 @@ where
                                 monitor,
                                 on_open,
                                 parent,
+                                foreign_parent,
                             } => {
                                 let exit_on_close_request =
                                     settings.exit_on_close_request;
@@ -333,6 +335,7 @@ where
                                     window_attributes,
                                     parent,
                                 );
+                                let window_attributes = transient::dialog_attributes(window_attributes, foreign_parent);
 
                                 #[cfg(target_arch = "wasm32")]
                                 let window_attributes = {
@@ -515,6 +518,7 @@ enum Control {
         monitor: Option<winit::monitor::MonitorHandle>,
         on_open: OpenResponse,
         parent: Option<Arc<winit::window::Window>>,
+        foreign_parent: Option<(String, bool, Option<String>)>,
         scale_factor: f32,
     },
     SetAutomaticWindowTabbing(bool),
@@ -1091,6 +1095,15 @@ async fn run_instance<P>(
                         };
 
                         match window_event {
+                            winit::event::WindowEvent::ActivationTokenDone { serial, token } => {
+                                if window.activation_token.as_ref().is_some_and(|(expected, _, _)| *expected == serial) {
+                                    let (_, channel, at) = window.activation_token.take().expect("matched activation request");
+                                    let value = (at.elapsed() < std::time::Duration::from_secs(1))
+                                        .then(|| token.into_raw());
+                                    let _ = channel.send(value);
+                                }
+                                continue;
+                            }
                             winit::event::WindowEvent::Resized(_) => {
                                 window.raw.request_redraw();
                             }
@@ -1445,6 +1458,10 @@ fn run_action<'a, P, C>(
             }
         },
         Action::Window(action) => match action {
+            window::Action::InhibitKeyboardShortcuts(id,reply)=>{
+                let endpoint=window_manager.get_mut(id).and_then(|window|keyboard_shortcuts::enable(&window.raw));
+                let _=reply.send(endpoint);
+            }
             window::Action::EnableDragDrop(id, reply) => {
                 let endpoint = window_manager.get_mut(id).and_then(|window| drag_drop::enable(&window.raw));
                 let _ = reply.send(endpoint);
@@ -1461,6 +1478,7 @@ fn run_action<'a, P, C>(
                         monitor,
                         on_open: OpenResponse::Normal(channel),
                         parent: None,
+                        foreign_parent: None,
                     })
                     .expect("Send control action");
 
@@ -1488,9 +1506,29 @@ fn run_action<'a, P, C>(
                         monitor,
                         on_open: OpenResponse::Transient(channel),
                         parent: Some(parent),
+                        foreign_parent: None,
                     })
                     .expect("Send transient window control action");
                 *is_window_opening = true;
+            }
+            window::Action::OpenDialog(id, settings, handle, modal, token, channel) => {
+                control_sender.start_send(Control::CreateWindow {
+                    id, settings, title: program.title(id), scale_factor: program.scale_factor(id),
+                    monitor: window_manager.last_monitor(), on_open: OpenResponse::Transient(channel),
+                    parent: None, foreign_parent: Some((handle, modal, token)),
+                }).expect("Send dialog window control action");
+                *is_window_opening = true;
+            }
+            window::Action::RequestActivationToken(id, channel) => {
+                if let Some(window) = window_manager.get_mut(id) {
+                    if let Some(serial) = transient::activation_token(&window.raw) {
+                        window.activation_token = Some((serial, channel, Instant::now()));
+                    } else {
+                        let _ = channel.send(None);
+                    }
+                } else {
+                    let _ = channel.send(None);
+                }
             }
             window::Action::Close(id) => {
                 let _ = ui_caches.remove(&id);

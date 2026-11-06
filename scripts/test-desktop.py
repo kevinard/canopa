@@ -105,8 +105,10 @@ def run(args):
         def owned(name):
             return call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
                         'NameHasOwner', GLib.Variant('(s)', (name,)), '(b)').unpack()[0]
-        start('a11y-launcher', [launcher, '--launch-immediately', '--a11y=1'])
+        start('a11y-launcher', [launcher, '--launch-immediately'])
         eventually(lambda: owned('org.a11y.Bus'), 'accessibility bus')
+        call('org.a11y.Bus', '/org/a11y/bus', 'org.freedesktop.DBus.Properties', 'Set',
+             GLib.Variant('(ssv)', ('org.a11y.Status', 'IsEnabled', GLib.Variant('b', True))))
         start('a11y-registry', [registry])
         start('sway', ['sway', '-c', str(root / 'sway.conf')])
         sway_socket = eventually(lambda: next(iter((root / 'runtime').glob('sway-ipc.*.sock')), None), 'Sway IPC')
@@ -235,17 +237,11 @@ def run(args):
             except GLib.Error:
                 pass # A provider revision can retire nodes while this walk is in progress.
             return None
-        def focus_after_update():
-            # Sender publication precedes the Center's replacement snapshot.
-            # A replacement intentionally clears keyboard selection; navigate
-            # again if that update retired the selection before AT-SPI observed it.
-            current = focused(center)
-            if current:
-                return current
-            command('wtype', '-k', 'Tab')
-            return focused(center)
-        command('wtype', '-k', 'Tab')
-        focus = eventually(focus_after_update, 'keyboard focus in Center accessibility tree')
+        # Keep the input-producing keyboard alive while observing native focus.
+        # Destroying a short-lived virtual keyboard can clear compositor focus
+        # even though the Center's keyboard selection remains highlighted.
+        start('focus-keyboard', ['wtype', '-k', 'Tab', '-s', '600000'])
+        focus = eventually(lambda: focused(center), 'keyboard focus in Center accessibility tree')
         subprocess.check_call(
             ['grim', '-o', 'HEADLESS-1', str(root / 'desktop.png')], env={**env, 'WAYLAND_DISPLAY': str(outer)})
         initial = (32, 45, 49) if args.color_scheme == 'dark' else (251, 252, 248)
@@ -443,7 +439,8 @@ if __name__ == '__main__':
             env['XDG_RUNTIME_DIR' if key == 'runtime' else f'XDG_{key.upper()}_HOME'] = str(root / key)
         env['RUST_LOG'] = 'canopa_shell::notifications=debug,canopa_shell::configuration=info'
         env.update(WLR_BACKENDS='headless', WLR_HEADLESS_OUTPUTS='1', WLR_RENDERER='pixman',
-                   LIBGL_ALWAYS_SOFTWARE='1', GTK_A11Y='always', DCONF_BACKEND='memory')
+                   LIBGL_ALWAYS_SOFTWARE='1', GTK_A11Y='always', DCONF_BACKEND='memory',
+                   GSETTINGS_BACKEND='memory', ATSPI_DBUS_IMPLEMENTATION='dbus-daemon', GIO_USE_VFS='local')
         (root / 'alsa.conf').write_text('pcm.!default { type null }\n')
         env['ALSA_CONFIG_PATH'] = str(root / 'alsa.conf')
         env['PULSE_SERVER'] = 'unix:' + str(root / 'runtime' / 'no-pulse')

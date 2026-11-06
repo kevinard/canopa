@@ -5,12 +5,38 @@
 It is test-only code under the project license. The runner compiles its Wayland
 bindings into the artifact directory; generated code is not checked in.
 
+`keyboard.c` is a test-only persistent virtual keyboard under the project license.
+It reads Linux evdev key codes (optionally prefixed with `ctrl `) from stdin and
+acknowledges each released key on stdout. ScreenCast acceptance keeps one full US
+XKB keymap throughout sequential
+choosers, avoiding per-command synthetic keymap replacement. Its protocol XML is
+copied unchanged from `wayland-protocols-misc` 0.3.12, Wayland RS revision
+`a3d7927d87799b2955bf491b51c7c2a3a82da661`, with its embedded MIT notice retained.
+The upstream file is [virtual-keyboard-unstable-v1.xml](https://github.com/Smithay/wayland-rs/blob/a3d7927d87799b2955bf491b51c7c2a3a82da661/wayland-protocols-misc/protocols/virtual-keyboard-unstable-v1.xml).
+
 The Python fixture creates one shared Canopa configuration, checks banner and Center
 native actions, sends Tab/Escape through `wtype`, and checks both consumers' palette
 pixels. Reloading the shared configuration switches both palettes; the fixture
 reopens the Center after Shell retires its foreground panel during reload.
 Run `--color-scheme dark` and `--color-scheme light --scale 1.25`
 with separate new artifact directories. Screenshots and `result.json` are retained.
+
+`scripts/test-print-dialog.py` checks the private Print catalog and Iced draft
+against an explicitly supplied disposable CUPS socket and passthrough fixture
+queue. It pins the application/compositor checksums, checks saved instance options
+and actual paper geometry, then exercises approval, cancellation, concurrent drafts
+and retirement of metadata blocked on a private unresponsive socket. Run dark/1.0
+and light/1.25. Supply the existing parent fixture with `--parent` and its checksum;
+transient checks use its actual exported handle. `--harness` and its checksum select
+the current Cargo JSON-selected Portal lib executable: its ignored native fixture
+calls the production Rust parent adapter, receives the real file descriptors and
+verifies their pins after UI exit. There is no extra standalone Rust driver build.
+`--file-only` expects an empty scheduler and exercises the same-window Files Save
+picker, late target appearance, explicit overwrite and unchanged existing bytes.
+It does not submit print jobs or establish public Print, file publication,
+rendering or physical-printer acceptance. Mutable CUPS state and queue
+setup belong to the caller's isolated fixture; never point it at an installed
+scheduler. Results and owned-process exits are recorded in `summary.json`.
 
 `wlr-virtual-pointer-unstable-v1.xml` is copied without modification from
 `wayland-protocols-wlr` 0.3.12's bundled wlr-protocols source (Wayland RS revision
@@ -54,6 +80,28 @@ CLI refusal/inventory checks still run and two handoff checks are skipped.
 These commands neither install a compositor nor establish full release
 acceptance. Stock Niri 26.04 retains the strict cancellation failure; use the
 verified companion or another build that passes that unchanged gate.
+
+## Private RemoteDesktop acceptance
+
+`scripts/test-remote-desktop-portal.py` exercises input-only production sessions
+through real Iced consent and controls. `scripts/test-remote-desktop-media.py`
+adds the standard XDG frontend and real monitor pixels through its restricted
+PipeWire FD. Both require explicit `--niri`, `--portal`, and `--harness` paths with
+matching `--NAME-sha256` values, plus a new `--output` directory. The harness is
+the Portal library test executable; it serves only the ignored, environment-guarded
+`screencast::remote::production::tests::native_backend_fixture`.
+
+Run dark/100% and `--scheme light --scale 1.25` separately. The fixtures use a
+private bus/compositor and harmless Wayland receiver with a French keymap. They
+send real libei input only after fresh approval and verify held-key retirement
+on controls/session/client/caller/backend loss. The combined fixture also checks
+view-only reduction, both source/device selection orders, actual asymmetric
+monitor pixels, producer removal and public session closure. It archives its
+exact fixture sources before execution and verifies their hashes afterward.
+
+The combined fixture writes a private opt-in portal descriptor. These tests do
+not advertise RemoteDesktop in shipped metadata or establish legacy Notify,
+pointer/touch, physical-input or compatible compositor distribution acceptance.
 
 During the Files Iced migration, `--iced-browsing-only`, `--iced-search-only`,
 `--iced-preview-only` and `--iced-actions-only` exercise the corresponding ported
@@ -740,3 +788,347 @@ The same prepared-Rename cases also disconnect and replace the private GIO
 provider while the draft is open, keeping the actual file/directory inode. The
 old intent must refuse the new device; a fresh F2 selection can use it and Undo.
 This uses no host mount or physical-device operation.
+
+
+The `files-iced-clipboard-lifetime-{dark,light}` cases perform Copy without file
+operations: ownership must survive every Browser closing, then a foreign native
+clipboard owner must release Files within ten seconds. The longer
+`files-iced-clipboard-{dark,light}` cases also cancel transfers; that unfinished
+work intentionally retains the process after the clipboard is superseded. Keep
+these lifetime owners separate when changing native acceptance.
+
+## Printer recovery reconnect regression
+
+`scripts/test-print-cups-reconnect.py` requires `--binary`, two explicitly owned
+Unix sockets (`--scheduler` and `--replacement`), the same disposable `--queue`
+on both, and `--receipt`. Use fresh schedulers with matching job-ID sequences.
+The relay closes the checked connection at the actual libcups cancellation
+boundary and directs a new connection to either scheduler. Five cases verify
+stable cleanup, benign reconnect, unrelated reused-ID preservation, three-attempt
+termination and multiple receipts sharing one guard. No document is uploaded;
+cleanup cancels only fixture-created jobs. The caller owns scheduler/queue setup.
+This complements public Iced/crash/restart acceptance and the worker thread-group
+lifetime regression; see [ADR0088](../../docs/adr/0088-checked-cups-cancellation-connections.md).
+
+## Printer outcome review
+
+`--recover-print` provides Files/Printers review with metadata-only confirmed
+record removal and a separate cleanup action. Native review acceptance uses
+controlled valid journal entries with four real incoming jobs on a private CUPS
+queue, plus an owned live worker claim. It verifies that record removal leaves
+jobs held, stale confirmations fail, cleanup cancels only its exact incomplete
+job, a missing match stays unconfirmed, and printer-only startup opens Iced review.
+Both appearances also exercise retained-file copy and record-only dismissal.
+
+The retained sources and command replay receipts are referenced by
+[the review evidence](../../.scratch/xdg-portals/print/printer-review-evidence.json).
+They reuse the existing compositor/pointer/scroll/CUPS executables and the current
+Cargo Portal harness; no separate Rust driver is compiled. The accepted-record UI
+fixture is not an actual final document acknowledgement or physical delivery.
+See [ADR0089](../../docs/adr/0089-iced-printer-outcome-review.md) for policy and scope.
+
+## Ordinary Qt print dialog routing
+
+`print-qt-native.cpp` is a disposable application-side probe using only public
+QPrintDialog/QPrinter APIs. It renders three numbered pages after approval and
+reports cancellation, selected printer and Qt version. A 60-second timeout fails
+the probe. It contains no explicit portal requests; keep its results separate
+from `print-qt-render.cpp`, the existing explicit D-Bus/PDF control.
+
+The private Qt routing fixture forces the xdgdesktopportal theme, monitors actual
+Print calls, checks loaded libraries, and validates loopback PDF output. On the
+installed Qt6.12.0 configuration the automatic cases remain mismatches; the
+explicit control reaches Canopa Iced. See
+[ADR0090](../../docs/adr/0090-automatic-qt-print-routing-gap.md) and
+[evidence](../../.scratch/xdg-portals/print/qt-routing-evidence.json). One small
+executable is retained in the checksum store; artifact directories reference it.
+
+## Custom printer paper
+
+`print-pdf-custom.ppd` extends the PDF passthrough fixture with a 3 × 5 through
+8.5 × 14 inch custom range. It is for an explicitly owned private CUPS scheduler;
+no installed queue is required. The actual CUPS API supplies printable margins.
+`ippeveprinter -P` cannot be combined with its legacy `-f`/`-2` mode. Its PPD mode
+does not establish a generally working variable-range IPP device.
+
+The custom-paper checks exercise exact worker geometry, unsupported dimensions,
+altered margins and conflicting named/custom choices before Create-Job, Iced
+confirmation and edit invalidation, saved media spellings, default selection,
+actual prepared GTK and explicit Qt callers, and capabilities changing between
+PreparePrint and Print. They reuse the existing stored compositor/CUPS/toolkit
+executables and the validated normal backend. A direct A4 source explicitly uses
+50% scale to fit the smaller custom sheet. The GTK probe waits for a fresh receiver
+marker; an earlier job's receipt must not terminate a later caller prematurely.
+Qt prepared delivery is compared with its retained source PDF's physical sizes,
+including its own whole-point quantization; no second layout is applied.
+
+The legacy CUPS path's actual downstream media is recorded independently from the
+approved setup and PDF dimensions. Its measured rounding remains an open device
+acceptance issue. Exploratory attribute-file receiver and driverless attempts are
+retained as failed or limited evidence, with their small sources archived rather
+than installed. See [ADR0091](../../docs/adr/0091-exact-custom-printer-paper.md) and
+[the precision follow-up](../../.scratch/xdg-portals/issues/02-custom-paper-device-precision.md).
+
+`scripts/test-print-custom-media.py` checks cold exact lookup through the normal
+worker against an already configured, explicitly owned private Unix CUPS socket.
+It sends only CheckPrinter metadata requests. Repeat `--size WIDTHxHEIGHT` and
+`--reject WIDTHxHEIGHT` in integer hundredths of a millimetre; supply `--binary`,
+`--scheduler`, `--queue` and `--receipt`. Optional `--instance`, `--config-home`
+and `--sides` exercise saved settings and duplex. To select the private CUPS image,
+use `--library` with `--expected-library-sha256`; the test seals it and verifies
+the actual worker mapping. This does not test delivery or physical output.
+
+`print-paper-document.py --output FILE.pdf` creates a four-page A4 PDF with black
+centered calibration marks and page labels. Those marks remain visible when a
+smaller sheet crops the source at 100% scale. Inspect actual nonblank content as
+well as dimensions; identical blank pages cannot establish content preservation.
+
+`--annotation print|screen|print-hidden` adds a deterministic stamp to the first
+page. `scripts/test-print-render-annotations.py --binary PATH --output NEW_DIR`
+exercises that source through the actual isolated copy-only worker, with one and
+two collated copies. It verifies printable/Print+NoView appearances, omission of
+screen-only stamps, exact page boxes and page order. Optional `--width` and
+`--height` are PDF points for fractional-size regression. No CUPS server or printer
+is contacted; writable font caches are private and removed after the run.
+
+Phase71's stock configured-filter loopback checks now preserve exact fractional
+paper, margins, duplex and saved instances, plus prepared stamps and copy counts.
+Those initial receipts use the diagnostic prototype. The subsequent maintained
+source/configuration/loader result is recorded in
+[ADR0108](../../docs/adr/0108-maintained-ipp-receiver.md); physical output remains
+separate. See
+[the paper/appearance decision](../../docs/adr/0107-exact-paper-and-print-appearances.md).
+
+The phase71 public continuation uses the standard frontend, normal opt-in backend
+and actual Iced consent in both appearances. After a real width edit and fresh
+paper check, one-copy simplex and two-copy long-edge stamped PDFs retain their
+exact geometry and page order through stock filters. Nondefault logical settings
+are not applied again to the prepared input. Initial saved defaults are already
+validated automatically, and PreparePrint intentionally returns one rendered copy
+while retaining the approved physical copy count. The initial fixture assumptions
+about these two behaviors remain failed receipts. See
+[public paper evidence](../../.scratch/xdg-portals/print/public-paper-evidence.json).
+
+The maintained test-only receiver source is now registered separately as
+`cups-ipp-receiver` under root vendor provenance. Build it with
+`scripts/build-print-ipp-receiver.py`, a pinned archive and a verified matching
+client build receipt. `print-custom-ipp.conf` declares the owned PDF receiver's
+range, margins and duplex capabilities. `scripts/test-print-ipp-receiver.py`
+checks eleven validation/read-only cases without jobs. See
+[the receiver recipe](../../vendor/source-overlays/cups-ipp-receiver/README.md).
+
+
+## Advanced printer controls
+
+The owned `print-pdf-advanced.ppd` fixture declares source/type, quality and
+symmetric/asymmetric resolution choices, a Manual/Glossy conflict and a smaller
+manual-tray custom limit. The public destination API omits those two constraints;
+the worker checks its driver in addition to individual IPP support. The bounded
+public-PPD runtime test is intentionally separate from ordinary tests because it
+requires the installed CUPS runtime. Its failed thread-exit case is retained as
+the regression for process-lifetime library ownership.
+
+Reuse the normal workspace/all-target build to select that runtime regression:
+
+```sh
+cargo test --workspace --all-targets --locked --offline driver_mapping_conflicts_and_conditional_limits -- --ignored
+```
+
+The phase51 source-only fixtures reuse the stable compiled graph and existing
+compositor, frontend, pointer, GTK/Qt and CUPS programs. The selected-resolution
+native case uses a private PDF-to-raster driver with the installed gstoraster and
+Ghostscript; no new executable is compiled or copied. It correlates the accepted
+Create-Job's source/type/quality to the receiver job ID and inspects every actual
+raster header for 600 × 1200 DPI. The source PDF has four pages. Dark100/light125
+cover saved defaults, a blocked conflict, correction through a real Iced dropdown,
+scrolling and a changed driver before job creation. Six custom-paper cases per
+appearance also cover real GTK and explicit Qt prepared clients, saved instance
+geometry, explicit current-option confirmation and capability changes.
+
+The receiver declares fixed A4/source/type/resolution capabilities explicitly.
+A narrow source-only relay retains the first declared MIME attributes when the
+installed ippeveprinter appends duplicates. Raw/forwarded metadata, original job
+requests, replies and program hashes remain available. It neither invents
+capabilities nor changes print requests. The first PPD-import PDF passthrough run
+and CLI experiments remain separate evidence; a correct CUPS option does not
+prove physical output. See [ADR0092](../../docs/adr/0092-printer-controls-and-driver-constraints.md),
+[controls evidence](../../.scratch/xdg-portals/print/controls-evidence.json) and
+[device work](../../.scratch/xdg-portals/issues/03-advanced-device-delivery.md).
+
+Phase52 also verifies application preferences over neutral queue defaults, missing
+remembered printers, per-field fallback and equivalent resolutions. The prepared
+GTK/explicit Qt regressions intentionally retain their application A4 preference
+over a saved custom default. Explicit Printer default restores the custom size;
+explicit initial custom paper still requires fresh device validation. Earlier
+phase51 receipts preserve their original default-only scope. See
+[preference ownership](../../docs/adr/0093-initial-print-preferences.md).
+
+## Print supervisor and descriptor retirement
+
+`print-supervisor-client.rs` links the current normal workspace libraries and
+retains the real Client/Broker/Dialog parent. `print-supervisor-helper.py` supplies
+controlled worker and private-credential messages. The helper verifies the sealed
+image but never loads CUPS or contacts a scheduler. The parent's real60/300-second
+budgets and10-second stop grace are used unchanged.
+
+`scripts/test-print-supervisor.py` runs controls, 42 retained-parent resource rounds
+or four concurrent deadline cases. It records descriptor baselines, cancellation
+EOF, response timing and process identity/retirement proofs. Keep its executable
+once in the shared checksum store and preserve source-only replay and receipts.
+See [the supervision guide](../../docs/print-supervision.md) for invocation and
+scope; this is separate from actual Iced, scheduler and device acceptance.
+
+## Print staging stream completion
+
+`print-handoff-inherit.py` wraps the actual normal file worker. For PrepareFile it
+forks a child that holds only the setup socket with CLOEXEC set. The controlled
+copy stays live until its owning test controller releases it. The actual worker
+still performs all filesystem setup and sends all publication metadata unchanged.
+
+Use the existing normal workspace harness and executable:
+
+```sh
+python3 scripts/test-print-handoff.py --binary target/debug/xdg-desktop-portal-canopa --harness PATH_TO_CURRENT_PORTAL_LIBRARY_HARNESS --artifacts NEW_DIRECTORY
+```
+
+The ordinary held-copy case must pass while the copies are live. `--copy closed`
+is the control; `--expect-would-block` records an explicitly selected old-worker
+reproducer. The controller adopts only its descendants, tracks identities and
+removes private files after retirement. It reuses the existing six-group native
+file-client fixture and creates no native executable or installed service.
+See [the completion decision](../../docs/adr/0105-print-staging-stream-completion.md).
+
+## Matching IPP backend resolutions
+
+`print-advanced-ipp.conf` declares an owned PDF receiver's source/type/quality and
+three DPI resolutions plus unequal DPCM axes. `scripts/test-print-ipp-backend.py`
+uses that receiver and the existing advanced PPD to check actual backend option
+conversion, including no invented resolution for an absent option. It creates no
+system queue or service. The DPCM case invokes the backend ABI directly and is
+separate from configured-queue, Canopa/Iced and physical/raster acceptance.
+See [the matching backend](../../vendor/source-overlays/cups-ipp-backend/README.md).
+
+## Real Flatpak Print caller
+
+`print-flatpak-client.c` is an application-side GIO client with one persistent
+portal connection. It requires the real Flatpak identity
+`org.canopa.PortalPrintProbe` in `/.flatpak-info` and an existing host-only sentinel
+path that must be inaccessible inside the sandbox. It implements `prepared`,
+`direct` and `cancel` modes; the second argument is the sentinel's absolute path.
+Successful printing sends an open, unlinked sandbox PDF through the public Print
+FD API. Cancellation must return response 1 without sending a document.
+
+Compile with the installed `gio-unix-2.0` SDK, `-std=c11 -D_GNU_SOURCE -Wall
+-Wextra -Werror`, and retain the executable once by checksum. Link it into the
+owned app as `/app/bin/probe`, with the four-page stamped fixture document at
+`/app/share/document.pdf`. The client deliberately refuses ordinary host execution.
+Its GTK-free minimal test runtime needs only its recorded ELF library closure.
+
+Native checks use a private Flatpak installation/repository, session bus, normal
+Canopa backend and nested compositor. No host filesystem, network or CUPS socket
+permission is granted to the app. Keep the installation/config/cache/home paths
+private, use only the local fixture remote, and bound storage before export.
+The scoped run disables automatic accessibility/Documents-portal setup; Print
+document transfer itself still uses the real filtered session bus and FD API.
+This establishes actual Flatpak caller identity and Print file delivery, separate
+from a standard application runtime, Documents exports, printer devices and
+installed desktop routing. See [the Print guide](../../docs/print-portal.md).
+
+## Automatic GTK Print in Flatpak
+
+`print-flatpak-gtk.c` is a separate application-side GTK3 consumer of
+`GtkPrintOperation`. The Canopa backend and consent helper continue to use
+Rust/Iced. The app requires the real `org.canopa.PortalGtkPrintProbe` Flatpak
+identity, checks an existing host-only sentinel is inaccessible, and rejects a
+`GTK_USE_PORTAL` override. Automatic toolkit routing must reach the public portal.
+It exports a real Wayland parent and renders four labeled pages with Cairo.
+
+Arguments are `basic`, `layout`, `cancel` or `withdraw`, followed by the sentinel
+path. The layout case requests pages2–4, two-up, reverse sheets and75% scale;
+expected physical sides are `[4]`, then `[2,3]`, as in ADR0076. The controller
+handles consent, cancellation or caller termination on the private desktop.
+
+The app stays in its event loop until its owned stdin controller sends `quit`.
+GTK's `done` signal can precede its asynchronous spool writer: the controller
+waits for public Request responses and host publication before releasing the
+app. It then hashes its own completed PDF. File delivery must preserve those
+exact bytes; GTK performs the prepared layout. This observation channel grants
+no host filesystem access to the app.
+
+Compile once with `-std=c11 -Wall -Wextra -Werror -O1` and
+`pkg-config --cflags --libs gtk+-3.0`; publish the executable by checksum. The
+private runtime adds the recorded GTK ELF closure, file print backend, DejaVu
+font, Fontconfig configuration, GLib schemas and verified evdev/PC105/US XKB
+data. Only the Wayland socket is exposed. Keep private installation paths,
+storage caps, system-renderer PDF checks and process-retirement evidence as for
+the GIO caller. These checks cover an actual toolkit in an owned minimal runtime;
+standard-distribution applications, Documents exports and printer devices retain
+their separate acceptance gates.
+
+## Flatpak prepared-token ownership
+
+`print-flatpak-tokens.c` is a controlled GIO consumer for the real Flatpak IDs
+`org.canopa.PortalPrintOwner` and `org.canopa.PortalPrintOther`. Arguments are the
+expected ID and the inaccessible host-only sentinel path. Compile with the same
+GIO flags as `print-flatpak-client.c`, adding `-O1`, and retain one executable by
+checksum. Both private apps use that image and the existing four-page PDF in the
+shared runtime; they receive no filesystem, network or unrestricted bus grants.
+
+The owned stdin protocol accepts `prepare LABEL`, `print LABEL TOKEN`,
+`print_extra LABEL TOKEN`, `print_held LABEL TOKEN`, `release LABEL` and `quit`.
+The extra command uses another bus connection in the same process. Separate app
+instances distinguish a new process with the same app ID from a different app ID.
+Public request handles, authenticated IDs and connection names are observed at
+the standard frontend. A foreign, consumed or stale token must open fresh Iced
+consent; the controller cancels that consent and expects response 1. Foreign
+attempts must leave the original owner's approval usable.
+
+The held command passes a real readable pipe but withholds its PDF bytes. The
+controller observes the production snapshot worker holding that exact pipe inode
+before submitting a competing request with the same token. The second request
+must require fresh consent while the first remains pending. Only after canceling
+the second does the controller release the first input and verify exact delivery.
+This tests overlapping one-use requests without production hooks or clock changes.
+
+Caller and frontend loss must release unused approval directory descriptors
+before another Print request. The separate restart profile keeps the original
+app and bus connection alive through private frontend restart and backend SIGKILL/
+restart with the same recovery store. Old tokens require fresh consent, and a
+new approval must still print. These checks concern unused approvals, separate
+from interruption during publication, power loss or physical printer jobs.
+
+## Normal-service publication interruption
+
+The [source-only replay](../../.scratch/xdg-portals/print/publication-crash-replay/README.md)
+uses the same controlled Flatpak caller, standard frontend and normal backend.
+Its Linux x86_64 tracer owns the backend process, follows its descendants and
+observes real worker syscalls. It holds a successful journal `fsync` or publication
+`linkat` exit without changing worker input, replies, memory or journal contents.
+Only the main backend is then killed; the normal parent-death contract must retire
+the held publisher. No alternate publisher or transaction harness supplies the
+filesystem operations.
+
+Reviewed replacements cover a completed stage before claiming, Claimed,
+Publishing before the link, a successful link before its Published record, and a
+synced Published record. After death, a normal discovery worker and restarted
+normal service must preserve the original hardlink and retained objects. A newer
+unrelated occupant is created when the interrupted target is absent; startup must
+leave it unchanged. Iced recovery classifies the retained work and saves document
+and displaced-file copies through fresh picker destinations. It must not restore,
+overwrite, retry or discard retained work automatically.
+
+The [staging continuation](../../.scratch/xdg-portals/print/publication-stage-replay/README.md)
+also covers new files at the completed-stage, Publishing, linked and Published
+boundaries. Empty setup, partial writing and full bytes without a completion
+record are checked for both new and existing destinations. A valid larger PDF
+uses the unchanged GIO client in an explicit private test branch: the actual
+publisher writes only its first 65,536 of 80,516 bytes before main-process death.
+Recovery must classify it as incomplete and disable export. Complete bytes without
+the journal's completion marker must remain unavailable too. The temporary branch
+is removed after all cases exit; original apps/runtime remain unchanged.
+
+The fixtures reuse existing binaries and the shared Flatpak runtime, with a
+separate 16 MiB evidence cap per continuation and the existing 3 GiB free-space
+floor. They change no system routing, installed services, queues or physical
+printer. This is local SIGKILL/restart acceptance at the recorded boundaries;
+power loss, kernel-stalled I/O and cross-restart quotas remain separate.

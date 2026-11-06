@@ -28,7 +28,16 @@ pub(crate) struct AcceptedNotificationInput {
 
 pub(crate) fn intake_notification(input: NotificationInput) -> NotificationIntakeResult {
     let app_identity = derive_app_identity(&input);
-    let body_content = interpreted_body_content(&input.body);
+    let body_content = match input.body_format {
+        crate::NotificationBodyFormat::Plain => NotificationBodyContent::plain(&input.body),
+        crate::NotificationBodyFormat::FreedesktopMarkup => interpreted_body_content(&input.body),
+        crate::NotificationBodyFormat::PortalMarkup => {
+            let mut parser = BodyMarkupParser::new(&input.body);
+            parser.portal = true;
+            parser.parse();
+            parsed_body_nodes_to_content(parser.output)
+        }
+    };
     let body = body_content.plain_text();
     let has_image = input.image_data.is_some() || input.image_reference.is_some();
     let category = input
@@ -156,6 +165,7 @@ struct BodyMarkupParser<'a> {
     plain: bool,
     anchor_open: bool,
     segments: usize,
+    portal: bool,
 }
 
 impl<'a> BodyMarkupParser<'a> {
@@ -169,6 +179,7 @@ impl<'a> BodyMarkupParser<'a> {
             plain: false,
             anchor_open: false,
             segments: 0,
+            portal: false,
         }
     }
 
@@ -224,6 +235,10 @@ impl<'a> BodyMarkupParser<'a> {
         let tag_name = tag_name(tag_without_direction);
         let tag_name = tag_name.to_ascii_lowercase();
         let self_closing = tag_without_direction.trim_end().ends_with('/');
+
+        if self.portal && !matches!(tag_name.as_str(), "b" | "i" | "a") {
+            return;
+        }
 
         match tag_name.as_str() {
             "b" | "i" | "u" => {
@@ -629,6 +644,53 @@ mod tests {
     mod fuzz_smoke;
     use super::*;
     use crate::{NotificationAction, NotificationBodyRun};
+
+    #[test]
+    fn explicit_body_formats_preserve_plain_text_and_limit_portal_markup() {
+        let accept = |body: &str, body_format| {
+            let NotificationIntakeResult::Accepted(accepted) =
+                intake_notification(NotificationInput {
+                    app_name: "Portal fixture".into(),
+                    summary: "Title".into(),
+                    body: body.into(),
+                    body_format,
+                    ..Default::default()
+                })
+            else {
+                panic!("expected accepted content");
+            };
+            accepted.notification
+        };
+        let plain = accept(
+            "<b>Literal &amp; body</b>",
+            crate::NotificationBodyFormat::Plain,
+        );
+        assert_eq!(plain.body, "<b>Literal &amp; body</b>");
+        assert_eq!(plain.raw_body, plain.body);
+        assert!(
+            plain
+                .body_content
+                .text_runs()
+                .iter()
+                .all(|run| run.style == Default::default())
+        );
+        let markup = accept(
+            "<b>Bold</b><img src='file:///private.png' alt='excluded'/><u>under</u><i>Italic</i>",
+            crate::NotificationBodyFormat::PortalMarkup,
+        );
+        assert_eq!(markup.body, "BoldunderItalic");
+        assert!(
+            !markup
+                .body_content
+                .segments
+                .iter()
+                .any(|segment| matches!(segment, NotificationBodySegment::Image { .. }))
+        );
+        let runs = markup.body_content.text_runs();
+        assert!(runs.iter().any(|run| run.style.bold));
+        assert!(runs.iter().any(|run| run.style.italic));
+        assert!(runs.iter().all(|run| !run.style.underline));
+    }
 
     #[test]
     fn intake_derives_app_identity_from_trimmed_desktop_entry() {

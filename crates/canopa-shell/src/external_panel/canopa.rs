@@ -98,6 +98,7 @@ impl CanopaSnapshot {
         self.action_id(
             InteractionTarget::Item { id: item.into() },
             &PanelAction {
+                request_activation_token: false,
                 key: slider.key.clone(),
                 label: slider.label.clone(),
                 value: None,
@@ -203,6 +204,7 @@ impl CanopaSession {
                                 id: section.id.clone(),
                             },
                             &PanelAction {
+                                request_activation_token: false,
                                 key: control.key.clone(),
                                 label: option.label.clone(),
                                 value: Some(option.value.clone()),

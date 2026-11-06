@@ -90,7 +90,11 @@ fn interrupted_undo_keeps_history_inspectable_and_allows_journaled_recovery_copi
     fs::create_dir(&salvage).unwrap();
     drop(engine);
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "interrupted_recovery_copy_child"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::interrupted::interrupted_recovery_copy_child",
+        ])
         .env("CANOPA_INTERRUPTED_ROOT", root.path())
         .spawn()
         .unwrap();
@@ -289,7 +293,11 @@ fn prepare_copy(root: &Path) {
 fn interrupted_undo(root: &Path) -> std::path::PathBuf {
     use std::os::unix::process::ExitStatusExt;
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "interrupted_undo_child"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::interrupted::interrupted_undo_child",
+        ])
         .env("CANOPA_INTERRUPTED_ROOT", root)
         .spawn()
         .unwrap();

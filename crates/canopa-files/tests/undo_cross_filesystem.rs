@@ -366,7 +366,7 @@ fn restarting_a_killed_cross_filesystem_return_preserves_conflict_choices_and_ol
             .args([
                 "--ignored",
                 "--exact",
-                "crash_cross_filesystem_return_helper",
+                "cases::undo_cross_filesystem::crash_cross_filesystem_return_helper",
             ])
             .env("CANOPA_FILES_CROSS_ROOT", root.path())
             .env("CANOPA_FILES_CROSS_DESTINATION", destination.path())
@@ -1247,7 +1247,7 @@ fn reviewed_cross_filesystem_returns_and_saved_only_restorations_survive_process
             .args([
                 "--ignored",
                 "--exact",
-                "crash_cross_filesystem_return_helper",
+                "cases::undo_cross_filesystem::crash_cross_filesystem_return_helper",
             ])
             .env("CANOPA_FILES_CROSS_ROOT", root.path())
             .env("CANOPA_FILES_CROSS_DESTINATION", destination.path())

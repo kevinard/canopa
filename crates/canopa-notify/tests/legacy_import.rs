@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_notify::{
     AppPermissionControl, ControlCommand, ControlReply, Daemon, DaemonOptions, DeliveryOutcome,

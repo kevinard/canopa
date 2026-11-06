@@ -10,6 +10,8 @@ use std::io::Cursor;
 use std::path::Path;
 
 pub mod icons;
+#[cfg(feature = "svg")]
+pub mod svg;
 
 /// File formats admitted independently of Cargo feature unification.
 #[derive(Clone, Copy)]
@@ -134,6 +136,26 @@ impl<'a> RasterBatch<'a> {
         if (self.cancelled)() {
             return None;
         }
+        self.decode_inner(bytes)
+    }
+
+    /// Decode an already-owned payload with the same format, allocation and pixel
+    /// bounds as local files. The attempt and encoded bytes consume this batch's
+    /// budget even when decoding fails.
+    pub fn decode(&mut self, bytes: Vec<u8>) -> Option<Raster> {
+        if (self.cancelled)() {
+            return None;
+        }
+        self.remaining.file_attempts = self.remaining.file_attempts.checked_sub(1)?;
+        if bytes.len() > self.policy.max_encoded_bytes || bytes.len() > self.remaining.encoded_bytes
+        {
+            return None;
+        }
+        self.remaining.encoded_bytes -= bytes.len();
+        self.decode_inner(bytes)
+    }
+
+    fn decode_inner(&mut self, bytes: Vec<u8>) -> Option<Raster> {
         let mut reader = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .ok()?;

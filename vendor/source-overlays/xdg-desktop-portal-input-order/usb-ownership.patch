@@ -1,0 +1,290 @@
+--- a/src/usb.c
++++ b/src/usb.c
+@@ -54,14 +54,6 @@
+ 
+ #define MAX_DEVICES 8
+ 
+-/* TODO:
+- *
+- * AccessDevices()
+- *  - Check if backend is returning appropriate device ids
+- *  - Check if backend is not increasing permissions
+- *  - Save allowed devices in the permission store
+- */
+-
+ struct _XdpUsb
+ {
+   XdpDbusUsbSkeleton parent_instance;
+@@ -113,6 +105,7 @@
+ 
+   char *device_id;
+   int fd;
++  gboolean writable;
+ } UsbOwnedDevice;
+ 
+ typedef struct _UsbSenderInfo
+@@ -182,16 +175,6 @@
+ 
+   g_clear_pointer (&acquire_data->device_id, g_free);
+   g_clear_pointer (&acquire_data, g_free);
+-}
+-
+-static UsbOwnedDevice *
+-usb_owned_device_ref (UsbOwnedDevice *owned_device)
+-{
+-  g_return_val_if_fail (owned_device != NULL, NULL);
+-
+-  g_atomic_ref_count_inc (&owned_device->ref_count);
+-
+-  return owned_device;
+ }
+ 
+ static void
+@@ -267,7 +250,8 @@
+ static void
+ usb_sender_info_acquire_device (UsbSenderInfo *sender_info,
+                                 const char    *device_id,
+-                                int            fd)
++                                int            fd,
++                                gboolean       writable)
+ {
+   g_autoptr(UsbOwnedDevice) owned_device = NULL;
+ 
+@@ -278,6 +262,7 @@
+   g_atomic_ref_count_init (&owned_device->ref_count);
+   owned_device->device_id = g_strdup (device_id);
+   owned_device->fd = g_steal_fd (&fd);
++  owned_device->writable = writable;
+ 
+   g_hash_table_insert (sender_info->owned_devices,
+                        g_strdup (device_id),
+@@ -935,6 +920,57 @@
+   return G_DBUS_METHOD_INVOCATION_HANDLED;
+ }
+ 
++/* Validate the complete backend grant before persisting any permission or
++ * pending acquisition. Device IDs and access modes remain caller-owned bounds.
++ */
++static gboolean
++validate_acquired_devices (GVariant *requested,
++                           GVariant *granted)
++{
++  g_autoptr(GHashTable) offered =
++    g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
++  g_autoptr(GHashTable) seen =
++    g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
++  GVariantIter iter;
++  const char *device_id;
++  GVariant *info;
++  GVariant *options;
++
++  g_variant_iter_init (&iter, requested);
++  while (g_variant_iter_next (&iter, "(&s@a{sv}@a{sv})", &device_id, &info, &options))
++    {
++      g_autoptr(GVariant) owned_info = info;
++      g_autoptr(GVariant) owned_options = options;
++      gboolean writable = FALSE;
++      guint previous = GPOINTER_TO_UINT (g_hash_table_lookup (offered, device_id));
++
++      g_variant_lookup (options, "writable", "b", &writable);
++      g_hash_table_replace (offered, g_strdup (device_id),
++                            GUINT_TO_POINTER (writable || previous == 2 ? 2 : 1));
++    }
++
++  if (g_variant_n_children (granted) > g_hash_table_size (offered))
++    return FALSE;
++
++  g_variant_iter_init (&iter, granted);
++  while (g_variant_iter_next (&iter, "(&s@a{sv})", &device_id, &options))
++    {
++      g_autoptr(GVariant) owned_options = options;
++      g_autoptr(GVariant) writable = g_variant_lookup_value (options, "writable", NULL);
++      guint requested_mode = GPOINTER_TO_UINT (g_hash_table_lookup (offered, device_id));
++
++      if (requested_mode == 0 || g_hash_table_contains (seen, device_id))
++        return FALSE;
++      if (writable &&
++          (!g_variant_is_of_type (writable, G_VARIANT_TYPE_BOOLEAN) ||
++           (g_variant_get_boolean (writable) && requested_mode != 2)))
++        return FALSE;
++      g_hash_table_add (seen, g_strdup (device_id));
++    }
++
++  return TRUE;
++}
++
+ static void
+ usb_acquire_devices_cb (GObject      *source_object,
+                         GAsyncResult *result,
+@@ -946,6 +982,7 @@
+   g_autoptr(GVariantIter) devices_iter = NULL;
+   g_auto(GVariantBuilder) results_builder;
+   g_autoptr (GVariant) results = NULL;
++  g_autoptr(GVariant) granted = NULL;
+   g_autoptr(XdpRequest) request = data;
+   g_autoptr(GError) error = NULL;
+   GVariant *options;
+@@ -955,10 +992,6 @@
+ 
+   response = XDG_DESKTOP_PORTAL_RESPONSE_OTHER;
+   usb = g_object_get_data (G_OBJECT (request), "usb");
+-  sender_info = usb_sender_info_from_request (request);
+-
+-  g_assert (sender_info != NULL);
+-
+   g_variant_builder_init (&results_builder, G_VARIANT_TYPE_VARDICT);
+ 
+   if (!xdp_dbus_impl_usb_call_acquire_devices_finish (usb->impl,
+@@ -972,16 +1005,26 @@
+       goto out;
+     }
+ 
+-  /* TODO: check if the list of devices that the backend reported is strictly
+-   * equal or a subset of the devices the app requested. */
+-
+-  /* TODO: check if we're strictly equal or downgrading the "writable" option */
+-
+-  if (!g_variant_lookup (results, "devices", "a(sa{sv})", &devices_iter))
++  /* Close or caller loss may have won while the backend was deciding. A late
++   * success must not create permissions or a finishable acquisition.
++   */
++  if (!request->exported)
+     goto out;
+ 
++  sender_info = usb_sender_info_from_request (request);
++  g_assert (sender_info != NULL);
++
+   if (response == XDG_DESKTOP_PORTAL_RESPONSE_SUCCESS)
+     {
++      GVariant *requested = g_object_get_data (G_OBJECT (request), "usb-requested-devices");
++
++      granted = g_variant_lookup_value (results, "devices", G_VARIANT_TYPE ("a(sa{sv})"));
++      if (!granted || !validate_acquired_devices (requested, granted))
++        {
++          response = XDG_DESKTOP_PORTAL_RESPONSE_OTHER;
++          goto out;
++        }
++      devices_iter = g_variant_iter_new (granted);
+       g_autoptr(GPtrArray) pending_devices =
+         g_ptr_array_new_full (g_variant_iter_n_children (devices_iter),
+                               (GDestroyNotify) usb_device_acquire_data_free);
+@@ -1228,6 +1271,8 @@
+ 
+   g_object_set_data_full (G_OBJECT (request), "usb",
+                           g_object_ref (self), g_object_unref);
++  g_object_set_data_full (G_OBJECT (request), "usb-requested-devices",
++                          g_variant_ref (filtered_devices), (GDestroyNotify) g_variant_unref);
+ 
+   xdp_dbus_impl_usb_call_acquire_devices (self->impl,
+                                           request->id,
+@@ -1313,45 +1358,40 @@
+       UsbOwnedDevice *owned_device = NULL;
+       g_autofd int fd = -1;
+       int fd_index;
++      GUdevDevice *device;
+ 
+       g_variant_dict_init (&dict, NULL);
+ 
+       access_data = g_ptr_array_steal_index (pending_devices, 0);
+ 
+-      /* Check we haven't already acquired the device */
++      /* Recheck availability and visibility even for a cached descriptor. */
++      device = g_hash_table_lookup (self->ids_to_devices, access_data->device_id);
++
++      if (!device)
++        {
++          g_variant_dict_insert (&dict, "success", "b", FALSE);
++          g_variant_dict_insert (&dict, "error", "s", _("Device not available"));
++          g_variant_builder_add (&results_builder, "(s@a{sv})",
++                                 access_data->device_id, g_variant_dict_end (&dict));
++          continue;
++        }
++
++      if (!usb_sender_info_match_device (sender_info, device))
++        {
++          g_variant_dict_insert (&dict, "success", "b", FALSE);
++          g_variant_dict_insert (&dict, "error", "s", _("Not allowed"));
++          g_variant_builder_add (&results_builder, "(s@a{sv})",
++                                 access_data->device_id, g_variant_dict_end (&dict));
++          continue;
++        }
++
+       owned_device = g_hash_table_lookup (sender_info->owned_devices, access_data->device_id);
+-      if (!owned_device)
++      if (!owned_device || owned_device->writable != access_data->writable)
+         {
+-          const char *device_file;
+-          GUdevDevice *device;
+-
+-          device = g_hash_table_lookup (self->ids_to_devices, access_data->device_id);
+-
+-          if (!device)
+-            {
+-              g_variant_dict_insert (&dict, "success", "b", FALSE);
+-              g_variant_dict_insert (&dict, "error", "s", _("Device not available"));
+-              g_variant_builder_add (&results_builder, "(s@a{sv})",
+-                                     access_data->device_id,
+-                                 g_variant_dict_end (&dict));
+-              continue;
+-            }
+-
+-          device_file = g_udev_device_get_device_file (device);
++          const char *device_file = g_udev_device_get_device_file (device);
++
+           g_assert (device_file != NULL);
+-
+-          /* Can the app even request this device? */
+-          if (!usb_sender_info_match_device (sender_info, device))
+-            {
+-              g_variant_dict_insert (&dict, "success", "b", FALSE);
+-              g_variant_dict_insert (&dict, "error", "s", _("Not allowed"));
+-              g_variant_builder_add (&results_builder, "(s@a{sv})",
+-                                     access_data->device_id,
+-                                     g_variant_dict_end (&dict));
+-              continue;
+-            }
+-
+-          fd = open (device_file, access_data->writable ? O_RDWR : O_RDONLY);
++          fd = open (device_file, (access_data->writable ? O_RDWR : O_RDONLY) | O_CLOEXEC);
+           if (fd == -1)
+             {
+               g_variant_dict_insert (&dict, "success", "b", FALSE);
+@@ -1365,9 +1405,8 @@
+         }
+       else
+         {
+-	  /* If we have already acquired the device, just return the fd again */
+-	  fd_index = g_unix_fd_list_append (fds, owned_device->fd, &error);
+-	}
++          fd_index = g_unix_fd_list_append (fds, owned_device->fd, &error);
++        }
+ 
+       if (error)
+         {
+@@ -1379,18 +1418,21 @@
+           continue;
+         }
+ 
+-      /* This sender now owns this device. Either create a new one
+-       * or ref the existing one.
++      /* The sender map owns exactly one cached descriptor per device. Client
++       * copies already transferred by D-Bus remain the client's responsibility.
+        */
+       if (!owned_device)
+         {
+           usb_sender_info_acquire_device (sender_info,
+                                           access_data->device_id,
+-                                          g_steal_fd (&fd));
++                                          g_steal_fd (&fd),
++                                          access_data->writable);
+         }
+-      else
++      else if (fd != -1)
+         {
+-          usb_owned_device_ref (owned_device);
++          g_clear_fd (&owned_device->fd, NULL);
++          owned_device->fd = g_steal_fd (&fd);
++          owned_device->writable = access_data->writable;
+         }
+ 
+       g_variant_dict_insert (&dict, "success", "b", TRUE);

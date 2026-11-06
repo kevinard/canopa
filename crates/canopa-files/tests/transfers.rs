@@ -1786,7 +1786,11 @@ fn restarting_after_a_killed_copy_cleans_the_partial_file_and_keeps_completed_un
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_copy_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::transfers::crash_copy_helper",
+        ])
         .env("CANOPA_FILES_CRASH_ROOT", root.path())
         .status()
         .unwrap();

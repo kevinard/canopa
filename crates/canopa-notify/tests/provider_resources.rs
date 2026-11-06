@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_notify::{Daemon, DaemonOptions};
 use canopa_panel_protocol::{PanelContent, ProviderResponse};
@@ -901,6 +901,7 @@ fn v5_provider_rejects_retired_actions_and_exits_on_close_or_stdin_eof() {
         assert_eq!(frame(&mut navigation), "panel-session\n");
         let mut content = PanelContent::new("First");
         content.actions.push(v4::PanelAction {
+            request_activation_token: false,
             key: "opaque-action".into(),
             label: "Invoke".into(),
             value: Some("same-domain-value".into()),

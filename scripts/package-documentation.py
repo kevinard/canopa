@@ -14,8 +14,8 @@ FILES = {
     "LICENSES.md": "share/canopa/LICENSES.md",
     "config/canopa.kdl": "share/canopa/canopa.kdl",
     **{f"docs/{name}.md": f"share/canopa/{name}.md" for name in (
-        "settings-portal", "shell-rename", "audio", "media", "files",
-        "notifications", "configuration", "theme-customization",
+        "settings-portal", "file-chooser-portal", "app-chooser-portal", "access-portal", "notification-portal", "account-portal", "background-portal", "dynamic-launcher-portal", "lockdown-portal", "wallpaper-portal", "screenshot-portal", "screencast-portal", "desktop-sharing", "print-portal", "print-runtime", "shell-rename", "audio", "media", "files",
+        "notifications", "configuration", "theme-customization", "input-capture-portal", "global-shortcuts-portal", "usb-portal",
     )},
     **{f"examples/{name}": f"share/canopa/examples/{name}" for name in (
         "canopa-desktop.kdl", "custom-theme.kdl", "themes/nord.kdl",

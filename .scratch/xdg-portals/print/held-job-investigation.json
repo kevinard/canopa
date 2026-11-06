@@ -1,0 +1,62 @@
+{
+  "status": "measured-post-acceptance-held-gap-and-acknowledgement-bookkeeping-regression-not-feature-acceptance",
+  "validation": "target/portal-print-58/worker-05.json",
+  "binary_sha256": "3f61df90706b93aa582ca654470ec44e234b021e37b7d94f3874b4eb63672987",
+  "held_baselines": [
+    {
+      "path": "target/portal-print-59/held-probe-06/summary.json",
+      "sha256": "4c7e7ae24a526a22357cf121301eaa420b9d84caeecbf7f989f30093e3328ed7"
+    },
+    {
+      "path": "target/portal-print-59/held-probe-07/summary.json",
+      "sha256": "91ab448610b3ba853e63530eb30487c9abb1191ea50cf170133bc0f7661dc648"
+    }
+  ],
+  "acknowledgement_failures": [
+    {
+      "path": "target/portal-print-59/acknowledgement-probe-01/summary.json",
+      "sha256": "d096071e6ed3247820edff5762b1cdbe85bafb18b745fcc80d841434dce704b7"
+    },
+    {
+      "path": "target/portal-print-59/native-acknowledgement-probe-01/summary.json",
+      "sha256": "c330a263e0e0d0f3a3911ce612913ddb4433b7080c2eb30f0bf894c2b96debe4"
+    }
+  ],
+  "facts": [
+    "worker exits with Created/Accepted and empty journal before gated backend checks credentials",
+    "backend then returns2, same job held with cups-held-for-authentication/documents1",
+    "wrong raw0x400e sends real credentials and reholds; correct raw0x400e completes same UUID/documents1; exactly one document upload and one backend data acceptance",
+    "current capabilities authentication.kind remains none after late hold; GetPrinterAttributes and GetPrinters omit auth-info-required, even though actual backend AUTH_INFO_REQUIRED becomes username,password",
+    "unprivileged CUPS disables credential caching; held raw control uses actual scheduler UID0 in single-ID user namespace, read-only host root and private writable directory, namespace filesystem capabilities, and explicitly recorded source-only executor adapter because native cups-exec setgroups is denied",
+    "complete HTTP200/IPP0 forwarded to worker plus rejected journal acknowledgement write yields Failed/Invalid file destination and CancelJob8 on its accepted job, state7/documents1",
+    "acknowledgement regression independently reproduced using unmodified unprivileged CUPS and original native cups-exec; no executor adapter needed"
+  ],
+  "limitations": [
+    "held protocol control with executor adapter is not unmodified runtime/Iced/physical acceptance",
+    "journal-empty baseline assertion locates missing follow-up; it does not mandate a duplicate local accepted-job database",
+    "all observed fixture processes terminal, private authentication/spool data removed; no Rust source change before baseline snapshots",
+    "full Print/18-interface goal active, Print opt-in, Qt deferred"
+  ],
+  "fixture_failures": [
+    {
+      "path": "target/portal-print-59/held-probe-01/summary.json",
+      "sha256": "5a72c056842244accfcac824424547d4dfbf918e8868ce3aeef8078e1b01a031"
+    },
+    {
+      "path": "target/portal-print-59/held-probe-02/summary.json",
+      "sha256": "3503ae72f3bdee50501b4be400b34f73ebb1c8630bab7810436557240c845631"
+    },
+    {
+      "path": "target/portal-print-59/held-probe-03/summary.json",
+      "sha256": "b8289ab1bf52bbc10ebc708a279fd2e39d0c7b428da15e14f66bdf863bb511ea"
+    },
+    {
+      "path": "target/portal-print-59/held-probe-04/summary.json",
+      "sha256": "03e913d2f16dbed991ae4a3aadb6d90347ee1d93c6f5f48f5fc1d627d7081ac9"
+    },
+    {
+      "path": "target/portal-print-59/held-probe-05/summary.json",
+      "sha256": "c40723806ef8daad707a09ce463f50e618592496335b63fb073c20c978acd298"
+    }
+  ]
+}

@@ -417,6 +417,9 @@ impl BannerVisual {
             NotificationVisualReference::IconName(icon_name) => Some(Self::IconNames {
                 names: vec![icon_name.clone()],
             }),
+            NotificationVisualReference::IconNames(names) => Some(Self::IconNames {
+                names: names.clone(),
+            }),
             NotificationVisualReference::LocalPath(_) => None,
         }
     }

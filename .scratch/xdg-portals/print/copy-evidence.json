@@ -1,0 +1,85 @@
+{
+  "status": "passed",
+  "scope": "physical copy grouping, prepared render-one reply, direct layout and public native Iced/CUPS delivery",
+  "full_goal_complete": false,
+  "packaged_interfaces": 11,
+  "experimental_interfaces": 6,
+  "print_normally_registered": false,
+  "receipts": {
+    "worker-01.json": "743876e509f758a615700b58b80d089e7ca921d0cd8dc354536bf2e4eaf35499",
+    "portal-regressions-01.json": "e1fa1b58244fcb792685e57fcad547abf3bee3cd47b32bc2503dabfcc03ce4a7",
+    "copies-01/summary.json": "bc147b9840e61d6459d577a401d38e430be945497b844bbe1ebdf2a2991f87c6",
+    "native-01/summary.json": "004f5d0232b081e608e22c71a6aaa43ed8b5e3b3847a6f93ec7bdcb8899dc3d5",
+    "public-printer-dark-03/summary.json": "65db7dee1008af85fdcc9470dcef18483e4cd773cf9290402f720b793f41e985",
+    "public-printer-light-03/summary.json": "7b5408fbdc04b88754bd258f7ec68bf38fdbe8e3eced32978b97ca2b24397fd5",
+    "public-files-dark-01/summary.json": "73e779431d926ccf71e2ab0d2307a25b699ba65863c2436db27803b94a740878",
+    "public-files-light-01/summary.json": "c32c3327f26474185061ac5e5aa6b01492c9baf42f751874c99e97dfbb63e7ee",
+    "gtk-client.json": "4e152a5875930ea758808e2e47f94ebd3bf950e9526bfa3421b8a614b3d09378",
+    "qt-client.json": "090ad29cac05ec56763ae16a8b85c596361ac4a330356de386416fe77ea295b0",
+    "startup-linkage.txt": "35d58e54c375ed0e4447720896e2cbd3e7288bbb7313a1661c9134ebe08240a5",
+    "public-02/interruption-retirement.json": "6b0374df2d44f155806bc9ee1ef81cf825b2fafa1ed9c16f8de80a479faaa607"
+  },
+  "guarded_inputs_unchanged": true,
+  "pins": {
+    "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa": "1671b22079d8f9861b8bd4555cc2b92bd40ce2c9bb536a62afc742c9c8d2d93b",
+    "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-6c03c7fd0a0bee32": "456cfb29c97222e53ef7563ca4c2abcab796ec33d21cd76577e1e4ac28c519e4"
+  },
+  "tests": {
+    "print": {
+      "passed": 94,
+      "ignored": 7
+    },
+    "lockdown": {
+      "passed": 12,
+      "ignored": 0
+    },
+    "portal_library": {
+      "passed": 312,
+      "ignored": 15
+    },
+    "portal_integration": {
+      "passed": 55,
+      "ignored": 2
+    }
+  },
+  "native": {
+    "copy_groups": 14,
+    "renderer_groups": 24,
+    "public_groups": 36,
+    "public_appearances": [
+      "dark/100%",
+      "light/125%"
+    ],
+    "public_printer_deliveries": 22,
+    "actual_gtk_printer_groups": 4,
+    "explicit_qt_dbus_pdf_printer_groups": 4,
+    "public_direct_printer_groups": 4,
+    "all_observed_terminal": true,
+    "processes": 347
+  },
+  "storage": {
+    "baseline_free_bytes": 7415750656,
+    "free_bytes": 7326302208,
+    "net_growth_bytes": 89448448,
+    "minimum_free_bytes": 6000000000,
+    "maximum_phase_growth_bytes": 3000000000
+  },
+  "historical_failures": [
+    "public01: sides-default alone did not change the fixture PPD default; all32 observed terminal",
+    "public02: interrupted exit143 after13 groups; scoped retirement receipt retained; no full pass claimed",
+    "public-printer dark/light01: Unix discovery socket path too long; all observed processes terminal",
+    "public-printer dark/light02: Qt emits rounded595x842 A4; corrected geometry assertion to compare application input, all observed terminal",
+    "first Qt probe link needed -fPIC/-pie for the system Qt build; final compile uses both"
+  ],
+  "limitations": [
+    "Print remains unregistered/unadvertised; no installed queue/service/routing changes",
+    "Virtual loopback printer and host identity; no physical-printer or real Flatpak acceptance",
+    "Qt probe explicitly calls DBus/QPrinter; automatic QPrintDialog portal use is not established",
+    "Broader page-set/reverse/duplex/toolkit/device/custom-media/saved-instance and prepared PS/SVG acceptance remain",
+    "Startup recovery, power loss, indefinitely stalled filesystem setup and ambiguous CUPS submission/backend death remain",
+    "Runtime packaging, six experimental interface/distribution and final workspace/release/routing gates remain",
+    "No new full workspace test gate; ten recorded Files integration failures remain unresolved"
+  ],
+  "acceptance_receipt": "/home/kevinard/projects/canopa/target/portal-print-37/acceptance-01.json",
+  "acceptance_sha256": "cc6821c49958edbb71e019d00fd3b01d38901a7c15234807803c100cc3c97b6e"
+}

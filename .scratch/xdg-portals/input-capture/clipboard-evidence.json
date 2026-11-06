@@ -1,0 +1,195 @@
+{
+  "status": "experimental active-only InputCapture Clipboard scoped acceptance passed; unadvertised; full eighteen-interface goal remains open",
+  "at": "2026-11-01",
+  "prior_goal_turn_classification": "verified wait: original validation wrapper PID and start identity confirmed live; no duplicate build",
+  "this_goal_turn_classification": "progress",
+  "adr": "docs/adr/0062-input-capture-clipboard-activation.md",
+  "capabilities": {
+    "pointer": true,
+    "keyboard": false,
+    "touch": false,
+    "clipboard": "separate unchecked grant, actual capture activation only"
+  },
+  "portal_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/final-validation-01.json",
+  "portal": {
+    "library_passed": 176,
+    "library_ignored": 7,
+    "integration_passed": 53,
+    "integration_ignored": 2,
+    "fmt": "passed",
+    "clippy": "passed",
+    "main_build": "passed"
+  },
+  "capture_native": {
+    "native-dark-02": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-dark-02/summary.json",
+      "groups": 15,
+      "checks": [
+        "exact-backend-v2-wire-and-truthful-pointer-capabilities-through-standard-frontend",
+        "modern-session-does-not-start-or-connect-before-explicit-unchecked-iced-consent",
+        "legacy-public-create-translates-to-v2-create-and-start-with-real-iced-controls",
+        "public-zones-barriers-one-ei-fd-and-real-pointer-activation-release-and-reuse",
+        "public-topology-change-cleans-held-input-orders-phase-signals-and-requires-fresh-zones",
+        "iced-stop-revokes-held-capture-before-clean-local-input-and-public-session-retirement",
+        "clipboard-request-does-not-grant-unchecked-consent-even-during-real-capture",
+        "clipboard-bytes-and-owner-events-are-denied-outside-actual-capture-activation",
+        "deactivation-cancels-held-readable-and-writable-pipes-with-bounded-admitted-data",
+        "late-completion-and-old-serial-cannot-affect-a-fresh-activation-transfer",
+        "explicit-disable-revokes-clipboard-and-held-input-without-ending-the-session",
+        "live-topology-invalidation-revokes-clipboard-pipes-and-requires-fresh-capture-zones",
+        "iced-stop-retires-clipboard-pipes-and-capture-as-one-owned-session",
+        "original-public-caller-loss-retires-its-backend-session-controls-and-held-receiver",
+        "original-backend-death-cleans-held-ei-input-and-standard-frontend-session"
+      ],
+      "workers_terminal": 5
+    },
+    "native-light-02": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-light-02/summary.json",
+      "groups": 15,
+      "checks": [
+        "exact-backend-v2-wire-and-truthful-pointer-capabilities-through-standard-frontend",
+        "modern-session-does-not-start-or-connect-before-explicit-unchecked-iced-consent",
+        "legacy-public-create-translates-to-v2-create-and-start-with-real-iced-controls",
+        "public-zones-barriers-one-ei-fd-and-real-pointer-activation-release-and-reuse",
+        "public-topology-change-cleans-held-input-orders-phase-signals-and-requires-fresh-zones",
+        "iced-stop-revokes-held-capture-before-clean-local-input-and-public-session-retirement",
+        "clipboard-request-does-not-grant-unchecked-consent-even-during-real-capture",
+        "clipboard-bytes-and-owner-events-are-denied-outside-actual-capture-activation",
+        "deactivation-cancels-held-readable-and-writable-pipes-with-bounded-admitted-data",
+        "late-completion-and-old-serial-cannot-affect-a-fresh-activation-transfer",
+        "explicit-disable-revokes-clipboard-and-held-input-without-ending-the-session",
+        "live-topology-invalidation-revokes-clipboard-pipes-and-requires-fresh-capture-zones",
+        "iced-stop-retires-clipboard-pipes-and-capture-as-one-owned-session",
+        "original-public-caller-loss-retires-its-backend-session-controls-and-held-receiver",
+        "original-backend-death-cleans-held-ei-input-and-standard-frontend-session"
+      ],
+      "workers_terminal": 5
+    },
+    "native-plain-dark-01": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-plain-dark-01/summary.json",
+      "groups": 8,
+      "checks": [
+        "exact-backend-v2-wire-and-truthful-pointer-capabilities-through-standard-frontend",
+        "modern-session-does-not-start-or-connect-before-explicit-unchecked-iced-consent",
+        "legacy-public-create-translates-to-v2-create-and-start-with-real-iced-controls",
+        "public-zones-barriers-one-ei-fd-and-real-pointer-activation-release-and-reuse",
+        "public-topology-change-cleans-held-input-orders-phase-signals-and-requires-fresh-zones",
+        "iced-stop-revokes-held-capture-before-clean-local-input-and-public-session-retirement",
+        "original-public-caller-loss-retires-its-backend-session-controls-and-held-receiver",
+        "original-backend-death-cleans-held-ei-input-and-standard-frontend-session"
+      ],
+      "workers_terminal": 3
+    },
+    "native-plain-light-01": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-plain-light-01/summary.json",
+      "groups": 8,
+      "checks": [
+        "exact-backend-v2-wire-and-truthful-pointer-capabilities-through-standard-frontend",
+        "modern-session-does-not-start-or-connect-before-explicit-unchecked-iced-consent",
+        "legacy-public-create-translates-to-v2-create-and-start-with-real-iced-controls",
+        "public-zones-barriers-one-ei-fd-and-real-pointer-activation-release-and-reuse",
+        "public-topology-change-cleans-held-input-orders-phase-signals-and-requires-fresh-zones",
+        "iced-stop-revokes-held-capture-before-clean-local-input-and-public-session-retirement",
+        "original-public-caller-loss-retires-its-backend-session-controls-and-held-receiver",
+        "original-backend-death-cleans-held-ei-input-and-standard-frontend-session"
+      ],
+      "workers_terminal": 3
+    },
+    "receiver-01": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/receiver-01/summary.json",
+      "groups": 9,
+      "checks": [
+        "exact-once-worker-owned-receiver-fd-and-authenticated-owner-admission",
+        "real-captured-motion-button-scroll-frames-and-repeated-activation-share-one-ei-connection",
+        "topology-change-stops-ei-activation-and-requires-current-zones-and-barriers",
+        "receiver-device-close-retires-held-state-and-replacement-requires-explicit-enable",
+        "sender-role-denied-before-seat-and-repeated-failures-release-worker-and-compositor-slots",
+        "original-caller-loss-cleans-held-ei-input-before-child-exit-and-restores-local-input",
+        "exact-worker-sigkill-revokes-niri-interception-and-closes-the-receiver",
+        "slow-receiver-has-bounded-output-and-cannot-retain-niri-interception",
+        "backend-process-loss-leaves-child-time-to-clean-ei-held-state-and-revoke-niri"
+      ],
+      "workers_terminal": 14
+    }
+  },
+  "final_capture_workers_terminal": 30,
+  "regression_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/regressions-01.json",
+  "regression_counts": {
+    "clipboard-dark-01": 8,
+    "pointer-dark-01": 17,
+    "keyboard-dark-01": 2,
+    "clipboard-light-01": 8,
+    "pointer-light-01": 17,
+    "keyboard-light-01": 2
+  },
+  "standalone_screencast": {
+    "dark": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/screencast-dark-01/result.json",
+      "groups": 17
+    },
+    "light": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/screencast-light-01/result.json",
+      "groups": 17
+    }
+  },
+  "combined_native_groups": 143,
+  "group_count_scope": "Thirty combined Clipboard/capture groups, sixteen pointer-only baseline groups, nine private receiver groups, fifty-four Clipboard/RemoteDesktop groups and thirty-four standalone ScreenCast groups. Appearance and mode repetitions are included explicitly.",
+  "native_driver": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-regressions-01.json",
+  "tooling_followup": "/home/kevinard/projects/canopa/target/portal-input-capture-20/tooling-followup-01.json",
+  "pins": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+      "sha256": "f7d74f071dd0db2081cb56eac4a6b8f951bf66bc34fccba1c488b5cd7a5b8ab3",
+      "bytes": 196252424
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+      "sha256": "9e3e350a891f43e046527fc38f5abffdf5ab2c07834c49dc26eca27cd096b2d3",
+      "bytes": 117397928
+    },
+    "frontend": {
+      "path": "/tmp/canopa-xdp-session-canonical-13/frozen/xdg-desktop-portal",
+      "sha256": "cb35d770e84578dec58682cc2deeb0b8e2a93b1458e2371b3c0ce2036bf2a4d7",
+      "bytes": 4659800
+    },
+    "niri": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e/niri",
+      "sha256": "9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e",
+      "bytes": 158604888
+    }
+  },
+  "archives": "/home/kevinard/projects/canopa/target/portal-input-capture-20/receiver-01-archives.json",
+  "advertised": false,
+  "installed": false,
+  "storage": {
+    "phase_baseline_free_bytes": 15574827008,
+    "free_bytes": 15218552832,
+    "whole_phase_net_growth_bytes": 356274176,
+    "validation_net_growth_bytes": 229744640,
+    "native_regression_net_growth_bytes": 119283712,
+    "compressed_native_executable_bytes": 77914947,
+    "new_niri_copies_per_case": 0
+  },
+  "workspace": {
+    "last_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/workspace-01.json",
+    "status": "failed: ten Files integration failures; cause not established",
+    "rerun_this_phase": false,
+    "reason": "Portal-only production changes and native tooling; no shared crate/vendor/cross-application production edits."
+  },
+  "remaining": [
+    "real keyboard/keymap and touch capture",
+    "standard frontend stale-Release/repeated-Enable phase compatibility and companion distribution",
+    "broader startup/phase/physical/constraint/lock/device/injection/frontend/worker/UI-loss acceptance",
+    "GlobalShortcuts, Print, Usb; real Flatpak and release acceptance, including unresolved workspace failures"
+  ],
+  "history": [
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-dark-01/summary.json",
+      "result": "Thirteen public groups pass before adding explicit Disable and topology Clipboard cases."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-20/native-light-01/summary.json",
+      "result": "Thirteen public groups pass before adding explicit Disable and topology Clipboard cases."
+    }
+  ]
+}

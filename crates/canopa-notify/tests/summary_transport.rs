@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 use canopa_notify::{Daemon, DaemonOptions, NotificationInput};
 use canopa_notify_client::{MAX_SUMMARY_BYTES, SUMMARY_REQUEST, SummarySubscription};
 use std::io::{BufRead, BufReader, Write};

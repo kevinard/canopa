@@ -835,7 +835,11 @@ fn a_killed_stopped_batch_restores_both_exact_parts_and_keeps_completed_work() {
                 continue; // The real cross-filesystem Move must copy the FIFO and fail it.
             }
             let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--ignored", "--exact", "restart_paused_transfer_helper"])
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "cases::operation_transfer_resume::restart_paused_transfer_helper",
+                ])
                 .env("CANOPA_TRANSFER_RESTART_ROOT", root.path())
                 .env("CANOPA_TRANSFER_RESTART_OUTPUT", output.path())
                 .env(
@@ -935,7 +939,11 @@ fn killed_stopped_fixture(
         return None;
     }
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "restart_paused_transfer_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::operation_transfer_resume::restart_paused_transfer_helper",
+        ])
         .env("CANOPA_TRANSFER_RESTART_ROOT", root.path())
         .env("CANOPA_TRANSFER_RESTART_OUTPUT", output.path())
         .env(
@@ -976,7 +984,11 @@ fn restored_parts_survive_a_second_crash_without_replaying_the_first_handoff() {
             fs::write(&prefix, b"Edited completed prefix").unwrap();
             let before = fs::metadata(&prefix).unwrap();
             let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--ignored", "--exact", "restart_one_part_helper"])
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "cases::operation_transfer_resume::restart_one_part_helper",
+                ])
                 .env("CANOPA_TRANSFER_RESTART_ROOT", root.path())
                 .env(
                     "CANOPA_TRANSFER_RESTART_FIRST",
@@ -1345,7 +1357,11 @@ fn a_killed_active_batch_restores_both_exact_parts_and_keeps_completed_work() {
                 continue; // The real cross-filesystem Move must copy the FIFO and fail it.
             }
             let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--ignored", "--exact", "restart_active_transfer_helper"])
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "cases::operation_transfer_resume::restart_active_transfer_helper",
+                ])
                 .env("CANOPA_TRANSFER_RESTART_ROOT", root.path())
                 .env("CANOPA_TRANSFER_RESTART_OUTPUT", output.path())
                 .env(
@@ -1438,7 +1454,11 @@ fn killed_active_fixture() -> (tempfile::TempDir, tempfile::TempDir, u64) {
         .tempdir_in(std::env::current_dir().unwrap())
         .unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "restart_active_transfer_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::operation_transfer_resume::restart_active_transfer_helper",
+        ])
         .env("CANOPA_TRANSFER_RESTART_ROOT", root.path())
         .env("CANOPA_TRANSFER_RESTART_OUTPUT", output.path())
         .env("CANOPA_TRANSFER_RESTART_KIND", "Copy")

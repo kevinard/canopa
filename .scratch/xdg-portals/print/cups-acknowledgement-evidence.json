@@ -1,0 +1,593 @@
+{
+  "status": "passed-http-acknowledgement; crash-cleanup-open",
+  "scope": "Final CUPS HTTP acknowledgement fix; actual public lost-reply and isolated-worker regressions plus positive prepared printer matrix; hard-main-death CUPS cleanup explicitly remains failing",
+  "goal": "active: 11 packaged, 6 other experimental, Print opt-in",
+  "validation": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-45/worker-01.json",
+    "sha256": "3ca6470893aae0814a24fc295bf43b1167f567a447579d9d7166b95d359b200e"
+  },
+  "native": [
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-06/summary.json",
+      "sha256": "709c56ffa783f49741488230c6c37d789fb38d2c3b0dbeaae512c94e3ccae7f7",
+      "top_level_groups": 5,
+      "observed_terminal_processes": 24
+    },
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-light-04/summary.json",
+      "sha256": "89874a87ba480a31775ed41f2b187150d1b6c47b5cf03ad8a5ad6a860f7f2daa",
+      "top_level_groups": 5,
+      "observed_terminal_processes": 24
+    },
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-45/prepared-printer-dark-01/summary.json",
+      "sha256": "a77c722904946744f32dab439e723e116db306981f33eae2d2a890208260a1fb",
+      "top_level_groups": 15,
+      "observed_terminal_processes": 85
+    }
+  ],
+  "open_crash_failures": [
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-04/summary.json",
+      "sha256": "4d1ef03134a0768836c01893bd135142b9b6591393769a6dd069df7bc081e7cc",
+      "evidence": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-04/crash-gap.json",
+      "evidence_sha256": "633b0e35677c10b440f7a989e6cd134cfe5ecce784d73f09ed38ccd536cf8994",
+      "spool_sha256": "d2ec9324d31bd105a69c9e3e5b20e05e8a166930cc6f9b044f05a4b10e814da1",
+      "conclusion": "Actual main death kills worker; incomplete CUPS job remains incoming after restart. Not fixed or accepted."
+    },
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-light-02/summary.json",
+      "sha256": "ae7332f086c7bed5bfda0be8c188d46d09a9763955035257b7eda5496a2c2738",
+      "evidence": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-light-02/crash-gap.json",
+      "evidence_sha256": "6a7162000d16f5ec80f9c82e9e1a47b4c7819d572541761032ecfae6efe7435a",
+      "spool_sha256": "5905b92c8ca570c4dee67d9f492a645d448e593ee900ca004fd16472f20b2296",
+      "conclusion": "Actual main death kills worker; incomplete CUPS job remains incoming after restart. Not fixed or accepted."
+    }
+  ],
+  "changed_since_validation": [],
+  "implementation_changes": {
+    "crates/canopa-portal/src/print/worker/cups.rs": "b77965a30615041bbd1ee5d01be5941d3d2417f9343206ef7b6eb1fe30ce96e2"
+  },
+  "tests": {
+    "tests": {
+      "passed": 135,
+      "failed": 0,
+      "ignored": 11
+    },
+    "lockdown-tests": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    "portal-library": {
+      "passed": 353,
+      "failed": 0,
+      "ignored": 19
+    },
+    "portal-integration": {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "binary": {
+    "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "sha256": "221c2da2c01442954166923e1c9654a748c385899e273409b9e18fc2812cb9fe",
+    "bytes": 263358272
+  },
+  "observed_native_terminal_processes": 133,
+  "red_baseline": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-02/summary.json",
+    "sha256": "3d89fe45a0ab0b00e4c01edef5c1cb271876c94a5865af54a0970f4125e017d0",
+    "relay_snapshot": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-02/print-cups-proxy.py",
+    "sha256_snapshot": "27e55f2120490010cfe5f0455c49f08cfc80fb70dc653bade1684b4b7f748cb5",
+    "observed_false_success": [
+      {
+        "name": "lost-document-reply",
+        "response": 0,
+        "frames": null,
+        "matches": false
+      },
+      {
+        "name": "direct-lost-document-reply",
+        "response": null,
+        "frames": [
+          {
+            "event": "created",
+            "job": 4
+          },
+          {
+            "event": "accepted",
+            "job": 4
+          }
+        ],
+        "matches": false
+      }
+    ]
+  },
+  "fixture_sources": {
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/validate.py": "a3dbc359d00fd7ae3f8ac3cd404fa2a6f05aaec9f93179b4bf38b5329565837f",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/printer.py": "283e78664104c8cf07129a632b012c2505b723bff91da6e11087a0eea4d6d963",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/prepared.py": "4f705a071e8f5ebfd2854adf6e18b4ec85a58a7de05bc5a86c66a1561a06f70c",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/seal.py": "0ac736f5b9114d71d8ed5d171765a07c833bc53dd63ae136641f596ff94bf10a",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/test-print-cups-replies.py": "e0847f8b542fa3d63b7ddc40e89dea2de5c19659a95cabb3b46db0875475f39b",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/print-cups-proxy.py": "919c7d009b05e2df20ebe5fa4af205ae734d5d1746f75a721db7c50fa0d50fcb",
+    "/home/kevinard/projects/canopa/target/portal-print-45/sources/print-cups-stall.c": "ab1282968f70230e28c4060ad9f0516f45a7145a95954a34ceb31211102b62c7"
+  },
+  "packaged_print_advertised": false,
+  "startup_linkage_no_gtk_cups_qpdf": true,
+  "live_phase45_drivers": [],
+  "storage": {
+    "baseline_free_bytes": 7218839552,
+    "final_free_bytes": 7225548800,
+    "net_growth_bytes": -6709248,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "application_binary_copies": 0,
+    "new_rust_native_drivers": 0,
+    "new_native_executables": 0
+  },
+  "remaining": [
+    "Durable CUPS job ownership/cleanup after actual main death and unidentified Create-Job replies; do not disable parent-death retirement",
+    "Publication crash, remote/kernel wait and cross-restart/converter resource acceptance",
+    "Automatic Qt/live toolkit printer emission and advanced/custom-media/device/saved-instance controls",
+    "Real Flatpak/physical acceptance and runtime packaging/default Print routing",
+    "Six other experimental interfaces/compatible companions and final workspace/native/package/release gates; ten recorded Files failures"
+  ],
+  "acceptance": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-45/acceptance-01.json",
+    "sha256": "7a2f2d1d2e74ccd7eadedf821e29bb0b6fcc94f97bab8c21a1c1268dd4bfec96"
+  },
+  "observations": [
+    {
+      "source": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-dark-06/summary.json",
+      "groups": [
+        {
+          "name": "control",
+          "response": 0,
+          "job": 1,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "deliveries": 1,
+          "lost_replies": []
+        },
+        {
+          "name": "lost-create-reply",
+          "response": 2,
+          "job": 2,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 4
+          },
+          "matches": true,
+          "deliveries": 0,
+          "lost_replies": [
+            {
+              "operation": 5,
+              "http_status": 200,
+              "ipp_status": 0,
+              "forwarded": false,
+              "lost_reply": "lost-create-reply"
+            }
+          ]
+        },
+        {
+          "name": "lost-document-reply",
+          "response": 2,
+          "job": 3,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 7
+          },
+          "matches": true,
+          "deliveries": 0,
+          "lost_replies": [
+            {
+              "operation": 6,
+              "http_status": 200,
+              "ipp_status": 0,
+              "forwarded": false,
+              "lost_reply": "lost-document-reply"
+            }
+          ]
+        },
+        {
+          "name": "fresh-after-errors",
+          "response": 0,
+          "job": 4,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "deliveries": 1,
+          "lost_replies": []
+        },
+        {
+          "name": "repeatable-worker-reply-regression",
+          "cases": [
+            {
+              "name": "forwarded",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "created",
+                  "job": 5
+                },
+                {
+                  "event": "accepted",
+                  "job": 5
+                }
+              ]
+            },
+            {
+              "name": "lost-create",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "failed",
+                  "message": "Print job creation was not acknowledged"
+                }
+              ]
+            },
+            {
+              "name": "lost-document",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "created",
+                  "job": 7
+                },
+                {
+                  "event": "failed",
+                  "message": "Final print acceptance was not acknowledged; do not retry automatically"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "/home/kevinard/projects/canopa/target/portal-print-45/public-printer-light-04/summary.json",
+      "groups": [
+        {
+          "name": "control",
+          "response": 0,
+          "job": 1,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "deliveries": 1,
+          "lost_replies": []
+        },
+        {
+          "name": "lost-create-reply",
+          "response": 2,
+          "job": 2,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 4
+          },
+          "matches": true,
+          "deliveries": 0,
+          "lost_replies": [
+            {
+              "operation": 5,
+              "http_status": 200,
+              "ipp_status": 0,
+              "forwarded": false,
+              "lost_reply": "lost-create-reply"
+            }
+          ]
+        },
+        {
+          "name": "lost-document-reply",
+          "response": 2,
+          "job": 3,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 7
+          },
+          "matches": true,
+          "deliveries": 0,
+          "lost_replies": [
+            {
+              "operation": 6,
+              "http_status": 200,
+              "ipp_status": 0,
+              "forwarded": false,
+              "lost_reply": "lost-document-reply"
+            }
+          ]
+        },
+        {
+          "name": "fresh-after-errors",
+          "response": 0,
+          "job": 4,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "deliveries": 1,
+          "lost_replies": []
+        },
+        {
+          "name": "repeatable-worker-reply-regression",
+          "cases": [
+            {
+              "name": "forwarded",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "created",
+                  "job": 5
+                },
+                {
+                  "event": "accepted",
+                  "job": 5
+                }
+              ]
+            },
+            {
+              "name": "lost-create",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "failed",
+                  "message": "Print job creation was not acknowledged"
+                }
+              ]
+            },
+            {
+              "name": "lost-document",
+              "exit_code": 0,
+              "frames": [
+                {
+                  "event": "created",
+                  "job": 7
+                },
+                {
+                  "event": "failed",
+                  "message": "Final print acceptance was not acknowledged; do not retry automatically"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "/home/kevinard/projects/canopa/target/portal-print-45/prepared-printer-dark-01/summary.json",
+      "groups": [
+        {
+          "name": "pdf-control-1-one-sided-False",
+          "copies": 1,
+          "sides": "one-sided",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-1-one-sided-False",
+          "copies": 1,
+          "sides": "one-sided",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-1-two-sided-long-edge-True",
+          "copies": 1,
+          "sides": "two-sided-long-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-2-one-sided-False",
+          "copies": 2,
+          "sides": "one-sided",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-2-two-sided-long-edge-True",
+          "copies": 2,
+          "sides": "two-sided-long-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-2-two-sided-long-edge-False",
+          "copies": 2,
+          "sides": "two-sided-long-edge",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-2-two-sided-short-edge-True",
+          "copies": 2,
+          "sides": "two-sided-short-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "ps-2-two-sided-short-edge-False",
+          "copies": 2,
+          "sides": "two-sided-short-edge",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-1-one-sided-False",
+          "copies": 1,
+          "sides": "one-sided",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-1-two-sided-long-edge-True",
+          "copies": 1,
+          "sides": "two-sided-long-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-2-one-sided-False",
+          "copies": 2,
+          "sides": "one-sided",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-2-two-sided-long-edge-True",
+          "copies": 2,
+          "sides": "two-sided-long-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-2-two-sided-long-edge-False",
+          "copies": 2,
+          "sides": "two-sided-long-edge",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-2-two-sided-short-edge-True",
+          "copies": 2,
+          "sides": "two-sided-short-edge",
+          "collate": true,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        },
+        {
+          "name": "svg-2-two-sided-short-edge-False",
+          "copies": 2,
+          "sides": "two-sided-short-edge",
+          "collate": false,
+          "response": 0,
+          "scheduler": {
+            "copies": 1,
+            "job-state": 9
+          },
+          "matches": true,
+          "received_mime": "application/pdf"
+        }
+      ]
+    }
+  ],
+  "crash_job_records": [
+    {
+      "scope": "failed full-main-death-during-Send-Document audit; not acceptance",
+      "raw_receipt": "target/portal-print-45/public-printer-dark-04/summary.json",
+      "retained_spool": "target/portal-print-45/public-printer-dark-04/spool/c00005",
+      "job": {
+        "job-id": 5,
+        "job-name": "crash-during-document",
+        "job-state": 4,
+        "job-state-reasons": "job-incoming"
+      },
+      "limitation": "main-death KILL retires worker without RAII cancellation; restarted backend does not retire this held CUPS job"
+    },
+    {
+      "scope": "failed full-main-death-during-Send-Document audit; not acceptance",
+      "raw_receipt": "target/portal-print-45/public-printer-light-02/summary.json",
+      "retained_spool": "target/portal-print-45/public-printer-light-02/spool/c00005",
+      "job": {
+        "job-id": 5,
+        "job-name": "crash-during-document",
+        "job-state": 4,
+        "job-state-reasons": "job-incoming"
+      },
+      "limitation": "main-death KILL retires worker without RAII cancellation; restarted backend does not retire this held CUPS job"
+    }
+  ]
+}

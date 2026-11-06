@@ -1,0 +1,159 @@
+{
+  "status": "scoped-worker-and-stock-filter-verification",
+  "goal": "active-full-eighteen-interface-scope",
+  "print": "opt-in",
+  "qt": "automatic-integration-deferred",
+  "binary_sha256": "47003b288279ff8bc3855005d783715b30198a6c15327624f9dd5f4639116b3b",
+  "cups_client_sha256": "903123580ada3470849a7c856ea56ab0d7405f0133ed3d11acbcd860cc01fb02",
+  "checks": {
+    "library": 439,
+    "integration": 55,
+    "public_ppd": 1,
+    "annotation_cases_current": 12,
+    "prepared_geometry_groups": 3,
+    "current_native_pipelines": [
+      28,
+      29,
+      30
+    ],
+    "prior_paper_candidate_pipelines": [
+      22,
+      23,
+      24,
+      25,
+      26,
+      27
+    ],
+    "host_reports": 39,
+    "host_recorded_identities_absent": 520
+  },
+  "receipts": {
+    "target/portal-print-71/submission-build-03.json": {
+      "sha256": "7840086493a010884eff33477affb080a2b54a4329933bb0d295294da533c04d",
+      "status": "built-strict-checks-passed-tests-pending"
+    },
+    "target/portal-print-71/submission-tests-03.json": {
+      "sha256": "52ae1f62a9019ca5f8555e5c4737ecef27c2a5b87826900f097923a44e9b122d",
+      "status": "passed"
+    },
+    "target/portal-print-71/stock-paper-matrix-01.json": {
+      "sha256": "7f394bbd675dabda7a66f68ae5cd380568a2ea3ac27016b34d51d8c29e75c18c",
+      "status": "passed"
+    },
+    "target/portal-print-71/annotation-build-01.json": {
+      "sha256": "07a13dbf6b249f487d6a64d376c8dc62ae43057c5455c4b643f74e4e0df6c98b",
+      "status": "built-strict-checks-passed-tests-pending"
+    },
+    "target/portal-print-71/annotation-tests-01.json": {
+      "sha256": "9b64c034a8c865b22a47f0490f1b35f4c17e407be7d830f9a42c6790b5cdb52f",
+      "status": "failed"
+    },
+    "target/portal-print-71/annotation-tests-02.json": {
+      "sha256": "52e031dd3888352680ff5305fd76ab78b342a5998892fed6b51e4c1d758efc41",
+      "status": "passed"
+    },
+    "target/portal-print-71/annotation-contract-01/summary.json": {
+      "sha256": "863b5819aed9f2f0cbc33d1a2da2bb9093ea84872d0ca3ac17356732db70c07d",
+      "status": "failed"
+    },
+    "target/portal-print-71/annotation-contract-02/summary.json": {
+      "sha256": "c71e83941f5cb9f23b44bb0a70bf224894bca4ad41adb19d92ed64d2e6ff9d9c",
+      "status": "passed"
+    },
+    "target/portal-print-71/annotation-geometry-red-01/summary.json": {
+      "sha256": "a818685392665863faf3ce8a8d4e55a42f70a56adbf1cbadcb2f6d5d39d8e7de",
+      "status": "failed"
+    },
+    "target/portal-print-71/geometry-build-01.json": {
+      "sha256": "ad6c4bdc174c390925e32db009c99226bbb4f0b9b118beaeca91895c1b099e99",
+      "status": "built-strict-checks-passed-tests-pending"
+    },
+    "target/portal-print-71/geometry-tests-01.json": {
+      "sha256": "94fba5f46254883bbbe8b2088b1da9a5ee18ab7fa98bcea2c441be943ffbb58c",
+      "status": "passed"
+    },
+    "target/portal-print-71/annotation-geometry-green-01/summary.json": {
+      "sha256": "574ece5227c9a9118621e44f6c24ee26c51cd5e546512a2e5f9a4e3a4e869d6f",
+      "status": "passed"
+    },
+    "target/portal-print-71/annotation-geometry-a4-green-01/summary.json": {
+      "sha256": "ee2e99bce3dc6037ec98108da160303ef2ddaf47a311fd34e00a4d0af32e7a00",
+      "status": "passed"
+    },
+    "target/portal-print-71/prepared-geometry-01/summary.json": {
+      "sha256": "0df001c86b9cc7ec6784ba1eee0f7a2c4659fe292dd21c5ca70967f6819e6e22",
+      "status": "passed"
+    },
+    "target/portal-print-71/prepared-paper-matrix-01.json": {
+      "sha256": "dcadaf8ff60d54c1b2eca36de6f43032df0ac02b26984174705a29159fad8da2",
+      "status": "passed"
+    },
+    "target/portal-print-71/pipeline-host-audit-02.json": {
+      "sha256": "9786653325f30388b832faed0c75234cad598c11071d276701297457f96d4269",
+      "status": "passed"
+    },
+    "target/portal-print-71/source-guard-paper-appearance-01.json": {
+      "sha256": "15b3299568fbc1a691df7477f570cec97ce4ee0115a44d69518a42aa68e8cecf",
+      "status": "passed-runtime-source-continuity-with-documentation-updates"
+    },
+    "target/portal-print-71/annotation-normal-archive-01.json": {
+      "sha256": "3d30f31b73e53734b732923052abee58d6714774812bc6da31c6abc0825e0a28",
+      "status": "lossless-baseline-verified-original-raw-preserved"
+    },
+    "target/portal-print-71/annotation-harness-archive-01.json": {
+      "sha256": "7566dcec0311ed50d9ee23c21f3164a1e9a2744508323ea472710c2581f956db",
+      "status": "lossless-baseline-verified-original-raw-preserved"
+    },
+    "target/portal-print-71/paper-normal-archive-01.json": {
+      "sha256": "be011eb16c6326a7f1bd9b59b4363448cce4d823eff5ecb03311fd853daf3bf7",
+      "status": "lossless-baseline-verified-original-raw-preserved"
+    },
+    "target/portal-print-71/paper-harness-archive-01.json": {
+      "sha256": "7546cafd05b16eb6a9897d3ef20408b645f85d99b839a95be769e2890f487d6a",
+      "status": "lossless-baseline-verified-original-raw-preserved"
+    },
+    "target/portal-print-71/normalizer-precision-02/summary.json": {
+      "sha256": "dc6ed39a3501012620373ea5e5bf45ea6ce0ce09f81f0884280eec1d66573b99",
+      "status": "observations"
+    },
+    "target/portal-print-71/prepared-annotations-01/summary.json": {
+      "sha256": "848e05eca966f4205069eaacd342dbfa4c7df484187e51e9405cf61b36a6946c",
+      "status": "observed"
+    }
+  },
+  "source_only_replay": {
+    ".scratch/xdg-portals/print/paper-appearance-replay/archive-baseline.py": "c597f5a35f1cdd9ec51e0e2f7844f748da9a694a70011ea16f3e4f1551aa6f24",
+    ".scratch/xdg-portals/print/paper-appearance-replay/audit-processes-02.py": "bec1c85188f009599cf14fbcaa7db7581fb182b29f901a5dc1e42bf704fc3fff",
+    ".scratch/xdg-portals/print/paper-appearance-replay/build-annotations.py": "d6c979f31c2c9a64f64f22709b3ce69491776529cf7a5d5df2478afb432c9fe8",
+    ".scratch/xdg-portals/print/paper-appearance-replay/build-geometry.py": "3f2f7a368243a4fbb56b8f6d351cba47083730c081bb9d2c03bdc3794a39f54b",
+    ".scratch/xdg-portals/print/paper-appearance-replay/check-paper-content.py": "2e0b51a0f2701635e9d8bffd08ee9c920ea165f43b2c1fa228704fa2514d4e60",
+    ".scratch/xdg-portals/print/paper-appearance-replay/driverless-pipeline.py": "73b00df1fa185c336f4acb9bede0e19b34dbd5ffeaaab239742aa74bbe6dd487",
+    ".scratch/xdg-portals/print/paper-appearance-replay/prepared-geometry-matrix.py": "11e2b1e3ce645486735d3d2e792c520636c7a12f346285c9078651ec76488acc",
+    ".scratch/xdg-portals/print/paper-appearance-replay/prepared-paper-matrix.py": "c3b70f1ff80c7557c7b7d900c3d30d7393390206c33086a20ea6f7fe20189c9c",
+    ".scratch/xdg-portals/print/paper-appearance-replay/render-annotation.py": "e13fef9de16f9836b0fbbcc7728b415c478520451ed8f258b7a03ee7581f25ec",
+    ".scratch/xdg-portals/print/paper-appearance-replay/runtime_probe.py": "66984165c9ea711619c8c5cdddec96755570f59a2c1e6ede30d21dac8870af62",
+    ".scratch/xdg-portals/print/paper-appearance-replay/scheduler-job.py": "64ed38d5e08c00f7571e51e23b774f3572803aa7fb77843d041aca6cd67d7242",
+    ".scratch/xdg-portals/print/paper-appearance-replay/stock-paper-matrix.py": "fb104a6ca01daea434dda51c568c66e49511ab31b7e7876604824b2d4e76240c",
+    ".scratch/xdg-portals/print/paper-appearance-replay/verify-annotations-02.py": "9c45071900f178f468015f7fd240b7da0678024e40d584296827284cf20b2098",
+    ".scratch/xdg-portals/print/paper-appearance-replay/verify-annotations.py": "e788b84092b8897175311e7b4b2c0b0eea23233958f5befa7210ee44ae72feb9",
+    ".scratch/xdg-portals/print/paper-appearance-replay/verify-geometry.py": "8fd26dad088d72d6568d3f186c81a98c180f9834428bef712b3add7b095933e3"
+  },
+  "remaining": [
+    "Public frontend and Iced revalidation for latest PDF normalization",
+    "Maintain and verify corrected receiver source provenance before final device gate",
+    "Advanced device delivery and broader connection compatibility",
+    "Actual Flatpak, release and deployment acceptance",
+    "Physical-printer acceptance",
+    "Earlier workspace Files failures and six experimental-interface gates"
+  ],
+  "non_adopted": [
+    "diagnostic libppd patch and prototype library",
+    "system CUPS or routing changes"
+  ],
+  "storage": {
+    "free_bytes": 5684334592,
+    "reused_root_incremental_debug": true,
+    "per_case_elf_copies": false,
+    "verified_lossless_baselines": true
+  }
+}

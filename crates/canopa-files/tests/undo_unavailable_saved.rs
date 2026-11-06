@@ -486,7 +486,11 @@ fn restarting_a_killed_source_only_return_keeps_saved_restoration_and_older_copy
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_source_only_return_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_unavailable_saved::crash_source_only_return_helper",
+        ])
         .env("CANOPA_FILES_SAVED_RETURN_ROOT", root.path())
         .status()
         .unwrap();

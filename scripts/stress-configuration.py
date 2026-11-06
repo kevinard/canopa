@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repeat the compiled configuration suite with bounded, optional CPU contention.
 
-Build first: bash scripts/test-notify.sh --test configuration_intake --no-run
+Build first: bash scripts/test-notify.sh --test integration --no-run
 Pass its executable path from Cargo's output. Each run uses a fresh private bus.
 """
 
@@ -46,7 +46,7 @@ def main():
             before = pressure()
             start = time.monotonic()
             with (args.artifacts / f'run-{index + 1}.log').open('w') as log:
-                child = subprocess.Popen(['dbus-run-session', '--', str(binary), '--nocapture'],
+                child = subprocess.Popen(['dbus-run-session', '--', str(binary), 'configuration_intake::', '--nocapture'],
                                          stdout=log, stderr=subprocess.STDOUT,
                                          start_new_session=True)
                 code = 'interrupted'

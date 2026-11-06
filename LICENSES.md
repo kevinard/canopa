@@ -19,5 +19,18 @@ The combined repository preserves the original source licenses:
 - The optional Niri source-overlay recipe preserves Niri's GPL-3.0-or-later and
   Smithay's MIT texts in `vendor/source-overlays/niri-source-cancellation/`.
   Its companion executable is built separately from the Canopa applications.
+- The optional private CUPS client preserves the upstream Apache-2.0 license and
+  CUPS exceptions in `vendor/source-overlays/cups-authentication/LICENSE` and
+  `NOTICE`. Bundles containing this modified client include those original texts,
+  a modification summary and its complete source patches under
+  `share/licenses/canopa-print-cups/`. Its system dependencies retain their
+  distribution notices.
+- The test-only CUPS IPP receiver overlay references those same original CUPS
+  LICENSE/NOTICE assets. Its source patch is under
+  `vendor/source-overlays/cups-ipp-receiver/`; its builder installs nothing.
+- The optional matching CUPS IPP backend shares those original LICENSE/NOTICE
+  assets. Bundles containing it retain them, a modification summary and complete
+  `resolution.patch` under `share/licenses/canopa-print-ipp-backend/`. Staging the
+  component configures no CUPS service or printer queue.
 
 Moving code into the shared workspace does not change its existing license.

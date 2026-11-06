@@ -45,6 +45,7 @@ impl NotificationServerRequest {
             app_icon: NotificationVisualReference::from_sender_reference(&app_icon),
             summary,
             body,
+            body_format: Default::default(),
             expire_timeout: NotificationTimeout::from_freedesktop_expire_timeout(expire_timeout),
             urgency: urgency_hint(&hints),
             actions: notification_actions(actions, action_icons),

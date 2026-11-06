@@ -1,0 +1,111 @@
+{
+  "status": "passed-scoped",
+  "acceptance": {
+    "path": "target/portal-print-42/acceptance-01.json",
+    "sha256": "3cf5d051614d4bfb0a3ea6e6c549e1d40e6ee4c861e3254d2a8984716a636627"
+  },
+  "implementation_changes": {
+    "crates/canopa-portal/src/print/render/plan/tests.rs": "c092eedd79b54d7ef84f19563b3d36d5dac5023abb302a3ae4c001b8c4bd6ab6",
+    "crates/canopa-portal/src/print/render/plan.rs": "8f629f0e55ba0bca65ae5a8fdeb5019e74818fbdd96032191f1ee9b35b7a7b06",
+    "crates/canopa-portal/src/print_recovery_ui/view.rs": "0c994647f7667855e3cbd06ac16e825d35674070c39344d4e0ec4cc221b3a6a6"
+  },
+  "binary": {
+    "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "sha256": "d5c524b775be7fcbfd595624b6ec503924a13ddb6b62b5bf94aefc3db4eeb440",
+    "bytes": 262129544
+  },
+  "tests": {
+    "tests": {
+      "passed": 134,
+      "failed": 0,
+      "ignored": 11
+    },
+    "lockdown-tests": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    "portal-library": {
+      "passed": 352,
+      "failed": 0,
+      "ignored": 19
+    },
+    "portal-integration": {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "native": [
+    {
+      "name": "layout-03",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-42/layout-03/summary.json",
+      "sha256": "3066f15e51948c6083feb72445856a3bb1b5efe94b8f8eceeb76af44ae133f10",
+      "observed_terminal_processes": 142,
+      "groups": 36
+    },
+    {
+      "name": "prepared-01",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-42/prepared-01/summary.json",
+      "sha256": "254f1a88a2753a1a41f17956c20baa248ba75c7c7bbc41a09ccd67ab034e2f1c",
+      "observed_terminal_processes": 29,
+      "groups": 6
+    },
+    {
+      "name": "folder-dark-04",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-42/folder-dark-04/summary.json",
+      "sha256": "5c6a3e4b4b7d10767ba5202994f0f9201927db812e55aece0198957bf880bca8",
+      "observed_terminal_processes": 9,
+      "groups": null
+    },
+    {
+      "name": "folder-light-02",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-42/folder-light-02/summary.json",
+      "sha256": "3c1d28c9369df142a99b2d1c8d81bac2ca49c43a2adfae256573f902d8951479",
+      "observed_terminal_processes": 9,
+      "groups": null
+    }
+  ],
+  "layout": {
+    "groups": 36,
+    "measured_gtk_references": 22,
+    "corner_maps": 8,
+    "physical_pdf_geometry": true,
+    "reference_reuse": {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-42/layout-02/summary.json",
+      "sha256": "a68f90d83ade0d67be84dc7038a5c9b6940429e42cc6398e82002d8c2e30f1eb",
+      "reused": 22
+    }
+  },
+  "prepared": {
+    "groups": 6,
+    "formats": [
+      "ps",
+      "svg"
+    ],
+    "scope": "actual GTK client via private measurement frontend; controlled retained approval to real Production/native worker; exact new/replacement bytes and mismatched output refusal; public/Iced/CUPS paths remain separate"
+  },
+  "observed_native_terminal_processes": 189,
+  "storage": {
+    "baseline_free_bytes": 6964817920,
+    "final_free_bytes": 7333756928,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "application_binary_copies": 0,
+    "new_rust_native_drivers": 0,
+    "new_native_executables": 0,
+    "net_growth_bytes": -368939008
+  },
+  "remaining": [
+    "Public/toolkit PS/SVG and printer delivery",
+    "Advanced/custom media/device/saved-instance controls",
+    "Full backend death/power-loss and actual stalled remote/kernel filesystem acceptance",
+    "Cross-restart quotas and converter descendant accounting",
+    "Ambiguous CUPS Create-Job/Send-Document acceptance",
+    "Real Flatpak/physical-device acceptance and runtime packaging/Print advertisement",
+    "Six experimental portals and compatible companion distribution",
+    "Full workspace/native/packaging/release/routing gates and ten recorded Files integration failures"
+  ],
+  "scope": "Print ordered ranges, embedded recovery scrollbars, actual Files handoff and prepared PS/SVG controlled file delivery; not full workspace/release/Print registration",
+  "goal": "active: 11 packaged, 6 experimental, Print unfinished/unregistered"
+}

@@ -168,7 +168,7 @@ fn a_new_volume_store_is_observed_without_manual_refresh() {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "catalog_mount_helper",
+            "cases::trash_catalog::catalog_mount_helper",
             "--ignored",
             "--nocapture",
         ])

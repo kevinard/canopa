@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "canopa-panel-protocol"
 version = "0.1.0"
 edition = "2024"
@@ -7,6 +8,10 @@ license = "MIT"
 [features]
 default = []
 tokio = ["dep:tokio"]
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

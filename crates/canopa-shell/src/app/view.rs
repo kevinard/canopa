@@ -11,6 +11,9 @@ impl App {
         if let Some(perf) = &self.perf {
             perf.record_view(window);
         }
+        if let Some(wallpaper) = self.wallpaper.view(window) {
+            return wallpaper;
+        }
 
         if self.foreground.is_dismissal_window(window) {
             return Space::new().width(Length::Fill).height(Length::Fill).into();

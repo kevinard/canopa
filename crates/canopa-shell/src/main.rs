@@ -16,6 +16,7 @@ mod modules;
 mod niri;
 mod surface;
 mod theme;
+mod wallpaper;
 
 use app::App;
 use app::eligible_outputs::EligibleOutputState;
@@ -28,6 +29,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
         cli::Command::Reload => "reload",
+        cli::Command::Lock => "lock",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
@@ -44,6 +46,12 @@ fn main() {
     match command {
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::Reload => std::process::exit(run_reload_cli()),
+        cli::Command::Lock => {
+            if let Err(error) = wallpaper::lock() {
+                eprintln!("canopa-shell: failed to start Swaylock: {error}");
+                std::process::exit(1);
+            }
+        }
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),
         cli::Command::ToggleMenu(name) => std::process::exit(run_menu_cli(name, true)),

@@ -15,6 +15,7 @@ pub use v4::{InteractionEvent as RichEvent, PanelContent as RichContent};
 pub const PROTOCOL_VERSION: u16 = 5;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const MAX_EVENT_BYTES: usize = 64 * 1024;
+pub const MAX_ACTIVATION_TOKEN_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "body", rename_all = "snake_case")]
@@ -74,6 +75,8 @@ pub enum HostMessage {
         protocol_version: u16,
         revision: u64,
         interaction: Interaction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        activation_token: Option<String>,
     },
     Close {
         protocol_version: u16,
@@ -86,7 +89,17 @@ impl HostMessage {
             protocol_version: PROTOCOL_VERSION,
             revision,
             interaction,
+            activation_token: None,
         }
+    }
+    pub fn with_activation_token(mut self, token: Option<String>) -> Self {
+        if let Self::Event {
+            activation_token, ..
+        } = &mut self
+        {
+            *activation_token = token;
+        }
+        self
     }
     pub fn close() -> Self {
         Self::Close {
@@ -101,6 +114,16 @@ impl HostMessage {
             | Self::Close { protocol_version } => *protocol_version,
         };
         version_check(version)?;
+        if let Self::Event {
+            activation_token: Some(token),
+            ..
+        } = self
+            && (token.is_empty()
+                || token.len() > MAX_ACTIVATION_TOKEN_BYTES
+                || token.contains('\0'))
+        {
+            return Err(ProtocolError::UnexpectedMessage);
+        }
         if matches!(
             self,
             Self::Event { revision: 0, .. }

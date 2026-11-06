@@ -52,6 +52,48 @@ describes desktop-name precedence. Restart the portal frontend or log in again t
 apply selection changes, at a time when no portal dialogs or capture sessions are
 needed. Canopa never changes this selection automatically.
 
+### Generate a complete configuration for review
+
+The release also includes `bin/canopa-portal-config`, an offline helper requiring
+Python 3.10 or newer and its standard library. It reads the Canopa descriptors
+under the same installation prefix. Use `--portal-dir DIRECTORY` for another
+descriptor layout. The descriptors must also be installed where the frontend
+searches for backends; generating a file does not install or activate anything.
+
+Choose the complete configuration currently selected for your Niri session as
+the base. This might be an existing user override or the distribution's
+`niri-portals.conf`. From an extracted bundle:
+
+```sh
+bin/canopa-portal-config --base CURRENT_SESSION_CONFIG \
+  --output /tmp/niri-portals.conf.canopa
+diff -u CURRENT_SESSION_CONFIG /tmp/niri-portals.conf.canopa
+```
+
+The default selects Settings and FileChooser. It preserves the existing default,
+other interface routes and comments, and retains the configured fallbacks after
+Canopa. A selected route containing `none` is replaced with Canopa alone: `none`
+disables the entire backend list, rather than acting as a fallback. Unselected
+disabled routes stay disabled. `--output` creates a new file and refuses to overwrite anything. Without
+it, the generated configuration goes to standard output. Nothing changes in the
+live session. After reviewing it, install the complete file at the appropriate
+user configuration path and apply it using the restart guidance above.
+
+Use `bin/canopa-portal-config --list` to see interfaces advertised by these
+descriptors. Repeated `--interface` options choose exactly the requested set:
+
+```sh
+bin/canopa-portal-config --base CURRENT_SESSION_CONFIG \
+  --interface Settings --interface FileChooser --interface Notification \
+  --output /tmp/niri-portals.conf.canopa
+```
+
+Notification uses its separate `canopa-notify` backend. Optional sharing/input
+interfaces require the extended descriptors and compatible companions described
+in the [desktop-sharing guide](desktop-sharing.md). The helper does not infer
+runtime support or make Print a default. See the
+[configuration decision](adr/0115-explicit-portal-configuration.md).
+
 ## Reload and verification
 
 After editing the common file, reload the running backend:

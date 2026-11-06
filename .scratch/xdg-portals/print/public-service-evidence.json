@@ -1,0 +1,102 @@
+{
+  "status": "passed-scoped",
+  "acceptance": {
+    "path": "target/portal-print-43/acceptance-01.json",
+    "sha256": "fd1a53bb2e8efee1ccf322ea63958377d3f953f2021d54eb01814de6d98b5032"
+  },
+  "scope": "Opt-in Print in the actual normal backend; public PS/SVG file/token/Iced and source-snapshot main-death/restart acceptance; not stable advertisement/full workspace/physical or transaction-crash acceptance",
+  "implementation_changes": {
+    "crates/canopa-portal/src/main.rs": "ede331fc54c1d3debe8502c927818dfb158bb26d57d44d5aae5bca456fb40ba6"
+  },
+  "binary": {
+    "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "sha256": "1babd4c55c9ccff44c2edc97c5db9209c68c1fdd6e735adb022fe0e6361a2359",
+    "bytes": 263358448
+  },
+  "tests": {
+    "tests": {
+      "passed": 134,
+      "failed": 0,
+      "ignored": 11
+    },
+    "lockdown-tests": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    "portal-library": {
+      "passed": 352,
+      "failed": 0,
+      "ignored": 19
+    },
+    "portal-integration": {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "native": [
+    {
+      "name": "public-normal-dark-01",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-43/public-normal-dark-01/summary.json",
+      "sha256": "de6e967528a35287b39f3755b243ba5a2706739c1e86b7e70782a7882f38d4a8",
+      "observed_terminal_processes": 26,
+      "groups": 12
+    },
+    {
+      "name": "public-normal-light-01",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-43/public-normal-light-01/summary.json",
+      "sha256": "2340d43a6331bd5b48c6850099d01e7598df4f277f86828a2e5e4c1f4c4ef156",
+      "observed_terminal_processes": 24,
+      "groups": 12
+    },
+    {
+      "name": "crash-normal-dark-02",
+      "path": "/home/kevinard/projects/canopa/target/portal-print-43/crash-normal-dark-02/summary.json",
+      "sha256": "9e5d484f3d8703b31882b63c764dfd795466c53edaa4d30486e041792d9c94b0",
+      "observed_terminal_processes": 15,
+      "groups": 5
+    }
+  ],
+  "default_print_registered": false,
+  "explicit_print_registered": true,
+  "packaged_print_advertised": false,
+  "cli": {
+    "help_has_opt_in": true,
+    "recovery_conflict_exit": 2
+  },
+  "source_crash": {
+    "appearance": "dark",
+    "name": "full-backend-loss-during-source-snapshot",
+    "backend_pid": 2160661,
+    "backend_exit": -9,
+    "worker_pid": 2160832,
+    "worker_terminal": true,
+    "response": 2,
+    "original_sha256": "94204fce921ef6115bd63f912c96c9e62bf7132f93b42ce6ef63dc793a84324c",
+    "same_old_inode": true,
+    "no_publication_entry": true
+  },
+  "observed_native_terminal_processes": 65,
+  "storage": {
+    "baseline_free_bytes": 7333220352,
+    "final_free_bytes": 7314591744,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "application_binary_copies": 0,
+    "new_rust_native_drivers": 0,
+    "new_native_executables": 0,
+    "net_growth_bytes": 18628608
+  },
+  "remaining": [
+    "Prepared PS/SVG printer delivery and Qt automatic-client acceptance",
+    "Advanced/custom media/device/saved-instance controls",
+    "Full-main death during publication/CUPS transactions, power-loss and actual stalled remote/kernel filesystem acceptance",
+    "Cross-restart quotas and converter descendant accounting",
+    "Ambiguous CUPS Create-Job/Send-Document acceptance",
+    "Real Flatpak/physical-device acceptance and runtime packaging/default Print advertisement",
+    "Six experimental portals and compatible companion distribution",
+    "Full workspace/native/packaging/release/routing gates and ten recorded Files integration failures"
+  ],
+  "goal": "active: 11 packaged, 6 experimental, Print opt-in/under development/unadvertised"
+}

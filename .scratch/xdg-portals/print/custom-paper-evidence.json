@@ -1,0 +1,211 @@
+{
+  "status": "verified-scoped-custom-paper-cups-approval; physical-precision-open",
+  "binary": {
+    "path": "target/debug/xdg-desktop-portal-canopa",
+    "sha256": "26ad253179ec35df72220789c42a62d199f588abe4b7836e22ada687cf621434"
+  },
+  "validation": {
+    "receipt": {
+      "path": "target/portal-print-50/worker-04.json",
+      "sha256": "2ef1f99b4ebe418a5436abf952020c5c45a21628c6e549d163852bc1076620dd"
+    },
+    "checks": {
+      "tests": {
+        "passed": 152,
+        "ignored": 11,
+        "output": {
+          "path": "target/portal-print-50/worker-04-tests.out",
+          "sha256": "a5bb2c8366bdf498b52907bc9de0cf78b069c341126ffbb057bd18c3ec339a50"
+        }
+      },
+      "lockdown-tests": {
+        "passed": 12,
+        "ignored": 0,
+        "output": {
+          "path": "target/portal-print-50/worker-04-lockdown-tests.out",
+          "sha256": "44d636551cdb2263e70f37ea8ecfe8de9f0b6127702fc0c0f7044d89563845f7"
+        }
+      },
+      "portal-library": {
+        "passed": 370,
+        "ignored": 19,
+        "output": {
+          "path": "target/portal-print-50/worker-04-portal-library.out",
+          "sha256": "47185c5997283c6446d09d4b338480d783874632fd8c16b47367d48e216cdbd5"
+        }
+      },
+      "portal-integration": {
+        "passed": 55,
+        "ignored": 2,
+        "output": {
+          "path": "target/portal-print-50/worker-04-portal-integration.out",
+          "sha256": "aa3aa9d0926a1db40a04cb0ac759eb35d41c49c7f949223ea75acd807a480575"
+        }
+      }
+    },
+    "format": "passed",
+    "clippy": "strict workspace/all-target passed",
+    "full_workspace_execution": false
+  },
+  "sources": {
+    "path": "target/portal-print-50/candidate-04-sources.json",
+    "sha256": "17894b46402f8090af85b8711fe40575ae168dd3e1c8af704da856bf454d07af"
+  },
+  "source_files": [
+    "crates/canopa-portal/src/print/worker.rs",
+    "crates/canopa-portal/src/print/worker/catalog.rs",
+    "crates/canopa-portal/src/print/worker/client.rs",
+    "crates/canopa-portal/src/print/worker/client/task.rs",
+    "crates/canopa-portal/src/print/worker/cups.rs",
+    "crates/canopa-portal/src/print/worker/cups/discovery.rs",
+    "crates/canopa-portal/src/print/worker/cups/media.rs",
+    "crates/canopa-portal/src/print_ui.rs",
+    "crates/canopa-portal/src/print_ui/draft.rs",
+    "crates/canopa-portal/src/print_ui/tests.rs",
+    "crates/canopa-portal/src/print_ui/view.rs"
+  ],
+  "native": {
+    "dark_successful_subset": {
+      "receipt": {
+        "path": "target/portal-print-50/custom-paper-dark-06/summary.json",
+        "sha256": "c6aa8cee53db7d65ff8a4a0a44367a80cbfeba91c6e9bf9e2a2d244ab4f94c9a"
+      },
+      "accepted_groups": [
+        "exact-worker-custom-geometry",
+        "unsupported-below-minimum",
+        "unsupported-above-maximum",
+        "pre-create-changed-margins",
+        "pre-create-conflicting-named-sheet",
+        "iced-blocks-needs-size-check",
+        "iced-blocks-out-of-range",
+        "iced-blocks-edited-unchecked",
+        "iced-blocks-changed-after-confirmation",
+        "public-direct-custom-paper",
+        "saved-instance-custom-default",
+        "actual-gtk-prepared-saved-custom"
+      ],
+      "whole_receipt_status": "failed; final Qt blanket-mm assertion retained"
+    },
+    "dark_continuation": {
+      "receipt": {
+        "path": "target/portal-print-50/custom-paper-dark-07/summary.json",
+        "sha256": "071922dddb357f397c5d928a1cba747da50dfe4f6e4984c1a324371f314df9e7"
+      },
+      "groups": [
+        "exact-worker-custom-geometry",
+        "saved-instance-custom-default",
+        "actual-explicit-qt-prepared-saved-custom",
+        "saved-printer-default-concrete-geometry",
+        "prepare-print-custom-capability-change-before-create"
+      ]
+    },
+    "light_full": {
+      "receipt": {
+        "path": "target/portal-print-50/custom-paper-light-02/summary.json",
+        "sha256": "e06b6861ac2d18d099e04984e3fc901e0044114aa6c60dfe38f58205c5a03ee5"
+      },
+      "groups": [
+        "exact-worker-custom-geometry",
+        "unsupported-below-minimum",
+        "unsupported-above-maximum",
+        "pre-create-changed-margins",
+        "pre-create-conflicting-named-sheet",
+        "iced-blocks-needs-size-check",
+        "iced-blocks-out-of-range",
+        "iced-blocks-edited-unchecked",
+        "iced-blocks-changed-after-confirmation",
+        "public-direct-custom-paper",
+        "saved-instance-custom-default",
+        "actual-gtk-prepared-saved-custom",
+        "actual-explicit-qt-prepared-saved-custom",
+        "saved-printer-default-concrete-geometry",
+        "prepare-print-custom-capability-change-before-create"
+      ]
+    },
+    "unique_groups_per_appearance": 15
+  },
+  "metadata": {
+    "path": "target/portal-print-50/custom-query-03/summary.json",
+    "sha256": "fde2ad2727e3de974cb9401d089d1900eee04a108bd40fd7684c33ece51dd362"
+  },
+  "ppd_parser": {
+    "path": "target/portal-print-50/ppd-parser-01.json",
+    "sha256": "a8906987250433ec2cf4111842b279742e8bb6bae4b654ae6e7cfac5f2fd553c"
+  },
+  "visual": {
+    "path": "target/portal-print-50/visual-green-01.json",
+    "sha256": "df81c4ab1f4aa1270e262fd9e2f8d486736bc06121665d6ffd3ede34e201badf"
+  },
+  "startup_linkage": {
+    "path": "target/portal-print-50/startup-linkage.txt",
+    "sha256": "cfde0c9de611f95046a960c46c15456f8e0a3bf21e03ecc1457c0243bd1952cc"
+  },
+  "observed_final_terminal_processes": 93,
+  "storage": {
+    "baseline_free_bytes": 7174508544,
+    "final_free_bytes": 7076524032,
+    "net_growth_bytes": 97984512,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "binary_copies": 0,
+    "new_native_executables": 0
+  },
+  "precision": {
+    "approved_cups_units": [
+      12500,
+      22500
+    ],
+    "legacy_receiver_units": [
+      12488,
+      22471
+    ],
+    "qt_source_and_preserved_pdf_points": [
+      354,
+      638
+    ],
+    "exact_physical_acceptance": false,
+    "follow_up": ".scratch/xdg-portals/issues/02-custom-paper-device-precision.md"
+  },
+  "history": {
+    "missing_support": "custom-query-01/summary.json",
+    "failed_saved_name": "custom-query-02/summary.json",
+    "interrupted": "custom-paper-dark-02/summary.json",
+    "legacy_options": "custom-pipeline-01/summary.json",
+    "experimental_source_pins": {
+      "path": "target/portal-print-50/experimental-fixture-sources/historical-pins.json",
+      "sha256": "c7c69b71ffbbee19c1aaafd69d6a5302e12bdebc5be6d7c9a082a4f7eb929070"
+    }
+  },
+  "scope_notes": [
+    "Only configured private CUPS queues and a legacy PPD receiver; no installed queues, physical printers, general custom-range IPP device or driverless acceptance.",
+    "Direct A4 source explicitly uses50%scale to fit the custom sheet. Prepared GTK/Qt render once; Qt source whole-point geometry is preserved in received copies.",
+    "CUPS exact API/margins revalidation precedes Create. It does not atomically bind later scheduler/device changes or guarantee physical precision.",
+    "Dark successful coverage is explicitly combined from a failed receipt successful prefix and a passing scoped continuation; the failed receipt remains failed.",
+    "No new dependency, GTK startup linkage, Cargo feature/profile selection, native driver executable, binary copy, cache cleanup or default portal routing."
+  ],
+  "remaining": [
+    "source/type/quality/resolution and authenticated-device controls plus broader saved preferences",
+    "custom IPP/driverless/physical-device precision and actual hardware acceptance",
+    "publication crash, remote/kernel waits and global/cross-restart/converter resources",
+    "real Flatpak/runtime packaging/default Print",
+    "deferred automatic Qt client integration",
+    "six experimental interfaces/companion distribution",
+    "ten Files integration failures and final workspace/native/package/release gates"
+  ],
+  "receipt": "target/portal-print-50/acceptance-01.json",
+  "documentation_validation": {
+    "status": "passed",
+    "documents": 9,
+    "local_links": 274,
+    "python_ast_files": 11,
+    "python_bytecode_created": false,
+    "json_files": 39,
+    "new_document_fixture_whitespace": "passed",
+    "git_diff_check": "passed",
+    "full_workspace_execution": false
+  },
+  "storage_after_documentation": {
+    "free_bytes": 7076331520,
+    "net_growth_bytes": 98177024
+  }
+}

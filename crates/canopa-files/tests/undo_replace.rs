@@ -12,7 +12,11 @@ fn restarting_after_a_killed_replace_undo_preserves_restored_and_displaced_work(
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_replace_undo_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_replace::crash_replace_undo_helper",
+        ])
         .env("CANOPA_FILES_REPLACE_CRASH_ROOT", root.path())
         .status()
         .unwrap();

@@ -558,7 +558,7 @@ fn interrupted_directory_recovery_cleans_only_incomplete_bytes_and_keeps_its_pre
         .args([
             "--ignored",
             "--exact",
-            "interrupted_directory_recovery_child",
+            "cases::recovery_directories::interrupted_directory_recovery_child",
         ])
         .env("CANOPA_DIRECTORY_RECOVERY_ROOT", root.path())
         .spawn()

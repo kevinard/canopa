@@ -11,7 +11,7 @@ fn destination_observations_are_bounded_shared_and_released_with_their_last_owne
         .args([
             "--ignored",
             "--exact",
-            "destination_capacity_helper",
+            "cases::transfer_destination_capacity::destination_capacity_helper",
             "--test-threads=1",
         ])
         .status()

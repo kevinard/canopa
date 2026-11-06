@@ -241,7 +241,7 @@ fn restarting_a_killed_saved_only_restoration_preserves_missing_items_and_older_
     let status = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "crash_unavailable_restore_helper",
+            "cases::undo_unavailable_moves::crash_unavailable_restore_helper",
             "--ignored",
             "--nocapture",
         ])

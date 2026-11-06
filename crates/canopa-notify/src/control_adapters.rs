@@ -308,8 +308,39 @@ fn parse_invoke_action_request(rest: &str) -> Option<SocketControlRequest> {
 }
 
 fn parse_panel_interaction_request(json: &str) -> Option<SocketControlRequest> {
-    let event = serde_json::from_str(json).ok()?;
-    control_command_from_panel_interaction(event).map(SocketControlRequest::PanelInteraction)
+    let context: PanelInteractionContext = serde_json::from_str(json).ok()?;
+    let mut command = control_command_from_panel_interaction(context.interaction)?;
+    if let Some(token) = context.activation_token {
+        if token.is_empty()
+            || token.len() > canopa_panel_protocol::v5::MAX_ACTIVATION_TOKEN_BYTES
+            || token.contains('\0')
+        {
+            return None;
+        }
+        let ControlCommand::InteractWithNotificationCenter {
+            action,
+            activation_token,
+            ..
+        } = &mut command
+        else {
+            return None;
+        };
+        if matches!(action, NotificationCenterAction::Acknowledge) {
+            return None;
+        }
+        *activation_token = Some(token);
+    }
+    Some(SocketControlRequest::PanelInteraction(command))
+}
+
+/// Private socket context around the unchanged v4 invoke event. With no token
+/// its JSON remains identical to legacy clients and provider forwarding.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PanelInteractionContext {
+    #[serde(flatten)]
+    interaction: InteractionEvent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    activation_token: Option<String>,
 }
 
 impl SocketControlRequestSpec {
@@ -507,6 +538,7 @@ fn panel_app_icon(
         reference => PanelIcon::Theme {
             names: match reference {
                 Some(NotificationVisualReference::IconName(name)) => vec![name.clone()],
+                Some(NotificationVisualReference::IconNames(names)) => names.clone(),
                 _ => canopa_notify::app_identity_icon_name_candidates(identity),
             },
             theme: settings.theme.clone(),
@@ -522,10 +554,12 @@ fn panel_center_action(
     label: String,
 ) -> PanelAction {
     PanelAction {
+        request_activation_token: !matches!(action, NotificationCenterAction::Acknowledge),
         key: panel_center_action_key(&action).to_string(),
         label,
         value: Some(
             serde_json::to_string(&ControlCommand::InteractWithNotificationCenter {
+                activation_token: None,
                 target,
                 action,
             })
@@ -667,7 +701,8 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
         } => match target {
             InteractionTarget::Item { id } => {
                 let command = serde_json::from_str(value.as_deref()?).ok()?;
-                let ControlCommand::InteractWithNotificationCenter { target, action } = &command
+                let ControlCommand::InteractWithNotificationCenter { target, action, .. } =
+                    &command
                 else {
                     return None;
                 };
@@ -726,6 +761,7 @@ mod tests {
 
     fn center_command_fixture(action: NotificationCenterAction) -> ControlCommand {
         ControlCommand::InteractWithNotificationCenter {
+            activation_token: None,
             target: center_target_fixture(),
             action,
         }

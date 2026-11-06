@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_notify::{
     ControlReply, NotificationCenterProjection, NotificationStatus, NotificationThread,

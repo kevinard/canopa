@@ -1,0 +1,141 @@
+{
+  "status": "scoped-public-frontend-normal-backend-iced-stock-filter-verified",
+  "goal": "active-full-eighteen-interface-scope",
+  "print": "opt-in",
+  "qt": "automatic-integration-deferred",
+  "binary_sha256": "47003b288279ff8bc3855005d783715b30198a6c15327624f9dd5f4639116b3b",
+  "cups_client_sha256": "903123580ada3470849a7c856ea56ab0d7405f0133ed3d11acbcd860cc01fb02",
+  "reports": {
+    "target/portal-print-71/driverless-pipeline-31/summary.json": {
+      "sha256": "77730c0e6e4ca26345d17104054674f5c96b98382425b6784c1a5612a81c106d",
+      "status": "failed",
+      "appearance": "dark",
+      "cases": [
+        {
+          "copies": 1,
+          "status": "running"
+        }
+      ],
+      "runtime_workers": 3
+    },
+    "target/portal-print-71/driverless-pipeline-32/summary.json": {
+      "sha256": "36d51ae70f4d6970d96b64db3795fa91b56f41b8a19150db0c17d7585248fa48",
+      "status": "failed",
+      "appearance": "dark",
+      "cases": [
+        {
+          "copies": 1,
+          "status": "running"
+        }
+      ],
+      "runtime_workers": 5
+    },
+    "target/portal-print-71/driverless-pipeline-33/summary.json": {
+      "sha256": "0de39f92bd91571b8aadafd65c5a5d188bfb91b358320f0e7e69682c884acedf",
+      "status": "failed",
+      "appearance": "dark",
+      "cases": [
+        {
+          "copies": 1,
+          "status": "passed"
+        },
+        {
+          "copies": 2,
+          "status": "running"
+        }
+      ],
+      "runtime_workers": 9
+    },
+    "target/portal-print-71/driverless-pipeline-34/summary.json": {
+      "sha256": "36c6747a2229d0f7522463a5e5129de527deef80ae41675b12fef707e6f18997",
+      "status": "verified-public-prepared-paper",
+      "appearance": "dark",
+      "cases": [
+        {
+          "copies": 1,
+          "status": "passed"
+        },
+        {
+          "copies": 2,
+          "status": "passed"
+        }
+      ],
+      "runtime_workers": 10
+    },
+    "target/portal-print-71/driverless-pipeline-35/summary.json": {
+      "sha256": "564deb16f5bedf04db79fa78c1d25dee9e9b163029676de3442bd0fda793581e",
+      "status": "verified-public-prepared-paper",
+      "appearance": "light",
+      "cases": [
+        {
+          "copies": 1,
+          "status": "passed"
+        },
+        {
+          "copies": 2,
+          "status": "passed"
+        }
+      ],
+      "runtime_workers": 10
+    }
+  },
+  "passed": {
+    "public_cases": 4,
+    "appearances": [
+      "dark/100%",
+      "light/125%"
+    ],
+    "copy_counts": [
+      1,
+      2
+    ],
+    "paper_mm": [
+      125.13,
+      225.13
+    ],
+    "prepared_settings_not_reapplied": [
+      "ranges",
+      "reverse",
+      "scale",
+      "number-up"
+    ],
+    "stamps_and_order": true,
+    "exact_page_boxes_tolerance_points": 1e-06,
+    "device_dimensions_margins_sides": true,
+    "source_and_runtime_pins": true
+  },
+  "failed_fixture_receipts": {
+    "run31": "saved paper default had already been validated automatically",
+    "run32": "bytes/text oracle error after successful public delivery",
+    "run33": "expected approved copies in renderer hints; protocol intentionally returns one and retains physical copies"
+  },
+  "source_guard": {
+    "path": "target/portal-print-71/source-guard-public-paper-01.json",
+    "sha256": "4d51ef6728b2c3db11508e78b1b7ffc27b5e39d4d10a69e36f109a1d2e9d3b98"
+  },
+  "host_audit": {
+    "path": "target/portal-print-71/pipeline-host-audit-03.json",
+    "sha256": "957a62101a51a9006ac8b245e042d16cfaa4f10c4bb625606a5ead14296dc741",
+    "reports": 44,
+    "retained_identities_absent": 738
+  },
+  "source_only_replay": {
+    ".scratch/xdg-portals/print/public-paper-replay/runtime_probe.py": "66984165c9ea711619c8c5cdddec96755570f59a2c1e6ede30d21dac8870af62",
+    ".scratch/xdg-portals/print/public-paper-replay/public-paper.py": "e43c7ec2136b5d41bc5cc16cdf9822b7923d1df120417fe8b9d65a716eed67a5",
+    ".scratch/xdg-portals/print/public-paper-replay/driverless-pipeline.py": "f2c0a6bc33c1f4acaa72125db15531394bb7eb47e656abf2e923dc19df74ffc0",
+    ".scratch/xdg-portals/print/public-paper-replay/audit-processes-03.py": "6dae29c99b77f0d0f3d972d9dd936abf0d5f30f4e97aeecedc2cc7bff7eda9a1"
+  },
+  "remaining": [
+    "Maintained corrected IPP receiver source/provenance/build recipe",
+    "Advanced devices and broader connection compatibility",
+    "Actual Flatpak/release/deployment/default routing",
+    "Physical printer acceptance",
+    "Earlier workspace Files failures and six experimental-interface gates"
+  ],
+  "storage": {
+    "free_bytes": 5678301184,
+    "new_elf_files": 0,
+    "new_cargo_builds": 0,
+    "cache_cleanup": false
+  }
+}

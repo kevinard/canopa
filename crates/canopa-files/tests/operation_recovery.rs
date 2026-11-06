@@ -216,7 +216,7 @@ fn run_paused_copy(case: &str) {
         .args([
             "--ignored",
             "--exact",
-            "recovery_copy_pause_child",
+            "cases::operation_recovery::recovery_copy_pause_child",
             "--nocapture",
         ])
         .env("LD_PRELOAD", library)
@@ -745,7 +745,7 @@ fn interrupted_undo_salvage(legacy: bool) {
         .args([
             "--ignored",
             "--exact",
-            "recovery_interrupted_undo_child",
+            "cases::operation_recovery::recovery_interrupted_undo_child",
             "--nocapture",
         ])
         .env("CANOPA_FILES_RECOVERY_INTERRUPTED_ROOT", root.path())

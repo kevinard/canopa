@@ -15,15 +15,17 @@ application models independent of the renderer.
 Run commands from the workspace root. `bash scripts/check.sh` defaults to the
 fingerprint unit tests and `uutils_copy` integration tests. For other work use
 `bash scripts/check.sh --files --lib FILTER` or
-`bash scripts/check.sh --files --test TARGET [FILTER]`; multiple `--test` selectors
-run related integration targets without compiling the rest. Choose tests covering
+`bash scripts/check.sh --files --test CASE [FILTER]`; multiple `--test` selectors
+run related modules in the shared integration executable. Direct Cargo commands
+use `--test integration cases::CASE::`; native fixtures and `uutils_copy` retain their
+own targets. Choose tests covering
 the changed behavior; the default Copy checks alone do not validate other Files
 features. Library/content-copy lifecycle changes also need the affected transfer,
 Undo, Recovery and source-retention targets.
 
 Keep incremental debug compilation enabled and reuse the same features and
 `target/` cache throughout development. A bare `cargo test -p canopa-files FILTER`
-still compiles every integration target. Reserve
+still builds all enabled test targets, so keep explicit selection. Reserve
 `bash scripts/check.sh --workspace` for the broader gates described in root
 instructions; a Files-only task does not require a workspace rebuild by default.
 Optimized performance measurements use an explicit release build separately.

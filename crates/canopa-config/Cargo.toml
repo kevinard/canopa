@@ -1,9 +1,14 @@
 [package]
+autotests = false
 name = "canopa-config"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
 
 [dependencies]
 canopa-file.workspace = true

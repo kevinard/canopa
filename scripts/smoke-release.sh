@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
-archive=${1:?usage: smoke-release.sh ARCHIVE}
+if [[ $# -lt 1 ]]; then
+    echo 'usage: smoke-release.sh ARCHIVE [--require-print-runtime] [--require-print-backend] [--require-desktop-sharing] [--require-extra-portals]' >&2
+    exit 2
+fi
+archive=$1
+shift
+runtime_args=(--check)
+backend_args=(--check)
+desktop_args=(--check)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --require-print-runtime) runtime_args+=(--required) ;;
+        --require-print-backend) backend_args+=(--required); runtime_args+=(--required) ;;
+        --require-desktop-sharing) desktop_args+=(--required) ;;
+        --require-extra-portals) desktop_args+=(--required --require-extra-portals) ;;
+        *) echo "Unknown smoke option: $1" >&2; exit 2 ;;
+    esac
+    shift
+done
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 tar -xzf "$archive" -C "$stage"
 bundle="$stage/canopa-x86_64-unknown-linux-gnu"
 python3 "$(dirname -- "${BASH_SOURCE[0]}")/package-documentation.py" --check "$bundle"
+python3 "$(dirname -- "${BASH_SOURCE[0]}")/package-print-runtime.py" "$bundle" "${runtime_args[@]}"
+python3 "$(dirname -- "${BASH_SOURCE[0]}")/package-print-backend.py" "$bundle" "${backend_args[@]}"
+python3 "$(dirname -- "${BASH_SOURCE[0]}")/package-desktop-sharing.py" "$bundle" "${desktop_args[@]}"
 test -x "$bundle/bin/canopa-files"
 "$bundle/bin/canopa-files" --help > /dev/null
 "$bundle/bin/canopa-files" --internal-check-copy
@@ -26,6 +47,58 @@ test -x "$bundle/bin/canopa-wifi-provider"
 test -x "$bundle/bin/canopa-notify"
 "$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
+rg '^Interfaces=.*org\.freedesktop\.impl\.portal\.Account;' "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
+test -s "$bundle/share/canopa/account-portal.md"
+test -s "$bundle/share/xdg-desktop-portal/portals/canopa-notify.portal"
+test -x "$bundle/bin/canopa-portal-config"
+cat > "$stage/portal-base.conf" <<'EOF'
+[preferred]
+default=gnome;gtk;
+org.freedesktop.impl.portal.ScreenCast=gnome
+org.freedesktop.impl.portal.Print=gtk
+EOF
+"$bundle/bin/canopa-portal-config" --base "$stage/portal-base.conf" \
+    --interface Settings --interface FileChooser --interface Notification \
+    --output "$stage/portal-candidate.conf"
+python3 - "$stage/portal-candidate.conf" <<'PY'
+import configparser, sys
+config = configparser.ConfigParser(interpolation=None)
+config.optionxform = str
+config.read(sys.argv[1])
+values = config['preferred']
+prefix = 'org.freedesktop.impl.portal.'
+assert values['default'] == 'gnome;gtk;'
+assert values[prefix + 'FileChooser'] == 'canopa;gnome;gtk;'
+assert values[prefix + 'Settings'] == 'canopa;gnome;gtk;'
+assert values[prefix + 'Notification'] == 'canopa-notify;gnome;gtk;'
+assert values[prefix + 'ScreenCast'] == 'gnome'
+assert values[prefix + 'Print'] == 'gtk'
+print('Portal configuration: relocated generator preserves existing routing and selects the separate Notify backend.')
+PY
+cat > "$stage/portal-disabled-base.conf" <<'EOF'
+[preferred]
+default=gnome;none;gtk;
+org.freedesktop.impl.portal.FileChooser=none
+org.freedesktop.impl.portal.Print=none
+EOF
+"$bundle/bin/canopa-portal-config" --base "$stage/portal-disabled-base.conf" \
+    --output "$stage/portal-enabled-candidate.conf"
+python3 - "$stage/portal-enabled-candidate.conf" <<'PY'
+import configparser, sys
+config = configparser.ConfigParser(interpolation=None)
+config.optionxform = str
+config.read(sys.argv[1])
+values = config['preferred']
+prefix = 'org.freedesktop.impl.portal.'
+assert values[prefix + 'FileChooser'] == 'canopa;'
+assert values[prefix + 'Settings'] == 'canopa;'
+assert values['default'] == 'gnome;none;gtk;'
+assert values[prefix + 'Print'] == 'none'
+print('Portal configuration: selecting an interface removes its none veto without enabling other disabled backends.')
+PY
+rg -Fx 'Interfaces=org.freedesktop.impl.portal.Notification;' "$bundle/share/xdg-desktop-portal/portals/canopa-notify.portal"
+rg -Fx 'Name=org.freedesktop.impl.portal.desktop.canopa.notify' "$bundle/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.notify.service"
+rg -Fx 'Exec=/usr/bin/env canopa-notify daemon --service' "$bundle/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.notify.service"
 test -s "$bundle/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.service"
 test -s "$bundle/share/dbus-1/services/org.freedesktop.FileManager1.service"
 rg -Fx 'Name=org.freedesktop.FileManager1' "$bundle/share/dbus-1/services/org.freedesktop.FileManager1.service"
@@ -66,6 +139,14 @@ def frame(message):
     body = json.dumps(message).encode()
     return magic + struct.pack('>Q', len(body)) + body
 
+def initial_v5(body):
+    # Providers may publish another state update before dequeuing Close.
+    messages = [json.loads(line) for line in body.splitlines()]
+    assert messages and all(message.get('protocol_version') == 5
+                            and isinstance(message.get('revision'), int)
+                            and message['revision'] > 0 for message in messages), messages
+    return messages[0]
+
 handshake = {'type': 'handshake', 'payload': {'protocol_version': 1,
              'session_id': 'release-smoke', 'provider_name': 'wifi',
              'origin': {'bar_name': 'main', 'output_name': 'test', 'origin_kind': 'bar'}}}
@@ -84,7 +165,7 @@ result = subprocess.run([sys.argv[1], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),
                              'CANOPA_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
-message = json.loads(result.stdout)
+message = initial_v5(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'form'
 assert message['content']['body']['elements'][0]['title'] == 'Wi-Fi unavailable'
@@ -93,7 +174,7 @@ result = subprocess.run([sys.argv[2], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[2]),
                              'PULSE_SERVER': 'unix:/nonexistent-canopa-release-audio'}, check=True)
-message = json.loads(result.stdout)
+message = initial_v5(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Sound'
@@ -103,7 +184,7 @@ result = subprocess.run([sys.argv[3], '--protocol', 'canopa-v5'],
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[3]),
                              'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/nonexistent-canopa-release-media'}, check=True)
-message = json.loads(result.stdout)
+message = initial_v5(result.stdout)
 assert message['protocol_version'] == 5 and message['revision'] == 1
 assert message['content']['kind'] == 'rich'
 assert message['content']['body']['title'] == 'Media'

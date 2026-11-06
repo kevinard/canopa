@@ -58,6 +58,9 @@ pub(crate) fn validate_input(input: &NotificationInput) -> Result<(), Notificati
     if let Some(NotificationSound::Name(value) | NotificationSound::File(value)) = &input.sound {
         budget.field(value)?;
     }
+    if let Some(NotificationSound::Encoded(bytes)) = &input.sound {
+        check_limit("sound bytes", bytes.len(), 8 * 1024 * 1024)?;
+    }
     for action in &input.actions {
         budget.field(&action.key)?;
         budget.field(&action.label)?;
@@ -100,9 +103,17 @@ impl TextBudget {
         &mut self,
         value: &NotificationVisualReference,
     ) -> Result<(), NotificationLimitExceeded> {
-        let (NotificationVisualReference::IconName(value)
-        | NotificationVisualReference::LocalPath(value)) = value;
-        self.field(value)
+        match value {
+            NotificationVisualReference::IconNames(names) => {
+                check_limit("icon names", names.len(), 32)?;
+                for name in names {
+                    self.field(name)?;
+                }
+                Ok(())
+            }
+            NotificationVisualReference::IconName(value)
+            | NotificationVisualReference::LocalPath(value) => self.field(value),
+        }
     }
 
     fn add(

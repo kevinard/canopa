@@ -56,7 +56,7 @@ fn fixture(case: &str) {
             .args([
                 "--ignored",
                 "--exact",
-                "directory_permissions_fixture",
+                "cases::directory_permissions::directory_permissions_fixture",
                 "--nocapture",
             ])
             .env("CANOPA_DIRECTORY_PERMISSIONS_ROOT", root.path())

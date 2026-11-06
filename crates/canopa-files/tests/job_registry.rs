@@ -298,7 +298,11 @@ fn unreadable_payloads_stay_visible_and_preserved_after_reopening() {
 fn committed_requests_survive_exit_without_running_destructors() {
     let root = tempfile::tempdir().unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "request_exit_helper", "--nocapture"])
+        .args([
+            "--exact",
+            "cases::job_registry::request_exit_helper",
+            "--nocapture",
+        ])
         .env("CANOPA_FILES_REQUEST_EXIT_FIXTURE", root.path())
         .status()
         .unwrap();

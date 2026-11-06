@@ -1,10 +1,8 @@
 use canopa_notify::InternalNotificationId;
 const FIRST_ID: InternalNotificationId = InternalNotificationId::new(1).unwrap();
 const SECOND_ID: InternalNotificationId = InternalNotificationId::new(2).unwrap();
-#[path = "support/daemon.rs"]
-mod daemon_support;
-#[path = "support/notifications.rs"]
-mod notifications;
+use crate::daemon_support;
+use crate::notifications;
 
 use canopa_notify::{
     AcceptedNotification, BannerLifecycleChange, Daemon, DaemonOptions, DeliveryOutcome,

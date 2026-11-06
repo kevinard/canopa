@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "canopa-shell"
 version = "0.1.0"
 edition.workspace = true
@@ -8,6 +9,7 @@ license = "MIT"
 [features]
 default = ["desktop"]
 desktop = [
+    "dep:canopa-apps",
     "dep:canopa-assets",
     "dep:canopa-file",
     "dep:canopa-notify-client",
@@ -26,6 +28,8 @@ desktop = [
     "dep:chrono",
     "dep:niri-ipc",
     "dep:unicode-segmentation",
+    "dep:sha2",
+    "dep:tempfile",
 ]
 
 [[bin]]
@@ -34,22 +38,11 @@ path = "src/main.rs"
 required-features = ["desktop"]
 
 [[test]]
-name = "canopa_provider"
-required-features = ["desktop"]
-
-[[test]]
-name = "configuration"
-required-features = ["desktop"]
-
-[[test]]
-name = "diagnostics"
-required-features = ["desktop"]
-
-[[test]]
-name = "menu_cli"
-required-features = ["desktop"]
+name = "integration"
+path = "tests/integration.rs"
 
 [dependencies]
+canopa-apps = { workspace = true, optional = true }
 futures-util.workspace = true
 canopa-assets = { workspace = true, optional = true }
 canopa-file = { workspace = true, optional = true }
@@ -79,6 +72,8 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 unicode-segmentation = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

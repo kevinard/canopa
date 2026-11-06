@@ -16,7 +16,11 @@ fn a_killed_source_only_merge_resumes_without_repeating_saved_approval_or_return
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_source_only_merge_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_directory_saved::crash_source_only_merge_helper",
+        ])
         .env("CANOPA_MERGE_SAVED_RESUME_ROOT", root.path())
         .status()
         .unwrap();

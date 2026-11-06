@@ -1,0 +1,8 @@
+patching file crates/canopa-portal/src/remote_input.rs
+patching file crates/canopa-portal/src/remote_input/parent.rs
+patching file crates/canopa-portal/src/screencast/remote.rs
+patching file crates/canopa-portal/src/screencast/remote/dispatch.rs
+patching file crates/canopa-portal/src/screencast/remote/availability.rs
+patching file crates/canopa-portal/src/screencast/remote/production/tests.rs
+patching file scripts/test-remote-desktop-pointer.py
+patching file scripts/test-remote-desktop-availability.py

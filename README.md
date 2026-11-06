@@ -2,7 +2,8 @@
 
 Canopa is a desktop environment built around the Niri Wayland compositor. Its Rust
 workspace currently contains Canopa Shell (the shell, Wi-Fi, audio and media providers), Canopa Notify, Canopa Files,
-the `canopa` configuration tool, a Settings portal backend, and shared configuration, appearance, Iced controls
+the `canopa` configuration tool, Settings/FileChooser/AppChooser/Access/Account/Background/DynamicLauncher/Lockdown/Wallpaper/Screenshot portal backends,
+a [Notification portal served by Notify](docs/notification-portal.md), and shared configuration, appearance, Iced controls
 and panel protocol crates. Local icon lookup and bounded raster preparation are
 shared through `canopa-assets`; see the [asset contracts](docs/adr/0005-shared-assets.md).
 
@@ -40,9 +41,17 @@ consistent between edits. The explicit `--workspace` gate runs all applications,
 test targets and tooling for CI/releases, shared dependencies or broader changes.
 Files-only edits normally need their affected tests rather than that gate.
 
+Ordinary integration cases share one executable per crate. The Files script keeps
+the existing `--test transfers` case selectors and translates them into module
+filters. Direct Cargo usage is `cargo test -p canopa-files --test integration cases::transfers::`.
+See [test layout and selection](docs/testing.md) for native exceptions and examples.
+
 Tests use private D-Bus sessions. Full transport tests additionally need
 `libglib2.0-bin`, `pipewire`, `pipewire-bin`, `pipewire-pulse`, and `pulseaudio-utils`.
 The Settings frontend fixture also needs `xdg-desktop-portal` and `python3-gi`.
+Portal desktop builds require PipeWire 0.3.64 or newer development files and
+libclang for its Rust bindings (`libpipewire-0.3-dev` and `libclang-dev` on Ubuntu
+24.04). The desktop executable links the system PipeWire library.
 The optional graphical acceptance workflow uses a dedicated runner with Niri, Sway,
 grim, Weston, wtype, Python GI/AT-SPI/Pillow, and software Mesa;
 see `scripts/check-desktop-runner.py`.
@@ -89,7 +98,42 @@ wiring. See [notifications and session setup](docs/notifications.md).
 See [the appearance decision](docs/adr/0003-shared-appearance.md) and the remaining
 phases in the [integration proposal](docs/canopa-integration-proposal.md).
 The [Settings portal](docs/settings-portal.md) exposes shared appearance to
-applications, with explicit backend selection and its own SIGHUP reload.
+applications, with explicit backend selection and its own SIGHUP reload. The
+[FileChooser portal](docs/file-chooser-portal.md) provides Rust/Iced open and save
+dialogs using the Files browsing model. The
+[AppChooser portal](docs/app-chooser-portal.md) provides searchable application
+selection and fresh Wayland activation tokens. The
+[Access portal](docs/access-portal.md) provides explicit permission questions and
+serialized choice controls.
+The [Account portal](docs/account-portal.md) provides an editable profile-sharing
+draft with field choices and a private, normalized avatar image.
+The [Background portal](docs/background-portal.md) observes verified Niri application
+windows and presents background-operation decisions through Notify and Iced.
+The [DynamicLauncher portal](docs/dynamic-launcher-portal.md) provides launcher
+name/icon review, with installation and token ownership retained by the frontend.
+The [Lockdown portal](docs/lockdown-portal.md) owns persistent runtime privacy
+switches and publishes changes to participating portal frontends.
+The [Wallpaper portal](docs/wallpaper-portal.md) reviews frozen local/remote images
+in Iced and applies desktop/lockscreen selections through Shell's persistent owner.
+The [Screenshot portal](docs/screenshot-portal.md) reviews frozen Screen/Area
+captures and confirms original pixel colors in Iced without changing the clipboard.
+The [experimental USB backend](docs/usb-portal.md) provides Rust/Iced device selection
+and read-only downgrade. The optional companion package's `--extra-portals`
+selection also includes [InputCapture](docs/input-capture-portal.md) and
+[GlobalShortcuts](docs/global-shortcuts-portal.md).
+The [experimental ScreenCast backend](docs/screencast-portal.md) has Rust sessions
+and Iced source consent and ongoing stop controls. Display/window video, static
+resume, all cursor modes and crash cleanup pass on a pinned compatibility
+compositor, with runtime cursor capability gating. Selecting a compatible
+compositor and frontend is explicit through the
+[optional desktop-sharing package](docs/desktop-sharing.md), which also enables
+the implemented RemoteDesktop and Clipboard interfaces. Default routing remains
+unchanged while broader distribution acceptance continues.
+The [Print backend in development](docs/print-portal.md) has Rust/Iced consent and
+isolated document workers. `--experimental-print` enables it in the normal backend
+for explicit integration; normal packaged routing awaits its remaining acceptance.
+`--printer-jobs` opens its Iced review to sign in to an existing held job without
+sending the document again.
 
 Follow the [shell guide](crates/canopa-shell/README.md) and [notification guide](crates/canopa-notify/README.md)
 for feature options, using root `target/` paths. Existing Niribar installations
@@ -101,6 +145,17 @@ binaries, current example configurations, service units, manuals, and source lic
 notices. The companion user services use `~/.local/bin`; `canopa-session.target` starts
 both. See the session setup guide before enabling them. Packaging does not install or restart anything.
 Check the archive with `bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz`.
+The release workflow also includes the [private Print client runtime](docs/print-runtime.md)
+and its original CUPS notices. Local packaging selects it explicitly with
+`--cups-runtime target/cups-authentication-compat/canopa-build.json`; omitting that
+option keeps system CUPS. Print remains opt-in.
+The optional desktop-sharing companions are selected together with
+`--desktop-niri NIRI_BUILD/canopa-build.json --desktop-frontend FRONTEND_BUILD/canopa-build.json`.
+Their package includes the extended descriptor, routing fragment and frontend
+service override described in the [desktop-sharing guide](docs/desktop-sharing.md).
+Append `--extra-portals` to include InputCapture, GlobalShortcuts and Usb with the
+current combined Niri recipe; verify that selection with `--require-extra-portals`
+on the archive smoke check.
 
 For subsequent updates of an existing local companion installation, run:
 

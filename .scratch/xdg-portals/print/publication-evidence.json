@@ -1,0 +1,71 @@
+{
+  "status": "passed-scoped-private-file-publication",
+  "acceptance": "target/portal-print-33/acceptance-01.json",
+  "acceptance_sha256": "56a097626790bf1c547fb1d5db826b0bdf81661e249c302bb0360a8009a1e46e",
+  "normal_binary_sha256": "fcec6ecb83f972b89c1b3029460769feb828cb3c81f2cc890192c42a3d37f117",
+  "checks": {
+    "format": true,
+    "strict_workspace_all_target_clippy": true,
+    "original_graph_workspace_all_target_build": true,
+    "print": {
+      "passed": 69,
+      "failed": 0,
+      "ignored": 3
+    },
+    "portal": [
+      {
+        "status": "ok",
+        "passed": 55,
+        "failed": 0,
+        "ignored": 2
+      },
+      {
+        "status": "ok",
+        "passed": 285,
+        "failed": 0,
+        "ignored": 11
+      }
+    ],
+    "native_client": {
+      "groups": 6,
+      "observed_processes": 9,
+      "all_observed_terminal": true
+    },
+    "partial_write_failure": {
+      "groups": 2,
+      "limit_bytes": 16384,
+      "worker_replies": [
+        {
+          "event": "failed",
+          "message": "File too large (os error 27)"
+        },
+        {
+          "event": "failed",
+          "message": "File too large (os error 27)"
+        }
+      ]
+    },
+    "transaction_sigkill_boundaries": [
+      "claimed",
+      "publishing",
+      "after-link-before-published-record"
+    ]
+  },
+  "remaining": [
+    "public Print methods, original-client/request/token/Lockdown integration",
+    "toolkit prepared/direct layout and copies acceptance",
+    "startup recovery presentation and abruptly lost backend/power-loss acceptance",
+    "isolate indefinitely stalled filesystem setup/recovery",
+    "CUPS backend-death and ambiguous creation policy",
+    "advanced/custom media and legacy saved-instance controls",
+    "six experimental-interface hardware/sandbox/compatibility acceptance and companion distribution",
+    "ten preceding Files integration failures and final release/routing acceptance"
+  ],
+  "scope_limits": [
+    "private file publication only; no current public Print or full Iced-to-public-Print run",
+    "partial write failure is EFBIG under RLIMIT_FSIZE, not an actual ENOSPC/full-filesystem test",
+    "SIGKILL boundary probes reuse the compiled transaction test harness; normal publication/settlement uses the normal executable",
+    "no new full-workspace test run; preceding ten Files failures remain unresolved",
+    "no installed routing/service/queue changes; no new dependencies or Cargo.lock edits"
+  ]
+}

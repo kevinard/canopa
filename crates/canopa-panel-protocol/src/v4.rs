@@ -381,6 +381,14 @@ pub struct PanelAction {
     pub key: String,
     pub label: String,
     pub value: Option<String>,
+    /// Opt into a native activation token on a v5 host event. Older hosts may
+    /// omit it; the opaque action value and frozen v4 invoke event are unchanged.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub request_activation_token: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl PanelAction {
@@ -389,7 +397,13 @@ impl PanelAction {
             key: key.into(),
             label: label.into(),
             value: None,
+            request_activation_token: false,
         }
+    }
+
+    pub fn with_activation_token(mut self) -> Self {
+        self.request_activation_token = true;
+        self
     }
 }
 
@@ -460,6 +474,7 @@ mod tests {
         content.validate().unwrap();
         assert_eq!(serde_json::to_value(&content).unwrap(), input);
         content.sections[0].items[0].actions.push(PanelAction {
+            request_activation_token: false,
             key: "opaque".into(),
             label: "Duplicate".into(),
             value: Some("revision-owned-target".into()),

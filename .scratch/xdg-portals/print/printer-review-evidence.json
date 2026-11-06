@@ -1,0 +1,179 @@
+{
+  "status": "passed-scoped-iced-printer-review; broader-portal-gates-open",
+  "binary": {
+    "path": "target/debug/xdg-desktop-portal-canopa",
+    "sha256": "d48912c9e8a483caf044d0ee5c9089e77ea1e128cf28eb42c69750613b6bf396"
+  },
+  "validation": {
+    "receipt": {
+      "path": "target/portal-print-48/worker-04.json",
+      "sha256": "4c14113071b8210ca413bd2377a7c8eec1ef1dda1ea5b18fc51973de9eb9c320"
+    },
+    "checks": {
+      "tests": {
+        "passed": 147,
+        "receipt": {
+          "path": "target/portal-print-48/worker-04-tests.out",
+          "sha256": "449173435f6627fe98e01980b7de94ecb48eeb94be8208fc0f41d863cbf495f7"
+        }
+      },
+      "lockdown-tests": {
+        "passed": 12,
+        "receipt": {
+          "path": "target/portal-print-48/worker-04-lockdown-tests.out",
+          "sha256": "bb9853038b33a3ef2a7f8afaeb2f9e1ab1839b983f7c4a2da1cba68fdf770000"
+        }
+      },
+      "portal-library": {
+        "passed": 365,
+        "receipt": {
+          "path": "target/portal-print-48/worker-04-portal-library.out",
+          "sha256": "7b68ab8e3cba8df3a9fe302374037b78614c9158393d8fb3d7a4012d45d1c1b7"
+        }
+      },
+      "portal-integration": {
+        "passed": 55,
+        "receipt": {
+          "path": "target/portal-print-48/worker-04-portal-integration.out",
+          "sha256": "a077d148f8466c069048d30d1a8f724ba4aa415b2e8ee5b1c3820f4c6db2f78d"
+        }
+      }
+    },
+    "format": "passed",
+    "clippy": "strict workspace/all-target passed with identical source guards",
+    "build_seconds": 390.16,
+    "full_workspace_execution": false
+  },
+  "native": {
+    "dark": {
+      "receipt": {
+        "path": "target/portal-print-48/printer-review-dark-02/summary.json",
+        "sha256": "07bf62377c620f23f72f7f27793b34a9f701f14ab43e31437e0c610261e9e9a7"
+      },
+      "observed_terminal_processes": 13,
+      "scope": "actual Iced printer recovery and isolated worker with controlled private journal records and real incomplete CUPS jobs; no physical printer or accepted-delivery claim",
+      "replay": {
+        "path": "target/portal-print-48/printer-review-dark-02/replay.json",
+        "sha256": "d375b86b7c7cb937f215b75863f258fc082b65694575514289fed33eaeac885d"
+      },
+      "required_checks": [
+        "accepted-removed-job-unchanged",
+        "accepted-retained",
+        "backend-ready",
+        "busy-protected",
+        "cleanup-scoped",
+        "file-copy",
+        "file-dismissed-data-retained",
+        "no-match-forgotten",
+        "removed-only-first",
+        "ui-closed",
+        "unchanged"
+      ]
+    },
+    "light": {
+      "receipt": {
+        "path": "target/portal-print-48/printer-review-light-01/summary.json",
+        "sha256": "cd783d8c8167d96b1f825a97d2fd4d2dd9d6d07d7b5837446714c4ff09f8b651"
+      },
+      "observed_terminal_processes": 13,
+      "scope": "actual Iced printer recovery and isolated worker with controlled private journal records and real incomplete CUPS jobs; no physical printer or accepted-delivery claim",
+      "replay": {
+        "path": "target/portal-print-48/printer-review-light-01/replay.json",
+        "sha256": "968d80373112f115fbbe26619fce3f319bf13c9ee1c44e541e116d6e147081bb"
+      },
+      "required_checks": [
+        "accepted-removed-job-unchanged",
+        "accepted-retained",
+        "backend-ready",
+        "busy-protected",
+        "cleanup-scoped",
+        "file-copy",
+        "file-dismissed-data-retained",
+        "no-match-forgotten",
+        "removed-only-first",
+        "ui-closed",
+        "unchanged"
+      ]
+    },
+    "public": {
+      "receipt": {
+        "path": "target/portal-print-48/public-printer-dark-01/summary.json",
+        "sha256": "7dde62ed93844fa4301b995d3e80fa817611344bd0b9dbc19fbd2f47ea1839a0"
+      },
+      "observed_terminal_processes": 50,
+      "scope": "actual normal opt-in Print, durable CUPS ownership, controlled main death and startup cleanup; exact-tag isolation/admission/accepted-record regression; no physical-printer or endpoint-replacement-race claim",
+      "groups": 13
+    },
+    "reconnect": {
+      "receipt": {
+        "path": "target/portal-print-48/reconnect-01/summary.json",
+        "sha256": "7cae0d7d218ea01b684827aad43641c3fe8ee4e8124a761258e41ce2e9ce70ac"
+      },
+      "cases": 5,
+      "observed_terminal_processes": 8
+    }
+  },
+  "visual": {
+    "path": "target/portal-print-48/visual-green-01.json",
+    "sha256": "620b8dc67c237af80b286552b3964494700ae3d032ed3fbc2708f59d26452f82"
+  },
+  "observed_final_terminal_processes": 84,
+  "source_snapshot": {
+    "path": "target/portal-print-48/candidate-04-sources.json",
+    "sha256": "374648536365947724148d2abed8f5026ccca2166d7df98b6d99bbf058b457f4"
+  },
+  "guarded_source_changes": [
+    "crates/canopa-portal/src/main.rs",
+    "crates/canopa-portal/src/print/file_target/publication/recovery/jobs.rs",
+    "crates/canopa-portal/src/print/printer_jobs.rs",
+    "crates/canopa-portal/src/print/recovery_host.rs",
+    "crates/canopa-portal/src/print/worker.rs",
+    "crates/canopa-portal/src/print/worker/client/recovery.rs",
+    "crates/canopa-portal/src/print/worker/client/task.rs",
+    "crates/canopa-portal/src/print_recovery_ui.rs",
+    "crates/canopa-portal/src/print_recovery_ui/tests.rs",
+    "crates/canopa-portal/src/print_recovery_ui/view.rs"
+  ],
+  "startup_linkage": {
+    "path": "target/portal-print-48/startup-linkage.txt",
+    "sha256": "6407482b9f4dd3dac35ef8e5fae41454913eeda154344534072d136658a556dd"
+  },
+  "historical_visual_failure": {
+    "path": "target/portal-print-48/visual-red-01.json",
+    "sha256": "82d9b9feebc1e959a2c838fceb2523acb1196b880ef8c0d140238c149332e69d"
+  },
+  "historical_functional_receipt": "target/portal-print-48/printer-review-dark-01/summary.json",
+  "storage": {
+    "baseline_free_bytes": 7114121216,
+    "final_free_bytes": 7179587584,
+    "net_growth_bytes": -65466368,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "binary_copies": 0,
+    "new_native_executables": 0
+  },
+  "scope_notes": [
+    "Controlled valid accepted-record UI fixture is not an actual final document acknowledgement/delivery; native public matrix separately checks an actual accepted active job.",
+    "UI fixtures use four real CUPS incoming jobs without document uploads; explicit metadata removal preserves their recorded held state until separate fixture cleanup.",
+    "Known missing matches stay unconfirmed; only explicit confirmed removal abandons tracking.",
+    "Same root target graph and checksum-addressed native executables reused; no installed services, queues or routing changed."
+  ],
+  "remaining": [
+    "automatic Qt and live toolkit printer emission",
+    "advanced/custom-media/device/saved-instance and authenticated-device controls",
+    "file-publication crash, actual remote/kernel waits and global/cross-restart/converter resource accounting",
+    "real Flatpak/physical/runtime packaging and default Print advertisement",
+    "six experimental interfaces and companion distribution",
+    "ten Files integration failures and full workspace/native/package/release routing"
+  ],
+  "acceptance_receipt": "target/portal-print-48/acceptance-01.json",
+  "documentation_checks": {
+    "local_links": 253,
+    "documentation_files": 8,
+    "python_syntax": "passed without bytecode",
+    "evidence_json": "passed",
+    "new_document_whitespace": "passed",
+    "diff_check": "passed",
+    "owned_driver_host_inspection": "none live"
+  }
+}

@@ -78,6 +78,22 @@ _Avoid_: Popup layer, z-index
 The layout direction of a **Bar**, derived from its **Edge**.
 _Avoid_: Edge
 
+### Wallpapers
+
+**Wallpaper Selection**:
+Shell-owned durable references to immutable background and lockscreen images.
+Both destinations change together when requested; bar configuration is independent.
+
+**Wallpaper Surface**:
+An input-transparent Iced background layer on a named **Output**, managed separately
+from **Bar Surfaces**. It covers the output without reserving workarea.
+
+The private Wallpaper Owner prepares bounded PNG descriptors off the UI thread,
+persists selections and installs background pixels in App. `canopa-shell lock`
+pins the selected lock image and executes Swaylock through the session-owned
+launch path. See [ADR0037](../adr/0037-shell-wallpaper-owner.md). The public
+Wallpaper portal is not advertised while native acceptance and review are pending.
+
 ### Modules
 
 **Module**:

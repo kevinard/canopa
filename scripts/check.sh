@@ -4,7 +4,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 usage() {
     cat <<'EOF'
-Usage: bash scripts/check.sh [--files [copy | --lib [FILTER] | --test TARGET ... [FILTER] [-- TEST_ARGS...]] | --workspace | --core]
+Usage: bash scripts/check.sh [--files [copy | --lib [FILTER] | --test CASE ... [FILTER] [-- TEST_ARGS...]] | --workspace | --core]
 
 Default: focused Files Copy/fingerprint checks with incremental debug builds.
 --files       Select Files tests; see scripts/check-files.sh --help.
@@ -53,12 +53,21 @@ case "$1" in
         python3 scripts/test-desktop-runner.py
         python3 scripts/test-update.py
         python3 scripts/test-session-units.py
+        python3 scripts/test-portal-config.py
         python3 scripts/test-check-scripts.py
+        python3 scripts/test-test-layout.py
+        python3 scripts/test-niri-source-bindings.py
+        python3 scripts/test-niri-build-reuse.py
+        python3 scripts/test-vendor-source-additions.py
+        python3 scripts/test-remote-touch-core.py --output "${CARGO_TARGET_DIR:-target}/remote-touch-core-check.json"
+        python3 scripts/test-vendor-test-workspace.py
+        python3 scripts/test-cups-authentication.py --self-test
         cargo fmt --all -- --check
         cargo clippy --workspace --all-targets --locked -- -D warnings
         python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md --check
-        dbus-run-session -- cargo test --workspace --all-targets --locked
+        dbus-run-session -- cargo test --workspace --all-targets --locked --no-fail-fast
         python3 scripts/test-settings-portal.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa"
+        python3 scripts/test-remote-desktop-dispatch.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa" --output "${CARGO_TARGET_DIR:-target}/remote-desktop-dispatch-check.json"
         cargo build --locked -p canopa-cli
         python3 scripts/test-configuration.py
         python3 scripts/test-vendor.py

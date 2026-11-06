@@ -1,0 +1,277 @@
+{
+  "status": "Private capture-bound pointer workers integrated; focused/native checks pass; public pointer grant and compositor adoption remain",
+  "recorded_at": "2026-10-31T14:34:13.347748+00:00",
+  "scope": "Capture binding metadata and private pointer worker ownership/renewal; public pointer permission, EI adapter and advertisement later",
+  "changes": [
+    {
+      "path": "crates/canopa-portal/src/remote_input.rs",
+      "before": "bc121970261699f5704c7b8408b88b85caa02933703ddbf4082bdd207a140340",
+      "after": "6d12996dc5256ed378c1ca0d35926447c1d625077ae9faea8ba5315ad785407c"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/parent.rs",
+      "before": "307742b687364dd1ff49b95e501b7eadaf0b73988912258e6d5b8afe6a345690",
+      "after": "e2204e49cfc20e3c157ff25d14245b8069eb0061f0d8814cd07a3f567d628763"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/parent/tests.rs",
+      "before": "b5c2063d98170fd60a193207d6c600ad03d3498fe956ad69b9206f929156328c",
+      "after": "e49a804050c38d1923112275c265bbc1d6f1f4cf57fb96097b6ba5393124c7ed"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/pointer.rs",
+      "before": null,
+      "after": "bb7ea62ce58ed4a49d2821ddce1307a2abf3494357126ac4486458abe894e33d"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/pointer/compositor.rs",
+      "before": null,
+      "after": "92b826384f651004dfd58166029bde857ac0afcdcac4d5a35af78c9af6c2b74a"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/pointer/tests.rs",
+      "before": null,
+      "after": "3249587551723e28a03981882dc0b43fd37f8fb6500f908d96aea890199db0c7"
+    },
+    {
+      "path": "crates/canopa-portal/src/remote_input/pointer/wire.rs",
+      "before": null,
+      "after": "8ce5b75fdf066ffde85f45682de5dca8a40ea43586fbaf2f292332040b807a60"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast.rs",
+      "before": "b508a154999c664acaee783d7ae23a2b5edc3398331c0c5553ffa52a90cc7683",
+      "after": "416a5af8bf4d772a2ff2683277309ecaa8fa58944531b31675fc1388ede3bf08"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast/production.rs",
+      "before": "3489db3c35e588a897064999cfe283c93f8fcf5c5dea6e52c04937363861ccb9",
+      "after": "c2eaf9a1f7ad10899b4cce2ce895342291b70d25719a7e31b66f17a410021a1b"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture.rs",
+      "before": "e68a7870f8bb73fdab28a3e68e610e6a7ed9d6602e96e9abc32bed332262fa08",
+      "after": "d02adcddf7c51cea1d13f2a445e55c45a69f7915e150f4dd12a97977df8ccfcb"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/bindings.rs",
+      "before": null,
+      "after": "80789443506be14a08bd114579da639d1642680a2cda087849ac35af4dc7276e"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/tests.rs",
+      "before": "e7f4d1a0651629085dc023553d72b68509ab625a9b46ede3143ec1aeb0fcb419",
+      "after": "412b83f6315d901b05d56f264869b624bdba77f4c1e1587b46e06a617b6b49d1"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/tests/fake.rs",
+      "before": "19fcfff10d8c826f989cb98f35476fa9667dadaf74a6e6e8721a8e6469343385",
+      "after": "fbd5d2012b95a4ceb3e4c5dbe40fce584e7f6191cc1efe64b38aee05c5969121"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/transport.rs",
+      "before": "305f503dab6e95942afd7f09e4c8c145274887e2d1d730d1fd0248cd1edd7675",
+      "after": "b3aa2974c0b1708bf9415e14e282858f530f527064bdef128d4110487d009245"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/worker.rs",
+      "before": "0a937c561222b6151e4b9ecfd3821e087a1f60ed26769474b1a5a665092c95fa",
+      "after": "2386dc7cbe1288faf0ef62001d5a2273efabebacad3881466ddd92d737f9e01b"
+    },
+    {
+      "path": "crates/canopa-portal/tests/screencast_capture.rs",
+      "before": "f1102252a2bb928ce1b42a478787d2507b10bd4c99a66350ae485a6347c6b278",
+      "after": "f6f7d9dd29bd00f5e0299651b16608f4417b74cf1a97d25b127fb12f587b91fe"
+    }
+  ],
+  "patch": {
+    "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/pointer-workers/portal.patch",
+    "sha256": "40364650c9d25196ef765390be9c5feb8141d35d3547a1c7442b9ab7eb8525c8",
+    "replayed": true
+  },
+  "binaries": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/xdg-desktop-portal-canopa",
+      "sha256": "27a9fbb90115047a613eac0f2cb6e44b080ed955d4babb5e506be586d80cc538",
+      "bytes": 180943232
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+      "sha256": "413597eb060ade224dc1bc41763b5a17a862357f104234688240156d3596ccb3",
+      "bytes": 109986560
+    }
+  },
+  "compositor_sha256": "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+  "validation": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06.json",
+    "library_tests": 151,
+    "library_ignored": 5,
+    "integration_tests": 37,
+    "integration_ignored": 2,
+    "clippy": "passed",
+    "seconds": 330.77,
+    "source_inputs": 1308,
+    "changed_sources": [],
+    "format": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check",
+        "-p",
+        "canopa-portal"
+      ],
+      "exit_code": 0,
+      "observed_tool_session": 84858,
+      "scope": "Portal source unchanged since validation06; formatting check observed terminal success during integration/Clippy validation"
+    }
+  },
+  "native": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-03.json",
+    "groups": 62,
+    "seconds": 361.44,
+    "suites": [
+      {
+        "name": "native-pointer-03",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py",
+          "--name",
+          "native-pointer-03",
+          "--busy",
+          "--iterations",
+          "192",
+          "--frozen",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/receipt.json"
+        ],
+        "status": "passed",
+        "pid": 1355270,
+        "exit_code": 0,
+        "seconds": 80.76,
+        "checks": 11,
+        "record_monitor_calls": null,
+        "identity_precondition_calls": null,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-03/summary.json"
+      },
+      {
+        "name": "native-pointer-04",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py",
+          "--name",
+          "native-pointer-04",
+          "--busy",
+          "--iterations",
+          "192",
+          "--frozen",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/receipt.json"
+        ],
+        "status": "passed",
+        "pid": 1355664,
+        "exit_code": 0,
+        "seconds": 54.85,
+        "checks": 11,
+        "record_monitor_calls": null,
+        "identity_precondition_calls": null,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-04/summary.json"
+      },
+      {
+        "name": "native-pinned-video-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-video.py",
+          "--name",
+          "native-pinned-video-01",
+          "--sha256",
+          "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+          "--scheme",
+          "dark",
+          "--scale",
+          "1.25",
+          "--pinned"
+        ],
+        "status": "passed",
+        "pid": 1355998,
+        "exit_code": 0,
+        "seconds": 94.78,
+        "checks": 17,
+        "record_monitor_calls": 9,
+        "identity_precondition_calls": 9,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pinned-video-01/summary.json"
+      },
+      {
+        "name": "native-legacy-video-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-video.py",
+          "--name",
+          "native-legacy-video-01",
+          "--sha256",
+          "e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f",
+          "--scheme",
+          "light",
+          "--scale",
+          "1.0"
+        ],
+        "status": "passed",
+        "pid": 1357361,
+        "exit_code": 0,
+        "seconds": 88.55,
+        "checks": 17,
+        "record_monitor_calls": 9,
+        "identity_precondition_calls": 0,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-legacy-video-01/summary.json"
+      },
+      {
+        "name": "native-pinned-remote-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-remote.py",
+          "--name",
+          "native-pinned-remote-01",
+          "--sha256",
+          "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+          "--scheme",
+          "light",
+          "--scale",
+          "1.25",
+          "--pinned"
+        ],
+        "status": "passed",
+        "pid": 1358680,
+        "exit_code": 0,
+        "seconds": 42.48,
+        "checks": 6,
+        "record_monitor_calls": 6,
+        "identity_precondition_calls": 6,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pinned-remote-01/summary.json"
+      }
+    ],
+    "all_owned_jobs_processes_terminal": true
+  },
+  "retained_failures": [
+    "validation01 lease revocation test expected a value instead of channel closure",
+    "validation03 native fixture attempted to serialize a public Stream type without Serialize",
+    "validation04 integration36 passed/1 startup timeout/2 ignored; cause unresolved; identical-executable direct case and unchanged full rerun pass",
+    "native-pointer01: seven groups passed then EOF during resize",
+    "native-pointer02: seven groups passed then socket reset during repeated resize",
+    "reset-red01 reproduces queued unread command followed by shutdown/reset at the real socket seam; passed after requiring subsequent EOF"
+  ],
+  "diagnostic_controls": [
+    "Uniquely tagged boundary logs retained in diagnostic proof; diagnostic native runs pass, including192 resize transitions; they do not isolate the intermittent native reset. Instrumentation removed from final source."
+  ],
+  "not_established": [
+    "Public EI/Notify pointer adapters or explicit Iced pointer consent",
+    "canonical compositor extension adoption and distribution",
+    "remaining window activation/occlusion/physical-input acceptance",
+    "full workspace success or resolution of earlier Files/native-matrix failures",
+    "remaining interfaces in full18-interface roadmap"
+  ],
+  "documentation_updated_at": "2026-10-31T14:35:13.544696+00:00",
+  "terminal_audit": "native-proof/terminal-audit.json",
+  "documentation_links": "native-proof/documentation-links.json"
+}

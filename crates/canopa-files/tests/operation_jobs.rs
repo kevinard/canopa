@@ -384,7 +384,11 @@ fn a_killed_worker_reopens_queued_and_running_requests_for_review_without_replay
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "operation_worker_crash_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::operation_jobs::operation_worker_crash_helper",
+        ])
         .env("CANOPA_OPERATION_WORKER_CRASH_ROOT", temporary.path())
         .status()
         .unwrap();
@@ -1172,7 +1176,7 @@ fn queued_rename_observations_are_bounded_and_release_after_cancellation_and_com
         .args([
             "--ignored",
             "--exact",
-            "rename_observation_budget_helper",
+            "cases::operation_jobs::rename_observation_budget_helper",
             "--nocapture",
         ])
         .status()

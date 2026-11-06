@@ -212,6 +212,7 @@ mod tests {
         assert!(second.revision > first.revision);
         let session = publisher.await.unwrap();
         let event = v5::HostMessage::Event {
+            activation_token: None,
             protocol_version: 5,
             revision: first.revision,
             interaction: v5::Interaction::Form(v1::ProviderEvent::ButtonActivated {

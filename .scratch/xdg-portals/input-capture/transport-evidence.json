@@ -1,0 +1,110 @@
+{
+  "status": "private Rust pointer EI Receiver verified; public InputCapture remains unimplemented",
+  "at": "2026-11-01",
+  "adr": "docs/adr/0060-input-capture-receiver-worker.md",
+  "prior_goal_turn_classification": "no progress: status-only turn; resumed the existing validation after confirming its live host process",
+  "this_goal_turn_classification": "progress",
+  "native_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-07/summary.json",
+  "native_groups": 9,
+  "workers_terminal": 14,
+  "native_checks": [
+    "exact-once-worker-owned-receiver-fd-and-authenticated-owner-admission",
+    "real-captured-motion-button-scroll-frames-and-repeated-activation-share-one-ei-connection",
+    "topology-change-stops-ei-activation-and-requires-current-zones-and-barriers",
+    "receiver-device-close-retires-held-state-and-replacement-requires-explicit-enable",
+    "sender-role-denied-before-seat-and-repeated-failures-release-worker-and-compositor-slots",
+    "original-caller-loss-cleans-held-ei-input-before-child-exit-and-restores-local-input",
+    "exact-worker-sigkill-revokes-niri-interception-and-closes-the-receiver",
+    "slow-receiver-has-bounded-output-and-cannot-retain-niri-interception",
+    "backend-process-loss-leaves-child-time-to-clean-ei-held-state-and-revoke-niri"
+  ],
+  "pins": {
+    "/home/kevinard/projects/canopa/scripts/test-input-capture-worker.py": "931d6a30fddf70cdb3e34bb0e6d97060461ac1328d39351ac85616d5ca4eeede",
+    "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa": "d98253fc2c69b935d0f0f4123b6691002264685b2c50a5d17e7aefeec30b9e08",
+    "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5": "060e894b2b252388f3cb0e1f62344006ecf7fb8eb1e74a3b7375b7af8f4d0ebc",
+    "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e/niri": "9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/input-capture-ei-client.c": "3868734aac3584b54d8bc8ecabd60f164607ab4e9b9b9aed4aae9f323838180b",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/input-capture-pointer.c": "524b873fcac5c2fcb19462852878665a0e7a4bbd4ff50cc1f2eaed38f3aaf2ff",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/remote-input-pointer-receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "e9f43c6d61293bc888e22720b2690aac396a6f10c0d37ccfd90d756d39c43527",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf"
+  },
+  "portal_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/final-validation-03.json",
+  "portal": {
+    "library_passed": 173,
+    "library_ignored": 7,
+    "integration_passed": 48,
+    "integration_ignored": 2,
+    "fmt": "passed",
+    "clippy": "passed",
+    "main_build": "passed"
+  },
+  "tooling_followup": "/home/kevinard/projects/canopa/target/portal-input-capture-18/tooling-followup-01.json",
+  "regression_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/regressions-01.json",
+  "regression_counts": {
+    "clipboard-dark-01": 8,
+    "pointer-dark-01": 17,
+    "keyboard-dark-01": 2,
+    "clipboard-light-01": 8,
+    "pointer-light-01": 17,
+    "keyboard-light-01": 2
+  },
+  "regression_native_groups": 54,
+  "combined_native_groups": 63,
+  "all_recorded_processes_terminal": true,
+  "native_archives": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-07-archives.json",
+  "source_deltas_after_checks": [
+    "scripts/desktop-fixture/input-capture-pointer.c"
+  ],
+  "advertised": false,
+  "installed": false,
+  "public_backend": false,
+  "capabilities": {
+    "pointer": true,
+    "keyboard": false,
+    "touch": false
+  },
+  "workspace": {
+    "last_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/workspace-01.json",
+    "status": "failed: same ten Files integration failures",
+    "rerun_this_phase": false,
+    "reason": "Portal-only implementation and its native fixtures; no shared crate, vendor or cross-application production edits this phase."
+  },
+  "storage": {
+    "free_bytes": 15934853120,
+    "validation_net_growth_bytes": -79851520,
+    "regression_net_growth_bytes": 5251072,
+    "new_niri_copies_per_case": 0,
+    "unique_native_executables_compressed_by_checksum": true
+  },
+  "remaining": [
+    "public InputCapture v2 sessions and actual frontend translation",
+    "Iced capture consent and persistent controls",
+    "real keyboard/keymap capture; touch remains unadvertised until implemented",
+    "active-only Clipboard authority and cancellation",
+    "broader topology/constraint/lock/device/physical/injection/failure matrices",
+    "companion distribution, remaining GlobalShortcuts/Print/Usb and full release acceptance"
+  ],
+  "history": [
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-01/summary.json",
+      "cause": "Normal libei receiver sends a v3 ready request; diagnostic native-02 identifies exact Device Ready."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-03/summary.json",
+      "cause": "Keyboard ordering marker retired before explicit Release, triggering actual Niri device-loss suspension; keep source alive through the cycle."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-04/summary.json",
+      "cause": "libei drops input after client-requested device close; retire local logical device state on removal. Graceful loss still requires explicit releases and stop."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-05/summary.json",
+      "result": "Nine groups passed before adding wheel assertion and rebuilding final harness."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-18/native-06/summary.json",
+      "cause": "Wheel fixture called virtual-pointer axis_discrete with wl_pointer-style arguments; correct to generated five-argument signature."
+    }
+  ]
+}

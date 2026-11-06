@@ -1,6 +1,6 @@
 use super::{
-    CtlRequest, SocketControlRequest, control_socket_response, invalid_control_reply,
-    panel_content_from_projection,
+    CtlRequest, PanelInteractionContext, SocketControlRequest, control_socket_response,
+    invalid_control_reply, panel_content_from_projection,
 };
 use anyhow::Context;
 use canopa_notify::NotifyControl;
@@ -106,9 +106,14 @@ impl PanelWire {
                 v5::HostMessage::Close { .. } => return Ok(None),
                 v5::HostMessage::Event {
                     interaction: v5::Interaction::Rich(event),
+                    activation_token,
                     ..
                 } => {
-                    let mut line = serde_json::to_string(&event).map_err(std::io::Error::other)?;
+                    let mut line = serde_json::to_string(&PanelInteractionContext {
+                        interaction: event,
+                        activation_token,
+                    })
+                    .map_err(std::io::Error::other)?;
                     line.push('\n');
                     return Ok(Some(line));
                 }

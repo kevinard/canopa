@@ -1,0 +1,92 @@
+{
+  "status": "passed",
+  "scope": "scoped actual public Print/frontend/Iced/file/private-CUPS and converter identity/lifetime acceptance",
+  "full_goal_complete": false,
+  "packaged_interfaces": 11,
+  "experimental_interfaces": 6,
+  "print_normally_registered": false,
+  "receipts": {
+    "worker-03.json": "b7b30fa515736933f3d989705b211ace8b265a88d6d6f2ed5683b167c5e97307",
+    "portal-regressions-03.json": "b06fe5332275957988466bfd215631fe5b368f33c31bcf9961b5990b9e5dd1a3",
+    "public-06/summary.json": "3df10314fc69ac1ebdf645e951f96d1f30cbec7238371200e608552e4eeb5640",
+    "hardening-03/summary.json": "5cbdb579a5d27a2ebef12aa88a312a0de77d213696aa0e730035b8a65bb1c512",
+    "native-01/summary.json": "0b1f7dda4b2fb56fddddb0c8019dba78cf1d499471b35a3eb4d29eb0bc7b7de0",
+    "startup-linkage.txt": "bb81e8307d4938da0c2f16ece31baf6fa21b552495bf95486a71297d624bf01e",
+    "fd-exec-probe.json": "fed520bc2022a3b34881a9baafac17bd27684f184770ca4833cc653c1c8a6a02",
+    "bind-fd-probe.json": "a541a50c33d0a4985c548807900f8f3af55f60aada94a9d6eee9fbe33aa05192"
+  },
+  "pins": {
+    "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa": "cd2152ad2badb5e9406cb2f4371c740ae39b957c0e95b7d7142dd86b88ca49bd",
+    "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-6c03c7fd0a0bee32": "2c95763c3ca58e8ca03e0aa15d27b86a82636bbd348c859c72853549b522abfb"
+  },
+  "changed_inputs": [],
+  "tests": {
+    "print_passed": 89,
+    "print_ignored": 7,
+    "lockdown_passed": 12,
+    "portal_library_passed": 307,
+    "portal_library_ignored": 15,
+    "portal_integration_passed": 55,
+    "portal_integration_ignored": 2
+  },
+  "native": {
+    "public_groups": 16,
+    "public_processes": 44,
+    "hardening_groups": 5,
+    "hardening_processes": 23,
+    "renderer_groups": 24,
+    "renderer_processes": 130,
+    "all_observed_terminal": true
+  },
+  "printer_receipts": [
+    {
+      "appearance": "dark",
+      "bytes": 7353,
+      "sha256": "3352212e8c12ae757f6e98bf05a3da1702f38cff0003195a9d72867b5237a418",
+      "content_type": "application/pdf",
+      "ipp": {
+        "IPP_MEDIA_COL": "{media-size={x-dimension=21000 y-dimension=29700} media-bottom-margin=0 media-left-margin=0 media-right-margin=0 media-top-margin=0}",
+        "IPP_SIDES": "one-sided",
+        "IPP_JOB_ID": "1"
+      },
+      "scheduler_job": 1,
+      "scheduler_copies": 1
+    },
+    {
+      "appearance": "light",
+      "bytes": 7353,
+      "sha256": "3352212e8c12ae757f6e98bf05a3da1702f38cff0003195a9d72867b5237a418",
+      "content_type": "application/pdf",
+      "ipp": {
+        "IPP_MEDIA_COL": "{media-size={x-dimension=21000 y-dimension=29700} media-bottom-margin=0 media-left-margin=0 media-right-margin=0 media-top-margin=0}",
+        "IPP_SIDES": "one-sided",
+        "IPP_JOB_ID": "2"
+      },
+      "scheduler_job": 2,
+      "scheduler_copies": 1
+    }
+  ],
+  "handles_terminal": {
+    "validation": 30340,
+    "portal_regressions": 1126,
+    "public": 10690,
+    "hardening": 66996,
+    "renderer": 54019
+  },
+  "storage": {
+    "baseline_free_bytes": 7450652672,
+    "free_bytes": 7416250368,
+    "net_growth_bytes": 34402304,
+    "minimum_free_bytes": 6000000000,
+    "maximum_phase_growth_bytes": 3000000000
+  },
+  "limitations": [
+    "Shipped Print registration remains off until remaining gates pass",
+    "Public tests use native host identity; no real Flatpak or physical printer acceptance",
+    "Duplex/copy boundaries, other device/custom-media/saved-instance controls and prepared Qt/PS/SVG compatibility remain",
+    "Recovery/power loss, indefinitely stalled filesystem setup and ambiguous CUPS job creation/backend death remain",
+    "Runtime packaging and wider six experimental interface/distribution/release/routing acceptance remain",
+    "No new full workspace test gate; ten recorded Files failures remain unresolved"
+  ],
+  "authoritative_receipt": "target/portal-print-36/acceptance-01.json"
+}

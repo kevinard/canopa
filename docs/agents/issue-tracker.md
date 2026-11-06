@@ -13,5 +13,5 @@ do not duplicate or renumber them. Repository consolidation is scoped in
 
 Integration decisions live in root `docs/adr/`; application ADR histories live in
 `docs/shell/adr/` and `docs/notify/adr/`. Built-in providers share v5 with explicit
-v1/v4 compatibility. The Settings portal is implemented; interactive portal
-request presentation remains separate work for the first interface needing it.
+v1/v4 compatibility. Settings is implemented; FileChooser and interactive request
+lifetimes are tracked in `.scratch/xdg-portals/` and root ADR0026.

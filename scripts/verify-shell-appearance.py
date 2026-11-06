@@ -123,7 +123,7 @@ Gtk.main()
         stub = runtime / "session-action.py"
         stub.write_text('import pathlib, sys\npathlib.Path(__file__).with_name(sys.argv[1] + ".requested").touch()\n')
         for original, replacement in [
-            ('launch "swaylock";', f'launch "python3" "{stub}" "lock";'),
+            ('launch "canopa-shell" "lock";', f'launch "python3" "{stub}" "lock";'),
             ('argv "niri" "msg" "action" "quit" "--skip-confirmation";', f'argv "python3" "{stub}" "logout";'),
             ('argv "systemctl" "reboot";', f'argv "python3" "{stub}" "reboot";'),
             ('argv "systemctl" "poweroff";', f'argv "python3" "{stub}" "poweroff";'),

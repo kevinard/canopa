@@ -475,7 +475,7 @@ fn a_killed_trash_batch_retains_every_file_and_recovers_undo_for_its_completed_p
     }
     let mut child = Child(
         Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "crash_trash_helper", "--ignored"])
+            .args(["--exact", "cases::trash::crash_trash_helper", "--ignored"])
             .env("CANOPA_FILES_TRASH_CRASH_ROOT", root.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

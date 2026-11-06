@@ -1,5 +1,4 @@
-#[path = "support/notifications.rs"]
-mod notifications;
+use crate::notifications;
 
 use canopa_notify::{
     Daemon, DaemonOptions, DeliveryOutcome, NoopBannerPresenter, NotificationInput,

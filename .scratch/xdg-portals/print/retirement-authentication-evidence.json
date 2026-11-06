@@ -1,0 +1,149 @@
+{
+  "status": "scoped-verified-full-auth-and-full-goal-active",
+  "scope": "Cache-only synchronous printer retirement with exact scope and account matching; no new Iced decision during automatic cleanup, no uncertain document retry; complete protected authentication remains open",
+  "validation": {
+    "path": "target/portal-print-55/worker-02.json",
+    "sha256": "4c8666d40299422d77029af8ee18c0899a49425fbc24f8b6162bb7ffce366532",
+    "counts": {
+      "tests": {
+        "passed": 190,
+        "failed": 0,
+        "ignored": 12
+      },
+      "lockdown-tests": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      "portal-library": {
+        "passed": 408,
+        "failed": 0,
+        "ignored": 20
+      },
+      "portal-integration": {
+        "passed": 55,
+        "failed": 0,
+        "ignored": 2
+      },
+      "ppd-runtime": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    }
+  },
+  "binary_sha256": "26939bdff8a14aa8db6f46fb405098d8b1a7c8481ceff20308db91bae8d69e12",
+  "sources": {
+    "path": "target/portal-print-55/candidate-02-sources.json",
+    "sha256": "c128dd4310eb22b47b1167ad7333fb55492619627451234cb6c1b5ba8a6830e4",
+    "files": 11,
+    "snapshot_bytes": 99014
+  },
+  "native": [
+    {
+      "path": "target/portal-print-55/retirement-worker-03/summary.json",
+      "sha256": "081daf6bfc2b592cd631e1888afd87454c7fcde8bbfa130a8d3976747e5b1bf2",
+      "groups": 7,
+      "observed_terminal": 14
+    },
+    {
+      "path": "target/portal-print-55/auth-worker-01/summary.json",
+      "sha256": "bf51e6b70481b659ece4512ee2cb9b3e39579b54a8a5ce7c6e4f0cdb7f633fb9",
+      "groups": 14,
+      "observed_terminal": 15
+    },
+    {
+      "path": "target/portal-print-55/controls-worker-01/summary.json",
+      "sha256": "07ad9d7e3bfc28360453a79a34592a0995f4d924d310788d15883c126d62ddc5",
+      "groups": 27,
+      "observed_terminal": 34
+    },
+    {
+      "path": "target/portal-print-55/retirement-ui-new-realm-dark-01/summary.json",
+      "sha256": "6833185dbb11dedb36f91f0c775f4bc4c5fc0e09c22e4cd49a51dd5ec0efa817",
+      "groups": 1,
+      "observed_terminal": 23
+    },
+    {
+      "path": "target/portal-print-55/retirement-ui-same-scope-dark-01/summary.json",
+      "sha256": "30d074ceab761a9e398581472e3291766a4ecddb70e7996c01b543b03c2d05f5",
+      "groups": 1,
+      "observed_terminal": 20
+    },
+    {
+      "path": "target/portal-print-55/retirement-ui-new-realm-light-01/summary.json",
+      "sha256": "bc449b4a81165961a25ccb9db6666175b7b8040996e2b4cd30eed6f388ec094f",
+      "groups": 1,
+      "observed_terminal": 20
+    },
+    {
+      "path": "target/portal-print-55/retirement-ui-same-scope-light-01/summary.json",
+      "sha256": "bebb39a3a568e4f98a85e9212d2e47384e7eba2b20090cfe8122a678231ca009",
+      "groups": 1,
+      "observed_terminal": 20
+    },
+    {
+      "path": "target/portal-print-55/authentication-dark-01/summary.json",
+      "sha256": "e1adca3f8998d03e372ba9898320c3c9a6158cc5b29b69c82e7b3268df6e89dd",
+      "groups": 11,
+      "observed_terminal": 135
+    },
+    {
+      "path": "target/portal-print-55/authentication-light-01/summary.json",
+      "sha256": "3c091e9d8c7444fdfafa4eabe906752fd69a5755a879a884e4140d12da1b5c56",
+      "groups": 11,
+      "observed_terminal": 133
+    },
+    {
+      "path": "target/portal-print-55/ordinary-print-regression-dark-01/summary.json",
+      "sha256": "613f4c9650f67400b3674700cb03527c7ce706f17341aa31cf8873f00ef2167f",
+      "groups": 6,
+      "observed_terminal": 29
+    },
+    {
+      "path": "target/portal-print-55/ordinary-print-regression-light-01/summary.json",
+      "sha256": "1a4ec58cedbcdb0ee783211b4745dfd2d4ad502c6f9cdf7bb2cf1c0874ae83c6",
+      "groups": 6,
+      "observed_terminal": 29
+    },
+    {
+      "path": "target/portal-print-55/reconnect-01/summary.json",
+      "sha256": "817926d81e8b3daf58037fb5cdb13e73215266c85841f90587a1d2d31f35b66f",
+      "groups": 5,
+      "observed_terminal": 8
+    }
+  ],
+  "native_groups": 91,
+  "observed_final_terminal": 480,
+  "failed_evidence": [
+    "target/portal-print-55/retirement-worker-01/summary.json",
+    "target/portal-print-55/retirement-worker-02/summary.json",
+    "target/portal-print-55/worker-01.json"
+  ],
+  "intentional_validation_stop": {
+    "path": "target/portal-print-55/validation-stop-01.json",
+    "sha256": "a1771bd144dff48a125d71c4d85a087b7f0d50fffcfd0c45283a3aadd6cede02"
+  },
+  "visual_checks": [
+    "Masked login, full labels and controls in dark100/light125",
+    "Ordinary advanced controls remain readable and scrollable in both appearances"
+  ],
+  "storage": {
+    "baseline_free_bytes": 6570827776,
+    "final_free_bytes": 6754869248,
+    "net_growth_bytes": -184041472,
+    "minimum_free_bytes": 6000000000,
+    "maximum_phase_growth_bytes": 3000000000,
+    "new_native_executables": 0,
+    "binary_copies": 0,
+    "new_dependencies": 0
+  },
+  "limits": [
+    "Actual PAM account/owner investigation is separate: principal-probe03/04/05 measured late Create owner mismatch and Send-only HTTP401 failure; no fix or full authenticated-printing acceptance yet",
+    "Protected recovery, held-job authentication without document resubmission, Digest and longer credentials remain required",
+    "Native prompt timeout, stalled-helper and file-selection credential-clearing acceptance remain open",
+    "Physical, driverless, real Flatpak, failure/resource/runtime/default packaging and six experimental interfaces remain",
+    "Automatic Qt client integration deferred by user; explicit Qt fixture isolates its own native CUPS lookup",
+    "No complete workspace execution; ten existing Files integration failures remain"
+  ]
+}

@@ -184,7 +184,9 @@ fn accepted_text_bytes(notification: &AcceptedNotification) -> usize {
 }
 
 fn visual_text_bytes(visual: &NotificationVisualReference) -> usize {
-    let (NotificationVisualReference::IconName(value)
-    | NotificationVisualReference::LocalPath(value)) = visual;
-    value.len()
+    match visual {
+        NotificationVisualReference::IconName(value)
+        | NotificationVisualReference::LocalPath(value) => value.len(),
+        NotificationVisualReference::IconNames(names) => names.iter().map(String::len).sum(),
+    }
 }

@@ -18,11 +18,30 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libpulse-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-4-dev libgtk-4-media-gstreamer gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav poppler-utils desktop-file-utils
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libpulse-dev libpipewire-0.3-dev libclang-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-4-dev libgtk-4-media-gstreamer gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav poppler-utils desktop-file-utils libgnutls28-dev zlib1g-dev binutils
       - run: python3 scripts/check-vendor.py
       - run: cargo build --locked --release --workspace --bins --target x86_64-unknown-linux-gnu
-      - run: bash scripts/package-release.sh target/x86_64-unknown-linux-gnu/release dist
-      - run: bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz
+      - name: Build private Print client
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, urllib.request
+          spec = json.loads(pathlib.Path('vendor/provenance.json').read_text())['source_overlays']['cups-authentication']['sources']['cups']
+          archives = pathlib.Path('target/cups-authentication-archives')
+          archives.mkdir(parents=True, exist_ok=True)
+          path = archives / spec['archive']
+          with urllib.request.urlopen(spec['url'], timeout=60) as source, path.open('wb') as destination:
+              while chunk := source.read(1024 * 1024):
+                  destination.write(chunk)
+          with path.open('rb') as source:
+              assert hashlib.file_digest(source, 'sha256').hexdigest() == spec['archive_sha256']
+          PY
+          python3 scripts/build-cups-authentication.py --archives target/cups-authentication-archives --work-dir target/cups-authentication-compat --prepare-only
+          python3 scripts/build-cups-authentication.py --archives target/cups-authentication-archives --work-dir target/cups-authentication-compat --reuse
+      - run: python3 scripts/test-print-runtime-package.py --build-receipt target/cups-authentication-compat/canopa-build.json --binary target/x86_64-unknown-linux-gnu/release/xdg-desktop-portal-canopa
+      - run: python3 scripts/build-print-ipp-backend.py --archives target/cups-authentication-archives --client-build target/cups-authentication-compat/canopa-build.json --work-dir target/print-ipp-backend-compat/maintained
+      - run: python3 scripts/test-print-backend-package.py --build-receipt target/print-ipp-backend-compat/maintained/canopa-build.json --client-build target/cups-authentication-compat/canopa-build.json --out target/print-backend-package-check
+      - run: bash scripts/package-release.sh target/x86_64-unknown-linux-gnu/release dist --cups-runtime target/cups-authentication-compat/canopa-build.json --cups-ipp-backend target/print-ipp-backend-compat/maintained/canopa-build.json
+      - run: bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz --require-print-runtime --require-print-backend
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.tar.gz

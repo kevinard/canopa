@@ -1,0 +1,174 @@
+{
+  "status": "scoped-maintained-receiver-source-loader-and-native-verified",
+  "goal": "active-full-eighteen-interface-scope",
+  "print": "opt-in",
+  "qt": "automatic-integration-deferred",
+  "normal_sha256": "47003b288279ff8bc3855005d783715b30198a6c15327624f9dd5f4639116b3b",
+  "receiver_sha256": "bf2842406d3f21687be2b4f989083acd66be0933ceae5922324c32717c0377a6",
+  "receiver_bytes": 221872,
+  "client_sha256": "903123580ada3470849a7c856ea56ab0d7405f0133ed3d11acbcd860cc01fb02",
+  "receipts": {
+    "target/portal-print-71/receiver-maintained-build-01.json": {
+      "sha256": "d6042a0343589d7749aa001d3e580924e88ea05e9642e2111fa04bf25bc88605",
+      "status": "built"
+    },
+    "target/portal-print-71/receiver-maintained-build-02.json": {
+      "sha256": "c959d69f62154e928c07c7e026ec966cb8c424de48e87ef3884f35cf6f5abffa",
+      "status": "built"
+    },
+    "target/portal-print-71/receiver-maintained-build-03.json": {
+      "sha256": "6c9602f60cf3fe638d84d4da9f2ba52398bb492a187a60d76cf4ae6bdb4e07d7",
+      "status": "built"
+    },
+    "target/portal-print-71/receiver-maintained-build-04.json": {
+      "sha256": "7af0cd5caec981ff785606edff2c0e2407a694a4911efd7dd9862db2c3c0f706",
+      "status": "built"
+    },
+    "target/portal-print-71/receiver-build-refusals-01/summary.json": {
+      "sha256": "5074d6741662dd8cda322a6bd7634e22b58561b59e38d8edd237a66b3581d60f",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-maintained-validation-01/summary.json": {
+      "sha256": "582b740773c7ae70017b891b25335a55d5a1c6bd28a479a83bdf5a2a354ce495",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-maintained-default-validation-01/summary.json": {
+      "sha256": "23aaa4b05224a7d89eedcc9c464ff08b6adc6e1248f9c617aa62970c2d03efe0",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-maintained-red-01/summary.json": {
+      "sha256": "a9cbf6f75f182b308a3809d7ab9142ac9096cabf6dd882ae48282af2c7bb0ee0",
+      "status": "receiver-validation-mismatch"
+    },
+    "target/portal-print-71/receiver-maintained-red-restoration-01.json": {
+      "sha256": "6792da1fdadfb94a88568e0e6c59779c61e1e4ad66bf9e76597915b52db50419",
+      "status": "expected-baseline-red"
+    },
+    "target/portal-print-71/receiver-default-loader-01.json": {
+      "sha256": "abc91f7d15371629a486d35369a27035f998b85a5cb126ac90fbf7d5e918af3d",
+      "status": "system-library-selected-without-explicit-launcher"
+    },
+    "target/portal-print-71/receiver-default-loader-02.json": {
+      "sha256": "aaa81e82848b60a90b6f0f5340e08507b0032e415d9903f227e6e5eead05464c",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-machine-code-01.json": {
+      "sha256": "f3094a46512e53f3403fa3df99a9f974779669298801a70558f1c91ccffc5deb",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-obsolete-archives-01.json": {
+      "sha256": "b21e23d49239ba4843973c54898fce9e46e796ad8768f74bc1e2921620c7677c",
+      "status": "lossless-obsolete-receivers-retired"
+    },
+    "target/portal-print-71/workspace-receiver-01.json": {
+      "sha256": "f37af75c18a7035e4737507d69847a0cd67cb71f7f3b0384c183b58446ed255f",
+      "status": "failed"
+    },
+    "target/portal-print-71/workspace-receiver-failures-01.json": {
+      "sha256": "e53d219e09b502f5736f4db2daa0a509d55512071ed56cb7f424d75a11c7e12d",
+      "status": "same-existing-Files-integration-failures"
+    },
+    "target/portal-print-71/workspace-receiver-post-01.json": {
+      "sha256": "74dba092285503a94d3b4b6690e9ac13ea34f0d7c1d0de0a5ba10456c5797a9a",
+      "status": "passed"
+    },
+    "target/portal-print-71/receiver-native-source-guard-01.json": {
+      "sha256": "bdb0da813039c9a1cad577822a5b92f5bb79a161d936273bd1c9c1f15700f7fb",
+      "status": "verified-runtime-source-continuity-with-receiver-tooling-additions"
+    },
+    "target/portal-print-71/receiver-native-source-guard-02.json": {
+      "sha256": "fcf0d1a8ab0d7c6fbd77005d74bb1ad1b129ea3ad732743ae1104ab665712854",
+      "status": "verified-runtime-source-continuity-with-receiver-tooling-additions"
+    },
+    "target/portal-print-71/receiver-final-source-guard-01.json": {
+      "sha256": "b1a6a0bcf17862916d8bce687689627290748f46b24af6c496b4b0fd8623e9dc",
+      "status": "passed-runtime-source-continuity-with-maintained-receiver"
+    },
+    "target/portal-print-71/pipeline-host-audit-04.json": {
+      "sha256": "6836669221d1365bbe0d37d1a8530318808a50ce47deb290fa3bd0a3f8c08de4",
+      "status": "passed"
+    },
+    "target/portal-print-71/driverless-pipeline-36/summary.json": {
+      "sha256": "57b25fd338bb5b27ab7963daf4dedc9d92a59475ca3d291de55321ef86dcbb04",
+      "status": "verified-private-driverless-paper"
+    },
+    "target/portal-print-71/driverless-pipeline-37/summary.json": {
+      "sha256": "ca11ed1fcffa7eabb30343798439274c291eef525808b6f6a596c133cbbf1f56",
+      "status": "verified-public-prepared-paper"
+    },
+    "target/portal-print-71/driverless-pipeline-38/summary.json": {
+      "sha256": "eed937352648b0a52d8fb35e7a3317b3ab3d91a097592469b7a9def4a0f238e4",
+      "status": "verified-public-prepared-paper"
+    },
+    "target/portal-print-71/driverless-pipeline-39/summary.json": {
+      "sha256": "d8dcb882e70d092b61388cfc23ef6c11ca3676ba8197348bf8978efc5ddc49e1",
+      "status": "verified-public-prepared-paper"
+    },
+    "target/portal-print-71/driverless-pipeline-40/summary.json": {
+      "sha256": "047988a604c35f84d54d157b27229ac3c7664650aa8f5d5717e8a5035c4eb9b0",
+      "status": "verified-public-prepared-paper"
+    },
+    "target/portal-print-71/driverless-pipeline-36/content-check/summary.json": {
+      "sha256": "74fd61276569b13fa666fff9fb04b36b3d9932dce03b1ecb58493a5b5e4e2614",
+      "status": "passed"
+    },
+    "target/portal-print-71/client-build-bound-config-01.json": {
+      "sha256": "4752267483b787eb315c6b3bb5ee43a20ded991dd1f73932d305c3d44ba43e16",
+      "status": "built"
+    },
+    "target/portal-print-71/receiver-canonical-recipe-01.json": {
+      "sha256": "445f13199056fb0c65c912747afe123edb354ecd37c7fb8f34bba4cf1cb61fd1",
+      "status": "canonical-receiver-recipe"
+    }
+  },
+  "source_only_replay": {
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/test-print-ipp-receiver.py": "9b1fef3e5d54096d96ae132dba45b9f4e852d3e936f67a633358cc363026c1b5",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/print-custom-ipp.conf": "ec40b9bd878af9c70bc6b243fee0a2e528ed22e06b2f6a43fac0c098797bfc2f",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/build-cups-authentication.py": "70a7a0d8d58d31835db48470071b8024de2ff468beec3c535b90c369b9c11f66",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/public-paper.py": "e55c93f06a17ea7a5fa1e1a7611442aafb659281d1eb47a3a6a0c4f82ffdda43",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/driverless-pipeline.py": "41358fb1b6aed9748bacf31dbdadc0caee5dd1b8fa545b0396985a1bfca6b92c",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/build-print-ipp-receiver.py": "f112f8c6318631972cf1c4c7780fbcd8e5dbc1c7121d922cb43e77bac1b81c5a",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/audit-processes-04.py": "352ffa880712a7bef56c2a026296c1b30f3e3e03c2c13d037c92a991786d9cd4",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/workspace-receiver.py": "7f4d72d9e6590612752d28d199eb39f7123e94647e23de24fbd20548f69b1abe",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/seal-receiver.py": "59f728ed6c6e51a5de88543bb72436a602fbd3d9880af034e3ce647613f11ca0",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/workspace-receiver-post.py": "09e922110d44cb33566253c49e97d9aadd4020efe63a777549a497f2d6b1cff5",
+    ".scratch/xdg-portals/print/receiver-maintenance-replay/receiver.patch": "8fb611cd2db7777af5b55682123e0fa60b2c9c0c1dc3b7e00a04e504ebab06a0"
+  },
+  "checks": {
+    "source_files_each": 1301,
+    "reproducible_final_build": true,
+    "default_client_mapping": true,
+    "protocol_cases": 11,
+    "original_baseline_failures": 7,
+    "build_refusals": 3,
+    "current_public_cases": 4,
+    "current_public_runs": [
+      39,
+      40
+    ],
+    "intermediate_runs": [
+      36,
+      37,
+      38
+    ],
+    "host_retained_identities_absent": 1006,
+    "host_reports": 52,
+    "portal_library": 439,
+    "portal_integration": 55,
+    "workspace_same_ten_Files_failures": true,
+    "workspace_full_green": false,
+    "workspace_poststages_passed": true
+  },
+  "remaining": [
+    "Advanced device and broader connection compatibility",
+    "Actual Flatpak/release/deployment/default Print routing",
+    "Physical printer acceptance",
+    "Existing Files workspace failures and six experimental-interface gates"
+  ],
+  "storage": {
+    "free_bytes": 5638262784,
+    "root_incremental_graph_reused": true,
+    "obsolete_receivers_losslessly_archived": true,
+    "no_per_case_elf_copies": true
+  }
+}

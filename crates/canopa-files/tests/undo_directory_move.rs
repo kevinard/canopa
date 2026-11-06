@@ -197,7 +197,7 @@ fn a_killed_owned_directory_return_resumes_without_duplicates_and_retains_older_
         .args([
             "--ignored",
             "--exact",
-            "crash_moved_directory_destination_helper",
+            "cases::undo_directory_move::crash_moved_directory_destination_helper",
         ])
         .env("CANOPA_DIRECTORY_MOVE_ROOT", fixture._source.path())
         .env("CANOPA_DIRECTORY_MOVE_CURRENT", &fixture.current)

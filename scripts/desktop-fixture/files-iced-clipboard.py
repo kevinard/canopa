@@ -273,8 +273,12 @@ def verify(session, fixture, browser, scheme, scale, process):
     time.sleep(1)
     assert process.poll() is None
     assert clipboard() == expected
-    with external(delayed, "release-background-owner", observe=False):
-        assert process.wait(timeout=10) == 0
+    # Cancel retains exact unfinished transfer work until explicit Abandon. It
+    # is another application owner, even after this clipboard selection is lost.
+    # The no-operation clipboard-lifetime case verifies natural process exit.
+    with external(delayed, "release-background-owner"):
         assert clipboard("text/uri-list") == delayed.encode()
-    checks.append("file ownership survives closing every Browser and releases the background process when superseded")
+        time.sleep(1)
+        assert process.poll() is None
+    checks.append("file ownership survives closing every Browser; canceled transfers still retain the process after clipboard supersession")
     return {"status": "passed", "scheme": scheme, "scale": scale, "checks": checks}

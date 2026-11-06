@@ -1885,7 +1885,11 @@ fn a_killed_saved_stage_handoff_reopens_before_and_after_catalog_cutover_without
         fixture.prepare_return();
         drop(fixture.engine.take());
         let status = Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "crash_saved_stage_handoff_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::undo_saved_stage_move::crash_saved_stage_handoff_helper",
+            ])
             .env("CANOPA_SAVED_STAGE_ROOT", fixture.source.path())
             .env("CANOPA_SAVED_STAGE_BOUNDARY", boundary)
             .status()
@@ -1994,7 +1998,11 @@ fn a_killed_forward_saved_handoff_reconciles_then_a_retried_folder_move_preserve
         fixture.replace_copied_file_of_size(Some(LENGTH));
         drop(fixture.engine.take());
         let status = Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "crash_saved_stage_handoff_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::undo_saved_stage_move::crash_saved_stage_handoff_helper",
+            ])
             .env("CANOPA_SAVED_STAGE_ROOT", fixture.source.path())
             .env("CANOPA_SAVED_STAGE_BOUNDARY", boundary)
             .env(

@@ -1,13 +1,23 @@
 [package]
+autotests = false
 name = "canopa-portal"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["desktop"]
+desktop = ["dep:iced", "dep:canopa-ui", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:canopa-file", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
+
 [[bin]]
 name = "xdg-desktop-portal-canopa"
 path = "src/main.rs"
+test = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
 
 [dependencies]
 anyhow.workspace = true
@@ -15,8 +25,34 @@ canopa-config.workspace = true
 canopa-theme.workspace = true
 clap.workspace = true
 futures-util.workspace = true
-tokio.workspace = true
+futures-channel.workspace = true
+tokio = { workspace = true, features = ["process"] }
 zbus.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+rusqlite.workspace = true
+canopa-files = { path = "../canopa-files", default-features = false, optional = true }
+canopa-ui = { workspace = true, optional = true }
+iced = { workspace = true, optional = true, features = ["tiny-skia"] }
+glob = { version = "0.3.4", optional = true }
+canopa-apps = { workspace = true, optional = true }
+canopa-assets = { workspace = true, optional = true, features = ["svg"] }
+canopa-file = { workspace = true, optional = true }
+whoami = { version = "1.6.1", default-features = false, optional = true }
+rustix = { workspace = true, features = ["event", "net", "pipe"] }
+image = { workspace = true, optional = true, features = ["gif", "webp"] }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+wayland-client = { workspace = true, optional = true }
+wayland-protocols = { workspace = true, optional = true, features = ["unstable"] }
+wayland-protocols-wlr = { workspace = true, optional = true }
+pipewire = { version = "0.9.2", optional = true, features = ["v0_3_64"] }
+reis = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
+libloading = { version = "0.8.9", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

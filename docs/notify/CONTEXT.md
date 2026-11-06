@@ -605,3 +605,32 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Non-resident **Notification Action** invocation publishes the sender-visible action event before the sender-visible dismissal event.
 - **Notification Lifecycle** owns **Notification Timeout** eligibility, duration, cancellation, and expiration meaning; **Notification Banner State** reports whether the matching revision is visible, and the **Notification Daemon** starts the timer only after graphical presentation acknowledges applying that banner state.
 - Inline replies are outside the first version scope.
+
+
+## Notification portal adapter (in progress)
+
+A **Portal Notification ID** is an application-scoped string owned by the portal
+transport. It is independent from both the Internal Notification ID and the
+session-global numeric Sender Notification ID of the freedesktop interface.
+Notify's service hosts the additional backend at the standard portal path;
+Delivery Policy, History, Lifecycle, Banners, Center and sound retain their owners.
+A **Portal Action Binding** freezes an application's action name and typed target
+at sender-event commitment. Later replacement cannot change a queued callback.
+The operation queue owns accepted Add/Remove work through transport reply loss,
+and shutdown drains that work before stopping the Notification Runtime.
+
+Intake distinguishes plain, portal-subset markup and freedesktop body formats.
+Its retained body-content representation preserves that interpretation across
+restart. Descriptor-backed portal media becomes bounded owned pixels/sound bytes
+before receipt; presentation workers do not reopen sender descriptor paths.
+Portal callbacks do not expire automatically when a banner has been shown.
+See [ADR0031](../adr/0031-notify-owned-portal-adapter.md) for current verification
+and the remaining advertisement boundary.
+
+The optional Canopa request-timeout capability explicitly requests withdrawal
+after a bounded interval from transport admission. Notify owns one bounded expiry
+schedule, marks these questions transient, and validates their binding before
+withdrawal so a queued expiry cannot close a replacement. It works without banner
+display or a surviving sender and is separate from Notification Timeout semantics.
+Ordinary portal notifications retain the existing no-expiry/sender-exit contract.
+See [ADR0034](../adr/0034-background-observation-and-decisions.md).

@@ -1,0 +1,205 @@
+{
+  "status": "scoped-retained-print-file-consent-passed",
+  "full_goal_complete": false,
+  "print_interface_registered": false,
+  "file_publication_implemented": false,
+  "packaged_interfaces": 11,
+  "experimental_interfaces": 6,
+  "date": "2026-11-02",
+  "normal_binary": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+  "normal_sha256": "91419df267706464de27e44d45854c1d6c886a63be1269a1519c7398ecdb5452",
+  "print_tests_passed": 54,
+  "print_tests_ignored": 1,
+  "portal_library": {
+    "status": "ok",
+    "passed": 270,
+    "failed": 0,
+    "ignored": 9
+  },
+  "portal_integration": {
+    "status": "ok",
+    "passed": 55,
+    "failed": 0,
+    "ignored": 2
+  },
+  "format_passed": true,
+  "strict_workspace_all_target_clippy_passed": true,
+  "whole_workspace_all_target_build_passed": true,
+  "new_full_workspace_test_gate_run": false,
+  "previous_ten_files_failures_unresolved": true,
+  "core_validation": "/home/kevinard/projects/canopa/target/portal-print-32/worker-03.json",
+  "portal_regressions": "/home/kevinard/projects/canopa/target/portal-print-32/portal-regressions-02.json",
+  "native_receipt": "/home/kevinard/projects/canopa/target/portal-print-dialog-native-06/summary.json",
+  "native_groups": 28,
+  "rust_parent_reviews": 20,
+  "iced_dialogs": 20,
+  "successful_file_pins_received": 4,
+  "late_appearance_rejections": 2,
+  "observed_processes": 85,
+  "all_observed_processes_terminal": true,
+  "source_guards_unchanged": true,
+  "no_print_jobs_submitted": true,
+  "no_application_output_creation_or_truncation": true,
+  "gtk_linked": false,
+  "cups_startup_dependency": false,
+  "phase_net_growth_bytes": 85159936,
+  "minimum_free_bytes": 6000000000,
+  "maximum_phase_net_growth_bytes": 3000000000,
+  "no_new_standalone_rust_native_driver": true,
+  "source_sha256": {
+    "Cargo.lock": "52de3d482cf774236700555ae674db7e30426de8a808e5e1f5e39d9ef23df779",
+    "crates/canopa-portal/Cargo.toml": "398f83beb952ff17b62c0113acd62998695dedff808c39995d0241f94b00cc18",
+    "crates/canopa-portal/src/account_ui.rs": "1d36d704ddcc16ec94e0ce0ea7176932e802d2a1d362029d486e823d13157972",
+    "crates/canopa-portal/src/chooser_ui/tests.rs": "e54bd2b26f385d9e2f62f45d045924fb41c6de6375a85bef4db5f0af60e08509",
+    "crates/canopa-portal/src/chooser_ui.rs": "fd59bc8c869644ffce4588e0ec837915a4c1b9ce9dddcda4578a98378f8d87ab",
+    "crates/canopa-portal/src/main.rs": "3afb0c0d95e5caa74f17bdb21fa01675878cd6c8de1af6ce158b3120899556e5",
+    "crates/canopa-portal/src/print/authority/tests.rs": "1b0ebd4b4e73e108a568fd75ed53fc726273ab31e5cf7d2246f76460c8fa6282",
+    "crates/canopa-portal/src/print/authority.rs": "759d97b8c5d6c0910e6dd14b0b22fc82f98c889f1c90beee2cee658e9763be36",
+    "crates/canopa-portal/src/print/file_target/tests.rs": "5ab97234ffd74a6a901eb1882572336d710aba57d6142b3422a6923c9bd943bc",
+    "crates/canopa-portal/src/print/file_target.rs": "cca8bc6a8066d274c94a9172f8e88eda6debedef34ce64b48c4080cd7816fb8f",
+    "crates/canopa-portal/src/print/presentation/tests.rs": "db5f9dbf02662ff2e3eec55f5166ffb28ff32938dd0612f4a12087d83529f325",
+    "crates/canopa-portal/src/print/presentation.rs": "a9c879a7ee2e78ef9b82ad7dd3ad011cbc9b25f52e78bdf739cadecf58be4354",
+    "crates/canopa-portal/src/print/settings.rs": "a6263f1107e03ef08f32b7e10879096d7cb090dff8a3795523b9f09c5727ced1",
+    "crates/canopa-portal/src/print/test_bus.rs": "bed378b0a9afc345326a176ae68d041340014bdbc32770fa7e81bced74cb8ee7",
+    "crates/canopa-portal/src/print/tests.rs": "54397ed56d7bcaf7037d243dcdc83f381c42ac9822e94fa7aec5ce4eaa7f2bd6",
+    "crates/canopa-portal/src/print/tokens/tests.rs": "b0c42558434c0dfed7133fae4d5478057f0dcd5ab77f4bdf404496665da67b42",
+    "crates/canopa-portal/src/print/tokens.rs": "77f4767f6655b72c258dd42c7da06fc2ffa7bb1f3db5ea4faeb64d16a06e048c",
+    "crates/canopa-portal/src/print/worker/catalog.rs": "c73636d1835491f62d6527829877108be4df4be987e13a430eb6f56941104b5f",
+    "crates/canopa-portal/src/print/worker/client/task.rs": "31c48b234c3ee30951cbd6ccf59ccc4276d0e3da85ade16599923e5b87066cd5",
+    "crates/canopa-portal/src/print/worker/client.rs": "99299656b88b41fe1c0372672f9f7003060e34f52c66266211217c5c62c7f3b6",
+    "crates/canopa-portal/src/print/worker/cups/discovery.rs": "57256d5fb727827d3e471c82344c1f8b4f77187bb44efbf7280e9c725f343602",
+    "crates/canopa-portal/src/print/worker/cups.rs": "bd18a46cf8e602170561892765f632279d56c800071394572b067dc14ffbc105",
+    "crates/canopa-portal/src/print/worker/document/tests.rs": "0dff28fec9afcc5326d487dd6f1226e37dcf1fe3cbbab65cb96030cf4c2f28f3",
+    "crates/canopa-portal/src/print/worker/document.rs": "905fda97a5aed2664aa874f4792c92baf9ac5fdb250e0b7fbf164738f82865c6",
+    "crates/canopa-portal/src/print/worker.rs": "be9857ad5e20cb0982508993b951d20b04f30e55382ce9c04c2762c877010ee3",
+    "crates/canopa-portal/src/print.rs": "065869a74db5d07a6e598c9f76afa31a24122761b690cabf1da59584a2d539c8",
+    "crates/canopa-portal/src/print_ui/draft.rs": "30ed5b2e0ae14581a94a9e52dc0fe00f3a00ce2fa362da101f0950c294651641",
+    "crates/canopa-portal/src/print_ui/tests.rs": "8efbe857f3b864c040d75dba69c7c8608727ea04c4ab5e1810d0f34a463e5fd8",
+    "crates/canopa-portal/src/print_ui/view.rs": "f3cfdaaed84b0dcd6e543ff0bdf998436142dae1eda293506a16bb771b6856bf",
+    "crates/canopa-portal/src/print_ui.rs": "835d8ca307ba8a4bf3eb5d0dea4e0e6aa525b005b370530c295b738e46d8caf8",
+    "scripts/test-print-dialog.py": "2bcdcc6399d46bcc672decfa664b0aabe73e76616bdf6b8d9b7fc51e3290142c"
+  },
+  "native_checks": [
+    {
+      "appearance": "file-dark",
+      "name": "healthy-empty-scheduler-keeps-file-output-available"
+    },
+    {
+      "appearance": "file-dark",
+      "name": "embedded-picker-cancellation-preserves-request-without-approval"
+    },
+    {
+      "appearance": "file-dark",
+      "name": "explicit-file-draft-preserves-selected-path-without-creating-output"
+    },
+    {
+      "appearance": "file-dark",
+      "name": "late-file-appearance-does-not-acquire-replacement-authority"
+    },
+    {
+      "appearance": "file-dark",
+      "name": "explicit-overwrite-review-transfers-existing-entry-without-changing-bytes"
+    },
+    {
+      "appearance": "file-light",
+      "name": "healthy-empty-scheduler-keeps-file-output-available"
+    },
+    {
+      "appearance": "file-light",
+      "name": "embedded-picker-cancellation-preserves-request-without-approval"
+    },
+    {
+      "appearance": "file-light",
+      "name": "explicit-file-draft-preserves-selected-path-without-creating-output"
+    },
+    {
+      "appearance": "file-light",
+      "name": "late-file-appearance-does-not-acquire-replacement-authority"
+    },
+    {
+      "appearance": "file-light",
+      "name": "explicit-overwrite-review-transfers-existing-entry-without-changing-bytes"
+    },
+    {
+      "appearance": "dark",
+      "name": "real-cups-catalog-and-geometry"
+    },
+    {
+      "appearance": "dark",
+      "name": "saved-instance-options-are-validated-and-preserved"
+    },
+    {
+      "appearance": "dark",
+      "name": "unknown-queue-is-an-explicit-failure"
+    },
+    {
+      "appearance": "dark",
+      "name": "enter-does-not-approve-escape-cancels"
+    },
+    {
+      "appearance": "dark",
+      "name": "explicit-approval-returns-supported-printer-draft"
+    },
+    {
+      "appearance": "dark",
+      "name": "concurrent-drafts-and-cancellation-are-independent"
+    },
+    {
+      "appearance": "dark",
+      "name": "scheduler-failure-does-not-prevent-dialog-cancellation"
+    },
+    {
+      "appearance": "dark",
+      "name": "parentless-dialog-can-be-cancelled-without-assuming-compositor-placement"
+    },
+    {
+      "appearance": "dark",
+      "name": "cancelling-live-metadata-reaps-owned-helper-before-ui-success"
+    },
+    {
+      "appearance": "light",
+      "name": "real-cups-catalog-and-geometry"
+    },
+    {
+      "appearance": "light",
+      "name": "saved-instance-options-are-validated-and-preserved"
+    },
+    {
+      "appearance": "light",
+      "name": "unknown-queue-is-an-explicit-failure"
+    },
+    {
+      "appearance": "light",
+      "name": "enter-does-not-approve-escape-cancels"
+    },
+    {
+      "appearance": "light",
+      "name": "explicit-approval-returns-supported-printer-draft"
+    },
+    {
+      "appearance": "light",
+      "name": "concurrent-drafts-and-cancellation-are-independent"
+    },
+    {
+      "appearance": "light",
+      "name": "scheduler-failure-does-not-prevent-dialog-cancellation"
+    },
+    {
+      "appearance": "light",
+      "name": "parentless-dialog-can-be-cancelled-without-assuming-compositor-placement"
+    },
+    {
+      "appearance": "light",
+      "name": "cancelling-live-metadata-reaps-owned-helper-before-ui-success"
+    }
+  ],
+  "remaining": [
+    "Actual staged file publication and conditional replacement/crash policy",
+    "Print D-Bus request/token/Lockdown integration",
+    "Actual toolkit layout/copy compatibility",
+    "Backend death and ambiguous CUPS job creation policy",
+    "Advanced device/custom media and legacy instance aliases",
+    "Full public Print native/failure acceptance",
+    "Six experimental interfaces and companion distribution"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "status": "registered-scoped-native-verified-unadvertised",
+  "verified_on": "2026-10-31",
+  "base_overlay": "niri-desktop-compat",
+  "base_recipe_sha256": "203d6350073fd9ea7885c3546342a9180a6100b8c6e662c2cd3c874ea726b50a",
+  "patches": [
+    {
+      "source": "niri",
+      "path": "vendor/source-overlays/niri-remote-input/niri.patch",
+      "sha256": "e1bd2127efba2a5503024ea295e162becfb635f2bda7b7c12bcf7b4ddb01ad99",
+      "files": {
+        "src/dbus/mod.rs": {
+          "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+          "patched": "e5447a74790ac7837972437900d3c405d1c1dc296775661a454a9a36bf23c1d6"
+        },
+        "src/dbus/remote_input.rs": {
+          "upstream": null,
+          "patched": "ffb0abc770dad254e2948db29b4f52a981c02616069eda4f4f69009eebe03eb0"
+        },
+        "src/dbus/remote_input/symbols.rs": {
+          "upstream": null,
+          "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+        },
+        "src/dbus/remote_input/wire.rs": {
+          "upstream": null,
+          "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+        },
+        "src/input/mod.rs": {
+          "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+          "patched": "6fb70acf9e7ace5605914dcb5ea84a3b48f2729355b65aaee59b95dd7599ba73"
+        },
+        "src/input/remote_keyboard.rs": {
+          "upstream": null,
+          "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+        },
+        "src/niri.rs": {
+          "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+          "patched": "5317b20281bb63bc782d174de357090de5707c04911fd8c9de552aa435369cd7"
+        }
+      }
+    },
+    {
+      "source": "smithay",
+      "path": "vendor/source-overlays/niri-remote-input/smithay.patch",
+      "sha256": "21d7f419b4f1c322244bbd29096953a5a3890e7e587e0c7e070270c083ceb2a4",
+      "files": {
+        "src/input/keyboard/mod.rs": {
+          "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+          "patched": "d2c5fb00de833233633f8edbfa65540e526c1c23008379b628298dab6a98368d"
+        }
+      }
+    }
+  ],
+  "previous_candidate_evidence": "target/remote-input-keyboard-native-04",
+  "source": "/home/kevinard/projects/canopa/target/niri-remote-input-source-01",
+  "build_log": "/tmp/canopa-legacy-keyboard-compositor-stage-01/build.log",
+  "build_receipt": "target/niri-remote-input-source-01/keyboard-symbol-build.json",
+  "verification": {
+    "compositor_sha256": "e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f",
+    "symbol_native_summary": "target/remote-input-symbols-native-01/summary.json",
+    "symbol_native_groups": 12,
+    "evdev_regression_summary": "target/remote-input-symbols-v1-regression-01/summary.json",
+    "evdev_native_groups": 13,
+    "combined_media_summary": "target/remote-input-symbols-media-dark-01/summary.json",
+    "combined_media_groups": 6,
+    "standalone_model_wire_tests": 16,
+    "archive_file_entries": 15,
+    "stage_archive_check": "/tmp/canopa-legacy-keyboard-compositor-stage-01/archive-check.json",
+    "portal_legacy_notify": false,
+    "physical_input": false,
+    "legacy_parent_summary": "target/remote-input-legacy-parent-native-01/summary.json",
+    "legacy_parent_groups": 5,
+    "new_eis_parent_summary": "target/remote-input-legacy-eis-regression-01/summary.json",
+    "new_eis_parent_groups": 6,
+    "new_portal_worker_sha256": "477fc400d5120919210e3f83cbf830e85daaeec47ec255000d81728b52981b5d",
+    "new_portal_harness_sha256": "ae400644ef92b1a5ade3980b6f9b053422aa5c7e025aa7858bb1996917d5edec"
+  },
+  "registry_key": "niri-remote-input",
+  "registration_note": "Explicit unadvertised typed-symbol and evdev candidate; same pins/lock graph, twelve new native groups, thirteen old lease groups and six combined frontend/media/EIS groups pass. Previous native/matrix evidence retained.",
+  "previous_verification": {
+    "patch_check": "/tmp/canopa-remote-input-state-patch-check-01.json",
+    "native_summary": "target/remote-input-keyboard-state-native-01/summary.json",
+    "native_checks_passed": 13,
+    "compositor_sha256": "ecd14ac0d3d591114e5b1d198403bd8d83c9e6f229db045113dcb3ce787b4d0b",
+    "wire_tests_passed": 3,
+    "unrun_admission_unit_test": true
+  }
+}

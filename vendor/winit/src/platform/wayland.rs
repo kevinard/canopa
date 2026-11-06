@@ -80,6 +80,13 @@ impl<T> EventLoopBuilderExtWayland for EventLoopBuilder<T> {
 ///
 /// [`Window`]: crate::window::Window
 pub trait WindowExtWayland {
+    /// Request focus-scoped inhibition. The returned guard reports actual
+    /// compositor permission; it expires on window retirement or final drop.
+    fn inhibit_keyboard_shortcuts(&self,changed:keyboard_shortcuts::Changed)->Option<keyboard_shortcuts::KeyboardShortcutsInhibitor>;
+    /// Request a token bound to recent input on this focused source window.
+    /// Returns unsupported without recent eligible input. Delivery uses
+    /// `WindowEvent::ActivationTokenDone`; callers must impose a reply deadline.
+    fn request_activation_token_for_input(&self) -> Result<crate::event_loop::AsyncRequestSerial, crate::error::NotSupportedError>;
     /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
     fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
 
@@ -90,6 +97,22 @@ pub trait WindowExtWayland {
 }
 
 impl WindowExtWayland for Window {
+    fn inhibit_keyboard_shortcuts(&self,changed:keyboard_shortcuts::Changed)->Option<keyboard_shortcuts::KeyboardShortcutsInhibitor> {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_)=>{let _=changed;None},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window)=>window.inhibit_keyboard_shortcuts(changed),
+        }
+    }
+    fn request_activation_token_for_input(&self) -> Result<crate::event_loop::AsyncRequestSerial, crate::error::NotSupportedError> {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => Err(crate::error::NotSupportedError::new()),
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.request_activation_token_for_input(),
+        }
+    }
     fn drag_drop(&self, changed: drag_drop::Changed) -> Option<drag_drop::DragDrop> {
         match &self.window {
             #[cfg(x11_platform)]
@@ -116,6 +139,10 @@ pub mod drag_drop {
         PipeTransfer, read_pipe, write_pipe,
     };
 }
+/// Optional focus-scoped compositor keyboard-shortcut inhibition.
+pub mod keyboard_shortcuts {
+    pub use crate::platform_impl::wayland::keyboard_shortcuts::{Changed,KeyboardShortcutsInhibitor,Status,Recording,RecordingState,RecordingCancelReason};
+}
 
 /// Additional methods on [`WindowAttributes`] that are specific to Wayland.
 pub trait WindowAttributesExtWayland {
@@ -126,6 +153,10 @@ pub trait WindowAttributesExtWayland {
     /// The parent must belong to the same Wayland event loop. Its native lifetime
     /// is retained through creation; the application owns both windows afterward.
     fn with_transient_parent(self, parent: Arc<Window>) -> Self;
+
+    /// Import an xdg-foreign-v2 parent before initial configuration, with an
+    /// optional xdg-dialog-v1 modal hint. Unavailable protocols are ignored.
+    fn with_foreign_parent(self, handle: String, modal: bool) -> Self;
 
     /// Build window with the given name.
     ///
@@ -138,6 +169,11 @@ pub trait WindowAttributesExtWayland {
 }
 
 impl WindowAttributesExtWayland for WindowAttributes {
+    fn with_foreign_parent(mut self, handle: String, modal: bool) -> Self {
+        self.platform_specific.wayland_foreign_parent = Some((handle, modal));
+        self
+    }
+
     #[inline]
     fn with_transient_parent(mut self, parent: Arc<Window>) -> Self {
         self.platform_specific.wayland_parent = Some(parent);

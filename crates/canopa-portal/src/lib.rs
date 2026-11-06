@@ -1,4 +1,78 @@
-//! Canopa's Settings backend. UI, application policy and configuration stay with their owners.
+//! Canopa's desktop portal backends. The frontend owns sandbox/document grants.
+pub mod access;
+#[cfg(feature = "desktop")]
+pub mod access_ui;
+pub mod account;
+#[cfg(feature = "desktop")]
+mod account_profile;
+#[cfg(feature = "desktop")]
+pub mod account_ui;
+pub mod app_chooser;
+#[cfg(feature = "desktop")]
+pub mod app_chooser_ui;
+pub mod background;
+#[cfg(feature = "desktop")]
+pub mod background_ui;
+#[cfg(feature = "desktop")]
+pub mod capture;
+mod choices;
+#[cfg(feature = "desktop")]
+pub mod chooser_ui;
+pub mod clipboard;
+#[cfg(feature = "desktop")]
+pub mod clipboard_transport;
+pub mod dynamic_launcher;
+#[cfg(feature = "desktop")]
+pub mod dynamic_launcher_icon;
+#[cfg(feature = "desktop")]
+pub mod dynamic_launcher_ui;
+pub mod file_chooser;
+#[cfg(feature = "desktop")]
+mod icons;
+pub mod input_capture;
+#[cfg(feature = "desktop")]
+pub mod input_capture_transport;
+#[cfg(feature = "desktop")]
+pub mod input_capture_ui;
+pub mod lockdown;
+pub mod print;
+#[cfg(feature = "desktop")]
+pub mod print_authentication_ui;
+#[cfg(feature = "desktop")]
+pub mod print_jobs_ui;
+#[cfg(feature = "desktop")]
+pub mod print_recovery_ui;
+#[cfg(feature = "desktop")]
+pub mod print_ui;
+pub mod process;
+#[cfg(feature = "desktop")]
+pub mod remote_input;
+pub mod requests;
+pub mod screencast;
+pub use screencast::remote as remote_desktop;
+pub mod global_shortcuts;
+#[cfg(feature = "desktop")]
+pub mod global_shortcuts_ui;
+pub mod screencast_capture;
+#[cfg(feature = "desktop")]
+pub mod screencast_status;
+#[cfg(feature = "desktop")]
+pub mod screencast_ui;
+pub mod screenshot;
+#[cfg(feature = "desktop")]
+mod screenshot_image;
+#[cfg(feature = "desktop")]
+pub mod screenshot_ui;
+pub mod usb;
+#[cfg(feature = "desktop")]
+pub mod usb_ui;
+pub mod wallpaper;
+#[cfg(feature = "desktop")]
+mod wallpaper_image;
+#[cfg(feature = "desktop")]
+pub mod wallpaper_ui;
+#[cfg(feature = "desktop")]
+mod worker;
 use canopa_theme::{Appearance, ColorScheme, Rgb};
 use std::collections::HashMap;
 use zbus::{

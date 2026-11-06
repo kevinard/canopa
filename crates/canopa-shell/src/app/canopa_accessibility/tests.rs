@@ -54,8 +54,9 @@ async fn native_center_accessibility_exposes_geometry_focus_and_revision_owned_a
 set -euo pipefail
 fixture=$CANOPA_ACCESSIBILITY_ROOT
 export XDG_RUNTIME_DIR="$fixture/runtime" XDG_CONFIG_HOME="$fixture/config"
-export DCONF_BACKEND=memory CANOPA_ACCESSIBILITY_FIXTURE=1
-unset AT_SPI_BUS_ADDRESS NO_AT_BRIDGE
+export DCONF_BACKEND=memory GSETTINGS_BACKEND=memory ATSPI_DBUS_IMPLEMENTATION=dbus-daemon GIO_USE_VFS=local CANOPA_ACCESSIBILITY_FIXTURE=1
+export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$fixture/no-system-bus"
+unset AT_SPI_BUS_ADDRESS NO_AT_BRIDGE DISPLAY WAYLAND_DISPLAY
 mkdir -m 700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME"
 launcher= registry=
 cleanup() {
@@ -67,12 +68,15 @@ launcher_bin=/usr/lib/at-spi-bus-launcher
 registry_bin=/usr/lib/at-spi2-registryd
 if [[ ! -x "$launcher_bin" ]]; then launcher_bin=/usr/libexec/at-spi-bus-launcher; fi
 if [[ ! -x "$registry_bin" ]]; then registry_bin=/usr/libexec/at-spi2-registryd; fi
-"$launcher_bin" --launch-immediately --a11y=1 &
+"$launcher_bin" --launch-immediately &
 launcher=$!
 for attempt in {1..100}; do
     if dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.GetNameOwner string:org.a11y.Bus >/dev/null 2>&1; then break; fi
     sleep 0.02
 done
+kill -0 "$launcher"
+# Current launchers enable accessibility through Status, not --a11y=1.
+dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true >/dev/null
 "$registry_bin" &
 registry=$!
 "$1" --exact app::canopa_accessibility::tests::native_center_accessibility_exposes_geometry_focus_and_revision_owned_actions --nocapture

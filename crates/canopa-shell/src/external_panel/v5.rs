@@ -111,6 +111,17 @@ impl Session {
             .then_some(message)
     }
 
+    pub(super) fn requests_activation(&self, event: &v1::ProviderEvent) -> bool {
+        let Some(message) = self.message(event.clone()) else {
+            return false;
+        };
+        self.state
+            .lock()
+            .unwrap()
+            .contract
+            .requests_activation(&message)
+    }
+
     pub(super) fn input_fits(&self, event: &v1::ProviderEvent) -> bool {
         // Check the longer submit envelope before accepting a local edit.
         // The value is never truncated, especially for secret inputs.
@@ -137,12 +148,25 @@ impl Session {
         writer: &mut (impl AsyncWrite + Unpin),
         event: v1::ProviderEvent,
     ) -> Result<(), ProtocolError> {
+        self.write_with_activation(writer, event, None).await
+    }
+
+    pub(super) async fn write_with_activation(
+        &self,
+        writer: &mut (impl AsyncWrite + Unpin),
+        event: v1::ProviderEvent,
+        activation_token: Option<String>,
+    ) -> Result<(), ProtocolError> {
         if !self.input_fits(&event) {
             return Err(ProtocolError::FrameTooLarge);
         }
         let Some(message) = self.message(event) else {
             return Ok(());
         };
+        let message = message.with_activation_token(activation_token);
+        if !self.state.lock().unwrap().contract.accepts(&message) {
+            return Ok(());
+        }
         writer
             .write_all(&message.encode()?)
             .await
@@ -232,6 +256,7 @@ mod tests {
         let mut provider = v5::Session::default();
         let mut content = v5::RichContent::new("Center");
         content.actions.push(canopa_panel_protocol::PanelAction {
+            request_activation_token: false,
             key: "opaque".into(),
             label: "Open".into(),
             value: Some("daemon/revision".into()),
@@ -269,6 +294,62 @@ mod tests {
         assert!(
             host.message(v1::ProviderEvent::ButtonActivated { element_id: id })
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn activation_context_keeps_opaque_values_and_drops_replaced_callbacks() {
+        let host = Session::new("activation".into());
+        let mut provider = v5::Session::default();
+        let mut content = v5::RichContent::new("Actions");
+        content.actions.push(canopa_panel_protocol::PanelAction {
+            value: Some("domain/opaque-value".into()),
+            ..canopa_panel_protocol::PanelAction::new("open", "Open").with_activation_token()
+        });
+        let response = provider
+            .replace(v5::Content::Rich(content.clone()), v5::Update::Replace)
+            .unwrap();
+        let document = host
+            .read_content(&mut response.encode().unwrap().as_slice())
+            .await
+            .unwrap();
+        let id = document.canopa().unwrap().action_id(
+            canopa_panel_protocol::InteractionTarget::Content,
+            &content.actions[0],
+        );
+        let event = v1::ProviderEvent::ButtonActivated { element_id: id };
+        assert!(host.requests_activation(&event));
+        let mut bytes = Vec::new();
+        host.write_with_activation(&mut bytes, event.clone(), Some("fresh".into()))
+            .await
+            .unwrap();
+        let message: v5::HostMessage = serde_json::from_slice(&bytes).unwrap();
+        assert!(provider.accepts(&message));
+        let v5::HostMessage::Event {
+            activation_token,
+            interaction:
+                v5::Interaction::Rich(canopa_panel_protocol::InteractionEvent::Invoke { value, .. }),
+            ..
+        } = message
+        else {
+            panic!("rich action");
+        };
+        assert_eq!(activation_token.as_deref(), Some("fresh"));
+        assert_eq!(value.as_deref(), Some("domain/opaque-value"));
+        let response = provider
+            .replace(v5::Content::Rich(content), v5::Update::Replace)
+            .unwrap();
+        host.read_content(&mut response.encode().unwrap().as_slice())
+            .await
+            .unwrap();
+        assert!(!host.requests_activation(&event));
+        let mut bytes = Vec::new();
+        host.write_with_activation(&mut bytes, event, Some("late".into()))
+            .await
+            .unwrap();
+        assert!(
+            bytes.is_empty(),
+            "a queued token cannot activate replacement content"
         );
     }
 }

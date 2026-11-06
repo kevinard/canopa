@@ -203,6 +203,7 @@ impl PanelAccessibility {
                 let mut options = Vec::new();
                 for option in &control.options {
                     let action = PanelAction {
+                        request_activation_token: false,
                         key: control.key.clone(),
                         label: option.label.clone(),
                         value: Some(option.value.clone()),

@@ -84,6 +84,22 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
 mod theme;
 
 #[test]
+fn owned_encoded_sound_plays_after_the_source_is_removed_and_releases_its_job() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("descriptor-content.wav");
+    wave_file(&path, 8);
+    let mut playback = file_playback(&path);
+    playback.requested_sound = Some(NotificationSound::Encoded(std::fs::read(&path).unwrap()));
+    std::fs::remove_file(&path).unwrap();
+    let (presenter, mut output) = offline_presenter();
+    presenter.play_notification_sound(playback).unwrap();
+    wait_until(|| output.next() == Some(0.25));
+    assert_eq!(1 + output.by_ref().count(), 8);
+    wait_until(|| presenter.state.lock().unwrap().jobs.load(Ordering::Acquire) == 0);
+    wait_until(|| presenter.state.lock().unwrap().backend.is_none());
+}
+
+#[test]
 fn idle_sound_presenter_releases_the_output_and_can_play_again() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sound.wav");

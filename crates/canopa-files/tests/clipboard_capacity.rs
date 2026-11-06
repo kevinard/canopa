@@ -42,7 +42,7 @@ fn replacing_a_full_owned_selection_preserves_both_intents_and_restores_the_norm
         .args([
             "--ignored",
             "--exact",
-            "clipboard_replacement_budget_helper",
+            "cases::clipboard_capacity::clipboard_replacement_budget_helper",
             "--test-threads=1",
         ])
         .status()

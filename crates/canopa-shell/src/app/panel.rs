@@ -567,12 +567,57 @@ impl App {
         handle: crate::external_panel::ExternalPanelSessionHandle,
         event: crate::external_panel::protocol::ProviderEvent,
     ) -> Task<Message> {
-        Task::perform(
+        use iced_layershell::actions::{
+            ActivationTokenCallback, LayerShellCustomAction, LayerShellCustomActionWithId,
+        };
+        let (request, token) = if handle.requests_activation(&event)
+            && let Some(window) = self.foreground.active_panel_window()
+        {
+            let (complete, received) = tokio::sync::oneshot::channel();
+            let complete = std::sync::Arc::new(std::sync::Mutex::new(Some(complete)));
+            let callback = ActivationTokenCallback::new(move |token| {
+                if let Some(complete) = complete.lock().unwrap().take() {
+                    let _ = complete.send(token);
+                }
+            });
+            (
+                Task::done(Message::LayerShell(LayerShellCustomActionWithId::new(
+                    Some(window),
+                    LayerShellCustomAction::RequestActivationToken {
+                        app_id: String::new(),
+                        callback,
+                    },
+                ))),
+                Some((received, std::time::Instant::now())),
+            )
+        } else {
+            (Task::none(), None)
+        };
+        let dispatch = Task::perform(
             async move {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    handle.send_event(event),
-                )
+                let token = if let Some((received, started)) = token {
+                    tokio::time::timeout(std::time::Duration::from_secs(1), received)
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                        .flatten()
+                        .filter(|token| {
+                            started.elapsed() < std::time::Duration::from_secs(1)
+                                && !token.is_empty()
+                                && token.len()
+                                    <= canopa_panel_protocol::v5::MAX_ACTIVATION_TOKEN_BYTES
+                                && !token.contains('\0')
+                        })
+                } else {
+                    None
+                };
+                match tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    if token.is_some() {
+                        handle.send_event_with_activation(event, token).await
+                    } else {
+                        handle.send_event(event).await
+                    }
+                })
                 .await
                 {
                     Ok(Ok(())) => super::messages::ExternalPanelEvent::ProviderEventSent {
@@ -592,7 +637,8 @@ impl App {
                 }
             },
             Message::ExternalPanel,
-        )
+        );
+        Task::batch([request, dispatch])
     }
 
     fn watch_external_panel_session(

@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions};
@@ -179,6 +179,7 @@ async fn panel_provider_exports_rich_body_content_from_daemon_snapshot() {
         serde_json::from_str::<canopa_notify::ControlCommand>(action.value.as_deref().unwrap())
             .unwrap(),
         canopa_notify::ControlCommand::InteractWithNotificationCenter {
+            activation_token: None,
             action: canopa_notify::NotificationCenterAction::OpenLink { segment_index: 4 },
             ..
         }

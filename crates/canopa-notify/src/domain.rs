@@ -57,6 +57,8 @@ pub struct NotificationInput {
     pub app_icon: Option<NotificationVisualReference>,
     pub summary: String,
     pub body: String,
+    #[serde(default)]
+    pub body_format: NotificationBodyFormat,
     pub expire_timeout: NotificationTimeout,
     pub urgency: Urgency,
     pub category: Option<String>,
@@ -73,6 +75,16 @@ pub struct NotificationInput {
     pub sound: Option<NotificationSound>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_position: Option<NotificationPosition>,
+}
+
+/// The sender contract determines how raw body text becomes display content.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationBodyFormat {
+    #[default]
+    FreedesktopMarkup,
+    Plain,
+    PortalMarkup,
 }
 
 pub fn normalize_notification_category(category: &str) -> Option<String> {
@@ -420,6 +432,7 @@ pub struct NotificationBodyStyle {
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum NotificationVisualReference {
     IconName(String),
+    IconNames(Vec<String>),
     LocalPath(String),
 }
 
@@ -622,6 +635,9 @@ impl NotificationAction {
 pub enum NotificationSound {
     Name(String),
     File(String),
+    /// Immutable descriptor content owned through asynchronous playback. This is
+    /// transient presentation input, never a retained history resource.
+    Encoded(Vec<u8>),
 }
 
 impl NotificationSound {

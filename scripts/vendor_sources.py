@@ -5,6 +5,7 @@ build inputs, normally beneath target/, and never replace an installed program.
 """
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import tarfile
@@ -19,6 +20,37 @@ def records(root):
     return json.loads((root / "vendor/provenance.json").read_text()).get("source_overlays", {})
 
 
+def added_file(root, record, relative):
+    """Extract an entire explicitly added source, verified against provenance."""
+    patches = [patch for patch in record['patches'] if relative in patch['files']]
+    if len(patches) != 1:
+        raise ValueError('Expected exactly one canonical source addition')
+    patch = patches[0]
+    expected = patch['files'][relative]
+    if expected['upstream'] is not None:
+        raise ValueError('Source must be declared absent upstream')
+    text = (root / patch['path']).read_text()
+    marker = f'diff --git a/{relative} b/{relative}\n'
+    if text.count(marker) != 1:
+        raise ValueError('Expected one canonical source section')
+    section = re.split(r'(?m)^diff --git ', text.split(marker)[1], maxsplit=1)[0]
+    header, added = section.split('@@\n', 1)
+    match = re.search(r'@@ -0,0 \+1(?:,(\d+))? $', header)
+    if ('--- /dev/null\n' not in header or f'+++ b/{relative}\n' not in header or match is None):
+        raise ValueError('Expected a complete new-file hunk')
+    lines = added.splitlines(keepends=True)
+    if len(lines) != int(match[1] or 1) or any(not line.startswith('+') for line in lines):
+        raise ValueError('Incomplete source addition')
+    source = ''.join(line[1:] for line in lines).encode()
+    if digest(source) != expected['patched']:
+        raise ValueError('Added source differs from canonical provenance')
+    return source
+
+
+def license_assets(spec):
+    return [spec["license"], *spec.get("notices", [])]
+
+
 def check(root, archives=None):
     errors = []
     for name, record in records(root).items():
@@ -26,10 +58,10 @@ def check(root, archives=None):
         try:
             originals = {}
             for source, spec in record["sources"].items():
-                license = spec["license"]
-                path = root / license["path"]
-                if path.is_symlink() or digest(path.read_bytes()) != license["sha256"]:
-                    errors.append(f"{name}: {source} licence differs from provenance")
+                for license in license_assets(spec):
+                    path = root / license["path"]
+                    if path.is_symlink() or digest(path.read_bytes()) != license["sha256"]:
+                        errors.append(f"{name}: {source} licence differs from provenance ({license['path']})")
                 if archives is None:
                     continue
                 archive = archives / spec["archive"]
@@ -40,8 +72,9 @@ def check(root, archives=None):
                 with tarfile.open(archive) as contents:
                     files = {member.name.removeprefix(prefix): contents.extractfile(member).read()
                              for member in contents if member.isfile() and member.name.startswith(prefix)}
-                if digest(files[license["upstream_path"]]) != license["sha256"]:
-                    errors.append(f"{name}: {source} licence does not match upstream")
+                for license in license_assets(spec):
+                    if digest(files[license["upstream_path"]]) != license["sha256"]:
+                        errors.append(f"{name}: {source} licence does not match upstream ({license['upstream_path']})")
                 originals[source] = files
             for patch in record["patches"]:
                 path = root / patch["path"]
@@ -49,7 +82,9 @@ def check(root, archives=None):
                     errors.append(f"{name}: patch differs from provenance")
                 for relative, hashes in patch["files"].items():
                     if archives is not None and patch["source"] in originals:
-                        if digest(originals[patch["source"]][relative]) != hashes["upstream"]:
+                        original = originals[patch["source"]].get(relative)
+                        actual = digest(original) if original is not None else None
+                        if actual != hashes["upstream"]:
                             errors.append(f"{name}: {relative} upstream checksum mismatch")
             if archives is not None and len(errors) == initial_errors:
                 with tempfile.TemporaryDirectory(prefix="canopa-vendor-source-check-") as directory:
@@ -81,9 +116,9 @@ def _prepare(root, archives, destination, record):
                 raise ValueError(f"{source}: unexpected archive root")
             contents.extractall(destination, filter="data")
         sources[source] = destination / spec["archive_root"]
-        license = spec["license"]
-        if digest((sources[source] / license["upstream_path"]).read_bytes()) != license["sha256"]:
-            raise ValueError(f"{source}: upstream licence checksum mismatch")
+        for license in license_assets(spec):
+            if digest((sources[source] / license["upstream_path"]).read_bytes()) != license["sha256"]:
+                raise ValueError(f"{source}: upstream licence checksum mismatch ({license['upstream_path']})")
     for patch in record["patches"]:
         source = sources[patch["source"]]
         before = {str(path.relative_to(source)): digest(path.read_bytes())

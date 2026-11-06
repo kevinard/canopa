@@ -1,13 +1,22 @@
 [package]
+autotests = false
 name = "canopa-assets"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license = "MIT"
 
+[features]
+svg = ["dep:resvg"]
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
 [dependencies]
 canopa-file.workspace = true
 image.workspace = true
+resvg = { workspace = true, optional = true }
 
 [dev-dependencies]
 image = { workspace = true, features = ["gif", "webp"] }

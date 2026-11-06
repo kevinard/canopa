@@ -100,6 +100,10 @@ impl ProviderStderrTail {
 }
 
 impl ExternalPanelSessionHandle {
+    pub(crate) fn requests_activation(&self, event: &protocol::ProviderEvent) -> bool {
+        !self.closed.load(Ordering::Acquire)
+            && matches!(&self.adapter, ProviderAdapter::V5(session) if session.requests_activation(event))
+    }
     pub(crate) fn input_fits(&self, event: &protocol::ProviderEvent) -> bool {
         match &self.adapter {
             ProviderAdapter::V5(session) => session.input_fits(event),
@@ -217,6 +221,14 @@ impl ExternalPanelSessionHandle {
         &self,
         event: protocol::ProviderEvent,
     ) -> Result<(), protocol::ProtocolError> {
+        self.send_event_with_activation(event, None).await
+    }
+
+    pub(crate) async fn send_event_with_activation(
+        &self,
+        event: protocol::ProviderEvent,
+        activation_token: Option<String>,
+    ) -> Result<(), protocol::ProtocolError> {
         if self.closed.load(Ordering::Acquire) {
             return Err(protocol::ProtocolError::Io(
                 "external panel session is closed".into(),
@@ -225,7 +237,9 @@ impl ExternalPanelSessionHandle {
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             let mut stdin = self.stdin.lock().await;
             if let ProviderAdapter::V5(session) = &self.adapter {
-                session.write(&mut *stdin, event).await
+                session
+                    .write_with_activation(&mut *stdin, event, activation_token)
+                    .await
             } else if let ProviderAdapter::V4(canopa) = &self.adapter {
                 match event {
                     protocol::ProviderEvent::ButtonActivated { element_id } => {

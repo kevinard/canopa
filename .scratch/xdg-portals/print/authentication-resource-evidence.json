@@ -1,0 +1,245 @@
+{
+  "status": "scoped-print-prompt-channel-file-lifetime-and-admission-verified-full-goal-active",
+  "goal_active": true,
+  "created": 1793730662.4287694,
+  "continuity": {
+    "path": "target/portal-print-64/source-continuity-01.json",
+    "sha256": "dcc364ba639f99ed651a430848e39ac68377061d8d146fe554a5b304a6151e99"
+  },
+  "binary_sha256": "a45799db32759ba4857d5255eaf840e359089e35a2e5b5e98e96bb08a16561ee",
+  "selected_client_sha256": "e0d80ef1ff4154878f72d00a1e45c65117c6420991eda568b8bb0b74422cb457",
+  "recovery_and_channel": [
+    {
+      "path": "target/portal-print-64/recovery-probe-02/summary.json",
+      "sha256": "6d910a5f614bee5e43b43bde1d835f7e837b2ea04fed1f4d640b47cedd67ec32",
+      "idle_prompt_expiry": {
+        "seconds": 87.54384383105207,
+        "helper_pid": 2495156,
+        "terminal_confirmed": true
+      },
+      "measurement_origin": "after helper focus, setup, mapping observation and capture; production timeout starts earlier",
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 14
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-03/summary.json",
+      "sha256": "53f779efc99027a187dd3f6fa497f4a2883f29f3d73f24af004af78795543e70",
+      "private_channel_fault": {
+        "case": "eof-prefix",
+        "seconds": 0.009895904920995235,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-04/summary.json",
+      "sha256": "de7aa3014a59f1eb0ca7c21d0f2401ec4114856895b1872434f2dd43bbb5dd1a",
+      "private_channel_fault": {
+        "case": "eof-body",
+        "seconds": 0.0058363310527056456,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-05/summary.json",
+      "sha256": "0870b62badf86971d3669e54a3b32169e47391db7359e44c220d6915679164db",
+      "private_channel_fault": {
+        "case": "cancel-prefix",
+        "seconds": 0.008224396035075188,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-06/summary.json",
+      "sha256": "b5e3396b247b1657a3a03b88e40bfe16222384d832ba001da11c58eb302cdaf0",
+      "private_channel_fault": {
+        "case": "cancel-body",
+        "seconds": 0.004563190042972565,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-07/summary.json",
+      "sha256": "6ac3c45ecdf371d07518838d981c01b466d391f33f64277f7c8473fbd0bbd661",
+      "private_channel_fault": {
+        "case": "stall-empty",
+        "seconds": 120.09957398404367,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-08/summary.json",
+      "sha256": "82f3e407082fb78d93d02257e832957e7842c83aaafd540f5cc8f6ca6ab95c80",
+      "private_channel_fault": {
+        "case": "stall-prefix",
+        "seconds": 120.05256487301085,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-10/summary.json",
+      "sha256": "a179783871bd3532e58d2f94252cc813de2e8059aa50917565e2723d994c258c",
+      "private_channel_fault": {
+        "case": "stall-body",
+        "seconds": 120.10894891608041,
+        "worker_terminal": true,
+        "complete_credentials_sent": false
+      },
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 5
+    }
+  ],
+  "file_transitions": [
+    {
+      "path": "target/portal-print-64/file-lifetime-dark-01/summary.json",
+      "sha256": "e878efa4bbb7019688f8c6c500ce02c17455e5e0b4b2f4f61363556d8b2ceff5",
+      "appearance": "dark",
+      "groups": [
+        {
+          "name": "file-selection-withdraws-in-flight-metadata-authentication",
+          "seconds": 3.948225965956226,
+          "public_request_pending": true
+        },
+        {
+          "name": "file-selection-clears-approved-metadata-credentials",
+          "same_endpoint_prompted_again": true,
+          "auth_dialogs": 3
+        },
+        {
+          "name": "prepared-file-handoff-and-delivery-after-authentication",
+          "response": 0,
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "no_printer_requests_after_prepare": true,
+          "no_printer_jobs": true,
+          "auth_dialogs": 3
+        }
+      ]
+    },
+    {
+      "path": "target/portal-print-64/file-lifetime-light-01/summary.json",
+      "sha256": "f842a3e81880c805d994b6c3ea8dab903e97e9d42f0cafb532270e8088162ca4",
+      "appearance": "light",
+      "groups": [
+        {
+          "name": "file-selection-withdraws-in-flight-metadata-authentication",
+          "seconds": 3.9288372080773115,
+          "public_request_pending": true
+        },
+        {
+          "name": "file-selection-clears-approved-metadata-credentials",
+          "same_endpoint_prompted_again": true,
+          "auth_dialogs": 3
+        },
+        {
+          "name": "prepared-file-handoff-and-delivery-after-authentication",
+          "response": 0,
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "no_printer_requests_after_prepare": true,
+          "no_printer_jobs": true,
+          "auth_dialogs": 3
+        }
+      ]
+    }
+  ],
+  "admission": {
+    "path": "target/portal-print-64/admission-02.json",
+    "sha256": "00ec04594d35d34cd8f6294464d2d826457b11e9600bd7df70ef54fd5eedbec2"
+  },
+  "retirement": {
+    "path": "target/portal-print-64/snapshot-retirement-02.json",
+    "sha256": "626029df15b2449efa4b2c922673d6c011da101514365d33b5061a58adc05c63"
+  },
+  "visual": {
+    "path": "target/portal-print-64/visual-inspection-01.json",
+    "sha256": "96d3ee60ed0ed5a21a470d1c25f015dc174896034c00fb714b56fcf48dea30fe"
+  },
+  "counts": {
+    "recovery_channel_invocations": 8,
+    "partial_or_stalled_reply_cases": 7,
+    "actual_iced_invocations": 3,
+    "file_transition_groups": 6,
+    "selected_raw_workers": 23,
+    "private_challenges": 15,
+    "production_isolation_observations": 7,
+    "file_worker_isolation_observations": 7,
+    "observed_unique_terminal_pids": 114
+  },
+  "retained_interruptions": [
+    {
+      "path": "target/portal-print-64/recovery-probe-01/summary.json",
+      "sha256": "bc27c858e1b5d038af66b83dcb486959f048f9ae4efbf5a0d2c9fd586262283e"
+    },
+    {
+      "path": "target/portal-print-64/recovery-probe-09/summary.json",
+      "sha256": "815f59f1f216165a18914a1425f9b179b467224959352e6eac147dc274cc055b"
+    },
+    {
+      "path": "target/portal-print-64/channel-matrix-interruption-01.json",
+      "sha256": "b5f2530d53b36b0ac75d13e432053299628fbed20062d400e69a7be3553b2747"
+    }
+  ],
+  "retained_observer_continuation": {
+    "first": {
+      "path": "target/portal-print-64/admission-01.json",
+      "sha256": "70df47ac598bd25bebaab2c92698363ada98de8983578276539c78f8ded3624b"
+    },
+    "reason": "Compiled checks passed; first observer saw only main-thread children. Thread-aware continuation adds explicit worker observations."
+  },
+  "all_private_auth_data_removed": true,
+  "storage": {
+    "free_bytes": 6119682048,
+    "net_growth_bytes": 7548928,
+    "cargo_builds": 0,
+    "new_elf_files": 0,
+    "binary_copies": 0,
+    "cache_purges": 0,
+    "policy": "Existing incremental/default workspace graph and checksum stores reused; source-only replay and concise receipts."
+  },
+  "prior_checks": "Unchanged 435 Portal library,55 integration,PPD1, strict workspace Clippy/default compile; full workspace remains non-green with the exact ten Files failures.",
+  "limits": [
+    "Outer 60/300-second supervisor deadlines and approval-with-incomplete-private-frame behavior remain unmeasured here.",
+    "File transitions prove fresh consent and no printer I/O during file delivery, not inspection of every allocator byte. Broker prompt-budget/epoch checks are existing unit evidence.",
+    "Controlled exit-confirmation barrier is not a kernel D-state simulation. Non-CUPS worker observations do not replace repeated authenticated-operation FD analysis.",
+    "Private scheduler and Basic/PAM fixtures are not physical/driverless/native Digest-PAM/Flatpak/deployed-runtime acceptance.",
+    "Print stays opt-in; automatic Qt deferred, earlier handoff/early-TLS and six experimental interfaces remain open."
+  ],
+  "next": ".scratch/xdg-portals/print/authentication-connection-next.md",
+  "replay_source_hashes": {
+    "runtime_probe.py": "7a4a18246fc249ca01d52712e59e2261a262c03b02ca6e66c2893c226497b9c7",
+    "admission-02.py": "dc57c07b3073e56990a48dad1025a4ef3b674067d86594160ec6033662fad1c9",
+    "seal.py": "071ddf1fa302bdf51b839f2d71f5b291f6320b703664bcaefb16b91ac26af2f9",
+    "admission.py": "dfc0cde863c77030f1cc306a688d5e5215cab26cf2ad7afaa9922701525ecb8f",
+    "recovery.py": "363cbc247e23024a4e545a065be2003086080e7d594971f876994cb17848547a",
+    "channel-matrix.py": "9992dc7e7400a699d46f3436a5959e29af8b9c2d395a4161d735debbabaf7244",
+    "recovery_ui.py": "443be7d556e6a3d905d7dcf75ba1a48d39c082f681e96ebc0c1370d6efc5acc2",
+    "file-lifetime.py": "cba4a7044bd89e5c275ccf9fd8d153f47d3f4afe67abd218cf72eff08922c449",
+    "channel.py": "49a0611c31da6ef18efa447e4dbf92a7ce0df172e65362a985e318584b469e91"
+  }
+}

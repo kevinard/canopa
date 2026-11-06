@@ -7,7 +7,7 @@
       "archive_sha256": "51b59e8af02bf4c51db2ee5d130293e6e1e5ac4ae9f74a1e57990a19221aa0d5",
       "upstream_commit": "5e39311c8c5e652bd493a8f78e68e62b8929d9cf",
       "patch": "vendor/patches/iced_layershell.patch",
-      "patch_sha256": "b9de3db0baf55a48584520cf7035579f066433acf975f62353448051328c4340",
+      "patch_sha256": "cd4660cb22a2ddd053198839d637681b21eaf2a4aa0ac12427602701c9ead5a5",
       "files": {
         "Cargo.lock": {
           "upstream": "38f7f0ba4d38a3b3c02ef4669ace1f5dfed6e81129b6f9a5d472ff8ec5a6a493",
@@ -87,7 +87,7 @@
         },
         "src/multi_window.rs": {
           "upstream": "4c686e0474d13c9baca27e15e6ce949b934c7e1243093ebfeeb7649176edc2a3",
-          "local": "c6bf856e3c9a097817c578512bfa7be6d6b1e01ec8bb6a462c1755ae4de8ee8d"
+          "local": "bbd7fb400f112dcc5f81c5ca60f33fc1c8f7a341e0db7734fd56c9a8667f7766"
         },
         "src/multi_window/state.rs": {
           "upstream": "9c55f882d39dcf8458998ab7ff36671faa7839a12f3ab61cf0e82984853ecfb2",
@@ -117,7 +117,8 @@
           "upstream": "1927f9672a6f64b41b820ff48208d1d80547e94d482c4c51389c231909ca9fdd",
           "local": "1927f9672a6f64b41b820ff48208d1d80547e94d482c4c51389c231909ca9fdd"
         }
-      }
+      },
+      "verified_on": "2026-11-01"
     },
     "layershellev": {
       "version": "0.19.1",
@@ -125,7 +126,7 @@
       "archive_sha256": "69fbd3ced50d91a5a118e3e00f49c72040ea6b48b78b159a3936104fc2632925",
       "upstream_commit": "5e39311c8c5e652bd493a8f78e68e62b8929d9cf",
       "patch": "vendor/patches/layershellev.patch",
-      "patch_sha256": "3ce94796a9a4b305322d5b5e25088aadfbc007d2d5eadd684bcfccf91c12b825",
+      "patch_sha256": "7865b33c6b91bba25751283c33ac9dee7c686a7c40158e237a316f8c709416e5",
       "files": {
         "Cargo.lock": {
           "upstream": "11484affa506c554ed75218821c9aaafbd92e5d87f9d954edb460a2cf6fc99a5",
@@ -165,7 +166,7 @@
         },
         "src/lib.rs": {
           "upstream": "32a0dd2f42769900a7ea0ff57ddf789766310f66c8882280fedc83c833d2f80d",
-          "local": "91003fcc0a1966bd6e1aa788a10cc17c573066a6494ba56e329f44dccdb1e45a"
+          "local": "41c740678c85b24fe6733883689c11837346de37df269feedf91a69385d9f8ca"
         },
         "src/seat.rs": {
           "upstream": "823a549c7b084684be6d59bb460bd6f8f7d2ce4be5f6ab16a16a265608d17d3a",
@@ -318,7 +319,7 @@
       "upstream_commit": "3997291f318a8bc06fa522f5579836fb3feb94df",
       "license_url": "https://raw.githubusercontent.com/iced-rs/iced/3997291f318a8bc06fa522f5579836fb3feb94df/LICENSE",
       "patch": "vendor/patches/iced_runtime.patch",
-      "patch_sha256": "bbfed6a154af8eb173896c500501d1f08a848714fe64092012c4e9332b3a4eb1",
+      "patch_sha256": "49eab7ddb4654d1b3726afef813c2030f334bb3f517b31ac6813c27ba5aabe56",
       "files": {
         ".cargo_vcs_info.json": {
           "upstream": "8e791bbce11b1f84bcc00cb0a3d1e7236f3677302340c94ea0b4e25714380293",
@@ -390,14 +391,22 @@
         },
         "src/window.rs": {
           "upstream": "b7d025d087631600056f7bbadb66a483bc18eea177d07acd822f91a83159d010",
-          "local": "90d47c0d2b77211722114fd5693356c36e0a30ab007fd7ae17c12f818ea9459f"
+          "local": "40eec1abf6f6a5d5d3e1f8124e7d7add7aa6ebd851f36388421d86bbf8134d74"
         },
         "src/window/drag_drop.rs": {
           "upstream": null,
           "local": "94897c952adc5a6ec5de9dc7f04d5ebdeccd5c943a0350602ea046213c73b134"
+        },
+        "src/window/keyboard_shortcuts.rs": {
+          "upstream": null,
+          "local": "84cd99725305200d53b46959f03e2ac1ac6e685830f7317201e374623f009903"
+        },
+        "src/window/keyboard_shortcuts/recording.rs": {
+          "upstream": null,
+          "local": "a39b1d3a5f73243d10b85914f25ba7441e9f63db6a06a6bd2dc6dca50be33379"
         }
       },
-      "verified_on": "2026-10-18"
+      "verified_on": "2026-11-01"
     },
     "iced_winit": {
       "version": "0.14.0",
@@ -406,7 +415,7 @@
       "upstream_commit": "3997291f318a8bc06fa522f5579836fb3feb94df",
       "license_url": "https://raw.githubusercontent.com/iced-rs/iced/3997291f318a8bc06fa522f5579836fb3feb94df/LICENSE",
       "patch": "vendor/patches/iced_winit.patch",
-      "patch_sha256": "3486dbc919320301f3bd30719af8c4cc277267d8fd12c733ca4fa07c5737d6c1",
+      "patch_sha256": "423fca4c34b8253be63c66d72dd3b4d8f0893ceab344e1a052b2b157fcac4272",
       "files": {
         ".cargo_vcs_info.json": {
           "upstream": "7e064142c2f3d2b896c063f1afafa1b4b6e10eb26867fc2d9d5a52f8e1310359",
@@ -452,9 +461,13 @@
           "upstream": null,
           "local": "29828e092ce42cec337c6f20db42f78ac6d2f98c9fc7d6e3b5c1f10486b170b0"
         },
+        "src/keyboard_shortcuts.rs": {
+          "upstream": null,
+          "local": "236c15fe7516cecc4dded4ed952d41f6bce165ad6e53336a7809d5015f0608ea"
+        },
         "src/lib.rs": {
           "upstream": "9351806958e5bb4dfef743306f28f67ecf3a926675f006bd99a076011d128331",
-          "local": "f1f533b39412ca5e59ea453c7dd6cf61b5f3a9b53a78ed15f96a2a78e989e803"
+          "local": "a23163f65cda821410696513cec48b96ea4e9331f7773021c6a9ba6171c0884c"
         },
         "src/proxy.rs": {
           "upstream": "98fd36252bf8aec9b9708da5cbf5aaa3ab1bafee115366095b657972986aa53c",
@@ -462,27 +475,27 @@
         },
         "src/transient.rs": {
           "upstream": null,
-          "local": "2dc82b4d3297a166a79a1041fef4018da706836893a1cb50134c03abcf3546d2"
+          "local": "eb74e9e2c068a5d84a0ac3e96d87c6aac0ceb78daba6b52f55f006d8cbd982f0"
         },
         "src/window.rs": {
           "upstream": "ce13c18da33760b65fb3402300de8d31e24f4cb0fe4cc0beec5d0b195d8ffc28",
-          "local": "ce13c18da33760b65fb3402300de8d31e24f4cb0fe4cc0beec5d0b195d8ffc28"
+          "local": "196e03f04b88c5b8fb73548a3eeaa25dfe9ad39e8260fa9579369f56e1856449"
         },
         "src/window/state.rs": {
           "upstream": "95482e880de39ce7ea0a7c9a200df2dd1c9ce8789e334736902061db23fb93c2",
           "local": "95482e880de39ce7ea0a7c9a200df2dd1c9ce8789e334736902061db23fb93c2"
         }
       },
-      "verified_on": "2026-10-18"
+      "verified_on": "2026-11-01"
     },
     "winit": {
       "version": "0.30.13",
       "archive_url": "https://static.crates.io/crates/winit/winit-0.30.13.crate",
       "archive_sha256": "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d",
       "upstream_commit": "e9809ef54b18499bb4f2cac945719ecc2a61061b",
-      "verified_on": "2026-10-18",
+      "verified_on": "2026-11-01",
       "patch": "vendor/patches/winit.patch",
-      "patch_sha256": "523e32ecc180428ce7a7978ca495102903f9dd0ad4c497aa8b2a0e8b624bae96",
+      "patch_sha256": "3320503234cf31851928701f0ecab63ff0f38ca319dc753b8a9a8ace2d174b14",
       "files": {
         ".cargo_vcs_info.json": {
           "upstream": "b8b2549c91dbf3dc4087197a6be89ab5acb5511c2d1eadc7349c249f646047bb",
@@ -762,7 +775,7 @@
         },
         "src/platform/wayland.rs": {
           "upstream": "4fd4601c7733275031f14c40d33caca8e493197c40bc721fdd055297f9690d00",
-          "local": "724a418a3eff7cd74cf357cf8a5f653b2094b324dd8125a0ea0909e76eb3ad92"
+          "local": "3039d48ec535e0956960a8ec0172b65361b012930844ef44d0d5fad847e27ce4"
         },
         "src/platform/web.rs": {
           "upstream": "4dac8e96213a4ca4ec586946f18d16dfbad3666ce1e60b34c4e28eac6e213c5e",
@@ -826,19 +839,19 @@
         },
         "src/platform_impl/linux/common/xkb/keymap.rs": {
           "upstream": "e08d41edd547e57df87b6c8da271f7c956a0d4dcead1cf2b17ab2c67652e0c82",
-          "local": "e08d41edd547e57df87b6c8da271f7c956a0d4dcead1cf2b17ab2c67652e0c82"
+          "local": "35ffafd5a0bd1faf576c103b0f5e99b0409008914c1d0aaff0b12fc7f6d78e63"
         },
         "src/platform_impl/linux/common/xkb/mod.rs": {
           "upstream": "4ae8efa819657fa6cd8c38543f8638d7c7c67af18ff3a8b871919252d87c2400",
-          "local": "4ae8efa819657fa6cd8c38543f8638d7c7c67af18ff3a8b871919252d87c2400"
+          "local": "ef0564b60ba9262ca93a53cf03d5f40f2ffa350ae3ca6f64c51c001d181e7c81"
         },
         "src/platform_impl/linux/common/xkb/state.rs": {
           "upstream": "c7a940941b2d1c679a2da163b244d6ec131c2d5d24f75e5265921cdb938c3cb5",
-          "local": "c7a940941b2d1c679a2da163b244d6ec131c2d5d24f75e5265921cdb938c3cb5"
+          "local": "cf4e439a0da170ae930ba325dcf5c3e1c14c1c20a78f57be924a596677d88aa1"
         },
         "src/platform_impl/linux/mod.rs": {
           "upstream": "ee825f75ba79a7a12932640e8b085fdc897a35d3ec8105a37987ffd166d1c9f2",
-          "local": "e64e988c1f4a9d31183549002222443c775bb04fca59a77106a627337729555b"
+          "local": "ef5e6c110e102867d4d06b96be03f40a9c25451c6462e1946c853fd86bcab093"
         },
         "src/platform_impl/linux/wayland/drag_drop.rs": {
           "upstream": null,
@@ -864,9 +877,29 @@
           "upstream": "3f92a12b7d786f12edfe69925c2ba17194974c427614d4c449335aa843f9d2c2",
           "local": "3f92a12b7d786f12edfe69925c2ba17194974c427614d4c449335aa843f9d2c2"
         },
+        "src/platform_impl/linux/wayland/foreign.rs": {
+          "upstream": null,
+          "local": "4928c6470e5c231ced2949de1b69b284435fe78412eea387b238dbad30865cbb"
+        },
+        "src/platform_impl/linux/wayland/keyboard_shortcuts.rs": {
+          "upstream": null,
+          "local": "1fa25763c70f3433b2703d34cc11a94d897a116d81f617970bbbdff2a9049eb1"
+        },
+        "src/platform_impl/linux/wayland/keyboard_shortcuts/policy.rs": {
+          "upstream": null,
+          "local": "6d4a7440719268ec8f8930d906bad29c4aaebf1b7607d13e00d176eb1dcfe05b"
+        },
+        "src/platform_impl/linux/wayland/keyboard_shortcuts/recording.rs": {
+          "upstream": null,
+          "local": "62fc04d42ba465b34d397c88f0dc2b124b7f9069f9b8fd002793710ed8e0c16b"
+        },
+        "src/platform_impl/linux/wayland/keyboard_shortcuts/recording_native.rs": {
+          "upstream": null,
+          "local": "6ffac61ba37991f51ba448285f4910469de13136fc7e09202611fc9deffabcfd"
+        },
         "src/platform_impl/linux/wayland/mod.rs": {
           "upstream": "473911ef643fb20ca22dcc9a7eb9c87344b0914b470b019384d7ba1be1e92111",
-          "local": "ca932a8b9a44e61afae14f293f8aebf39c458e0c47735bb10d59ce32fa1a365b"
+          "local": "89cf920a913aef012f60b6f5e4d0acdf8cea6514d322066a6efe0f708f31a6f8"
         },
         "src/platform_impl/linux/wayland/output.rs": {
           "upstream": "14982bc1e6ba130eb2c3d0da790905d28075cd1cec215b6f74e560fa449f5421",
@@ -874,11 +907,11 @@
         },
         "src/platform_impl/linux/wayland/seat/keyboard/mod.rs": {
           "upstream": "dd20e74809b3a7987864bc5cabdbeaf62a8474400ddbc4fc86188ed7a84dea62",
-          "local": "1697172a9e750d64edd04da9eb7a37cb94865747cf4ea47a24442844c2599e44"
+          "local": "2bed6252aab91d7f2c5b5e4125727f24cf18e6fe07c432672691244c774d0bf5"
         },
         "src/platform_impl/linux/wayland/seat/mod.rs": {
           "upstream": "70bbd2a8c43a898f4cb2580d38c4f14e478e7331ab65d2e115feb0377fe2fc44",
-          "local": "8b31bc93a4669ffe0b360fa48617b666ed703714a89c9f26135578efedd2efe3"
+          "local": "b7efa058ffda865466b70bbc9af3383f84c417667a30117682870b8ecf21df5d"
         },
         "src/platform_impl/linux/wayland/seat/pointer/mod.rs": {
           "upstream": "842ea0e853a3fef090ddf2ff6bc68f00c008f38db3b222468f8332451aa569b8",
@@ -898,7 +931,7 @@
         },
         "src/platform_impl/linux/wayland/state.rs": {
           "upstream": "18beef206a1d0a1cf72ac65b1cefb4984bc204ca0638ecbbe2cb2c8d316422c9",
-          "local": "05dc7250b55b27347a3aee997f796574793e497abb7ee4924c0f3e098c795e87"
+          "local": "95652839a85153897e62880c44e5b5475e4ad4ead7a3475e509a2a010f63643f"
         },
         "src/platform_impl/linux/wayland/types/cursor.rs": {
           "upstream": "b513bb85d34e3df1d5bc765e2f88a468e80f43d50464336d5dbaf54332fdf8e7",
@@ -906,7 +939,7 @@
         },
         "src/platform_impl/linux/wayland/types/focus.rs": {
           "upstream": null,
-          "local": "d1d068081fd9400ed886b121a35fca9c6f3b50d5723ae0331faed400c77042d1"
+          "local": "5bf8fd938aae6646e3a799c29b038aa3648eb8b72d290026a977e882c2ae3824"
         },
         "src/platform_impl/linux/wayland/types/kwin_blur.rs": {
           "upstream": "6cbb4ce3e2484a01bacfa24a55ea3c1659503b18fc48e8f41f341d437f291ea4",
@@ -930,7 +963,7 @@
         },
         "src/platform_impl/linux/wayland/window/mod.rs": {
           "upstream": "30b6c00aa143046e4b1d7277e5fd08ae7ef7f7f084b0c0e62c89e0dda8a5c6c2",
-          "local": "ee079d68159ddb334b7f4a22627730463324ef923d510c7e41313f3879dc04d3"
+          "local": "82516cbebd60554f41fb29c18e3d2a714caf5e8454b8dc31fa72ff80a4adefa8"
         },
         "src/platform_impl/linux/wayland/window/state.rs": {
           "upstream": "d09f9c19235a36d0a0068eb82428a27e3a4f318f31925368e573310ae791030a",
@@ -1751,6 +1784,169 @@
           "local": "18fc45566875815a39a85f715ef8965400961ae8c23825a394e1bea3340c6bbd"
         }
       }
+    },
+    "reis": {
+      "version": "0.7.1",
+      "archive_url": "https://static.crates.io/crates/reis/reis-0.7.1.crate",
+      "archive_sha256": "4b967ec6489a42067a20724f11987bb96178ea796873cbe1afd25fb93ee6f85f",
+      "upstream_commit": "02bc1b52aca10231d380c0cf236d69ec3c56cae4",
+      "verified_on": "2026-10-30",
+      "patch": "vendor/patches/reis.patch",
+      "patch_sha256": "d6d96cf4f22e8fc5312513366fe095e9f10e1e7c51e6ce87798e02dc0935d223",
+      "files": {
+        ".cargo_vcs_info.json": {
+          "upstream": "4db20441557131d34a30b0d05dabd9ec21674a044a35dc44238c945c67310c03",
+          "local": "4db20441557131d34a30b0d05dabd9ec21674a044a35dc44238c945c67310c03"
+        },
+        ".github/workflows/ci.yaml": {
+          "upstream": "203a183257a5541341db65875db28bf218c28e04fa99b2c78a66e75ebf364e98",
+          "local": "203a183257a5541341db65875db28bf218c28e04fa99b2c78a66e75ebf364e98"
+        },
+        ".gitignore": {
+          "upstream": "c1e953ee360e77de57f7b02f1b7880bd6a3dc22d1a69e953c2ac2c52cc52d247",
+          "local": "c1e953ee360e77de57f7b02f1b7880bd6a3dc22d1a69e953c2ac2c52cc52d247"
+        },
+        "Cargo.lock": {
+          "upstream": "aff07aef3d7dc764b3dce25c3ae670cde1acae942df5694ce3acd4060afe669f",
+          "local": null
+        },
+        "Cargo.toml": {
+          "upstream": "680ee0707f59ebc793ded903ad91305d1288333409fed86e8d17470f5d9d7fd1",
+          "local": "680ee0707f59ebc793ded903ad91305d1288333409fed86e8d17470f5d9d7fd1"
+        },
+        "Cargo.toml.orig": {
+          "upstream": "0d72649a7bfc7cd2ae9d6bd17f8257cac2168b9037f5eadb75aedcc5543929f0",
+          "local": "0d72649a7bfc7cd2ae9d6bd17f8257cac2168b9037f5eadb75aedcc5543929f0"
+        },
+        "LIBEI_VERSION": {
+          "upstream": "cb1d9a30bc4ab8a397f39b7d786bb82aca0b816077eefc35d7c822017d75f6a5",
+          "local": "cb1d9a30bc4ab8a397f39b7d786bb82aca0b816077eefc35d7c822017d75f6a5"
+        },
+        "LICENSE": {
+          "upstream": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "local": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+        },
+        "README.md": {
+          "upstream": "d5d20ff7410c029149bb9564ddb717365e36b08f2f5d832c6adfba0454ad1d19",
+          "local": "d5d20ff7410c029149bb9564ddb717365e36b08f2f5d832c6adfba0454ad1d19"
+        },
+        "examples/list-devices.rs": {
+          "upstream": "c462f16f1991402737768a5931455699232cc4e9e10824fb934c77be48a27162",
+          "local": "c462f16f1991402737768a5931455699232cc4e9e10824fb934c77be48a27162"
+        },
+        "examples/receive-synchronous.rs": {
+          "upstream": "98afdbf8629590fbbd21136df95a5fada25f7eedec827b02ffd5cfed97cf07ee",
+          "local": "98afdbf8629590fbbd21136df95a5fada25f7eedec827b02ffd5cfed97cf07ee"
+        },
+        "examples/receive.rs": {
+          "upstream": "d8beeda40bcfdd894556461b85502019ac379c86040fcc55d6438f6bbf58ff69",
+          "local": "d8beeda40bcfdd894556461b85502019ac379c86040fcc55d6438f6bbf58ff69"
+        },
+        "examples/reis-demo-server.rs": {
+          "upstream": "a6f3665af973eca2f85c6a97963056bd3a69a31d628602ae027d47b2d956cdca",
+          "local": "a6f3665af973eca2f85c6a97963056bd3a69a31d628602ae027d47b2d956cdca"
+        },
+        "examples/type-text-ei.rs": {
+          "upstream": "b09529e46f43baa44facc5502c1968709e4e87b3b57a2319c2763ef2c90d9e2b",
+          "local": "b09529e46f43baa44facc5502c1968709e4e87b3b57a2319c2763ef2c90d9e2b"
+        },
+        "examples/type-text.rs": {
+          "upstream": "e1939526de7dcd2aa1fdc392a29674aec62d680cb2342725544c6b95d9bf7f79",
+          "local": "e1939526de7dcd2aa1fdc392a29674aec62d680cb2342725544c6b95d9bf7f79"
+        },
+        "run-libei-pytest.sh": {
+          "upstream": "320e7e291671a66287f0e741dd8fc45d93084cf1721773a1c743332a352a9ee9",
+          "local": "320e7e291671a66287f0e741dd8fc45d93084cf1721773a1c743332a352a9ee9"
+        },
+        "src/async_io.rs": {
+          "upstream": "4411e44e373f218285791ba70d04fe62b3f1bf615c9f85a59e08a13db37e4d3f",
+          "local": "4411e44e373f218285791ba70d04fe62b3f1bf615c9f85a59e08a13db37e4d3f"
+        },
+        "src/async_shared.rs": {
+          "upstream": "ee0e5e74a371405a58d7d7308f9043bcde7cd4bc8c9ca9b55cfdebf3423b6368",
+          "local": "ee0e5e74a371405a58d7d7308f9043bcde7cd4bc8c9ca9b55cfdebf3423b6368"
+        },
+        "src/calloop.rs": {
+          "upstream": "c6785626ab9925830dafa347fa59e50e44be360560886ebc5abfc2cb8e719c93",
+          "local": "c6785626ab9925830dafa347fa59e50e44be360560886ebc5abfc2cb8e719c93"
+        },
+        "src/ei.rs": {
+          "upstream": "401373a99ffe3db571aed39e2784ac13e38ad8ff842547567af0ff33c4d3c5fd",
+          "local": "401373a99ffe3db571aed39e2784ac13e38ad8ff842547567af0ff33c4d3c5fd"
+        },
+        "src/eiproto.rs.jinja": {
+          "upstream": "227623cbb0befa15f48d47935da604156c8359f7b250e82e4e7832c0af932584",
+          "local": "227623cbb0befa15f48d47935da604156c8359f7b250e82e4e7832c0af932584"
+        },
+        "src/eiproto_ei.rs": {
+          "upstream": "c1a3b09f73e3970d57d3f185251a1f90bc33fbc263c3cfb8d8ea370ed189d15b",
+          "local": "c1a3b09f73e3970d57d3f185251a1f90bc33fbc263c3cfb8d8ea370ed189d15b"
+        },
+        "src/eiproto_eis.rs": {
+          "upstream": "20a382ddad028f7e32f2fd1b1e15a4d15d52c6637683c4fcf7342b40f42a8a9d",
+          "local": "20a382ddad028f7e32f2fd1b1e15a4d15d52c6637683c4fcf7342b40f42a8a9d"
+        },
+        "src/eiproto_enum.rs": {
+          "upstream": "71542288185e0383640e2b7f16e0356f0638a61f751fa4867905cbbe256ea82d",
+          "local": "71542288185e0383640e2b7f16e0356f0638a61f751fa4867905cbbe256ea82d"
+        },
+        "src/eiproto_enum.rs.jinja": {
+          "upstream": "2740a82d0ec7caf350c777a7155821b7919a075fb833f67f426dcdf7e954e129",
+          "local": "2740a82d0ec7caf350c777a7155821b7919a075fb833f67f426dcdf7e954e129"
+        },
+        "src/eis.rs": {
+          "upstream": "d2514c8af0c061439fd83bc3fc82785789edbd46e70d4620f1eb087e5e160d9a",
+          "local": "7071343a43e94f568647b124a467a549e155387cc1acbac8e0ffe9eb6c7ef7c8"
+        },
+        "src/error.rs": {
+          "upstream": "e98a286674dbc652277b80e4c629b7db00952c9654d1027e35da724cac155143",
+          "local": "e98a286674dbc652277b80e4c629b7db00952c9654d1027e35da724cac155143"
+        },
+        "src/event.rs": {
+          "upstream": "61496d70bb24abf44d87673fa0bb1a57cd840b7b621abe39311e2897a01a42e8",
+          "local": "61496d70bb24abf44d87673fa0bb1a57cd840b7b621abe39311e2897a01a42e8"
+        },
+        "src/handshake.rs": {
+          "upstream": "d5792c5676552f208cf0c1810286fec45185ea377cabf80967c44e06ce93cd5b",
+          "local": "d5792c5676552f208cf0c1810286fec45185ea377cabf80967c44e06ce93cd5b"
+        },
+        "src/lib.rs": {
+          "upstream": "926cdff2c34f275938f2b1c9a9f640448912f158122c5ba040a9ee887cefece2",
+          "local": "926cdff2c34f275938f2b1c9a9f640448912f158122c5ba040a9ee887cefece2"
+        },
+        "src/object.rs": {
+          "upstream": "362c00ca2df86c208478a57822e734a6dee907dd8d23d365852bf7a6f6759cc3",
+          "local": "362c00ca2df86c208478a57822e734a6dee907dd8d23d365852bf7a6f6759cc3"
+        },
+        "src/request.rs": {
+          "upstream": "aa51d3c169f6972fba792a67a366a77b6c754aa2384557dd6768f5b3bb426f1f",
+          "local": "aa51d3c169f6972fba792a67a366a77b6c754aa2384557dd6768f5b3bb426f1f"
+        },
+        "src/tokio.rs": {
+          "upstream": "a951d30a638b5e40dcc1cec5f4a4d78044e705e523bc8020f8cc89c700b5748a",
+          "local": "a951d30a638b5e40dcc1cec5f4a4d78044e705e523bc8020f8cc89c700b5748a"
+        },
+        "src/util.rs": {
+          "upstream": "6063f1a9f1075b91ce3f9c748ff61046edd79c16e549b3ca5488347daacf22de",
+          "local": "6063f1a9f1075b91ce3f9c748ff61046edd79c16e549b3ca5488347daacf22de"
+        },
+        "src/wire/arg.rs": {
+          "upstream": "64a68d51687669a66d5fecde4c7023de260f6db522721b4fa81e2b10d051d620",
+          "local": "64a68d51687669a66d5fecde4c7023de260f6db522721b4fa81e2b10d051d620"
+        },
+        "src/wire/backend.rs": {
+          "upstream": "1422e3914f9749354a54771dff29c1b738c255c8f2815cf04d354a2f8bdc946a",
+          "local": "8aee054d39bf6b9ed34f059c383e797302f89cd27e4f9471d0605a957a69fd3c"
+        },
+        "src/wire/mod.rs": {
+          "upstream": "d5761200c86837444e269c35b16c5dd212b9a8c5d17c8ec0ae0bcf18e3496aaa",
+          "local": "d5761200c86837444e269c35b16c5dd212b9a8c5d17c8ec0ae0bcf18e3496aaa"
+        },
+        "update-protocol-bindings.sh": {
+          "upstream": "1e9865d8cd1c5b7f25950a7688d680c1c92fc5e325a06614bf2a78cee4205bf6",
+          "local": "1e9865d8cd1c5b7f25950a7688d680c1c92fc5e325a06614bf2a78cee4205bf6"
+        }
+      }
     }
   },
   "source_overlays": {
@@ -1815,6 +2011,1478 @@
           }
         }
       ]
+    },
+    "niri-screencast-resume": {
+      "description": "Pinned Niri nested screencast companion: replay a static frame and cursor after consumer resume",
+      "verified_on": "2026-10-30",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-screencast-resume/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-screencast-resume/niri.patch",
+          "sha256": "b03b123e00d7496679122d436a8894d7a7cd0445e2678ef35885d9262aebef78",
+          "files": {
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            }
+          }
+        }
+      ]
+    },
+    "niri-desktop-compat": {
+      "description": "Pinned Niri desktop companion combining ScreenCast static resume and Smithay drag-source lifetime correction",
+      "verified_on": "2026-10-30",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-screencast-resume/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-compat/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-screencast-resume/niri.patch",
+          "sha256": "b03b123e00d7496679122d436a8894d7a7cd0445e2678ef35885d9262aebef78",
+          "files": {
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-desktop-compat/smithay.patch",
+          "sha256": "db59669ed645cefa0d5499aa218f76e9d7f370df1feaaa60bbc6d87c90a4beaa",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "ae01fbe921ba0d537a8ed36d3f546ad1ffbfbbec8830995389043a630c755c53"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            }
+          }
+        }
+      ]
+    },
+    "niri-remote-input": {
+      "description": "Pinned desktop companion plus compositor-owned keyboard leases and authoritative input state for Canopa RemoteDesktop",
+      "verified_on": "2026-10-31",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-screencast-resume/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-compat/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-screencast-resume/niri.patch",
+          "sha256": "b03b123e00d7496679122d436a8894d7a7cd0445e2678ef35885d9262aebef78",
+          "files": {
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-desktop-compat/smithay.patch",
+          "sha256": "db59669ed645cefa0d5499aa218f76e9d7f370df1feaaa60bbc6d87c90a4beaa",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "ae01fbe921ba0d537a8ed36d3f546ad1ffbfbbec8830995389043a630c755c53"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            }
+          }
+        },
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-remote-input/niri.patch",
+          "sha256": "e1bd2127efba2a5503024ea295e162becfb635f2bda7b7c12bcf7b4ddb01ad99",
+          "files": {
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "e5447a74790ac7837972437900d3c405d1c1dc296775661a454a9a36bf23c1d6"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "ffb0abc770dad254e2948db29b4f52a981c02616069eda4f4f69009eebe03eb0"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "6fb70acf9e7ace5605914dcb5ea84a3b48f2729355b65aaee59b95dd7599ba73"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "5317b20281bb63bc782d174de357090de5707c04911fd8c9de552aa435369cd7"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-remote-input/smithay.patch",
+          "sha256": "21d7f419b4f1c322244bbd29096953a5a3890e7e587e0c7e070270c083ceb2a4",
+          "files": {
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "d2c5fb00de833233633f8edbfa65540e526c1c23008379b628298dab6a98368d"
+            }
+          }
+        }
+      ]
+    },
+    "xdg-desktop-portal-input-order": {
+      "description": "Pinned standard frontend with ordered RemoteDesktop Notify, original-owner session revocation, signal-confirmed InputCapture phase, and request-bounded USB grants/descriptor ownership; no install or routing change",
+      "verified_on": "2026-11-01",
+      "sources": {
+        "xdg-desktop-portal": {
+          "revision": "1.22.1",
+          "archive": "xdg-desktop-portal-1.22.1.tar.xz",
+          "archive_sha256": "d4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3",
+          "url": "https://github.com/flatpak/xdg-desktop-portal/releases/download/1.22.1/xdg-desktop-portal-1.22.1.tar.xz",
+          "archive_root": "xdg-desktop-portal-1.22.1",
+          "license": {
+            "path": "vendor/source-overlays/xdg-desktop-portal-input-order/COPYING",
+            "upstream_path": "COPYING",
+            "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "xdg-desktop-portal",
+          "path": "vendor/source-overlays/xdg-desktop-portal-input-order/frontend.patch",
+          "sha256": "ec19c9dd0294629d17a0fbb5fd23ce0b3171597011c24aee5a500a7aa557c7b9",
+          "files": {
+            "src/remote-desktop.c": {
+              "upstream": "e12ec72d9d9774e24673fdfb523ee8f543134082b4a055d919f1f44d9527555e",
+              "patched": "82d90ba2df971b425f8f79546eef43fe2f86c3656b9b25f5f1495f0c72f1d4b8"
+            },
+            "src/xdp-context.c": {
+              "upstream": "2c009356170b3ca0cde0f33011e9ec7ea8c1f045dd90a2927deb62fe80180a36",
+              "patched": "2e6322a2c342166bea00d6dab1cb9fcd51c2e3510186bd7bd6ab3fba59aa8ff5"
+            },
+            "src/xdp-context.h": {
+              "upstream": "519721bf7abd0564771a64aadc907c222e7960dc594a5503110563ee16681021",
+              "patched": "44a50a461a23061e4efd77eb83840e5db1a226c965eaa8d15b61c703c7269b7d"
+            }
+          }
+        },
+        {
+          "source": "xdg-desktop-portal",
+          "path": "vendor/source-overlays/xdg-desktop-portal-input-order/session-owner.patch",
+          "sha256": "08b9684538e48e40a4f3d005fa17e8ba6fc13c900a907b77bfbb74cf50a0e67c",
+          "files": {
+            "src/xdp-session.c": {
+              "upstream": "77697e3f59e1ca90a6f45e4f6221dfb3cc1a8cf6413c7ffc3ce549b1c3951faf",
+              "patched": "447bcb16cf75ae8741c27e8a9c7e1ab95836e555b553afcec837881cc802c098"
+            },
+            "src/xdp-session.h": {
+              "upstream": "4c61edcf534589b5756d9f16aafa5fe46c3468e7af1f2ee79acbd14402b731f5",
+              "patched": "f214ae57e46c9955f48c22d2ec2ae1afc0496820dd6d3d374f5a2693304ba710"
+            }
+          }
+        },
+        {
+          "source": "xdg-desktop-portal",
+          "path": "vendor/source-overlays/xdg-desktop-portal-input-order/input-capture-phase.patch",
+          "sha256": "a275e7557a741cb91962eb0887de6b6288bb56c50918645d756554074a4f7647",
+          "files": {
+            "src/input-capture.c": {
+              "upstream": "186e392a999caac7430cdeb09b7660da779d3d7a8bed9e9a0cd31e702b403595",
+              "patched": "8bddc28b57782a4e10dd2df19e66dccf442844ff34e1e57028272f959ae83cbc"
+            }
+          }
+        },
+        {
+          "source": "xdg-desktop-portal",
+          "path": "vendor/source-overlays/xdg-desktop-portal-input-order/usb-ownership.patch",
+          "sha256": "4ff31aa0313b30fdddfddd498f85afa04c2c9674e9c17ee1c83853e7f02d9a6f",
+          "files": {
+            "src/usb.c": {
+              "upstream": "7d2d6bd6f9590ba647b0a4a813b2a28d31fc53f6c688127e1d00e1bfe202542f",
+              "patched": "bad97496e24c29e8647023b0a2f69aaeae939c0675284c8b5fd37ad4d2a1def8"
+            }
+          }
+        }
+      ]
+    },
+    "niri-desktop-pointer": {
+      "description": "Combined capture/drag/keyboard/pointer companion with atomic capture mappings and creator-owned recording retirement; scoped native verified, full matrix and distribution acceptance pending",
+      "verified_on": "2026-11-01",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-desktop-pointer/niri.patch",
+          "sha256": "2c4ac64bd15eff20da0394a1ac221f01206b0ba6515626cccdf8cf98aa3f2c5f",
+          "files": {
+            "src/backend/winit.rs": {
+              "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+              "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+            },
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "6cf5ddd4c81a9e2fc859a6fce167259fc8fc005803aa6d08444a62a1ea24bc8a"
+            },
+            "src/dbus/mutter_screen_cast.rs": {
+              "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+              "patched": "51e9509c805c8fce9ba6bb60e1dbcf3dda142d4794df495fdbe76f249871e0cd"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "7cba210ce3eca5fc13324da82beefb02945b50bb3f51ce31469cf653b22d05c2"
+            },
+            "src/dbus/remote_input/pointer.rs": {
+              "upstream": null,
+              "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+            },
+            "src/dbus/remote_input/pointer/wire.rs": {
+              "upstream": null,
+              "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/handlers/mod.rs": {
+              "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+              "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+            },
+            "src/input/backend_ext.rs": {
+              "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+              "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "757b9529263629fc26f2831a3875382534c3257bbd0dc5e0776c5a94d8ea2278"
+            },
+            "src/input/pointer_buttons.rs": {
+              "upstream": null,
+              "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/input/remote_pointer.rs": {
+              "upstream": null,
+              "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+            },
+            "src/layout/mod.rs": {
+              "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+              "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "c5c9d2f6a7b656c38a993a01f39c0ab02d51eedb7aa75086491e85b1389b259d"
+            },
+            "src/screencasting/mod.rs": {
+              "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+              "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+            },
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            },
+            "src/screencasting/sources.rs": {
+              "upstream": null,
+              "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+            },
+            "src/screencasting/sources/identity.rs": {
+              "upstream": null,
+              "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+            },
+            "src/screencasting/sources/mapping.rs": {
+              "upstream": null,
+              "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+            },
+            "src/screencasting/sources/mapping/path.rs": {
+              "upstream": null,
+              "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-desktop-pointer/smithay.patch",
+          "sha256": "e8bb76202a4addcc18014b771dd61de286d0b2c88f664d4f50633ea6c8ee23c7",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "d2c5fb00de833233633f8edbfa65540e526c1c23008379b628298dab6a98368d"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            },
+            "src/wayland/virtual_pointer/input.rs": {
+              "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+              "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+            }
+          }
+        }
+      ]
+    },
+    "niri-input-capture": {
+      "description": "Experimental combined desktop pointer/capture companion with bounded leases and forwarded-press-aware keyboard source teardown; no installed selection",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-input-capture/niri.patch",
+          "sha256": "bcadc3edc2aa9a505e66195c7089fc25cb10fd55ff3bdc966b473f58d3e3ab30",
+          "files": {
+            "src/backend/winit.rs": {
+              "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+              "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+            },
+            "src/dbus/input_capture.rs": {
+              "upstream": null,
+              "patched": "6abedb010145452c8f946a20da2fd31a769562dc4a44310407c45bfec7976a19"
+            },
+            "src/dbus/input_capture/geometry.rs": {
+              "upstream": null,
+              "patched": "4886f57c88ee85c5c34459d008ebbef08f63b4796bf12f1c6d0497103f167699"
+            },
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "c341bc83dde3f3187d2e3ad09acefdcc6d0f7cd94a385f6ceaac072bd15efa95"
+            },
+            "src/dbus/mutter_screen_cast.rs": {
+              "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+              "patched": "51e9509c805c8fce9ba6bb60e1dbcf3dda142d4794df495fdbe76f249871e0cd"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "7cba210ce3eca5fc13324da82beefb02945b50bb3f51ce31469cf653b22d05c2"
+            },
+            "src/dbus/remote_input/pointer.rs": {
+              "upstream": null,
+              "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+            },
+            "src/dbus/remote_input/pointer/wire.rs": {
+              "upstream": null,
+              "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/handlers/mod.rs": {
+              "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+              "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+            },
+            "src/input/backend_ext.rs": {
+              "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+              "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "a3417d15fcd0b757ab755e212d45989e33cc913043f1a7fd050d5d6ac6081662"
+            },
+            "src/input/pointer_buttons.rs": {
+              "upstream": null,
+              "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/input/remote_pointer.rs": {
+              "upstream": null,
+              "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+            },
+            "src/layout/mod.rs": {
+              "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+              "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "6e37ddac88cb28b618d517a7344714563f01c6b6f00a56a1ff938d3c4fb52201"
+            },
+            "src/screencasting/mod.rs": {
+              "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+              "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+            },
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            },
+            "src/screencasting/sources.rs": {
+              "upstream": null,
+              "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+            },
+            "src/screencasting/sources/identity.rs": {
+              "upstream": null,
+              "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+            },
+            "src/screencasting/sources/mapping.rs": {
+              "upstream": null,
+              "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+            },
+            "src/screencasting/sources/mapping/path.rs": {
+              "upstream": null,
+              "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-input-capture/smithay.patch",
+          "sha256": "a76bdaa1f13dd9452742f4ce8bae6997d77752cf3957f5873e039bb4912d535d",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "0d82f977326361e6ab029ab873ee7230152744a3e605c1fafb62266f8ddde59c"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            },
+            "src/wayland/virtual_pointer/input.rs": {
+              "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+              "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+            }
+          }
+        }
+      ],
+      "prepared_on": "2026-11-01"
+    },
+    "niri-global-shortcuts": {
+      "description": "Experimental compositor-owned bounded GlobalShortcuts leases with source-aware press retirement and current-keymap admission, retaining InputCapture and keyboard source cleanup; no installed selection",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-global-shortcuts/niri.patch",
+          "sha256": "65de3d89050f85a222e35ce0c272e20008a4f6571973cec06a4d8a671c325c72",
+          "files": {
+            "src/backend/winit.rs": {
+              "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+              "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+            },
+            "src/dbus/freedesktop_a11y.rs": {
+              "upstream": "d687280a45601a6df52220f4edfacdc0d69a902074b4d61ec328f5db7a56d98a",
+              "patched": "e7bc7ac56b1e1c9d2fc99878a2577edcd1823919dba6895ce82f4e90b1652faa"
+            },
+            "src/dbus/global_shortcuts.rs": {
+              "upstream": null,
+              "patched": "b88c6419a53da884b076a2df9a66e80adfbe12fa5b68dba0fc074bc68c74345d"
+            },
+            "src/dbus/global_shortcuts/engine.rs": {
+              "upstream": null,
+              "patched": "62e22d165cc7efe3b941aaf51f2c380a398fee2287489bb11322a829f44dcb15"
+            },
+            "src/dbus/global_shortcuts/host.rs": {
+              "upstream": null,
+              "patched": "97ec8ea60600f68b3cc57f614caaf92f2293bddf02bb63bb53914c286e3f455a"
+            },
+            "src/dbus/global_shortcuts/presses.rs": {
+              "upstream": null,
+              "patched": "d6c254639f97ed75c61de357b9aba2a26196ada11bfb79342d72eca7cb614be7"
+            },
+            "src/dbus/global_shortcuts/registry.rs": {
+              "upstream": null,
+              "patched": "c17acc37eb1d7f3801dfdf7a79833dfc946094548315c2ac80f869715b4b4597"
+            },
+            "src/dbus/global_shortcuts/resolver.rs": {
+              "upstream": null,
+              "patched": "c514581bd7130bd7658a5a02e014a8b589380d3444cb8f2b614b1266222d8a28"
+            },
+            "src/dbus/global_shortcuts/state.rs": {
+              "upstream": null,
+              "patched": "78a8b7cdca73c0bf98c52b77556f1e1ba23d66bf5079436a7aba2aa8c41d7b83"
+            },
+            "src/dbus/global_shortcuts/wire.rs": {
+              "upstream": null,
+              "patched": "92c6e230d9b1482cc5b783c67f14e2ebb24da6c99278f68cdc1fb5269675104a"
+            },
+            "src/dbus/input_capture.rs": {
+              "upstream": null,
+              "patched": "6abedb010145452c8f946a20da2fd31a769562dc4a44310407c45bfec7976a19"
+            },
+            "src/dbus/input_capture/geometry.rs": {
+              "upstream": null,
+              "patched": "4886f57c88ee85c5c34459d008ebbef08f63b4796bf12f1c6d0497103f167699"
+            },
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "b9b41330d6001077ad1b2dbe249380a61db69687422c0dbc0e2c6dff75f5eb6c"
+            },
+            "src/dbus/mutter_screen_cast.rs": {
+              "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+              "patched": "51e9509c805c8fce9ba6bb60e1dbcf3dda142d4794df495fdbe76f249871e0cd"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "b649f6ca301bac119dfb4c7363d0345327b9103f0c0c376c9f05c31e26bc2e69"
+            },
+            "src/dbus/remote_input/pointer.rs": {
+              "upstream": null,
+              "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+            },
+            "src/dbus/remote_input/pointer/wire.rs": {
+              "upstream": null,
+              "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/handlers/mod.rs": {
+              "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+              "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+            },
+            "src/input/backend_ext.rs": {
+              "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+              "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "b68cede0e1dc2754c340d8535e2303af38f671bf578d442b67470afd37f83e29"
+            },
+            "src/input/pointer_buttons.rs": {
+              "upstream": null,
+              "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/input/remote_pointer.rs": {
+              "upstream": null,
+              "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+            },
+            "src/layout/mod.rs": {
+              "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+              "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "89943cb84e5382dd323bb78880f31fbb19bb5c5bfbca03675fa201574501ed1a"
+            },
+            "src/screencasting/mod.rs": {
+              "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+              "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+            },
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            },
+            "src/screencasting/sources.rs": {
+              "upstream": null,
+              "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+            },
+            "src/screencasting/sources/identity.rs": {
+              "upstream": null,
+              "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+            },
+            "src/screencasting/sources/mapping.rs": {
+              "upstream": null,
+              "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+            },
+            "src/screencasting/sources/mapping/path.rs": {
+              "upstream": null,
+              "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-input-capture/smithay.patch",
+          "sha256": "a76bdaa1f13dd9452742f4ce8bae6997d77752cf3957f5873e039bb4912d535d",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "0d82f977326361e6ab029ab873ee7230152744a3e605c1fafb62266f8ddde59c"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            },
+            "src/wayland/virtual_pointer/input.rs": {
+              "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+              "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+            }
+          }
+        }
+      ],
+      "prepared_on": "2026-11-01"
+    },
+    "cups-authentication": {
+      "description": "Experimental process-private CUPS client library: faithful bounded Basic/MD5/SHA256 credentials, negotiated Digest qop/default algorithm and opaque, and applied DigestOptions; no daemon build, installation or default routing; versioned Canopa authentication capability for worker-only runtime selection; preserve quoted-pair authentication fields and serialize complete escaped Digest values; reject incomplete HTTP response headers before authentication or reconnect, avoiding an EOF status loop; preserve the declared custom-media bottom margin independently of the top margin",
+      "verified_on": "2026-11-04",
+      "sources": {
+        "cups": {
+          "revision": "2.4.20",
+          "archive": "cups-2.4.20-source.tar.gz",
+          "archive_sha256": "ab4d9cd7f3e58060091d2b24972223d6401675f11c49b65abf4f6ef31dea22ff",
+          "url": "https://github.com/OpenPrinting/cups/releases/download/v2.4.20/cups-2.4.20-source.tar.gz",
+          "archive_root": "cups-2.4.20",
+          "license": {
+            "path": "vendor/source-overlays/cups-authentication/LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+          },
+          "notices": [
+            {
+              "path": "vendor/source-overlays/cups-authentication/NOTICE",
+              "upstream_path": "NOTICE",
+              "sha256": "977206f041b9a6f47ac00531e1242c0fab7063da71178f8d868b167b70866b6d"
+            }
+          ]
+        }
+      },
+      "patches": [
+        {
+          "source": "cups",
+          "path": "vendor/source-overlays/cups-authentication/authentication.patch",
+          "sha256": "6ccbc6ccbb8c9afd34c0b2a0d1f5913af1ef20902fc26fd9369daba760fa2117",
+          "files": {
+            "cups/auth.c": {
+              "upstream": "b78e32d3650df04692c102e72f597bdba41f733c503896054119f07061da5325",
+              "patched": "1a836b4319b7086cb5d04b70be6a795654a1eeb4aa50d3b338bba22c4942c616"
+            },
+            "cups/cups-private.h": {
+              "upstream": "cd392769aa314085e16edacd69af18854145781d4efc7f0553992d513cecdd82",
+              "patched": "b09b25da6537e206a85330177f58131c5f023cee8bbb5a7ce71949d892ba5b3e"
+            },
+            "cups/cups.h": {
+              "upstream": "cc44ac29a96c04f8c328689c3b8975414569cbae8281fd2922c78377902f0c3b",
+              "patched": "ec26469a483ec61c340a2d38fcc6f3637020152faee19f1e5c043e544c558033"
+            },
+            "cups/http-private.h": {
+              "upstream": "9544c074509ca3e62508f6885becfe5c21025ff8252add903c0416e2ac3499fd",
+              "patched": "2610ecae995524d200ba606f63ae179f3ac95c93fa9d58cab33daddf8e4a5e41"
+            },
+            "cups/http-support.c": {
+              "upstream": "cb1372aaae386732a014156aaaebbace5220538bbce5ee64568a15fe1ea31deb",
+              "patched": "b7f2928b69086c4e350972fccbc0b16f5acc2db1215bc5f6a6a7b1ded60f7d70"
+            },
+            "cups/http.c": {
+              "upstream": "52872c56efbae767319eb56749fa38ebbb421a607fb7e420c0fb4fa34dce9027",
+              "patched": "98a8e794a6ee7d54e7f47a50be0f9486d925e24316b6ce28d501c294d2c7498a"
+            },
+            "cups/usersys.c": {
+              "upstream": "a44d91a4168f9691600417f7a1e12d1bb68e8934175cdac95ce3f8e24b005722",
+              "patched": "d44ae0188c7081a9b4c8fbea6351a4ca77477d2df05753a3a08fd8c454c8bbf0"
+            },
+            "cups/request.c": {
+              "upstream": "394002ddcbca06659736981f812ee7958237669c3136d8c4a2116a134b01e077",
+              "patched": "cf2c02131e9e70e4e7151bbc0c513aef41d4b5279f21932d368e09b340a8e169"
+            }
+          }
+        },
+        {
+          "source": "cups",
+          "path": "vendor/source-overlays/cups-authentication/custom-media.patch",
+          "sha256": "9e0563bc2a38880b0f5022a7cd025b7c18302d91a5445631b330bf26a921108a",
+          "files": {
+            "cups/dest-options.c": {
+              "upstream": "bf4ab9bf0bb542d63d855f32b6a0e8e04f9b36d1a723a9ae7b7e401ab6823af1",
+              "patched": "6c8b6c9a6a31889d087eec8e67ab3bb96c5c8922eb0d198a81d2185da6b210a5"
+            }
+          }
+        }
+      ]
+    },
+    "cups-ipp-receiver": {
+      "description": "Test-only owned IPP receiver: inclusive custom media range membership and faithful configured MIME capabilities without duplicate attributes; built against a verified matching process-private CUPS client, never installed or used as a system service",
+      "verified_on": "2026-11-04",
+      "sources": {
+        "cups": {
+          "revision": "2.4.20",
+          "archive": "cups-2.4.20-source.tar.gz",
+          "archive_sha256": "ab4d9cd7f3e58060091d2b24972223d6401675f11c49b65abf4f6ef31dea22ff",
+          "url": "https://github.com/OpenPrinting/cups/releases/download/v2.4.20/cups-2.4.20-source.tar.gz",
+          "archive_root": "cups-2.4.20",
+          "license": {
+            "path": "vendor/source-overlays/cups-authentication/LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+          },
+          "notices": [
+            {
+              "path": "vendor/source-overlays/cups-authentication/NOTICE",
+              "upstream_path": "NOTICE",
+              "sha256": "977206f041b9a6f47ac00531e1242c0fab7063da71178f8d868b167b70866b6d"
+            }
+          ]
+        }
+      },
+      "patches": [
+        {
+          "source": "cups",
+          "path": "vendor/source-overlays/cups-ipp-receiver/receiver.patch",
+          "sha256": "8fb611cd2db7777af5b55682123e0fa60b2c9c0c1dc3b7e00a04e504ebab06a0",
+          "files": {
+            "tools/ippeveprinter.c": {
+              "upstream": "aec786e5ccd4f0532513e8026fb1e10a63115bf7bea6380e5239a726097831b1",
+              "patched": "7daac7e24bedd9250a99da890acfb3d6119297c71f22bc2370dd4af5f9760736"
+            }
+          }
+        }
+      ]
+    },
+    "cups-ipp-backend": {
+      "description": "Optional matching CUPS IPP backend: preserve explicit printer-resolution in the PPD conversion path with typed standard option encoding; retain both axes and units without inventing a default; no daemon build, installation or default routing; require Canopa client capability v1 before private API use, with a strong imported symbol that refuses stock-client fallback",
+      "verified_on": "2026-11-04",
+      "sources": {
+        "cups": {
+          "revision": "2.4.20",
+          "archive": "cups-2.4.20-source.tar.gz",
+          "archive_sha256": "ab4d9cd7f3e58060091d2b24972223d6401675f11c49b65abf4f6ef31dea22ff",
+          "url": "https://github.com/OpenPrinting/cups/releases/download/v2.4.20/cups-2.4.20-source.tar.gz",
+          "archive_root": "cups-2.4.20",
+          "license": {
+            "path": "vendor/source-overlays/cups-authentication/LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+          },
+          "notices": [
+            {
+              "path": "vendor/source-overlays/cups-authentication/NOTICE",
+              "upstream_path": "NOTICE",
+              "sha256": "977206f041b9a6f47ac00531e1242c0fab7063da71178f8d868b167b70866b6d"
+            }
+          ]
+        }
+      },
+      "patches": [
+        {
+          "source": "cups",
+          "path": "vendor/source-overlays/cups-ipp-backend/resolution.patch",
+          "sha256": "336a213b78c5015ccb21de6d2320fc63a9f12cfabc2f0a21e794c283ad080d9e",
+          "files": {
+            "backend/ipp.c": {
+              "upstream": "2ba292439f158d6a4f03423b62ca8ab564da0b15032c726a943db06eaa251fbd",
+              "patched": "0d3eaa0106e56140e75ee7b78852995c58d6205198ee2278cfac82691cf51ca3"
+            }
+          }
+        }
+      ]
+    },
+    "niri-input-capture-keyboard": {
+      "description": "Private v2 InputCapture keyboard/pointer routing with independent XKB, keymap revisions and source-owned modifier cleanup; combined capture, shortcuts and creator lifetimes retained",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-input-capture-keyboard/niri.patch",
+          "sha256": "63b4754d45c2b4c9f720f0d1ed3df9670a9bb6ca91f822f33d88a80ca94b8af5",
+          "files": {
+            "src/backend/winit.rs": {
+              "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+              "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+            },
+            "src/dbus/freedesktop_a11y.rs": {
+              "upstream": "d687280a45601a6df52220f4edfacdc0d69a902074b4d61ec328f5db7a56d98a",
+              "patched": "e7bc7ac56b1e1c9d2fc99878a2577edcd1823919dba6895ce82f4e90b1652faa"
+            },
+            "src/dbus/global_shortcuts.rs": {
+              "upstream": null,
+              "patched": "bab295fd73799cc8c9c03fd2ecbb774e8def5245f5ced9c295feeba03fe5547c"
+            },
+            "src/dbus/global_shortcuts/engine.rs": {
+              "upstream": null,
+              "patched": "62e22d165cc7efe3b941aaf51f2c380a398fee2287489bb11322a829f44dcb15"
+            },
+            "src/dbus/global_shortcuts/host.rs": {
+              "upstream": null,
+              "patched": "97ec8ea60600f68b3cc57f614caaf92f2293bddf02bb63bb53914c286e3f455a"
+            },
+            "src/dbus/global_shortcuts/presses.rs": {
+              "upstream": null,
+              "patched": "d6c254639f97ed75c61de357b9aba2a26196ada11bfb79342d72eca7cb614be7"
+            },
+            "src/dbus/global_shortcuts/registry.rs": {
+              "upstream": null,
+              "patched": "c17acc37eb1d7f3801dfdf7a79833dfc946094548315c2ac80f869715b4b4597"
+            },
+            "src/dbus/global_shortcuts/resolver.rs": {
+              "upstream": null,
+              "patched": "c514581bd7130bd7658a5a02e014a8b589380d3444cb8f2b614b1266222d8a28"
+            },
+            "src/dbus/global_shortcuts/state.rs": {
+              "upstream": null,
+              "patched": "78a8b7cdca73c0bf98c52b77556f1e1ba23d66bf5079436a7aba2aa8c41d7b83"
+            },
+            "src/dbus/global_shortcuts/wire.rs": {
+              "upstream": null,
+              "patched": "92c6e230d9b1482cc5b783c67f14e2ebb24da6c99278f68cdc1fb5269675104a"
+            },
+            "src/dbus/input_capture.rs": {
+              "upstream": null,
+              "patched": "519c1fd3341875aa7ec778782091a7958cbb35b466d62841b6127848346cd4e6"
+            },
+            "src/dbus/input_capture/geometry.rs": {
+              "upstream": null,
+              "patched": "4886f57c88ee85c5c34459d008ebbef08f63b4796bf12f1c6d0497103f167699"
+            },
+            "src/dbus/input_capture/keyboard.rs": {
+              "upstream": null,
+              "patched": "3a967d11c18c4282c36ada0a5b338b23dc756c977db770cfdace81e06d51d787"
+            },
+            "src/dbus/input_capture/keys.rs": {
+              "upstream": null,
+              "patched": "feaf174c92336aa91957990cda1fb8cf0df56c1acdda045faf8735985363be6f"
+            },
+            "src/dbus/input_capture/masks.rs": {
+              "upstream": null,
+              "patched": "c78b990f8aa901f25d7a53a94311e7742f444ee769d44caecd7484214f0fd98a"
+            },
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "997f1357e7892f8789a30ecfb7358f1dd1316ed0994fecf39e615fe26ada7d4b"
+            },
+            "src/dbus/mutter_screen_cast.rs": {
+              "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+              "patched": "51e9509c805c8fce9ba6bb60e1dbcf3dda142d4794df495fdbe76f249871e0cd"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "b649f6ca301bac119dfb4c7363d0345327b9103f0c0c376c9f05c31e26bc2e69"
+            },
+            "src/dbus/remote_input/pointer.rs": {
+              "upstream": null,
+              "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+            },
+            "src/dbus/remote_input/pointer/wire.rs": {
+              "upstream": null,
+              "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/handlers/mod.rs": {
+              "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+              "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+            },
+            "src/handlers/virtual_keyboard.rs": {
+              "upstream": "3121677fd99be26f5b86c53047d9ffd3847b21d1b287539435b05dab2128381b",
+              "patched": "c270cceb3157ebce2d2318d7b133f244a14934ef2b0d16582029202830f28869"
+            },
+            "src/input/backend_ext.rs": {
+              "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+              "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "ebfd13749227354d9427d757dcc6a1bca4d01e4da879b60370c2591e6701c029"
+            },
+            "src/input/pointer_buttons.rs": {
+              "upstream": null,
+              "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/input/remote_pointer.rs": {
+              "upstream": null,
+              "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+            },
+            "src/layout/mod.rs": {
+              "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+              "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "89943cb84e5382dd323bb78880f31fbb19bb5c5bfbca03675fa201574501ed1a"
+            },
+            "src/screencasting/mod.rs": {
+              "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+              "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+            },
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            },
+            "src/screencasting/sources.rs": {
+              "upstream": null,
+              "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+            },
+            "src/screencasting/sources/identity.rs": {
+              "upstream": null,
+              "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+            },
+            "src/screencasting/sources/mapping.rs": {
+              "upstream": null,
+              "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+            },
+            "src/screencasting/sources/mapping/path.rs": {
+              "upstream": null,
+              "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-input-capture/smithay.patch",
+          "sha256": "a76bdaa1f13dd9452742f4ce8bae6997d77752cf3957f5873e039bb4912d535d",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "0d82f977326361e6ab029ab873ee7230152744a3e605c1fafb62266f8ddde59c"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            },
+            "src/wayland/virtual_pointer/input.rs": {
+              "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+              "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+            }
+          }
+        }
+      ],
+      "prepared_on": "2026-11-05"
+    },
+    "niri-remote-touch": {
+      "description": "Capture-bound RemoteDesktop touch leases and physical contact ownership; public portal integration pending",
+      "sources": {
+        "niri": {
+          "revision": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+          "archive_sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60",
+          "url": "https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "archive_root": "niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/niri-LICENSE",
+            "upstream_path": "LICENSE",
+            "sha256": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+          }
+        },
+        "smithay": {
+          "revision": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+          "archive_sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558",
+          "url": "https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "archive_root": "smithay-8a270232f1bfc416c781273c98a3f52a812a0bba",
+          "license": {
+            "path": "vendor/source-overlays/niri-desktop-pointer/smithay-LICENSE",
+            "upstream_path": "LICENSE.txt",
+            "sha256": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+          }
+        }
+      },
+      "patches": [
+        {
+          "source": "niri",
+          "path": "vendor/source-overlays/niri-remote-touch/niri.patch",
+          "sha256": "1b24749036777f31326b8d459e5f914cd4dda219b433021a588f3a0841edd9a2",
+          "files": {
+            "src/backend/winit.rs": {
+              "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+              "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+            },
+            "src/dbus/freedesktop_a11y.rs": {
+              "upstream": "d687280a45601a6df52220f4edfacdc0d69a902074b4d61ec328f5db7a56d98a",
+              "patched": "e7bc7ac56b1e1c9d2fc99878a2577edcd1823919dba6895ce82f4e90b1652faa"
+            },
+            "src/dbus/global_shortcuts.rs": {
+              "upstream": null,
+              "patched": "bab295fd73799cc8c9c03fd2ecbb774e8def5245f5ced9c295feeba03fe5547c"
+            },
+            "src/dbus/global_shortcuts/engine.rs": {
+              "upstream": null,
+              "patched": "62e22d165cc7efe3b941aaf51f2c380a398fee2287489bb11322a829f44dcb15"
+            },
+            "src/dbus/global_shortcuts/host.rs": {
+              "upstream": null,
+              "patched": "97ec8ea60600f68b3cc57f614caaf92f2293bddf02bb63bb53914c286e3f455a"
+            },
+            "src/dbus/global_shortcuts/presses.rs": {
+              "upstream": null,
+              "patched": "d6c254639f97ed75c61de357b9aba2a26196ada11bfb79342d72eca7cb614be7"
+            },
+            "src/dbus/global_shortcuts/registry.rs": {
+              "upstream": null,
+              "patched": "c17acc37eb1d7f3801dfdf7a79833dfc946094548315c2ac80f869715b4b4597"
+            },
+            "src/dbus/global_shortcuts/resolver.rs": {
+              "upstream": null,
+              "patched": "c514581bd7130bd7658a5a02e014a8b589380d3444cb8f2b614b1266222d8a28"
+            },
+            "src/dbus/global_shortcuts/state.rs": {
+              "upstream": null,
+              "patched": "78a8b7cdca73c0bf98c52b77556f1e1ba23d66bf5079436a7aba2aa8c41d7b83"
+            },
+            "src/dbus/global_shortcuts/wire.rs": {
+              "upstream": null,
+              "patched": "92c6e230d9b1482cc5b783c67f14e2ebb24da6c99278f68cdc1fb5269675104a"
+            },
+            "src/dbus/input_capture.rs": {
+              "upstream": null,
+              "patched": "519c1fd3341875aa7ec778782091a7958cbb35b466d62841b6127848346cd4e6"
+            },
+            "src/dbus/input_capture/geometry.rs": {
+              "upstream": null,
+              "patched": "4886f57c88ee85c5c34459d008ebbef08f63b4796bf12f1c6d0497103f167699"
+            },
+            "src/dbus/input_capture/keyboard.rs": {
+              "upstream": null,
+              "patched": "3a967d11c18c4282c36ada0a5b338b23dc756c977db770cfdace81e06d51d787"
+            },
+            "src/dbus/input_capture/keys.rs": {
+              "upstream": null,
+              "patched": "feaf174c92336aa91957990cda1fb8cf0df56c1acdda045faf8735985363be6f"
+            },
+            "src/dbus/input_capture/masks.rs": {
+              "upstream": null,
+              "patched": "c78b990f8aa901f25d7a53a94311e7742f444ee769d44caecd7484214f0fd98a"
+            },
+            "src/dbus/mod.rs": {
+              "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+              "patched": "997f1357e7892f8789a30ecfb7358f1dd1316ed0994fecf39e615fe26ada7d4b"
+            },
+            "src/dbus/mutter_screen_cast.rs": {
+              "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+              "patched": "51e9509c805c8fce9ba6bb60e1dbcf3dda142d4794df495fdbe76f249871e0cd"
+            },
+            "src/dbus/remote_input.rs": {
+              "upstream": null,
+              "patched": "40de9267fc2aa909cb7ae38a107b286127f9c379a7184f681723f8f5c075274d"
+            },
+            "src/dbus/remote_input/pointer.rs": {
+              "upstream": null,
+              "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+            },
+            "src/dbus/remote_input/pointer/wire.rs": {
+              "upstream": null,
+              "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+            },
+            "src/dbus/remote_input/symbols.rs": {
+              "upstream": null,
+              "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+            },
+            "src/dbus/remote_input/touch.rs": {
+              "upstream": null,
+              "patched": "53ad13dfaa5fecc1edbbae5212c72e6cccc0fc663daa71989696c3b76e582e27"
+            },
+            "src/dbus/remote_input/touch/wire.rs": {
+              "upstream": null,
+              "patched": "3c2f89ff01507fb32feabfa168cc1495cac1d0415e28336a765ce387525d01da"
+            },
+            "src/dbus/remote_input/wire.rs": {
+              "upstream": null,
+              "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+            },
+            "src/handlers/mod.rs": {
+              "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+              "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+            },
+            "src/handlers/virtual_keyboard.rs": {
+              "upstream": "3121677fd99be26f5b86c53047d9ffd3847b21d1b287539435b05dab2128381b",
+              "patched": "c270cceb3157ebce2d2318d7b133f244a14934ef2b0d16582029202830f28869"
+            },
+            "src/input/backend_ext.rs": {
+              "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+              "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+            },
+            "src/input/mod.rs": {
+              "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+              "patched": "14425ba0ed6ce8c0a913ce91ec0327195bd81bd3ce9320096be446895dd04160"
+            },
+            "src/input/pointer_buttons.rs": {
+              "upstream": null,
+              "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+            },
+            "src/input/remote_keyboard.rs": {
+              "upstream": null,
+              "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+            },
+            "src/input/remote_pointer.rs": {
+              "upstream": null,
+              "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+            },
+            "src/input/remote_touch.rs": {
+              "upstream": null,
+              "patched": "11ff161fd3fbc8341a810a95328e080bdc7eeaeef7927ad69845706b1eb5ece1"
+            },
+            "src/input/remote_touch/contacts.rs": {
+              "upstream": null,
+              "patched": "2ea96ed1485e5816084b8403ffab8c11764915cbb1e5d0e72b2e2c656bde21bf"
+            },
+            "src/layout/mod.rs": {
+              "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+              "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+            },
+            "src/niri.rs": {
+              "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+              "patched": "89943cb84e5382dd323bb78880f31fbb19bb5c5bfbca03675fa201574501ed1a"
+            },
+            "src/screencasting/mod.rs": {
+              "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+              "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+            },
+            "src/screencasting/pw_utils.rs": {
+              "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+              "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+            },
+            "src/screencasting/sources.rs": {
+              "upstream": null,
+              "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+            },
+            "src/screencasting/sources/identity.rs": {
+              "upstream": null,
+              "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+            },
+            "src/screencasting/sources/mapping.rs": {
+              "upstream": null,
+              "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+            },
+            "src/screencasting/sources/mapping/path.rs": {
+              "upstream": null,
+              "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+            }
+          }
+        },
+        {
+          "source": "smithay",
+          "path": "vendor/source-overlays/niri-input-capture/smithay.patch",
+          "sha256": "a76bdaa1f13dd9452742f4ce8bae6997d77752cf3957f5873e039bb4912d535d",
+          "files": {
+            "src/input/dnd/grab.rs": {
+              "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+              "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+            },
+            "src/input/keyboard/mod.rs": {
+              "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+              "patched": "0d82f977326361e6ab029ab873ee7230152744a3e605c1fafb62266f8ddde59c"
+            },
+            "src/input/pointer/grab.rs": {
+              "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+              "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+            },
+            "src/input/pointer/mod.rs": {
+              "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+              "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+            },
+            "src/input/touch/grab.rs": {
+              "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+              "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+            },
+            "src/input/touch/mod.rs": {
+              "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+              "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+            },
+            "src/wayland/selection/data_device/source.rs": {
+              "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+              "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+            },
+            "src/wayland/virtual_pointer/input.rs": {
+              "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+              "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+            }
+          }
+        }
+      ],
+      "prepared_on": "2026-11-05"
     }
   }
 }

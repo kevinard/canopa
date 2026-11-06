@@ -290,6 +290,12 @@ fn play_with_rodio(
     let requested = playback.requested_sound.as_ref();
 
     match requested {
+        Some(NotificationSound::Encoded(bytes)) => {
+            if try_add_bytes_to_mixer(bytes.clone(), &mixer, job, &finished).is_err() {
+                eprintln!("level=warn component=sound event=requested_sound_failed kind=encoded");
+                play_default_sound(&resolver, &settings, &mixer, job, &finished)?;
+            }
+        }
         Some(NotificationSound::File(path)) => {
             if try_add_file_to_mixer(path, &mixer, job, &finished).is_ok() {
                 return Ok(());
@@ -364,6 +370,19 @@ fn try_add_file_to_mixer(
     }
     let path = path.as_ref();
     let bytes = read_bounded(path, MAX_SOUND_FILE_BYTES)?;
+    try_add_bytes_to_mixer(bytes, mixer, job, finished)
+}
+
+fn try_add_bytes_to_mixer(
+    bytes: Vec<u8>,
+    mixer: &rodio::mixer::Mixer,
+    job: &Arc<SoundJob>,
+    finished: &mpsc::Sender<()>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        bytes.len() <= MAX_SOUND_FILE_BYTES,
+        "sound byte limit exceeded"
+    );
     if job.is_cancelled() {
         return Ok(());
     }

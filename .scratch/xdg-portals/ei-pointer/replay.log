@@ -1,0 +1,12 @@
+patching file crates/canopa-portal/src/remote_input.rs
+patching file crates/canopa-portal/src/remote_input/parent.rs
+patching file crates/canopa-portal/src/remote_input/pointer.rs
+patching file crates/canopa-portal/src/remote_input/pointer/compositor.rs
+patching file crates/canopa-portal/src/remote_input/server.rs
+patching file crates/canopa-portal/src/remote_input/server/device.rs
+patching file crates/canopa-portal/src/remote_input/server/keyboard.rs
+patching file crates/canopa-portal/src/remote_input/server/pointer.rs
+patching file scripts/test-remote-input-worker.py
+patching file scripts/test-remote-input-ei-pointer.py
+patching file scripts/desktop-fixture/remote-input-ei-pointer.c
+patching file scripts/desktop-fixture/remote-input-pointer-receiver.c

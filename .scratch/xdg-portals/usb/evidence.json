@@ -1,0 +1,176 @@
+{
+  "status": "experimental USB scoped acceptance passed; full workspace repeats same ten Files integration failures; full eighteen-interface goal active",
+  "ownership": "Rust/Iced consent only; standard frontend discovery/filtering/permissions/monitoring/device FDs",
+  "normal_advertisement": false,
+  "installed_routing_changed": false,
+  "portal_checks": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-usb-22/final-validation-03.json",
+    "library_passed": 179,
+    "library_ignored": 7,
+    "integration_passed": 55,
+    "integration_ignored": 2,
+    "fmt": true,
+    "clippy_all_targets": true,
+    "normal_build": true,
+    "rust_inputs_still_match": true,
+    "later_guard_changes": [
+      "vendor/provenance.json"
+    ]
+  },
+  "frontend": {
+    "recipe_sha256": "93384702fde0ab6bb598163cf21279f12a6b683d5dac9f57b47d74a0883774a7",
+    "source_inputs_sha256": "c170eba7c75ab7997f7a0446e44c0e8326bff709c74ef510c1dcbee75ed5b288",
+    "source_file_count": 499,
+    "changed_source_paths": [
+      "src/usb.c"
+    ],
+    "binary_sha256": "277568bfecc9e75c1a155a370a69f7a992c335bf6745344601bac54cea132233",
+    "baseline": "frontend-regression-baseline-09/summary.json",
+    "candidate": "frontend-candidate-08/summary.json",
+    "same_regression_source": true,
+    "source_and_build_cache_reused": true
+  },
+  "native": {
+    "groups": 28,
+    "helpers_terminal": 22,
+    "receipts": [
+      {
+        "path": "/home/kevinard/projects/canopa/target/portal-usb-22/native-dark-04/summary.json",
+        "groups": 14,
+        "scheme": "dark",
+        "scale": 1.0,
+        "helpers_terminal": 11
+      },
+      {
+        "path": "/home/kevinard/projects/canopa/target/portal-usb-22/native-light-02/summary.json",
+        "groups": 14,
+        "scheme": "light",
+        "scale": 1.25,
+        "helpers_terminal": 11
+      }
+    ],
+    "scope": "Exact final normal application from the workspace run, actual Rust/Iced and canonical frontend, synthetic USB nodes only; no real hardware/Flatpak or distribution acceptance",
+    "application_sha256": "ddbee84cfdfbc1a8528a71242bcae99379ae6a17408041fdf6e317969f8ebdd6",
+    "frontend_sha256": "277568bfecc9e75c1a155a370a69f7a992c335bf6745344601bac54cea132233",
+    "compositor_sha256": "9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e"
+  },
+  "executable_archives": {
+    "status": "verified lossless archives before workspace rebuild",
+    "files": [
+      {
+        "name": "portal",
+        "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+        "sha256": "e9892dcedbf103baa59878ccad3e57bc013652b58b8b9413752d53209cdc370d",
+        "bytes": 201081536,
+        "archive": "/home/kevinard/projects/canopa/target/portal-usb-22/binary-archives/portal-e9892dcedbf1.gz",
+        "compressed_bytes": 46669487,
+        "lossless_verified": true,
+        "raw_root_retained": true
+      },
+      {
+        "name": "harness",
+        "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+        "sha256": "4729b8fe256ca64e663dbb74b94db25221f2d94cf28cf2ced78d87cf6a144c98",
+        "bytes": 117650312,
+        "archive": "/home/kevinard/projects/canopa/target/portal-usb-22/binary-archives/harness-4729b8fe256c.gz",
+        "compressed_bytes": 31862390,
+        "lossless_verified": true,
+        "raw_root_retained": true
+      }
+    ]
+  },
+  "workspace": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-usb-22/workspace-01.json",
+    "status": "failed",
+    "tool_session": 91369,
+    "wrapper_pid": 1728474,
+    "wrapper_start_ticks": "39710232",
+    "original_workspace_selection": true,
+    "jobs": 1,
+    "incremental": true,
+    "maximum_growth_bytes": 3000000000,
+    "minimum_free_bytes": 8000000000,
+    "tool_session_terminal": true,
+    "analysis": "/home/kevinard/projects/canopa/target/portal-usb-22/workspace-analysis-01.json",
+    "seconds": 1674.56,
+    "files_passed": 596,
+    "files_failed": 10,
+    "files_ignored": 41,
+    "same_previous_failure_set": true,
+    "other_rust_targets": "passed",
+    "post_rust_stages": "all four passed",
+    "source_changes": [],
+    "net_growth_bytes": 160731136,
+    "cause_of_files_failures": "not established"
+  },
+  "open_work": [
+    "Real hardware and Flatpak USB/filtering acceptance",
+    "Compatible frontend packaging/distribution before normal USB advertisement",
+    "Resolve or establish ownership of the repeated Files failures before a green release gate",
+    "Complete GlobalShortcuts and Print",
+    "Broader capture/input/Clipboard acceptance and full eighteen-interface release routing"
+  ],
+  "previous_native": {
+    "groups": 28,
+    "helpers_terminal": 22,
+    "receipts": [
+      {
+        "path": "/home/kevinard/projects/canopa/target/portal-usb-22/native-dark-03/summary.json",
+        "checks": 14,
+        "scheme": "dark",
+        "scale": 1.0,
+        "helpers_terminal": 11
+      },
+      {
+        "path": "/home/kevinard/projects/canopa/target/portal-usb-22/native-light-01/summary.json",
+        "checks": 14,
+        "scheme": "light",
+        "scale": 1.25,
+        "helpers_terminal": 11
+      }
+    ],
+    "scope": "Synthetic regular device nodes; no real hardware USB/Flatpak or distribution acceptance"
+  },
+  "workspace_portal_checks": {
+    "library_passed": 179,
+    "library_ignored": 7,
+    "integration_passed": 55,
+    "integration_ignored": 2
+  },
+  "final_executable_archives": {
+    "status": "verified lossless final application/workspace harness archives",
+    "files": [
+      {
+        "name": "portal",
+        "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+        "sha256": "ddbee84cfdfbc1a8528a71242bcae99379ae6a17408041fdf6e317969f8ebdd6",
+        "bytes": 229510680,
+        "archive": "/home/kevinard/projects/canopa/target/portal-usb-22/binary-archives/portal-ddbee84cfdfb.gz",
+        "compressed_bytes": 51037784,
+        "lossless_verified": true,
+        "raw_root_retained": true
+      },
+      {
+        "name": "harness",
+        "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-6af112ec8fbddff4",
+        "sha256": "c55b7e32f23e051ae7770a477d67134e86b573bfe6a6115085c343a8c5745542",
+        "bytes": 134727056,
+        "archive": "/home/kevinard/projects/canopa/target/portal-usb-22/binary-archives/harness-c55b7e32f23e.gz",
+        "compressed_bytes": 35043806,
+        "lossless_verified": true,
+        "raw_root_retained": true
+      }
+    ]
+  },
+  "storage": {
+    "workspace_net_growth_bytes": 160731136,
+    "free_bytes": 14470127616,
+    "usb_evidence_bytes": 168256114,
+    "pre_workspace_compressed_bytes": 78531877,
+    "final_compressed_bytes": 86081590,
+    "new_compositor_copies": 0,
+    "one_checksum_addressed_frontend_added": true,
+    "previous_checkpoint_free_bytes": 14853357568,
+    "observed_checkpoint_net_growth_bytes": 383229952
+  }
+}

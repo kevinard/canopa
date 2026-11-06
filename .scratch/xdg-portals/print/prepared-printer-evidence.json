@@ -1,0 +1,124 @@
+{
+  "status": "passed-scoped",
+  "scope": "Prepared PS/SVG normalization through actual opt-in normal service, public frontend/Iced and private PDF-only CUPS/loopback printer; no physical-printer or release acceptance",
+  "validation": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-44/worker-01.json",
+    "sha256": "d62515a2621173713c0f6bc747fdbc9ec456496d9ee4b67fe0916358707e2298"
+  },
+  "native": [
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-44/public-printer-dark-04/summary.json",
+      "sha256": "308ebf43217bec0f49b582004e080d41a483560bf1bbaf8f2f5950834bf9206f",
+      "groups": 15,
+      "observed_terminal_processes": 87
+    },
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-44/public-printer-light-02/summary.json",
+      "sha256": "25c41ddf1e7bd3fcfc40f3b9203817f9c05efdeb1c3048610cb119528c3803c3",
+      "groups": 15,
+      "observed_terminal_processes": 90
+    },
+    {
+      "path": "/home/kevinard/projects/canopa/target/portal-print-43/public-normal-dark-02/summary.json",
+      "sha256": "06dea8b31a6852553355a394fe4276b1839bc2436a141df89d3b0838c70c1104",
+      "groups": 12,
+      "observed_terminal_processes": 24
+    }
+  ],
+  "goal": "active: 11 packaged, 6 other experimental, Print opt-in",
+  "changed_since_validation": [],
+  "implementation_changes": {
+    "crates/canopa-portal/src/print/production/tests.rs": "aee7f44798fc6c6a11b672db15c8fdac4a145511bb6bc6647040c6b5fd57ecaf",
+    "crates/canopa-portal/src/print/production.rs": "87da18d79bdcd209d80546d485bebc119873417de4dab6ed6f7292c48a649afe"
+  },
+  "tests": {
+    "tests": {
+      "passed": 135,
+      "failed": 0,
+      "ignored": 11
+    },
+    "lockdown-tests": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    "portal-library": {
+      "passed": 353,
+      "failed": 0,
+      "ignored": 19
+    },
+    "portal-integration": {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "binary": {
+    "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "sha256": "f1158aa2f09ee2cb47cd3cfdd2e5f3cff04a8e99548d25396286bce56cd9b953",
+    "bytes": 263357432
+  },
+  "observed_native_terminal_processes": 201,
+  "red_baseline": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-44/public-printer-dark-01/summary.json",
+    "sha256": "647dbb98532bf7193f9b730fdd07b80e58570d9fa79d86f9f26bc1e533ad22ab",
+    "mismatches": [
+      "ps-1-one-sided-False",
+      "ps-1-two-sided-long-edge-True",
+      "svg-1-one-sided-False",
+      "svg-1-two-sided-long-edge-True"
+    ]
+  },
+  "visual_review": {
+    "consent": [
+      "public-printer-dark-04/dark/ps-1-one-sided-False-consent.png",
+      "public-printer-light-02/light/svg-1-one-sided-False-consent.png"
+    ],
+    "rendered": [
+      "review/svg-content.png",
+      "review/ps-page3.png",
+      "review/ps-blank-back.png"
+    ],
+    "findings": "Readable dark/light Iced consent; actual delivered SVG retains four PAGE labels in quadrants, PS page 3 reads PAGE-3, duplex blank back is blank. Full side membership/order/raster and intrinsic geometry assertions pass for all 30 printer cases."
+  },
+  "default_print_registered": false,
+  "packaged_print_advertised": false,
+  "explicit_print_registered": true,
+  "startup_linkage_no_gtk_cups_qpdf": true,
+  "live_phase44_drivers": [],
+  "fixture_sources": {
+    "/home/kevinard/projects/canopa/target/portal-print-44/sources/validate.py": "affb04c3906ef2c535f69e842c2b35c277c703a9d64ec9c9d951caa57ac7531b",
+    "/home/kevinard/projects/canopa/target/portal-print-44/sources/printer.py": "e168bbc7a798b1950f6aee456af678c77ed031a5da4b7e73420043b631c2257c",
+    "/home/kevinard/projects/canopa/target/portal-print-44/sources/seal.py": "4c83e6031f8dac610c0cb972a9248ea5c14b0b05ee1d5e0a16a98b648d72627f",
+    "/home/kevinard/projects/canopa/target/portal-print-44/sources/public-formats.py": "addc7ca01fca15cabf033b670e798fd8f5110aa532d7ff5365dae3737fef15a7"
+  },
+  "storage": {
+    "baseline_free_bytes": 7313768448,
+    "final_free_bytes": 7219273728,
+    "net_growth_bytes": 94494720,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "application_binary_copies": 0,
+    "new_rust_native_drivers": 0,
+    "new_native_executables": 0
+  },
+  "remaining": [
+    "Automatic Qt client and live toolkit printer emission acceptance",
+    "Advanced/custom media/device/saved-instance controls",
+    "Full-main death during publication/CUPS transactions, ambiguous submission and stalled remote/kernel filesystems",
+    "Cross-restart quotas and converter descendant accounting",
+    "Real Flatpak/physical-device acceptance and runtime packaging/default Print advertisement",
+    "Six experimental portals and compatible companion distribution",
+    "Full workspace/native/packaging/release/routing gates and ten recorded Files integration failures"
+  ],
+  "acceptance": {
+    "path": "/home/kevinard/projects/canopa/target/portal-print-44/acceptance-01.json",
+    "sha256": "d40ad2489d7f31426499aa627b7a37a04538186cd3132d3cf5ca34eaa2ff365b"
+  },
+  "notes": [
+    "Prepared protocol streams; no live toolkit printer emission or physical-printer claim.",
+    "Actual file-client checks use the current Phase44 binary despite the Phase43 receipt directory.",
+    "Raw failed baseline/reference receipts remain failed; they are not final acceptance.",
+    "Scope is unchanged: 11 packaged, 6 other experimental, Print opt-in, full goal active."
+  ]
+}

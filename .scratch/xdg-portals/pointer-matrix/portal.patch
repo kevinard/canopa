@@ -1,0 +1,594 @@
+--- a/crates/canopa-portal/src/remote_input.rs
++++ b/crates/canopa-portal/src/remote_input.rs
+@@ -22,8 +22,8 @@
+ mod server;
+ pub use pointer::{Command as PointerCommand, PointerInput, Status as PointerStatus};
+ 
+-const SERVICE: &str = "org.canopa.Niri.RemoteInput1";
+-const PATH: &str = "/org/canopa/Niri/RemoteInput1";
++pub(crate) const SERVICE: &str = "org.canopa.Niri.RemoteInput1";
++pub(crate) const PATH: &str = "/org/canopa/Niri/RemoteInput1";
+ const CALL_TIME: Duration = Duration::from_secs(5);
+ const FRAME_BYTES: usize = 16 * 1024;
+ 
+--- a/crates/canopa-portal/src/remote_input/parent.rs
++++ b/crates/canopa-portal/src/remote_input/parent.rs
+@@ -60,6 +60,11 @@
+         capture: bool,
+     ) -> anyhow::Result<u32> {
+         tokio::time::timeout(CALL_TIME, async {
++            let bus = zbus::fdo::DBusProxy::new(connection).await?;
++            anyhow::ensure!(
++                bus.get_name_owner(SERVICE.try_into()?).await? == self.owner,
++                "Input owner changed before capability query"
++            );
+             let proxy = zbus::proxy::Builder::<zbus::Proxy<'_>>::new(connection)
+                 .destination(self.owner.clone())?
+                 .path(PATH)?
+@@ -85,6 +90,10 @@
+             }
+             let pointer = version(&proxy, "PointerVersion").await? == Some(1)
+                 && (!capture || version(&proxy, "MappedPointerVersion").await? == Some(2));
++            anyhow::ensure!(
++                bus.get_name_owner(SERVICE.try_into()?).await? == self.owner,
++                "Input owner changed during capability query"
++            );
+             Ok::<_, anyhow::Error>(1 | if pointer { 2 } else { 0 })
+         })
+         .await?
+--- a/crates/canopa-portal/src/screencast/remote.rs
++++ b/crates/canopa-portal/src/screencast/remote.rs
+@@ -3,6 +3,10 @@
+ use std::os::fd::OwnedFd;
+ mod dispatch;
+ pub use dispatch::RemoteDesktop;
++#[cfg(feature = "desktop")]
++mod availability;
++#[cfg(feature = "desktop")]
++pub use availability::AvailabilityWatch;
+ mod input;
+ pub use input::{Input, PointerInput};
+ 
+--- a/crates/canopa-portal/src/screencast/remote/dispatch.rs
++++ b/crates/canopa-portal/src/screencast/remote/dispatch.rs
+@@ -11,7 +11,7 @@
+ 
+ #[derive(Clone)]
+ pub struct RemoteDesktop {
+-    methods: Methods,
++    pub(super) methods: Methods,
+ }
+ impl RemoteDesktop {
+     pub fn new(capture: ScreenCast) -> Self {
+--- /dev/null
++++ b/crates/canopa-portal/src/screencast/remote/availability.rs
+@@ -0,0 +1,81 @@
++//! Read-only device availability notifications for the registered backend.
++use super::*;
++use futures_util::StreamExt;
++use zbus::{MatchRule, MessageStream, message::Type, object_server::SignalEmitter};
++
++pub struct AvailabilityWatch(Option<tokio::task::JoinHandle<()>>);
++impl AvailabilityWatch {
++    pub async fn stop(mut self) {
++        if let Some(task) = self.0.take() {
++            task.abort();
++            let _ = task.await;
++        }
++    }
++}
++impl Drop for AvailabilityWatch {
++    fn drop(&mut self) {
++        if let Some(task) = &self.0 {
++            task.abort();
++        }
++    }
++}
++async fn publish(emitter: &SignalEmitter<'_>, value: u32) -> zbus::Result<()> {
++    zbus::fdo::Properties::properties_changed(
++        emitter,
++        "org.freedesktop.impl.portal.RemoteDesktop".try_into()?,
++        HashMap::from([("AvailableDeviceTypes", Value::from(value))]),
++        Default::default(),
++    )
++    .await
++}
++impl RemoteDesktop {
++    /// Start after registering the interface and retain the guard until shutdown.
++    /// The frontend caches this property, so fresh getters alone are insufficient.
++    pub async fn observe_available_devices(
++        &self,
++        connection: &Connection,
++    ) -> anyhow::Result<AvailabilityWatch> {
++        let bus = zbus::fdo::DBusProxy::new(connection).await?;
++        let mut owners = bus
++            .receive_name_owner_changed_with_args(&[(0, crate::remote_input::SERVICE)])
++            .await?;
++        let rule = MatchRule::builder()
++            .msg_type(Type::Signal)
++            .interface("org.freedesktop.DBus.Properties")?
++            .member("PropertiesChanged")?
++            .path(crate::remote_input::PATH)?
++            .arg(0, crate::remote_input::SERVICE)?
++            .build();
++        let mut properties = MessageStream::for_match_rule(rule, connection, Some(32)).await?;
++        let presenter = self.methods.capture.host.remote_presenter.clone();
++        let mut current = presenter.available_devices(connection).await;
++        let emitter = SignalEmitter::new(connection, crate::OBJECT_PATH)?.to_owned();
++        publish(&emitter, current).await?;
++        let connection = connection.clone();
++        Ok(AvailabilityWatch(Some(tokio::spawn(async move {
++            loop {
++                let owner_event = tokio::select! {
++                    event = owners.next() => { if event.is_none() { let _=publish(&emitter,0).await; return; } true },
++                    // A bounded stream may report a missed notification. Re-read
++                    // authoritative state rather than trusting signal contents.
++                    event = properties.next() => { if event.is_none() { let _=publish(&emitter,0).await; return; } false },
++                };
++                // Retire an old owner's cached capability before validating a
++                // possible replacement. A signal payload never authorizes input.
++                if owner_event && current != 0 {
++                    if publish(&emitter, 0).await.is_err() {
++                        return;
++                    }
++                    current = 0;
++                }
++                let next = presenter.available_devices(&connection).await;
++                if next != current {
++                    if publish(&emitter, next).await.is_err() {
++                        return;
++                    }
++                    current = next;
++                }
++            }
++        }))))
++    }
++}
+--- a/crates/canopa-portal/src/screencast/remote/production/tests.rs
++++ b/crates/canopa-portal/src/screencast/remote/production/tests.rs
+@@ -216,6 +216,92 @@
+     }
+ }
+ #[tokio::test]
++async fn availability_notifications_follow_the_live_owner_and_stop_with_registration() {
++    use futures_util::StreamExt;
++    let fixture = Fixture::new("mapped").await;
++    let producer = Arc::new(Production::new(
++        fixture.producer.process.clone(),
++        fixture.producer.capture.clone(),
++    ));
++    let sessions = ScreenCast::with_presenters(
++        fixture.producer.capture.clone(),
++        producer,
++        crate::requests::Requests::default(),
++    );
++    let remote = RemoteDesktop::new(sessions.clone());
++    fixture
++        .backend
++        .object_server()
++        .at(crate::OBJECT_PATH, remote.clone())
++        .await
++        .unwrap();
++    let observer = fixture._bus.connect().await;
++    let properties = zbus::fdo::PropertiesProxy::builder(&observer)
++        .destination(fixture.backend.unique_name().unwrap().clone())
++        .unwrap()
++        .path(crate::OBJECT_PATH)
++        .unwrap()
++        .build()
++        .await
++        .unwrap();
++    let mut changes = properties.receive_properties_changed().await.unwrap();
++    let watch = remote
++        .observe_available_devices(&fixture.backend)
++        .await
++        .unwrap();
++    async fn mask(changes: &mut zbus::fdo::PropertiesChangedStream, expected: u32) {
++        tokio::time::timeout(Duration::from_secs(3), async {
++            loop {
++                let event = changes.next().await.unwrap();
++                let args = event.args().unwrap();
++                if let Some(value) = args.changed_properties().get("AvailableDeviceTypes")
++                    && u32::try_from(value).unwrap() == expected
++                {
++                    break;
++                }
++            }
++        })
++        .await
++        .unwrap();
++    }
++    mask(&mut changes, 3).await;
++    fixture
++        .pointer_version
++        .store(2, std::sync::atomic::Ordering::SeqCst);
++    let emitter =
++        zbus::object_server::SignalEmitter::new(&fixture.server, "/org/canopa/Niri/RemoteInput1")
++            .unwrap();
++    zbus::fdo::Properties::properties_changed(
++        &emitter,
++        INPUT_SERVICE.try_into().unwrap(),
++        HashMap::new(),
++        vec!["PointerVersion"].into(),
++    )
++    .await
++    .unwrap();
++    mask(&mut changes, 1).await;
++    let endpoint = InputEndpoint::resolve(
++        &fixture.backend,
++        fixture.producer.capture.socket().unwrap().clone(),
++    )
++    .await
++    .unwrap();
++    fixture.server.release_name(INPUT_SERVICE).await.unwrap();
++    mask(&mut changes, 0).await;
++    assert!(endpoint.devices(&fixture.backend, false).await.is_err());
++    watch.stop().await;
++    fixture
++        .pointer_version
++        .store(1, std::sync::atomic::Ordering::SeqCst);
++    fixture.server.request_name(INPUT_SERVICE).await.unwrap();
++    assert!(
++        tokio::time::timeout(Duration::from_millis(80), changes.next())
++            .await
++            .is_err()
++    );
++    sessions.shutdown().await.unwrap();
++}
++#[tokio::test]
+ async fn pointer_negotiation_requires_live_scale_descriptors_only_for_captured_input() {
+     for (mode, relative, captured) in [
+         ("accept", 1, 1),
+@@ -401,13 +487,14 @@
+     let capture = Arc::new(CaptureProduction::new(process.clone()));
+     let remote = Arc::new(Production::new(process, capture.clone()));
+     let sessions = ScreenCast::with_presenters(capture, remote, Requests::default());
++    let remote = RemoteDesktop::new(sessions.clone());
+     let server = zbus::connection::Builder::session()
+         .unwrap()
+         .name(crate::BUS_NAME)
+         .unwrap()
+         .serve_at(crate::OBJECT_PATH, sessions.clone())
+         .unwrap()
+-        .serve_at(crate::OBJECT_PATH, RemoteDesktop::new(sessions.clone()))
++        .serve_at(crate::OBJECT_PATH, remote.clone())
+         .unwrap()
+         .serve_at(
+             crate::OBJECT_PATH,
+@@ -417,6 +504,7 @@
+         .build()
+         .await
+         .unwrap();
++    let availability = remote.observe_available_devices(&server).await.unwrap();
+     println!(
+         "remote-backend-ready {}",
+         serde_json::json!({"pid":std::process::id(),"owner":server.unique_name().unwrap().as_str()})
+@@ -429,5 +517,6 @@
+     .await
+     .unwrap();
+     sessions.shutdown().await.unwrap();
++    availability.stop().await;
+     server.close().await.unwrap();
+ }
+--- a/scripts/test-remote-desktop-pointer.py
++++ b/scripts/test-remote-desktop-pointer.py
+@@ -103,15 +103,18 @@
+         else: raise AssertionError('unapproved input accepted')
+     def finish(p,expected=0):
+         status = p.wait(timeout=20); assert status==expected,(p.args,status,expected)
+-        session.processes.remove(p); result.setdefault('retired',[]).append({'pid':p.pid,'command':p.args,'exit_code':status})
++        if p in session.processes: session.processes.remove(p)
++        result.setdefault('retired',[]).append({'pid':p.pid,'command':p.args,'exit_code':status})
+     def client_events(path): return [json.loads(v) for v in path.read_text().splitlines() if v.startswith('{')]
+-    def sample(c,key,values,label):
++    def sample(c,key,values,label,size=(400,300),scale=None,monitor=False):
+         import gi
+         gi.require_version('Gst','1.0'); gi.require_version('GstVideo','1.0')
+         from gi.repository import Gst,GstVideo
+         from PIL import Image
+-        node,props = values['streams'][0]; serial = props['pipewire-serial']
+-        assert props['mapping_id'] and list(props['size'])==[400,300] and 'position' not in props,props
++        node,props = next(v for v in values['streams'] if v[1]['source_type']==(1 if monitor else 2)); serial = props['pipewire-serial']
++        scale = args.scale if scale is None else scale
++        assert props['mapping_id'],props
++        if not monitor: assert 'position' not in props,props
+         assert any(v['id']==node and int(v.get('info',{}).get('props',{}).get('object.serial',0))==serial for v in session.registry())
+         fd = session.remote(c,key)
+         for name in ['XDG_RUNTIME_DIR','PIPEWIRE_RUNTIME_DIR','PIPEWIRE_REMOTE']:
+@@ -120,7 +123,8 @@
+         try:
+             pipeline = Gst.parse_launch(f'pipewiresrc fd={fd} target-object={serial} ! videoconvert ! video/x-raw,format=RGBA ! appsink name=frames sync=false max-buffers=2 drop=true')
+             sink = pipeline.get_by_name('frames'); pipeline.set_state(Gst.State.PLAYING)
+-            image = None; deadline = time.monotonic()+10; expected=(round(400*args.scale),round(300*args.scale))
++            image = None; deadline = time.monotonic()+10
++            expected = session.pixel_size if monitor else tuple(round(v*scale) for v in size)
+             while time.monotonic()<deadline:
+                 frame = sink.emit('try-pull-sample',Gst.SECOND)
+                 if frame is None: continue
+@@ -130,7 +134,12 @@
+                 if image.size==expected: break
+             assert image is not None and image.size==expected,(image.size if image else None,expected)
+             for (x,y),color in zip([(1,1),(3,1),(1,3),(3,3)],[(208,32,32),(32,176,80),(48,79,208),(224,176,32)]):
+-                pixel=image.getpixel((image.width*x//4,image.height*y//4))[:3]; assert max(abs(a-b) for a,b in zip(pixel,color))<=8,(pixel,color)
++                if monitor:
++                    current = next(v for v in windows() if v['id']==wid)['layout']
++                    position = current['window_offset_in_tile'] if not current.get('tile_pos_in_workspace_view') else [current['tile_pos_in_workspace_view'][i]+current['window_offset_in_tile'][i] for i in range(2)]
++                    point = (round((position[0]+size[0]*x/4)*scale),round((position[1]+size[1]*y/4)*scale))
++                else: point=(image.width*x//4,image.height*y//4)
++                pixel=image.getpixel(point)[:3]; assert max(abs(a-b) for a,b in zip(pixel,color))<=8,(pixel,color,point)
+             image.save(out/(label+'.png')); result.setdefault('frames',[]).append({'node':node,'serial':serial,'mapping_id':props['mapping_id'],'size':image.size,'file':label+'.png'})
+         finally:
+             if pipeline is not None: pipeline.set_state(Gst.State.NULL); pipeline.get_state(5*Gst.SECOND)
+@@ -149,14 +158,15 @@
+                 if b'--remote-input-worker' in command and str(args.portal).encode() in command: live.add(pid)
+             except OSError: pass
+         return live
+-    for case,approved in [('view-only',0),('legacy-stop',2),('legacy-worker-loss',3),('pointer',2),('combined',3)]:
++    cases = [('matrix',3)] if args.matrix else [('view-only',0),('legacy-stop',2),('legacy-worker-loss',3),('pointer',2),('combined',3)]
++    for case,approved in cases:
+         caller = connection()
+         call(caller,FRONTEND,PATH,'org.freedesktop.host.portal.Registry','Register','(sa{sv})',('org.canopa.RemoteDesktopFixture',{}))
+         caller.signal_subscribe(FRONTEND,'org.freedesktop.portal.Request','Response',None,None,Gio.DBusSignalFlags.NONE,lambda c,s,p,i,n,v:responses.__setitem__(p,v.unpack()))
+         caller.signal_subscribe(FRONTEND,'org.freedesktop.portal.Session','Closed',None,None,Gio.DBusSignalFlags.NONE,lambda c,s,p,i,n,v:closed.add(p))
+         values = response(request(caller,REMOTE,'CreateSession','(a{sv})',(options(session_handle_token=GLib.Variant('s',f's{token}')),))); key = values['session_handle']
+         response(request(caller,REMOTE,'SelectDevices','(oa{sv})',(key,options(types=GLib.Variant('u',3)))))
+-        response(request(caller,CAST,'SelectSources','(oa{sv})',(key,options(types=GLib.Variant('u',2),cursor_mode=GLib.Variant('u',1)))))
++        response(request(caller,CAST,'SelectSources','(oa{sv})',(key,options(types=GLib.Variant('u',3 if args.matrix else 2),multiple=GLib.Variant('b',args.matrix),cursor_mode=GLib.Variant('u',1)))))
+         start = request(caller,REMOTE,'Start','(osa{sv})',(key,'',options()))
+         dialog = session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Share and allow control — Canopa'),None),'Iced combined consent')
+         if not dialog['is_floating']: action('move-window-to-floating','--id',dialog['id'])
+@@ -166,10 +176,14 @@
+         session.capture(case+'-fresh.png')
+         if approved & 1: click(280,130)
+         if approved & 2: click(280,180)
+-        keys('-k','Down','-k','space'); time.sleep(.2); session.capture(case+'-selected.png')
++        keys('-k','Down','-k','space')
++        if args.matrix: keys('-k','Down','-k','space')
++        time.sleep(.2); session.capture(case+'-selected.png')
+         keys('-M','ctrl','-k','Return','-m','ctrl'); values = response(start)
+         assert values['devices']==approved and not values['clipboard_enabled'],values
+-        node,props = values['streams'][0]; assert props['source_type']==2 and list(props['size'])==[400,300] and props['mapping_id'],props
++        wi = next(i for i,v in enumerate(values['streams']) if v[1]['source_type']==2)
++        node,props = values['streams'][wi]; assert props['source_type']==2 and list(props['size'])==[400,300] and props['mapping_id'],props
++        assert len(values['streams'])==(2 if args.matrix else 1),values
+         result.setdefault('starts',[]).append({'case':case,'results':values})
+         controls = session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']==('Screen sharing — Canopa' if approved==0 else 'Remote control — Canopa')),None),'ongoing controls')
+         action('move-floating-window','--id',controls['id'],'--x',520,'--y',20); action('focus-window','--id',wid)
+@@ -222,23 +236,69 @@
+         os.close(owned[0]); os.close(control_read); session.processes.append(client)
+         session.wait_for(lambda:any(e.get('resumed')=='pointer' for e in client_events(client_log)),'real EI pointer')
+         regions = [e for e in client_events(client_log) if e.get('added')=='pointer'][0]['regions']
+-        assert regions==[{'id':props['mapping_id'],'offset':[0,0],'size':[400,300],'scale':args.scale}],regions
++        expected=[];offset=0
++        for _,meta in values['streams']:
++            expected.append({'id':meta['mapping_id'],'offset':[offset,0],'size':list(meta['size']),'scale':args.scale});offset+=meta['size'][0]
++        assert regions==expected,regions
+         def command(value):
+             before = len(client_events(client_log)); os.write(control_write,(value+'\n').encode()); session.wait_for(lambda:any(e.get('sent')==value for e in client_events(client_log)[before:]),'EI command '+value)
+-        before = len(log.read_text().splitlines()); command('absolute 0 33 43'); line('motion 33.00 43.00',before)
++        before = len(log.read_text().splitlines()); command(f'absolute {wi} 33 43'); line('motion 33.00 43.00',before)
+         sample(caller,key,values,case+'-after-handoff')
+         command('button 272 1'); command('button 272 0'); line('button 272 0',before)
+         passed(case+'-legacy-held-input-cleanup-precedes-EI-handoff-on-the-same-paired-stream',regions=regions)
++        if args.matrix:
++            mi = next(i for i,v in enumerate(values['streams']) if v[1]['source_type']==1)
++            before=len(log.read_text().splitlines());command(f'absolute {mi} 134 144');line('motion 34.00 44.00',before)
++            sample(caller,key,values,'matrix-monitor-before',monitor=True)
++            passed('monitor-and-window-public-streams-pair-to-distinct-EI-regions-and-client-coordinates')
++            before=len(log.read_text().splitlines());command('key 42 1');line('key 42 1 Shift_L',before)
++            released_keys=log.read_text().splitlines().count('key 42 0 Shift_L')
++            size=(400,300);scale=args.scale
++            def generation():return [e for e in client_events(client_log) if e.get('added')=='pointer'][-1]
++            for index,(kind,target) in enumerate([('size',(420,320)),('scale',1.5),('scale',1.25),('size',(400,300))]):
++                previous=generation()['generation'];before=len(log.read_text().splitlines());command('button 272 1');line('button 272 1',before)
++                before=len(log.read_text().splitlines())
++                if kind=='size':
++                    size=target
++                    for dimension,value in zip(['width','height'],size):action('set-window-'+dimension,'--id',wid,value)
++                    session.wait_for(lambda:next(w for w in windows() if w['id']==wid)['layout']['window_size']==list(size),'committed window size')
++                else:
++                    scale=target;session.run(['niri','msg','output','winit','scale',str(scale)])
++                session.wait_for(lambda:generation()['generation']>previous
++                    and generation()['regions'][wi]['size']==list(size)
++                    and generation()['regions'][wi]['scale']==scale,'public EI region replacement')
++                current=generation();g=current['generation']
++                session.wait_for(lambda:any(e.get('resumed')=='pointer' and e.get('generation')==g for e in client_events(client_log)),'new pointer resumed')
++                line('button 272 0',before)
++                assert current['regions'][wi]['size']==list(size) and current['regions'][wi]['scale']==scale,current
++                assert [v['id'] for v in current['regions']]==[v[1]['mapping_id'] for v in values['streams']]
++                assert not any(e.get('removed')=='keyboard' for e in client_events(client_log))
++                assert log.read_text().splitlines().count('key 42 0 Shift_L')==released_keys
++                before=len(log.read_text().splitlines());command(f'absolute {wi} {35+index} {45+index}');line(f'motion {35+index:.2f} {45+index:.2f}',before)
++                command('button 272 1');command('button 272 0')
++                sample(caller,key,values,'matrix-window-change-'+str(index),size=size,scale=scale)
++                sample(caller,key,values,'matrix-monitor-change-'+str(index),size=size,scale=scale,monitor=True)
++                passed('public-multiple-source-'+kind+'-replacement-preserves-keyboard-and-video-'+str(index),regions=current['regions'])
++            before=len(log.read_text().splitlines());command('key 42 0');line('key 42 0 Shift_L',before)
+         before = len(log.read_text().splitlines()); command('button 272 1'); line('button 272 1',before)
+         if approved & 1: command('key 42 1'); line('key 42 1 Shift_L',before)
+         before = len(log.read_text().splitlines())
+-        call(caller,FRONTEND,key,'org.freedesktop.portal.Session','Close','()',())
+-        finish(client); os.close(control_write); line('button 272 0',before)
++        ending=args.ending if args.matrix else 'close'
++        if ending=='client-kill':session.processes.remove(client);client.kill()
++        elif ending=='backend-kill':session.processes.remove(backend);backend.kill();finish(backend,expected=-9)
++        elif ending=='ui-stop':action('close-window','--id',controls['id'])
++        else:call(caller,FRONTEND,key,'org.freedesktop.portal.Session','Close','()',())
++        finish(client,expected=-9 if ending=='client-kill' else 0); os.close(control_write); line('button 272 0',before)
+         if approved & 1: line('key 42 0 Shift_L',before)
++        if ending!='close':session.wait_for(lambda:(drain(),key in closed)[1],'unexpected input/control loss closes public session')
+         caller.close_sync(None)
+-        session.wait_for(lambda:source_ended(node,props['pipewire-serial']),'EI capture producer retired')
++        for old_node,meta in values['streams']:session.wait_for(lambda:source_ended(old_node,meta['pipewire-serial']),'EI capture producer retired')
+         session.wait_for(lambda:not input_workers(),'EI worker reaped')
+-        passed(case+'-public-session-close-cleans-EI-held-input-and-controls')
++        session.wait_for(lambda:not any(w['id']==controls['id'] for w in windows()),'control panel retired')
++        passed(case+'-public-'+ending+'-cleans-EI-held-input-and-controls')
++    if args.matrix:
++        if backend.poll() is None:backend.stdin.close();finish(backend)
++        observer.close_sync(None);return
+     caller = connection()
+     call(caller,FRONTEND,PATH,'org.freedesktop.host.portal.Registry','Register','(sa{sv})',('org.canopa.RemoteDesktopFixture',{}))
+     caller.signal_subscribe(FRONTEND,'org.freedesktop.portal.Request','Response',None,None,Gio.DBusSignalFlags.NONE,lambda c,s,p,i,n,v:responses.__setitem__(p,v.unpack()))
+@@ -280,7 +340,7 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     for name in ['portal','harness','niri','frontend']:
+         parser.add_argument('--'+name,required=True,type=Path); parser.add_argument('--'+name+'-sha256',required=True)
+-    parser.add_argument('--scheme',choices=['dark','light'],default='dark'); parser.add_argument('--scale',type=float,default=1.25); parser.add_argument('--output',required=True,type=Path)
++    parser.add_argument('--scheme',choices=['dark','light'],default='dark'); parser.add_argument('--scale',type=float,default=1.25); parser.add_argument('--matrix',action='store_true',help='exercise monitor+window mapping and four mutable projection transitions'); parser.add_argument('--ending',choices=['close','ui-stop','client-kill','backend-kill'],default='close'); parser.add_argument('--output',required=True,type=Path)
+     args = parser.parse_args()
+     for name in ['portal','harness','niri','frontend']:
+         p = getattr(args,name).resolve(); setattr(args,name,p); assert digest(p)==getattr(args,name+'_sha256')
+--- /dev/null
++++ b/scripts/test-remote-desktop-availability.py
+@@ -0,0 +1,150 @@
++#!/usr/bin/env python3
++"""Real XDG frontend device-cache invalidation on a private bus; no desktop/input."""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import shutil
++import socket
++import subprocess
++import sys
++import tempfile
++import threading
++import time
++import traceback
++
++ROOT = Path(__file__).resolve().parents[1]
++INPUT = 'org.canopa.Niri.RemoteInput1'
++INPUT_PATH = '/org/canopa/Niri/RemoteInput1'
++BACKEND = 'org.freedesktop.impl.portal.desktop.canopa'
++PUBLIC = 'org.freedesktop.portal.Desktop'
++PATH = '/org/freedesktop/portal/desktop'
++REMOTE = 'org.freedesktop.portal.RemoteDesktop'
++IMPL = 'org.freedesktop.impl.portal.RemoteDesktop'
++
++
++def digest(path):
++    with path.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
++
++
++def verify(args,root,out,result):
++    from gi.repository import Gio,GLib
++    processes=[]; listener=socket.socket(socket.AF_UNIX); stop=threading.Event(); calls=[]
++    env={**os.environ,'XDG_RUNTIME_DIR':str(root),'XDG_CONFIG_HOME':str(root/'config'),'XDG_DATA_HOME':str(root/'data'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_CURRENT_DESKTOP':'Canopa','CANOPA_REMOTE_DESKTOP_NATIVE':'1','CANOPA_PORTAL_BINARY':str(args.portal),'NIRI_SOCKET':str(root/'ipc.sock')}
++    env.update(DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(root/'no-system-bus'),GIO_USE_VFS='local',GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas')
++    for name in ['DISPLAY','WAYLAND_DISPLAY','DBUS_STARTER_ADDRESS','DBUS_STARTER_BUS_TYPE']:env.pop(name,None)
++    for name in ['config','data','cache']: (root/name).mkdir()
++    portals=root/'portals';portals.mkdir();env['XDG_DESKTOP_PORTAL_DIR']=str(portals);env['XDG_DATA_DIRS']=env['XDG_DATA_HOME']
++    (portals/'canopa.portal').write_text('[portal]\nDBusName='+BACKEND+'\nInterfaces='+IMPL+';org.freedesktop.impl.portal.ScreenCast;org.freedesktop.impl.portal.Settings;\nUseIn=Canopa;\n')
++    (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.ScreenCast=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
++    bus=subprocess.Popen(['dbus-daemon','--session','--nofork','--print-address=1'],stdout=subprocess.PIPE,stderr=(out/'dbus.log').open('w'),text=True);processes.append(bus);env['DBUS_SESSION_BUS_ADDRESS']=bus.stdout.readline().strip()
++    def connection(): return Gio.DBusConnection.new_for_address_sync(env['DBUS_SESSION_BUS_ADDRESS'],Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT|Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,None,None)
++    owner=connection();observer=connection();state={'pointer':1,'registered':True};changes=[]
++    def bus_call(c,m,s,v): return c.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus',m,GLib.Variant(s,v),None,Gio.DBusCallFlags.NONE,5000,None).unpack()
++    listener.bind(env['NIRI_SOCKET']);listener.listen();listener.settimeout(.2)
++    def ipc():
++        while not stop.is_set():
++            try: peer,_=listener.accept()
++            except socket.timeout: continue
++            except OSError: break
++            with peer:
++                peer.settimeout(1)
++                try:
++                    data=peer.recv(4096)
++                    if data:
++                        assert data==b'"Version"\n',data
++                        peer.sendall(b'{"Ok":{"Version":"availability fixture"}}\n')
++                except (OSError,AssertionError): pass
++    thread=threading.Thread(target=ipc,daemon=True);thread.start()
++    xml='<node><interface name="'+INPUT+'"><property name="Version" type="u" access="read"/><property name="PointerVersion" type="u" access="read"/><property name="MappedPointerVersion" type="u" access="read"/></interface></node>'
++    interface=Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
++    def get_property(c,sender,path,iface,name):
++        return GLib.Variant('u',1 if name=='Version' else (2 if name=='MappedPointerVersion' else state['pointer']))
++    def method(c,sender,path,iface,name,parameters,invocation):
++        calls.append(name);invocation.return_dbus_error('org.freedesktop.DBus.Error.Failed','No input may open in an availability probe')
++    registration=owner.register_object(INPUT_PATH,interface,method,get_property,None)
++    def incoming(c,message,received):
++        if received and message.get_message_type()==Gio.DBusMessageType.METHOD_CALL and message.get_interface()==INPUT:calls.append(message.get_member())
++        return message
++    owner.add_filter(incoming)
++    assert bus_call(owner,'RequestName','(su)',(INPUT,0))[0]==1
++    def drain():
++        while GLib.MainContext.default().pending(): GLib.MainContext.default().iteration(False)
++    def wait(condition,label,timeout=15):
++        end=time.monotonic()+timeout
++        while time.monotonic()<end:
++            drain()
++            for p in processes:
++                assert p.poll() is None,(p.args,p.returncode,label)
++            value=condition()
++            if value:return value
++            time.sleep(.02)
++        raise AssertionError('Timed out: '+label)
++    def call(c,d,p,i,m,s,v):
++        answer={}
++        def done(c,r):
++            try: answer['value']=c.call_finish(r).unpack()
++            except GLib.Error as e: answer['error']=str(e)
++        c.call(d,p,i,m,GLib.Variant(s,v),None,Gio.DBusCallFlags.NONE,10000,None,done)
++        wait(lambda:answer,'DBus '+m);assert 'error' not in answer,answer
++        return answer['value']
++    def value(destination,interface): return call(observer,destination,PATH,'org.freedesktop.DBus.Properties','Get','(ss)',(interface,'AvailableDeviceTypes'))[0]
++    def passed(name): result['checks'].append(name);(out/'progress.json').write_text(json.dumps(result,indent=2)+'\n');print(name,flush=True)
++    def changed(c,s,p,i,n,v):
++        iface,props,invalid=v.unpack()
++        if iface in [IMPL,REMOTE] and ('AvailableDeviceTypes' in props or 'AvailableDeviceTypes' in invalid): changes.append({'sender':s,'interface':iface,'properties':props,'invalidated':invalid})
++    observer.signal_subscribe(None,'org.freedesktop.DBus.Properties','PropertiesChanged',PATH,None,Gio.DBusSignalFlags.NONE,changed)
++    def invalidate(): owner.emit_signal(None,INPUT_PATH,'org.freedesktop.DBus.Properties','PropertiesChanged',GLib.Variant('(sa{sv}as)',(INPUT,{},['PointerVersion'])))
++    try:
++        with (out/'backend.log').open('w') as log: backend=subprocess.Popen([str(args.harness),'--exact','screencast::remote::production::tests::native_backend_fixture','--ignored','--nocapture','--test-threads=1'],stdin=subprocess.PIPE,stdout=log,stderr=log,env=env,start_new_session=True)
++        processes.append(backend);wait(lambda:'remote-backend-ready ' in (out/'backend.log').read_text(),'backend')
++        with (out/'frontend.log').open('w') as log: frontend=subprocess.Popen([str(args.frontend),'--verbose'],stdout=log,stderr=log,env=env,start_new_session=True)
++        processes.append(frontend)
++        wait(lambda:bus_call(observer,'NameHasOwner','(s)',(PUBLIC,))[0],'frontend')
++        assert value(BACKEND,IMPL)==value(PUBLIC,REMOTE)==3;passed('live-owner-initial-mask-reaches-real-frontend')
++        for index,expected in [(2,1),(1,3)]:
++            state['pointer']=index;invalidate()
++            wait(lambda:value(BACKEND,IMPL)==expected,'backend live capability '+str(expected))
++            wait(lambda:value(PUBLIC,REMOTE)==expected,'frontend notified capability '+str(expected),timeout=5)
++            passed('source-property-change-reaches-frontend-'+str(expected))
++        assert bus_call(owner,'ReleaseName','(s)',(INPUT,))[0]==1
++        wait(lambda:value(BACKEND,IMPL)==0,'backend owner loss')
++        wait(lambda:value(PUBLIC,REMOTE)==0,'frontend owner loss',timeout=5);passed('owner-loss-invalidates-frontend-device-mask')
++        replacement=connection();replacement.register_object(INPUT_PATH,interface,method,get_property,None)
++        assert bus_call(replacement,'RequestName','(su)',(INPUT,0))[0]==1
++        wait(lambda:value(PUBLIC,REMOTE)==3,'replacement owner capability',timeout=5);passed('replacement-owner-is-revalidated-before-frontend-restores-mask')
++        assert not calls,calls
++        result['changes']=changes;result['input_methods_called']=calls;assert any(x['interface']==REMOTE for x in changes),changes
++        replacement.close_sync(None);owner.close_sync(None)
++        wait(lambda:value(PUBLIC,REMOTE)==0,'final source loss');passed('probing-and-notifications-never-open-input')
++        backend.stdin.close();assert backend.wait(timeout=20)==0;processes.remove(backend)
++    finally:
++        stop.set();listener.close();thread.join(timeout=2)
++        for p in reversed(processes):
++            if p.poll() is None:p.terminate()
++            try:p.wait(timeout=5)
++            except subprocess.TimeoutExpired:p.kill();p.wait(timeout=5)
++        result['processes']=[{'pid':p.pid,'command':p.args,'exit_code':p.poll()} for p in [*processes,*([backend] if 'backend' in locals() and backend not in processes else [])]]
++        if not observer.is_closed():observer.close_sync(None)
++
++
++def main():
++    p=argparse.ArgumentParser(description=__doc__)
++    for n in ['portal','harness','frontend']:p.add_argument('--'+n,required=True,type=Path);p.add_argument('--'+n+'-sha256',required=True)
++    p.add_argument('--output',required=True,type=Path);a=p.parse_args()
++    for n in ['portal','harness','frontend']:
++        path=getattr(a,n).resolve();setattr(a,n,path);assert digest(path)==getattr(a,n+'_sha256')
++    a.output=a.output.resolve();a.output.mkdir(exist_ok=False);shutil.copy2(__file__,a.output/Path(__file__).name)
++    result={'status':'running','scope':'Real standard frontend cached AvailableDeviceTypes with pinned production backend and fake same-process input/IPC provider; no input grant or desktop','checks':[],'fixture_sha256':digest(Path(__file__)),'binaries':{n:{'path':str(getattr(a,n)),'sha256':getattr(a,n+'_sha256')} for n in ['portal','harness','frontend']}};started=time.monotonic();code=1
++    try:
++        with tempfile.TemporaryDirectory(prefix='canopa-availability-') as directory:verify(a,Path(directory),a.output,result)
++        result['status']='passed';code=0
++    except Exception as error:result.update(status='failed',error=repr(error),traceback=traceback.format_exc())
++    result.update(seconds=round(time.monotonic()-started,2),binaries_unchanged=all(digest(getattr(a,n))==getattr(a,n+'_sha256') for n in ['portal','harness','frontend']),fixture_unchanged=digest(Path(__file__))==result['fixture_sha256'])
++    (a.output/'summary.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:result.get(k) for k in ['status','seconds','error']}))
++    if code:print(result['traceback'])
++    raise SystemExit(code)
++
++
++if __name__=='__main__':main()

@@ -34,7 +34,11 @@ fn restarting_a_killed_keep_both_destination_restore_preserves_newer_files_and_c
     use std::{os::unix::process::ExitStatusExt, process::Command};
     let root = PreservedFixture::new("canopa-destination-undo-crash-");
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_destination_restore_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_destinations::crash_destination_restore_helper",
+        ])
         .env("CANOPA_FILES_DESTINATION_CRASH_ROOT", root.path())
         .status()
         .unwrap();

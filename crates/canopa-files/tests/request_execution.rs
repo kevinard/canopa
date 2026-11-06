@@ -41,7 +41,11 @@ fn killed_mutation(kind: &str) -> (tempfile::TempDir, serde_json::Value) {
         .tempdir()
         .unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "request_execution_crash_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::request_execution::request_execution_crash_helper",
+        ])
         .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
         .env("CANOPA_REQUEST_EXECUTION_KIND", kind)
         .status()
@@ -170,7 +174,11 @@ fn completed_cross_filesystem_move_restores_only_metadata_after_root_replacement
     }
     let source = source_root.path().join("source");
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "request_execution_crash_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::request_execution::request_execution_crash_helper",
+        ])
         .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
         .env("CANOPA_REQUEST_EXECUTION_KIND", "move-directory")
         .env("CANOPA_REQUEST_EXECUTION_SOURCE", &source)
@@ -248,7 +256,11 @@ fn stopped_copy_and_cross_filesystem_move_restore_exact_reports_after_root_repla
         };
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
         child
-            .args(["--ignored", "--exact", "request_execution_crash_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::request_execution::request_execution_crash_helper",
+            ])
             .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
             .env("CANOPA_REQUEST_EXECUTION_KIND", kind);
         if kind == "partial-move" {
@@ -1323,7 +1335,11 @@ fn a_confirmed_rename_reopens_as_finished_without_replaying_or_overwriting_new_w
         .tempdir()
         .unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "request_execution_crash_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::request_execution::request_execution_crash_helper",
+        ])
         .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
         .env("CANOPA_REQUEST_EXECUTION_KIND", "rename")
         .status()
@@ -1385,7 +1401,11 @@ fn killed_result_save_reopens_the_exact_filesystem_execution_without_replaying_i
             .tempdir()
             .unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "request_execution_crash_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::request_execution::request_execution_crash_helper",
+            ])
             .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
             .env("CANOPA_REQUEST_EXECUTION_KIND", kind)
             .status()
@@ -1510,7 +1530,11 @@ fn reviewing_and_dismissing_a_lost_rename_result_preserves_files_and_execution_e
         .tempdir()
         .unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "request_execution_crash_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::request_execution::request_execution_crash_helper",
+        ])
         .env("CANOPA_REQUEST_EXECUTION_ROOT", root.path())
         .env("CANOPA_REQUEST_EXECUTION_KIND", "rename")
         .status()

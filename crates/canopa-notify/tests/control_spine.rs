@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use assert_cmd::Command;
 use predicates::str::contains;

@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions, DeliveryOutcome, Urgency, UserRule};

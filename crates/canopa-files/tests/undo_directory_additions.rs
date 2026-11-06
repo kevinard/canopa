@@ -13,7 +13,11 @@ fn a_killed_additional_pass_resumes_without_returning_completed_additions_twice(
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_additional_merge_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_directory_additions::crash_additional_merge_helper",
+        ])
         .env("CANOPA_ADDITIONAL_RESUME_ROOT", root.path())
         .status()
         .unwrap();

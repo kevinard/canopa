@@ -103,18 +103,18 @@ without touching the live desktop. Runner registration and hosted results must b
 
 ## Storage interruption and configuration load checks
 
-`bash scripts/test-notify.sh --test storage_failures --test legacy_import` exercises real
+`bash scripts/test-notify.sh --test integration -- storage_failures:: legacy_import::` exercises real
 SQLite busy errors, SIGKILL during an uncommitted migration, and SIGXFSZ during a
 legacy snapshot write. The last fixture needs `prlimit` from util-linux. These
 tests establish process-interruption recovery, not filesystem or power-loss
 certification. Reserved `.history-import-*` snapshots and sidecars are reclaimed
 under the destination ownership lock on the next default-path startup.
 
-Build the configuration suite with `bash scripts/test-notify.sh --test configuration_intake
+Build the configuration suite with `bash scripts/test-notify.sh --test integration
 --no-run`, then pass the executable path printed by Cargo to:
 
 ```sh
-python3 scripts/stress-configuration.py --test-binary /path/to/configuration_intake-HASH \
+python3 scripts/stress-configuration.py --test-binary /path/to/integration-HASH \
   --artifacts /tmp/configuration-load-new --runs 5 --cpu-workers 4
 ```
 

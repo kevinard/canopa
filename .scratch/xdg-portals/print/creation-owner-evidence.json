@@ -1,0 +1,188 @@
+{
+  "status": "scoped-durable-create-owner-verified-full-auth-and-full-goal-active",
+  "scope": "Persist authenticated owner before CUPS can retry Create; freeze after creation; fail closed on durable write failure. Send-only authentication remains open.",
+  "validation": {
+    "path": "target/portal-print-56/worker-01.json",
+    "sha256": "e2773915260370cc5b1853877195c5ab087eea1b9d33ea6f2d41065be3a98dd8",
+    "counts": {
+      "tests": {
+        "passed": 192,
+        "failed": 0,
+        "ignored": 12
+      },
+      "lockdown-tests": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      "portal-library": {
+        "passed": 410,
+        "failed": 0,
+        "ignored": 20
+      },
+      "portal-integration": {
+        "passed": 55,
+        "failed": 0,
+        "ignored": 2
+      },
+      "ppd-runtime": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    }
+  },
+  "binary_sha256": "d0273396ab98dbcc7b162a51480af69b526eb41529f259ac58f769b6ea54f440",
+  "sources": {
+    "path": "target/portal-print-56/candidate-01-sources.json",
+    "sha256": "c419b171ac8b510fd93a6870e3bce27668aeb9863bf54caa8f698ab1745f6266",
+    "files": 4,
+    "snapshot_bytes": 70252,
+    "review_patch": {
+      "path": "target/portal-print-56/candidate-01.patch",
+      "sha256": "ea504e92f8087b92d7b991f70b382364a717e6f165ea1bf4a5456ab2cfba9af6"
+    }
+  },
+  "native": [
+    {
+      "path": "target/portal-print-56/principal-probe-02/summary.json",
+      "sha256": "3d87de4152726926c4a33939eaad38c09f9391666234abdc80a8151625705f7d",
+      "groups": 3,
+      "observed_terminal": 7,
+      "scope_status": "scoped-owner-verified-send-auth-open"
+    },
+    {
+      "path": "target/portal-print-56/principal-probe-03/summary.json",
+      "sha256": "16c463fbe807b96d5b5e7fa86ab5997236305edfa517222af8629dba8600cbd8",
+      "groups": 3,
+      "observed_terminal": 7,
+      "scope_status": "scoped-owner-verified-send-auth-open"
+    },
+    {
+      "path": "target/portal-print-56/principal-probe-04/summary.json",
+      "sha256": "35b62bd89b4f5c6c52f6fb868372f566f9469c9b5013646c81d353d467a86727",
+      "groups": 3,
+      "observed_terminal": 7,
+      "scope_status": "scoped-owner-verified-send-auth-open"
+    },
+    {
+      "path": "target/portal-print-56/principal-probe-05/summary.json",
+      "sha256": "de69368ed4c61ae23e052390aeda6656bebb70885b08dbaa79d9b97ca9e8c312",
+      "groups": 3,
+      "observed_terminal": 7,
+      "scope_status": "scoped-owner-verified-send-auth-open"
+    },
+    {
+      "path": "target/portal-print-56/retirement-worker-01/summary.json",
+      "sha256": "f7fe3a591009c3fd4bf03c2e36200800560f636eeb8d3ea25c5d0389ce35e625",
+      "groups": 7,
+      "observed_terminal": 14,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/auth-worker-01/summary.json",
+      "sha256": "449b4a50e3bd71f68e86942bd0f6012a1840d0cfb79acba7515e22a72bfaa8c8",
+      "groups": 14,
+      "observed_terminal": 15,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/controls-worker-01/summary.json",
+      "sha256": "7b49ca63a4c86137713afa2670a63219f2c89a082165cee0cb7c89d4418d5b78",
+      "groups": 27,
+      "observed_terminal": 34,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/reconnect-01/summary.json",
+      "sha256": "cb0bc995397a321625c7bff171cdf2eb9d91164f5ede16f716fe362e84570651",
+      "groups": 5,
+      "observed_terminal": 8,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/retirement-ui-new-realm-dark-01/summary.json",
+      "sha256": "fb95c5801f3b14d01cad1e442b69a4f23df082ab4f36fb00f005cb40c05552e6",
+      "groups": 1,
+      "observed_terminal": 21,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/retirement-ui-same-scope-dark-01/summary.json",
+      "sha256": "ef6cd3fe62537f798eda1b42d328e1606d60c2c7fb4a1ecd2d0e81ff1273ee2b",
+      "groups": 1,
+      "observed_terminal": 20,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/retirement-ui-new-realm-light-01/summary.json",
+      "sha256": "5355aa46b627480e02b860bcf3c5f02f5b9661183931b48211a23e0e1b252d0a",
+      "groups": 1,
+      "observed_terminal": 19,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/retirement-ui-same-scope-light-01/summary.json",
+      "sha256": "6925dab60967e976775b30f733b5eaf464487c5ff38bb496d018eeb3c095a2cc",
+      "groups": 1,
+      "observed_terminal": 20,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/authentication-dark-01/summary.json",
+      "sha256": "e9c1505d1ebe096910d48dff9e0dd05469b1b8295f2dc94ab504db4a89054c23",
+      "groups": 11,
+      "observed_terminal": 133,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/authentication-light-01/summary.json",
+      "sha256": "7143c06061e97b042d2ca32988cfead3d056a6ddea067ad5b7c42d5d3bbbf05e",
+      "groups": 11,
+      "observed_terminal": 131,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/ordinary-print-regression-dark-01/summary.json",
+      "sha256": "9a8d0e67975c1149cac538b85221bf32769d1de207f0ef049a52339a52e72cb6",
+      "groups": 6,
+      "observed_terminal": 31,
+      "scope_status": "passed"
+    },
+    {
+      "path": "target/portal-print-56/ordinary-print-regression-light-01/summary.json",
+      "sha256": "950c05be47d62ce92cacb05472b3faa879f1b7383309a06aff643dbdcf2a3ae3",
+      "groups": 6,
+      "observed_terminal": 29,
+      "scope_status": "passed"
+    }
+  ],
+  "native_groups": 103,
+  "observed_final_terminal": 503,
+  "failed_evidence": [
+    "target/portal-print-56/principal-probe-01/summary.json"
+  ],
+  "storage": {
+    "baseline_free_bytes": 6754156544,
+    "final_free_bytes": 6717132800,
+    "net_growth_bytes": 37023744,
+    "minimum_free_bytes": 6000000000,
+    "maximum_phase_growth_bytes": 3000000000,
+    "new_native_executables": 0,
+    "binary_copies": 0,
+    "new_dependencies": 0
+  },
+  "limits": [
+    "Send-only explicit401 still fails safely, preserving original owner; no authenticated resend implemented",
+    "Complete explicit protected recovery, held-job Authenticate-Job, account/owner authority after creation remain required",
+    "Digest, longer credentials, native prompt-timeout/stalled-helper/file-output credential clearing remain required",
+    "Private PAM fixture uses synthetic alias/password and minimal stack; no host authentication files, real credentials or physical printer used",
+    "Physical/driverless/Flatpak, failure/resource/runtime/default packaging, six experimental interfaces and final release gates remain",
+    "Automatic Qt integration deferred; explicit Qt rendering fixture isolates its own native CUPS lookup",
+    "No complete workspace execution; ten existing Files integration failures remain"
+  ],
+  "visual_checks": [
+    "Actual masked Iced device credential fields and controls inspected at dark100 and light125",
+    "Actual ordinary source/type/quality/resolution controls inspected in both appearances; labels, scrolling and actions readable"
+  ]
+}

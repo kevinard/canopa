@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_panel_protocol::{InteractionEvent, InteractionTarget, PanelContent, ProviderResponse};
 use futures_util::StreamExt;

@@ -72,7 +72,7 @@ Control requests must fit 64 KiB and ordinary replies must fit 8 MiB, including 
 
 Run automated checks on a private session bus with `bash scripts/test-notify.sh`. This avoids replacing the desktop notification service.
 
-The D-Bus contract tests require `dbus-run-session` and `dbus-send` from the `dbus` package (also installed by CI). Run the focused suite with `bash scripts/test-notify.sh -p canopa-notify --test dbus_contract`. It checks introspection, method replies, malformed requests and ordered lifecycle signals through isolated headless executables; `dbus-send` independently verifies the server-information output shape. It does not replace the graphical checks below.
+The D-Bus contract tests require `dbus-run-session` and `dbus-send` from the `dbus` package (also installed by CI). Run the focused suite with `bash scripts/test-notify.sh -p canopa-notify --test integration dbus_contract::`. It checks introspection, method replies, malformed requests and ordered lifecycle signals through isolated headless executables; `dbus-send` independently verifies the server-information output shape. It does not replace the graphical checks below.
 
 ## Graphical Smoke Check
 

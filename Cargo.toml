@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/canopa-apps",
   "crates/canopa-portal",
   "crates/canopa-cli",
   "crates/canopa-assets",
@@ -30,6 +31,7 @@ rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+canopa-apps = { path = "crates/canopa-apps" }
 canopa-assets = { path = "crates/canopa-assets" }
 canopa-notify-client = { path = "crates/canopa-notify-client" }
 canopa-file = { path = "crates/canopa-file" }
@@ -39,6 +41,7 @@ canopa-ui = { path = "crates/canopa-ui" }
 sha2 = "0.10"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 uucore = { version = "=0.12.0", features = ["buf-copy"] }
+reis = "=0.7.1"
 shlex = "2"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }
 chrono = { version = "0.4", features = ["clock"] }
@@ -99,9 +102,12 @@ tokio = { version = "1", features = [
   "time",
 ] }
 wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 url = "2.5"
+base64 = "0.22"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 unicode-segmentation = "1.13"
 
 [patch.crates-io]
@@ -112,6 +118,7 @@ iced_winit = { path = "vendor/iced_winit" }
 winit = { path = "vendor/winit" }
 layershellev = { path = "vendor/layershellev" }
 uucore = { path = "vendor/uucore" }
+reis = { path = "vendor/reis" }
 
 [profile.release]
 lto = "thin"

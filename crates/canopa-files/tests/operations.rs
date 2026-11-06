@@ -42,7 +42,11 @@ fn restart_after_a_killed_keep_both_undo_preserves_older_history_and_newer_work(
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_keep_both_undo_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::operations::crash_keep_both_undo_helper",
+        ])
         .env("CANOPA_FILES_UNDO_CRASH_ROOT", root.path())
         .status()
         .unwrap();

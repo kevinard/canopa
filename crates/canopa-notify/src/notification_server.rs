@@ -6,7 +6,17 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedValue;
 
 mod ids;
+mod portal;
 use ids::{IdError, NotificationSenderIds, SenderNotificationId};
+
+pub(crate) const PORTAL_BUS_NAME: &str = portal::BUS_NAME;
+pub(crate) struct NotificationServerHandle(portal::Handle);
+
+impl NotificationServerHandle {
+    pub(crate) async fn shutdown(self) -> anyhow::Result<()> {
+        self.0.shutdown().await
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -197,7 +207,7 @@ async fn start_notification_server(
 pub(crate) async fn attach_notification_server(
     connection: zbus::Connection,
     daemon: Daemon,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<NotificationServerHandle> {
     attach_with_ids(connection, daemon, NotificationSenderIds::new()).await
 }
 
@@ -205,11 +215,15 @@ async fn attach_with_ids(
     connection: zbus::Connection,
     daemon: Daemon,
     sender_ids: NotificationSenderIds,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<NotificationServerHandle> {
+    let portal_registry = portal::Registry::default();
     daemon.install_sender_event_publisher(DbusSenderPublisher::start(
         connection.clone(),
         sender_ids.clone(),
+        portal_registry.clone(),
     )?)?;
+    let (portal, handle) = portal::PortalServer::start(daemon.clone(), portal_registry);
+    connection.object_server().at(portal::PATH, portal).await?;
     connection
         .object_server()
         .at(
@@ -217,17 +231,19 @@ async fn attach_with_ids(
             NotificationServer { daemon, sender_ids },
         )
         .await?;
-    Ok(())
+    Ok(NotificationServerHandle(handle))
 }
 
 struct DbusSenderPublisher {
     queue: tokio::sync::mpsc::Sender<SenderPublication>,
     sender_ids: NotificationSenderIds,
+    portal_registry: portal::Registry,
     error: Arc<Mutex<Option<String>>>,
 }
 
 enum SenderPublication {
     Event(SenderNotificationId, SenderEvent),
+    Portal(portal::Publication),
     Flush(tokio::sync::oneshot::Sender<()>),
 }
 
@@ -235,6 +251,7 @@ impl DbusSenderPublisher {
     fn start(
         connection: zbus::Connection,
         sender_ids: NotificationSenderIds,
+        portal_registry: portal::Registry,
     ) -> anyhow::Result<Self> {
         let emitter =
             SignalEmitter::new(&connection, "/org/freedesktop/Notifications")?.into_owned();
@@ -244,6 +261,15 @@ impl DbusSenderPublisher {
         tokio::spawn(async move {
             while let Some(publication) = events.recv().await {
                 match publication {
+                    SenderPublication::Portal(publication) => {
+                        if let Err(error) = publication.emit(&connection).await {
+                            *transport_error.lock().unwrap() = Some(format!("{error:#}"));
+                            eprintln!(
+                                "level=error component=dbus event=portal_sender_signal_failed"
+                            );
+                            break;
+                        }
+                    }
                     SenderPublication::Event(sender_id, event) => {
                         if let Err(error) = emit_sender_event(&emitter, sender_id, &event).await {
                             *transport_error.lock().unwrap() = Some(format!("{error:#}"));
@@ -260,6 +286,7 @@ impl DbusSenderPublisher {
         Ok(Self {
             queue,
             sender_ids,
+            portal_registry,
             error,
         })
     }
@@ -267,6 +294,18 @@ impl DbusSenderPublisher {
 
 impl canopa_notify::SenderEventPublisher for DbusSenderPublisher {
     fn publish(&self, event: SenderEvent) -> canopa_notify::SenderEventPublication {
+        if let Some(publication) = self.portal_registry.freeze(&event) {
+            let queue = self.queue.clone();
+            return Box::pin(async move {
+                if let Some(publication) = publication {
+                    queue
+                        .send(SenderPublication::Portal(publication))
+                        .await
+                        .map_err(|_| anyhow::anyhow!("D-Bus sender publisher disconnected"))?;
+                }
+                Ok(())
+            });
+        }
         // Freeze identity at commitment, before waiting for transport capacity.
         // A failed or delayed signal cannot keep a closed registration alive.
         let sender_id = match &event {

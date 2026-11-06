@@ -357,9 +357,89 @@
 +        assert!(statuses.is_empty() && remaining.is_empty());
 +    }
 +}
+--- a/src/keyboard_shortcuts.rs
++++ b/src/keyboard_shortcuts.rs
+@@ -0,0 +1,77 @@
++//! Optional ordinary-window protocol bridge; notifications are coalesced.
++use crate::runtime::window::keyboard_shortcuts as shared;
++#[cfg(not(all(target_os = "linux", feature = "wayland")))]
++pub(crate) fn enable(_: &winit::window::Window) -> Option<shared::Inhibitor> {
++    None
++}
++#[cfg(all(target_os = "linux", feature = "wayland"))]
++pub(crate) fn enable(window: &winit::window::Window) -> Option<shared::Inhibitor> {
++    use crate::futures::futures::channel::mpsc;
++    use std::sync::{Arc, Mutex};
++    use winit::platform::wayland::{keyboard_shortcuts as native, WindowExtWayland};
++    fn channel() -> (native::Changed, mpsc::Receiver<()>) {
++        let (sender, receiver) = mpsc::channel(0);
++        let sender = Arc::new(Mutex::new(sender));
++        let changed: native::Changed = Arc::new(move || {
++            let _ = sender
++                .lock()
++                .unwrap_or_else(|e| e.into_inner())
++                .try_send(());
++        });
++        (changed, receiver)
++    }
++    let (changed, receiver) = channel();
++    let endpoint = window.inhibit_keyboard_shortcuts(changed)?;
++    struct Driver(native::KeyboardShortcutsInhibitor);
++    struct RecordingDriver(native::Recording);
++    fn reason(reason: native::RecordingCancelReason) -> shared::RecordingCancelReason {
++        use native::RecordingCancelReason as N;
++        use shared::RecordingCancelReason as S;
++        match reason {
++            N::User => S::User,
++            N::ProtectionChanged => S::ProtectionChanged,
++            N::KeymapChanged => S::KeymapChanged,
++            N::AmbiguousSeat => S::AmbiguousSeat,
++            N::Unrepresentable => S::Unrepresentable,
++            N::InputLimit => S::InputLimit,
++            N::Dropped => S::Dropped,
++        }
++    }
++    impl shared::RecordingDriver for RecordingDriver {
++        fn state(&self) -> shared::RecordingState {
++            use native::RecordingState as N;
++            use shared::RecordingState as S;
++            match self.0.state() {
++                N::Preparing => S::Preparing,
++                N::WaitingForRelease => S::WaitingForRelease,
++                N::Ready => S::Ready,
++                N::Collecting => S::Collecting,
++                N::Recorded(value) => S::Recorded(value),
++                N::Cancelled(value) => S::Cancelled(reason(value)),
++                N::Closed => S::Closed,
++            }
++        }
++        fn cancel(&self) {
++            self.0.cancel();
++        }
++    }
++    impl shared::Driver for Driver {
++        fn record(&self) -> Option<shared::Recording> {
++            let (changed, receiver) = channel();
++            Some(shared::Recording::new(
++                RecordingDriver(self.0.record(changed)?),
++                receiver,
++            ))
++        }
++        fn status(&self) -> shared::Status {
++            match self.0.status() {
++                native::Status::Unfocused => shared::Status::Unfocused,
++                native::Status::Pending => shared::Status::Pending,
++                native::Status::Active => shared::Status::Active,
++                native::Status::Inactive => shared::Status::Inactive,
++                native::Status::Closed => shared::Status::Closed,
++            }
++        }
++    }
++    Some(shared::Inhibitor::new(Driver(endpoint), receiver))
++}
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -30,7 +30,10 @@
+@@ -30,7 +30,11 @@
  pub mod conversion;
  
  mod error;
@@ -367,10 +447,11 @@
  mod proxy;
 +mod transient;
 +mod drag_drop;
++mod keyboard_shortcuts;
  mod window;
  
  pub use clipboard::Clipboard;
-@@ -278,8 +281,8 @@
+@@ -278,8 +282,8 @@
                  let poll = self.instance.as_mut().poll(&mut self.context);
  
                  match poll {
@@ -381,15 +462,16 @@
                              Control::ChangeFlow(flow) => {
                                  use winit::event_loop::ControlFlow;
  
-@@ -304,6 +307,7 @@
+@@ -304,6 +308,8 @@
                                  scale_factor,
                                  monitor,
                                  on_open,
 +                                parent,
++                                foreign_parent,
                              } => {
                                  let exit_on_close_request =
                                      settings.exit_on_close_request;
-@@ -324,6 +328,11 @@
+@@ -324,6 +330,12 @@
                                          self.id.clone(),
                                      )
                                      .with_visible(false);
@@ -398,10 +480,11 @@
 +                                    window_attributes,
 +                                    parent,
 +                                );
++                                let window_attributes = transient::dialog_attributes(window_attributes, foreign_parent);
  
                                  #[cfg(target_arch = "wasm32")]
                                  let window_attributes = {
-@@ -463,13 +472,32 @@
+@@ -463,13 +475,32 @@
  }
  
  #[derive(Debug)]
@@ -435,17 +518,18 @@
      },
      EventLoopAwakened(winit::event::Event<Message>),
      Exit,
-@@ -485,7 +513,8 @@
+@@ -485,7 +516,9 @@
          settings: window::Settings,
          title: String,
          monitor: Option<winit::monitor::MonitorHandle>,
 -        on_open: oneshot::Sender<window::Id>,
 +        on_open: OpenResponse,
 +        parent: Option<Arc<winit::window::Window>>,
++        foreign_parent: Option<(String, bool, Option<String>)>,
          scale_factor: f32,
      },
      SetAutomaticWindowTabbing(bool),
-@@ -558,8 +587,8 @@
+@@ -558,8 +591,8 @@
  
      'next_event: loop {
          // Empty the queue if possible
@@ -456,7 +540,7 @@
          } else {
              event_receiver.next().await
          };
-@@ -709,7 +738,7 @@
+@@ -709,7 +742,7 @@
                      clipboard = Clipboard::connect(window.raw.clone());
                  }
  
@@ -465,7 +549,23 @@
                  is_window_opening = false;
              }
              Event::EventLoopAwakened(event) => {
-@@ -1133,6 +1162,7 @@
+@@ -1062,6 +1095,15 @@
+                         };
+ 
+                         match window_event {
++                            winit::event::WindowEvent::ActivationTokenDone { serial, token } => {
++                                if window.activation_token.as_ref().is_some_and(|(expected, _, _)| *expected == serial) {
++                                    let (_, channel, at) = window.activation_token.take().expect("matched activation request");
++                                    let value = (at.elapsed() < std::time::Duration::from_secs(1))
++                                        .then(|| token.into_raw());
++                                    let _ = channel.send(value);
++                                }
++                                continue;
++                            }
+                             winit::event::WindowEvent::Resized(_) => {
+                                 window.raw.request_redraw();
+                             }
+@@ -1133,6 +1175,7 @@
                          }
  
                          let mut uis_stale = false;
@@ -473,7 +573,7 @@
  
                          for (id, window) in window_manager.iter_mut() {
                              let interact_span = debug::interact(id);
-@@ -1151,42 +1181,66 @@
+@@ -1151,42 +1194,66 @@
                                  continue;
                              }
  
@@ -572,7 +672,7 @@
                                  .zip(statuses.into_iter())
                              {
                                  runtime.broadcast(
-@@ -1254,7 +1308,18 @@
+@@ -1254,7 +1321,18 @@
                              }
                          }
  
@@ -592,10 +692,14 @@
                              let _ =
                                  control_sender.start_send(Control::ChangeFlow(
                                      ControlFlow::WaitUntil(redraw_at),
-@@ -1380,6 +1445,10 @@
+@@ -1380,6 +1458,14 @@
              }
          },
          Action::Window(action) => match action {
++            window::Action::InhibitKeyboardShortcuts(id,reply)=>{
++                let endpoint=window_manager.get_mut(id).and_then(|window|keyboard_shortcuts::enable(&window.raw));
++                let _=reply.send(endpoint);
++            }
 +            window::Action::EnableDragDrop(id, reply) => {
 +                let endpoint = window_manager.get_mut(id).and_then(|window| drag_drop::enable(&window.raw));
 +                let _ = reply.send(endpoint);
@@ -603,17 +707,18 @@
              window::Action::Open(id, settings, channel) => {
                  let monitor = window_manager.last_monitor();
  
-@@ -1390,10 +1459,37 @@
+@@ -1390,11 +1476,59 @@
                          title: program.title(id),
                          scale_factor: program.scale_factor(id),
                          monitor,
 -                        on_open: channel,
 +                        on_open: OpenResponse::Normal(channel),
 +                        parent: None,
++                        foreign_parent: None,
                      })
                      .expect("Send control action");
  
-+                *is_window_opening = true;
+                 *is_window_opening = true;
 +            }
 +            window::Action::OpenTransient(id, settings, parent, channel) => {
 +                let Some(parent) = window_manager
@@ -637,14 +742,35 @@
 +                        monitor,
 +                        on_open: OpenResponse::Transient(channel),
 +                        parent: Some(parent),
++                        foreign_parent: None,
 +                    })
 +                    .expect("Send transient window control action");
-                 *is_window_opening = true;
++                *is_window_opening = true;
++            }
++            window::Action::OpenDialog(id, settings, handle, modal, token, channel) => {
++                control_sender.start_send(Control::CreateWindow {
++                    id, settings, title: program.title(id), scale_factor: program.scale_factor(id),
++                    monitor: window_manager.last_monitor(), on_open: OpenResponse::Transient(channel),
++                    parent: None, foreign_parent: Some((handle, modal, token)),
++                }).expect("Send dialog window control action");
++                *is_window_opening = true;
++            }
++            window::Action::RequestActivationToken(id, channel) => {
++                if let Some(window) = window_manager.get_mut(id) {
++                    if let Some(serial) = transient::activation_token(&window.raw) {
++                        window.activation_token = Some((serial, channel, Instant::now()));
++                    } else {
++                        let _ = channel.send(None);
++                    }
++                } else {
++                    let _ = channel.send(None);
++                }
              }
              window::Action::Close(id) => {
+                 let _ = ui_caches.remove(&id);
 --- a/src/transient.rs
 +++ b/src/transient.rs
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,53 @@
 +//! Native auxiliary-window attributes, applied before initial configuration.
 +use std::sync::Arc;
 +use winit::window::{Window, WindowAttributes};
@@ -673,3 +799,46 @@
 +    let _ = parent;
 +    attributes
 +}
++
++pub(crate) fn dialog_attributes(attributes: WindowAttributes, parent: Option<(String, bool, Option<String>)>) -> WindowAttributes {
++    #[cfg(all(target_os = "linux", feature = "wayland"))]
++    if let Some((handle, modal, token)) = parent {
++        use winit::platform::wayland::WindowAttributesExtWayland;
++        use winit::platform::startup_notify::WindowAttributesExtStartupNotify;
++        let attributes = attributes.with_foreign_parent(handle, modal);
++        return if let Some(token) = token {
++            attributes.with_activation_token(winit::window::ActivationToken::from_raw(token))
++        } else { attributes };
++    }
++    #[cfg(not(all(target_os = "linux", feature = "wayland")))]
++    let _ = parent;
++    attributes
++}
++
++pub(crate) fn activation_token(window: &Window) -> Option<winit::event_loop::AsyncRequestSerial> {
++    #[cfg(all(target_os = "linux", feature = "wayland"))]
++    {
++        use winit::platform::wayland::WindowExtWayland;
++        window.request_activation_token_for_input().ok()
++    }
++    #[cfg(not(all(target_os = "linux", feature = "wayland")))]
++    { let _ = window; None }
++}
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -82,6 +82,7 @@
+                 redraw_at: None,
+                 preedit: None,
+                 ime_state: None,
++                activation_token: None,
+             },
+         );
+ 
+@@ -171,6 +172,7 @@
+     pub surface_version: u64,
+     pub renderer: P::Renderer,
+     pub redraw_at: Option<Instant>,
++    pub activation_token: Option<(winit::event_loop::AsyncRequestSerial, crate::futures::futures::channel::oneshot::Sender<Option<String>>, Instant)>,
+     preedit: Option<Preedit<P::Renderer>>,
+     ime_state: Option<(Rectangle, input_method::Purpose)>,
+ }

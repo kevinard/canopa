@@ -228,12 +228,8 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     let ownership = startup::StartupOwnership::acquire(&paths)?;
     // Establish ownership before opening history: opening performs restart recovery.
     let bus_connection = if let Some(bus_name) = bus_name {
-        Some(
-            zbus::connection::Builder::session()?
-                .name(bus_name)?
-                .build()
-                .await?,
-        )
+        let builder = zbus::connection::Builder::session()?.name(bus_name)?;
+        Some(builder.build().await?)
     } else {
         None
     };
@@ -258,9 +254,19 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         paths.socket.display()
     );
 
-    if let Some(connection) = &bus_connection {
-        attach_notification_server(connection.clone(), daemon.clone()).await?;
-    }
+    let notifications = if let Some(connection) = &bus_connection {
+        let notifications = attach_notification_server(connection.clone(), daemon.clone()).await?;
+        if args.service {
+            // Portal activation must see an installed interface/properties when
+            // this secondary service name appears, after history and UI startup.
+            connection
+                .request_name(notification_server::PORTAL_BUS_NAME)
+                .await?;
+        }
+        Some(notifications)
+    } else {
+        None
+    };
 
     let shutdown = async {
         let mut terminate =
@@ -287,6 +293,9 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     }
 
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        if let Some(notifications) = notifications {
+            notifications.shutdown().await?;
+        }
         if let Some(interactions) = interactions {
             interactions.shutdown().await?;
         }

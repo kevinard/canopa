@@ -249,6 +249,15 @@ impl Debug for ActivationTokenCallback {
 struct ActivationTokenContext {
     serial: u32,
     surface_id: Option<id::Id>,
+    observed: Instant,
+}
+
+#[derive(Debug)]
+struct PendingActivationToken {
+    callback: ActivationTokenCallback,
+    source: id::Id,
+    started: Instant,
+    request: XdgActivationTokenV1,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -960,7 +969,7 @@ pub struct WindowState<T> {
     fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
     xdg_activation: Option<XdgActivationV1>,
     idle_inhibit_manager: Option<ZwpIdleInhibitManagerV1>,
-    pending_activation_tokens: HashMap<ObjectId, ActivationTokenCallback>,
+    pending_activation_tokens: HashMap<ObjectId, PendingActivationToken>,
     last_activation_context: Option<ActivationTokenContext>,
     globals: Option<GlobalList>,
 
@@ -1648,6 +1657,19 @@ impl<T> WindowState<T> {
         T: 'static,
         F: FnOnce(Option<String>) + Send + 'static,
     {
+        // Cancellation of a consumer cannot make retained protocol callbacks
+        // unbounded. Reap expired/retired requests before admitting another one.
+        let expired: Vec<_> = self.pending_activation_tokens.iter()
+            .filter(|(_, pending)| pending.started.elapsed() >= Duration::from_secs(1)
+                || self.get_unit_with_id(pending.source).is_none())
+            .map(|(id, _)| id.clone()).collect();
+        for id in expired {
+            if let Some(pending) = self.pending_activation_tokens.remove(&id) {
+                pending.request.destroy();
+                (pending.callback.0)(None);
+            }
+        }
+        if self.pending_activation_tokens.len() >= 64 { callback(None); return; }
         let Some(activation) = self.xdg_activation.as_ref().cloned() else {
             callback(None);
             return;
@@ -1656,13 +1678,14 @@ impl<T> WindowState<T> {
             callback(None);
             return;
         };
+        if context.observed.elapsed() >= Duration::from_secs(2) { callback(None); return; }
         let target_surface_id = surface_id.or(context.surface_id);
         if target_surface_id != context.surface_id {
             callback(None);
             return;
         }
-        let Some(surface) = target_surface_id
-            .and_then(|id| self.get_unit_with_id(id))
+        let Some(source) = target_surface_id else { callback(None); return; };
+        let Some(surface) = self.get_unit_with_id(source)
             .map(WindowStateUnit::get_wlsurface)
             .cloned()
         else {
@@ -1687,12 +1710,13 @@ impl<T> WindowState<T> {
         token_request.commit();
         self.pending_activation_tokens.insert(
             token_request.id(),
-            ActivationTokenCallback(Box::new(callback)),
+            PendingActivationToken { callback: ActivationTokenCallback(Box::new(callback)),
+                source, started: Instant::now(), request: token_request },
         );
     }
 
     pub(crate) fn update_activation_context(&mut self, serial: u32, surface_id: Option<id::Id>) {
-        self.last_activation_context = Some(ActivationTokenContext { serial, surface_id });
+        self.last_activation_context = Some(ActivationTokenContext { serial, surface_id, observed: Instant::now() });
     }
 
     /// it return the iter of units. you can do loop with it
@@ -2285,10 +2309,12 @@ impl<T> Dispatch<XdgActivationTokenV1, ()> for WindowState<T> {
         _qhandle: &QueueHandle<Self>,
     ) {
         if let xdg_activation_token_v1::Event::Done { token } = event {
-            if let Some(callback) = state.pending_activation_tokens.remove(&proxy.id()) {
-                (callback.0)(Some(token));
+            if let Some(pending) = state.pending_activation_tokens.remove(&proxy.id()) {
+                let eligible = pending.started.elapsed() < Duration::from_secs(1)
+                    && state.get_unit_with_id(pending.source).is_some();
+                (pending.callback.0)(eligible.then_some(token));
+                proxy.destroy();
             }
-            proxy.destroy();
         }
     }
 }

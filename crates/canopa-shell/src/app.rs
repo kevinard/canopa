@@ -42,6 +42,7 @@ mod surfaces;
 mod tray;
 mod view;
 mod visibility;
+mod wallpaper;
 mod widget_ops;
 
 use iced::Task;
@@ -55,6 +56,7 @@ pub(crate) struct App {
     config: Config,
     configuration: configuration::ConfigurationRuntime,
     eligible_outputs: eligible_outputs::EligibleOutputState,
+    wallpaper: wallpaper::Wallpaper,
     shared: shared::SharedContext,
     surfaces: surfaces::SurfaceManager,
     foreground: foreground::Foreground,
@@ -80,6 +82,7 @@ pub(crate) struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     Configuration(configuration::Event),
+    Wallpaper(crate::wallpaper::Event),
     ConfiguredModule {
         id: crate::modules::ModuleId,
         generation: u64,
@@ -143,6 +146,7 @@ impl Message {
             Message::Surface(event) => event.diagnostic_label(),
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Configuration(_) => "Configuration",
+            Message::Wallpaper(_) => "Wallpaper",
             Message::ConfiguredModule { message, .. } => message.diagnostic_label(),
             Message::Ipc(event) => event.diagnostic_label(),
             Message::ExternalPanel(event) => event.diagnostic_label(),
@@ -298,6 +302,7 @@ impl App {
             config,
             configuration: Default::default(),
             eligible_outputs,
+            wallpaper: Default::default(),
             shared: shared::SharedContext::new(),
             surfaces,
             foreground: foreground::Foreground::default(),
@@ -374,6 +379,7 @@ impl App {
 
         let task = match message {
             Message::Configuration(event) => self.handle_configuration_event(event),
+            Message::Wallpaper(event) => self.handle_wallpaper(event),
             Message::CanopaAccessibilityFrame(window) => self.measure_canopa_accessibility(window),
             Message::CanopaAccessibilityBounds {
                 window,
@@ -394,6 +400,16 @@ impl App {
                     panel.as_ref(),
                 );
                 self.apply_external_panel_session_effects(effects)
+            }
+            Message::Surface(messages::SurfaceEvent::WindowClosed(window))
+                if self.wallpaper.closed(window) =>
+            {
+                Task::none()
+            }
+            Message::Surface(messages::SurfaceEvent::WindowSized(window, _, _))
+                if self.wallpaper.contains(window) =>
+            {
+                self.wallpaper_configured(window)
             }
             Message::Surface(event) => self.handle_surface_event(event),
             Message::WaylandOutputSnapshot(outputs) => self.handle_wayland_output_snapshot(outputs),

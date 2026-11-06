@@ -1,0 +1,92 @@
+{
+  "status": "worker-scoped-verified-full-auth-and-full-goal-active",
+  "scope": "Request-owned worker credential channel, actual CUPS Basic/TLS callbacks and literal ordered per-job fields; no Iced authentication feature-completion claim",
+  "validation": {
+    "path": "target/portal-print-53/worker-05.json",
+    "sha256": "766f62d013aab2083c7baa10eea64b20256820d29e53302a0348176742688320",
+    "counts": {
+      "tests": {
+        "passed": 173,
+        "failed": 0,
+        "ignored": 12
+      },
+      "lockdown-tests": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      "portal-library": {
+        "passed": 391,
+        "failed": 0,
+        "ignored": 20
+      },
+      "portal-integration": {
+        "passed": 55,
+        "failed": 0,
+        "ignored": 2
+      },
+      "ppd-runtime": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    }
+  },
+  "binary_sha256": "e68dd7d275c0205e419339f14c3dd51e0c68206e80aa2816fcd166819e618462",
+  "sources": {
+    "path": "target/portal-print-53/candidate-02-sources.json",
+    "sha256": "e7d869da8500d8e6d2b464169babb8c598c00ca91216bb5571f62e16b3dc73c8",
+    "files": 14
+  },
+  "native": [
+    {
+      "path": "target/portal-print-53/auth-worker-07/summary.json",
+      "sha256": "261a44a3613d35f0d1fefd4cb62d3940f6824ae74e2393eb2e91c80a75d7d9d4",
+      "groups": 14,
+      "observed_terminal": 15
+    },
+    {
+      "path": "target/portal-print-53/controls-worker-01/summary.json",
+      "sha256": "637465f19613ea3b7d72a9252466bd2b15a5e5461dbf04b8ef1a6db4685379eb",
+      "groups": 27,
+      "observed_terminal": 34
+    },
+    {
+      "path": "target/portal-print-53/ordinary-print-regression-dark-01/summary.json",
+      "sha256": "827be13fe20af4ea165dc17c9f4c5156409ea109b44a8ad3b27889efaee0d975",
+      "groups": 6,
+      "observed_terminal": 29
+    },
+    {
+      "path": "target/portal-print-53/ordinary-print-regression-light-01/summary.json",
+      "sha256": "0cd5037867a21c6f96b99b4cf909765d74d380aac69a4c64fcca8357a7c31f81",
+      "groups": 6,
+      "observed_terminal": 31
+    }
+  ],
+  "observed_final_terminal": 109,
+  "failed_evidence": [
+    "target/portal-print-53/worker-01.json",
+    "target/portal-print-53/api-01/summary.json",
+    "target/portal-print-53/api-03/summary.json",
+    "target/portal-print-53/api-04/summary.json",
+    "target/portal-print-53/auth-worker-01/summary.json",
+    "target/portal-print-53/auth-worker-02/summary.json",
+    "target/portal-print-53/auth-worker-03/summary.json",
+    "target/portal-print-53/auth-worker-04/summary.json",
+    "target/portal-print-53/auth-worker-05/summary.json",
+    "target/portal-print-53/auth-worker-06/summary.json"
+  ],
+  "primary_source_manifest": {
+    "path": "target/portal-print-53/upstream.json",
+    "sha256": "824eebe8363cd88705656a73f9e00a0ae7f476987ad846966edc8c01d258f145"
+  },
+  "limits": [
+    "Client still sends no credential provider: Iced prompts and retained private prepared-print handoff remain required",
+    "Protected recovery, late Create/Send account and durable owner binding, held-job authentication without resubmission remain required",
+    "HTTP Digest, longer credentials and interactive deadline/recovery-batch bounds remain required",
+    "No physical, driverless, real Flatpak or Iced authentication acceptance",
+    "No complete workspace test execution; ten existing Files integration failures remain",
+    "Print remains opt-in; runtime/default routing, six experimental interfaces and final release gates remain open; automatic Qt deferred"
+  ]
+}

@@ -1,0 +1,692 @@
+{
+  "status": "scoped-selected-runtime-protected-operations-verified-full-print-goal-active",
+  "goal_active": true,
+  "created": 1793729333.0929012,
+  "continuity": {
+    "path": "target/portal-print-63/source-continuity-01.json",
+    "sha256": "7da87ff8678babd334e9e1eee7f05d94b6cf269b2527ed653e0150c2724f8a51"
+  },
+  "native": [
+    {
+      "path": "target/portal-print-63/principal-probe-01/summary.json",
+      "sha256": "531ccd2da01addabf49ab100beb534e019bd1e0eb2800cc96c461540c4d3db8e",
+      "status": "scoped-owner-verified-send-auth-open",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-06/summary.json",
+      "sha256": "199b36cb0570fc46baf89e681556e23f7c6fda0844cb119f44cf22d7573f3dd0",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/principal-probe-02/summary.json",
+      "sha256": "b25132556631f3145430f1e3b3a4d594f76390fbea919ebba6e0ea68742b87ed",
+      "status": "scoped-owner-verified-send-auth-open",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/principal-probe-03/summary.json",
+      "sha256": "a7aed2f37a09b0d4c25507d138698c6d2cc0953ce6bea68cacb546d4cca566d2",
+      "status": "scoped-owner-verified-send-auth-open",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-01/summary.json",
+      "sha256": "df9c7bd43ba893e0241e1af5bd7dbc33383d2dc1339696e3fabf4090f95b7547",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-02/summary.json",
+      "sha256": "31902b347e4a5a550a50e8ee48e0c3bb5a94d89065d8c4004320ff2ad0da10d8",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-03/summary.json",
+      "sha256": "6017ce0204a82c43e42fdc8bf28c72a5ae864a9cef662e6618ec16417b363ba2",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-04/summary.json",
+      "sha256": "ddd5c9d999972994b22ad0f586247b02403965fe2d8a2592ee8fc3e6a8c43bf3",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/send-worker-05/summary.json",
+      "sha256": "5d741cd1e73c60c70ed7222ccfc71c7f3533a92e31485ccedad842635f0a2ab2",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-01/summary.json",
+      "sha256": "8639dd7a731e26363fdc1ab19360fbb43bf9e1e83ee80c54aa9a63e4c8be147b",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-02/summary.json",
+      "sha256": "88c683d9a899b3d7f533359e7c6c3d771c6c0180db70ef687492f9022f52adb5",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-03/summary.json",
+      "sha256": "aeb4fd383baeb336ce29537b109288b60648b9605f016169d9320c8550ee15e5",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-04/summary.json",
+      "sha256": "d3dcdf8f7e6fccc8e683e642cd0843fa97e2de51287ebaa5b3f4852c53a93ebb",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-05/summary.json",
+      "sha256": "6aa18c412a580ad69f7c8755b0cebd148e8247e92a4ad156ffb65a3716f2d4f0",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-http-02/summary.json",
+      "sha256": "e0081e10f66ce2d034c981e7a82576ec362b277668da65ae3c78ee92bfde20bb",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-http-03/summary.json",
+      "sha256": "169be3a4028d323f87eb05e24c8f5f58c16b302707f9cfd2eb244468cdb306e2",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-http-04/summary.json",
+      "sha256": "5a3bde02df598243653e5bf6adc857069e1b7b6e431d52ad1cfab2ebd42b947d",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-http-05/summary.json",
+      "sha256": "bea0f5335081363e3780c54d15bb7a871adb40f1d0a93d92b74e877891e16105",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-http-06/summary.json",
+      "sha256": "66e9800bceee72412aa5c4e991cc131f865382fb690ad080fe71b219ec5f9adc",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/principal-probe-04/summary.json",
+      "sha256": "986a568e58eb9589712a03544a8c451334824456ae04ea14190a6ecf46cc80a0",
+      "status": "scoped-owner-verified-send-auth-open",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/send-worker-07/summary.json",
+      "sha256": "0b136d04e8820576f403cc38ed18e86ef3eff75e6b7cdfddc96f068c8cee7cd7",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/send-worker-08/summary.json",
+      "sha256": "8e5fb8bceb7bfaea0895d4a07994d76784b79c957dee3531b686cbc53fb555bb",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-12/summary.json",
+      "sha256": "6111b15c6a46ff545dcef0a371ffc0334356991d38d5093adaa8d4d851be7ae1",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-13/summary.json",
+      "sha256": "a0b5ad3a3b7f03e3caa867b56d7e67b73696823bbb5ecdeebd7677ab3459098c",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/held-http-08/summary.json",
+      "sha256": "8caf739fd96367d97318ca5c0a3be77967f5d7490b601a887acd315df1071550",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/held-http-09/summary.json",
+      "sha256": "ffca6ed168b1c1a9c4e768d26122e7821e41d2ae933bb1630cc090af23b5f2d3",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/principal-probe-05/summary.json",
+      "sha256": "f568dae8e62a54d984b51b22879af3c7d0bebd0682f230ecc4a27f1e1acfec70",
+      "status": "scoped-owner-verified-send-auth-open",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/send-worker-09/summary.json",
+      "sha256": "73dcd047b559430dc3c4b60d37aecf00d9a78bd5c41ec72c6c2f8c85506868d0",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/send-worker-10/summary.json",
+      "sha256": "f3dc0e3f2941a9cc092ada117e476736caa3ee95f7b14050d5070008e0c19faa",
+      "status": "scoped-send-worker-verified",
+      "raw_worker_count": 1,
+      "mapping_observations": 0,
+      "observed_terminal": 3,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-14/summary.json",
+      "sha256": "fecd7cfc34af2183db7a939544c4bbe08563c6a68c22b9c70e6988a4e98d7ff0",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-15/summary.json",
+      "sha256": "1edb6e32ee51316027b3bdf159f62c8f7e4c03cd1d4b9e733f009c9b7cc5d75e",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 3,
+      "mapping_observations": 0,
+      "observed_terminal": 5,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/held-http-10/summary.json",
+      "sha256": "53343af309568ae9ff8c007441633a64b87c8f1112defbba8fa29593c45699ef",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/held-http-11/summary.json",
+      "sha256": "be8e3df629b6a29bf3a13ce7a681cb419c244e2f3c9da5a6791f887f397fc6c3",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 9,
+      "nested_ui": [],
+      "digest_algorithm": "MD5"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-06/summary.json",
+      "sha256": "6a8999e5a8143450f443690700cb688a336a473edf01e9ba61071a7da66ffe56",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 14,
+      "nested_ui": [
+        {
+          "scheme": "dark",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "approved-login-retires-only-owned-job"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-07/summary.json",
+      "sha256": "c573f6d944908d3ba088c112efc4204b0f92f144d794e7d90ee0955735ce1896",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 13,
+      "nested_ui": [
+        {
+          "scheme": "dark",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "withdrawal-preserves-job-and-record"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-08/summary.json",
+      "sha256": "0c3bb3947b6c942f2b6f66cd0ab3dafab00d019c44fbe25fcbf1a5f9af100cd2",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 13,
+      "nested_ui": [
+        {
+          "scheme": "dark",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "withdrawal-preserves-job-and-record"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-09/summary.json",
+      "sha256": "eed5305fda42da0b3290335a8da0e9690b47683ca7273270eb05fc3f4337408d",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 14,
+      "nested_ui": [
+        {
+          "scheme": "light",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "approved-login-retires-only-owned-job"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-10/summary.json",
+      "sha256": "bbb622f77df88df82a7fb9cf6b72190172398cf5027e429554c433bb3a745ae3",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 13,
+      "nested_ui": [
+        {
+          "scheme": "light",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "withdrawal-preserves-job-and-record"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-11/summary.json",
+      "sha256": "a8d77794eebc233dbfafac48f0c911a2293000954e758a9f9ecf6ab5932ab613",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 13,
+      "nested_ui": [
+        {
+          "scheme": "light",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "withdrawal-preserves-job-and-record"
+          ]
+        }
+      ],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-16/summary.json",
+      "sha256": "cc563319c84dbd8b9003c92c29058cf3db47b0236c23fd8f28f1133d9cfb4f69",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 14,
+      "nested_ui": [
+        {
+          "scheme": "dark",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "approved-login-retires-only-owned-job"
+          ]
+        }
+      ],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/recovery-probe-17/summary.json",
+      "sha256": "808e1f096021d533f17df8f9501f5c7b98c0a892f3e0d00137513d852c22f4ef",
+      "status": "scoped-protected-recovery-verified",
+      "raw_worker_count": 2,
+      "mapping_observations": 1,
+      "observed_terminal": 14,
+      "nested_ui": [
+        {
+          "scheme": "light",
+          "checks": [
+            "opening-review-does-not-authenticate-or-cancel",
+            "explicit-check-opens-Iced-sign-in",
+            "approved-login-retires-only-owned-job"
+          ]
+        }
+      ],
+      "digest_algorithm": "SHA-256"
+    },
+    {
+      "path": "target/portal-print-63/held-source-01/summary.json",
+      "sha256": "d908bd31c4287962b27e4ac87f83a07b60f21319ce31ffb5ac5428a028e79630",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-source-02/summary.json",
+      "sha256": "d93e4c2c22c3df28b0ad6057598c4c096ce53b83b9e3ff24176785f144b8074f",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-source-03/summary.json",
+      "sha256": "1fec6b37fddb52631c15d0745b5d2b36580dffc668de5e40e2fa29108af8b517",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-source-04/summary.json",
+      "sha256": "280f8790e61b2306827b5a84d524f00d7bfbce6df27169804e69be6ea98d8e88",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-source-05/summary.json",
+      "sha256": "34efbf673b2f931a737b86b4ed93de4b1a9f2d3fb4fa687b827048cfef161f8e",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 12,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-negative-01/summary.json",
+      "sha256": "4b33b775e3dc3d84558d5b7a8945d84a2d861043492e70fa83fb5da201f896ac",
+      "status": "passed",
+      "raw_worker_count": 4,
+      "mapping_observations": 0,
+      "observed_terminal": 8,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-ui-01/summary.json",
+      "sha256": "0648a48d2a06aa1898d35326337d68fd3caf5f26481a094cc0a438eccea4775a",
+      "status": "passed",
+      "raw_worker_count": 2,
+      "mapping_observations": 8,
+      "observed_terminal": 52,
+      "nested_ui": [],
+      "digest_algorithm": null
+    },
+    {
+      "path": "target/portal-print-63/held-ui-02/summary.json",
+      "sha256": "781ae738433ae668bad5d6ef7c40ae31dd29fb678b2901a861d981ea8dc900a4",
+      "status": "passed",
+      "raw_worker_count": 2,
+      "mapping_observations": 8,
+      "observed_terminal": 50,
+      "nested_ui": [],
+      "digest_algorithm": null
+    }
+  ],
+  "containers": [
+    {
+      "path": "target/portal-print-63/protected-core-matrix-01.json",
+      "sha256": "0d2a6fadc4bb9a12086ea165af318ba0afa29a82b31daa00956429877f761242",
+      "status": "failed"
+    },
+    {
+      "path": "target/portal-print-63/protected-core-continuation-01.json",
+      "sha256": "1d1429667277d32043bfddfdd3f1482831c9b6d1da73b79ff413dc96ded30d51",
+      "status": "passed"
+    },
+    {
+      "path": "target/portal-print-63/protected-digest-matrix-01.json",
+      "sha256": "16ee881b2a7196756ef541fa17460db61b3d46732ab038a90b3b63b04731f082",
+      "status": "failed"
+    },
+    {
+      "path": "target/portal-print-63/protected-digest-continuation-01.json",
+      "sha256": "b724abe01715afa0c166956cc70702a51ebc45cf27b631deb05461fc9d354de2",
+      "status": "passed"
+    },
+    {
+      "path": "target/portal-print-63/recovery-gui-matrix-01.json",
+      "sha256": "dd047dcb02bd61fb4ee123356fb11292f5d202cdfc3a7edc07e389079bd789e2",
+      "status": "passed"
+    },
+    {
+      "path": "target/portal-print-63/recovery-digest-gui-matrix-01.json",
+      "sha256": "abf9bb9185d494deb1f662afc0771340ee7306c686c197f6c04dc9d4d368c0c1",
+      "status": "passed"
+    },
+    {
+      "path": "target/portal-print-63/selected-source-matrix-01.json",
+      "sha256": "de75d6767ba874738a363ef2e1b3e74d87aafe9ea3f76cc8d84b4c7ac5fd6b03",
+      "status": "passed"
+    },
+    {
+      "path": "target/portal-print-63/iced-sequence-dark-01.json",
+      "sha256": "55eb0e15bec957491c648648508021d22799e3d9cd24efcd41a4b7bb9e40e11d",
+      "status": "passed",
+      "commands": 70
+    },
+    {
+      "path": "target/portal-print-63/iced-sequence-light-01.json",
+      "sha256": "6fc33ddd229066aeba31f14809c2e2fee9f195c62a87c6120d6591d3c77f30cb",
+      "status": "passed",
+      "commands": 70
+    }
+  ],
+  "counts": {
+    "passing_native_invocations": 49,
+    "selected_raw_workers": 122,
+    "private_challenges": 73,
+    "production_isolation_observations": 24,
+    "actual_iced_invocations": 10,
+    "held_iced_command_steps": 140,
+    "observed_unique_terminal_identities": 431
+  },
+  "all_private_auth_data_removed": true,
+  "retained_failed_receipts": [
+    "held-http-01/summary.json",
+    "held-http-07/summary.json"
+  ],
+  "fixture_corrections": [
+    "target/portal-print-63/held-fixture-investigation-01.json",
+    "target/portal-print-63/digest-fixture-investigation-01.json"
+  ],
+  "visual": {
+    "path": "target/portal-print-63/visual-inspection-01.json",
+    "sha256": "4736ff76317942406b114a42ecaa0b702ef767469edb598f9142de95df89b17b"
+  },
+  "replay_source_hashes": {
+    "send.py": "eee72b7e904d95472a2b9350a1aa00edcfa5d636ce5c8f1d8f7f477ff55b36f1",
+    "create-digest.py": "22aa5d97018660eb2a60a8930f24302cb6bffda3b5cb76890c3f62ceff6b4273",
+    "held-http.py": "795dafcecc06c8d76ca70b64abe5a93c8f50780053360fc36a504bc79acb4330",
+    "digest_bridge.py": "55d0d3b7824addf3943d9316d48bd80c5779b015a69b2e7dd22bc8f8c3d0dad7",
+    "runtime_probe.py": "7a4a18246fc249ca01d52712e59e2261a262c03b02ca6e66c2893c226497b9c7",
+    "recovery-digest.py": "13f20c61d89a6913ae34be23d6db36c23f6d141896cfcadc12def2c07cccfbbb",
+    "digest-continuation.py": "366d17ce820d94c5754908752e027391bc67fcbbec46e6ad1dac252c2531e15e",
+    "core-matrix.py": "d3e42d084767e783bcbaab51bda0ce9413d00dd284daea8db4bdaa65c53db47d",
+    "recovery-gui-matrix.py": "2ef63ca18e95e8547501d694c93532d15f2614345a8f0556ef3ca8eb38285207",
+    "core-continuation.py": "d070e22bd7727e7c8d2bd674f2b1750acf793230936c98ecb35f1955c8c3501f",
+    "digest-matrix.py": "ed72ca6a260aad73f80b852d8ce96057e0339673c55f9eba0579a69e398ff5f5",
+    "source-matrix.py": "61c3b24c93426c3aa94bc2af11a6c10b62ef621f1006e6b3dd1fc1ea8f933c6e",
+    "prepare.py": "78c4d175eca7e57f88aab8dda059e9a28be6bd5b21c07df2516ae2379be327e4",
+    "held-negative.py": "6e60663af401b4ddfce32ebe7296811fa537ed6f9610600db4ac149c4c7ced12",
+    "recovery.py": "e23375bd1712f8c908ca0e20c85d7f4b2d2eee9fa754d87713aa248ac963bdb2",
+    "create.py": "81e95d8caf710bbe50ba4c0adfc01bcdd95f3b063b94be263ea3f51fd1140fc8",
+    "digest-auth.py": "156d13c118a9654953b95f48edbb44ff350e7f9b6f9b86e37fdf5bec9770e389",
+    "namespace-exec.py": "d23a65be777b7f64be5972b2213c6d9114437ba01df2f81dab32cbae1da7e5ee",
+    "held-source.py": "0f5b1c29d88f0d615cff61a8176e4347f678755264808a18ed2cd57a6bbcd4b1",
+    "held-gui.py": "1bed00f0648fabd7c9af587d68d07af45cfbc88b1d7685e1a685f74b38a1e43d",
+    "gui-sequence.py": "054630ca08e0c36c5a31733b97d60be9ab161f0fa1e317ba6b6b8b86175ab36b",
+    "device-backend.py": "f74092681c6ba2c21faab38abeb64619de3a73d52746d5a2d9ecee30ef3aa2d0",
+    "recovery_ui.py": "56aaa844c161333ac91e0fc36dac4776df416a4b2cb809ed1c1a022484ec1818",
+    "recovery-digest-gui-matrix.py": "011831ea673a02b8a83ed278c96015d0418f981714699d0f709d87388031ac60",
+    "send-digest.py": "a1ba177fdf62bc2bbffa739cbaf2ed87a653afa3a6453a119ad6c9edbfb5d1ec",
+    "held-digest.py": "8c88b7ba274192ac9620dd406c7c576d357661e751b5fb596d565cdb11f5ce7c",
+    "held-ui.py": "dcf3d152a29d60a94fdd216bf2ba696b662d0a219e9425b7fd05621ac6787f88",
+    "metadata-relay.py": "52ff85a8b39ca16109493e1ae45be2ff113d1a749a75c7b2254bf5f7339328fc"
+  },
+  "free_bytes": 6129553408,
+  "net_growth_bytes": 12001280,
+  "storage": "Source-only replay files/concise receipts; existing checksum binaries/client image and root compiled graph reused. No build, new ELF, binary copy, release profile or cache purge.",
+  "scope": [
+    "Selected-runtime Create-only and Send-only, wrong-once/TLS, lost replies, cancellation and durable owner/UUID checks.",
+    "Selected-runtime explicit recovery, different approved actor with immutable owner, cancellation/denial and actual Iced in both appearances.",
+    "Selected-runtime existing held job release, same UUID and one original document, denied/withdrawn/lost replies and 70 actual Iced command steps per appearance.",
+    "Changed held source UUID/owner/queue/server, replacement scheduler/job and changed requirements refuse mutation.",
+    "Actual CUPS/PAM Basic authorization uses private read-only namespace passwd/PAM overlays. Digest MD5/SHA-256 is independently verified at a private gateway before Basic/PAM forwarding; no native cupsd Digest/PAM claim.",
+    "Namespace-only device executor adapter establishes protocol behavior, not unmodified cups-exec, physical device or deployed runtime acceptance."
+  ],
+  "remaining": [
+    "Prompt/deadline/resource and file-output credential lifetime acceptance.",
+    "Broader connection/credential/challenge interoperability, prior early-TLS observability issue.",
+    "Driver/device precision, Flatpak, optional runtime/package/NOTICE/release and six experimental interface gates.",
+    "Full workspace remains unverified/failed in the same ten Files cases from the unchanged phase62 run; earlier parallel handoff issue remains."
+  ],
+  "next": ".scratch/xdg-portals/print/authentication-resources-next.md"
+}

@@ -70,6 +70,14 @@ before release acceptance. The separate later-grab clipboard/retained-offer caus
 and full product requirements remain open. See
 [the verification record](../../.scratch/file-manager/niri-cancel-verification.json).
 
+[ADR0045](0045-combined-niri-desktop-companion.md) adds a separate combined candidate
+on the newer capture pin. The capture-only build reproduces this source-lifetime
+failure twice; the ported correction passes the original controls, retained-offer
+transport, actual Files exchange/gestures and ScreenCast on the same executable.
+The older recipe remains unchanged. Scoped successes do not replace the full
+matrix or release/distribution acceptance; startup failures and reruns are recorded
+in the portal distribution ledger.
+
 ## Compositor selection for acceptance
 
 The maintained runner accepts an explicit `--niri` executable and optional

@@ -900,7 +900,11 @@ fn restarting_a_killed_reviewed_move_preserves_selected_files_and_older_copy_und
             .tempdir()
             .unwrap();
         let status = Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "crash_reviewed_move_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::undo_changed_moves::crash_reviewed_move_helper",
+            ])
             .env("CANOPA_FILES_MOVED_CRASH_ROOT", root.path())
             .env(
                 "CANOPA_FILES_MOVED_CRASH_ADOPTED",

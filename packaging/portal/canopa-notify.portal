@@ -1,0 +1,4 @@
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.canopa.notify
+Interfaces=org.freedesktop.impl.portal.Notification;
+UseIn=canopa

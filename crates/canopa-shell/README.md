@@ -51,10 +51,17 @@ Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
 cards and Enter activates them. Battery and media appear when they have content;
 Calendar opens separately from the clock.
 Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
-`swaylock` with session ownership. The other buttons open confirmation menus with
+`canopa-shell lock` with session ownership. This executes `swaylock`, passing the
+Shell-owned lockscreen image through an open descriptor when one is selected.
+Unavailable wallpaper state falls back to locking without an image. Custom launch
+commands remain literal argv. The other buttons open confirmation menus with
 Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to quit,
 and Reboot/Power off use `systemctl` without force options. These ordinary button
 actions and menus can be rebound in the configuration.
+
+To use Canopa's selected lockscreen image from an existing bar action or Niri
+binding, route that action through `canopa-shell lock`. A custom action that
+launches Swaylock directly continues to use its own image configuration.
 
 ### Bar text and icons
 

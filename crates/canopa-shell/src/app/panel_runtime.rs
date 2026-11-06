@@ -1273,7 +1273,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             lock.actions.action_for(&ActionTrigger::Click),
-            Some(&PanelAction::Launch(vec!["swaylock".into()]))
+            Some(&PanelAction::Launch(vec![
+                "canopa-shell".into(),
+                "lock".into()
+            ]))
         );
         for (module, menu, program, arguments) in [
             (

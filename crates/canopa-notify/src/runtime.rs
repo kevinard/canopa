@@ -484,6 +484,7 @@ impl NotificationRuntime {
         &self,
         target: NotificationCenterTarget,
         action: NotificationCenterAction,
+        activation_token: Option<String>,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
             target.instance == self.center_instance,
@@ -495,7 +496,7 @@ impl NotificationRuntime {
                     target.notification_id,
                     target.revision,
                     segment_index,
-                    None,
+                    activation_token,
                     false,
                 )
                 .await
@@ -516,7 +517,7 @@ impl NotificationRuntime {
             NotificationCenterAction::Activate => {
                 self.activate_notification_for_revision(
                     target.notification_id,
-                    None,
+                    activation_token,
                     Some(target.revision),
                 )
                 .await
@@ -525,7 +526,7 @@ impl NotificationRuntime {
                 self.invoke_action_for_revision(
                     target.notification_id,
                     &action_key,
-                    None,
+                    activation_token,
                     Some(target.revision),
                 )
                 .await

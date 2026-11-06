@@ -1,0 +1,221 @@
+{
+  "status": "passed",
+  "scope": "Full official archive materialization of canonical keyboard/capture/drag base plus six pointer/mapping/scale layers; combined two-source patch independently replays. Draft only; no root canonical source or compiler inputs changed; no build/install/native acceptance inferred.",
+  "seconds": 34.12,
+  "archives": {
+    "niri": {
+      "path": "/tmp/canopa-screencast-native-archives/niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz",
+      "sha256": "865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60"
+    },
+    "smithay": {
+      "path": "/tmp/canopa-screencast-native-archives/smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz",
+      "sha256": "3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558"
+    }
+  },
+  "base_recipe_sha256": "f0ef4120ad4efc03f20d276433df39a1253efd6342d8ad3e406d8bbd61c8642a",
+  "layers": [
+    {
+      "source": "niri",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/pointer-ownership-draft/niri.patch",
+      "sha256": "9a33e2dfae1e8c3b63587dd5fa067ac2ce1c1623d230ece144fee302d6ac2f77"
+    },
+    {
+      "source": "smithay",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/pointer-ownership-draft/smithay.patch",
+      "sha256": "2cf78745087cd4967dd2cfbf115ba8622390cab9cf24595c8490b2563acb9497"
+    },
+    {
+      "source": "niri",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/pointer-lease-draft/niri.patch",
+      "sha256": "9a25583891fdccb294ab8747cf8eb7a677e86cce5dd6d259a48c1529a76b70d3"
+    },
+    {
+      "source": "niri",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/capture-mapping-draft/niri.patch",
+      "sha256": "46e42ca6eb49ed7806589654a7e3816a2b9174c7365340a296bb0fdf6e1d39bd"
+    },
+    {
+      "source": "niri",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/mapped-pointer-draft/niri.patch",
+      "sha256": "c160f0265497032c532f6aba33a3df910ca3abe9f0a685843da11c1115255177"
+    },
+    {
+      "source": "niri",
+      "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/ei-scale/niri.patch",
+      "sha256": "d3ce9745b33a14e0f9e99d9a8cacf2ae25d6a4c235b315747c6cd4d7e804b387"
+    }
+  ],
+  "source_files": {
+    "niri": 5616,
+    "smithay": 345
+  },
+  "changed_files": {
+    "niri": 22,
+    "smithay": 8
+  },
+  "draft_source_matches": true,
+  "comparison_normalization": "Only the two absolute local Smithay dependency paths in Niri Cargo.toml differ between work locations; Cargo.lock and all other bytes match.",
+  "binding": {
+    "manifest_upstream_sha256": "69710697f36f668c6a012163f502f52db0e6df6f7b9c731f4146a8de75408b5e",
+    "manifest_prepared_sha256": "d4080c394ad6638c1441fdb4a12d5ed5ae7f5669f9cab636cf49a79355d121da",
+    "lock_upstream_sha256": "a3774f2ee8da8ff96a1a7e9c4f795578fb60918724e1a4feb4618375f1809bc6",
+    "lock_prepared_sha256": "8e4397ae9e95917464b13427278486a0da66c0d109e9eaa0d7840c6cce337d6a",
+    "local_source_packages": [
+      "smithay",
+      "smithay-drm-extras"
+    ],
+    "other_locked_dependencies_unchanged": true
+  },
+  "combined_binding": {
+    "manifest_upstream_sha256": "69710697f36f668c6a012163f502f52db0e6df6f7b9c731f4146a8de75408b5e",
+    "manifest_prepared_sha256": "e2e2832a18d8148403092494f2e0ce84a8d4232adba81b70e7e9e98311ef7f3d",
+    "lock_upstream_sha256": "a3774f2ee8da8ff96a1a7e9c4f795578fb60918724e1a4feb4618375f1809bc6",
+    "lock_prepared_sha256": "8e4397ae9e95917464b13427278486a0da66c0d109e9eaa0d7840c6cce337d6a",
+    "local_source_packages": [
+      "smithay",
+      "smithay-drm-extras"
+    ],
+    "other_locked_dependencies_unchanged": true
+  },
+  "record_sha256": "4c4e2db7a0ab4438acf49117bf6dd62c7ce9228ec17d7613a00f9f6936d2d29a",
+  "combined_record": "/tmp/canopa-pointer-archive-14/candidate-record.json",
+  "patches": [
+    {
+      "source": "niri",
+      "path": "vendor/source-overlays/niri-desktop-pointer/niri.patch",
+      "sha256": "81aa4b71308f83349e89d40020fec5b5b25f4311de65b3a02c661ed6efffecfe",
+      "files": {
+        "src/backend/winit.rs": {
+          "upstream": "8d3a91d47e1ffb488c8766a6bd5c8684ad4a246833ddb9778a09148681712c32",
+          "patched": "42ba66e3eb442e210a8fe85bbad22b4e1bac01730922ef58f4fbfa3a43232b0c"
+        },
+        "src/dbus/mod.rs": {
+          "upstream": "869481774ca460cf53ddf915169bbb42283249448ffcabdc69f9c92e8519840c",
+          "patched": "6cf5ddd4c81a9e2fc859a6fce167259fc8fc005803aa6d08444a62a1ea24bc8a"
+        },
+        "src/dbus/mutter_screen_cast.rs": {
+          "upstream": "5ada0812d417facf57cf2ee4ed888dbc012bec8a7255c398df9a9c4c121bb14c",
+          "patched": "433cdec968389e7b69c8f04425f2a14d601b9c6bddcaa77a36832698937ce7e1"
+        },
+        "src/dbus/remote_input.rs": {
+          "upstream": null,
+          "patched": "7cba210ce3eca5fc13324da82beefb02945b50bb3f51ce31469cf653b22d05c2"
+        },
+        "src/dbus/remote_input/pointer.rs": {
+          "upstream": null,
+          "patched": "bd10503af77151aa420ffe0c085823a9666b0de7019010f39e96d4f38cd5ba1f"
+        },
+        "src/dbus/remote_input/pointer/wire.rs": {
+          "upstream": null,
+          "patched": "ea899cc26fb782fc73cb332fd180739beea36333e7596c53f07aa0b3d3cbb712"
+        },
+        "src/dbus/remote_input/symbols.rs": {
+          "upstream": null,
+          "patched": "f11f91c833e2d3bea45ae577e2b7dd914f70c1b967591920160ef363a711f37a"
+        },
+        "src/dbus/remote_input/wire.rs": {
+          "upstream": null,
+          "patched": "d8794bc5e866e50cbd9f5d6f272d4a78563db98c0f04d61a6579867ce97fb584"
+        },
+        "src/handlers/mod.rs": {
+          "upstream": "c9d69688111f28b006e8487c60a05ce863d63875ca975a94c0a6dc02acfa7697",
+          "patched": "7f19e65ec05960e4d4b7d266a65657a0a227f7b8fe607b75936309e37f5999bc"
+        },
+        "src/input/backend_ext.rs": {
+          "upstream": "e4e6e143760fde58a18babd94ae481d6b4e2a1ec853b03075781fec9473943e9",
+          "patched": "7b617bde8623ac0e2416a3161951263b406c6159a001cdc99651f84446c43f8f"
+        },
+        "src/input/mod.rs": {
+          "upstream": "27ae51086559feac98cfa0bb640270dfaae9393aa1bfde3ee6825a33b360541e",
+          "patched": "757b9529263629fc26f2831a3875382534c3257bbd0dc5e0776c5a94d8ea2278"
+        },
+        "src/input/pointer_buttons.rs": {
+          "upstream": null,
+          "patched": "897beeb54681e8174ef4a35002f33b875e3c6a6e373ee9397f0e55d615254c61"
+        },
+        "src/input/remote_keyboard.rs": {
+          "upstream": null,
+          "patched": "67a8aa2db2386813d1aaa157c44d62b2957ca32dcee365e84a076f082977f7f5"
+        },
+        "src/input/remote_pointer.rs": {
+          "upstream": null,
+          "patched": "0ca427737e5caa2cbd47effb89acdb4464c19f8c1a7b07caecc79e643577f9e6"
+        },
+        "src/layout/mod.rs": {
+          "upstream": "0d35dfcca1b1f1326fedf050312001f3b519b4911e333859ac64fb21c9549de4",
+          "patched": "5756ff911191220e211fe057694cc3f69db1c29fbd81e008c3e2b8d6cbfe6620"
+        },
+        "src/niri.rs": {
+          "upstream": "d3b4d825ca879d2af387cc96da409b4c41f4f17de1ff78f3acde7e851d10b5c5",
+          "patched": "c5c9d2f6a7b656c38a993a01f39c0ab02d51eedb7aa75086491e85b1389b259d"
+        },
+        "src/screencasting/mod.rs": {
+          "upstream": "a85ac1796acb4f559a68d72ab912762cc99e190979d1ea8b33d3e3f74be090b7",
+          "patched": "e11263cfb4a5994dc6cc30e8e5186fceec4a65e386d10039b9123ba777456184"
+        },
+        "src/screencasting/pw_utils.rs": {
+          "upstream": "923964bb601a70491d0c26adb06919e8de4e71f2bcf77386d41a779d3eb2d35c",
+          "patched": "2c042b8e640d13a0849e8de92a77ea44e4f1de674da8bc24f02f22c1b914fdea"
+        },
+        "src/screencasting/sources.rs": {
+          "upstream": null,
+          "patched": "9011efe6558e906419de0b656c5e9716cb4bfd778d55dc86ea98701098acd37a"
+        },
+        "src/screencasting/sources/identity.rs": {
+          "upstream": null,
+          "patched": "b1391df577059ea3fa22b302f35c8870a413559830168678a9bec94cc1b53aa3"
+        },
+        "src/screencasting/sources/mapping.rs": {
+          "upstream": null,
+          "patched": "e742f58fc18865c040fc19791fbc8853eac2d0717ab25ee5ea8f51c9d55ecdb3"
+        },
+        "src/screencasting/sources/mapping/path.rs": {
+          "upstream": null,
+          "patched": "e144dfed1bccb24a39ac1223677b3c09613a4ad1cc97ffc6310e0db52f99c7dd"
+        }
+      }
+    },
+    {
+      "source": "smithay",
+      "path": "vendor/source-overlays/niri-desktop-pointer/smithay.patch",
+      "sha256": "e8bb76202a4addcc18014b771dd61de286d0b2c88f664d4f50633ea6c8ee23c7",
+      "files": {
+        "src/input/dnd/grab.rs": {
+          "upstream": "75a8e7501b9c8f51f5b5043681c47d772ddebcf32ba7cf2b542b210148cd021c",
+          "patched": "204f863876a8415064456654434432b046b73d8f69129585a28076152bce0921"
+        },
+        "src/input/keyboard/mod.rs": {
+          "upstream": "9098c17cd641d3a0b5a3f983485f37d7dc83af2823478e2e0985805bb3161fe7",
+          "patched": "d2c5fb00de833233633f8edbfa65540e526c1c23008379b628298dab6a98368d"
+        },
+        "src/input/pointer/grab.rs": {
+          "upstream": "9033a8fed612cdbe0b2cea30e4e2ef829dd0f855ee65b062a81d09ed81c1080a",
+          "patched": "89a5b01cd9e1aa5335b9c6f522326ebdab34db348d937bcd2577ed3f4599cb30"
+        },
+        "src/input/pointer/mod.rs": {
+          "upstream": "5bf7095ca92125a42a4dc5d4b8f1b5ba20682dda5e25d9bcf70171f86c1e1ad3",
+          "patched": "86f25e3d9671107348df3674e7b8b77f02cd64936c34a371545b99e0ddd6dfde"
+        },
+        "src/input/touch/grab.rs": {
+          "upstream": "0280b90cbf6d3900891374a687ed20ef9ba9c410aa3fe53545e5d5165b73de25",
+          "patched": "c3ef3f3eeccf9f4d1a73a3bf14d04c0d538a3df31b28165e7eb2afdb86c18fa7"
+        },
+        "src/input/touch/mod.rs": {
+          "upstream": "f7f93ae609f496f79fd92c8e7e1cdd85919f0ee683cd963cbb93aa290bd0a66d",
+          "patched": "3538d083ea30b70e5db0d7b8338411bb4ea2d3101021cf6bd6b4d424855c25ed"
+        },
+        "src/wayland/selection/data_device/source.rs": {
+          "upstream": "919a3b783cf227c6d683395b9035aba96b8c3e71d25a49277d835948a01b6e23",
+          "patched": "65339ee153d2830501608f23a8f53a1616ef0293d1569a7f2b20b3d694ae8afd"
+        },
+        "src/wayland/virtual_pointer/input.rs": {
+          "upstream": "afda11faa536b447d12e5e87ef8b8dc953d2f49022659ae1325a3f91ae11ced2",
+          "patched": "96b73de1503161a68fde0705048696812da626eeaa5393ebfcff427ff64e8666"
+        }
+      }
+    }
+  ],
+  "canonical_adopted": false,
+  "built": false,
+  "installed": false
+}

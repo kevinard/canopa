@@ -2682,6 +2682,36 @@
         "--scale",
         "1.25"
       ]
+    },
+    {
+      "id": "files-iced-clipboard-lifetime-dark",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-lifetime"
+      ]
+    },
+    {
+      "id": "files-iced-clipboard-lifetime-light",
+      "script": "verify-files.py",
+      "args": [
+        "--binary",
+        "{files}",
+        "--output",
+        "{artifacts}",
+        "--iced-operations-only",
+        "--iced-operations-case",
+        "clipboard-lifetime",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25"
+      ]
     }
   ]
 }

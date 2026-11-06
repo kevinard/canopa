@@ -161,7 +161,7 @@ fn a_killed_cross_filesystem_folder_return_resumes_its_snapshot_without_duplicat
         .args([
             "--ignored",
             "--exact",
-            "crash_cross_directory_destination_helper",
+            "cases::undo_directory_cross::crash_cross_directory_destination_helper",
         ])
         .env("CANOPA_CROSS_DIRECTORY_ROOT", source.path())
         .status()

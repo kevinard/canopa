@@ -108,9 +108,12 @@ def setup(session, fixture, formats_only=False, accessibility=True):
     roots = list(map(Path, ("/usr/lib", "/usr/libexec", "/usr/lib/at-spi2-core")))
     def executable(name):
         return str(next(root / name for root in roots if (root / name).is_file()))
-    session.start([executable("at-spi-bus-launcher"), "--launch-immediately", "--a11y=1"], "a11y-launcher.log")
+    session.env.update(GSETTINGS_BACKEND="memory", ATSPI_DBUS_IMPLEMENTATION="dbus-daemon", GIO_USE_VFS="local")
+    session.start([executable("at-spi-bus-launcher"), "--launch-immediately"], "a11y-launcher.log")
     session.wait_for(lambda: call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
                                  "NameHasOwner", GLib.Variant("(s)", ("org.a11y.Bus",))).unpack()[0], "private accessibility bus")
+    call("org.a11y.Bus", "/org/a11y/bus", "org.freedesktop.DBus.Properties", "Set",
+         GLib.Variant("(ssv)", ("org.a11y.Status", "IsEnabled", GLib.Variant("b", True))))
     address = call("org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress").unpack()[0]
     os.environ["AT_SPI_BUS_ADDRESS"] = address
     session.env["AT_SPI_BUS_ADDRESS"] = address

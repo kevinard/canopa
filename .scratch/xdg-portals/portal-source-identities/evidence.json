@@ -1,0 +1,184 @@
+{
+  "status": "portal live monitor identities integrated; scoped validation/native evidence passed; compositor extension remains unadopted",
+  "recorded_at": "2026-10-31T13:07:32.086455+00:00",
+  "scope": "Portal monitor identity through consent, refresh, revalidation and recording; no pointer grant yet",
+  "changes": [
+    {
+      "path": "crates/canopa-portal/src/screencast_capture.rs",
+      "before": "dc9d1d032c6d8b2969e41f47c504a65b0cf46ef1bc6fc022d94e2f2b79eab2db",
+      "after": "e68a7870f8bb73fdab28a3e68e610e6a7ed9d6602e96e9abc32bed332262fa08"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/worker.rs",
+      "before": "f8666a0e16380d26ee2e01949ddbeb2584e1d1df7591d50d4d7dc5403f840e6c",
+      "after": "0a937c561222b6151e4b9ecfd3821e087a1f60ed26769474b1a5a665092c95fa"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/tests.rs",
+      "before": "571486975de929165b44a4860c810ff2d9e0c2b3e36425cd172a602b8d2e2319",
+      "after": "e7f4d1a0651629085dc023553d72b68509ab625a9b46ede3143ec1aeb0fcb419"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/tests/fake.rs",
+      "before": "d41267997ce506c43bb4f9e1f157f59250f6fbe0747c0b89d6d47be887928241",
+      "after": "19fcfff10d8c826f989cb98f35476fa9667dadaf74a6e6e8721a8e6469343385"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast/production.rs",
+      "before": "7b18d5fec7c2ebbf74650843268a4e0f6fc17a9cbbd3a7c03c637496a654b658",
+      "after": "3489db3c35e588a897064999cfe283c93f8fcf5c5dea6e52c04937363861ccb9"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast/production/catalog.rs",
+      "before": "3e70220c03d3ef4fb86a5a80d272c84a6d07b4c51cc0f34189bde9efac76adf3",
+      "after": "6c8d2baab86000d1154218c3a2f4dc606b62007ba6726a96ad1f944705421c36"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast/remote/production.rs",
+      "before": "edd6956fade35a3505d2b26854db91a376911eaf2b27702c03a1cdb3de261bf3",
+      "after": "6285dfdbb13495a349fa1fc270006087a12941eb8b760860b17ab5deccc59542"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_ui.rs",
+      "before": "51158c73ad51a5d93438d2b13536bcca4843b73d6b1f711dd465ad46ef58e56d",
+      "after": "8e82c5de5714acdb35e4566cc1c8c902ccf4f61870365e5958f523d9e235b5d4"
+    },
+    {
+      "path": "crates/canopa-portal/tests/screencast_capture.rs",
+      "before": "8c769ec3b1796901cbdd5bd3693ebf63661cfa50bd8102a21452aac431e89f85",
+      "after": "f1102252a2bb928ce1b42a478787d2507b10bd4c99a66350ae485a6347c6b278"
+    },
+    {
+      "path": "crates/canopa-portal/src/screencast_capture/monitor.rs",
+      "before": null,
+      "after": "c0edc979acbd40c09f0be6bc1557ce37276f8d6563da9f3d366d18e73712bb1c"
+    }
+  ],
+  "patch": {
+    "path": "/home/kevinard/projects/canopa/.scratch/xdg-portals/portal-source-identities/portal.patch",
+    "sha256": "86a0dac41cc9507ab1ae1ff3411ee5b93c7052d83fe10afd53b025bff211e255"
+  },
+  "binaries": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/xdg-desktop-portal-canopa",
+      "sha256": "a9171645dd995bdcf2bc72cdf23b4ec54b54156ba21e2ebdeaa66305ae81c279",
+      "bytes": 180030560
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/canopa-portal-tests",
+      "sha256": "5ddf74df6bf606cd02d1273983d0fe9371bc80107dd329105a76edbd1e232cf8",
+      "bytes": 108212704
+    }
+  },
+  "validation": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-source-identities-06/validation-05.json",
+    "library_tests": 145,
+    "library_ignored": 4,
+    "integration_tests": 37,
+    "integration_ignored": 2,
+    "clippy": "passed",
+    "seconds": 75.39,
+    "source_inputs": 1303,
+    "changed_sources": []
+  },
+  "native": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-01.json",
+    "groups": 40,
+    "seconds": 254.31,
+    "suites": [
+      {
+        "name": "native-pinned-video-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-video.py",
+          "--name",
+          "native-pinned-video-01",
+          "--sha256",
+          "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+          "--scheme",
+          "dark",
+          "--scale",
+          "1.25",
+          "--pinned"
+        ],
+        "status": "passed",
+        "pid": 1340632,
+        "exit_code": 0,
+        "seconds": 125.45,
+        "checks": 17,
+        "record_monitor_calls": 9,
+        "identity_precondition_calls": 9,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-pinned-video-01/summary.json"
+      },
+      {
+        "name": "native-legacy-video-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-video.py",
+          "--name",
+          "native-legacy-video-01",
+          "--sha256",
+          "e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f",
+          "--scheme",
+          "light",
+          "--scale",
+          "1.0"
+        ],
+        "status": "passed",
+        "pid": 1341969,
+        "exit_code": 0,
+        "seconds": 88.77,
+        "checks": 17,
+        "record_monitor_calls": 9,
+        "identity_precondition_calls": 0,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-legacy-video-01/summary.json"
+      },
+      {
+        "name": "native-pinned-remote-01",
+        "command": [
+          "python3",
+          "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-remote.py",
+          "--name",
+          "native-pinned-remote-01",
+          "--sha256",
+          "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+          "--scheme",
+          "light",
+          "--scale",
+          "1.25",
+          "--pinned"
+        ],
+        "status": "passed",
+        "pid": 1343252,
+        "exit_code": 0,
+        "seconds": 40.08,
+        "checks": 6,
+        "record_monitor_calls": 6,
+        "identity_precondition_calls": 6,
+        "all_processes_terminal": true,
+        "summary": "/home/kevinard/projects/canopa/target/portal-source-identities-06/native-pinned-remote-01/summary.json"
+      }
+    ],
+    "all_owned_jobs_processes_terminal": true
+  },
+  "retained_failures": [
+    "validation01 moved compositor string compile failure",
+    "validation02 zero-test integration filters are not coverage; nested conditional Clippy failure",
+    "validation03 fixture wire-tuple Clippy finding; library145/integration37 passed",
+    "validation04 parallel library run:143 pass/2 cancellation timeouts/4 ignored; cause unresolved. Both cases pass directly on identical executable and in validation05 full normal parallel rerun."
+  ],
+  "not_established": [
+    "canonical compositor adoption/archive validation/distribution",
+    "pointer worker ownership/renewal, EI/Notify pointer adapters and Iced permission",
+    "remaining window activation/physical input/full native matrix acceptance",
+    "full workspace success; earlier ten Files failures remain",
+    "remaining interfaces from full 18-interface roadmap"
+  ],
+  "delta_replay": {
+    "status": "passed",
+    "files": 10,
+    "scope": "portal ten-file delta against preserved slice starting state; not compositor/archive adoption or full workspace gate"
+  }
+}

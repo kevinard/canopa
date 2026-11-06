@@ -417,7 +417,11 @@ fn restarting_a_killed_saved_version_restore_preserves_the_choice_and_older_hist
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_saved_version_restore_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_saved_versions::crash_saved_version_restore_helper",
+        ])
         .env("CANOPA_FILES_SAVED_CRASH_ROOT", root.path())
         .status()
         .unwrap();

@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_notify::{ControlCommand, ControlReply};
 use futures_util::StreamExt;

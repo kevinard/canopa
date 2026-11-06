@@ -28,6 +28,7 @@ fn state() -> Snapshot {
 
 fn event(revision: u64, target: InteractionTarget, key: &str, value: Option<&str>) -> HostMessage {
     HostMessage::Event {
+        activation_token: None,
         protocol_version: 5,
         revision,
         interaction: Interaction::Rich(canopa_panel_protocol::InteractionEvent::Invoke {

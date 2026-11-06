@@ -21,6 +21,8 @@ fn backend(address: &str, config_home: &Path, log: &Path) -> Process {
         Command::new(env!("CARGO_BIN_EXE_xdg-desktop-portal-canopa"))
             .env("DBUS_SESSION_BUS_ADDRESS", address)
             .env("XDG_CONFIG_HOME", config_home)
+            .env("XDG_STATE_HOME", config_home.join("state"))
+            .env_remove("NIRI_SOCKET")
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(log).unwrap())
             .spawn()

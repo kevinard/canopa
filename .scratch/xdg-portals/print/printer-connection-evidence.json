@@ -1,0 +1,88 @@
+{
+  "status": "passed-scoped-cups-reconnect-guard; broader-portal-gates-open",
+  "binary": {
+    "path": "target/debug/xdg-desktop-portal-canopa",
+    "sha256": "984b13c7957b8866b67638de739d8c4c0c18f3761fb65c2b9e35cb2b52726926"
+  },
+  "validation": {
+    "path": "target/portal-print-47/worker-03.json",
+    "sha256": "69656fcf8344427f674c33588bf8b70d31e05a645939105491830d6ef4f64d55",
+    "tests": {
+      "print": 140,
+      "lockdown": 12,
+      "portal_library": 358,
+      "portal_integration": 55
+    },
+    "full_workspace_execution": false
+  },
+  "native": {
+    "reconnect": {
+      "path": "target/portal-print-47/reconnect-02/summary.json",
+      "sha256": "244e1473db6e25fc1662c64b43a009c0f4f07c1a58f6e5298aced0ba1914b609",
+      "cases": 5,
+      "observed_terminal_processes": 8
+    },
+    "public": {
+      "path": "target/portal-print-47/public-printer-dark-01/summary.json",
+      "sha256": "db6a0195cc0d1e31840243fb0d1fb7e6f5ed6217924a3a5489f38628302fd3f2",
+      "groups": 13,
+      "appearance": "dark",
+      "observed_terminal_processes": 51
+    },
+    "lifetime": {
+      "path": "target/portal-print-47/thread-group-green.json",
+      "sha256": "0e624a05b6107c72722dba2051128aeda7dc52896272035df672c33548a25a29",
+      "status": "passed"
+    }
+  },
+  "failed_baseline": {
+    "path": "target/portal-print-47/reconnect-01/summary.json",
+    "status": "mismatch; original held, unrelated replacement job cancelled"
+  },
+  "guarded_rust_changes": [
+    "crates/canopa-portal/src/print/worker/cups/recovery.rs",
+    "crates/canopa-portal/src/print/worker/cups/recovery/connection.rs"
+  ],
+  "sources": {
+    "crates/canopa-portal/src/print/worker/cups/recovery.rs": {
+      "path": "target/portal-print-47/sources/crates/canopa-portal/src/print/worker/cups/recovery.rs",
+      "sha256": "2c2d8479272af640c258c0c2be567cab86bd51aac0031e4a6d88ba0ecbc60a49"
+    },
+    "crates/canopa-portal/src/print/worker/cups/recovery/connection.rs": {
+      "path": "target/portal-print-47/sources/crates/canopa-portal/src/print/worker/cups/recovery/connection.rs",
+      "sha256": "5d5c246984d1ecdf965bf033813df2d88b0a9ead02aa5353d8ad2e4fa5f7c671"
+    },
+    "scripts/test-print-cups-reconnect.py": {
+      "path": "target/portal-print-47/sources/scripts/test-print-cups-reconnect.py",
+      "sha256": "720f951cdc605536879fddfc959ed1488cf62b5af12668a97f0a09974cb279b8"
+    },
+    "scripts/desktop-fixture/print-cups-proxy.py": {
+      "path": "target/portal-print-47/sources/scripts/desktop-fixture/print-cups-proxy.py",
+      "sha256": "32ff81eee78db906c30fcc75ebde48e94db3b3aed264c1c7c632bf2dae450851"
+    }
+  },
+  "storage": {
+    "baseline_free_bytes": 7166332928,
+    "final_free_bytes": 7114641408,
+    "net_growth_bytes": 51691520,
+    "reserve_bytes": 6000000000,
+    "maximum_growth_bytes": 3000000000,
+    "new_native_executables": 0,
+    "binary_copies": 0
+  },
+  "remaining": [
+    "Iced unresolved printer record review/absence policy",
+    "toolkit/device/authentication/Flatpak/physical/runtime and Print resource/crash gates",
+    "six experimental interfaces and companion distribution",
+    "ten recorded Files integration failures and final workspace/native/package/release routing"
+  ],
+  "acceptance_receipt": "target/portal-print-47/acceptance-01.json",
+  "scope": "Trusted synchronous libcups cancellation stays on an already checked connection; reconnect forces fresh ownership lookup, at most three attempts. Assumes namespace continuity on an established connection. Production intent retirement only; stateless developer CancelJob keeps its explicit-ID contract.",
+  "documentation_checks": {
+    "local_links": 242,
+    "documentation_files": 8,
+    "python_syntax": "passed without bytecode",
+    "evidence_json": "passed",
+    "diff_check": "passed"
+  }
+}

@@ -5,6 +5,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
+
+SNAPSHOT_STORE = Path(__file__).resolve().parents[1] / "target/native-test-snapshots/compositor-by-sha256"
 
 
 def sha256(path):
@@ -40,14 +43,45 @@ def select_niri(path=None, expected_sha256=None):
             "expected_sha256": expected_sha256}
 
 
+def freeze_niri(source, checksum):
+    """Keep one immutable copy per checksum, independent of mutable build outputs."""
+    if not re.fullmatch(r"[0-9a-f]{64}", checksum):
+        raise ValueError("Invalid Niri snapshot checksum")
+    if sha256(Path(source)) != checksum:
+        raise ValueError("Niri changed while preparing its acceptance snapshot")
+    directory = SNAPSHOT_STORE / checksum
+    directory.mkdir(parents=True, exist_ok=True)
+    canonical = directory / "niri"
+    if not canonical.exists() and not canonical.is_symlink():
+        # Publish without overwriting another run's snapshot. Copy rather than
+        # hardlink: Cargo may replace or write the original executable later.
+        with tempfile.NamedTemporaryFile(dir=directory, prefix=".niri-", delete=False) as temporary:
+            pending = Path(temporary.name)
+            try:
+                with Path(source).open("rb") as stream:
+                    shutil.copyfileobj(stream, temporary)
+                temporary.flush()
+                if sha256(pending) != checksum:
+                    raise ValueError("Niri changed while preparing its acceptance snapshot")
+                pending.chmod(0o500)
+                try:
+                    os.link(pending, canonical)
+                except FileExistsError:
+                    pass
+            finally:
+                pending.unlink()
+    if canonical.is_symlink() or not canonical.is_file() or sha256(canonical) != checksum:
+        raise ValueError("Corrupt content-addressed Niri snapshot")
+    if canonical.stat().st_mode & 0o222:
+        raise ValueError("Content-addressed Niri snapshot must be read-only")
+    return canonical
+
+
 def stage_niri(selection, output):
-    """Freeze the selected bytes so a later rebuild cannot change a running batch."""
+    """Reference frozen bytes so repeated runs do not each retain a full binary."""
+    canonical = freeze_niri(selection["source"], selection["sha256"])
     directory = output / "compositor" / "bin"
     directory.mkdir(parents=True)
     snapshot = directory / "niri"
-    with Path(selection["source"]).open("rb") as source, snapshot.open("xb") as destination:
-        shutil.copyfileobj(source, destination)
-    if sha256(snapshot) != selection["sha256"]:
-        raise ValueError("Niri changed while preparing its acceptance snapshot")
-    snapshot.chmod(0o500)
+    snapshot.symlink_to(canonical)
     return {**selection, "snapshot": str(snapshot)}

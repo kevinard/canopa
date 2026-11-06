@@ -1037,7 +1037,11 @@ fn restart_releases_dead_process_source_leases_but_preserves_accepted_requests()
         let (engine, saved) = stored_version(root.path());
         drop(engine);
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--ignored", "--exact", "crash_source_lease_helper"])
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::request_source_retention::crash_source_lease_helper",
+            ])
             .env("CANOPA_SOURCE_LEASE_ROOT", root.path())
             .env(
                 "CANOPA_SOURCE_LEASE_ACCEPTED",

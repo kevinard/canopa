@@ -1,0 +1,598 @@
+//! A sharing draft lives only in this request. Only Share completes it.
+#[cfg(test)]
+mod tests;
+use crate::{
+    account::{AccountRequest, FIELD_BYTES, UserInformation},
+    account_profile::{self, Avatar, Profile},
+    chooser_ui::{self, Outcome, Picker, PickerOptions, PickerStart},
+    file_chooser::{ChooserRequest, Mode},
+    worker::run as worker,
+};
+use iced::{
+    Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
+    widget::{checkbox, column, container, image, row, scrollable, text, text_input},
+    window,
+};
+use std::{
+    os::unix::ffi::{OsStrExt, OsStringExt},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+
+pub fn run(
+    request: AccountRequest,
+    appearance: canopa_theme::Appearance,
+) -> anyhow::Result<Option<UserInformation>> {
+    let foreground = appearance.palette().text;
+    let font = canopa_ui::font(&appearance);
+    let theme = canopa_ui::theme(appearance);
+    let result = Arc::new(Mutex::new(None));
+    let output = result.clone();
+    iced::daemon(
+        move || {
+            let settings = window::Settings {
+                size: Size::new(680.0, 620.0),
+                min_size: Some(Size::new(440.0, 360.0)),
+                exit_on_close_request: false,
+                platform_specific: window::settings::PlatformSpecific {
+                    application_id: "org.canopa.Portal".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let parent = request
+                .parent_window
+                .strip_prefix("wayland:")
+                .unwrap_or_default();
+            let (_, opening) = window::open_dialog(parent.to_owned(), true, settings);
+            let source = request.clone();
+            let load = Task::perform(
+                worker(move || account_profile::load(&source, foreground)),
+                Message::Loaded,
+            );
+            (
+                Dialog::new(request.clone(), theme.clone(), foreground, output.clone()),
+                Task::batch([opening.map(|_| Message::Opened), load]),
+            )
+        },
+        Dialog::update,
+        Dialog::view,
+    )
+    .title(|app: &Dialog, _| {
+        if matches!(app.view, View::Profile) {
+            "Share profile — Canopa".into()
+        } else {
+            "Choose profile image — Canopa".into()
+        }
+    })
+    .theme(|app: &Dialog, _| app.theme.clone())
+    .subscription(Dialog::subscription)
+    .default_font(font)
+    .run()
+    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    Ok(result.lock().expect("account result").take())
+}
+
+enum View {
+    Profile,
+    PreparingPicker(u64),
+    Picker(u64, Box<Picker>),
+}
+
+struct Dialog {
+    request: AccountRequest,
+    theme: Theme,
+    foreground: canopa_theme::Rgb,
+    output: Arc<Mutex<Option<UserInformation>>>,
+    view: View,
+    generation: u64,
+    image_generation: u64,
+    loading: bool,
+    image_loading: bool,
+    busy: bool,
+    completed: bool,
+    id: String,
+    name: String,
+    invalid_id: bool,
+    invalid_name: bool,
+    share_id: bool,
+    share_name: bool,
+    share_image: bool,
+    avatar: Option<Avatar>,
+    preview: Option<image::Handle>,
+    pictures: PathBuf,
+    requester: String,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+enum Message {
+    Opened,
+    Loaded(Result<Profile, String>),
+    Id(String),
+    Name(String),
+    ShareId(bool),
+    ShareName(bool),
+    ShareImage(bool),
+    ChooseImage,
+    ClearImage,
+    Back,
+    PickerReady(u64, Result<Box<PickerStart>, String>),
+    Picker(u64, chooser_ui::Message),
+    Avatar(u64, Result<Avatar, String>),
+    Share(u64),
+    Shared(u64, Result<UserInformation, String>),
+    Cancel,
+    Event(Event),
+}
+
+impl Dialog {
+    fn new(
+        request: AccountRequest,
+        theme: Theme,
+        foreground: canopa_theme::Rgb,
+        output: Arc<Mutex<Option<UserInformation>>>,
+    ) -> Self {
+        let requester = if request.app_id.is_empty() {
+            "The requesting app".into()
+        } else {
+            request.app_id.chars().take(120).collect()
+        };
+        Self {
+            request,
+            theme,
+            foreground,
+            output,
+            view: View::Profile,
+            generation: 0,
+            image_generation: 0,
+            loading: true,
+            image_loading: false,
+            busy: false,
+            completed: false,
+            id: String::new(),
+            name: String::new(),
+            invalid_id: false,
+            invalid_name: false,
+            share_id: true,
+            share_name: true,
+            share_image: false,
+            avatar: None,
+            preview: None,
+            pictures: std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .unwrap_or_else(|| PathBuf::from("/")),
+            requester,
+            error: None,
+        }
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if let View::Picker(generation, picker) = &self.view {
+            return picker
+                .subscription()
+                .with(*generation)
+                .map(|(generation, message)| Message::Picker(generation, message));
+        }
+        iced::event::listen_with(|event, status, _| {
+            let escape = matches!(
+                &event,
+                Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    ..
+                })
+            );
+            (escape || status == iced::event::Status::Ignored).then_some(Message::Event(event))
+        })
+    }
+
+    fn editable(&self) -> bool {
+        matches!(self.view, View::Profile) && !self.loading && !self.busy && !self.completed
+    }
+
+    fn can_share(&self) -> bool {
+        self.editable()
+            && !self.image_loading
+            && (!self.share_id || !self.invalid_id)
+            && (!self.share_name || !self.invalid_name)
+    }
+
+    fn install_avatar(&mut self, avatar: Option<Avatar>) {
+        self.preview = avatar.as_ref().map(|avatar| {
+            image::Handle::from_rgba(
+                avatar.raster.width,
+                avatar.raster.height,
+                avatar.raster.pixels.clone(),
+            )
+        });
+        self.share_image = avatar.is_some();
+        self.avatar = avatar;
+    }
+
+    fn back(&mut self) -> Task<Message> {
+        self.generation = self.generation.wrapping_add(1);
+        self.view = View::Profile;
+        Task::none()
+    }
+
+    fn update(&mut self, message: Message) -> Task<Message> {
+        if self.completed {
+            return Task::none();
+        }
+        match message {
+            Message::Opened => {}
+            Message::Loaded(result) if self.loading => {
+                self.loading = false;
+                self.generation = self.generation.wrapping_add(1);
+                match result {
+                    Ok(profile) => {
+                        self.id = profile.id;
+                        self.name = profile.name;
+                        self.requester = profile.requester;
+                        self.pictures = profile.pictures;
+                        self.install_avatar(profile.avatar);
+                    }
+                    Err(_) => self.error = Some("Enter the information you want to share.".into()),
+                }
+            }
+            Message::Id(value) if self.editable() && self.share_id => {
+                self.invalid_id = value.len() > FIELD_BYTES || value.contains('\0');
+                if !self.invalid_id {
+                    self.id = value;
+                }
+            }
+            Message::Name(value) if self.editable() && self.share_name => {
+                self.invalid_name = value.len() > FIELD_BYTES || value.contains('\0');
+                if !self.invalid_name {
+                    self.name = value;
+                }
+            }
+            Message::ShareId(value) if self.editable() => {
+                self.share_id = value;
+                if value {
+                    self.invalid_id = false;
+                }
+            }
+            Message::ShareName(value) if self.editable() => {
+                self.share_name = value;
+                if value {
+                    self.invalid_name = false;
+                }
+            }
+            Message::ShareImage(value)
+                if self.editable() && !self.image_loading && self.avatar.is_some() =>
+            {
+                self.share_image = value
+            }
+            Message::ClearImage if self.editable() => {
+                self.image_generation = self.image_generation.wrapping_add(1);
+                self.image_loading = false;
+                self.generation = self.generation.wrapping_add(1);
+                self.install_avatar(None);
+                self.error = None;
+            }
+            Message::ChooseImage if self.editable() && !self.image_loading => {
+                self.generation = self.generation.wrapping_add(1);
+                let generation = self.generation;
+                self.view = View::PreparingPicker(generation);
+                self.error = None;
+                let mut request = ChooserRequest::parse(
+                    Mode::Open,
+                    self.request.app_id.clone(),
+                    String::new(),
+                    "Choose profile image".into(),
+                    Default::default(),
+                )
+                .expect("local picker request");
+                request.accept_label = "Select".into();
+                let mut folder = self.pictures.as_os_str().as_bytes().to_vec();
+                folder.push(0);
+                request.current_folder = Some(folder);
+                let filter = (
+                    "Images".into(),
+                    [
+                        "image/png",
+                        "image/jpeg",
+                        "image/gif",
+                        "image/webp",
+                        "image/svg+xml",
+                    ]
+                    .into_iter()
+                    .map(|mime| (1, mime.into()))
+                    .collect(),
+                );
+                request.filters = vec![filter];
+                request.current_filter = request.filters.first().cloned();
+                return Task::perform(
+                    worker(move || chooser_ui::prepare_picker(request)),
+                    move |result| {
+                        Message::PickerReady(
+                            generation,
+                            result.and_then(|value| {
+                                value
+                                    .map(Box::new)
+                                    .map_err(|_| "Couldn't open the image picker.".into())
+                            }),
+                        )
+                    },
+                );
+            }
+            Message::PickerReady(generation, result) if matches!(self.view, View::PreparingPicker(current) if current == generation) => {
+                match result {
+                    Ok(start) => {
+                        let (picker, task) = Picker::new(
+                            *start,
+                            PickerOptions {
+                                read_only_choice: false,
+                                retain_file_target: false,
+                            },
+                        );
+                        self.view = View::Picker(generation, Box::new(picker));
+                        return task.map(move |message| Message::Picker(generation, message));
+                    }
+                    Err(error) => {
+                        self.error = Some(error);
+                        return self.back();
+                    }
+                }
+            }
+            Message::Picker(generation, message) => {
+                let View::Picker(current, picker) = &mut self.view else {
+                    return Task::none();
+                };
+                if *current != generation {
+                    return Task::none();
+                }
+                if matches!(
+                    &message,
+                    chooser_ui::Message::Event(Event::Window(window::Event::CloseRequested))
+                ) {
+                    return self.update(Message::Cancel);
+                }
+                let task = picker.update(message);
+                match picker.take_outcome() {
+                    Some(Outcome::Cancelled) => return self.back(),
+                    Some(Outcome::Selected(selection)) => {
+                        let _ = self.back();
+                        let Some(path) = selection.paths.into_iter().next() else {
+                            return Task::none();
+                        };
+                        let path = PathBuf::from(std::ffi::OsString::from_vec(path));
+                        self.image_generation = self.image_generation.wrapping_add(1);
+                        let generation = self.image_generation;
+                        self.image_loading = true;
+                        let foreground = self.foreground;
+                        return Task::perform(
+                            worker(move || account_profile::prepare_avatar(&path, foreground)),
+                            move |result| {
+                                Message::Avatar(
+                                    generation,
+                                    result.and_then(|value| {
+                                        value.map_err(|_| "Couldn't load that image.".into())
+                                    }),
+                                )
+                            },
+                        );
+                    }
+                    None => return task.map(move |message| Message::Picker(generation, message)),
+                }
+            }
+            Message::Back if !matches!(self.view, View::Profile) => return self.back(),
+            Message::Avatar(generation, result)
+                if self.image_loading && generation == self.image_generation =>
+            {
+                self.image_loading = false;
+                self.generation = self.generation.wrapping_add(1);
+                match result {
+                    Ok(avatar) => {
+                        self.install_avatar(Some(avatar));
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            Message::Share(generation) if generation == self.generation && self.can_share() => {
+                let information = UserInformation {
+                    id: if self.share_id {
+                        self.id.clone()
+                    } else {
+                        String::new()
+                    },
+                    name: if self.share_name {
+                        self.name.clone()
+                    } else {
+                        String::new()
+                    },
+                    image: None,
+                };
+                let avatar = self.share_image.then(|| self.avatar.clone()).flatten();
+                self.busy = true;
+                self.error = None;
+                return Task::perform(
+                    worker(move || {
+                        let image = avatar.as_ref().map(account_profile::publish).transpose()?;
+                        Ok::<_, anyhow::Error>(UserInformation {
+                            image,
+                            ..information
+                        })
+                    }),
+                    move |result| {
+                        Message::Shared(generation,
+                    result.and_then(|value| value.map_err(|_| "Couldn't prepare the image for sharing. Retry or turn off image sharing.".into())))
+                    },
+                );
+            }
+            Message::Shared(generation, result) if self.busy && generation == self.generation => {
+                self.busy = false;
+                match result {
+                    Ok(information) => {
+                        *self.output.lock().expect("account result") = Some(information);
+                        self.completed = true;
+                        return iced::exit();
+                    }
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            Message::Cancel => {
+                self.completed = true;
+                return iced::exit();
+            }
+            Message::Event(Event::Window(window::Event::CloseRequested)) => {
+                return self.update(Message::Cancel);
+            }
+            Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
+                key, modifiers, ..
+            })) => {
+                if key == keyboard::Key::Named(keyboard::key::Named::Escape) {
+                    return self.update(if matches!(self.view, View::Profile) {
+                        Message::Cancel
+                    } else {
+                        Message::Back
+                    });
+                }
+                if key == keyboard::Key::Named(keyboard::key::Named::Tab) {
+                    return if modifiers.shift() {
+                        iced::widget::operation::focus_previous()
+                    } else {
+                        iced::widget::operation::focus_next()
+                    };
+                }
+            }
+            _ => {}
+        }
+        Task::none()
+    }
+
+    fn view(&self, _: window::Id) -> Element<'_, Message> {
+        match &self.view {
+            View::Picker(generation, picker) => {
+                let generation = *generation;
+                return picker
+                    .view()
+                    .map(move |message| Message::Picker(generation, message));
+            }
+            View::PreparingPicker(_) => {
+                return container(
+                    column![
+                        text("Preparing image picker…"),
+                        canopa_ui::action(
+                            text("Back"),
+                            Some(Message::Back),
+                            canopa_ui::Action::Normal,
+                            false
+                        )
+                    ]
+                    .spacing(16),
+                )
+                .padding(20)
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .style(canopa_ui::surface)
+                .into();
+            }
+            View::Profile => {}
+        }
+        let enabled = self.editable();
+        let mut content = column![
+            text("Share your profile").size(22),
+            text(format!("Requested by {}", self.requester)).size(16),
+        ]
+        .spacing(14)
+        .width(Length::Fill);
+        if !self.request.app_id.is_empty() && self.request.app_id != self.requester {
+            content = content.push(text(&self.request.app_id).size(13).style(canopa_ui::muted));
+        }
+        if !self.request.reason.is_empty() {
+            content = content.push(text(&self.request.reason));
+        }
+        if self.loading {
+            content = content.push(text("Loading profile…").style(canopa_ui::muted));
+        } else {
+            let preview: Element<'_, Message> = match &self.preview {
+                Some(handle) => image(handle.clone()).width(96).height(96).into(),
+                None => container(text("No image").style(canopa_ui::muted))
+                    .center_x(96)
+                    .center_y(96)
+                    .into(),
+            };
+            let actions = column![
+                canopa_ui::action(
+                    text("Choose image"),
+                    (enabled && !self.image_loading).then_some(Message::ChooseImage),
+                    canopa_ui::Action::Normal,
+                    false
+                ),
+                canopa_ui::action(
+                    text("Clear image"),
+                    (enabled && (self.avatar.is_some() || self.image_loading))
+                        .then_some(Message::ClearImage),
+                    canopa_ui::Action::Quiet,
+                    false
+                ),
+            ]
+            .spacing(8);
+            content = content.push(row![preview, actions].spacing(16).align_y(iced::Center));
+            let mut share_image = checkbox(self.share_image)
+                .label("Share profile image")
+                .style(canopa_ui::checkbox_style);
+            if enabled && !self.image_loading && self.avatar.is_some() {
+                share_image = share_image.on_toggle(Message::ShareImage);
+            }
+            content = content.push(share_image);
+            let mut share_id = checkbox(self.share_id)
+                .label("Share username")
+                .style(canopa_ui::checkbox_style);
+            let mut share_name = checkbox(self.share_name)
+                .label("Share name")
+                .style(canopa_ui::checkbox_style);
+            if enabled {
+                share_id = share_id.on_toggle(Message::ShareId);
+                share_name = share_name.on_toggle(Message::ShareName);
+            }
+            let mut id = text_input("Username", &self.id).id("account-id");
+            let mut name = text_input("Name", &self.name).id("account-name");
+            if enabled && self.share_id {
+                id = id.on_input(Message::Id);
+            }
+            if enabled && self.share_name {
+                name = name.on_input(Message::Name);
+            }
+            content = content
+                .push(column![share_id, id].spacing(6))
+                .push(column![share_name, name].spacing(6));
+            if (self.share_id && self.invalid_id) || (self.share_name && self.invalid_name) {
+                content = content.push(text("That name is too long or contains an unsupported character. Edit it before sharing.").style(text::danger));
+            }
+            if self.image_loading {
+                content = content.push(text("Preparing image…").style(canopa_ui::muted));
+            }
+        }
+        if let Some(error) = &self.error {
+            content = content.push(text(error).style(text::danger));
+        }
+        let footer = row![
+            canopa_ui::action(
+                text("Cancel"),
+                Some(Message::Cancel),
+                canopa_ui::Action::Normal,
+                false
+            )
+            .width(Length::Fill),
+            canopa_ui::action(
+                text(if self.busy { "Sharing…" } else { "Share" }),
+                self.can_share().then_some(Message::Share(self.generation)),
+                canopa_ui::Action::Normal,
+                false
+            )
+            .width(Length::Fill),
+        ]
+        .spacing(12);
+        container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
+            .padding(20)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(canopa_ui::surface)
+            .into()
+    }
+}

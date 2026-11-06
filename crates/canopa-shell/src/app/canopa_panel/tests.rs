@@ -645,6 +645,7 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
             id: "message".into(),
         },
         &PanelAction {
+            request_activation_token: false,
             key: "opaque-link".into(),
             label: "Read the page".into(),
             value: Some("old-revision".into()),

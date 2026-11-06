@@ -11,13 +11,21 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn wait<T>(mut ready: impl FnMut() -> Option<T>) -> T {
-    let deadline = Instant::now() + Duration::from_secs(10);
+#[track_caller]
+fn wait<T>(ready: impl FnMut() -> Option<T>) -> T {
+    wait_for(Duration::from_secs(10), ready)
+}
+#[track_caller]
+fn wait_for<T>(timeout: Duration, mut ready: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + timeout;
     loop {
         if let Some(value) = ready() {
             return value;
         }
-        assert!(Instant::now() < deadline, "Recovery catalog did not settle");
+        assert!(
+            Instant::now() < deadline,
+            "Recovery fixture did not settle within {timeout:?}"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -33,8 +41,13 @@ fn start(root: &Path) -> OperationJobs {
 fn submit(service: &OperationJobs, request: Request) -> u64 {
     receive(service.submit(request, None).unwrap()).unwrap()
 }
+#[track_caller]
 fn settled(service: &OperationJobs, id: u64) -> JobSnapshot {
-    wait(|| {
+    settled_for(service, id, Duration::from_secs(10))
+}
+#[track_caller]
+fn settled_for(service: &OperationJobs, id: u64, timeout: Duration) -> JobSnapshot {
+    wait_for(timeout, || {
         service.snapshot().jobs.into_iter().find(|job| {
             job.id == id && !matches!(job.phase, Phase::Queued | Phase::Running | Phase::Waiting)
         })
@@ -356,7 +369,12 @@ fn pages_remain_loaded_and_saved_identity_survives_active_undo_expiry() {
         }),
     );
     answer_replace(&service, copy);
-    assert_eq!(settled(&service, copy).phase, Phase::Finished);
+    // This batch prepares two catalog pages. Its asynchronous Copy completion
+    // is separate from the catalog waits and the page-latency test above.
+    assert_eq!(
+        settled_for(&service, copy, Duration::from_secs(60)).phase,
+        Phase::Finished
+    );
     let reader = Reader::start(service.clone()).unwrap();
     wait(|| {
         let s = reader.snapshot();

@@ -138,9 +138,21 @@ impl NotifyControl {
                 self.daemon.activate_notification(notification_id).await?;
                 Ok(ControlReply::CommandApplied)
             }
-            ControlCommand::InteractWithNotificationCenter { target, action } => {
+            ControlCommand::InteractWithNotificationCenter {
+                target,
+                action,
+                activation_token,
+            } => {
+                anyhow::ensure!(
+                    activation_token
+                        .as_ref()
+                        .is_none_or(|token| !token.is_empty()
+                            && token.len() <= 4096
+                            && !token.contains('\0')),
+                    "invalid notification activation context"
+                );
                 self.daemon
-                    .handle_notification_center_interaction(target, action)
+                    .handle_notification_center_interaction(target, action, activation_token)
                     .await?;
                 Ok(ControlReply::CommandApplied)
             }
@@ -206,6 +218,8 @@ pub enum ControlCommand {
     InteractWithNotificationCenter {
         target: NotificationCenterTarget,
         action: NotificationCenterAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        activation_token: Option<String>,
     },
 }
 

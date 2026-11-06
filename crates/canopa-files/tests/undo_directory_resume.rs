@@ -462,7 +462,11 @@ fn a_killed_directory_merge_resumes_without_returning_completed_children_twice()
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "crash_directory_merge_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_directory_resume::crash_directory_merge_helper",
+        ])
         .env("CANOPA_DIRECTORY_RESUME_ROOT", root.path())
         .status()
         .unwrap();

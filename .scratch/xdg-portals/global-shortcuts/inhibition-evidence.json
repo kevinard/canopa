@@ -1,0 +1,224 @@
+{
+  "status": "Scoped focused-editor inhibition acceptance complete; final shared SDK2 normal application, native lifetimes and six shared desktop suites pass; full workspace retains the same ten Files failures",
+  "at": "2026-11-01",
+  "goal_turn_classification": "progress",
+  "implementation": "Optional ordinary-window Wayland surface/seat inhibition with actual permission/focus state, independent guard/window retirement, and retained compositor reservations",
+  "sdk_build": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/build-01.json",
+  "sdk_pilot_scope": "Intermediate SDK1 application; later ordinary-window focus-memo retirement correction is source-complete but not yet built by the shared gate",
+  "sdk_core_tests": {
+    "policy": 1,
+    "runtime_stream": 1,
+    "log": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/shortcut-core-01.log",
+    "stable_source_paths": true,
+    "new_cargo_graph": false
+  },
+  "portal_before_final_shared_build": {
+    "library_passed": 213,
+    "integration_passed": 55,
+    "library_log": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/library-host-01.log",
+    "integration_log": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/integration-host-01.log"
+  },
+  "canonical": {
+    "recipe_sha256": "a85506a3827f9eb77254427b4c3adf3e3ffa31ce1f91a7d6c2020bb57153bca4",
+    "niri_sha256": "92294c7984b05b7439cdb4f4a1c8cb18fdc962763b674efc5e8574379f6295dc",
+    "materialization": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/canonical-02.json",
+    "build": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/build-niri-01.json",
+    "sources": 5971,
+    "compositor_core_tests": 53,
+    "core_binary_sha256": "14a017ecaa9587899a8c19190a8b248ab5325ef5d4e4260bff0c9f477078011d",
+    "core_log": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/core-tests-01.log",
+    "actual_sources": true,
+    "deny_warnings": true,
+    "serde_selection_failure": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/core-build-01.log",
+    "serde_selection_correction": "Used the already cached nightly-compatible serde-e225ee74ad69b311; no dependency rebuild or cleanup",
+    "production_unused_helper": "Registry::is_current is now test-only"
+  },
+  "pilot_native": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-dark-02/summary.json",
+    "groups": 11,
+    "helpers_terminal": 6,
+    "all_owned_processes_terminal": true,
+    "changed_inputs": []
+  },
+  "controls": [
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-red-01/summary.json",
+      "scope": "Original application and companion reproduce live F9 interception in editor"
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-dark-01/summary.json",
+      "scope": "Intermediate client and original companion reproduce empty-lease admission denial during inhibition"
+    }
+  ],
+  "vendor_transitions": [
+    "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/vendor-transition-01.json",
+    "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/vendor-transition-02.json",
+    "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/vendor-transition-03.json"
+  ],
+  "workspace": {
+    "status": "finished-with-rust-test-failures",
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/workspace-01.json",
+    "tool_session": 60244,
+    "wrapper_pid": 1909435,
+    "wrapper_start_ticks": "42079518",
+    "original_selection": true,
+    "one_job": true,
+    "same_incremental_cache": true,
+    "growth_cap_bytes": 3000000000,
+    "free_space_floor_bytes": 8000000000,
+    "original_tool_session_terminal": true,
+    "original_tool_exit_code": 143,
+    "observer_receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/workspace-observation-02.json",
+    "observer_tool_session": 8569,
+    "original_main_pid": 1909437,
+    "original_main_start_ticks": "42079786",
+    "original_cargo_pid": 1923687,
+    "duplicate_cargo_started": false,
+    "phase": "Original whole-workspace compilation completed; Rust test executables now running",
+    "original_processes_terminal": true,
+    "observer_tool_session_terminal": true,
+    "post_stages_passed": 4,
+    "changed_inputs": [],
+    "original_cargo_exit_code_observed": null,
+    "rust_failure_exit_inferred_from_cargo_summary": 101,
+    "actual_main_failure_names": [
+      "cases::recovery_catalog::pages_remain_loaded_and_saved_identity_survives_active_undo_expiry",
+      "cases::undo_destinations::restarting_a_killed_keep_both_destination_restore_preserves_newer_files_and_cleans_stages",
+      "cases::undo_unavailable_moves::an_external_move_does_not_let_older_copy_undo_own_an_independent_restored_destination",
+      "cases::undo_unavailable_moves::an_unavailable_moves_previous_destination_can_be_restored_without_returning_the_missing_item",
+      "cases::undo_unavailable_moves::changing_the_shown_saved_destination_refuses_restore_and_keeps_it_retryable_after_restart",
+      "cases::undo_unavailable_moves::restarting_a_killed_saved_only_restoration_preserves_missing_items_and_older_copy_undo",
+      "cases::undo_unavailable_moves::restoring_a_previous_destination_does_not_adopt_it_for_an_older_copy_of_the_missing_incoming_item",
+      "cases::undo_unavailable_moves::restoring_only_the_previous_destination_does_not_relocate_archives_as_if_the_missing_link_returned",
+      "cases::undo_unavailable_moves::restoring_the_shown_previous_destination_approves_its_current_version_in_one_review",
+      "cases::undo_unavailable_saved::source_only_replace_preserves_newer_original_work_while_saved_restoration_remains_pending"
+    ],
+    "same_ten_files_failures": true,
+    "raw_name_extraction_caveat": "The observer regex includes the ignored crash_unavailable_restore_helper from nested output; acceptance-01.json parses only the largest main failure list",
+    "net_growth_bytes": 2828189696
+  },
+  "normal_advertisement_changed": false,
+  "installed_routing_changed": false,
+  "full_workspace_green": false,
+  "full_goal_complete": false,
+  "next": [
+    "Implement keyboard recording with source-owned protection continuity, exact XKB base/post-press modifiers and consumed-cycle cleanup",
+    "Minimum-window/long-label, broader layout/input-policy/lifetime/failure acceptance",
+    "Real Flatpak and compatible companion distribution; Print remains unimplemented"
+  ],
+  "canonical_regressions": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/native-regressions-01.json",
+    "groups": 48,
+    "all_owned_processes_terminal": true,
+    "owned_process_count": 16,
+    "changed_inputs": [],
+    "scope": "Current revised compositor: shortcut leases13, source teardown10, raw keyboard13, typed keyboard12; no final shared SDK/native or physical-input claim",
+    "concurrent_workspace_build": true,
+    "filesystem_delta_during_regressions_bytes": 29093888,
+    "artifact_bytes": 640031
+  },
+  "recording_preparation": ".scratch/xdg-portals/global-shortcuts/RECORDING.md",
+  "recording_dispatch_probe": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/recording-dispatch-01/summary.json",
+    "cases": 3,
+    "all_owned_processes_terminal": true,
+    "changed_inputs": [],
+    "scope": "Actual Wayland client base symbols, pre-press masks and following native modifier events; not Portal recording or SDK acceptance",
+    "findings": [
+      "Control_L arrives with pre-mask0 then effective Control4",
+      "Caps_Lock remapped as Control keeps its base name while effective Control becomes4",
+      "Shift+a renders A but base symbol remains a",
+      "AltGr+e renders EuroSign but its Mod5 effective bit is outside the resolver grammar",
+      "Modifiers-first release clears the client mask before the trigger release; retain the press snapshot"
+    ]
+  },
+  "shared_build_native": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-shared-native-01.json",
+    "binary_sha256": "3d79d5b4167db5ddc451cb57042346008502daeb79b98b578d6c181ab6c3f833",
+    "groups": 22,
+    "appearances": [
+      "dark/100%",
+      "light/125%"
+    ],
+    "all_twelve_helpers_terminal": true,
+    "all_owned_processes_terminal": true,
+    "source_guard_changes": [],
+    "binary_unchanged": true,
+    "workspace_input_map_sha256": "dbd7e85788f746ee75478c84c442fb130a659c76f6ca88459b25e6fd715543c0",
+    "workspace_still_running_at_start": true,
+    "final_workspace_reconciliation_pending": false,
+    "scope": "Actual normal application rebuilt by original whole-workspace Cargo during phase27, including SDK2 ordinary-window focus-memo retirement; gate and source guards still pending terminal reconciliation"
+  },
+  "lifetime_probe": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-lifetime-build-02.json",
+    "tool_session": 67467,
+    "pid": 1927857,
+    "start_ticks": "42244394",
+    "status": "passed",
+    "source": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-lifetime.rs",
+    "scope": "Three actual native window retirements with retained handle clones and duplicate rejection; no outcome yet",
+    "metadata_selection": "Same original workspace/default feature graph --no-run; require cached artifact freshness and Cargo-reported iced/native libraries",
+    "raw_executable_policy": "Archive once with verified decompressed checksum after the helper exits",
+    "tool_session_terminal": true,
+    "tool_exit_code": 0,
+    "native_outcome": null,
+    "native_receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-lifetime-native-02/summary.json",
+    "rounds": 3,
+    "duplicate_rejections": 3,
+    "retained_clones_terminal": 3,
+    "all_owned_processes_terminal": true,
+    "metadata_artifacts_recompiled": [],
+    "source_guard_changes": [],
+    "archive_verified": true,
+    "raw_removed_after_native_exit": true
+  },
+  "archived_control": {
+    "receipt": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/9d8ccdd3293b211180f29ccfe0762a3b498a7d33253443c460b06f0a2afeedaa/archive.json",
+    "decompressed_checksum_verified": true,
+    "raw_removed_only_after_no_active_users": true,
+    "bytes_reclaimed": 132791197
+  },
+  "shared_desktop_regressions": {
+    "initial_receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/shared-desktop-01.json",
+    "notify_retry_receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/shared-notify-retry-02.json",
+    "accepted_suites": [
+      "Notify desktop",
+      "fork popup/outputs",
+      "overlay placement all four edges at125%",
+      "focused icons",
+      "idle Sway",
+      "idle Niri"
+    ],
+    "all_observed_processes_terminal": true,
+    "no_private_runtime_processes_remain": true,
+    "source_guard_changes": [],
+    "changed_binary_pins": [],
+    "initial_failure": "Sway rejected the124-byte sun_path before applications started; the identical Notify script and binaries pass with87-byte private runtime socket path",
+    "scope": "Current rebuilt Shell/Notify normal executables; whole-workspace reconciliation remains pending"
+  },
+  "inspected_gui_captures": [
+    "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-shared-dark-01/03-conflict-dark.png",
+    "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/inhibition-shared-light-01/01-unchecked-light.png"
+  ],
+  "evidence_archiving": {
+    "receipt": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/archive-obsolete-compositors-01.json",
+    "superseded_compositors_archived": 11,
+    "batch_bytes_reclaimed": 1241690740,
+    "total_including_recent_control_bytes_reclaimed": 1374481937,
+    "all_original_and_decompressed_checksums_verified": true,
+    "active_executables_skipped": true,
+    "current_compositor_retained_raw": "92294c7984b05b7439cdb4f4a1c8cb18fdc962763b674efc5e8574379f6295dc",
+    "root_cargo_outputs_untouched": true
+  },
+  "portal_final_shared_build": {
+    "library_passed": 213,
+    "library_ignored": 8,
+    "integration_passed": 55,
+    "integration_ignored": 2,
+    "library_harness": "target/debug/deps/canopa_portal-6af112ec8fbddff4",
+    "integration_harness": "target/debug/deps/integration-16500db34c0e3dd8",
+    "log": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/workspace-gate-01.log",
+    "scope": "Actual final SDK2 normal workspace graph; distinct from earlier focused SDK1 harnesses"
+  },
+  "acceptance": "/home/kevinard/projects/canopa/target/portal-global-shortcuts-27/acceptance-01.json"
+}

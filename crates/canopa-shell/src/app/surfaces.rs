@@ -609,7 +609,9 @@ impl App {
     /// Reconciles live **Bar Surfaces** from a Wayland Output Snapshot.
     pub(super) fn handle_wayland_output_snapshot(&mut self, outputs: Vec<String>) -> Task<Message> {
         self.foreground.remember_dismissal_outputs(outputs.clone());
-        Task::batch(self.reconcile_bar_surfaces_from_observed_outputs(Some(outputs)))
+        let mut tasks = self.reconcile_bar_surfaces_from_observed_outputs(Some(outputs));
+        tasks.extend(self.reconcile_wallpaper());
+        Task::batch(tasks)
     }
 
     pub(super) fn reconcile_bar_surfaces_from_observed_outputs(

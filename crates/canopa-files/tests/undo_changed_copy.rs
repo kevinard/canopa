@@ -399,7 +399,11 @@ fn restarting_a_killed_changed_copy_removal_preserves_all_newer_files_in_recover
         .tempdir()
         .unwrap();
     let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "changed_copy_removal_child"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::undo_changed_copy::changed_copy_removal_child",
+        ])
         .env("CANOPA_CHANGED_COPY_ROOT", root.path())
         .status()
         .unwrap();

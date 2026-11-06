@@ -229,7 +229,7 @@ fn discovery_survives_graphical_saves_and_explicit_defaults_never_read_ambient_f
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "discovery_survives_graphical_saves_and_explicit_defaults_never_read_ambient_files",
+            "cases::configuration_reload::discovery_survives_graphical_saves_and_explicit_defaults_never_read_ambient_files",
         ])
         .env("CANOPA_CONFIG_RELOAD_CHILD", root.path())
         .env("XDG_CONFIG_HOME", root.path().join("config"))

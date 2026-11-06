@@ -49,7 +49,7 @@ fn a_crashed_idle_owner_leaves_a_reclaimable_endpoint() {
         .args([
             "--ignored",
             "--exact",
-            "idle_owner_helper",
+            "cases::activation::idle_owner_helper",
             "--test-threads=1",
         ])
         .env("CANOPA_ACTIVATION_TEARDOWN_FIXTURE", private.path())
@@ -109,7 +109,7 @@ fn idle_owner_helper() {
 
 #[test]
 fn shutdown_does_not_depend_on_the_socket_path_still_existing() {
-    isolated_helper("replaced_endpoint_helper");
+    isolated_helper("cases::activation::replaced_endpoint_helper");
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn replaced_endpoint_helper() {
 
 #[test]
 fn connection_timeout_includes_a_full_socket_accept_backlog() {
-    isolated_helper("saturated_endpoint_helper");
+    isolated_helper("cases::activation::saturated_endpoint_helper");
 }
 
 #[test]

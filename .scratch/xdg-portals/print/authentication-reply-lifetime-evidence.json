@@ -1,0 +1,201 @@
+{
+  "status": "scoped-authentication-private-reply-lifetime-fix-verified-full-portal-goal-active",
+  "goal_active": true,
+  "created": 1793732524.9670794,
+  "worker": {
+    "path": "target/portal-print-65/worker-01.json",
+    "sha256": "aeff12690ce4d42e57c0904e20826714bcb337d27bf4b3a9ca5f9021c11d8752"
+  },
+  "validation": [
+    {
+      "path": "target/portal-print-65/validation-clippy-01.json",
+      "sha256": "5d22f408eb7b9d78934756fc9f6a104658e963219c20691112b541e3f2c91267"
+    },
+    {
+      "path": "target/portal-print-65/validation-build-01.json",
+      "sha256": "1c010c09f02ba76abdee14e2bfeb6734663bdec9b5953f58b95baea22eaef1d4"
+    },
+    {
+      "path": "target/portal-print-65/validation-tests-01.json",
+      "sha256": "962a84ab6cfeb263551aa3eba205d8a31842466e7485a9bb606bd7b40f5e93d4"
+    }
+  ],
+  "source_patch": {
+    "path": "target/portal-print-65/candidate-01.patch",
+    "sha256": "66f1328760f5538989cd10ef86af9396be9f9745ce669bfe60fdd5392f269951"
+  },
+  "sources": {
+    "path": "target/portal-print-65/candidate-01-sources.json",
+    "sha256": "1d5597a5ea34ef5e71667a381b91b84472e771dfe45c421fc9b3de09d7bba942"
+  },
+  "baseline": {
+    "path": "target/portal-print-65/retained-prefix-01/summary.json",
+    "sha256": "3b5902bdbd578c445cf8178019287734715d42ec4948cb449cd21d92a41c643e"
+  },
+  "investigation": {
+    "path": "target/portal-print-65/investigation-01.json",
+    "sha256": "1a96eb0d8b1de025068b78d72214ebbb1f892c321f3b5b9016d3c1e2c8994b44"
+  },
+  "native": [
+    {
+      "path": "target/portal-print-65/eof-prefix-02/summary.json",
+      "sha256": "8f44e6ec8e2e915c14e269b42e762c0843d728facdb1d3d3e06b425d9d32c5aa",
+      "scope": "Actual compiled Rust Print controller, Production adapter, Broker/Dialog and Client supervisor; controlled approval/worker/password stand-ins, real snapshot worker. No Iced, scheduler, document submission or physical acceptance.",
+      "status": "measured",
+      "observed_terminal": 3
+    },
+    {
+      "path": "target/portal-print-65/retained-prefix-02/summary.json",
+      "sha256": "68bc4052ff1804fc8d5f1d859f4b86ed90bc16bc52e56c6b7a7423ae32ccc8ce",
+      "after_approval": {
+        "seconds": 90.19655466789845,
+        "response_received": true,
+        "writer_alive": true
+      },
+      "scope": "Actual compiled Rust Print controller, Production adapter, Broker/Dialog and Client supervisor; controlled approval/worker/password stand-ins, real snapshot worker. No Iced, scheduler, document submission or physical acceptance.",
+      "status": "measured",
+      "observed_terminal": 4
+    },
+    {
+      "path": "target/portal-print-65/file-lifetime-dark-01/summary.json",
+      "sha256": "cb2b5e7943dd2c4fa821f86733d0bffd434d594873b257e8ce83c1c33191a31c",
+      "appearance": "dark",
+      "groups": [
+        {
+          "name": "file-selection-withdraws-in-flight-metadata-authentication",
+          "seconds": 4.037646422977559,
+          "public_request_pending": true
+        },
+        {
+          "name": "file-selection-clears-approved-metadata-credentials",
+          "same_endpoint_prompted_again": true,
+          "auth_dialogs": 3
+        },
+        {
+          "name": "prepared-file-handoff-and-delivery-after-authentication",
+          "response": 0,
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "no_printer_requests_after_prepare": true,
+          "no_printer_jobs": true,
+          "auth_dialogs": 3
+        }
+      ],
+      "status": "passed",
+      "observed_terminal": 29
+    },
+    {
+      "path": "target/portal-print-65/file-lifetime-light-01/summary.json",
+      "sha256": "fb8dc359454999419ca19f926f8744c18c1bc2ddaff5c1c9bf5fce70ed337fa1",
+      "appearance": "light",
+      "groups": [
+        {
+          "name": "file-selection-withdraws-in-flight-metadata-authentication",
+          "seconds": 3.6485457870876417,
+          "public_request_pending": true
+        },
+        {
+          "name": "file-selection-clears-approved-metadata-credentials",
+          "same_endpoint_prompted_again": true,
+          "auth_dialogs": 3
+        },
+        {
+          "name": "prepared-file-handoff-and-delivery-after-authentication",
+          "response": 0,
+          "pages": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "no_printer_requests_after_prepare": true,
+          "no_printer_jobs": true,
+          "auth_dialogs": 3
+        }
+      ],
+      "status": "passed",
+      "observed_terminal": 30
+    },
+    {
+      "path": "target/portal-print-65/recovery-probe-01/summary.json",
+      "sha256": "09a8494f2c359e7b40f6120e890fa5813eba2db43ddfe554a89f800fdaba494b",
+      "appearance": "dark",
+      "checks": [
+        "opening-review-does-not-authenticate-or-cancel",
+        "explicit-check-opens-Iced-sign-in",
+        "approved-login-retires-only-owned-job"
+      ],
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 14
+    },
+    {
+      "path": "target/portal-print-65/recovery-probe-02/summary.json",
+      "sha256": "ffd74160e6ffb6b2489820aff3eeac301a30efb076a20a722704abb13ed63baa",
+      "appearance": "light",
+      "checks": [
+        "opening-review-does-not-authenticate-or-cancel",
+        "explicit-check-opens-Iced-sign-in",
+        "approved-login-retires-only-owned-job"
+      ],
+      "status": "scoped-protected-recovery-verified",
+      "observed_terminal": 14
+    }
+  ],
+  "binary_sha256": "ef722d77bfc733b69ba35e1eee5032350625a9485fbf6a5b8ee556fdddf9ee33",
+  "counts": {
+    "portal_library": 437,
+    "portal_integration": 55,
+    "ppd_runtime": 1,
+    "new_regression_tests": 2,
+    "postapproval_withdrawal_variants": 6,
+    "candidate_native_invocations": 6,
+    "actual_iced_invocations": 4,
+    "observed_unique_terminal_pids": 94
+  },
+  "archive": [
+    {
+      "path": "target/portal-print-65/baseline-harness-archive-01.json",
+      "sha256": "7a0799f1ad93c00d408154beeafb72ef8b93c89c8bb0600c57daf7951ce2f003"
+    },
+    {
+      "path": "target/portal-print-65/candidate-binary-archive-01.json",
+      "sha256": "a4db5da603ee107c0e8c7e8db6b5b54f1a3b051c73b67f1744a8374acc26bdb5"
+    }
+  ],
+  "all_private_auth_data_removed": true,
+  "storage": {
+    "free_bytes": 6196662272,
+    "net_growth_bytes": -78016512,
+    "new_feature_graph": false,
+    "per_evidence_binary_copies": 0,
+    "cache_purge": false,
+    "policy": "Original root incremental/default/workspace graph reused; two lossless checksum archives, source-only replay and concise receipts."
+  },
+  "scope": [
+    "One90-second deadline covers ordinary approval, helper exit and private length/body/EOF; withdrawal/caller loss shares that lifetime.",
+    "Real controlled parent reproducer failed after95s before fix and completes at90.2s with retained writer still live after fix.",
+    "Normal Iced metadata-to-file consent and prepared4pagePDF delivery pass in both appearances.",
+    "Actual Iced wrong-once TLS/PAM protected recovery in both appearances preserves immutable owner and unrelated job without another document."
+  ],
+  "remaining": [
+    "Outer60/300-second parent supervision, broader credential/challenge/connection and repeated authenticated descriptor acceptance.",
+    "Driverless/device precision, Flatpak, optional runtime/package/NOTICE and release acceptance; Print remains opt-in.",
+    "Automatic Qt integration remains deferred; six experimental interfaces and earlier handoff/early-TLS issues remain.",
+    "Full workspace execution was not repeated for this local Portal fix; earlier exact ten Files failures remain open."
+  ],
+  "next": ".scratch/xdg-portals/print/authentication-connection-next.md",
+  "replay_source_hashes": {
+    "runtime_probe.py": "7a4a18246fc249ca01d52712e59e2261a262c03b02ca6e66c2893c226497b9c7",
+    "prompt.py": "495d63a49668d7d66983de140eaeab5778cfb97867f70a34217ab7d5d8ac0731",
+    "validate.py": "6ceca36f56f6a4467401c3482d2974d37d82b8e333150f05d1ef5ccb521c8018",
+    "seal.py": "09e6e1049fc706d7ba2878c1078d56049e89731170d5a2a9e5b3962c23d10647",
+    "helper.py": "282b30a051cae9a8ab14d952625e00e7f43ed8837a190ea31561f93d098797b5",
+    "recovery.py": "9131227d94d849c38a15f916b7aee422d2fa01e4cfeff45cb29a1dd8538e53b0",
+    "recovery_ui.py": "443be7d556e6a3d905d7dcf75ba1a48d39c082f681e96ebc0c1370d6efc5acc2",
+    "file-lifetime.py": "5a3e11b8c0d2a1e50c57cf330a47d07b148f7fed87923cc46ba44846a8d67690"
+  }
+}

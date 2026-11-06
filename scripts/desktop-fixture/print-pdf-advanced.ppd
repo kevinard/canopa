@@ -1,0 +1,81 @@
+*PPD-Adobe: "4.3"
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "CANOPAA.PPD"
+*Manufacturer: "Canopa fixture"
+*Product: "(Canopa PDF fixture)"
+*ModelName: "Canopa PDF advanced-controls fixture"
+*ShortNickName: "Canopa PDF fixture"
+*NickName: "Canopa PDF advanced-controls fixture"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "1"
+*cupsVersion: 2.4
+*cupsManualCopies: False
+*cupsFilter2: "application/pdf application/pdf 0 -"
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: A4
+*PageSize A4/A4: ""
+*CloseUI: *PageSize
+*DefaultPageRegion: A4
+*PageRegion A4/A4: ""
+*DefaultImageableArea: A4
+*ImageableArea A4: "0 0 595.2755905512 841.8897637795"
+*DefaultPaperDimension: A4
+*PaperDimension A4: "595.2755905512 841.8897637795"
+*OpenUI *Duplex/Two-Sided Printing: PickOne
+*OrderDependency: 20 AnySetup *Duplex
+*DefaultDuplex: None
+*Duplex None/One-Sided: ""
+*Duplex DuplexNoTumble/Long Edge: ""
+*Duplex DuplexTumble/Short Edge: ""
+*CloseUI: *Duplex
+*% Custom sheets are 3x5 through 8.5x14 inches; PDF passes through unchanged.
+*VariablePaperSize: True
+*MaxMediaWidth: "612"
+*MaxMediaHeight: "1008"
+*HWMargins: 9 9 9 9
+*CustomPageSize True: ""
+*ParamCustomPageSize Width: 1 points 216 612
+*ParamCustomPageSize Height: 2 points 360 1008
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 0
+
+*OpenUI *InputSlot/Paper Source: PickOne
+*OrderDependency: 30 AnySetup *InputSlot
+*DefaultInputSlot: Tray1
+*InputSlot Tray1/Main Tray: ""
+*InputSlot Manual/Manual Feed: ""
+*CloseUI: *InputSlot
+*OpenUI *MediaType/Paper Type: PickOne
+*OrderDependency: 40 AnySetup *MediaType
+*DefaultMediaType: Plain
+*MediaType Plain/Plain Paper: ""
+*MediaType Labels/Labels: ""
+*MediaType Glossy/Glossy Photo: ""
+*CloseUI: *MediaType
+*OpenUI *cupsPrintQuality/Print Quality: PickOne
+*OrderDependency: 50 AnySetup *cupsPrintQuality
+*DefaultcupsPrintQuality: Normal
+*cupsPrintQuality Draft/Draft: ""
+*cupsPrintQuality Normal/Normal: ""
+*cupsPrintQuality High/High: ""
+*CloseUI: *cupsPrintQuality
+*OpenUI *Resolution/Resolution: PickOne
+*OrderDependency: 60 AnySetup *Resolution
+*DefaultResolution: 300dpi
+*Resolution 300dpi/300 DPI: "<</HWResolution[300 300]>>setpagedevice"
+*Resolution 600dpi/600 DPI: "<</HWResolution[600 600]>>setpagedevice"
+*Resolution 600x1200dpi/600 x 1200 DPI: "<</HWResolution[600 1200]>>setpagedevice"
+*CloseUI: *Resolution
+*cupsUIConstraints manual-glossy: "*InputSlot Manual *MediaType Glossy"
+*cupsUIResolver manual-glossy: "*MediaType Plain"
+*cupsMediaQualifier2: InputSlot
+*cupsMaxSize .Manual.: "360 576"

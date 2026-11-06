@@ -1,0 +1,198 @@
+{
+  "status": "scoped-selected-runtime-and-credential-capacity-verified-full-print-goal-active",
+  "goal_active": true,
+  "created": 1793726539.957037,
+  "validation": {
+    "compilation": "target/portal-print-62/worker-03.json",
+    "compiled_test_continuation": "target/portal-print-62/worker-04.json",
+    "portal_library": 435,
+    "portal_integration": 55,
+    "ppd_runtime": 1,
+    "strict_workspace_clippy": true,
+    "source_guards_unchanged": true
+  },
+  "sources": {
+    "path": "target/portal-print-62/candidate-01-sources.json",
+    "sha256": "48a043eb8ed241c36258046e60cc2f6c90904de680fb3209cc719e28e11a6707",
+    "files": 20
+  },
+  "client": {
+    "recipe_sha256": "7a275e0a029f70b22f935d747a7e20c997d62fced852db7c627897a0185c4058",
+    "source_files_verified": 1301,
+    "archive": {
+      "status": "checksum-verified",
+      "source": "/home/kevinard/projects/canopa/target/cups-authentication-compat/cups-2.4.20/cups/libcups.so.2",
+      "archive": "/home/kevinard/projects/canopa/target/native-test-snapshots/print-client-by-sha256/e0d80ef1ff4154878f72d00a1e45c65117c6420991eda568b8bb0b74422cb457/libcups.so.2",
+      "sha256": "e0d80ef1ff4154878f72d00a1e45c65117c6420991eda568b8bb0b74422cb457",
+      "bytes": 841120,
+      "per_evidence_binary_copies": 0
+    },
+    "capability": 1
+  },
+  "binary": {
+    "status": "lossless-checksum-verified",
+    "source": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "archive": "/home/kevinard/projects/canopa/target/native-test-snapshots/print-portal-by-sha256/a45799db32759ba4857d5255eaf840e359089e35a2e5b5e98e96bb08a16561ee/xdg-desktop-portal-canopa.xz",
+    "original_sha256": "a45799db32759ba4857d5255eaf840e359089e35a2e5b5e98e96bb08a16561ee",
+    "original_bytes": 280526768,
+    "compressed_bytes": 38862644,
+    "per_evidence_binary_copies": 0
+  },
+  "unknown_capability_fixture": {
+    "status": "built",
+    "source": "/tmp/canopa-print-62/capability-unknown.c",
+    "source_sha256": "8c1ff9788f35eb9288599f3c19a296ac6df78557039952b8ce76e959b286bf30",
+    "binary": "/home/kevinard/projects/canopa/target/native-test-snapshots/print-fixtures-by-sha256/a09a3186dba60cb919d52acf284938a4ad5a3c7a7654aa646edc1110937aa4b8/capability-unknown.so",
+    "binary_sha256": "a09a3186dba60cb919d52acf284938a4ad5a3c7a7654aa646edc1110937aa4b8",
+    "bytes": 15176,
+    "scope": "Unsupported version99 shared-library fixture; no CUPS API or global state, loaded only in isolated worker",
+    "command": [
+      "cc",
+      "-O0",
+      "-g0",
+      "-shared",
+      "-fPIC"
+    ]
+  },
+  "native": [
+    {
+      "path": "target/portal-print-62/digest-worker-01/summary.json",
+      "sha256": "5320174795bf4e48212581ade063c8a41333cd9e4d60f5d6043e0990bea28ff3",
+      "scope": "worker",
+      "cases_or_groups": 31,
+      "observed_terminal": 32
+    },
+    {
+      "path": "target/portal-print-62/digest-worker-02/summary.json",
+      "sha256": "16e5be5980c7c79896f2eebb56ae3b273703a3f61b700130d135256dc1b5c2fd",
+      "scope": "worker",
+      "cases_or_groups": 31,
+      "observed_terminal": 32
+    },
+    {
+      "path": "target/portal-print-62/digest-worker-03/summary.json",
+      "sha256": "6bab5b3bddeb1465061ea682929fc70af8225e01a79d06aaea675e3368565470",
+      "scope": "worker",
+      "cases_or_groups": 31,
+      "observed_terminal": 32
+    },
+    {
+      "path": "target/portal-print-62/digest-worker-04/summary.json",
+      "sha256": "04c023468f5fab585d180df7bc35d2328b987971c5a3818cbfd4fb5a21cc1684",
+      "scope": "worker",
+      "cases_or_groups": 27,
+      "observed_terminal": 28
+    },
+    {
+      "path": "target/portal-print-62/authentication-Basic-dark-02/summary.json",
+      "sha256": "6cd52240be5711899aa3bf6e87e6c00424a2dad256ec8a55102a9aaf935689ec",
+      "scope": "iced-full",
+      "cases_or_groups": 11,
+      "observed_terminal": 153
+    },
+    {
+      "path": "target/portal-print-62/authentication-Basic-light-01/summary.json",
+      "sha256": "a92649dc1a9401c80a9c1a48e913c9050979a3f6e541a59a6830c16dad9cd290",
+      "scope": "iced-full",
+      "cases_or_groups": 11,
+      "observed_terminal": 151
+    },
+    {
+      "path": "target/portal-print-62/authentication-SHA-256-dark-01/summary.json",
+      "sha256": "23474917985c1932d72d7953fa375c015038d3cf5885845fcdb4d9afa459edb6",
+      "scope": "iced-full",
+      "cases_or_groups": 11,
+      "observed_terminal": 146
+    },
+    {
+      "path": "target/portal-print-62/authentication-SHA-256-light-01/summary.json",
+      "sha256": "f29dc10075e5dc3ab5bcbd2616f317bc7672e6dbdddf2133851be0a105ad7b0b",
+      "scope": "iced-full",
+      "cases_or_groups": 11,
+      "observed_terminal": 148
+    },
+    {
+      "path": "target/portal-print-62/authentication-capture-SHA-256-dark-01/summary.json",
+      "sha256": "4b2b0769a0797d2ddb1a4adfc5b89a42434833d0fe509735bb4a9b482e637f16",
+      "scope": "iced-capture",
+      "cases_or_groups": 2,
+      "observed_terminal": 42
+    },
+    {
+      "path": "target/portal-print-62/authentication-capture-SHA-256-light-01/summary.json",
+      "sha256": "67a706f48c4edaff7422d85c5d3e9434a22884b4699c8f777d06ce9c2acc255c",
+      "scope": "iced-capture",
+      "cases_or_groups": 2,
+      "observed_terminal": 42
+    },
+    {
+      "path": "target/portal-print-62/parent-runtime-01/summary.json",
+      "sha256": "757ee9ac16ed12b74b4add985321d3785f05710362148153b4a5df5885fa6b08",
+      "scope": "actual-parent-owned-Python-child-transport",
+      "observed_terminal": 2
+    }
+  ],
+  "counts": {
+    "actual_worker_cases": 120,
+    "full_iced_runs": 4,
+    "full_iced_groups": 44,
+    "reduced_capture_runs": 2,
+    "reduced_capture_groups": 4,
+    "actual_parent_transport_checks": 1,
+    "isolation_observations": 70,
+    "observed_terminal_identities": 808
+  },
+  "all_private_auth_data_removed": true,
+  "visual": {
+    "path": "target/portal-print-62/visual-inspection-01.json",
+    "sha256": "7e6acbef73655c395a0db0bc92804bd426736caae9ceebced60864c6b0a79b3b"
+  },
+  "workspace": {
+    "path": "target/portal-print-62/workspace-01.json",
+    "sha256": "d3bba405511df050c1f8dfc00939c93cf807e5769fac5fc07cb8f40df90f1e0b",
+    "failures": "target/portal-print-62/workspace-failures-01.json",
+    "same_exact_ten_files_failures_as_phase61": true,
+    "full_workspace_green": false,
+    "independent_post_stages_pass": true
+  },
+  "retained_nonpassing_receipts": [
+    "worker-01.json",
+    "worker-02.json",
+    "worker-03.json",
+    "iced-runtime-matrix-01.json",
+    "authentication-Basic-dark-01/summary.json"
+  ],
+  "replay_source_hashes": {
+    "iced-matrix-02.py": "9d8119b703222afc4d17c6b2a3bb3da3e0df26906ab0427290a90496d667725a",
+    "capability-overlay.py": "af024e181d4f4abd32fc5c736144a40d324dceb8bb84c76d63bec1bb690dc90f",
+    "check.py": "871c3987577f5d9387971cf071be28c435adfaed9d34c9ead6b4074edc347e72",
+    "iced-capture-matrix.py": "1509d0040700e307137ed0d06d938348a9266f03d3520e48fbef8862461d7e90",
+    "digest-auth.py": "156d13c118a9654953b95f48edbb44ff350e7f9b6f9b86e37fdf5bec9770e389",
+    "edit-runtime.py": "87bd74fe9f5a027c4d067a36e5b1b0fad6517db7347ad017436b1ddbbf28d1a2",
+    "iced.py": "29611e9edb0364e1bc417f8a0f9f7bd17d148305180db515ad82dfd24ac98ee2",
+    "check-03.py": "c7147f2ae331a4f36d9bf34e8491f09600d74fe579a66420ee33108bf2c14f81",
+    "prepare-worker.py": "cdf8571987532bf8afb34dce5b7e44f97edd902e3a496087d307314077172d3e",
+    "workspace-check.py": "41329797c64c08188f0839e40c802d38a22974949eeffdfd690873b7718ff2d3",
+    "parent-runtime.py": "601534b2805a4e01e604fe80fdd909d2ec0e8dd947170b6630840d3bd5aee3f3",
+    "post-check.py": "0ea0f309d42421cee0c8fbf718908f3982aa5ce515392741bf6f908dbb96070f",
+    "native-matrix.py": "e1273b77ff1a24552262a8919f69f83ab267047386bb58708556f44ee8bfe91d",
+    "worker.py": "eed31970cd007b3acb37866ee41c8a5cd13d6a7958f48bcd0f5f71bc5b074820",
+    "iced-capture.py": "00c3d41e5da663f4a787ef0aaa12fe77f222811e3e44601d75a20acb00485e09",
+    "review-probe.py": "44dca8aa7033e81ec4bda6412c187c027324453e4aa89d78fe7e8dea64667b5c",
+    "capability-unknown.c": "8c1ff9788f35eb9288599f3c19a296ac6df78557039952b8ce76e959b286bf30",
+    "iced-matrix.py": "da3881233778e47d76de0888e2584094418e5a118881cd5fbbbb33bbdce9a8b2",
+    "prepare-iced.py": "ecb3d7bfecd0e004a64c27c5714d4ed62dc2f80a58874e8fdb1b57bee97062d8",
+    "check-02.py": "1efc4db2320bfcc9aaa6ed99c953836afad754443f61e28b58463df6a2dc4ef1"
+  },
+  "free_bytes": 6139363328,
+  "net_growth_bytes": 434184192,
+  "storage": "Same root incremental/debug/default graph and stable CUPS cache. One shared checksum image/fixture; Rust evidence compressed losslessly once per checksum. No cache purge, release build or per-evidence ELF copies.",
+  "limitations": [
+    "Private exact-byte Basic/Digest gateways with real IPP schedulers, not actual Digest/PAM or physical printer acceptance.",
+    "Selected-runtime Create-only/Send-only, protected recovery and held-job/lost-ack/source regressions remain.",
+    "Resource/timeouts/file-output credential lifetime, broader connection/driver/device, Flatpak and runtime/package/NOTICE/release gates remain.",
+    "Print remains opt-in. Automatic Qt integration deferred; six other experimental interfaces retain their gates.",
+    "Earlier parallel-handoff and early-TLS observability issues remain open."
+  ],
+  "next": ".scratch/xdg-portals/print/runtime-integration-next.md"
+}

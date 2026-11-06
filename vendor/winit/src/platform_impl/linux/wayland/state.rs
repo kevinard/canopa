@@ -39,6 +39,8 @@ use crate::platform_impl::OsError;
 
 /// Winit's Wayland state.
 pub struct WinitState {
+    pub(crate) keyboard_shortcuts: Option<super::keyboard_shortcuts::Hub>,
+    pub(crate) foreign: super::foreign::Manager,
     pub(crate) drag_drop: Option<super::drag_drop::Hub>,
     /// The WlRegistry.
     pub registry_state: RegistryState,
@@ -144,9 +146,11 @@ impl WinitState {
 
         let seat_state = SeatState::new(globals, queue_handle);
         let drag_drop = super::drag_drop::Hub::bind(globals, queue_handle);
+        let keyboard_shortcuts=super::keyboard_shortcuts::Hub::bind(globals,queue_handle);
 
         let mut seats = AHashMap::default();
         for seat in seat_state.seats() {
+            if let Some(hub)=&keyboard_shortcuts{hub.add_seat(seat.clone());}
             if let Some(hub) = &drag_drop { hub.add_seat(seat.clone()); }
             seats.insert(seat.id(), WinitSeatState::new());
         }
@@ -162,6 +166,8 @@ impl WinitState {
         let custom_cursor_pool = Arc::new(Mutex::new(SlotPool::new(2, &shm).unwrap()));
 
         Ok(Self {
+            keyboard_shortcuts,
+            foreign: super::foreign::Manager::bind(globals, queue_handle),
             drag_drop,
             registry_state,
             compositor_state: Arc::new(compositor_state),
@@ -257,6 +263,7 @@ impl WinitState {
 
 impl Drop for WinitState {
     fn drop(&mut self) {
+        if let Some(hub)=self.keyboard_shortcuts.take(){hub.shutdown();}
         if let Some(hub) = self.drag_drop.take() { hub.shutdown(); }
     }
 }

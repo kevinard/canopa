@@ -30,6 +30,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
         _: &Connection,
         _: &QueueHandle<WinitState>,
     ) {
+        let shortcuts = state.keyboard_shortcuts.clone();
         let seat_state = match state.seats.get_mut(&data.seat.id()) {
             Some(seat_state) => seat_state,
             None => {
@@ -73,22 +74,30 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
         }
 
         match event {
-            WlKeyboardEvent::Keymap { format, fd, size } => match format {
-                WEnum::Value(format) => match format {
-                    WlKeymapFormat::NoKeymap => {
-                        warn!("non-xkb compatible keymap")
-                    }
-                    WlKeymapFormat::XkbV1 => {
-                        let context = &mut keyboard_state.xkb_context;
-                        context.set_keymap_from_fd(fd, size as usize);
-                    }
-                    _ => unreachable!(),
-                },
-                WEnum::Unknown(value) => {
-                    warn!("unknown keymap format 0x{:x}", value)
+            WlKeyboardEvent::Keymap { format, fd, size } => {
+                if let Some(hub) = &shortcuts {
+                    hub.keymap(&data.seat.id(), false);
                 }
-            },
-            WlKeyboardEvent::Enter { surface, .. } => {
+                match format {
+                    WEnum::Value(format) => match format {
+                        WlKeymapFormat::NoKeymap => {
+                            warn!("non-xkb compatible keymap")
+                        }
+                        WlKeymapFormat::XkbV1 => {
+                            let context = &mut keyboard_state.xkb_context;
+                            context.set_keymap_from_fd(fd, size as usize);
+                            if let Some(hub) = &shortcuts {
+                                hub.keymap(&data.seat.id(), context.shortcut_modifiers().is_some());
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
+                    WEnum::Unknown(value) => {
+                        warn!("unknown keymap format 0x{:x}", value)
+                    }
+                }
+            }
+            WlKeyboardEvent::Enter { surface, keys, .. } => {
                 let window_id = wayland::make_wid(&surface);
 
                 // Mark the window as focused.
@@ -109,6 +118,9 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                 }
 
                 *data.window_id.lock().unwrap() = Some(window_id);
+                if let Some(hub) = &state.keyboard_shortcuts {
+                    hub.enter(&data.seat.id(), window_id, &keys);
+                }
 
                 // The keyboard focus is considered as general focus.
                 if was_unfocused {
@@ -127,6 +139,9 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
             }
             WlKeyboardEvent::Leave { surface, .. } => {
                 let window_id = wayland::make_wid(&surface);
+                if let Some(hub) = &state.keyboard_shortcuts {
+                    hub.leave(&data.seat.id(), window_id);
+                }
 
                 // NOTE: we should drop the repeat regardless whether it was for the present
                 // window of for the window which just went gone.
@@ -165,6 +180,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
             WlKeyboardEvent::Key {
                 key,
                 state: WEnum::Value(WlKeyState::Pressed),
+                serial,
                 ..
             } => {
                 let key = key + 8;
@@ -175,7 +191,8 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     data,
                     key,
                     ElementState::Pressed,
-                    false,
+                    Some(serial),
+                    shortcuts.as_ref(),
                 ) {
                     if let Some(drag_drop) = &state.drag_drop {
                         drag_drop.escape(&data.seat.id());
@@ -213,6 +230,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                         state.dispatched_events = true;
 
                         let data = wl_keyboard.data::<KeyboardData>().unwrap();
+                        let shortcuts = state.keyboard_shortcuts.clone();
                         let seat_state = match state.seats.get_mut(&data.seat.id()) {
                             Some(seat_state) => seat_state,
                             None => return TimeoutAction::Drop,
@@ -236,7 +254,8 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                             data,
                             repeat_keycode,
                             ElementState::Pressed,
-                            true,
+                            None,
+                            shortcuts.as_ref(),
                         );
 
                         // NOTE: the gap could change dynamically while repeat is going.
@@ -250,6 +269,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
             WlKeyboardEvent::Key {
                 key,
                 state: WEnum::Value(WlKeyState::Released),
+                serial,
                 ..
             } => {
                 let key = key + 8;
@@ -260,7 +280,8 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     data,
                     key,
                     ElementState::Released,
-                    false,
+                    Some(serial),
+                    shortcuts.as_ref(),
                 );
 
                 if keyboard_state.repeat_info != RepeatInfo::Disable
@@ -278,6 +299,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                 }
             }
             WlKeyboardEvent::Modifiers {
+                serial,
                 mods_depressed,
                 mods_latched,
                 mods_locked,
@@ -292,6 +314,14 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
 
                 xkb_state.update_modifiers(mods_depressed, mods_latched, mods_locked, 0, 0, group);
                 seat_state.modifiers = xkb_state.modifiers().into();
+                if let Some(hub) = &shortcuts {
+                    hub.modifiers(
+                        &data.seat.id(),
+                        serial,
+                        recording_modifiers(xkb_context),
+                        group,
+                    );
+                }
 
                 // HACK: part of the workaround from `WlKeyboardEvent::Enter`.
                 let window_id = match *data.window_id.lock().unwrap() {
@@ -426,13 +456,38 @@ fn key_input(
     data: &KeyboardData,
     keycode: u32,
     state: ElementState,
-    repeat: bool,
+    serial: Option<u32>,
+    shortcuts: Option<&crate::platform_impl::wayland::keyboard_shortcuts::Hub>,
 ) -> bool {
+    let repeat = serial.is_none();
     let window_id = match *data.window_id.lock().unwrap() {
         Some(window_id) => window_id,
         None => return false,
     };
 
+    if let Some(hub) = shortcuts {
+        let consumed = if repeat {
+            hub.consumes_repeat(&data.seat.id(), window_id, keycode)
+        } else {
+            hub.key_event(
+                &data.seat.id(),
+                window_id,
+                keycode,
+                state == ElementState::Pressed,
+                serial.unwrap(),
+                || {
+                    Some(crate::platform_impl::wayland::keyboard_shortcuts::Key {
+                        modifiers: recording_modifiers(&keyboard_state.xkb_context)?,
+                        name: keyboard_state.xkb_context.shortcut_key(keycode)?,
+                    })
+                },
+            )
+        };
+        if consumed {
+            keyboard_state.xkb_context.clear_shortcut_compose();
+            return false;
+        }
+    }
     let device_id = crate::event::DeviceId(crate::platform_impl::DeviceId::Wayland(DeviceId));
     if let Some(mut key_context) = keyboard_state.xkb_context.key_context() {
         let event = key_context.process_key_event(keycode, state, repeat);
@@ -451,4 +506,19 @@ fn key_input(
         return escape;
     }
     false
+}
+
+fn recording_modifiers(
+    context: &Context,
+) -> Option<crate::platform_impl::wayland::keyboard_shortcuts::Modifiers> {
+    use crate::platform_impl::wayland::keyboard_shortcuts::{
+        Modifiers, ALT, CTRL, LOGO, NUM, SHIFT,
+    };
+    let (mods, unknown) = context.shortcut_modifiers()?;
+    let bits = if mods.ctrl { CTRL } else { 0 }
+        | if mods.alt { ALT } else { 0 }
+        | if mods.shift { SHIFT } else { 0 }
+        | if mods.num_lock { NUM } else { 0 }
+        | if mods.logo { LOGO } else { 0 };
+    Some(Modifiers { bits, unknown })
 }

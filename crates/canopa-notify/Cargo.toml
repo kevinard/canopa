@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "canopa-notify"
 version = "0.1.0"
 edition.workspace = true
@@ -14,8 +15,12 @@ default = ["gui", "audio"]
 gui = ["dep:canopa-assets", "dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols"]
 audio = ["dep:rodio"]
 
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
 [dependencies]
-canopa-assets = { workspace = true, optional = true }
+canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-notify-client.workspace = true
 miette.workspace = true
 canopa-file.workspace = true

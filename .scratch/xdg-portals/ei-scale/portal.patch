@@ -1,0 +1,451 @@
+--- a/crates/canopa-portal/src/screencast_capture/worker.rs
++++ b/crates/canopa-portal/src/screencast_capture/worker.rs
+@@ -307,6 +307,10 @@
+                 source_id: actual,
+                 mapping_id,
+                 size,
++                physical_scale: parameters
++                    .remove("canopa-physical-scale")
++                    .map(f64::try_from)
++                    .transpose()?,
+             };
+             anyhow::ensure!(mapping.valid(), "Invalid capture mapping");
+             Some(mapping)
+--- a/crates/canopa-portal/src/screencast_capture/bindings.rs
++++ b/crates/canopa-portal/src/screencast_capture/bindings.rs
+@@ -9,6 +9,8 @@
+     pub(crate) source_id: u64,
+     pub(crate) mapping_id: String,
+     pub(crate) size: (i32, i32),
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub(crate) physical_scale: Option<f64>,
+ }
+ impl Mapping {
+     pub(crate) fn valid(&self) -> bool {
+@@ -17,6 +19,7 @@
+             && self.source_id != 0
+             && valid_mapping_id(&self.mapping_id)
+             && valid_size(self.size)
++            && self.physical_scale.is_none_or(valid_scale)
+     }
+     pub(super) fn matches(&self, source: &Source) -> bool {
+         source_identity(source) == Some(self.source_id)
+@@ -31,6 +34,8 @@
+     pub(crate) source_id: u64,
+     pub(crate) mapping_id: String,
+     pub(crate) size: (i32, i32),
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub(crate) physical_scale: Option<f64>,
+ }
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+ #[serde(deny_unknown_fields)]
+@@ -63,6 +68,7 @@
+                 source_id: mapping.source_id,
+                 mapping_id: mapping.mapping_id.clone(),
+                 size: mapping.size,
++                physical_scale: mapping.physical_scale,
+             });
+         }
+         let binding = Self {
+@@ -94,7 +100,8 @@
+                     && region.source_id != 0
+                     && valid_mapping_id(&region.mapping_id)
+                     && mappings.insert(&region.mapping_id)
+-                    && valid_size(region.size),
++                    && valid_size(region.size)
++                    && region.physical_scale.is_none_or(valid_scale),
+                 "Invalid capture region"
+             );
+         }
+@@ -110,6 +117,9 @@
+ }
+ pub(crate) fn valid_size((w, h): (i32, i32)) -> bool {
+     (1..=32768).contains(&w) && (1..=32768).contains(&h)
++}
++pub(crate) fn valid_scale(scale: f64) -> bool {
++    scale.is_finite() && scale > 0. && scale <= 64.
+ }
+ pub(crate) fn valid_mapping_id(id: &str) -> bool {
+     !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
+@@ -129,15 +139,20 @@
+     suffix.parse().ok()
+ }
+ 
+-pub(crate) type Sizes = Vec<(u32, (i32, i32))>;
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub(crate) struct Shape {
++    pub node: u32,
++    pub size: (i32, i32),
++    pub physical_scale: Option<f64>,
++}
+ 
+ impl Bindings {
+-    /// Revalidate the exact producer objects; size may change, identity may not.
+-    pub(crate) async fn current_sizes(
++    /// Revalidate the exact producer objects; size/scale may change, identity may not.
++    pub(crate) async fn current_shapes(
+         &self,
+         connection: &Connection,
+         pid: u32,
+-    ) -> anyhow::Result<Sizes> {
++    ) -> anyhow::Result<Vec<Shape>> {
+         use futures_util::{StreamExt, TryStreamExt, stream};
+         self.validate()?;
+         tokio::time::timeout(CALL_TIME, async {
+@@ -179,11 +194,25 @@
+                     .remove("size")
+                     .ok_or_else(|| anyhow::anyhow!("Missing mapping size"))?
+                     .try_into()?;
++                let physical_scale = values
++                    .remove("canopa-physical-scale")
++                    .map(f64::try_from)
++                    .transpose()?;
+                 anyhow::ensure!(
+-                    id == region.source_id && mapping == region.mapping_id && valid_size(size),
++                    id == region.source_id && mapping == region.mapping_id,
+                     "Capture mapping changed identity"
+                 );
+-                Ok::<_, anyhow::Error>((region.node, size))
++                anyhow::ensure!(
++                    valid_size(size)
++                        && physical_scale.is_none_or(valid_scale)
++                        && (region.physical_scale.is_none() || physical_scale.is_some()),
++                    "Capture projection metadata unavailable"
++                );
++                Ok::<_, anyhow::Error>(Shape {
++                    node: region.node,
++                    size,
++                    physical_scale,
++                })
+             }))
+             .buffered(4)
+             .try_collect()
+--- a/crates/canopa-portal/src/screencast_capture/tests.rs
++++ b/crates/canopa-portal/src/screencast_capture/tests.rs
+@@ -487,16 +487,27 @@
+     assert_eq!(bindings.regions[1].source_id, 42);
+     assert_eq!(
+         bindings
+-            .current_sizes(&fixture.backend, std::process::id())
++            .current_shapes(&fixture.backend, std::process::id())
+             .await
+             .unwrap(),
+-        [(101, (640, 480)), (102, (640, 480))]
++        [
++            bindings::Shape {
++                node: 101,
++                size: (640, 480),
++                physical_scale: None
++            },
++            bindings::Shape {
++                node: 102,
++                size: (640, 480),
++                physical_scale: None
++            }
++        ]
+     );
+     stop.send_replace(true);
+     task.await.unwrap().unwrap();
+     assert!(
+         bindings
+-            .current_sizes(&fixture.backend, std::process::id())
++            .current_shapes(&fixture.backend, std::process::id())
+             .await
+             .is_err()
+     );
+@@ -535,6 +546,7 @@
+                 source_id: u64::MAX - u64::from(i),
+                 mapping_id: format!("{}{:03}", "y".repeat(253), i),
+                 size: (32768, 32768),
++                physical_scale: Some(64.),
+             }),
+         })
+         .collect();
+@@ -555,3 +567,64 @@
+     legacy[0].source = Source::Monitor("legacy".into());
+     assert!(Bindings::from_streams(":1.1", &legacy).is_err());
+ }
++
++#[tokio::test]
++async fn scaled_bindings_revalidate_live_projection_without_replacing_source_identity() {
++    use std::sync::atomic::Ordering;
++    let fixture = fake::Fixture::new().await;
++    fixture.state.source_version.store(1, Ordering::SeqCst);
++    *fixture.state.physical_scale.lock().unwrap() = Some(1.25);
++    let (stop, ready, task) = launch(&fixture, vec![Source::Window(42)]).await;
++    let streams = ready.await.unwrap();
++    assert_eq!(
++        streams[0].mapping.as_ref().unwrap().physical_scale,
++        Some(1.25)
++    );
++    let binding = Bindings::from_streams(fixture.service.unique_name().unwrap().as_str(), &streams)
++        .unwrap()
++        .unwrap();
++    let before = binding
++        .current_shapes(&fixture.backend, std::process::id())
++        .await
++        .unwrap();
++    *fixture.state.physical_scale.lock().unwrap() = Some(1.5);
++    let after = binding
++        .current_shapes(&fixture.backend, std::process::id())
++        .await
++        .unwrap();
++    assert_eq!(before[0].size, after[0].size);
++    assert_eq!(before[0].physical_scale, Some(1.25));
++    assert_eq!(after[0].physical_scale, Some(1.5));
++    for scale in [
++        None,
++        Some(f64::NAN),
++        Some(f64::INFINITY),
++        Some(0.),
++        Some(-1.),
++        Some(64.1),
++    ] {
++        *fixture.state.physical_scale.lock().unwrap() = scale;
++        assert!(
++            binding
++                .current_shapes(&fixture.backend, std::process::id())
++                .await
++                .is_err()
++        );
++    }
++    stop.send_replace(true);
++    task.await.unwrap().unwrap();
++}
++
++#[tokio::test]
++async fn malformed_optional_scale_cannot_publish_a_ready_recording() {
++    use std::sync::atomic::Ordering;
++    for scale in [f64::NAN, f64::INFINITY, 0., -1., 64.1] {
++        let fixture = fake::Fixture::new().await;
++        fixture.state.source_version.store(1, Ordering::SeqCst);
++        *fixture.state.physical_scale.lock().unwrap() = Some(scale);
++        let (_stop, ready, task) = launch(&fixture, vec![Source::Window(42)]).await;
++        assert!(ready.await.is_err());
++        assert!(task.await.unwrap().is_err());
++        assert_eq!(fixture.state.stops.load(Ordering::SeqCst), 1);
++    }
++}
+--- a/crates/canopa-portal/src/remote_input/pointer/compositor.rs
++++ b/crates/canopa-portal/src/remote_input/pointer/compositor.rs
+@@ -4,12 +4,15 @@
+ use tokio::io::{AsyncReadExt, AsyncWriteExt};
+ use zbus::zvariant::{ObjectPath, OwnedFd};
+ 
+-type Descriptors = Vec<(u64, String, (i32, i32))>;
++type Descriptors = Vec<(u64, String, (i32, i32), Option<f64>)>;
++type LegacyDescriptors = Vec<(u64, String, (i32, i32))>;
++type ScaledDescriptors = Vec<(u64, String, (i32, i32), f64)>;
+ #[derive(Clone, Debug)]
+ struct Region {
+     node: u32,
+     stream: u64,
+     size: (i32, i32),
++    physical_scale: Option<f64>,
+ }
+ pub(super) struct Pointer {
+     socket: tokio::net::UnixStream,
+@@ -27,41 +30,74 @@
+             .cache_properties(zbus::proxy::CacheProperties::No)
+             .build()
+             .await?;
+-        let mapped = tokio::time::timeout(CALL_TIME, async {
++        let version = tokio::time::timeout(CALL_TIME, async {
+             anyhow::ensure!(
+                 proxy.get_property::<u32>("PointerVersion").await? == 1,
+                 "Unsupported pointer lease version"
+             );
+             if let Some(binding) = &input.capture {
++                let version = proxy.get_property::<u32>("MappedPointerVersion").await?;
+                 anyhow::ensure!(
+-                    proxy.get_property::<u32>("MappedPointerVersion").await? == 1,
++                    matches!(version, 1 | 2),
+                     "Capture-bound pointer unavailable"
+                 );
+-                binding
+-                    .current_sizes(connection, input.compositor_pid)
++                let shapes = binding
++                    .current_shapes(connection, input.compositor_pid)
+                     .await?;
+-            }
+-            Ok::<_, anyhow::Error>(input.capture.is_some())
++                anyhow::ensure!(
++                    version == 1 || shapes.iter().all(|s| s.physical_scale.is_some()),
++                    "Missing capture physical scale"
++                );
++                Ok::<_, anyhow::Error>(version)
++            } else {
++                Ok(0)
++            }
+         })
+         .await??;
+-        let (fd, caps, descriptors): (OwnedFd, u32, Descriptors) =
+-            if let Some(binding) = &input.capture {
+-                let session = ObjectPath::try_from(binding.session.as_str())?;
+-                let paths = binding
+-                    .regions
+-                    .iter()
+-                    .map(|r| ObjectPath::try_from(r.stream.as_str()))
+-                    .collect::<Result<Vec<_>, _>>()?;
+-                tokio::time::timeout(
++        let mapped = version != 0;
++        let (fd, caps, descriptors): (OwnedFd, u32, Descriptors) = if let Some(binding) =
++            &input.capture
++        {
++            let session = ObjectPath::try_from(binding.session.as_str())?;
++            let paths = binding
++                .regions
++                .iter()
++                .map(|r| ObjectPath::try_from(r.stream.as_str()))
++                .collect::<Result<Vec<_>, _>>()?;
++            if version == 2 {
++                let (fd, caps, regions): (OwnedFd, u32, ScaledDescriptors) = tokio::time::timeout(
+                     CALL_TIME,
+                     proxy.call("OpenMappedPointer", &(session, paths)),
+                 )
+-                .await??
++                .await??;
++                (
++                    fd,
++                    caps,
++                    regions
++                        .into_iter()
++                        .map(|(stream, id, size, scale)| (stream, id, size, Some(scale)))
++                        .collect(),
++                )
+             } else {
+-                let (fd, caps): (OwnedFd, u32) =
+-                    tokio::time::timeout(CALL_TIME, proxy.call("OpenPointer", &())).await??;
+-                (fd, caps, Vec::new())
+-            };
++                let (fd, caps, regions): (OwnedFd, u32, LegacyDescriptors) = tokio::time::timeout(
++                    CALL_TIME,
++                    proxy.call("OpenMappedPointer", &(session, paths)),
++                )
++                .await??;
++                (
++                    fd,
++                    caps,
++                    regions
++                        .into_iter()
++                        .map(|(stream, id, size)| (stream, id, size, None))
++                        .collect(),
++                )
++            }
++        } else {
++            let (fd, caps): (OwnedFd, u32) =
++                tokio::time::timeout(CALL_TIME, proxy.call("OpenPointer", &())).await??;
++            (fd, caps, Vec::new())
++        };
+         let socket = UnixStream::from(std::os::fd::OwnedFd::from(fd));
+         anyhow::ensure!(
+             rustix::net::sockopt::socket_domain(&socket) == Ok(rustix::net::AddressFamily::UNIX)
+@@ -96,12 +132,15 @@
+                     descriptors.len() == binding.regions.len(),
+                     "Invalid pointer regions"
+                 );
+-                for (region, (stream, mapping_id, size)) in binding.regions.iter().zip(descriptors)
++                for (region, (stream, mapping_id, size, physical_scale)) in
++                    binding.regions.iter().zip(descriptors)
+                 {
+                     anyhow::ensure!(
+                         Some(stream) == bindings::path_id(&region.stream, "Stream")
+                             && mapping_id == region.mapping_id
+-                            && bindings::valid_size(size),
++                            && bindings::valid_size(size)
++                            && physical_scale.is_none_or(bindings::valid_scale)
++                            && (version != 2 || physical_scale.is_some()),
+                         "Pointer region does not match capture"
+                     );
+                     // Use the descriptors atomically pinned by Open, including
+@@ -110,6 +149,7 @@
+                         node: region.node,
+                         stream,
+                         size,
++                        physical_scale,
+                     });
+                 }
+             } else {
+@@ -254,18 +294,28 @@
+         let Some(binding) = &input.capture else {
+             return Ok(false);
+         };
+-        let sizes = match binding
+-            .current_sizes(connection, input.compositor_pid)
++        let shapes = match binding
++            .current_shapes(connection, input.compositor_pid)
+             .await
+         {
+-            Ok(sizes) => sizes,
++            Ok(shapes) => shapes,
+             Err(_) => return Ok(false),
+         };
+-        if sizes.iter().all(|(node, size)| {
+-            self.regions
+-                .iter()
+-                .any(|r| r.node == *node && r.size == *size)
+-        }) {
++        let scale_lost = self.regions.iter().any(|r| {
++            r.physical_scale.is_some()
++                && !shapes
++                    .iter()
++                    .any(|shape| shape.node == r.node && shape.physical_scale.is_some())
++        });
++        if scale_lost
++            || shapes.iter().all(|shape| {
++                self.regions.iter().any(|r| {
++                    r.node == shape.node
++                        && r.size == shape.size
++                        && (r.physical_scale.is_none() || r.physical_scale == shape.physical_scale)
++                })
++            })
++        {
+             return Ok(false);
+         }
+         // EOF has already acknowledged old held-input release. Never reopen on
+--- a/crates/canopa-portal/src/remote_input/pointer/tests.rs
++++ b/crates/canopa-portal/src/remote_input/pointer/tests.rs
+@@ -138,11 +138,15 @@
+     let connection = Connection::session().await.unwrap();
+     let caller = Connection::session().await.unwrap();
+     let owner = Owner::resolve(&connection).await.unwrap();
+-    let names = owner
+-        .monitors(&connection, vec!["winit".into()])
+-        .await
+-        .unwrap();
+-    let mut sources = vec![Source::Monitor(names.into_iter().next().unwrap())];
++    let mut sources = if std::env::var("CANOPA_POINTER_WINDOW_ONLY").as_deref() == Ok("1") {
++        Vec::new()
++    } else {
++        let names = owner
++            .monitors(&connection, vec!["winit".into()])
++            .await
++            .unwrap();
++        vec![Source::Monitor(names.into_iter().next().unwrap())]
++    };
+     if let Ok(id) = std::env::var("CANOPA_POINTER_WINDOW") {
+         sources.push(Source::Window(id.parse().unwrap()));
+     }
+--- a/crates/canopa-portal/src/screencast_capture/tests/fake.rs
++++ b/crates/canopa-portal/src/screencast_capture/tests/fake.rs
+@@ -59,6 +59,7 @@
+     pub ignore_precondition: AtomicBool,
+     pub wrong_stream_identity: AtomicBool,
+     pub resize_on_start: AtomicBool,
++    pub physical_scale: Mutex<Option<f64>>,
+     pub identity_preconditions: Mutex<Vec<Option<u64>>>,
+     pub starts: AtomicU32,
+     pub recorded: Mutex<Vec<(String, u32)>>,
+@@ -311,6 +312,12 @@
+             ),
+             ("size", Value::from(size).try_into_owned().unwrap()),
+         ]);
++        if let Some(scale) = *self.state.physical_scale.lock().unwrap() {
++            values.insert(
++                "canopa-physical-scale",
++                Value::from(scale).try_into_owned().unwrap(),
++            );
++        }
+         if self.state.source_version.load(Ordering::SeqCst) != 0 {
+             let identity =
+                 self.identity + u64::from(self.state.wrong_stream_identity.load(Ordering::SeqCst));

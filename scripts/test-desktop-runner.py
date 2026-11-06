@@ -7,7 +7,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
+import native_compositor
 from native_compositor import select_niri, sha256, stage_niri
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +17,77 @@ NIRI = None
 
 
 class Selection(unittest.TestCase):
+    def setUp(self):
+        self.storage = tempfile.TemporaryDirectory(prefix="canopa-runner-store-")
+        self.addCleanup(self.storage.cleanup)
+        self.store = Path(self.storage.name) / "store"
+        replacement = patch.object(native_compositor, "SNAPSHOT_STORE", self.store)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+
+    def source(self, name="source"):
+        source = Path(self.storage.name) / name
+        source.write_text("#!/bin/sh\necho 'niri fixture'\n")
+        source.chmod(0o700)
+        return source
+
+    def test_runs_share_one_frozen_copy_without_sharing_mutable_build_output(self):
+        source = self.source()
+        selected = select_niri(source)
+        paths = [Path(stage_niri(selected, Path(self.storage.name) / str(i))["snapshot"])
+                 for i in range(3)]
+        self.assertTrue(all(path.is_symlink() for path in paths))
+        self.assertEqual(len({path.resolve() for path in paths}), 1)
+        canonical = paths[0].resolve()
+        self.assertNotEqual(canonical.stat().st_ino, source.stat().st_ino)
+        self.assertEqual(list(self.store.glob("*/niri")), [canonical])
+        source.write_text("#!/bin/sh\necho 'niri replacement'\n")
+        changed = stage_niri(select_niri(source), Path(self.storage.name) / "new")
+        self.assertNotEqual(Path(changed["snapshot"]).resolve(), canonical)
+        self.assertEqual(sha256(canonical), selected["sha256"])
+        with self.assertRaisesRegex(ValueError, "changed while preparing"):
+            stage_niri(selected, Path(self.storage.name) / "stale")
+
+    def test_corrupt_or_symlinked_cached_snapshots_are_refused_without_overwriting(self):
+        source = self.source()
+        selected = select_niri(source)
+        canonical = self.store / selected["sha256"] / "niri"
+        canonical.parent.mkdir(parents=True)
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink):
+                if symlink:
+                    canonical.symlink_to(source)
+                else:
+                    canonical.write_text("corrupt snapshot")
+                with self.assertRaisesRegex(ValueError, "Corrupt"):
+                    stage_niri(selected, Path(self.storage.name) / f"bad-{symlink}")
+                self.assertEqual(source.read_text(), "#!/bin/sh\necho 'niri fixture'\n")
+                canonical.unlink()
+
+    def test_change_during_copy_leaves_no_partial_snapshot(self):
+        source = self.source()
+        selected = select_niri(source)
+        with patch.object(native_compositor.shutil, "copyfileobj",
+                          side_effect=lambda source, output: output.write(b"changed during copy")):
+            with self.assertRaisesRegex(ValueError, "changed while preparing"):
+                stage_niri(selected, Path(self.storage.name) / "changed")
+        self.assertEqual(list(self.store.rglob("niri")), [])
+        self.assertEqual(list(self.store.rglob(".niri-*")), [])
+
+    def test_media_sessions_use_the_shared_store_and_check_explicit_frozen_sources(self):
+        from screencast_media import MediaSession
+        source = self.source()
+        checksum = sha256(source)
+        root = Path(self.storage.name)
+        first = MediaSession(root / "runtime", root / "media-a", source, checksum)
+        with patch("screencast_media.SNAPSHOT_STORE", self.store):
+            second = MediaSession(root / "runtime", root / "media-b", first.compositor.resolve(),
+                                  checksum, reference_frozen=True)
+            with self.assertRaisesRegex(ValueError, "Only a content-addressed"):
+                MediaSession(root / "runtime", root / "media-c", source, checksum, reference_frozen=True)
+        self.assertEqual(first.compositor.resolve(), second.compositor.resolve())
+        self.assertTrue(second.compositor.is_symlink())
+
     def refusal(self, arguments, message):
         with tempfile.TemporaryDirectory(prefix="canopa-runner-refusal-") as directory:
             output = Path(directory) / "artifacts"

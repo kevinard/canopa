@@ -15,7 +15,11 @@ use std::{
 fn killed_copy(root: &Path, output: &Path, kind: TransferKind) -> PathBuf {
     fs::write(root.join("item"), vec![0xab; 192 * 1024]).unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "killed_copy_helper"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::transfer_stage_recovery::killed_copy_helper",
+        ])
         .env("CANOPA_STAGE_RECOVERY_ROOT", root)
         .env("CANOPA_STAGE_RECOVERY_OUTPUT", output)
         .env(

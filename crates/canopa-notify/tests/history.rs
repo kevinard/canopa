@@ -1,7 +1,5 @@
-#[path = "support/daemon.rs"]
-mod daemon_support;
-#[path = "support/notifications.rs"]
-mod notifications;
+use crate::daemon_support;
+use crate::notifications;
 
 use canopa_notify::{Daemon, DaemonOptions};
 use notifications::notification;
@@ -70,6 +68,7 @@ async fn retained_count_budget_preserves_pending_content_and_exempts_transient_n
     let target = batch.projection.groups[0].items[0].target.clone();
     control
         .execute(ControlCommand::InteractWithNotificationCenter {
+            activation_token: None,
             target,
             action: NotificationCenterAction::Acknowledge,
         })
@@ -273,6 +272,7 @@ async fn retained_byte_budget_rejects_atomically_and_acknowledgement_releases_ca
         .unwrap();
     control
         .execute(ControlCommand::InteractWithNotificationCenter {
+            activation_token: None,
             target: expired.target,
             action: NotificationCenterAction::Acknowledge,
         })

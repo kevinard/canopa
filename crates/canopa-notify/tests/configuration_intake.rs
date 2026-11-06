@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 
 use canopa_notify::{Daemon, DaemonOptions, DeliveryOutcome};
 use support::notifications::notification;

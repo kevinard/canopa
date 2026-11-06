@@ -1,7 +1,5 @@
-#[path = "support/daemon.rs"]
-mod daemon_support;
-#[path = "support/notifications.rs"]
-mod notifications;
+use crate::daemon_support;
+use crate::notifications;
 
 use canopa_notify::{
     ActivationTokenFuture, ActivationTokenProvider, AppPermissionControl, ControlCommand,
@@ -171,6 +169,7 @@ async fn queued_link_cannot_open_replaced_or_deleted_content() {
         let captured = center_item(&control, receipt.notification_id).await;
         let mut invocation = Box::pin(control.execute(
             ControlCommand::InteractWithNotificationCenter {
+                activation_token: None,
                 target: captured.target,
                 action: NotificationCenterAction::OpenLink { segment_index: 0 },
             },
@@ -243,6 +242,7 @@ async fn slow_link_chooser_is_bounded_and_does_not_hold_the_control_reply() {
         .unwrap();
     let target = center_item(&control, receipt.notification_id).await.target;
     let command = ControlCommand::InteractWithNotificationCenter {
+        activation_token: None,
         target,
         action: NotificationCenterAction::OpenLink { segment_index: 0 },
     };
@@ -313,6 +313,7 @@ async fn center_links_open_the_captured_target_without_sender_actions_or_acknowl
         .unwrap();
     let captured = center_item(&control, receipt.notification_id).await;
     let command = ControlCommand::InteractWithNotificationCenter {
+        activation_token: None,
         target: captured.target.clone(),
         action: NotificationCenterAction::OpenLink { segment_index: 1 },
     };
@@ -375,6 +376,7 @@ async fn retained_attention_can_be_acknowledged_after_expiry_without_sender_call
     assert!(
         control
             .execute(ControlCommand::InteractWithNotificationCenter {
+                activation_token: None,
                 target: original.target,
                 action: NotificationCenterAction::Acknowledge,
             })
@@ -392,6 +394,7 @@ async fn retained_attention_can_be_acknowledged_after_expiry_without_sender_call
     assert!(changes.changed().await);
     control
         .execute(ControlCommand::InteractWithNotificationCenter {
+            activation_token: None,
             target: expired.target,
             action: NotificationCenterAction::Acknowledge,
         })
@@ -613,6 +616,7 @@ async fn center_activation_rejects_replaced_and_terminal_targets_without_request
                 assert!(
                     control
                         .execute(ControlCommand::InteractWithNotificationCenter {
+                            activation_token: None,
                             target: captured.target.clone(),
                             action,
                         })
@@ -625,6 +629,7 @@ async fn center_activation_rejects_replaced_and_terminal_targets_without_request
             let current = center_item(&control, receipt.notification_id).await;
             assert_ne!(current.target, captured.target);
             let activation = ControlCommand::InteractWithNotificationCenter {
+                activation_token: None,
                 target: current.target,
                 action: NotificationCenterAction::Activate,
             };
@@ -702,6 +707,7 @@ async fn center_token_wait_revalidates_after_replacement_or_close_without_blocki
             // or pausing the database's timers along with the activation deadline.
             let mut invocation = Box::pin(control.execute(
                 ControlCommand::InteractWithNotificationCenter {
+                    activation_token: None,
                     target: captured.target,
                     action,
                 },
@@ -2172,4 +2178,32 @@ async fn center_reader_never_moves_backwards_when_a_transient_is_replaced_betwee
     );
     assert_eq!(refreshed.len(), 3);
     daemon.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn center_activation_context_reaches_only_its_captured_sender_action() {
+    let daemon = daemon_support::open_headless_daemon().await;
+    let control = NotifyControl::new((*daemon).clone());
+    let mut input = notification("Mail", "Activation context");
+    input.actions = vec![NotificationAction::new("default", "")];
+    let receipt = daemon.receive_notification(input).await.unwrap();
+    let target = center_item(&control, receipt.notification_id).await.target;
+    let command = ControlCommand::InteractWithNotificationCenter {
+        target,
+        action: NotificationCenterAction::Activate,
+        activation_token: Some("native-context".into()),
+    };
+    control.execute(command.clone()).await.unwrap();
+    let events = daemon.sender_events().await;
+    assert!(
+        matches!(&events[0], SenderEvent::ActivationToken { activation_token, .. } if activation_token == "native-context")
+    );
+    assert!(
+        matches!(&events[1], SenderEvent::ActionInvoked { action_key, .. } if action_key == "default")
+    );
+    assert!(
+        control.execute(command).await.is_err(),
+        "a retired target cannot reuse its context"
+    );
+    assert_eq!(daemon.sender_events().await, events);
 }

@@ -1,5 +1,4 @@
-#[path = "support/daemon.rs"]
-mod daemon_support;
+use crate::daemon_support;
 
 use canopa_notify::{
     Daemon, DaemonOptions, DeliveryOutcome, NotificationAction, NotificationImageData,

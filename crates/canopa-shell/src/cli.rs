@@ -4,6 +4,7 @@ pub enum Command {
     CheckConfig(ConfigOptions),
     PrintVersion,
     Reload,
+    Lock,
     IpcCommand(String),
     OpenMenu(String),
     ToggleMenu(String),
@@ -87,11 +88,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     Command::OpenMenu(name)
                 });
             }
-            "--version" | "-V" | "--toggle-panel" | "reload" | "--reload" => {
+            "--version" | "-V" | "--toggle-panel" | "reload" | "--reload" | "lock" => {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
                 }
-                special_mode = Some(if matches!(arg.as_str(), "reload" | "--reload") {
+                special_mode = Some(if arg == "lock" {
+                    Command::Lock
+                } else if matches!(arg.as_str(), "reload" | "--reload") {
                     Command::Reload
                 } else if arg == "--toggle-panel" {
                     Command::IpcCommand("toggle-panel".into())
@@ -171,7 +174,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     if let Some(command) = special_mode {
         if matches!(
             command,
-            Command::OpenMenu(_) | Command::ToggleMenu(_) | Command::Reload
+            Command::OpenMenu(_) | Command::ToggleMenu(_) | Command::Reload | Command::Lock
         ) {
             if dmenu_option {
                 return Command::UsageError(
@@ -210,6 +213,23 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_is_a_standalone_command_without_configuration_or_dmenu_options() {
+        assert!(matches!(parse_args(["lock".into()]), Command::Lock));
+        for extra in [
+            "--defaults",
+            "--json",
+            "--check-config",
+            "--version",
+            "unexpected",
+        ] {
+            assert!(matches!(
+                parse_args(["lock".into(), extra.into()]),
+                Command::UsageError(_)
+            ));
+        }
+    }
 
     #[test]
     fn reload_is_a_standalone_command_for_the_running_selection() {

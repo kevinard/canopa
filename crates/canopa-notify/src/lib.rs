@@ -42,13 +42,14 @@ pub use delivery_policy::{
 };
 pub use domain::{
     AcceptedNotification, DEFAULT_NOTIFICATION_SOUND_NAME, DEFAULT_NOTIFICATION_SOUND_THEME,
-    DeliveryOutcome, NotificationAction, NotificationBodyContent, NotificationBodyImage,
-    NotificationBodyImageSource, NotificationBodyRun, NotificationBodySegment,
-    NotificationBodyStyle, NotificationImageData, NotificationInput, NotificationPosition,
-    NotificationReceipt, NotificationSnapshot, NotificationSound, NotificationSoundPlayback,
-    NotificationSoundRequest, NotificationSoundSettings, NotificationStatus, NotificationThread,
-    NotificationTimeout, NotificationTimeoutDefaults, NotificationVisualReference,
-    SenderCloseReason, SenderEvent, Urgency, UserRule, normalize_notification_category,
+    DeliveryOutcome, NotificationAction, NotificationBodyContent, NotificationBodyFormat,
+    NotificationBodyImage, NotificationBodyImageSource, NotificationBodyRun,
+    NotificationBodySegment, NotificationBodyStyle, NotificationImageData, NotificationInput,
+    NotificationPosition, NotificationReceipt, NotificationSnapshot, NotificationSound,
+    NotificationSoundPlayback, NotificationSoundRequest, NotificationSoundSettings,
+    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
+    NotificationVisualReference, SenderCloseReason, SenderEvent, Urgency, UserRule,
+    normalize_notification_category,
 };
 pub use input_limits::NotificationLimitExceeded;
 pub use lifecycle::{
@@ -389,9 +390,10 @@ impl Daemon {
         &self,
         target: NotificationCenterTarget,
         action: NotificationCenterAction,
+        activation_token: Option<String>,
     ) -> anyhow::Result<()> {
         self.runtime
-            .handle_notification_center_interaction(target, action)
+            .handle_notification_center_interaction(target, action, activation_token)
             .await
     }
 

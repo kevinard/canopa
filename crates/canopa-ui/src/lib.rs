@@ -6,7 +6,7 @@ use canopa_theme::{Appearance, ColorScheme, Rgb};
 pub use customization::*;
 use iced::{
     Color, Theme,
-    widget::{button, container, text},
+    widget::{button, checkbox, container, text},
 };
 
 pub fn color(Rgb(r, g, b): Rgb) -> Color {
@@ -96,6 +96,18 @@ pub fn colors(theme: &Theme) -> Colors {
         warning: theme.palette().warning,
         success: theme.palette().success,
     }
+}
+
+/// Keep unfilled checkbox boundaries visible on both shared surface palettes.
+pub fn checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
+    let p = colors(theme);
+    let mut style = checkbox::primary(theme, status);
+    style.border.color = match status {
+        checkbox::Status::Hovered { .. } => p.focus,
+        checkbox::Status::Disabled { .. } => p.disabled,
+        checkbox::Status::Active { .. } => p.border,
+    };
+    style
 }
 
 pub fn surface(theme: &Theme) -> container::Style {

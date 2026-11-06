@@ -690,7 +690,7 @@ fn queued_source_observations_leave_capacity_for_questions_and_later_work() {
         .args([
             "--ignored",
             "--exact",
-            "source_observation_budget_helper",
+            "cases::operation_transfers::source_observation_budget_helper",
             "--test-threads=1",
         ])
         .status()

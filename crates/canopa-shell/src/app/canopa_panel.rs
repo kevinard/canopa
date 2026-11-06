@@ -84,6 +84,7 @@ pub(super) fn render_with_back<'a>(
             let mut options = row![].spacing(metrics::GAP);
             for option in &control.options {
                 let action = PanelAction {
+                    request_activation_token: false,
                     key: control.key.clone(),
                     label: format!(
                         "{}{}",

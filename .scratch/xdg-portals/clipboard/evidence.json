@@ -1,0 +1,203 @@
+{
+  "status": "scoped private RemoteDesktop and active-only InputCapture Clipboard acceptance verified; normal advertisement disabled",
+  "at": "2026-11-01T05:47:39.223642+00:00",
+  "advertised": false,
+  "installed": false,
+  "session_checkpoint": {
+    "decision": "docs/adr/0058-clipboard-session-consent-and-ordering.md",
+    "checks_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-validation-03.json",
+    "source_count": 1144,
+    "sources_unchanged": true,
+    "portal_library": {
+      "passed": 172,
+      "ignored": 6
+    },
+    "portal_integration": {
+      "passed": 48,
+      "ignored": 2
+    },
+    "format": "passed",
+    "clippy": "passed",
+    "build": "passed",
+    "build_net_growth_bytes": -36212736,
+    "native_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-native-02.json",
+    "initial_public_native": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-04-run.json",
+    "initial_candidate_archives": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-04-archives.json",
+    "prior_full_check_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-validation-02.json",
+    "prior_full_check_net_growth_bytes": 295817216,
+    "native_groups": {
+      "native-dark-06": 8,
+      "native-light-02": 8,
+      "transport-final-02": 8,
+      "pointer-regression-dark-01": 17,
+      "keyboard-regression-dark-01": 2,
+      "pointer-regression-light-01": 17,
+      "keyboard-regression-light-01": 2
+    },
+    "native_groups_total": 62,
+    "native_inputs_unchanged": true,
+    "native_binaries_unchanged": true,
+    "native_processes_terminal": true,
+    "binaries": {
+      "portal": {
+        "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+        "sha256": "c4024dd53b9f5d20fd09b70f201c06e51aeb26dd8daef11d66b59bfb64eb714f",
+        "bytes": 182655464
+      },
+      "harness": {
+        "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+        "sha256": "b8f38695ffeb1e18c6959911c13eadbec92b170b45ab04c0dedda8f1eda8be5c",
+        "bytes": 114037176
+      },
+      "frontend": {
+        "path": "/tmp/canopa-xdp-session-canonical-13/frozen/xdg-desktop-portal",
+        "sha256": "cb35d770e84578dec58682cc2deeb0b8e2a93b1458e2371b3c0ce2036bf2a4d7",
+        "bytes": 4659800
+      },
+      "niri": {
+        "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed/niri",
+        "sha256": "925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed",
+        "bytes": 157383856
+      }
+    },
+    "final_candidate_archives": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-06-archives.json",
+    "native_net_growth_bytes": 36630528
+  },
+  "remaining": [
+    "broader public transfer/backpressure and frontend/helper/compositor failure matrix",
+    "broader InputCapture phase/escape/frontend/helper/compositor failure acceptance and companion distribution",
+    "broad clipboard compatibility including regular-file Wayland receive target assessment",
+    "normal registration, companion packaging/distribution, real Flatpak acceptance and remaining portal interfaces"
+  ],
+  "transport_checkpoint": {
+    "status": "scoped Rust clipboard transport verified; portal API and consent unimplemented",
+    "at": "2026-11-01T04:29:01.314599+00:00",
+    "checks_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/final-checks-03.json",
+    "source_count": 1139,
+    "sources_unchanged": true,
+    "portal_library": {
+      "passed": 170,
+      "ignored": 6
+    },
+    "portal_integration": {
+      "passed": 43,
+      "ignored": 2
+    },
+    "format": "passed",
+    "clippy": "passed",
+    "native": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/native-03/summary.json",
+      "groups": 8,
+      "binary_bytes_each_direction": 2097152,
+      "harness": {
+        "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+        "sha256": "00c624e6250911ad5d8f24e69015eabf0c277c9c66251af9e78370b932d865a6",
+        "bytes": 112834464
+      },
+      "niri_sha256": "925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed",
+      "inputs_unchanged": true,
+      "processes_terminal": true
+    },
+    "initial_native_failure": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/native-01/summary.json",
+      "cause": "Fixture did not drain wl-paste stdout concurrently with producing two-megabyte payload; backpressure reached the intended 30-second idle limit. Concurrent drain fixes the fixture.",
+      "corrected_pair_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/native-02/summary.json",
+      "transport_implementation_unchanged": true,
+      "changed_sources": [
+        "crates/canopa-portal/src/clipboard_transport/tests.rs"
+      ]
+    },
+    "initial_check_failures": [
+      {
+        "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/final-checks-01.json",
+        "cause": "Rust module declaration ordering required by formatter"
+      },
+      {
+        "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/final-checks-02.json",
+        "cause": "Clippy requested an equivalent simpler descriptor predicate"
+      }
+    ],
+    "storage": {
+      "final_check_net_growth_bytes": 1103364096,
+      "free_bytes": 17809960960,
+      "prior_validated_binaries_archive": "/home/kevinard/projects/canopa/target/portal-pointer-lifecycle-14/archive-production-01.json",
+      "no_per_native_run_binary_copies": true,
+      "cargo_caches_preserved": true
+    },
+    "advertised": false,
+    "installed": false,
+    "remaining": [
+      "exact Clipboard v1 D-Bus methods and owner/session/phase authorization",
+      "RemoteDesktop Start request/independent Iced clipboard consent/result and ongoing controls",
+      "directed and correctly ordered clipboard signals on actual public frontend",
+      "InputCapture real compositor capture and active-phase integration",
+      "broad clipboard compatibility including assessment of regular-file Wayland receive targets",
+      "normal routing/distribution/real Flatpak acceptance and remaining portal interfaces"
+    ],
+    "final_candidate_archive": {
+      "status": "lossless archive verified",
+      "raw": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+      "archive": "/home/kevinard/projects/canopa/target/portal-clipboard-15/binary-archives/harness-00c624e62509.gz",
+      "sha256": "00c624e6250911ad5d8f24e69015eabf0c277c9c66251af9e78370b932d865a6",
+      "original_bytes": 112834464,
+      "compressed_bytes": 30831231,
+      "raw_root_build_output_retained": true
+    },
+    "historical_source_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-15/historical-source-01.json",
+    "intermediate_binary_retention": "Native01/native02 test executables were superseded at the same Cargo output path before archival. Their verified execution hashes, exact relevant source versions, manifests and logs remain; no claim of retained intermediate ELFs. Final candidate is separately archived losslessly."
+  },
+  "session_validation_history": [
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/checks-02.json",
+      "cause": "Wire observer retained FD-bearing messages and held the writer open; dropping it before FD operations fixes the test without production changes.",
+      "corrected_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/checks-03.json"
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-01-run.json",
+      "cause": "Fixture assumed Tab/Space button focus. Explicit labeled Alt+C approval and accurate compact Clipboard-only UI were added."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-02-run.json",
+      "cause": "Independent wl-copy announces duplicate MIME aliases; readiness must test presence rather than require one occurrence.",
+      "probe": "/home/kevinard/projects/canopa/target/portal-clipboard-16/source-probe-01"
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/native-dark-03-run.json",
+      "cause": "Fixture treated intentionally cancelled wl-copy exit zero as unexpected; explicit expected process retirement corrects this."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-validation-01.json",
+      "cause": "Clippy requested an equivalent collapsed conditional."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-native-01.json",
+      "cause": "The native revocation test used a running-snapshot helper that rejects the expected stopped snapshot. Only the test module changed to wait directly for ready=false; the production code is unchanged.",
+      "corrected_receipt": "/home/kevinard/projects/canopa/target/portal-clipboard-16/final-native-02.json"
+    }
+  ],
+  "workspace_acceptance": {
+    "status": "red on ten Files integration tests",
+    "receipt": "/home/kevinard/projects/canopa/target/portal-pointer-lifecycle-14/workspace-01.json",
+    "note": "Portal-only checks do not establish full workspace or production acceptance."
+  },
+  "storage": {
+    "free_bytes": 16856219648,
+    "no_per_native_run_binary_copies": true,
+    "cargo_caches_preserved": true,
+    "final_archive_compressed_bytes": 74830668
+  },
+  "input_capture_evidence": ".scratch/xdg-portals/input-capture/clipboard-evidence.json",
+  "checkpoint_notice": "Existing session/transport/storage fields retain phase-16 evidence. The linked phase-20 ledger records the current candidate and wider input/media regressions.",
+  "latest_portal": {
+    "library_passed": 176,
+    "library_ignored": 7,
+    "integration_passed": 53,
+    "integration_ignored": 2,
+    "fmt": "passed",
+    "clippy": "passed",
+    "main_build": "passed"
+  },
+  "latest_native_groups": 146,
+  "frontend_phase_evidence": ".scratch/xdg-portals/input-capture/frontend-phase-evidence.json",
+  "latest_private_bus_groups": 45
+}

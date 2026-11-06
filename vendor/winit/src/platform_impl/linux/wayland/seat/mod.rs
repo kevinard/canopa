@@ -63,6 +63,12 @@ impl WinitSeatState {
     pub fn new() -> Self {
         Default::default()
     }
+
+    pub(crate) fn clear_shortcut_compose(&mut self) {
+        if let Some(keyboard) = self.keyboard_state.as_mut() {
+            keyboard.xkb_context.clear_shortcut_compose();
+        }
+    }
 }
 
 impl SeatHandler for WinitState {
@@ -93,6 +99,7 @@ impl SeatHandler for WinitState {
                 let keyboard = seat.get_keyboard(queue_handle, KeyboardData::new(seat.clone()));
                 seat_state.keyboard_state =
                     Some(KeyboardState::new(keyboard, self.loop_handle.clone()));
+                if let Some(hub)=&self.keyboard_shortcuts{hub.keyboard(&seat.id(),true);}
             },
             SeatCapability::Pointer if seat_state.pointer.is_none() => {
                 let surface = self.compositor_state.create_surface(queue_handle);
@@ -192,6 +199,7 @@ impl SeatHandler for WinitState {
                 }
             },
             SeatCapability::Keyboard => {
+                if let Some(hub)=&self.keyboard_shortcuts{hub.keyboard(&seat.id(),false);}
                 seat_state.keyboard_state = None;
                 self.on_keyboard_destroy(&seat.id());
             },
@@ -205,6 +213,7 @@ impl SeatHandler for WinitState {
         _queue_handle: &QueueHandle<Self>,
         seat: WlSeat,
     ) {
+        if let Some(hub)=&self.keyboard_shortcuts{hub.add_seat(seat.clone());}
         if let Some(hub) = &self.drag_drop { hub.add_seat(seat.clone()); }
         self.seats.insert(seat.id(), WinitSeatState::new());
     }
@@ -215,6 +224,7 @@ impl SeatHandler for WinitState {
         _queue_handle: &QueueHandle<Self>,
         seat: WlSeat,
     ) {
+        if let Some(hub)=&self.keyboard_shortcuts{hub.remove_seat(&seat.id());}
         if let Some(hub) = &self.drag_drop { hub.remove_seat(&seat.id()); }
         let _ = self.seats.remove(&seat.id());
         self.on_keyboard_destroy(&seat.id());

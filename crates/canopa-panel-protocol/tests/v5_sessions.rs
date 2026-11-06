@@ -132,6 +132,7 @@ fn validation_checks_control_kind_disabled_entries_and_custom_permission() {
 fn rich_actions_retain_opaque_values_and_require_the_current_revision() {
     let mut content = RichContent::new("Notifications");
     content.actions.push(v4::PanelAction {
+        request_activation_token: false,
         key: "opaque".into(),
         label: "Clear".into(),
         value: Some("domain-revision".into()),
@@ -166,6 +167,7 @@ fn rich_actions_retain_opaque_values_and_require_the_current_revision() {
 fn rich_membership_checks_section_options_and_item_actions_including_links() {
     let mut content = RichContent::new("Center");
     let action = |key: &str| v4::PanelAction {
+        request_activation_token: false,
         key: key.into(),
         label: key.into(),
         value: Some("domain-token".into()),
@@ -260,6 +262,7 @@ fn advertised_actions_must_fit_the_event_limit_including_json_escapes() {
         {
             let mut content = RichContent::new("Actions");
             content.actions.push(v4::PanelAction {
+                request_activation_token: false,
                 key: "run".into(),
                 label: "Run".into(),
                 value: Some(large),
@@ -534,4 +537,127 @@ fn rich_sliders_validate_ranges_values_and_revisions_without_changing_legacy_ite
     legacy.sections[0].items[0].slider = None;
     let wire = serde_json::to_value(&legacy).unwrap();
     assert!(wire["sections"][0]["items"][0].get("slider").is_none());
+}
+
+#[test]
+fn activation_is_opted_in_revision_bound_bounded_and_absent_from_legacy_events() {
+    let content = |activation| {
+        Content::Rich(v4::PanelContent {
+            title: "Actions".into(),
+            sections: vec![],
+            actions: vec![v4::PanelAction {
+                request_activation_token: activation,
+                ..v4::PanelAction::new("open", "Open")
+            }],
+            error: None,
+        })
+    };
+    let event = |revision| {
+        HostMessage::event(
+            revision,
+            Interaction::Rich(v4::InteractionEvent::Invoke {
+                target: v4::InteractionTarget::Content,
+                action_key: "open".into(),
+                value: None,
+            }),
+        )
+    };
+    let mut session = Session::default();
+    let old = session.replace(content(false), Update::Replace).unwrap();
+    let plain = event(old.revision);
+    assert!(!session.requests_activation(&plain));
+    assert!(session.accepts(&plain));
+    assert!(!session.accepts(&plain.clone().with_activation_token(Some("token".into()))));
+    let expected = b"{\"type\":\"event\",\"protocol_version\":5,\"revision\":1,\"interaction\":{\"kind\":\"rich\",\"event\":{\"type\":\"invoke\",\"target\":{\"target\":\"content\"},\"action_key\":\"open\",\"value\":null}}}\n";
+    assert_eq!(plain.encode().unwrap(), expected);
+    assert_eq!(
+        serde_json::to_string(&v4::PanelAction::new("open", "Open")).unwrap(),
+        r#"{"key":"open","label":"Open","value":null}"#
+    );
+    let current = session.replace(content(true), Update::Replace).unwrap();
+    assert!(!session.requests_activation(&plain));
+    let plain = event(current.revision);
+    assert!(session.requests_activation(&plain));
+    assert!(session.accepts(&plain));
+    assert!(session.accepts(&plain.clone().with_activation_token(Some("fresh".into()))));
+    for token in [
+        String::new(),
+        "nul\0token".into(),
+        "x".repeat(MAX_ACTIVATION_TOKEN_BYTES + 1),
+    ] {
+        assert!(!session.accepts(&plain.clone().with_activation_token(Some(token))));
+    }
+    let mut old_host = Session::default();
+    old_host.observe(current).unwrap();
+    assert!(
+        old_host.accepts(&plain),
+        "a missing context remains a valid fallback"
+    );
+}
+
+#[test]
+fn opted_in_actions_reserve_the_complete_escaped_token_envelope() {
+    let mut content = v4::PanelContent {
+        title: "Actions".into(),
+        sections: vec![],
+        actions: vec![v4::PanelAction::new("open", "Open")],
+        error: None,
+    };
+    content.actions[0].value = Some("x".repeat(46 * 1024));
+    assert!(Content::Rich(content.clone()).validate().is_ok());
+    content.actions[0].request_activation_token = true;
+    assert_eq!(
+        Content::Rich(content).validate(),
+        Err(ProtocolError::FrameTooLarge)
+    );
+}
+
+#[test]
+fn activation_opt_in_keeps_old_strict_host_events_and_permissive_actions_compatible() {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct OldEvent {
+        #[serde(rename = "type")]
+        kind: String,
+        protocol_version: u16,
+        revision: u64,
+        interaction: Interaction,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldAction {
+        key: String,
+        label: String,
+        value: Option<String>,
+    }
+    let action = v4::PanelAction::new("open", "Open").with_activation_token();
+    let old: OldAction = serde_json::from_value(serde_json::to_value(&action).unwrap()).unwrap();
+    assert_eq!(
+        (old.key.as_str(), old.label.as_str(), old.value),
+        ("open", "Open", None)
+    );
+    let absent: v4::PanelAction =
+        serde_json::from_str(r#"{"key":"open","label":"Open","value":null}"#).unwrap();
+    assert!(!absent.request_activation_token);
+    let message = HostMessage::event(
+        9,
+        Interaction::Rich(v4::InteractionEvent::Invoke {
+            target: v4::InteractionTarget::Content,
+            action_key: "open".into(),
+            value: None,
+        }),
+    );
+    let old: OldEvent = serde_json::from_slice(&message.encode().unwrap()).unwrap();
+    assert_eq!(
+        (old.kind.as_str(), old.protocol_version, old.revision),
+        ("event", 5, 9)
+    );
+    assert!(matches!(old.interaction, Interaction::Rich(_)));
+    let new = message
+        .with_activation_token(Some("fresh".into()))
+        .encode()
+        .unwrap();
+    assert!(
+        serde_json::from_slice::<OldEvent>(&new).is_err(),
+        "context must never be sent unless the provider opts in"
+    );
 }

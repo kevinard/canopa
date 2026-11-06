@@ -1,0 +1,119 @@
+{
+  "status": "scoped-real-flatpak-prepared-token-lifetime-passed",
+  "scope": "Actual Flatpak original-caller ownership, proactive unused-approval retirement, deterministic one-use overlap and live-app frontend/backend restart. Unused approvals only; publication crash, device, standard-runtime and deployment gates remain separate.",
+  "goal_active": true,
+  "print_opt_in": true,
+  "qt_automatic_deferred": true,
+  "cases": [
+    {
+      "run": "token-dark-01",
+      "groups": 9,
+      "status": "passed",
+      "profile": "ownership",
+      "probe_source_sha256": "783acf6dda374831d99e51b37924ea8a5f94aff086d2fd4a5b06549b35fbbc28"
+    },
+    {
+      "run": "token-light-02",
+      "groups": 9,
+      "status": "passed",
+      "profile": "ownership",
+      "probe_source_sha256": "783acf6dda374831d99e51b37924ea8a5f94aff086d2fd4a5b06549b35fbbc28"
+    },
+    {
+      "run": "restart-dark-03",
+      "groups": 3,
+      "status": "passed",
+      "profile": "restarts",
+      "probe_source_sha256": "56f288e5167020584307622152975e4524bc693503e14a8b671697eb5cecfb1e"
+    },
+    {
+      "run": "restart-light-04",
+      "groups": 3,
+      "status": "passed",
+      "profile": "restarts",
+      "probe_source_sha256": "56f288e5167020584307622152975e4524bc693503e14a8b671697eb5cecfb1e"
+    }
+  ],
+  "native_groups": 24,
+  "verified_pdf_outputs": 6,
+  "verified_pdf_pages": 24,
+  "recorded_native_identities_absent": 141,
+  "private_directories_removed": 4,
+  "runtime_inventory": "target/portal-print-75/xkb-deployment-01.json",
+  "source_only_replays": {
+    ".scratch/xdg-portals/print/flatpak-token-replay/deploy-clients.py": "3cb4b908a382cc40d9845ad1f637b7fd0d2703b7be60e9e7c952200232431dd2",
+    ".scratch/xdg-portals/print/flatpak-token-replay/ownership-native.py": "783acf6dda374831d99e51b37924ea8a5f94aff086d2fd4a5b06549b35fbbc28",
+    ".scratch/xdg-portals/print/flatpak-token-replay/native-tokens.py": "56f288e5167020584307622152975e4524bc693503e14a8b671697eb5cecfb1e",
+    ".scratch/xdg-portals/print/flatpak-token-replay/check-pdf.py": "4040b000f5bdb244aae7bda99321652c0e0409f138ec1ddcdcc794652da95aa1",
+    ".scratch/xdg-portals/print/flatpak-token-replay/host-audit.py": "f6b8eb76c2c82f2434bc19c4fa64f9bf309b709406092f90a4261014828714ff",
+    ".scratch/xdg-portals/print/flatpak-token-replay/token-client-before-stream.c": "803979ec1e3b76cae8caa9c3fe8e7825e0e17be0d2b8c09701ec9453f4c1f44a",
+    ".scratch/xdg-portals/print/flatpak-token-replay/source-guard.py": "12fc55d6d8e499eecb851f077b95118a63e1eb8bd730dcd188bd26b02f4bf1fb"
+  },
+  "receipts": {
+    "target/portal-print-76/unused-tool-data-retired-01.json": {
+      "sha256": "40cfa3fbc2e81dee891f3a4db8316c864c79b5de579fc49956d259e3f2271833",
+      "status": "passed"
+    },
+    "target/portal-print-76/client-build-01.json": {
+      "sha256": "eea8fa65bb75b8d83aa39087711b513d7e47a9acf6b6c491333f8e0f08db31cb",
+      "status": "passed"
+    },
+    "target/portal-print-76/client-build-02.json": {
+      "sha256": "7d0bce24b931a524d855fddad7f1f45ca57c539a8de56046199e33e82a0f02bc",
+      "status": "passed"
+    },
+    "target/portal-print-76/prototype-archive-01.json": {
+      "sha256": "b204733f4025c53a53f4131ff553455556906ad1e2f1db318fc0acbd641bfc59",
+      "status": "passed"
+    },
+    "target/portal-print-76/deployment-01.json": {
+      "sha256": "7f65fd2b9cf2bf7086fb6a785825a0e98c073fcebc4c539821f9baf6b6c2eb8f",
+      "status": "passed"
+    },
+    "target/portal-print-76/token-dark-01/summary.json": {
+      "sha256": "b86deac3dbfe7979cf5c7b1640f6a7fd6a2c77b13a33b991f2983b7ab000bab8",
+      "status": "passed"
+    },
+    "target/portal-print-76/token-light-02/summary.json": {
+      "sha256": "d7df88208c0b877efcd9bbbd9d9463f39f2d3a4e4d39705bcc3cf2303352c878",
+      "status": "passed"
+    },
+    "target/portal-print-76/restart-dark-03/summary.json": {
+      "sha256": "81de013c34d03671a8115ba955eb5eabcf7f979aaaaf0d4bf68c7ed4eabe81c4",
+      "status": "passed"
+    },
+    "target/portal-print-76/restart-light-04/summary.json": {
+      "sha256": "2726b23ef6ad1b44f934af41a5b024cf3e7f85291a60f98b231d67b456933e83",
+      "status": "passed"
+    },
+    "target/portal-print-76/pdf-content-01.json": {
+      "sha256": "488668210a341ed632efa3340a7889755ddfcd92031483f477168d0178f7e262",
+      "status": "passed"
+    },
+    "target/portal-print-76/host-audit-01.json": {
+      "sha256": "1f44903b1feafdb925e8fac2c92257ba3a000c248e7a431e1b2ff1116ca9fe3b",
+      "status": "passed"
+    }
+  },
+  "root_changes": [
+    "scripts/desktop-fixture/print-flatpak-tokens.c",
+    "scripts/desktop-fixture/README.md",
+    "docs/print-portal.md"
+  ],
+  "rust_sources_unchanged": true,
+  "workspace_rerun": false,
+  "full_workspace_green": false,
+  "retained_workspace_result": "target/portal-print-73/workspace-final-results-02.json",
+  "fixture_cap_bytes": 134217728,
+  "free_floor_bytes": 3221225472,
+  "no_system_installation_or_routing_changes": true,
+  "no_physical_printing": true,
+  "no_native_acceptance_failures_this_phase": true,
+  "next": "Wider Print integration/failure/resource gates using the same bounded store; do not repeat completed token/restart profiles merely on continuation",
+  "validation_note": "The first source-guard attempt compared the crate/vendor discovery against all Rust inputs, including the unchanged scripts/desktop-fixture/print-supervisor-client.rs. It stopped before writing a guard; the discovery comparison now uses matching crate/vendor scope. No native acceptance or runtime failure.",
+  "source_guard": {
+    "path": "target/portal-print-76/source-guard-01.json",
+    "sha256": "370b9f7de12140ffa185aef832c39bb872806bd743f08ac38e343687fe6ff749"
+  },
+  "shared_fixture_allocated_bytes_after_guard": 134025216
+}

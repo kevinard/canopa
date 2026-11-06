@@ -29,7 +29,7 @@ fn standard_requests_use_the_owned_headless_runtime_and_respect_other_owners() {
         .args([
             "--ignored",
             "--exact",
-            "file_manager_bus_helper",
+            "cases::file_manager::file_manager_bus_helper",
             "--test-threads=1",
         ])
         .env("CANOPA_FILE_MANAGER_FIXTURE", root.path())

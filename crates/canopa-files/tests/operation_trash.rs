@@ -254,7 +254,7 @@ fn a_refused_restore_into_a_leased_container_does_not_block_later_operations() {
     command.args([
         "--ignored",
         "--exact",
-        "leased_restore_child",
+        "cases::operation_trash::leased_restore_child",
         "--nocapture",
     ]);
     run_private_child(command);
@@ -453,7 +453,12 @@ fn run_fault_helper(mode: &str, action: &str) {
     );
     let mut command = std::process::Command::new(std::env::current_exe().unwrap());
     command
-        .args(["--ignored", "--exact", "trash_fault_helper", "--nocapture"])
+        .args([
+            "--ignored",
+            "--exact",
+            "cases::operation_trash::trash_fault_helper",
+            "--nocapture",
+        ])
         .env("LD_PRELOAD", library)
         .env("CANOPA_FILES_TRASH_FAULT_ROOT", root.path())
         .env("CANOPA_FILES_TRASH_FAULT_MODE", mode)

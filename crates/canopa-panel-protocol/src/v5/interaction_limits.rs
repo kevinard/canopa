@@ -14,12 +14,26 @@ fn form(event: FormEvent) -> Result<(), ProtocolError> {
     check(Interaction::Form(event))
 }
 
-fn rich(target: InteractionTarget, key: &str, value: Option<&str>) -> Result<(), ProtocolError> {
-    check(Interaction::Rich(InteractionEvent::Invoke {
-        target,
-        action_key: key.into(),
-        value: value.map(str::to_owned),
-    }))
+fn rich(
+    target: InteractionTarget,
+    key: &str,
+    value: Option<&str>,
+    activation: bool,
+) -> Result<(), ProtocolError> {
+    let message = HostMessage::event(
+        u64::MAX,
+        Interaction::Rich(InteractionEvent::Invoke {
+            target,
+            action_key: key.into(),
+            value: value.map(str::to_owned),
+        }),
+    );
+    // Control bytes need six JSON bytes each. Reserving the complete escaped
+    // token prevents an advertised action from becoming unsendable at click time.
+    let message = message.with_activation_token(
+        activation.then(|| "\u{1}".repeat(super::MAX_ACTIVATION_TOKEN_BYTES)),
+    );
+    message.encode().map(|_| ())
 }
 
 pub(super) fn validate(content: &Content) -> Result<(), ProtocolError> {
@@ -68,6 +82,7 @@ pub(super) fn validate(content: &Content) -> Result<(), ProtocolError> {
                     InteractionTarget::Content,
                     &action.key,
                     action.value.as_deref(),
+                    action.request_activation_token,
                 )?;
             }
             for section in &content.sections {
@@ -79,6 +94,7 @@ pub(super) fn validate(content: &Content) -> Result<(), ProtocolError> {
                             },
                             &control.key,
                             Some(&option.value),
+                            false,
                         )?;
                     }
                 }
@@ -96,10 +112,15 @@ pub(super) fn validate(content: &Content) -> Result<(), ProtocolError> {
                                 })
                             }))
                     {
-                        rich(target.clone(), &action.key, action.value.as_deref())?;
+                        rich(
+                            target.clone(),
+                            &action.key,
+                            action.value.as_deref(),
+                            action.request_activation_token,
+                        )?;
                     }
                     if let Some(slider) = &item.slider {
-                        rich(target, &slider.key, Some(&slider.max.to_string()))?;
+                        rich(target, &slider.key, Some(&slider.max.to_string()), false)?;
                     }
                 }
             }

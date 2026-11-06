@@ -1,0 +1,285 @@
+{
+  "status": "passed",
+  "scope": "bounded caller/shutdown waits with retained direct-worker retirement, storage/admission and deferred settlement",
+  "full_goal_complete": false,
+  "packaged_interfaces": 11,
+  "experimental_interfaces": 6,
+  "print_normally_registered": false,
+  "receipts": {
+    "worker-01.json": "c51cce4219c0cb117b4604bd03d62894f8376b086ccafdbe75f698ab37dc1571",
+    "portal-regressions-01.json": "899920b17df35ba4493301ad006bb1aedade25196a384ffc298fc6193501fd21",
+    "filesystem-01/summary.json": "e91d6fe686280b3418d51ed17f992c68ac16874fa64b964974af9320fb33bd6e",
+    "retirement-01/summary.json": "3f9d6ca0dadb0327d0ec71d5180e5b6076c4019c4aa36c7e611be45858f50d6a",
+    "native-01/summary.json": "a668d4b2180b7f52c1ebecfa7faa69d142da9ddff43c99d6b69eb14e5d907e08",
+    "public-files-dark-01/summary.json": "866ab35ec190b39cb24d91d3ec33a2a65d978ac7315818f7f8e01eced0e74a2d",
+    "public-files-light-01/summary.json": "bfb88b7fa2a190b0dbbd156ec41d6d28c863cdfe2b7537ca7059a31e479e0ea0",
+    "public-printer-dark-01/summary.json": "4f51cb8c0dd40e74a21b095290b252f678ab9d4b7a79bd3a9e3a095a05c2c73a",
+    "public-printer-light-01/summary.json": "b53c1565f1b881c0692f6f476d041bb0c5d9f97d95b1d2d580f855f5a810e643",
+    "startup-linkage.txt": "20d6506be6482f782abbf38647639377caf04ab2915b072956612c53601b75a2"
+  },
+  "guarded_inputs_unchanged": true,
+  "pins": {
+    "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa": "115c3cf54a0f196dfaeb32522a43d6277fb50eae59c73311208ea7a715c2f540",
+    "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-6c03c7fd0a0bee32": "9a191f4c678c3aa2890c11ac19425bf32339c610a59de53aa82d796b8b6f4ded"
+  },
+  "tests": {
+    "print": {
+      "passed": 99,
+      "ignored": 9
+    },
+    "lockdown": {
+      "passed": 12,
+      "ignored": 0
+    },
+    "portal_library": {
+      "passed": 317,
+      "ignored": 17
+    },
+    "portal_integration": {
+      "passed": 55,
+      "ignored": 2
+    }
+  },
+  "native": {
+    "retirement_groups": 3,
+    "filesystem_groups": 6,
+    "renderer_groups": 24,
+    "public_groups": 36,
+    "public_printer_deliveries": 22,
+    "all_observed_terminal": true,
+    "processes": 312
+  },
+  "stall_outcomes": [
+    {
+      "blocked": {
+        "operation": "prepare_file",
+        "pid": 2119440
+      },
+      "mode": "setup-cancel",
+      "seconds_after_block": 10.028593025,
+      "status": "passed"
+    },
+    {
+      "blocked": {
+        "operation": "prepare_file",
+        "pid": 2119441
+      },
+      "mode": "setup-drop",
+      "seconds_after_block": 10.019989002,
+      "status": "passed"
+    },
+    {
+      "blocked": {
+        "operation": "verify_file",
+        "pid": 2119448
+      },
+      "mode": "verify-cancel",
+      "seconds_after_block": 10.035592351,
+      "status": "passed"
+    },
+    {
+      "blocked": {
+        "operation": "settle_file",
+        "pid": 2119472
+      },
+      "disposition": {
+        "published": true,
+        "recovery": [
+          47,
+          116,
+          109,
+          112,
+          47,
+          46,
+          116,
+          109,
+          112,
+          97,
+          122,
+          102,
+          116,
+          109,
+          117,
+          47,
+          46,
+          99,
+          97,
+          110,
+          111,
+          112,
+          97,
+          45,
+          112,
+          114,
+          105,
+          110,
+          116,
+          45,
+          101,
+          48,
+          98,
+          53,
+          49,
+          98,
+          48,
+          101,
+          50,
+          56,
+          98,
+          54,
+          55,
+          102,
+          98,
+          56,
+          98,
+          52,
+          49,
+          52,
+          97,
+          48,
+          53,
+          51,
+          51,
+          53,
+          98,
+          52,
+          54,
+          48,
+          49,
+          98
+        ],
+        "uncertain": false
+      },
+      "mode": "cleanup-accepted",
+      "seconds_after_block": 69.846040085,
+      "staged_and_original_retained": true,
+      "status": "passed"
+    },
+    {
+      "blocked": {
+        "operation": "settle_file",
+        "pid": 2119469
+      },
+      "error": "Print file output could not be confirmed; do not retry automatically. Recovery may be retained at \"/tmp/.tmpLE4K5G/.canopa-print-26fe09008e48e88f6bca63ef75909ca2\"",
+      "mode": "cleanup-lost-receipt",
+      "seconds_after_block": 69.732954561,
+      "staged_and_original_retained": true,
+      "status": "passed"
+    }
+  ],
+  "retirement_outcomes": [
+    {
+      "mode": "snapshot",
+      "reply_seconds": 4.432519589,
+      "scope": "real worker with delayed exit confirmation; OS child can already be terminal",
+      "shutdown_seconds": 15.003733613,
+      "status": "passed",
+      "storage_and_admission_held_until_confirmation": true
+    },
+    {
+      "disposition": {
+        "published": true,
+        "recovery": [
+          47,
+          116,
+          109,
+          112,
+          47,
+          46,
+          116,
+          109,
+          112,
+          106,
+          122,
+          99,
+          69,
+          119,
+          110,
+          47,
+          46,
+          99,
+          97,
+          110,
+          111,
+          112,
+          97,
+          45,
+          112,
+          114,
+          105,
+          110,
+          116,
+          45,
+          54,
+          49,
+          56,
+          49,
+          98,
+          97,
+          56,
+          48,
+          101,
+          52,
+          54,
+          54,
+          101,
+          49,
+          52,
+          101,
+          53,
+          57,
+          52,
+          54,
+          100,
+          54,
+          55,
+          101,
+          56,
+          50,
+          57,
+          50,
+          97,
+          98,
+          99,
+          54
+        ],
+        "uncertain": false
+      },
+      "eventual_cleanup_after_shutdown": true,
+      "mode": "publication-accepted",
+      "no_settlement_before_confirmation": true,
+      "reply_seconds": 4.6245977719999996,
+      "scope": "real worker with delayed exit confirmation; OS child can already be terminal",
+      "shutdown_seconds": 15.005364203,
+      "status": "passed"
+    },
+    {
+      "error": "Print file output is unconfirmed while its worker retires; do not retry automatically. Recovery may be retained at \"/tmp/.tmpDh8sIp/.canopa-print-96413a2e6236f05ba90f6b96c7f3380e\"",
+      "eventual_cleanup_after_shutdown": true,
+      "mode": "publication-lost-receipt",
+      "no_settlement_before_confirmation": true,
+      "reply_seconds": 2.39574614,
+      "scope": "real worker with delayed exit confirmation; OS child can already be terminal",
+      "shutdown_seconds": 15.002417977,
+      "status": "passed"
+    }
+  ],
+  "storage": {
+    "baseline_free_bytes": 7325265920,
+    "free_bytes": 7152566272,
+    "net_growth_bytes": 172699648,
+    "minimum_free_bytes": 6000000000,
+    "maximum_phase_growth_bytes": 3000000000
+  },
+  "historical_failures": [],
+  "limitations": [
+    "Confirmation barrier is cfg(test), not an actual Linux D wait; physical/NFS and converter-descendant/cross-restart accounting remain distinct",
+    "Startup recovery discovery/index/UI and abrupt backend/power-loss policy remain; hints/journals never authorize replay",
+    "Physical/NFS/real Flatpak and broader layout/device/toolkit/prepared PS/SVG acceptance remain",
+    "Ambiguous CUPS Create-Job/Send-Document/backend death and runtime packaging remain",
+    "Print remains unregistered; six experimental interface/distribution and final workspace/release/routing gates remain",
+    "No new full workspace test gate; ten recorded Files integration failures remain unresolved"
+  ],
+  "acceptance_receipt": "/home/kevinard/projects/canopa/target/portal-print-39/acceptance-01.json",
+  "acceptance_sha256": "e6b34ad0aed359ecc540358071c7d5b6c215e1943adb23bdcc189ae847c0c549"
+}

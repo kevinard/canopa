@@ -1,0 +1,347 @@
+{
+  "status": "scoped-normal-service-new-file-and-unconfirmed-staging-crash-passed",
+  "scope": "Actual standard frontend and real Flatpak caller, normal backend/main SIGKILL at four new-file publication and three empty/partial/full-unconfirmed staging boundaries, normal discovery/startup Iced and fresh confirmed-body copies. Local process death only; power-loss/kernel/global resource and wider gates remain.",
+  "goal_active": true,
+  "print_opt_in": true,
+  "qt_automatic_deferred": true,
+  "cases": [
+    {
+      "run": "complete-new-dark-02",
+      "appearance": "dark",
+      "boundary": "complete",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "complete-new-light-06",
+      "appearance": "light",
+      "boundary": "complete",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "copied-new-dark-14",
+      "appearance": "dark",
+      "boundary": "copied",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "copied-new-light-20",
+      "appearance": "light",
+      "boundary": "copied",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "copied-replace-dark-13",
+      "appearance": "dark",
+      "boundary": "copied",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "copied-replace-light-19",
+      "appearance": "light",
+      "boundary": "copied",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "linked-new-dark-04",
+      "appearance": "dark",
+      "boundary": "linked",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "linked-new-light-08",
+      "appearance": "light",
+      "boundary": "linked",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "partial-new-dark-12",
+      "appearance": "dark",
+      "boundary": "partial",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "partial-new-light-18",
+      "appearance": "light",
+      "boundary": "partial",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "partial-replace-dark-01",
+      "appearance": "dark",
+      "boundary": "partial",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "partial-replace-light-17",
+      "appearance": "light",
+      "boundary": "partial",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "published-new-dark-05",
+      "appearance": "dark",
+      "boundary": "published",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "published-new-light-09",
+      "appearance": "light",
+      "boundary": "published",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "publishing-new-dark-03",
+      "appearance": "dark",
+      "boundary": "publishing",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "publishing-new-light-07",
+      "appearance": "light",
+      "boundary": "publishing",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "setup-new-dark-11",
+      "appearance": "dark",
+      "boundary": "setup",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "setup-new-light-16",
+      "appearance": "light",
+      "boundary": "setup",
+      "destination": "new",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "setup-replace-dark-10",
+      "appearance": "dark",
+      "boundary": "setup",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    },
+    {
+      "run": "setup-replace-light-15",
+      "appearance": "light",
+      "boundary": "setup",
+      "destination": "replace",
+      "groups": 3,
+      "probe_source_sha256": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+      "tracer_source_sha256": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292"
+    }
+  ],
+  "native_groups": 60,
+  "recovered_pdf_outputs": 8,
+  "verified_pdf_pages": 32,
+  "recorded_native_identities_absent": 570,
+  "private_directories_removed": 20,
+  "partial_bytes": 65536,
+  "partial_source_bytes": 80516,
+  "partial_source_sha256": "2029ca7b1c16806fd7869c49974baf4ae9c385d0b72fa193dfb2fb960146d91d",
+  "temporary_app_branch_removed": true,
+  "original_app_branches_unchanged": true,
+  "runtime_inventory": "target/portal-print-75/xkb-deployment-01.json",
+  "source_only_replays": {
+    ".scratch/xdg-portals/print/publication-stage-replay/prepare-partial.py": "565e6ad342a7e690be8e5e99fafa267bacc13b3d4b38d59f25336c9f500bef01",
+    ".scratch/xdg-portals/print/publication-stage-replay/finish-partial.py": "e86749069971d1e8339ac4b30e74ec24edca40bfc7b6b96f2c18582229746fdf",
+    ".scratch/xdg-portals/print/publication-stage-replay/trace-backend.py": "3b0882530a0cf4dfb275778affdaf467d94c64faf4af9f5488ef028c39709292",
+    ".scratch/xdg-portals/print/publication-stage-replay/native-crash.py": "70ca2839ac2dcb2ae5de4e737145afecf490ba93d8fe25e7f2a38ab98a9898a2",
+    ".scratch/xdg-portals/print/publication-stage-replay/run-matrix.py": "4c8a7ce0d478a63971727d51f019b3031fa4deca1dfeb96b91d1072867b6f96e",
+    ".scratch/xdg-portals/print/publication-stage-replay/check-artifacts.py": "1798690f6144f28321142bd7fcc3ac1be92c69e669e1e6e283302b13c4e2509c",
+    ".scratch/xdg-portals/print/publication-stage-replay/host-audit.py": "e75f36f75e8f273bbc44adbde8fd3ddf4ceeecad857fb1d0dd90549680ee5dd5",
+    ".scratch/xdg-portals/print/publication-stage-replay/retire-partial-branch.py": "e319df3357cbbdb9ae5b3fea223b5dcf279fe219cb7d3ed81d5ea68800bf46d7",
+    ".scratch/xdg-portals/print/publication-stage-replay/source-guard.py": "737231386264504013f2b7c8c1b47daa713ffa2efdf9e21a872d83631073895c"
+  },
+  "receipts": {
+    "target/portal-print-78/complete-new-dark-02/summary.json": {
+      "sha256": "b4e6a6390be31166a057f06b39cec2e410ed137b32eb7343876a2bb3972c2b03",
+      "status": "passed"
+    },
+    "target/portal-print-78/complete-new-light-06/summary.json": {
+      "sha256": "80a2085032f6c94e54e11afa75627014cc1512c540075eba1560e6fc18067113",
+      "status": "passed"
+    },
+    "target/portal-print-78/copied-new-dark-14/summary.json": {
+      "sha256": "61a735cddddbbeb348d1ef725390e8f1759230ad35680eff3ce9bb21db57d1d9",
+      "status": "passed"
+    },
+    "target/portal-print-78/copied-new-light-20/summary.json": {
+      "sha256": "a376b08810d561a588ee9928861878cffaefa1cbbb2f282cf0bf1a59476b2e74",
+      "status": "passed"
+    },
+    "target/portal-print-78/copied-replace-dark-13/summary.json": {
+      "sha256": "d946083f75f3d0d5e1c296f8f188a4b07d1be400975be69b60300e3e71ddb41d",
+      "status": "passed"
+    },
+    "target/portal-print-78/copied-replace-light-19/summary.json": {
+      "sha256": "89e991b9522aaca6aba1744e357d0a7a9829f271229d73d16b05f2b79be26920",
+      "status": "passed"
+    },
+    "target/portal-print-78/linked-new-dark-04/summary.json": {
+      "sha256": "4401bdcc54315ad574c627359e1560938d68bf1abf4b5f6274f3d2241cc51e62",
+      "status": "passed"
+    },
+    "target/portal-print-78/linked-new-light-08/summary.json": {
+      "sha256": "49175afec4da415cf8200dc7d9658955d536734e6ce9242d8f22160162800931",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-new-dark-12/summary.json": {
+      "sha256": "223647bceb9ff08c36b87c4a4c22a42f500ad1e07132842cecc3dd8b4ba43a7b",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-new-light-18/summary.json": {
+      "sha256": "249a8dcb254ba129e1480dc6fffe7141eb706977ed5023a38579336161c50539",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-replace-dark-01/summary.json": {
+      "sha256": "9fbfa999ff11b64e9cf1f492e361ae152a434d55c68a0f1139351d9c42c5ad0d",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-replace-light-17/summary.json": {
+      "sha256": "4aa2ad1dccdcab6e50c37c1e1747ffb2dda91cb1abc976e8b2319a2a510a513a",
+      "status": "passed"
+    },
+    "target/portal-print-78/published-new-dark-05/summary.json": {
+      "sha256": "9d81c4bd943532fd0bc187a6eef932d988c4d7b44d542696c9a8f1eaacce02a5",
+      "status": "passed"
+    },
+    "target/portal-print-78/published-new-light-09/summary.json": {
+      "sha256": "7737b13c170664f483909d74a98515edc318bd4a97faa86ded436739a9d17418",
+      "status": "passed"
+    },
+    "target/portal-print-78/publishing-new-dark-03/summary.json": {
+      "sha256": "595dfb7a0712d9fd4eb0a3e055bd06e600ae1524284575193ff4a9a6116d94bd",
+      "status": "passed"
+    },
+    "target/portal-print-78/publishing-new-light-07/summary.json": {
+      "sha256": "33f111172f0d3b654548b0d3a6be0e06c6ca858109801778a9bdf8fcbb09f8a0",
+      "status": "passed"
+    },
+    "target/portal-print-78/setup-new-dark-11/summary.json": {
+      "sha256": "cd0044860106bf8b992711644900cfdf939c9214d7bc5c6f398b766213f6833d",
+      "status": "passed"
+    },
+    "target/portal-print-78/setup-new-light-16/summary.json": {
+      "sha256": "5a104b331a2571f07664769da6c24780cda1573a1cc0d4fe61ab0b7da53fe834",
+      "status": "passed"
+    },
+    "target/portal-print-78/setup-replace-dark-10/summary.json": {
+      "sha256": "6bdd7a9b133f17203a661a0aa8b4f239b496c00f4c14389a2dee9e19179543c9",
+      "status": "passed"
+    },
+    "target/portal-print-78/setup-replace-light-15/summary.json": {
+      "sha256": "6dd7c6a2f724205cd2fba2e48aaa981daa782304c14704a839fa40e7526b3f6d",
+      "status": "passed"
+    },
+    "target/portal-print-78/unused-gir-retired-01.json": {
+      "sha256": "f1062ed0041b001019647413618113ae35f9d446e1c8a7e155702c421ed3be12",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-deployment-01.json": {
+      "sha256": "2d1cb8878568baf132cd198be5ab077a754d11dcf8fd58795b2587fc48b784be",
+      "status": "failed"
+    },
+    "target/portal-print-78/partial-deployment-02.json": {
+      "sha256": "c8692806d921fd6b81bf2062b03fb238cacd45378a4040d5193cd909ed469098",
+      "status": "passed"
+    },
+    "target/portal-print-78/matrix-01.json": {
+      "sha256": "5db94e273b83f5d26cc044f5c84e8ac682a60aa23a271211fcc72daa59bc1a38",
+      "status": "passed"
+    },
+    "target/portal-print-78/artifact-check-01.json": {
+      "sha256": "70b97dd2cfcfa5f725a01d51581a891f3531356f365016c78a925595363876ca",
+      "status": "passed"
+    },
+    "target/portal-print-78/host-audit-01.json": {
+      "sha256": "67858b14cae41bbd6e3040f89ea2087bc5ac7bcbfc14c56822a05c2fa0d16331",
+      "status": "passed"
+    },
+    "target/portal-print-78/partial-retired-01.json": {
+      "sha256": "599aafc0497443dd278dc698611102e942b0ac3cf12e00015350a9ec937acf5e",
+      "status": "passed"
+    }
+  },
+  "root_changes": [
+    "scripts/desktop-fixture/README.md",
+    "docs/print-portal.md"
+  ],
+  "rust_sources_unchanged": true,
+  "workspace_rerun": false,
+  "full_workspace_green": false,
+  "retained_workspace_result": "target/portal-print-73/workspace-final-results-02.json",
+  "shared_flatpak_fixture_cap_bytes": 134217728,
+  "publication_fixture_cap_bytes": 16777216,
+  "combined_phase74_to78_cap_bytes": 167772160,
+  "free_floor_bytes": 3221225472,
+  "no_system_installation_or_routing_changes": true,
+  "no_physical_printing": true,
+  "no_native_acceptance_failures_this_phase": true,
+  "retained_setup_failure": "partial-deployment-01 export stopped before commit because new stage was not finalized. Continuation02 finalized/exported/installed the same stage; no setup/source regeneration or native rerun.",
+  "representative_raster": "target/portal-print-76/verified-page-one.png",
+  "representative_raster_sha256": "83b85ce36e87396874488b088cac78a96abf9d2b14fe802465dadc71b67d9d74",
+  "next": "issues/11-print-cross-restart-resources.md: investigate actual pending exit and existing cross-process bounds before proposing a correction; then wider Print integration/device/deployment and six experimental gates",
+  "source_guard": {
+    "path": "target/portal-print-78/source-guard-01.json",
+    "sha256": "d4cc41bb965d5a0d10855bde4d037ec48e46eeefe5b2e95bac3e6cc8e9a9fb0e"
+  },
+  "shared_flatpak_fixture_allocated_bytes": 133685248,
+  "publication_fixture_allocated_bytes_after_guard": 4018176,
+  "combined_phase74_to78_unique_file_bytes_after_guard": 139735040
+}

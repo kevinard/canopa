@@ -88,6 +88,7 @@ def verify(binary, session, scheme, scale, transfers_only=False, actions_only=Fa
             "recovery-directories": "files-iced-recovery-directories.py",
             "interrupted": "files-iced-interrupted.py",
             "clipboard": "files-iced-clipboard.py",
+            "clipboard-lifetime": "files-iced-clipboard-lifetime.py",
             "source-leases": "files-iced-source-leases.py",
             "clipboard-source-copy": "files-iced-clipboard-sources.py",
             "clipboard-source-move": "files-iced-clipboard-sources.py",
@@ -1692,7 +1693,7 @@ def main():
     parser.add_argument("--scheme", choices=("dark", "light"), default="dark")
     parser.add_argument("--scale", type=float, default=1.0)
     workflow = parser.add_mutually_exclusive_group()
-    parser.add_argument("--iced-operations-case", choices=("full", "startup", "startup-interrupted", "window-navigation", "location-editing", "trash", "recovery", "recovery-directories", "interrupted", "clipboard", "source-leases", "clipboard-source-copy", "clipboard-source-move", "clipboard-capacity", "drops", "drop-exchange", "drop-choices", "drop-stale", "drop-devices", "transfers", "continuation", "dismissal", "transfer-completion", "claim-review", "prepared-rename", "focus", "focus-expired", "parents", "compact", "conflicts", "question-focus", "unavailable", "mixed-copy", "mixed-move", "move-conflicts"), default="full", help="Select name/Undo, clipboard, transfer inspection or conflict acceptance")
+    parser.add_argument("--iced-operations-case", choices=("full", "startup", "startup-interrupted", "window-navigation", "location-editing", "trash", "recovery", "recovery-directories", "interrupted", "clipboard", "clipboard-lifetime", "source-leases", "clipboard-source-copy", "clipboard-source-move", "clipboard-capacity", "drops", "drop-exchange", "drop-choices", "drop-stale", "drop-devices", "transfers", "continuation", "dismissal", "transfer-completion", "claim-review", "prepared-rename", "focus", "focus-expired", "parents", "compact", "conflicts", "question-focus", "unavailable", "mixed-copy", "mixed-move", "move-conflicts"), default="full", help="Select name/Undo, clipboard, transfer inspection or conflict acceptance")
     workflow.add_argument("--iced-operations-only", action="store_true", help="Verify floating Iced name prompts, actual mutations and shared Undo")
     parser.add_argument("--iced-preferences-case", choices=("full", "toolbar-fast", "locations"), default="full", help="Select full preferences, toolbar activation or actual XDG Locations navigation")
     workflow.add_argument("--iced-preferences-only", action="store_true", help="Verify transactional Iced global Views/Toolbar/Locations/Shortcuts editing and raw bookmarks")

@@ -40,6 +40,8 @@ pub use state::WindowState;
 
 /// The Wayland window.
 pub struct Window {
+    keyboard_shortcuts:Option<super::keyboard_shortcuts::Hub>,
+    foreign_parent: Option<super::foreign::Parent>,
     drag_drop: Option<super::drag_drop::Hub>,
     /// Reference to the underlying SCTK window.
     window: SctkWindow,
@@ -130,6 +132,9 @@ impl Window {
                 }
             }
         }
+
+        let foreign_parent = attributes.platform_specific.wayland_foreign_parent.as_ref()
+            .and_then(|(handle, modal)| state.foreign.import(handle, *modal, &window, &queue_handle));
 
         let mut window_state = WindowState::new(
             event_loop_window_target.connection.clone(),
@@ -242,6 +247,8 @@ impl Window {
         event_loop_awakener.ping();
 
         Ok(Self {
+            keyboard_shortcuts:state.keyboard_shortcuts.clone(),
+            foreign_parent,
             drag_drop: state.drag_drop.clone(),
             window,
             display,
@@ -266,6 +273,9 @@ impl Window {
     pub(crate) fn drag_drop(&self, changed: super::drag_drop::Changed) -> Option<super::drag_drop::DragDrop> {
         self.drag_drop.as_ref()?.endpoint(self.window_id, self.window.wl_surface().clone(),
             Arc::downgrade(&self.window_requests), self.event_loop_awakener.clone(), changed)
+    }
+    pub(crate) fn inhibit_keyboard_shortcuts(&self,changed:super::keyboard_shortcuts::Changed)->Option<super::keyboard_shortcuts::KeyboardShortcutsInhibitor> {
+        self.keyboard_shortcuts.as_ref()?.enable(self.window_id,self.window.wl_surface().clone(),self.event_loop_awakener.clone(),changed)
     }
 }
 
@@ -591,6 +601,21 @@ impl Window {
         Ok(serial)
     }
 
+    pub fn request_activation_token_for_input(&self) -> Result<AsyncRequestSerial, NotSupportedError> {
+        let global = self.xdg_activation.as_ref().ok_or_else(NotSupportedError::new)?;
+        let input = self.focus_input.as_ref().and_then(|input| input.capture())
+            .ok_or_else(NotSupportedError::new)?;
+        let serial = AsyncRequestSerial::get();
+        let token = global.get_activation_token(&self.queue_handle,
+            XdgActivationTokenData::Obtain((self.window_id, serial)));
+        if !input.configure_token(&token, self.surface()) {
+            token.destroy();
+            return Err(NotSupportedError::new());
+        }
+        token.commit();
+        Ok(serial)
+    }
+
     #[inline]
     pub fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
         self.window_state.lock().unwrap().set_cursor_grab(mode)
@@ -757,6 +782,8 @@ impl Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
+        if let Some(hub)=&self.keyboard_shortcuts{hub.retire(self.window_id,None);}
+        self.foreign_parent.take();
         self.window_requests.closed.store(true, Ordering::Release);
         if let Some(hub) = &self.drag_drop { hub.close_window(self.window_id); }
         self.event_loop_awakener.ping();

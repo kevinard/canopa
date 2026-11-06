@@ -64,11 +64,66 @@ impl Session {
             HostMessage::Event {
                 revision,
                 interaction,
+                activation_token,
                 ..
             } => self.current.as_ref().is_some_and(|current| {
-                current.revision == *revision && allows(&current.content, interaction)
+                current.revision == *revision
+                    && allows(&current.content, interaction)
+                    && (activation_token.is_none()
+                        || activation_requested(&current.content, interaction))
             }),
         }
+    }
+
+    /// Whether the exact currently advertised action opts into native context.
+    pub fn requests_activation(&self, message: &HostMessage) -> bool {
+        if message.validate().is_err() {
+            return false;
+        }
+        let HostMessage::Event {
+            revision,
+            interaction,
+            ..
+        } = message
+        else {
+            return false;
+        };
+        self.current.as_ref().is_some_and(|current| {
+            current.revision == *revision
+                && allows(&current.content, interaction)
+                && activation_requested(&current.content, interaction)
+        })
+    }
+}
+
+fn activation_requested(content: &Content, interaction: &Interaction) -> bool {
+    let (
+        Content::Rich(content),
+        Interaction::Rich(v4::InteractionEvent::Invoke {
+            target,
+            action_key,
+            value,
+        }),
+    ) = (content, interaction)
+    else {
+        return false;
+    };
+    let matches = |action: &v4::PanelAction| {
+        action.request_activation_token && action.key == *action_key && action.value == *value
+    };
+    match target {
+        v4::InteractionTarget::Content => content.actions.iter().any(matches),
+        v4::InteractionTarget::Section { .. } => false,
+        v4::InteractionTarget::Item { id } => content
+            .sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .filter(|item| item.id == *id)
+            .any(|item| {
+                item.actions.iter().any(matches)
+                || item.rich_body.iter().flat_map(|body| &body.segments).any(|segment|
+                    matches!(segment, v4::RichBodySegment::Link { action, .. } if matches(action)))
+            }),
     }
 }
 
