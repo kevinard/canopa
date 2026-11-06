@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "checks": [
+    "actual shared config starts the tested backend",
+    "niri-specific configuration selected",
+    "user-local descriptors found without XDG_DESKTOP_PORTAL_DIR",
+    "Settings and FileChooser explicitly select Canopa",
+    "public Settings matches backend appearance",
+    "public FileChooser v4 available"
+  ],
+  "activation_scope": "Backend starts explicitly; installed systemd activation is not exercised.",
+  "backend_pid": 3139887,
+  "processes": [
+    {
+      "pid": 3139883,
+      "command": [
+        "dbus-daemon",
+        "--nofork",
+        "--print-address=1",
+        "--config-file=/tmp/canopa-niri-review-1gzuwzny/bus.conf"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 3139887,
+      "command": [
+        "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+        "--canopa-config",
+        "/home/kevinard/.config/canopa/config.kdl"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 3139896,
+      "command": [
+        "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/277568bfecc9e75c1a155a370a69f7a992c335bf6745344601bac54cea132233/xdg-desktop-portal",
+        "--verbose"
+      ],
+      "exit_code": -15
+    }
+  ],
+  "temporary_runtime_removed": true
+}

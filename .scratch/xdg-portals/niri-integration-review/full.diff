@@ -1,0 +1,25 @@
+--- /usr/share/xdg-desktop-portal/niri-portals.conf
++++ /home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/full-niri-portals.conf
+@@ -1,5 +1,20 @@
+ [preferred]
+ default=gnome;gtk;
+-org.freedesktop.impl.portal.Access=gtk;
+-org.freedesktop.impl.portal.Notification=gtk;
++org.freedesktop.impl.portal.Access=canopa;gtk;
++org.freedesktop.impl.portal.Notification=canopa-notify;gtk;
+ org.freedesktop.impl.portal.Secret=gnome-keyring;
++org.freedesktop.impl.portal.Account=canopa;gnome;gtk;
++org.freedesktop.impl.portal.AppChooser=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Background=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Clipboard=canopa;gnome;gtk;
++org.freedesktop.impl.portal.DynamicLauncher=canopa;gnome;gtk;
++org.freedesktop.impl.portal.FileChooser=canopa;gnome;gtk;
++org.freedesktop.impl.portal.GlobalShortcuts=canopa;gnome;gtk;
++org.freedesktop.impl.portal.InputCapture=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Lockdown=canopa;gnome;gtk;
++org.freedesktop.impl.portal.RemoteDesktop=canopa;gnome;gtk;
++org.freedesktop.impl.portal.ScreenCast=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Screenshot=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Settings=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Usb=canopa;gnome;gtk;
++org.freedesktop.impl.portal.Wallpaper=canopa;gnome;gtk;

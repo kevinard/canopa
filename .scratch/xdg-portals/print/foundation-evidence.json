@@ -1,0 +1,55 @@
+{
+  "status": "scoped-print-model-and-authority-foundation-passed",
+  "full_goal_complete": false,
+  "print_interface_registered": false,
+  "packaged_interfaces": 11,
+  "experimental_interfaces": 6,
+  "date": "2026-11-02",
+  "model_validation": "/home/kevinard/projects/canopa/target/portal-print-29/model-04.json",
+  "regressions": "/home/kevinard/projects/canopa/target/portal-print-29/portal-regressions-01.json",
+  "new_print_tests_passed": 23,
+  "portal_library": {
+    "status": "ok",
+    "passed": 238,
+    "failed": 0,
+    "ignored": 8
+  },
+  "portal_integration": {
+    "status": "ok",
+    "passed": 55,
+    "failed": 0,
+    "ignored": 2
+  },
+  "format_passed": true,
+  "strict_workspace_all_target_clippy_passed": true,
+  "workspace_all_target_build_passed": true,
+  "new_full_workspace_test_gate_run": false,
+  "previous_workspace_ten_files_failures_unresolved": true,
+  "source_sha256": {
+    "crates/canopa-portal/src/lib.rs": "c5d2461410dd1cda617e98a3baf714582fd2b15e54346727f6d971867f14997e",
+    "crates/canopa-portal/src/print/authority/tests.rs": "1b0ebd4b4e73e108a568fd75ed53fc726273ab31e5cf7d2246f76460c8fa6282",
+    "crates/canopa-portal/src/print/authority.rs": "759d97b8c5d6c0910e6dd14b0b22fc82f98c889f1c90beee2cee658e9763be36",
+    "crates/canopa-portal/src/print/settings.rs": "a6263f1107e03ef08f32b7e10879096d7cb090dff8a3795523b9f09c5727ced1",
+    "crates/canopa-portal/src/print/test_bus.rs": "bed378b0a9afc345326a176ae68d041340014bdbc32770fa7e81bced74cb8ee7",
+    "crates/canopa-portal/src/print/tests.rs": "54397ed56d7bcaf7037d243dcdc83f381c42ac9822e94fa7aec5ce4eaa7f2bd6",
+    "crates/canopa-portal/src/print/tokens/tests.rs": "b0c42558434c0dfed7133fae4d5478057f0dcd5ab77f4bdf404496665da67b42",
+    "crates/canopa-portal/src/print/tokens.rs": "77f4767f6655b72c258dd42c7da06fc2ffa7bb1f3db5ea4faeb64d16a06e048c",
+    "crates/canopa-portal/src/print.rs": "067eb479a71613ff8edd53aa8b9bb816a92d3f22551f27a78522da34410107b1",
+    "docs/adr/0070-prepared-print-authority.md": "8a7ca0b87b7d82bd7b8fde4702a83a0499c19ecea8eef09b0542e04967483c32"
+  },
+  "normal_portal": {
+    "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+    "sha256": "3cabc5474449fc6ce6e639caa1b9f39dd2e2ddcdc9461755b58b1572dced1216",
+    "fresh": false
+  },
+  "validation_net_growth_bytes": -1163264,
+  "free_bytes": 10185400320,
+  "remaining": [
+    "Rust descriptor snapshot and submission worker",
+    "Iced printer/page setup and print-to-file consent",
+    "Print D-Bus methods and lifetime integration",
+    "Actual application layout/copies compatibility",
+    "Native public Print and failure acceptance",
+    "All six experimental interface acceptance and companion distribution"
+  ]
+}

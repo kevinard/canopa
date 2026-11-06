@@ -1,0 +1,27 @@
+{
+  "status": "failed",
+  "pid": 1412949,
+  "start_ticks": "33376852",
+  "inputs": 1501,
+  "incremental": "1",
+  "jobs": "1",
+  "target": "/home/kevinard/projects/canopa/target",
+  "stages": [
+    {
+      "name": "workspace-main-01",
+      "command": [
+        "bash",
+        "scripts/check.sh",
+        "--workspace"
+      ],
+      "status": "failed",
+      "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-main-01.log",
+      "pid": 1412951,
+      "exit_code": 101,
+      "seconds": 426.07
+    }
+  ],
+  "full_gate_exit_code": 101,
+  "changed_inputs": [],
+  "added_inputs": []
+}

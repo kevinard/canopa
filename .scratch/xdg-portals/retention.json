@@ -1,0 +1,1693 @@
+{
+  "version": 1,
+  "recorded_on": "2026-11-06",
+  "scope": "Only previously untracked .scratch/xdg-portals files; tracked files, ignored build outputs and live configuration are not deletion targets.",
+  "inventoried_files": 1999,
+  "inventoried_bytes": 36140738,
+  "retained_original_files": 200,
+  "removed_files": 1799,
+  "removed_bytes": 35125750,
+  "removed_groups": {
+    "capture-mapping-draft": {
+      "removed_files": 8,
+      "removed_bytes": 67633,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded investigation setup": 1,
+        "superseded prototype, source snapshot or generated fixture": 6
+      },
+      "removed_inventory_canonical_sha256": "2aa5e32d6a2b8f7b57898897a71652d7bcf5b425b8463913c4b3dbad25c9cb67"
+    },
+    "capture-owner": {
+      "removed_files": 5,
+      "removed_bytes": 20792,
+      "reasons": {
+        "superseded investigation setup": 2,
+        "superseded prototype, source snapshot or generated fixture": 3
+      },
+      "removed_inventory_canonical_sha256": "864bcb2378d99d4ba327b17a305b6aa0c1f408936dc63e0ef98c8dc31b5c3fa9"
+    },
+    "ei-pointer": {
+      "removed_files": 46,
+      "removed_bytes": 815903,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 14,
+        "raw execution log summarized by retained receipts": 6,
+        "historical source inventory": 1,
+        "large receipt retained in compact form": 1,
+        "superseded native screenshot": 5,
+        "exact duplicate of tracked source or metadata": 19
+      },
+      "removed_inventory_canonical_sha256": "ae1646ab0c3e190a4e17147ca686fb6fa47a968dbe48f7f77039f2baa3a3b435"
+    },
+    "ei-scale": {
+      "removed_files": 654,
+      "removed_bytes": 11188364,
+      "reasons": {
+        "superseded investigation setup": 2,
+        "large receipt retained in compact form": 4,
+        "raw execution log summarized by retained receipts": 199,
+        "superseded prototype, source snapshot or generated fixture": 201,
+        "superseded native screenshot": 162,
+        "exact duplicate of tracked source or metadata": 58,
+        "raw diagnostic output summarized by native receipts": 28
+      },
+      "removed_inventory_canonical_sha256": "b4eeb8e4347a4f6e9cb4c6c2adedefcf5126209b28aa34ebab300fb1d2af9cbb"
+    },
+    "frontend-session": {
+      "removed_files": 24,
+      "removed_bytes": 437346,
+      "reasons": {
+        "historical source inventory": 4,
+        "raw execution log summarized by retained receipts": 19,
+        "exact duplicate of tracked source or metadata": 1
+      },
+      "removed_inventory_canonical_sha256": "c1b5eb2373773114f46744ded21fa58bb758c5443a7b78f8155dbc66d38eb1d6"
+    },
+    "mapped-pointer-draft": {
+      "removed_files": 8,
+      "removed_bytes": 82878,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded investigation setup": 1,
+        "superseded prototype, source snapshot or generated fixture": 5,
+        "exact duplicate of tracked source or metadata": 1
+      },
+      "removed_inventory_canonical_sha256": "a4056c359c91bb0c83ef68f2e0a225379432127caa458956e6f57aadd0d215a0"
+    },
+    "niri-integration-review": {
+      "removed_files": 11,
+      "removed_bytes": 1066629,
+      "reasons": {
+        "regenerable package inventory": 2,
+        "raw execution log summarized by retained receipts": 9
+      },
+      "removed_inventory_canonical_sha256": "39f5ae79d3179cb2a43a287881a65b75ad7ebfca866a85cbdbb8c8ab2be4c509"
+    },
+    "pointer-adapters": {
+      "removed_files": 296,
+      "removed_bytes": 5811371,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 47,
+        "raw execution log summarized by retained receipts": 68,
+        "superseded investigation setup": 2,
+        "large receipt retained in compact form": 2,
+        "superseded native screenshot": 138,
+        "raw diagnostic output summarized by native receipts": 14,
+        "exact duplicate of tracked source or metadata": 25
+      },
+      "removed_inventory_canonical_sha256": "0795f686a19e0fff3839394413b364b0cc111b103a1b2b7ead3146d65baf49d2"
+    },
+    "pointer-archive": {
+      "removed_files": 8,
+      "removed_bytes": 1182588,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded prototype, source snapshot or generated fixture": 4,
+        "historical source inventory": 2,
+        "exact duplicate of tracked source or metadata": 1
+      },
+      "removed_inventory_canonical_sha256": "f089b554db50d0156f2be5a0ab7b221185ceff6b2fb1eccf4f37c563059ee907"
+    },
+    "pointer-lease-draft": {
+      "removed_files": 13,
+      "removed_bytes": 98626,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded investigation setup": 2,
+        "superseded prototype, source snapshot or generated fixture": 10
+      },
+      "removed_inventory_canonical_sha256": "9190bdecd0e2e8862ea965ea3434b99f56f1f9bba1ce8513890424d8e1f86a3e"
+    },
+    "pointer-matrix": {
+      "removed_files": 83,
+      "removed_bytes": 1907434,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 27,
+        "raw execution log summarized by retained receipts": 7,
+        "historical source inventory": 1,
+        "large receipt retained in compact form": 1,
+        "exact duplicate of tracked source or metadata": 19,
+        "superseded native screenshot": 28
+      },
+      "removed_inventory_canonical_sha256": "09895d5c28f8bc6faccc071d94a26e5b5646bd9220f1ee7a42106c74f1e64596"
+    },
+    "pointer-ownership-draft": {
+      "removed_files": 25,
+      "removed_bytes": 201052,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded investigation setup": 1,
+        "superseded prototype, source snapshot or generated fixture": 23
+      },
+      "removed_inventory_canonical_sha256": "0dec6f3b8170e978a7087ac57da46f07d58e35af79a974cf0eac3422c734bf67"
+    },
+    "pointer-production": {
+      "removed_files": 109,
+      "removed_bytes": 3071147,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 32,
+        "raw execution log summarized by retained receipts": 2,
+        "historical source inventory": 1,
+        "large receipt retained in compact form": 1,
+        "exact duplicate of tracked source or metadata": 23,
+        "superseded native screenshot": 50
+      },
+      "removed_inventory_canonical_sha256": "566d1b69a4fbf3f339894e5872b68f03f595d4fe377be1f279ef20bf2ef729e5"
+    },
+    "pointer-workers": {
+      "removed_files": 395,
+      "removed_bytes": 8467236,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 71,
+        "raw execution log summarized by retained receipts": 111,
+        "large receipt retained in compact form": 10,
+        "superseded investigation setup": 1,
+        "superseded native screenshot": 148,
+        "raw diagnostic output summarized by native receipts": 19,
+        "exact duplicate of tracked source or metadata": 35
+      },
+      "removed_inventory_canonical_sha256": "2168534f4145738fc3d3fdefe7901120711f3cf6d6fab7f62e5d447ec5daff0d"
+    },
+    "portal-source-identities": {
+      "removed_files": 7,
+      "removed_bytes": 20369,
+      "reasons": {
+        "raw execution log summarized by retained receipts": 1,
+        "superseded prototype, source snapshot or generated fixture": 6
+      },
+      "removed_inventory_canonical_sha256": "f24f5c52040545b0870035e4ba1d5d8efb4f74d882012018791bd283f27b6aff"
+    },
+    "print": {
+      "removed_files": 104,
+      "removed_bytes": 671913,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 96,
+        "exact duplicate of tracked source or metadata": 7,
+        "historical source inventory": 1
+      },
+      "removed_inventory_canonical_sha256": "c2f3c148547a2880ab3f5bb66ab277e60ca1ef05fb498e41c9f0700d3a94c787"
+    },
+    "probe-background-niri.py": {
+      "removed_files": 1,
+      "removed_bytes": 7270,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 1
+      },
+      "removed_inventory_canonical_sha256": "9131dcd275096c610592f0d2f591fba385f51cb227caf4edde3be467cb274586"
+    },
+    "window-screenshot": {
+      "removed_files": 2,
+      "removed_bytes": 7199,
+      "reasons": {
+        "superseded prototype, source snapshot or generated fixture": 2
+      },
+      "removed_inventory_canonical_sha256": "c977dec102cfd8d789ab962e4fff0cdf582c785476ae5c5f87e67256d8f26b7e"
+    }
+  },
+  "retained_paths": [
+    ".scratch/xdg-portals/capture-owner/canonical-record.json",
+    ".scratch/xdg-portals/capture-owner/canonical-source-proof.json",
+    ".scratch/xdg-portals/capture-owner/evidence/capture-dark-01/summary.json",
+    ".scratch/xdg-portals/capture-owner/evidence/owner-before-02/summary.json",
+    ".scratch/xdg-portals/capture-owner/evidence/owner-before-03/summary.json",
+    ".scratch/xdg-portals/capture-owner/evidence/owner-probe-before-04/summary.json",
+    ".scratch/xdg-portals/capture-owner/evidence/source-dark-05/summary.json",
+    ".scratch/xdg-portals/capture-owner/evidence/source-dark-06/summary.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/build-final.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/frozen/receipt.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/keyboard-02/summary.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/native-final-07/summary.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/native-green-06/summary.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/native-red-05/summary.json",
+    ".scratch/xdg-portals/ei-pointer/evidence/terminal-audit.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/candidate-scope-01.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-bindings/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-dnd/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-evdev/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-lease/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-symbols/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/accept-01-symbols/verified-sources/receipt.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-buttons/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-gestures/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-host/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-old-bindings/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-old-dnd/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-picker/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/regression-fixtures/accept-01-reset/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/compositor-regressions/verify-01.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/layered-replay/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/mapped-regressions/mapped-padded-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/mapped-regressions/mapped-plain-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-compositor-01.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-legacy-video-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-mapped-remote-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-mapped-video-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-pointer-v1-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-pointer-v2-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-portal-01.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-scale-after-01/scale-observation.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-scale-after-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-scale-before-01/scale-observation.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-scale-before-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/native-worker-scale-01/summary.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/niri-format.json",
+    ".scratch/xdg-portals/ei-scale/native-proof/terminal-audit.json",
+    ".scratch/xdg-portals/frontend-session/evidence/app-regression-suite-01.json",
+    ".scratch/xdg-portals/frontend-session/evidence/backend-closed-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/backend-closed-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/baseline-final-03-session-matrix.json",
+    ".scratch/xdg-portals/frontend-session/evidence/baseline-recipe.json",
+    ".scratch/xdg-portals/frontend-session/evidence/binary-archives.json",
+    ".scratch/xdg-portals/frontend-session/evidence/busy-busy-before-05/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/busy-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/busy-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/candidate-build-03.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-07-session-matrix.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-availability-14-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-availability-14/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-backend-dark-08-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-backend-dark-08/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-backend-light-09-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-backend-light-09/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-build-01.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-cast-dark-18-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-cast-light-19-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-chooser-dark-20/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-chooser-light-21/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-client-light-13-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-client-light-13/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-notify-dark-16-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-notify-dark-16/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-recipe.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-regression-dark-10-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-regression-dark-10/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-regression-light-11-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-regression-light-11/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-settings-22.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-ui-dark-12-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/canonical-ui-dark-12/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/cast-backend-before-17-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/client-close-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/client-close-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/client-loss-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/client-loss-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/early-closed-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/early-closed-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/early-closed-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/final-06-session-matrix.json",
+    ".scratch/xdg-portals/frontend-session/evidence/loss-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/loss-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/loss-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/pending-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/pending-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/pending-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/reacquire-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/reacquire-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/reacquire-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/replace-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/replace-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/replace-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/sanitized-backend-dark-15-run.json",
+    ".scratch/xdg-portals/frontend-session/evidence/sanitized-backend-dark-15/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/sanitized-build-02.json",
+    ".scratch/xdg-portals/frontend-session/evidence/sanitized-final-06-session-matrix.json",
+    ".scratch/xdg-portals/frontend-session/evidence/sanitizer-audit-01.json",
+    ".scratch/xdg-portals/frontend-session/evidence/source-audit-01.json",
+    ".scratch/xdg-portals/frontend-session/evidence/stalled-baseline-final-03/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/stalled-canonical-07/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/stalled-sanitized-final-06/summary.json",
+    ".scratch/xdg-portals/frontend-session/evidence/workspace-01.json",
+    ".scratch/xdg-portals/input-capture/evidence.json",
+    ".scratch/xdg-portals/niri-integration-review/base-units/niri.service",
+    ".scratch/xdg-portals/niri-integration-review/base-units/xdg-desktop-portal.service",
+    ".scratch/xdg-portals/niri-integration-review/core.diff",
+    ".scratch/xdg-portals/niri-integration-review/distribution-niri-portals.conf",
+    ".scratch/xdg-portals/niri-integration-review/full.diff",
+    ".scratch/xdg-portals/niri-integration-review/live-inventory.json",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/canopa/desktop-sharing.json",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/canopa/desktop-sharing/portals.conf.fragment",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/canopa/desktop-sharing/wireplumber/90-canopa-screencast.conf",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/canopa/desktop-sharing/wireplumber/canopa-screencast.lua",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/canopa/desktop-sharing/xdg-desktop-portal.service.conf",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.notify.service",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.service",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/systemd/user/xdg-desktop-portal-canopa.service",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/xdg-desktop-portal/portals/canopa-notify.portal",
+    ".scratch/xdg-portals/niri-integration-review/payload/share/xdg-desktop-portal/portals/canopa.portal",
+    ".scratch/xdg-portals/niri-integration-review/result.json",
+    ".scratch/xdg-portals/niri-integration-review/review.json",
+    ".scratch/xdg-portals/niri-integration-review/validate-configs.py",
+    ".scratch/xdg-portals/niri-integration-review/validate-core.py",
+    ".scratch/xdg-portals/niri-integration-review/validation/configuration-results.json",
+    ".scratch/xdg-portals/niri-integration-review/validation/core-results.json",
+    ".scratch/xdg-portals/niri-integration-review/validation/live-unchanged.json",
+    ".scratch/xdg-portals/niri-integration-review/validation/systemd-results.json",
+    ".scratch/xdg-portals/niri-integration-review/validation/units/niri.service",
+    ".scratch/xdg-portals/niri-integration-review/validation/units/xdg-desktop-portal-canopa.service",
+    ".scratch/xdg-portals/niri-integration-review/validation/units/xdg-desktop-portal.service",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/native-01.json",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/native-legacy-video-01/summary.json",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/native-pinned-remote-01/summary.json",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/native-pinned-video-01/summary.json",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/native-pointer-01/summary.json",
+    ".scratch/xdg-portals/pointer-adapters/native-proof/terminal-audit.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/availability-after-03/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/availability-before-01/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/availability-before-02/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/availability-final-07/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/frozen-01.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/matrix-backend-dark-04/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/matrix-client-light-03/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/matrix-dark-01/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/matrix-ui-dark-02/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/regression-dark-05/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/regression-light-06/summary.json",
+    ".scratch/xdg-portals/pointer-matrix/evidence/terminal-audit.json",
+    ".scratch/xdg-portals/pointer-production/evidence/frozen-final.json",
+    ".scratch/xdg-portals/pointer-production/evidence/keyboard-final-dark-06-run.json",
+    ".scratch/xdg-portals/pointer-production/evidence/keyboard-final-dark-06/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/keyboard-final-light-07-run.json",
+    ".scratch/xdg-portals/pointer-production/evidence/keyboard-final-light-07/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-dark-01/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-dark-02/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-dark-03/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-dark-04/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-dark-08-run.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-dark-08/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-light-05/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-light-09-run.json",
+    ".scratch/xdg-portals/pointer-production/evidence/native-final-light-09/summary.json",
+    ".scratch/xdg-portals/pointer-production/evidence/terminal-audit.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/format-check.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-03.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-legacy-video-01/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pinned-remote-01/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pinned-video-01/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-01/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-02/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-03/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-04/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-diagnostic-01/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/native-pointer-diagnostic-02/summary.json",
+    ".scratch/xdg-portals/pointer-workers/native-proof/terminal-audit.json",
+    ".scratch/xdg-portals/print/custom-margin-replay/settings-asymmetric.json",
+    ".scratch/xdg-portals/print/custom-margin-replay/settings-queue-default.json",
+    ".scratch/xdg-portals/print/custom-margin-replay/settings-without-resolution.json",
+    ".scratch/xdg-portals/print/flatpak-evidence.json",
+    ".scratch/xdg-portals/print/flatpak-replay/flatpak-packages-plan.json",
+    ".scratch/xdg-portals/print/foundation-evidence.json",
+    ".scratch/xdg-portals/print/gtk-flatpak-evidence.json",
+    ".scratch/xdg-portals/storage/deduplication.json",
+    ".scratch/xdg-portals/storage/evidence.json",
+    ".scratch/xdg-portals/storage/historical-archives.json",
+    ".scratch/xdg-portals/storage/intermediate-tmp.json",
+    ".scratch/xdg-portals/storage/redundant-tmp.json",
+    ".scratch/xdg-portals/storage/validation-source-delta.json",
+    ".scratch/xdg-portals/storage/validation.json",
+    ".scratch/xdg-portals/storage/vendor-preparation.json"
+  ],
+  "compacted_receipts": [
+    {
+      "original_path": ".scratch/xdg-portals/ei-pointer/evidence/validation-final.json",
+      "original_bytes": 162533,
+      "original_sha256": "48341c80812c0bf1281e7604588b4758fd499693aeb57ba484e3d0756a21c0f8",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1320,
+          "canonical_sha256": "68699048c3bb148f95595002bebbf901d8d75fd8d0a6afdbe010c61f9ec12a9e"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "scope": "Private combined EI keyboard/pointer server; ordinary default-feature incremental debug root target; not full workspace gate",
+        "pid": 1382278,
+        "started_at": "2026-10-31T16:37:45.768770+00:00",
+        "source_hashes": {
+          "omitted_inventory_entries": 1320,
+          "canonical_sha256": "68699048c3bb148f95595002bebbf901d8d75fd8d0a6afdbe010c61f9ec12a9e"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "build",
+              "--locked",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/validation-final-0.log",
+            "pid": 1382281,
+            "exit_code": 0,
+            "seconds": 5.78
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/validation-final-1.log",
+            "pid": 1382290,
+            "passed_tests": 154,
+            "exit_code": 0,
+            "seconds": 103.18
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/validation-final-2.log",
+            "pid": 1383140,
+            "passed_tests": 43,
+            "exit_code": 0,
+            "seconds": 71.9
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/validation-final-3.log",
+            "pid": 1383805,
+            "exit_code": 0,
+            "seconds": 94.49
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/validation-final-4.log",
+            "pid": 1384091,
+            "exit_code": 0,
+            "seconds": 1.91
+          }
+        ],
+        "seconds": 280.15,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/ei-scale/native-proof/build-01.json",
+      "original_bytes": 1616322,
+      "original_sha256": "4bd72032711e6c5992ef6c63d3c31c2c1509750e2aa2d57959f749f636746381",
+      "omitted_fields": [
+        {
+          "pointer": "/input_sources",
+          "entries": 5961,
+          "canonical_sha256": "c6430f84d5732ba03ae545533d885fb6e18930b1b09a3c5f38f2fbd8320d9505"
+        }
+      ],
+      "record": {
+        "status": "built",
+        "pid": 2,
+        "start_ticks": "32144118",
+        "started_at": "2026-10-31T15:19:41.793560+00:00",
+        "scope": "unadopted scale-aware mapped pointer descriptor v2; no portal grant/recipe/install change",
+        "compiler": "rustc 1.97.0-nightly (14196dbfa 2026-04-12)",
+        "profile": "dev",
+        "incremental": true,
+        "jobs": 1,
+        "command": [
+          "cargo",
+          "build",
+          "--locked",
+          "--offline",
+          "-p",
+          "niri",
+          "--bin",
+          "niri",
+          "--jobs",
+          "1",
+          "--target-dir",
+          "/home/kevinard/projects/canopa/target/niri-screencast-native"
+        ],
+        "input_sources": {
+          "omitted_inventory_entries": 5961,
+          "canonical_sha256": "c6430f84d5732ba03ae545533d885fb6e18930b1b09a3c5f38f2fbd8320d9505"
+        },
+        "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/build-01.log",
+        "build_pid": 9,
+        "exit_code": 0,
+        "seconds": 170.87,
+        "changed_inputs": [],
+        "binary": {
+          "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9/niri",
+          "sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9",
+          "bytes": 157152800
+        },
+        "parent_binary_unchanged": true
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/ei-scale/native-proof/portal-frozen-receipt.json",
+      "original_bytes": 201201,
+      "original_sha256": "32f9bca05f5e8adb94957b49e5a77b8a312a8673082be57fa74157af35977e26",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-02.json",
+        "validation_sha256": "946ebfd7fec9a3eb233ae9a4b63282d605ae8bb61dae33cd7902383ab644152f",
+        "library_validation": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-01.json",
+        "library_validation_sha256": "f4f7fb3d9fbf4a665135f7a243266cb300f7128d50f44c5f4af4c4bfc02a600b",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/xdg-desktop-portal-canopa",
+            "sha256": "62a3f70aadb3c24b37720caaac41f4d70987f1f7b6317fe4e73cb705aa571b2b",
+            "bytes": 181197632
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/canopa-portal-tests",
+            "sha256": "641a1b5205a3190d84359344f6bc6c0784d8ccf7cd39a70b6f43ca1fdd0c0eed",
+            "bytes": 110290544
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/ei-scale/native-proof/validation-01.json",
+      "original_bytes": 201777,
+      "original_sha256": "f4f7fb3d9fbf4a665135f7a243266cb300f7128d50f44c5f4af4c4bfc02a600b",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        }
+      ],
+      "record": {
+        "status": "failed",
+        "started_at": "2026-10-31T15:28:05.818917+00:00",
+        "scope": "Optional physical-scale capture metadata and v1/v2 mapped pointer renewal; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1368657,
+        "source_hashes": {
+          "omitted_inventory_entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib",
+              "screencast_capture::tests::"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-01-0.log",
+            "pid": 1368658,
+            "passed_tests": 15,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 114.08
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-01-1.log",
+            "pid": 1369096,
+            "passed_tests": 153,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 8.76
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "failed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-01-2.log",
+            "pid": 1369369,
+            "exit_code": 101,
+            "seconds": 219.42
+          }
+        ],
+        "seconds": 342.88,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/ei-scale/native-proof/validation-02.json",
+      "original_bytes": 202193,
+      "original_sha256": "946ebfd7fec9a3eb233ae9a4b63282d605ae8bb61dae33cd7902383ab644152f",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "started_at": "2026-10-31T15:39:01.314010+00:00",
+        "scope": "Optional physical-scale capture metadata and v1/v2 mapped pointer renewal; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1371828,
+        "source_hashes": {
+          "omitted_inventory_entries": 1313,
+          "canonical_sha256": "f61216921814e07a4305ce47ca2fb58ea28f73bfdf101ce6978a49a764bc42b5"
+        },
+        "commands": [
+          {
+            "command": [
+              "target/debug/deps/integration-d42ef0e1020750cf",
+              "--exact",
+              "screencast_capture::killing_the_backend_process_leaves_worker_alive_long_enough_to_stop",
+              "--nocapture"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-02-0.log",
+            "pid": 1371829,
+            "passed_tests": 1,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 0.33
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-02-1.log",
+            "pid": 1371840,
+            "passed_tests": 43,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 8.72
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-02-2.log",
+            "pid": 1372111,
+            "exit_code": 0,
+            "seconds": 85.88
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/validation-02-3.log",
+            "pid": 1372193,
+            "exit_code": 0,
+            "seconds": 1.29
+          }
+        ],
+        "seconds": 96.24,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-adapters/native-proof/frozen-receipt.json",
+      "original_bytes": 201023,
+      "original_sha256": "8ebf3f74c85de8a118168e1a7d20e6827aee2bdd377166ecea8f87fe64b56e8a",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1313,
+          "canonical_sha256": "9934bc8137b7ffc0c40251a499a2dc13d7b4c91d3b730b3fd5c6acd1523fd377"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01.json",
+        "validation_sha256": "4c16a0a083f95e0565905acd532938ab58c8b40fc9b54fb89847052ef5fda47f",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/xdg-desktop-portal-canopa",
+            "sha256": "7e47bd782dd146278e0786c8458d2f1388b8b2769248e477bf154a93a68019d6",
+            "bytes": 181015184
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/canopa-portal-tests",
+            "sha256": "04d549112d72048712b6d65b746532fbeab3b9f92cc8fcabb9cf9cc9f90acf98",
+            "bytes": 110215808
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1313,
+          "canonical_sha256": "9934bc8137b7ffc0c40251a499a2dc13d7b4c91d3b730b3fd5c6acd1523fd377"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-adapters/native-proof/validation-01.json",
+      "original_bytes": 203352,
+      "original_sha256": "4c16a0a083f95e0565905acd532938ab58c8b40fc9b54fb89847052ef5fda47f",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1313,
+          "canonical_sha256": "9934bc8137b7ffc0c40251a499a2dc13d7b4c91d3b730b3fd5c6acd1523fd377"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "started_at": "2026-10-31T14:50:16.936801+00:00",
+        "scope": "Public mapping metadata and typed receive-ordered legacy pointer adapters; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1360996,
+        "source_hashes": {
+          "omitted_inventory_entries": 1313,
+          "canonical_sha256": "9934bc8137b7ffc0c40251a499a2dc13d7b4c91d3b730b3fd5c6acd1523fd377"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration",
+              "remote_desktop::pointer::"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-0.log",
+            "pid": 1360997,
+            "passed_tests": 4,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 199.4
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration",
+              "screencast::mapping::"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-1.log",
+            "pid": 1361980,
+            "passed_tests": 2,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 4.62
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-2.log",
+            "pid": 1361994,
+            "passed_tests": 151,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 157.21
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-3.log",
+            "pid": 1362650,
+            "passed_tests": 43,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 7.66
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-4.log",
+            "pid": 1362923,
+            "exit_code": 0,
+            "seconds": 88.22
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-5.log",
+            "pid": 1363024,
+            "exit_code": 0,
+            "seconds": 1.41
+          },
+          {
+            "command": [
+              "python3",
+              "scripts/test-test-layout.py"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/validation-01-6.log",
+            "pid": 1363042,
+            "exit_code": 0,
+            "seconds": 0.58
+          }
+        ],
+        "seconds": 459.13,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-matrix/evidence/validation-final.json",
+      "original_bytes": 162862,
+      "original_sha256": "767f19179513b4e585483c723dd071ff3653939587f488bb05eb74ac793c3a58",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1322,
+          "canonical_sha256": "aa18c5b7bb305a10914aadc967a793402e7d0e34f93e7b38385028e3306bb0d8"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "scope": "Event-driven device availability and public mixed-source projection matrix; ordinary default-feature incremental debug root target; not full workspace gate",
+        "pid": 1399360,
+        "started_at": "2026-10-31T18:02:37.318871+00:00",
+        "source_hashes": {
+          "omitted_inventory_entries": 1322,
+          "canonical_sha256": "aa18c5b7bb305a10914aadc967a793402e7d0e34f93e7b38385028e3306bb0d8"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "build",
+              "--locked",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-matrix-12/validation-final-0.log",
+            "pid": 1399574,
+            "exit_code": 0,
+            "seconds": 7.22
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-matrix-12/validation-final-1.log",
+            "pid": 1399887,
+            "passed_tests": 161,
+            "exit_code": 0,
+            "seconds": 12.01
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-matrix-12/validation-final-2.log",
+            "pid": 1400513,
+            "passed_tests": 43,
+            "exit_code": 0,
+            "seconds": 9.51
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-matrix-12/validation-final-3.log",
+            "pid": 1400992,
+            "exit_code": 0,
+            "seconds": 3.06
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-matrix-12/validation-final-4.log",
+            "pid": 1401116,
+            "exit_code": 0,
+            "seconds": 1.84
+          }
+        ],
+        "seconds": 37.45,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-production/evidence/validation-final.json",
+      "original_bytes": 162837,
+      "original_sha256": "4d3d2da2df0176048c2f5ce3af115d3ce67c9556637594b9eeee3133dd8654e4",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1322,
+          "canonical_sha256": "4ac749ca4e82ed370d9d18086c9217c31a3b94d8e21a20becd963a9b68d47eaa"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "scope": "Production pointer Notify, Iced consent and bound EI handoff; ordinary default-feature incremental debug root target; not full workspace gate",
+        "pid": 1392295,
+        "started_at": "2026-10-31T17:19:46.623973+00:00",
+        "source_hashes": {
+          "omitted_inventory_entries": 1322,
+          "canonical_sha256": "4ac749ca4e82ed370d9d18086c9217c31a3b94d8e21a20becd963a9b68d47eaa"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "build",
+              "--locked",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/validation-final-0.log",
+            "pid": 1392297,
+            "exit_code": 0,
+            "seconds": 6.2
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/validation-final-1.log",
+            "pid": 1392317,
+            "passed_tests": 160,
+            "exit_code": 0,
+            "seconds": 8.05
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/validation-final-2.log",
+            "pid": 1392643,
+            "passed_tests": 43,
+            "exit_code": 0,
+            "seconds": 6.91
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/validation-final-3.log",
+            "pid": 1393145,
+            "exit_code": 0,
+            "seconds": 2.8
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "-p",
+              "canopa-portal"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/validation-final-4.log",
+            "pid": 1393249,
+            "exit_code": 0,
+            "seconds": 2.08
+          }
+        ],
+        "seconds": 27.44,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/diagnostic-frozen-01/receipt.json",
+      "original_bytes": 200901,
+      "original_sha256": "d55000c1701d6521c71d64cff0dd35b760502d6dc9ad71fb5dfba9dba3997345",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-05.json",
+        "validation_sha256": "150d243ee94425a2d9c7c72ab4c60e5833ccbf6fe1d68fafa29a762c7bc543ea",
+        "library_validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-04.json",
+        "library_validation_sha256": "ac89e16c46db94133b7eaf75fe9592ddde92bfce4560106d4011af8c1fc3fa53",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/diagnostic-frozen-01/xdg-desktop-portal-canopa",
+            "sha256": "09999ddebd36939a6168c57f05e50d0675d0858e310c5a510024fa89c4516ef8",
+            "bytes": 180945840
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/canopa-portal-tests",
+            "sha256": "870bebcaa9780e934a3fb54e3be52af18ef0d64b58c2fe28480bdb64154b1408",
+            "bytes": 109715032
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        },
+        "scope": "Diagnostic portal binary has uniquely tagged boundary logs; harness unchanged from frozen02",
+        "diagnostic_sources": {
+          "crates/canopa-portal/src/remote_input/pointer.rs": "77194f949b06541a399448525428ac4987fc5315fe3e20fd1dfe30c74173b318",
+          "crates/canopa-portal/src/remote_input/pointer/compositor.rs": "48eedc9a106122dd87ddce8e0c6988bda1303fe8243d44d047cc62e21bc288e8"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/frozen-02/receipt.json",
+      "original_bytes": 200495,
+      "original_sha256": "7ab97af60c2d0d556d4ad69ed963ba68f5127fdf0a38a0c4166a05cb6b9e6183",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-05.json",
+        "validation_sha256": "150d243ee94425a2d9c7c72ab4c60e5833ccbf6fe1d68fafa29a762c7bc543ea",
+        "library_validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-04.json",
+        "library_validation_sha256": "ac89e16c46db94133b7eaf75fe9592ddde92bfce4560106d4011af8c1fc3fa53",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/xdg-desktop-portal-canopa",
+            "sha256": "8e55c518b3549b68216332e475247a7b1f16db5e64ba4a9a081ac104c2b5d3ae",
+            "bytes": 180929848
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/canopa-portal-tests",
+            "sha256": "870bebcaa9780e934a3fb54e3be52af18ef0d64b58c2fe28480bdb64154b1408",
+            "bytes": 109715032
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/frozen-03/receipt.json",
+      "original_bytes": 200286,
+      "original_sha256": "83a8a38cac5acff3f177ec7e0fb7b929a98eeb68b173077f3047b0dc3030e46c",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "9217ad8b85d4d90d5c35fb9c15c49104a7ea32ac9572c43cd9fe74cc1336e003"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06.json",
+        "validation_sha256": "2b8d1521f5d35e4644346bb86e3a715e83c9c9b827a4bc31b99a07205ed7a593",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/xdg-desktop-portal-canopa",
+            "sha256": "27a9fbb90115047a613eac0f2cb6e44b080ed955d4babb5e506be586d80cc538",
+            "bytes": 180943232
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+            "sha256": "413597eb060ade224dc1bc41763b5a17a862357f104234688240156d3596ccb3",
+            "bytes": 109986560
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "9217ad8b85d4d90d5c35fb9c15c49104a7ea32ac9572c43cd9fe74cc1336e003"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/frozen/receipt.json",
+      "original_bytes": 200280,
+      "original_sha256": "40d6b4230cc7db8a3f68ecf6b0a82543ec04e91b8307ab95ae1432ba73ddac2c",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "bc48ddf7738a2aad635e56eb52f8ffafb9ddc438110dcbaeaef6e2f57653df48"
+        }
+      ],
+      "record": {
+        "status": "frozen after focused portal validation",
+        "validation": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-02.json",
+        "validation_sha256": "36aade6e5b2490b7d0ae96d17a373a1789cdd7360412bf8eca04ed1a19f604ec",
+        "binaries": {
+          "portal": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/xdg-desktop-portal-canopa",
+            "sha256": "b901831c7bdf967835abc3721159d47be6a92f63a107d7ec9fd2602aadf48d47",
+            "bytes": 180929432
+          },
+          "harness": {
+            "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/canopa-portal-tests",
+            "sha256": "1aaa98a7f3acedcf2ea13e4a5fe5f9838afd6e1ed8908c85c5f187b913d56c28",
+            "bytes": 109223736
+          }
+        },
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "bc48ddf7738a2aad635e56eb52f8ffafb9ddc438110dcbaeaef6e2f57653df48"
+        }
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-01.json",
+      "original_bytes": 200184,
+      "original_sha256": "9fe6f795cc4cb7d4b80b24396f96951afdb2958ef70a22c295d8c476e8a62bb9",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "43d079d7495158197d6f954505de3d0438b80b7e693342f4eb1092f7a2a9c04c"
+        }
+      ],
+      "record": {
+        "status": "failed",
+        "started_at": "2026-10-31T13:38:45.233332+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1345554,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "43d079d7495158197d6f954505de3d0438b80b7e693342f4eb1092f7a2a9c04c"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "failed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-01-0.log",
+            "pid": 1345555,
+            "exit_code": 101,
+            "seconds": 103.59
+          }
+        ],
+        "seconds": 103.6,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-02.json",
+      "original_bytes": 201071,
+      "original_sha256": "36aade6e5b2490b7d0ae96d17a373a1789cdd7360412bf8eca04ed1a19f604ec",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "bc48ddf7738a2aad635e56eb52f8ffafb9ddc438110dcbaeaef6e2f57653df48"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "started_at": "2026-10-31T13:41:02.850080+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1346227,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "bc48ddf7738a2aad635e56eb52f8ffafb9ddc438110dcbaeaef6e2f57653df48"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-02-0.log",
+            "pid": 1346228,
+            "passed_tests": 149,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 41.87
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-02-1.log",
+            "pid": 1346776,
+            "passed_tests": 37,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 217.04
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-02-2.log",
+            "pid": 1347936,
+            "exit_code": 0,
+            "seconds": 119.43
+          }
+        ],
+        "seconds": 378.36,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-03.json",
+      "original_bytes": 200183,
+      "original_sha256": "a7245906b99597a7ce6cb451e263a973ba9dc63ee71968aeb25d29f753d54229",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "43aaf7d0e3580a6b004e6c6942c6c2d48d24efbf0dc49412e9bc54cecc4f46a5"
+        }
+      ],
+      "record": {
+        "status": "failed",
+        "started_at": "2026-10-31T14:01:22.573512+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1348756,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "43aaf7d0e3580a6b004e6c6942c6c2d48d24efbf0dc49412e9bc54cecc4f46a5"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "failed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-03-0.log",
+            "pid": 1348757,
+            "exit_code": 101,
+            "seconds": 20.39
+          }
+        ],
+        "seconds": 20.39,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-04.json",
+      "original_bytes": 200612,
+      "original_sha256": "ac89e16c46db94133b7eaf75fe9592ddde92bfce4560106d4011af8c1fc3fa53",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        }
+      ],
+      "record": {
+        "status": "failed",
+        "started_at": "2026-10-31T14:05:25.368893+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1348956,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-04-0.log",
+            "pid": 1348957,
+            "passed_tests": 150,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 82.18
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "failed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-04-1.log",
+            "pid": 1349521,
+            "exit_code": 101,
+            "seconds": 183.54
+          }
+        ],
+        "seconds": 265.73,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-05.json",
+      "original_bytes": 201155,
+      "original_sha256": "150d243ee94425a2d9c7c72ab4c60e5833ccbf6fe1d68fafa29a762c7bc543ea",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "started_at": "2026-10-31T14:10:25.370240+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1350831,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "32f77ddfc27d2d9263d43936598bf054f4aa5e6a46780c5fac3bbad62cba799c"
+        },
+        "commands": [
+          {
+            "command": [
+              "target/debug/deps/integration-d42ef0e1020750cf",
+              "--exact",
+              "screencast_capture::killing_the_backend_process_leaves_worker_alive_long_enough_to_stop",
+              "--nocapture"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-05-0.log",
+            "pid": 1350832,
+            "passed_tests": 1,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 0.85
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-05-1.log",
+            "pid": 1350843,
+            "passed_tests": 37,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 7.22
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-05-2.log",
+            "pid": 1351088,
+            "exit_code": 0,
+            "seconds": 93.92
+          }
+        ],
+        "seconds": 102.01,
+        "changed_sources": []
+      }
+    },
+    {
+      "original_path": ".scratch/xdg-portals/pointer-workers/native-proof/validation-06.json",
+      "original_bytes": 201598,
+      "original_sha256": "2b8d1521f5d35e4644346bb86e3a715e83c9c9b827a4bc31b99a07205ed7a593",
+      "omitted_fields": [
+        {
+          "pointer": "/source_hashes",
+          "entries": 1308,
+          "canonical_sha256": "9217ad8b85d4d90d5c35fb9c15c49104a7ea32ac9572c43cd9fe74cc1336e003"
+        }
+      ],
+      "record": {
+        "status": "passed",
+        "started_at": "2026-10-31T14:20:55.468648+00:00",
+        "scope": "Portal capture binding and private pointer worker focused validation; normal incremental/default-feature debug cache, not full workspace gate",
+        "pid": 1353287,
+        "source_hashes": {
+          "omitted_inventory_entries": 1308,
+          "canonical_sha256": "9217ad8b85d4d90d5c35fb9c15c49104a7ea32ac9572c43cd9fe74cc1336e003"
+        },
+        "commands": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib",
+              "remote_input::pointer::compositor::tests::retiring_with_an_unread_command_confirms_eof_after_reset_without_replaying"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06-0.log",
+            "pid": 1353292,
+            "passed_tests": 1,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 49.41
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--lib"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06-1.log",
+            "pid": 1353631,
+            "passed_tests": 151,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 13.88
+          },
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--test",
+              "integration"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06-2.log",
+            "pid": 1353905,
+            "passed_tests": 37,
+            "coverage_confirmed": true,
+            "exit_code": 0,
+            "seconds": 181.66
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--locked",
+              "-p",
+              "canopa-portal",
+              "--all-targets",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "status": "passed",
+            "log": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/validation-06-3.log",
+            "pid": 1355107,
+            "exit_code": 0,
+            "seconds": 85.8
+          }
+        ],
+        "seconds": 330.77,
+        "changed_sources": []
+      }
+    }
+  ],
+  "evidence_note": "Compact records preserve original path, byte count, SHA-256, outcomes and identities. Source-inventory entries become count/digest summaries; these summaries cannot reconstruct the original manifests or independently reverify source files. Historical hashes describe the original raw receipts, not this derived index."
+}

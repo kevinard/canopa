@@ -1,5 +1,8 @@
 ## Phase56: durable authenticated Create owner scoped verified
 
+Evidence retention: see [the cleanup record](RETENTION.md) for retained receipts,
+compacted source inventories and removed historical local outputs.
+
 Full18 goal ACTIVE:11 packaged/six experimental/Print opt-in. User chose Canopa
 Print features first; automatic Qt integration remains deferred. No required input
 or external blocker. No live builds/native fixtures remain. All toolhandles from

@@ -1,0 +1,85 @@
+{
+  "overlay": "xdg-desktop-portal-input-order",
+  "recipe_sha256": "b00f9e7bd1ca48403116e94d7b50ee67218435fde3aa826894ea21a081557076",
+  "source": "/tmp/canopa-xdp-session-canonical-13/xdg-desktop-portal-1.22.1",
+  "source_file_count": 499,
+  "source_inputs_sha256": "d6922bd7c6731f107d823d017deb6184cecc1fef66f80a55158ffc2deb22b329",
+  "build": "/tmp/canopa-xdp-session-canonical-13/build",
+  "profile": "debug",
+  "jobs": 1,
+  "installed": false,
+  "native_file": {
+    "path": "/tmp/canopa-xdp-order-stage-01/native.ini",
+    "sha256": "c765d3c7fccd5cbd0eb84ab09e8b2a5ab286427efa2015318f450a849b7d5b04"
+  },
+  "status": "built",
+  "commands": [
+    [
+      "meson",
+      "setup",
+      "/tmp/canopa-xdp-session-canonical-13/build",
+      "/tmp/canopa-xdp-session-canonical-13/xdg-desktop-portal-1.22.1",
+      "--prefix=/usr",
+      "--libexecdir=/usr/lib",
+      "--buildtype=debug",
+      "--wrap-mode=nodownload",
+      "-Db_sanitize=none",
+      "-Dtests=disabled",
+      "-Ddocumentation=disabled",
+      "-Dman-pages=disabled",
+      "--native-file=/tmp/canopa-xdp-order-stage-01/native.ini"
+    ],
+    [
+      "ninja",
+      "-C",
+      "/tmp/canopa-xdp-session-canonical-13/build",
+      "-j",
+      "1",
+      "src/xdg-desktop-portal"
+    ]
+  ],
+  "upstream_tests": "disabled; native acceptance must be run separately",
+  "compilers": {
+    "host": {
+      "c": {
+        "id": "gcc",
+        "exelist": [
+          "cc"
+        ],
+        "linker_exelist": [
+          "cc"
+        ],
+        "file_suffixes": [
+          "c"
+        ],
+        "default_suffix": "c",
+        "version": "16.2.1",
+        "full_version": "cc (GCC) 16.2.1 20260810",
+        "linker_id": "ld.bfd"
+      }
+    },
+    "build": {
+      "c": {
+        "id": "gcc",
+        "exelist": [
+          "cc"
+        ],
+        "linker_exelist": [
+          "cc"
+        ],
+        "file_suffixes": [
+          "c"
+        ],
+        "default_suffix": "c",
+        "version": "16.2.1",
+        "full_version": "cc (GCC) 16.2.1 20260810",
+        "linker_id": "ld.bfd"
+      }
+    }
+  },
+  "exit_code": 0,
+  "binary": "/tmp/canopa-xdp-session-canonical-13/frozen/xdg-desktop-portal",
+  "binary_sha256": "cb35d770e84578dec58682cc2deeb0b8e2a93b1458e2371b3c0ce2036bf2a4d7",
+  "inputs_unchanged": true,
+  "binary_bytes": 4659800
+}

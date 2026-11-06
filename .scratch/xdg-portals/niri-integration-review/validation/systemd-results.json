@@ -1,0 +1,14 @@
+{
+  "command": [
+    "systemd-analyze",
+    "--user",
+    "verify",
+    "--man=no",
+    "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/validation/units/niri.service",
+    "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/validation/units/xdg-desktop-portal-canopa.service",
+    "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/validation/units/xdg-desktop-portal.service"
+  ],
+  "exit_code": 0,
+  "scope": "Combined base/drop-ins with executable paths substituted to checksum-matched build locations; future installed path existence is not claimed.",
+  "sandbox_attempt": "Blocked by sandbox SO_PASSCRED setup; exact read-only verification repeated on host."
+}

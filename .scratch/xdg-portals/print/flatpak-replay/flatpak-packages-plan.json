@@ -1,0 +1,65 @@
+{
+  "status": "verified-extracted-workspace-only",
+  "packages": [
+    {
+      "name": "flatpak",
+      "version": "1:1.18.4-2",
+      "filename": "flatpak-1:1.18.4-2-x86_64.pkg.tar.zst",
+      "sha256sum": "dc14c79146f4cd6b6f6ec16813ee99d9efbfe7538f75b5e3d4d214a09f3286ad",
+      "csize": "2050190",
+      "isize": "8468091",
+      "url": "https://geo.mirror.pkgbuild.com/extra/os/x86_64/flatpak-1:1.18.4-2-x86_64.pkg.tar.zst",
+      "signature_valid": true,
+      "signature_sha256": "5d2c8c0e093ff7733a46adf7c47e205ed42c5cbd4f1b697724ce33a321c9f89c"
+    },
+    {
+      "name": "libmalcontent",
+      "version": "0.14.0-4",
+      "filename": "libmalcontent-0.14.0-4-x86_64.pkg.tar.zst",
+      "sha256sum": "9c35fcdcade68ff32a0af35f5e80b3c72eb69926069ae0450a2006241109f23c",
+      "csize": "70373",
+      "isize": "432482",
+      "url": "https://geo.mirror.pkgbuild.com/extra/os/x86_64/libmalcontent-0.14.0-4-x86_64.pkg.tar.zst",
+      "signature_valid": true,
+      "signature_sha256": "b53f37661a361991be635e1719a5230bf0a7c68cadb016d906409f40636dec75"
+    },
+    {
+      "name": "ostree",
+      "version": "2026.4-1",
+      "filename": "ostree-2026.4-1-x86_64.pkg.tar.zst",
+      "sha256sum": "27c234d446851690f5608de768fbf7bbe775e4b1111856acb4ffacf30f1d266a",
+      "csize": "860271",
+      "isize": "4586776",
+      "url": "https://archive.archlinux.org/packages/o/ostree/ostree-2026.4-1-x86_64.pkg.tar.zst",
+      "signature_valid": true,
+      "signature_sha256": "3d874b31ea2c4e77f3895763adfa31c1f866927a38b79031b1af80ea26313899"
+    },
+    {
+      "name": "composefs",
+      "version": "1.0.8-1",
+      "filename": "composefs-1.0.8-1-x86_64.pkg.tar.zst",
+      "sha256sum": "f04ba335b4b466dd232e2675bcc711e1794106e6d5bcef46ad19518437d6f616",
+      "csize": "60060",
+      "isize": "161195",
+      "url": "https://geo.mirror.pkgbuild.com/extra/os/x86_64/composefs-1.0.8-1-x86_64.pkg.tar.zst",
+      "signature_valid": true,
+      "signature_sha256": "617faa0741930e7852c318985b0ff441e3817f1555abcb262787436b1bf3bbc9"
+    },
+    {
+      "name": "accountsservice",
+      "version": "26.27.3-1",
+      "filename": "accountsservice-26.27.3-1-x86_64.pkg.tar.zst",
+      "sha256sum": "d3af0478419f59cf771f516cd6265e1e9f7a4e8d3e9cede1d0e6f7173835dab1",
+      "csize": "173172",
+      "isize": "991953",
+      "url": "https://geo.mirror.pkgbuild.com/extra/os/x86_64/accountsservice-26.27.3-1-x86_64.pkg.tar.zst",
+      "signature_valid": true,
+      "signature_sha256": "3164a70a3399b2a9d7f2b9d86d17d7df8db1b205654ed76a7f8e5b4cee2d9526"
+    }
+  ],
+  "scope": "Workspace-only extracted Flatpak CLI; no system or user installation, remotes, service or routing changes",
+  "growth_limit_bytes": 134217728,
+  "download_notes": [
+    "Original live-mirror OSTree URL returned HTTP404 before extraction/execution; exact pinned archive verified from official Arch archive instead."
+  ]
+}

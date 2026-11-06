@@ -1,0 +1,8 @@
+--- /usr/share/xdg-desktop-portal/niri-portals.conf
++++ /home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/core-niri-portals.conf
+@@ -3,3 +3,5 @@
+ org.freedesktop.impl.portal.Access=gtk;
+ org.freedesktop.impl.portal.Notification=gtk;
+ org.freedesktop.impl.portal.Secret=gnome-keyring;
++org.freedesktop.impl.portal.Settings=canopa;gnome;gtk;
++org.freedesktop.impl.portal.FileChooser=canopa;gnome;gtk;

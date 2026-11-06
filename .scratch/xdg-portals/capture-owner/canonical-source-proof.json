@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "recipe_sha256": "a5abb6ebf7a775a9ad78a8f8efaa6c081fb5ed25127c082c87697a97425cc9b4",
+  "source_files": {
+    "niri": 5616,
+    "smithay": 345
+  },
+  "source_inputs_unchanged_from_compiled_build": true,
+  "normalization": "only two absolute local Smithay paths in Cargo.toml",
+  "source_receipt": "/home/kevinard/projects/canopa/target/niri-pointer-stage-01/canopa-build.json",
+  "binary": {
+    "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed/niri",
+    "sha256": "925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed",
+    "bytes": 157383856
+  },
+  "compiler": "rustc 1.97.0-nightly (14196dbfa 2026-04-12)",
+  "compile_seconds": 196.08,
+  "installed": false
+}

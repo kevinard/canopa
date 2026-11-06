@@ -1,0 +1,14 @@
+[
+  {
+    "path": "scripts/test-remote-input-symbols.py",
+    "sha256": "d221e8ecdd4575e401eedd1e4e1ec42ebee61ad1566a01a4a5fb6cb12acff790"
+  },
+  {
+    "path": "scripts/validate-desktop.py",
+    "sha256": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf"
+  },
+  {
+    "path": "scripts/desktop-fixture/remote-input-receiver.c",
+    "sha256": "5386c84f69592b0faf2c9c4678ccb8b520ca04fa50c207550f7c703b6c2e7546"
+  }
+]

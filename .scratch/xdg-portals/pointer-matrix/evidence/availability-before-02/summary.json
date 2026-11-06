@@ -1,0 +1,59 @@
+{
+  "status": "failed",
+  "scope": "Real standard frontend cached AvailableDeviceTypes with pinned production backend and fake same-process input/IPC provider; no input grant or desktop",
+  "checks": [
+    "live-owner-initial-mask-reaches-real-frontend"
+  ],
+  "fixture_sha256": "57e31bca3afa6429568a8e1c10ad46dc9edc27de93587ac810c902de66c2aedb",
+  "binaries": {
+    "portal": {
+      "path": "/tmp/canopa-pointer-production-11-final/xdg-desktop-portal-canopa",
+      "sha256": "1a221a6d4847d06d08a5f1d04d1689cdacbb1b2acdaaca1da02abb514408bcaf"
+    },
+    "harness": {
+      "path": "/tmp/canopa-pointer-production-11-final/canopa-portal-tests",
+      "sha256": "31eb7007c20413b89742ea259a75e308f9d1093f16bfa261961620207cf0abec"
+    },
+    "frontend": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+      "sha256": "b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3"
+    }
+  },
+  "processes": [
+    {
+      "pid": 1395371,
+      "command": [
+        "dbus-daemon",
+        "--session",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1395377,
+      "command": [
+        "/tmp/canopa-pointer-production-11-final/canopa-portal-tests",
+        "--exact",
+        "screencast::remote::production::tests::native_backend_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": -15
+    },
+    {
+      "pid": 1395384,
+      "command": [
+        "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+        "--verbose"
+      ],
+      "exit_code": -15
+    }
+  ],
+  "error": "AssertionError('Timed out: frontend notified capability 1')",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-availability.py\", line 141, in main\n    with tempfile.TemporaryDirectory(prefix='canopa-availability-') as directory:verify(a,Path(directory),a.output,result)\n                                                                                 ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-availability.py\", line 109, in verify\n    wait(lambda:value(PUBLIC,REMOTE)==expected,'frontend notified capability '+str(expected),timeout=5)\n    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-availability.py\", line 83, in wait\n    raise AssertionError('Timed out: '+label)\nAssertionError: Timed out: frontend notified capability 1\n",
+  "seconds": 5.71,
+  "binaries_unchanged": true,
+  "fixture_unchanged": true
+}

@@ -1,0 +1,431 @@
+{
+  "status": "passed",
+  "scope": "Actual recording-worker mapping handoff to separate private pointer worker; real video/client input, not public EI/Notify pointer permission or compositor adoption",
+  "checks": [
+    {
+      "name": "actual-recording-worker-returns-one-complete-source-checked-binding",
+      "status": "passed",
+      "streams": [
+        {
+          "geometry": {
+            "position": [
+              0,
+              0
+            ],
+            "size": [
+              1024,
+              640
+            ]
+          },
+          "node": 41,
+          "serial": 44,
+          "source": {
+            "Monitor": {
+              "identity": 1,
+              "name": "winit"
+            }
+          },
+          "mapping": {
+            "mapping_id": "canopa-niri::1.11:u1",
+            "node": 41,
+            "size": [
+              1024,
+              640
+            ],
+            "source_id": 1,
+            "stream": "/org/gnome/Mutter/ScreenCast/Stream/u1",
+            "session": "/org/gnome/Mutter/ScreenCast/Session/u1"
+          }
+        },
+        {
+          "geometry": null,
+          "node": 43,
+          "serial": 46,
+          "source": {
+            "Window": 2
+          },
+          "mapping": {
+            "mapping_id": "canopa-niri::1.11:u2",
+            "node": 43,
+            "size": [
+              400,
+              300
+            ],
+            "source_id": 2,
+            "stream": "/org/gnome/Mutter/ScreenCast/Stream/u2",
+            "session": "/org/gnome/Mutter/ScreenCast/Session/u1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "separate-rust-pointer-worker-maps-absolute-nodes-and-relative-motion",
+      "status": "passed"
+    },
+    {
+      "name": "pointer-worker-validates-paired-buttons-and-forwards-wheel-and-axis-stop",
+      "status": "passed",
+      "events": [
+        "button 272 1",
+        "button 272 0",
+        "axis-source 0",
+        "axis-discrete 0 1",
+        "axis 0 15.00",
+        "axis-source 1",
+        "axis-stop 0"
+      ]
+    },
+    {
+      "name": "invalid-region-or-unrequested-node-does-not-inject-or-retire-a-valid-worker",
+      "status": "passed"
+    },
+    {
+      "name": "rust-worker-input-matches-four-real-captured-video-regions",
+      "status": "passed"
+    },
+    {
+      "name": "idle-window-resize-releases-old-state-and-renews-the-same-pointer-worker",
+      "status": "passed"
+    },
+    {
+      "name": "monitor-scale-change-renews-bound-regions-without-reusing-held-state",
+      "status": "passed"
+    },
+    {
+      "name": "inflight-motion-and-repeated-size-changes-keep-a-coherent-worker",
+      "status": "passed",
+      "statuses": [
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Unavailable",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted",
+        "Accepted"
+      ]
+    },
+    {
+      "name": "pointer-stop-releases-input-while-the-recording-remains-owned-and-reopenable",
+      "status": "passed"
+    },
+    {
+      "name": "backend-sigkill-leaves-both-workers-able-to-retire-input-and-producers",
+      "status": "passed",
+      "workers": [
+        {
+          "pid": 1355981,
+          "state": "S",
+          "start": "31843577"
+        },
+        {
+          "pid": 1355733,
+          "state": "S",
+          "start": "31839014"
+        }
+      ]
+    },
+    {
+      "name": "source-destruction-closes-the-idle-pointer-worker-and-recording",
+      "status": "passed"
+    }
+  ],
+  "binaries": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/xdg-desktop-portal-canopa",
+      "sha256": "27a9fbb90115047a613eac0f2cb6e44b080ed955d4babb5e506be586d80cc538",
+      "bytes": 180943232
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+      "sha256": "413597eb060ade224dc1bc41763b5a17a862357f104234688240156d3596ccb3",
+      "bytes": 109986560
+    }
+  },
+  "compositor_sha256": "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+  "processes": [
+    {
+      "pid": 1355677,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-portal-pointer-3p9c7fn2/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355678,
+      "command": [
+        "pipewire"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355680,
+      "command": [
+        "wireplumber",
+        "--profile",
+        "policy"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355688,
+      "command": [
+        "weston",
+        "--backend=headless",
+        "--renderer=gl",
+        "--fake-seat",
+        "--width=1280",
+        "--height=800",
+        "--socket=wayland-parent",
+        "--no-config",
+        "--idle-time=0"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355697,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-04/compositor/bin/niri",
+        "-c",
+        "/tmp/canopa-portal-pointer-3p9c7fn2/niri.kdl"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355722,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-04/receiver"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1355730,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+        "--exact",
+        "remote_input::pointer::tests::native_pointer_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": -9,
+      "terminal": true
+    },
+    {
+      "pid": 1355986,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+        "--exact",
+        "remote_input::pointer::tests::native_pointer_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    }
+  ],
+  "exit_code": 0,
+  "seconds": 50.15,
+  "source_hashes": {
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py": "e91652edfdaf107221f37aeef3a34ade60ce84a9133478c83a3dc3ec72de9304",
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "ab43f5ef37d0473bdadb780faec5a67745a5ddf3e4ef528d0f531bf190a45ffc",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf"
+  },
+  "changed_sources": [],
+  "binaries_unchanged": true
+}

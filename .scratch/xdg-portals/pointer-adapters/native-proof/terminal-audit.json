@@ -1,0 +1,30 @@
+{
+  "wrapper_pids": [
+    1360996,
+    1363179
+  ],
+  "wrappers_terminal": true,
+  "owned_native_processes_terminal": true,
+  "observed_tool_sessions": {
+    "check01": {
+      "id": 8966,
+      "exit": 101
+    },
+    "check02": {
+      "id": 63815,
+      "exit": 0
+    },
+    "validation01": {
+      "id": 92678,
+      "exit": 0
+    },
+    "freeze": {
+      "id": 7208,
+      "exit": 0
+    },
+    "native01": {
+      "id": 21367,
+      "exit": 0
+    }
+  }
+}

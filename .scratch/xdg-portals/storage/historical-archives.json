@@ -1,0 +1,150 @@
+{
+  "status": "passed",
+  "files": [
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/canopa-portal-tests.gz",
+      "sha256": "04d549112d72048712b6d65b746532fbeab3b9f92cc8fcabb9cf9cc9f90acf98",
+      "bytes": 110215808,
+      "mode": 493,
+      "archive_bytes": 28589572,
+      "reclaimed_allocated_bytes": 81629184
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-adapters-08/frozen/xdg-desktop-portal-canopa.gz",
+      "sha256": "7e47bd782dd146278e0786c8458d2f1388b8b2769248e477bf154a93a68019d6",
+      "bytes": 181015184,
+      "mode": 493,
+      "archive_bytes": 40886829,
+      "reclaimed_allocated_bytes": 140128256
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/canopa-portal-tests.gz",
+      "sha256": "641a1b5205a3190d84359344f6bc6c0784d8ccf7cd39a70b6f43ca1fdd0c0eed",
+      "bytes": 110290544,
+      "mode": 493,
+      "archive_bytes": 28612855,
+      "reclaimed_allocated_bytes": 81682432
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/xdg-desktop-portal-canopa.gz",
+      "sha256": "62a3f70aadb3c24b37720caaac41f4d70987f1f7b6317fe4e73cb705aa571b2b",
+      "bytes": 181197632,
+      "mode": 493,
+      "archive_bytes": 40922346,
+      "reclaimed_allocated_bytes": 140279808
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/canopa-portal-tests.gz",
+      "sha256": "5ddf74df6bf606cd02d1273983d0fe9371bc80107dd329105a76edbd1e232cf8",
+      "bytes": 108212704,
+      "mode": 493,
+      "archive_bytes": 28165927,
+      "reclaimed_allocated_bytes": 80052224
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-source-identities-06/frozen/xdg-desktop-portal-canopa.gz",
+      "sha256": "a9171645dd995bdcf2bc72cdf23b4ec54b54156ba21e2ebdeaa66305ae81c279",
+      "bytes": 180030560,
+      "mode": 493,
+      "archive_bytes": 40694611,
+      "reclaimed_allocated_bytes": 139337728
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/xdg-desktop-portal-canopa.gz",
+      "sha256": "9feb21e4f908b41e8bc2b4e2d64c180d582a17ce3d78546b0d4fe3775fa5567f",
+      "bytes": 181418616,
+      "mode": 493,
+      "archive_bytes": 41017634,
+      "reclaimed_allocated_bytes": 140402688
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/canopa-portal-tests.gz",
+      "sha256": "e18f6b2f6e676751a21c6dd903514adaf016b99f583418bc2ed14847048914c7",
+      "bytes": 110324544,
+      "mode": 493,
+      "archive_bytes": 28620043,
+      "reclaimed_allocated_bytes": 81707008
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/xdg-desktop-portal-canopa.gz",
+      "sha256": "47ca439354beac2168be023ce30131ae5cd3929e5af76887d23eb2278ae077da",
+      "bytes": 181418776,
+      "mode": 493,
+      "archive_bytes": 41015815,
+      "reclaimed_allocated_bytes": 140402688
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/canopa-portal-tests.gz",
+      "sha256": "413597eb060ade224dc1bc41763b5a17a862357f104234688240156d3596ccb3",
+      "bytes": 109986560,
+      "mode": 493,
+      "archive_bytes": 28548562,
+      "reclaimed_allocated_bytes": 81444864
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/xdg-desktop-portal-canopa.gz",
+      "sha256": "27a9fbb90115047a613eac0f2cb6e44b080ed955d4babb5e506be586d80cc538",
+      "bytes": 180943232,
+      "mode": 493,
+      "archive_bytes": 40901821,
+      "reclaimed_allocated_bytes": 140046336
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/canopa-portal-tests.gz",
+      "sha256": "870bebcaa9780e934a3fb54e3be52af18ef0d64b58c2fe28480bdb64154b1408",
+      "bytes": 109715032,
+      "mode": 493,
+      "archive_bytes": 28497171,
+      "reclaimed_allocated_bytes": 81219584
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-02/xdg-desktop-portal-canopa.gz",
+      "sha256": "8e55c518b3549b68216332e475247a7b1f16db5e64ba4a9a081ac104c2b5d3ae",
+      "bytes": 180929848,
+      "mode": 493,
+      "archive_bytes": 40904646,
+      "reclaimed_allocated_bytes": 140029952
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/canopa-portal-tests",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/canopa-portal-tests.gz",
+      "sha256": "1aaa98a7f3acedcf2ea13e4a5fe5f9838afd6e1ed8908c85c5f187b913d56c28",
+      "bytes": 109223736,
+      "mode": 493,
+      "archive_bytes": 28400650,
+      "reclaimed_allocated_bytes": 80826368
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen/xdg-desktop-portal-canopa.gz",
+      "sha256": "b901831c7bdf967835abc3721159d47be6a92f63a107d7ec9fd2602aadf48d47",
+      "bytes": 180929432,
+      "mode": 493,
+      "archive_bytes": 40878993,
+      "reclaimed_allocated_bytes": 140054528
+    },
+    {
+      "original": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/diagnostic-frozen-01/xdg-desktop-portal-canopa",
+      "archive": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/diagnostic-frozen-01/xdg-desktop-portal-canopa.gz",
+      "sha256": "09999ddebd36939a6168c57f05e50d0675d0858e310c5a510024fa89c4516ef8",
+      "bytes": 180945840,
+      "mode": 493,
+      "archive_bytes": 40885031,
+      "reclaimed_allocated_bytes": 140066816
+    }
+  ],
+  "reclaimed_allocated_bytes": 1829310464
+}

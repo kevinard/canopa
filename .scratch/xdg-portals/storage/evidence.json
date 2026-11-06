@@ -1,0 +1,207 @@
+{
+  "status": "storage mitigation validated",
+  "root_reclaimed_allocated_bytes": 3220058112,
+  "tmp_reclaimed_bytes": 584040448,
+  "protected_root_debug": true,
+  "checks": {
+    "desktop_runner": 12,
+    "check_scripts": 15,
+    "vendor_workspace_sync": 2,
+    "python_compile": true,
+    "shell_syntax": true,
+    "diff_whitespace": true
+  },
+  "continuation": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-remainder-03.json",
+  "growth_budget_bytes": 6000000000,
+  "free_floor_bytes": 8000000000,
+  "historical_executables_archived": 16,
+  "vendor_preparation": {
+    "stable_prepared_files": 451,
+    "real_offline_metadata": true,
+    "identical_hashes_and_mtimes_on_repeat": true,
+    "rust_execution": "deferred to bounded continuation"
+  },
+  "extra_archive_bytes": 69701632,
+  "new_tooling_inputs": {
+    "scripts/vendor_test_workspace.py": "5bcc01b48ed4ebf494e70c534ad3adcd195eb2ac270baf4c15edce28cd5a0b77",
+    "scripts/test-vendor-test-workspace.py": "cbb1d0641409595f383c5a224229492483a1543ce419b6c883ec24813c3fae5a"
+  },
+  "current_validation": {
+    "at": "2026-10-31T22:53:12.796885+00:00",
+    "status": "storage mitigation and compiled-test continuation complete; full workspace validation remains incomplete",
+    "build": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-remainder-03.json",
+      "status": "stopped at storage budget",
+      "net_growth_bytes": 6005809152,
+      "exit_code": -15,
+      "seconds": 1904.39
+    },
+    "compiled_test_execution": {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-compiled-tests-05.json",
+      "executables_passed": 17,
+      "passed": 2035,
+      "ignored": 9,
+      "source_inputs_unchanged": 1501,
+      "binary_hashes_unchanged": true,
+      "correct_per_crate_working_directory": true,
+      "artifact_inventory_complete": false,
+      "results": [
+        {
+          "name": "canopa_audio_provider-bc0252afd0c81a18",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-00-05.log"
+        },
+        {
+          "name": "canopa_media_provider-94ffb136e7892117",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-02-05.log"
+        },
+        {
+          "name": "canopa_notify-6c30f57cbfc0b090",
+          "passed": 157,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-notify",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-03-05.log"
+        },
+        {
+          "name": "canopa_notify-fd0bebeb05c914e3",
+          "passed": 44,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-notify",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-04-05.log"
+        },
+        {
+          "name": "canopa_portal-6af112ec8fbddff4",
+          "passed": 161,
+          "failed": 0,
+          "ignored": 5,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-portal",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-05-05.log"
+        },
+        {
+          "name": "canopa_shell-a59c35380f894261",
+          "passed": 1275,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-06-05.log"
+        },
+        {
+          "name": "canopa_shell-b01bb69a04968b43",
+          "passed": 38,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-07-05.log"
+        },
+        {
+          "name": "canopa_wifi_provider-5dcbd7eadc7ee437",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-08-05.log"
+        },
+        {
+          "name": "integration-16500db34c0e3dd8",
+          "passed": 43,
+          "failed": 0,
+          "ignored": 2,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-portal",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-11-05.log"
+        },
+        {
+          "name": "integration-a56395d95e9cae5a",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-shell",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-12-05.log"
+        },
+        {
+          "name": "integration-a5fb98f92e89f6df",
+          "passed": 278,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-notify",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-13-05.log"
+        },
+        {
+          "name": "local_actions-281769bec9fb1320",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 1,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-files",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-15-05.log"
+        },
+        {
+          "name": "local_operation_attention-c8351dff56df21e6",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 1,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-files",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-16-05.log"
+        },
+        {
+          "name": "uutils_copy-69b52a13f267c954",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-files",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-17-05.log"
+        },
+        {
+          "name": "xdg_desktop_portal_canopa-718209f5296af03d",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-portal",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-18-05.log"
+        },
+        {
+          "name": "copy_measure-6a8d5dd5751ddbc8",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-files",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-19-05.log"
+        },
+        {
+          "name": "drag_transport-58ac4ea4a10dddfb",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "cwd": "/home/kevinard/projects/canopa/crates/canopa-files",
+          "log": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-ready-20-05.log"
+        }
+      ]
+    },
+    "runner_correction": {
+      "historical_receipt": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/workspace-compiled-tests-04.json",
+      "cause": "Direct runner used workspace cwd. Three Notify packaging checks read relative paths and failed with ENOENT. They all pass with the correct crate cwd; the entire ready set was then rerun successfully.",
+      "application_source_changes": false
+    },
+    "remaining": [
+      "finish only the still-unbuilt/unexecuted full-graph targets using the existing cache, retaining original full-workspace features and skipping the 17 executables already covered here",
+      "CLI executable missing; configuration and actual fork-library test stages remain pending",
+      "prior full Files integration result remains 596 passed / 10 failed / 41 ignored; same ten names as earlier gate, without assigning baseline causality",
+      "capture creator-lifetime fix remains formatted draft only; no compositor build or canonical adoption this turn",
+      "remaining portal roadmap, native and distribution acceptance"
+    ],
+    "terminal_audit": {
+      "live_validation_drivers": [],
+      "active_target_executables": []
+    },
+    "free_bytes": 22785294336,
+    "tmp_free_bytes": 2136813568
+  },
+  "updated_at": "2026-10-31T22:53:12.796885+00:00"
+}

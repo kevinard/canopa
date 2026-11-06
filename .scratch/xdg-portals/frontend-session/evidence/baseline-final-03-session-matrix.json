@@ -1,0 +1,59 @@
+{
+  "results": [
+    {
+      "scenario": "loss",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership"
+      ],
+      "error": "AssertionError('Timed out: public Session.Closed for every backend-owned session')",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/loss-baseline-final-03/summary.json"
+    },
+    {
+      "scenario": "replace",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership"
+      ],
+      "error": "AssertionError('Timed out: public Session.Closed for every backend-owned session')",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/replace-baseline-final-03/summary.json"
+    },
+    {
+      "scenario": "pending",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [],
+      "error": "AssertionError(('/org/freedesktop/portal/desktop/request/1_2/first0', 0, {'session_handle': '/org/freedesktop/portal/desktop/session/1_2/first0'}))",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/pending-baseline-final-03/summary.json"
+    },
+    {
+      "scenario": "reacquire",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [],
+      "error": "AssertionError(('/org/freedesktop/portal/desktop/request/1_2/first0', 0, {'session_handle': '/org/freedesktop/portal/desktop/session/1_2/first0'}))",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/reacquire-baseline-final-03/summary.json"
+    },
+    {
+      "scenario": "early-closed",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [],
+      "error": "AssertionError(('/org/freedesktop/portal/desktop/request/1_2/first0', 0, {'session_handle': '/org/freedesktop/portal/desktop/session/1_2/first0'}))",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/early-closed-baseline-final-03/summary.json"
+    },
+    {
+      "scenario": "stalled",
+      "exit_code": 1,
+      "status": "failed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership"
+      ],
+      "error": "AssertionError('Timed out: public Session.Closed for every backend-owned session')",
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/stalled-baseline-final-03/summary.json"
+    }
+  ],
+  "fixture_sha256": "a30a432ad14c5474d796939d8849b92e2be1021a89907b1e0be1c31b95a9b66a"
+}

@@ -1,0 +1,150 @@
+{
+  "status": "failed",
+  "scope": "Private descriptor, pinned ordered standard frontend, production Rust backend/Iced consent and real pointer/keyboard delivery; no shipped advertisement or Flatpak/distribution acceptance",
+  "checks": [],
+  "pins": {
+    "/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py": "6ef57aea49d5f9f1b0769c14e3f13d7d16af4d481db3df7f1bc2f3aa7d51095c",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "a7e525fb26448e8e26856ef17160a49a0040b97822b5f8946fbf1324b6976439",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/remote-input-ei-pointer.c": "b12dcfd2dfd9137b7d56877dca648775e56df2dc736df01c1fc28df93500bbb5",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/remote-input-pointer-receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce"
+  },
+  "binaries": {
+    "portal": {
+      "path": "/tmp/canopa-pointer-production-11-frozen/xdg-desktop-portal-canopa",
+      "sha256": "3eb7b5e083d8b49054877943a04e36ca52199fadd73cc31ef339d70d9466dfae"
+    },
+    "harness": {
+      "path": "/tmp/canopa-pointer-production-11-frozen/canopa-portal-tests",
+      "sha256": "b6052d7e804e3710a5ad510e02081ce1e3f1fc1a40f7931d9425df039d092938"
+    },
+    "niri": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9/niri",
+      "sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9"
+    },
+    "frontend": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+      "sha256": "b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3"
+    }
+  },
+  "starts": [
+    {
+      "case": "view-only",
+      "results": {
+        "devices": 0,
+        "clipboard_enabled": false,
+        "streams": [
+          [
+            41,
+            {
+              "mapping_id": "canopa-niri::1.10:u3",
+              "pipewire-serial": 44,
+              "size": [
+                400,
+                300
+              ],
+              "source_type": 2
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "frames": [
+    {
+      "node": 41,
+      "serial": 44,
+      "mapping_id": "canopa-niri::1.10:u3",
+      "size": [
+        500,
+        375
+      ],
+      "file": "view-only-before.png"
+    }
+  ],
+  "error": "AssertionError('g-dbus-error-quark: GDBus.Error:org.freedesktop.DBus.Error.Failed: Session is not allowed to send input notifications (0)')",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 99, in denied\n    try: notify(c,key,m,s,v)\n         ~~~~~~^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 93, in notify\n    def notify(c,key,m,s,v): return call(c,FRONTEND,PATH,REMOTE,m,s,(key,{},*v))\n                                    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 72, in call\n    def call(c,d,p,i,m,s,v): return c.call_sync(d,p,i,m,GLib.Variant(s,v),None,Gio.DBusCallFlags.NONE,10000,None).unpack()\n                                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ngi.repository.GLib.GError: g-dbus-error-quark: GDBus.Error:org.freedesktop.DBus.Error.Failed: Session is not allowed to send input notifications (0)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 261, in main\n    try: verify(args,session,result); result['status']='passed'; code=0\n         ~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 178, in verify\n    denied(caller,key,'NotifyPointerButton','(oa{sv}iu)',(272,1))\n    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 101, in denied\n    assert Gio.DBusError.get_remote_error(error)=='org.freedesktop.DBus.Error.AccessDenied',str(error)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: g-dbus-error-quark: GDBus.Error:org.freedesktop.DBus.Error.Failed: Session is not allowed to send input notifications (0)\n",
+  "processes": [
+    {
+      "pid": 1386828,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-public-pointer-hh06vfm6/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1386829,
+      "command": [
+        "pipewire"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1386831,
+      "command": [
+        "wireplumber",
+        "--profile",
+        "policy"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1386842,
+      "command": [
+        "weston",
+        "--backend=headless",
+        "--renderer=gl",
+        "--fake-seat",
+        "--width=1280",
+        "--height=800",
+        "--socket=wayland-parent",
+        "--no-config",
+        "--idle-time=0"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1386854,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-production-11/native-dark-01/compositor/bin/niri",
+        "-c",
+        "/tmp/canopa-public-pointer-hh06vfm6/niri.kdl"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1386902,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-production-11/native-dark-01/receiver"
+      ],
+      "exit_code": -15
+    },
+    {
+      "pid": 1386922,
+      "command": [
+        "/tmp/canopa-pointer-production-11-frozen/canopa-portal-tests",
+        "--exact",
+        "screencast::remote::production::tests::native_backend_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": -15
+    },
+    {
+      "pid": 1386925,
+      "command": [
+        "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+        "--verbose"
+      ],
+      "exit_code": -15
+    }
+  ],
+  "seconds": 15.43,
+  "changed_sources": [],
+  "exit_code": 1,
+  "binaries_unchanged": true
+}

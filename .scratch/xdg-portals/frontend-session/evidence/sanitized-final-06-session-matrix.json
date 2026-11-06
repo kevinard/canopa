@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "scenario": "loss",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "every-public-session-closes-on-loss",
+        "retired-session-paths-cannot-be-used-again"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/loss-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "replace",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "every-public-session-closes-on-replace",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "replacement-accepts-only-fresh-sessions-while-old-owner-remains-alive"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/replace-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "pending",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "late-original-success-cannot-export-replaced-sessions",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "replacement-accepts-only-fresh-sessions-while-old-owner-remains-alive",
+        "no-spurious-closed-for-client-or-unexported-session"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/pending-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "reacquire",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "a-lost-and-reacquired-name-cannot-revive-pending-sessions",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "replacement-accepts-only-fresh-sessions-while-old-owner-remains-alive",
+        "no-spurious-closed-for-client-or-unexported-session"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/reacquire-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "early-closed",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "late-success-cannot-reexport-a-backend-closed-session",
+        "retired-session-paths-cannot-be-used-again",
+        "no-spurious-closed-for-client-or-unexported-session"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/early-closed-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "stalled",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "every-public-session-closes-on-stalled",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "replacement-accepts-only-fresh-sessions-while-old-owner-remains-alive",
+        "unresponsive-old-owner-cannot-block-frontend-or-outlive-bounded-cleanup"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/stalled-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "busy",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "real-frontend-worker-is-busy-in-a-synchronous-backend-call",
+        "every-public-session-closes-on-busy",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "replacement-accepts-only-fresh-sessions-while-old-owner-remains-alive",
+        "busy-worker-revocation-keeps-frontend-responsive-and-cleans-original-owner"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/busy-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "backend-closed",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "every-public-session-closes-on-backend-closed",
+        "backend-closed-does-not-echo-close",
+        "retired-session-paths-cannot-be-used-again"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/backend-closed-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "client-close",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "retired-session-paths-cannot-be-used-again",
+        "no-spurious-closed-for-client-or-unexported-session"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/client-close-sanitized-final-06/summary.json"
+    },
+    {
+      "scenario": "client-loss",
+      "exit_code": 0,
+      "status": "passed",
+      "checks": [
+        "five-session-types-preserve-caller-ownership",
+        "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+        "no-spurious-closed-for-client-or-unexported-session"
+      ],
+      "error": null,
+      "summary": "/home/kevinard/projects/canopa/target/portal-frontend-session-13/client-loss-sanitized-final-06/summary.json"
+    }
+  ],
+  "fixture_sha256": "56366dd2ae7537ec27140d121b1c777269acbd29be56ed63af5e97d6d0aa97f2"
+}

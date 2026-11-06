@@ -1,0 +1,154 @@
+{
+  "status": "experimental pointer/Clipboard and canonical frontend phase handling verified; unadvertised; workspace Files failures and full goal remain open",
+  "at": "2026-11-01T06:58:38.471327+00:00",
+  "recipe": "niri-input-capture",
+  "recipe_sha256": "93e247ba63a7e2bc0c4a17f98c8702d6d8eca74773d9527ccd09567b6b945963",
+  "source_count": 5963,
+  "canonical_sources_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/canonical-sources-01.json",
+  "build_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/build-02.json",
+  "source_paths_reused": true,
+  "incremental_target_reused": true,
+  "geometry_tests": 7,
+  "geometry_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/geometry-01.log",
+  "capture_native_groups": 8,
+  "capture_native_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/native-04/summary.json",
+  "regression_native_groups": {
+    "clipboard-dark-01": 8,
+    "pointer-dark-01": 17,
+    "keyboard-dark-01": 2,
+    "clipboard-light-01": 8,
+    "pointer-light-01": 17,
+    "keyboard-light-01": 2
+  },
+  "regression_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/regressions-01.json",
+  "native_total": 62,
+  "compositor_sha256": "9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e",
+  "baseline_sha256": "925c49c8745972e609d014886b3af251ee1d53d05677d95c6eaf6404c5bb32ed",
+  "baseline_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/baseline-01/summary.json",
+  "baseline_outcome": "NameHasNoOwner for the absent private InputCapture service",
+  "workspace_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/workspace-01.json",
+  "workspace_status": "failed",
+  "advertised": false,
+  "installed": false,
+  "capabilities": {
+    "private_pointer": true,
+    "keyboard": false,
+    "touch": false,
+    "public_input_capture": true,
+    "ei_receiver": true,
+    "iced_consent": true,
+    "clipboard": "separate unchecked grant; actual activation only"
+  },
+  "storage": {
+    "free_bytes": 16172285952,
+    "new_niri_copies_per_native_case": 0,
+    "workspace_net_growth_bytes": 449888256
+  },
+  "remaining": [
+    "real keyboard/keymap and touch capture; broader physical/phase/failure acceptance",
+    "compatible frontend/compositor distribution and real Flatpak acceptance",
+    "GlobalShortcuts, Print, Usb and unresolved workspace failures"
+  ],
+  "history": [
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/build-01.json",
+      "cause": "Initial locked-pointer focus borrow overlaps revocation; clone focus before the mutable call."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/native-01/summary.json",
+      "cause": "C fixture missing libm; add -lm without changing the compositor."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/native-02/summary.json",
+      "result": "7 groups pass before strengthening receiver observation."
+    },
+    {
+      "receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-17/native-03/summary.json",
+      "result": "7 groups pass with an ordered receiver event marker."
+    }
+  ],
+  "workspace_tool_session_id": 60525,
+  "prior_goal_turn_classification": "progress",
+  "workspace_format": "passed",
+  "workspace_clippy": "passed",
+  "workspace_same_files_failure_set": true,
+  "workspace_files": {
+    "passed": 596,
+    "failed": 10,
+    "ignored": 41,
+    "failures": [
+      "cases::recovery_catalog::pages_remain_loaded_and_saved_identity_survives_active_undo_expiry",
+      "cases::undo_destinations::restarting_a_killed_keep_both_destination_restore_preserves_newer_files_and_cleans_stages",
+      "cases::undo_unavailable_moves::an_external_move_does_not_let_older_copy_undo_own_an_independent_restored_destination",
+      "cases::undo_unavailable_moves::an_unavailable_moves_previous_destination_can_be_restored_without_returning_the_missing_item",
+      "cases::undo_unavailable_moves::changing_the_shown_saved_destination_refuses_restore_and_keeps_it_retryable_after_restart",
+      "cases::undo_unavailable_moves::restarting_a_killed_saved_only_restoration_preserves_missing_items_and_older_copy_undo",
+      "cases::undo_unavailable_moves::restoring_a_previous_destination_does_not_adopt_it_for_an_older_copy_of_the_missing_incoming_item",
+      "cases::undo_unavailable_moves::restoring_only_the_previous_destination_does_not_relocate_archives_as_if_the_missing_link_returned",
+      "cases::undo_unavailable_moves::restoring_the_shown_previous_destination_approves_its_current_version_in_one_review",
+      "cases::undo_unavailable_saved::source_only_replace_preserves_newer_original_work_while_saved_restoration_remains_pending"
+    ]
+  },
+  "workspace_sources_unchanged": true,
+  "workspace_post_stages": {
+    "workspace-settings-01": "passed",
+    "workspace-cli-01": "passed",
+    "workspace-configuration-01": "passed",
+    "workspace-vendor-01": "passed"
+  },
+  "workspace_portal": {
+    "library_passed": 172,
+    "library_ignored": 6,
+    "integration_passed": 48,
+    "integration_ignored": 2
+  },
+  "transport_evidence": ".scratch/xdg-portals/input-capture/transport-evidence.json",
+  "session_evidence": ".scratch/xdg-portals/input-capture/session-evidence.json",
+  "foundation_capabilities": {
+    "private_pointer": true,
+    "keyboard": false,
+    "touch": false,
+    "public_input_capture": false,
+    "ei_receiver": false,
+    "iced_consent": false
+  },
+  "foundation_checkpoint_notice": "Source, geometry, native and workspace fields retain phase-17 evidence. The latest scoped Portal/native result is linked separately; normal advertisement remains disabled.",
+  "clipboard_evidence": ".scratch/xdg-portals/input-capture/clipboard-evidence.json",
+  "latest_portal": {
+    "library_passed": 176,
+    "library_ignored": 7,
+    "integration_passed": 53,
+    "integration_ignored": 2,
+    "fmt": "passed",
+    "clippy": "passed",
+    "main_build": "passed"
+  },
+  "latest_native_groups": 143,
+  "frontend_phase_evidence": ".scratch/xdg-portals/input-capture/frontend-phase-evidence.json",
+  "frontend_phase_status": "canonical frontend phase fix and scoped acceptance complete; workspace remains red on ten Files failures; full eighteen-interface goal open",
+  "latest_frontend_scoped_checks": 191,
+  "latest_workspace_receipt": "/home/kevinard/projects/canopa/target/portal-input-capture-21/workspace-01.json",
+  "latest_workspace_analysis": "/home/kevinard/projects/canopa/target/portal-input-capture-21/workspace-analysis-01.json",
+  "latest_pins": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa",
+      "sha256": "c390d62cbca7cd329daf004ce8b23abf9d55975bded934bb7f4938d49ff622af",
+      "bytes": 223773208
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/debug/deps/canopa_portal-93e717a9fdde0bd5",
+      "sha256": "9e3e350a891f43e046527fc38f5abffdf5ab2c07834c49dc26eca27cd096b2d3",
+      "bytes": 117397928
+    },
+    "frontend": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/95737053edb642a48647dbf663134238400e7d60e14875c8684b6977c74054c4/xdg-desktop-portal",
+      "sha256": "95737053edb642a48647dbf663134238400e7d60e14875c8684b6977c74054c4",
+      "bytes": 4659736
+    },
+    "niri": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e/niri",
+      "sha256": "9b9ba92c383332ff6f0c7cd2eecff0220d763a96b4fbb595dd2ce214a12b114e",
+      "bytes": 158604888
+    }
+  }
+}

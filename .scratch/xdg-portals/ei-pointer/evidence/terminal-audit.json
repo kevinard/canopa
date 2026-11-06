@@ -1,0 +1,47 @@
+{
+  "native_runs": [
+    {
+      "run": "native-01",
+      "status": "failed",
+      "processes": 8,
+      "all_terminal": true
+    },
+    {
+      "run": "native-02",
+      "status": "failed",
+      "processes": 9,
+      "all_terminal": true
+    },
+    {
+      "run": "native-03",
+      "status": "failed",
+      "processes": 11,
+      "all_terminal": true
+    },
+    {
+      "run": "native-04",
+      "status": "failed",
+      "processes": 13,
+      "all_terminal": true
+    },
+    {
+      "run": "native-red-05",
+      "status": "failed",
+      "processes": 13,
+      "all_terminal": true
+    },
+    {
+      "run": "native-green-06",
+      "status": "passed",
+      "processes": 25,
+      "all_terminal": true
+    },
+    {
+      "run": "native-final-07",
+      "status": "passed",
+      "processes": 25,
+      "all_terminal": true
+    }
+  ],
+  "live_stage10_executables": []
+}

@@ -1,0 +1,41 @@
+{
+  "wrappers": [
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-01.json",
+      "status": "failed",
+      "pid": 1345554
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-02.json",
+      "status": "passed",
+      "pid": 1346227
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-03.json",
+      "status": "failed",
+      "pid": 1348756
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-04.json",
+      "status": "failed",
+      "pid": 1348956
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-05.json",
+      "status": "passed",
+      "pid": 1350831
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/validation-06.json",
+      "status": "passed",
+      "pid": 1353287
+    },
+    {
+      "receipt": "target/portal-pointer-workers-07/native-03.json",
+      "status": "passed",
+      "pid": 1355269
+    }
+  ],
+  "remaining_wrappers": [],
+  "native_suites_all_terminal": true
+}

@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "before_parameters": {
+    "canopa-physical-scale": 1.25,
+    "canopa-source-id": 2,
+    "mapping-id": "canopa-niri::1.11:u1",
+    "position": [
+      0,
+      0
+    ],
+    "size": [
+      400,
+      300
+    ]
+  },
+  "after_parameters": {
+    "canopa-physical-scale": 1.5,
+    "canopa-source-id": 2,
+    "mapping-id": "canopa-niri::1.11:u1",
+    "position": [
+      0,
+      0
+    ],
+    "size": [
+      400,
+      300
+    ]
+  },
+  "before_pixels": [
+    500,
+    375
+  ],
+  "after_pixels": [
+    600,
+    450
+  ],
+  "original_descriptor": [
+    [
+      1,
+      "canopa-niri::1.11:u1",
+      [
+        400,
+        300
+      ],
+      1.25
+    ]
+  ],
+  "old_lease_eof": true,
+  "old_source_released": true
+}

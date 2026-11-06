@@ -1,0 +1,73 @@
+{
+  "status": "passed",
+  "scenario": "client-close",
+  "checks": [
+    "five-session-types-preserve-caller-ownership",
+    "cleanup-reaches-each-original-owner-once-and-never-the-replacement",
+    "retired-session-paths-cannot-be-used-again",
+    "no-spurious-closed-for-client-or-unexported-session"
+  ],
+  "frontend": "/tmp/canopa-xdp-session-stage-13/frozen-sanitized-02/xdg-desktop-portal",
+  "frontend_sha256": "d04011c10fb42bb11ccb7c1f200eb198ebe915be6f67f19ea25503276c0af074",
+  "fixture_sha256": "56366dd2ae7537ec27140d121b1c777269acbd29be56ed63af5e97d6d0aa97f2",
+  "xml_inputs": {
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.RemoteDesktop.xml": "7383db3aefb662359e490bb3b15c496ef4ba613fd502dda1d9af9eac1d8cd427",
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.ScreenCast.xml": "1282ef81555cbad9b1d4eddef3049c61b3197f02b001a963f1c822013db3b7ec",
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.GlobalShortcuts.xml": "accf7eddb0b399fde8283dff9972240f562a177987da87695d21e2a646dc23c2",
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.InputCapture.xml": "d90ba43c179b90d97d6ea7534ba5141534c76338e1b998a74fc05fb917afbb14",
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.Inhibit.xml": "441080b607613fa25ba2ecacc8e4530cc08b07acba8a944664465a123fbe39c9",
+    "/home/kevinard/projects/canopa/target/xdg-portal-input-order-source-01/xdg-desktop-portal-1.22.1/data/org.freedesktop.impl.portal.Session.xml": "121183b55dfc4c4615831daf86081cce8289a49698d1ff3c89afd1c6b34ac5e2"
+  },
+  "backend_calls": [
+    {
+      "owner": ":1.0",
+      "path": "/org/freedesktop/portal/desktop/session/1_2/first0",
+      "method": "Close"
+    },
+    {
+      "owner": ":1.0",
+      "path": "/org/freedesktop/portal/desktop/session/1_2/first1",
+      "method": "Close"
+    },
+    {
+      "owner": ":1.0",
+      "path": "/org/freedesktop/portal/desktop/session/1_2/first2",
+      "method": "Close"
+    },
+    {
+      "owner": ":1.0",
+      "path": "/org/freedesktop/portal/desktop/session/1_2/first3",
+      "method": "Close"
+    },
+    {
+      "owner": ":1.0",
+      "path": "/org/freedesktop/portal/desktop/session/1_2/first4",
+      "method": "Close"
+    }
+  ],
+  "closed_signals": [],
+  "processes": [
+    {
+      "pid": 1407755,
+      "command": [
+        "dbus-daemon",
+        "--session",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1407759,
+      "command": [
+        "/tmp/canopa-xdp-session-stage-13/frozen-sanitized-02/xdg-desktop-portal",
+        "--verbose"
+      ],
+      "exit_code": -15
+    }
+  ],
+  "seconds": 0.73,
+  "frontend_unchanged": true,
+  "fixture_unchanged": true,
+  "xml_unchanged": true
+}

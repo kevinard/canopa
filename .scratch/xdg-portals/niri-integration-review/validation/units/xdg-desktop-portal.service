@@ -1,0 +1,16 @@
+[Unit]
+Description=Portal service
+PartOf=graphical-session.target
+Requires=dbus.service
+After=dbus.service
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.portal.Desktop
+ExecStart=/usr/lib/xdg-desktop-portal
+Slice=session.slice
+
+[Service]
+ExecStart=
+ExecStart=/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/277568bfecc9e75c1a155a370a69f7a992c335bf6745344601bac54cea132233/xdg-desktop-portal

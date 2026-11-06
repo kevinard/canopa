@@ -1,0 +1,162 @@
+{
+  "status": "passed",
+  "scope": "Window-only production capture and pointer worker scale-only renewal with stable logical size/source identity; actual video/client input, no public EI pointer permission or compositor adoption",
+  "checks": [
+    {
+      "name": "window-only-production-capture-transfers-verified-physical-scale-without-public-position",
+      "status": "passed"
+    },
+    {
+      "name": "window-only-scale-renewal-0",
+      "status": "passed",
+      "physical_scale": 1.5,
+      "logical_size": [
+        400,
+        300
+      ],
+      "pixels": [
+        600,
+        450
+      ]
+    },
+    {
+      "name": "window-only-scale-renewal-1",
+      "status": "passed",
+      "physical_scale": 1.25,
+      "logical_size": [
+        400,
+        300
+      ],
+      "pixels": [
+        500,
+        375
+      ]
+    },
+    {
+      "name": "window-only-scale-renewal-2",
+      "status": "passed",
+      "physical_scale": 1.5,
+      "logical_size": [
+        400,
+        300
+      ],
+      "pixels": [
+        600,
+        450
+      ]
+    },
+    {
+      "name": "renewed-worker-input-still-matches-four-real-window-video-regions",
+      "status": "passed"
+    },
+    {
+      "name": "same-owned-recording-can-reopen-input-after-scale-only-renewal-and-stop",
+      "status": "passed"
+    },
+    {
+      "name": "window-only-source-loss-retires-pointer-worker-and-producer",
+      "status": "passed"
+    }
+  ],
+  "binaries": {
+    "portal": {
+      "path": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/xdg-desktop-portal-canopa",
+      "sha256": "62a3f70aadb3c24b37720caaac41f4d70987f1f7b6317fe4e73cb705aa571b2b",
+      "bytes": 181197632
+    },
+    "harness": {
+      "path": "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/canopa-portal-tests",
+      "sha256": "641a1b5205a3190d84359344f6bc6c0784d8ccf7cd39a70b6f43ca1fdd0c0eed",
+      "bytes": 110290544
+    }
+  },
+  "compositor_sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9",
+  "processes": [
+    {
+      "pid": 1372374,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-portal-pointer-z2cx5z6u/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372375,
+      "command": [
+        "pipewire"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372377,
+      "command": [
+        "wireplumber",
+        "--profile",
+        "policy"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372385,
+      "command": [
+        "weston",
+        "--backend=headless",
+        "--renderer=gl",
+        "--fake-seat",
+        "--width=1280",
+        "--height=800",
+        "--socket=wayland-parent",
+        "--no-config",
+        "--idle-time=0"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372395,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-worker-scale-01/compositor/bin/niri",
+        "-c",
+        "/tmp/canopa-portal-pointer-z2cx5z6u/niri.kdl"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372420,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-worker-scale-01/receiver"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    },
+    {
+      "pid": 1372428,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/frozen/canopa-portal-tests",
+        "--exact",
+        "remote_input::pointer::tests::native_pointer_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "terminal": true
+    }
+  ],
+  "exit_code": 0,
+  "seconds": 7.36,
+  "source_hashes": {
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-worker-scale.py": "3e24391c13356e3c63b649694116a1f3237b315841f2a390fbfec56fc83d9899",
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "a7e525fb26448e8e26856ef17160a49a0040b97822b5f8946fbf1324b6976439",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf"
+  },
+  "changed_sources": [],
+  "binaries_unchanged": true
+}

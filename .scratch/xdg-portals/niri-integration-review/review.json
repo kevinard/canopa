@@ -1,0 +1,115 @@
+{
+  "status": "prepared-for-review",
+  "applied": false,
+  "archive": {
+    "status": "passed",
+    "archive": "/home/kevinard/projects/canopa/target/portal-release-package-check/canopa-x86_64-unknown-linux-gnu.tar.gz",
+    "archive_sha256": "41ee03f86b7a8f15347a9dcb1e5b37b16acc0969f1061fe8223b245f6e3d3d35",
+    "archive_bytes": 210272638,
+    "single_development_archive_replaced": true,
+    "candidate_directory_removed": true,
+    "temporary_staging_removed": true,
+    "method": "Stream accepted members; replace only Portal and fresh documentation; no retained ELF copies.",
+    "identities_receipt": "delivery-identities-01.json",
+    "smoke_receipt": "delivery-smoke-result-01.json"
+  },
+  "installed_prefix": "/home/kevinard/.local",
+  "live_service_actions": [],
+  "profiles": {
+    "core": {
+      "configuration": "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/core-niri-portals.conf",
+      "diff": "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/core.diff",
+      "interfaces": [
+        "Settings",
+        "FileChooser"
+      ],
+      "file_count": 1165,
+      "archive_payload_bytes": 297642305,
+      "requires_compositor_change": false
+    },
+    "full": {
+      "configuration": "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/full-niri-portals.conf",
+      "diff": "/home/kevinard/projects/canopa/.scratch/xdg-portals/niri-integration-review/full.diff",
+      "interfaces": [
+        "Access",
+        "Notification",
+        "Account",
+        "AppChooser",
+        "Background",
+        "Clipboard",
+        "DynamicLauncher",
+        "FileChooser",
+        "GlobalShortcuts",
+        "InputCapture",
+        "Lockdown",
+        "RemoteDesktop",
+        "ScreenCast",
+        "Screenshot",
+        "Settings",
+        "Usb",
+        "Wallpaper"
+      ],
+      "file_count": 1182,
+      "archive_payload_bytes": 837129966,
+      "requires_compositor_change": true
+    }
+  },
+  "checks": {
+    "configuration": "validation/configuration-results.json",
+    "core_private_frontend": "validation/core-results.json",
+    "systemd": "validation/systemd-results.json"
+  },
+  "preserved": [
+    "Current Canopa and Niri configuration files",
+    "Existing Shell/Notify unit definitions and readiness drop-ins",
+    "GNOME/GTK default routing and Secret selection",
+    "Installed Files and canopa CLI binaries",
+    "Print remains outside Canopa advertisement"
+  ],
+  "activation": {
+    "core": "Install reviewed user-local files only after approval; apply on an explicitly approved portal restart or next login. Stock Niri stays selected.",
+    "full": "Requires the companion Niri, updated Shell/Notify/providers and WirePlumber policy. Activate full routing between Niri sessions; never restart the live compositor automatically."
+  },
+  "rollback": {
+    "metadata": "Back up every existing destination before atomic replacement; restore backups and remove only created files on rollback.",
+    "services": "Rollback routing/frontend/compositor overrides first; retain upgraded application data and do not downgrade databases automatically."
+  },
+  "notes": [
+    "Both profiles need the companion frontend for user-local backend descriptor discovery.",
+    "No Cargo build, SDK download or binary copy was performed for this review.",
+    "This is a development bundle; the existing full-workspace Files timing failure remains recorded."
+  ],
+  "steps": {
+    "core": [
+      "Verify the archive checksum and every recorded existing-file guard.",
+      "Back up selected existing destinations and record metadata before atomic installation.",
+      "Install the Portal backend, configuration helper, companion frontend, descriptors, notices and reviewed user unit/configuration files.",
+      "Reload user unit definitions without enabling the on-demand backend or restarting running services.",
+      "Apply the new routing at an explicitly approved frontend restart or next login; stock Niri and current Shell/Notify stay selected."
+    ],
+    "full": [
+      "Plan activation between Niri sessions; do not place full routing into effect while stock Niri owns the desktop.",
+      "Back up selected installed files and quiesced notification state before the application upgrade.",
+      "Install the compatible Niri, frontend, updated Shell/Notify/providers and WirePlumber policy from the same archive.",
+      "Preserve the current Niri/Canopa configurations and existing Shell/Notify service definitions/readiness ordering.",
+      "Once the companion Niri is running, explicitly restart Shell/Notify and portal services to load their upgraded executables; do not assume logout restarts every user service.",
+      "Confirm capture-owner version1 and the expected process identities before enabling the full17-interface routing."
+    ]
+  },
+  "not_installed_by_either_profile": [
+    "Canopa Files/CLI binaries",
+    "FileManager1 activation metadata",
+    "Application desktop entries",
+    "Current Canopa or Niri configuration contents",
+    "Replacement Shell/Notify user unit definitions"
+  ],
+  "unit_verification": "passed with future executable paths substituted to checksum-matched build paths",
+  "core_activation_validation": "Private frontend mapping/startup passed. Installed systemd activation and a live session switch remain unperformed.",
+  "approval_required_before_installation": true,
+  "review_file_sizes": {
+    "core.diff": 425,
+    "full.diff": 1323,
+    "core-niri-portals.conf": 280,
+    "full-niri-portals.conf": 1043
+  }
+}

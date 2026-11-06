@@ -1,0 +1,110 @@
+{
+  "status": "passed",
+  "scope": "Private consumed spatial/compositor gesture ownership with host-key receiver barriers; synthetic host events, not physical hardware acceptance",
+  "binary": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9/niri",
+  "sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9",
+  "cases": [
+    {
+      "kind": "spatial",
+      "ending": "release-with-other-button",
+      "enters_while_primary_held": 0,
+      "status": "passed"
+    },
+    {
+      "kind": "spatial",
+      "ending": "overlap",
+      "enters_while_primary_held": 0,
+      "status": "passed"
+    },
+    {
+      "kind": "spatial",
+      "ending": "destroy",
+      "status": "passed"
+    },
+    {
+      "kind": "move",
+      "ending": "release-with-other-button",
+      "enters_while_primary_held": 0,
+      "status": "passed"
+    },
+    {
+      "kind": "move",
+      "ending": "overlap",
+      "enters_while_primary_held": 0,
+      "status": "passed"
+    },
+    {
+      "kind": "move",
+      "ending": "destroy",
+      "status": "passed"
+    }
+  ],
+  "processes": [
+    {
+      "pid": 1371426,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-pointer-host-87yr3rlv/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "terminal": true
+    },
+    {
+      "pid": 1371427,
+      "command": [
+        "Xvfb",
+        "-displayfd",
+        "1",
+        "-screen",
+        "0",
+        "1600x1000x24",
+        "-nolisten",
+        "tcp"
+      ],
+      "terminal": true
+    },
+    {
+      "pid": 1371431,
+      "command": [
+        "niri",
+        "-c",
+        "/tmp/canopa-pointer-host-87yr3rlv/niri.kdl"
+      ],
+      "terminal": true
+    },
+    {
+      "pid": 1371445,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/accept-01-gestures/sink"
+      ],
+      "terminal": true
+    },
+    {
+      "pid": 1371446,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/accept-01-gestures/receiver"
+      ],
+      "terminal": true
+    },
+    {
+      "pid": 1371464,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/accept-01-gestures/inject"
+      ],
+      "terminal": true
+    }
+  ],
+  "exit_code": 0,
+  "seconds": 3.5,
+  "binary_unchanged": true,
+  "changed_sources": [],
+  "source_hashes": {
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/receiver-host.c": "8d600f2991f7ccb70227f310fd387df1a314b8781e072db70f6471c1cc405eb1",
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/x11-sink.c": "2a73c991e6bf22f3d0e5ecd4a79c656fe419ad7f95583f4e5d2d7aec6a8212fd",
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/inject-motion.c": "7550c0a791bec641919524a62046ba43eecf2e176e950714e1c1d96ed6abb6f1",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/wlr-virtual-pointer-unstable-v1.xml": "3ff6d540be0bc5228195bf072bde42117ea17945a5c2061add5d3cf97d6bb524",
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/compositor-regressions/regression-fixtures/native-gestures.py": "d24bce6f40d3e4328ee4849c9a002a0aa78e2c61252ac7afbb3c5a71772ef51e"
+  }
+}

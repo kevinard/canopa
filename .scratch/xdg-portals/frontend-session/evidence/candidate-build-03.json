@@ -1,0 +1,76 @@
+{
+  "status": "passed",
+  "source": "/tmp/canopa-xdp-session-stage-13/xdg-desktop-portal-1.22.1",
+  "source_files": 499,
+  "source_inputs_sha256": "d6922bd7c6731f107d823d017deb6184cecc1fef66f80a55158ffc2deb22b329",
+  "changed_files": {
+    "src/xdp-session.c": {
+      "before": "77697e3f59e1ca90a6f45e4f6221dfb3cc1a8cf6413c7ffc3ce549b1c3951faf",
+      "after": "447bcb16cf75ae8741c27e8a9c7e1ab95836e555b553afcec837881cc802c098"
+    },
+    "src/xdp-session.h": {
+      "before": "4c61edcf534589b5756d9f16aafa5fe46c3468e7af1f2ee79acbd14402b731f5",
+      "after": "f214ae57e46c9955f48c22d2ec2ae1afc0496820dd6d3d374f5a2693304ba710"
+    }
+  },
+  "patch_sha256": "08b9684538e48e40a4f3d005fa17e8ba6fc13c900a907b77bfbb74cf50a0e67c",
+  "commands": [
+    [
+      "ninja",
+      "-C",
+      "/tmp/canopa-xdp-session-stage-13/build",
+      "-j1",
+      "src/xdg-desktop-portal"
+    ]
+  ],
+  "native_file": {
+    "path": "/tmp/canopa-xdp-order-stage-01/native.ini",
+    "sha256": "c765d3c7fccd5cbd0eb84ab09e8b2a5ab286427efa2015318f450a849b7d5b04"
+  },
+  "canonical_modified": false,
+  "installed": false,
+  "exit_code": 0,
+  "seconds": 7.84,
+  "inputs_unchanged": true,
+  "binary": "/tmp/canopa-xdp-session-stage-13/frozen-03/xdg-desktop-portal",
+  "binary_sha256": "e842c41ff94946d28d35809013e1ab12e80fd1838a15fe8b70415d6c3d8412e1",
+  "binary_bytes": 4659800,
+  "compilers": {
+    "host": {
+      "c": {
+        "id": "gcc",
+        "exelist": [
+          "cc"
+        ],
+        "linker_exelist": [
+          "cc"
+        ],
+        "file_suffixes": [
+          "c"
+        ],
+        "default_suffix": "c",
+        "version": "16.2.1",
+        "full_version": "cc (GCC) 16.2.1 20260810",
+        "linker_id": "ld.bfd"
+      }
+    },
+    "build": {
+      "c": {
+        "id": "gcc",
+        "exelist": [
+          "cc"
+        ],
+        "linker_exelist": [
+          "cc"
+        ],
+        "file_suffixes": [
+          "c"
+        ],
+        "default_suffix": "c",
+        "version": "16.2.1",
+        "full_version": "cc (GCC) 16.2.1 20260810",
+        "linker_id": "ld.bfd"
+      }
+    }
+  }
+}

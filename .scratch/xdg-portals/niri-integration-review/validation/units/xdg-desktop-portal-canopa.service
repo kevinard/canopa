@@ -1,0 +1,11 @@
+[Unit]
+Description=Canopa desktop portal backend
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.impl.portal.desktop.canopa
+ExecStart=/home/kevinard/projects/canopa/target/debug/xdg-desktop-portal-canopa
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure

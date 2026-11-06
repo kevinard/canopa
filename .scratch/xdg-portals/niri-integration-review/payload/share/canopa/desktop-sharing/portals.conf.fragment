@@ -1,0 +1,9 @@
+# Merge these entries into the session's existing [preferred] group.
+# Keep its default and other interface selections.
+[preferred]
+org.freedesktop.impl.portal.ScreenCast=canopa
+org.freedesktop.impl.portal.RemoteDesktop=canopa
+org.freedesktop.impl.portal.Clipboard=canopa
+org.freedesktop.impl.portal.InputCapture=canopa
+org.freedesktop.impl.portal.GlobalShortcuts=canopa
+org.freedesktop.impl.portal.Usb=canopa

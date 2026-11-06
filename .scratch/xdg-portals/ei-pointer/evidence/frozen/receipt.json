@@ -1,0 +1,15 @@
+{
+  "portal": {
+    "path": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/xdg-desktop-portal-canopa",
+    "sha256": "47ca439354beac2168be023ce30131ae5cd3929e5af76887d23eb2278ae077da",
+    "bytes": 181418776
+  },
+  "source_inputs": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/final-inputs.json",
+  "source_inputs_sha256": "d4396a00fab641453e74e1d9d302d6824010464a9cc9973144376430d4503910",
+  "source_count": 1320,
+  "harness": {
+    "path": "/home/kevinard/projects/canopa/target/portal-ei-pointer-10/frozen/canopa-portal-tests",
+    "sha256": "e18f6b2f6e676751a21c6dd903514adaf016b99f583418bc2ed14847048914c7",
+    "bytes": 110324544
+  }
+}

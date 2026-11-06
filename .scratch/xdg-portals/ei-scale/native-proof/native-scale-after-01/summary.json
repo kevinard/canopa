@@ -1,0 +1,204 @@
+{
+  "status": "passed",
+  "scope": "Window-only scale change: unchanged logical size, actual changed video pixels, atomic scale descriptor and old held-source retirement required before EI integration; no public pointer grant or compositor adoption",
+  "checks": [
+    {
+      "name": "actual-window-only-video-changes-scale-with-unchanged-selected-logical-region",
+      "status": "passed",
+      "observation": {
+        "version": 2,
+        "before_parameters": {
+          "canopa-physical-scale": 1.25,
+          "canopa-source-id": 2,
+          "mapping-id": "canopa-niri::1.11:u1",
+          "position": [
+            0,
+            0
+          ],
+          "size": [
+            400,
+            300
+          ]
+        },
+        "after_parameters": {
+          "canopa-physical-scale": 1.5,
+          "canopa-source-id": 2,
+          "mapping-id": "canopa-niri::1.11:u1",
+          "position": [
+            0,
+            0
+          ],
+          "size": [
+            400,
+            300
+          ]
+        },
+        "before_pixels": [
+          500,
+          375
+        ],
+        "after_pixels": [
+          600,
+          450
+        ],
+        "original_descriptor": [
+          [
+            1,
+            "canopa-niri::1.11:u1",
+            [
+              400,
+              300
+            ],
+            1.25
+          ]
+        ],
+        "old_lease_eof": true,
+        "old_source_released": true
+      }
+    },
+    {
+      "name": "scale-only-change-retires-held-source-and-atomic-renewal-snapshots-new-scale",
+      "status": "passed",
+      "region": [
+        1,
+        "canopa-niri::1.11:u1",
+        [
+          400,
+          300
+        ],
+        1.5
+      ]
+    },
+    {
+      "name": "renewed-scale-matches-real-window-pixels-and-points-with-empty-held-state",
+      "status": "passed"
+    }
+  ],
+  "scale_only_observation": {
+    "version": 2,
+    "before_parameters": {
+      "canopa-physical-scale": 1.25,
+      "canopa-source-id": 2,
+      "mapping-id": "canopa-niri::1.11:u1",
+      "position": [
+        0,
+        0
+      ],
+      "size": [
+        400,
+        300
+      ]
+    },
+    "after_parameters": {
+      "canopa-physical-scale": 1.5,
+      "canopa-source-id": 2,
+      "mapping-id": "canopa-niri::1.11:u1",
+      "position": [
+        0,
+        0
+      ],
+      "size": [
+        400,
+        300
+      ]
+    },
+    "before_pixels": [
+      500,
+      375
+    ],
+    "after_pixels": [
+      600,
+      450
+    ],
+    "original_descriptor": [
+      [
+        1,
+        "canopa-niri::1.11:u1",
+        [
+          400,
+          300
+        ],
+        1.25
+      ]
+    ],
+    "old_lease_eof": true,
+    "old_source_released": true
+  },
+  "processes": [
+    {
+      "pid": 1368398,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-mapped-pointer-1fxrpnof/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "terminal": true,
+      "exit_code": 0
+    },
+    {
+      "pid": 1368399,
+      "command": [
+        "pipewire"
+      ],
+      "terminal": true,
+      "exit_code": 0
+    },
+    {
+      "pid": 1368401,
+      "command": [
+        "wireplumber",
+        "--profile",
+        "policy"
+      ],
+      "terminal": true,
+      "exit_code": 0
+    },
+    {
+      "pid": 1368409,
+      "command": [
+        "weston",
+        "--backend=headless",
+        "--renderer=gl",
+        "--fake-seat",
+        "--width=1280",
+        "--height=800",
+        "--socket=wayland-parent",
+        "--no-config",
+        "--idle-time=0"
+      ],
+      "terminal": true,
+      "exit_code": 0
+    },
+    {
+      "pid": 1368419,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-scale-after-01/compositor/bin/niri",
+        "-c",
+        "/tmp/canopa-mapped-pointer-1fxrpnof/niri.kdl"
+      ],
+      "terminal": true,
+      "exit_code": 0
+    },
+    {
+      "pid": 1368444,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-scale-after-01/receiver"
+      ],
+      "terminal": true,
+      "exit_code": -15
+    }
+  ],
+  "exit_code": 0,
+  "seconds": 5.26,
+  "binary": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9/niri",
+  "sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9",
+  "binary_unchanged": true,
+  "source_hashes": {
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/native-scale.py": "65d6f1bd914f43e5ea37b983993ccb76aef763502efeebe6e0f7e44a479ad6ed",
+    "/home/kevinard/projects/canopa/target/portal-ei-scale-09/receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "a7e525fb26448e8e26856ef17160a49a0040b97822b5f8946fbf1324b6976439",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf"
+  },
+  "changed_sources": []
+}

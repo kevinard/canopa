@@ -1,0 +1,20 @@
+[
+  {
+    "original": "/tmp/canopa-pointer-production-11-frozen/canopa-portal-tests",
+    "archive": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/binary-archives/intermediate/canopa-portal-tests.gz",
+    "sha256": "b6052d7e804e3710a5ad510e02081ce1e3f1fc1a40f7931d9425df039d092938",
+    "bytes": 110539952,
+    "mode": 493,
+    "reclaimed_tmpfs_bytes": 110542848,
+    "archive_allocated_bytes": 28692480
+  },
+  {
+    "original": "/tmp/canopa-pointer-production-11-frozen/xdg-desktop-portal-canopa",
+    "archive": "/home/kevinard/projects/canopa/target/portal-pointer-production-11/binary-archives/intermediate/xdg-desktop-portal-canopa.gz",
+    "sha256": "3eb7b5e083d8b49054877943a04e36ca52199fadd73cc31ef339d70d9466dfae",
+    "bytes": 181476112,
+    "mode": 493,
+    "reclaimed_tmpfs_bytes": 181477376,
+    "archive_allocated_bytes": 41009152
+  }
+]

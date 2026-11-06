@@ -1,0 +1,5 @@
+{
+  "status": "passed",
+  "files": 20,
+  "scope": "accepted canonical E5 + ownership + relative pointer lease + live capture metadata + mapped pointer + atomic physical scale; changed/added files only, not full archive verification"
+}

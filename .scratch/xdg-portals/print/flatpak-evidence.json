@@ -1,0 +1,121 @@
+{
+  "status": "scoped-real-flatpak-print-files-passed",
+  "scope": "Actual minimal-runtime Flatpak GIO caller; standard frontend/normal Rust-Iced backend; prepared/direct/cancel in dark100/light125; no full toolkit/Flatpak/physical/deployment acceptance",
+  "goal_active": true,
+  "print_opt_in": true,
+  "qt_automatic_deferred": true,
+  "root_changes": [
+    "scripts/desktop-fixture/print-flatpak-client.c",
+    "scripts/desktop-fixture/README.md",
+    "docs/print-portal.md"
+  ],
+  "source_only_replays": {
+    ".scratch/xdg-portals/print/flatpak-replay/prepare-runtime.py": "373cb794506c3543e86ee48774225f74f71ef223b397470f1fb2c98189b087e0",
+    ".scratch/xdg-portals/print/flatpak-replay/deploy-runtime.py": "b5110d05d3a5433d5d7558259d333edd130e0f1c46cfb03dc24cf6915c7e8f39",
+    ".scratch/xdg-portals/print/flatpak-replay/native-flatpak.py": "5fed7882147325591e86352d9b6e2485be158691fc6371a6ec9a939f18e5e2b1",
+    ".scratch/xdg-portals/print/flatpak-replay/direct-control.py": "1228694775ec37c6d617dc0157eee491a4ac941b086c26b98c2e03507cfdc028",
+    ".scratch/xdg-portals/print/flatpak-replay/check-pdf.py": "3d9a93ecce9645ba5d0e3e1e2fc8e78935e8b4cd076a034d3a4778a43e0c1c8d",
+    ".scratch/xdg-portals/print/flatpak-replay/host-audit.py": "afa654d2f47c4794f8b9bc3bb4526a6cf0e29c58e8d8927c485f61450a8c6261",
+    ".scratch/xdg-portals/print/flatpak-replay/check-pdf-source-only-first.py": "17177562a809fdb11f49e2547eb13e31c330e4ab5a116cfce67a0599ca06f9b0",
+    ".scratch/xdg-portals/print/flatpak-replay/check-pdf-bundled-first.py": "c607edd94ede2e309eb490784b29844d10cc201ca774e046e0a92a52cbe3d435",
+    ".scratch/xdg-portals/print/flatpak-replay/direct-control-sandbox-first.py": "2a4ef9738f34d05d02b8734306f37924308d0b6c3832d813354c63760b64b4a3"
+  },
+  "receipts": {
+    "target/portal-print-74/flatpak-packages-plan.json": {
+      "sha256": "7bb96f966f1a788c4a7ae7f411c8b4284534c81b9d00e0feac45c60e10b3906f",
+      "status": "verified-extracted-workspace-only"
+    },
+    "target/portal-print-74/flatpak-client-build-01.json": {
+      "sha256": "156d4559b7c356d28378b41fd2dc41ffcc7ad83d653c4dc1fde6219b8df878ed",
+      "status": "passed"
+    },
+    "target/portal-print-74/flatpak-build-inputs.json": {
+      "sha256": "d09bb94f7c4fc068dc273be17abacd5559527a5710d6409de71959b814116a1f",
+      "status": "built-private-flatpak-inputs"
+    },
+    "target/portal-print-74/flatpak-deployment-01.json": {
+      "sha256": "33447dcefb40373e868450e82b99bb0380f868bb872ff91daba5e52fdf846d0e",
+      "status": "failed"
+    },
+    "target/portal-print-74/flatpak-deployment-02.json": {
+      "sha256": "8056af1aa5ddc023e80f554761146c9bf216668f9ad10ffc4c4ae4eecb11deb8",
+      "status": "failed"
+    },
+    "target/portal-print-74/flatpak-deployment-03.json": {
+      "sha256": "99638bdadab882b6cd7252c8adc3d81bbb4929387b70ade848aa1f4e07feda64",
+      "status": "failed"
+    },
+    "target/portal-print-74/flatpak-deployment-04.json": {
+      "sha256": "c4f1f7efb4adc52151deac7471c84dbc2183790dafb314dd410dfcf905a046ae",
+      "status": "passed"
+    },
+    "target/portal-print-74/native-dark-01/summary.json": {
+      "sha256": "92c261781ba62707be53dbc664c129d75dbbd06538022ca928e7d569a265e2be",
+      "status": "failed"
+    },
+    "target/portal-print-74/native-dark-02/summary.json": {
+      "sha256": "f1a070d71b773461281955ae96c2126d88f795ee758839eb0ca27339023df08b",
+      "status": "failed"
+    },
+    "target/portal-print-74/native-dark-03/summary.json": {
+      "sha256": "c4d0821f68b15917877f8dd945777379c08da548d65c623c48f724f2d426fa0a",
+      "status": "passed"
+    },
+    "target/portal-print-74/native-light-04/summary.json": {
+      "sha256": "f40dfd25826551a2d0e3adfa62f4d3fcba576719bfd00d1da9448e044083f258",
+      "status": "passed"
+    },
+    "target/portal-print-74/pdf-comparison-first-01.json": {
+      "sha256": "991d03da492867febce2b2f81727db8bbee1b50877c03240b88cd272fa4b70b6",
+      "status": "failed"
+    },
+    "target/portal-print-74/direct-worker-control-01.json": {
+      "sha256": "c13d9c9e938a71f54e7cf0f29a6c86eef3b42ee65f7bb99c546d5241191a1141",
+      "status": "failed"
+    },
+    "target/portal-print-74/direct-worker-control-02.json": {
+      "sha256": "5ec1cacc33732126aa4b0cb11d0eb84bfd083e5b0231372d2b2e0ac85056798b",
+      "status": "passed"
+    },
+    "target/portal-print-74/flatpak-pdf-content-sandbox-01.json": {
+      "sha256": "f74dfc1d7106fe657f5e6a97d1593aadfba8326c640e709b2fa0024d401e9b6f",
+      "status": "failed-visual-font-environment"
+    },
+    "target/portal-print-74/flatpak-pdf-content-bundled-host-02.json": {
+      "sha256": "174ad1f494f685a19a66f541407c9107039cae1f2eb21cd88a65af170a1c9a69",
+      "status": "failed-visual-bundled-poppler"
+    },
+    "target/portal-print-74/flatpak-pdf-content-01.json": {
+      "sha256": "71ef4c3fb45db94a0e8961606f57daa60930eb31b6a6f230f3173fd1d61b7d0b",
+      "status": "passed"
+    },
+    "target/portal-print-74/host-audit-initial-01.json": {
+      "sha256": "d1888b5e634e2b4a77b803488e94579bd6bc5057f62f8ef2d2a1c65c8fce7efc",
+      "status": "failed"
+    },
+    "target/portal-print-74/owned-cache-cleanup-01.json": {
+      "sha256": "3d0572ee8d3c3fa7d4d4be15852c6ce07bb4edc528d52231791b257570f40b9d",
+      "status": "passed"
+    },
+    "target/portal-print-74/host-audit-01.json": {
+      "sha256": "9d64d0d2c5ca03e34e2fe1f5bc2c0109cc1f31c2c0c118778a1f2774e6531511",
+      "status": "passed"
+    }
+  },
+  "native_cases_passed": 6,
+  "verified_pdf_pages": 16,
+  "native_process_identities_absent": 102,
+  "workspace_rerun": false,
+  "full_workspace_green": false,
+  "retained_workspace_result": "target/portal-print-73/workspace-final-results-02.json",
+  "no_system_installation_or_routing_changes": true,
+  "no_physical_printing": true,
+  "fixture_cap_bytes": 134217728,
+  "free_floor_bytes": 3221225472,
+  "next": "Real toolkit Flatpak caller using the same bounded store; wider Print/device/lifetime and six experimental interfaces remain",
+  "source_guard": {
+    "path": "target/portal-print-74/source-guard-01.json",
+    "sha256": "0d52ab2e17b29b3b8d59ce75ac6ee5d630c0761f2c25fecc920bb06da2271b8a"
+  },
+  "fixture_allocated_bytes": 44896256
+}

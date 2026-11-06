@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "live_owner_changes": [],
+  "configuration_changes": [],
+  "private_pids_remaining": [],
+  "private_runtime_removed": true,
+  "installed_portal_override_absent": true,
+  "new_frontend_dropin_absent": true,
+  "new_niri_dropin_absent": true
+}

@@ -1,0 +1,102 @@
+{
+  "status": "passed",
+  "reclaimed_allocated_bytes": 1390747648,
+  "groups": [
+    {
+      "sha256": "24ab3878f5706cbd4f0a69ed1d58404307fc49c25247956852b0c71b0baf0f39",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/24ab3878f5706cbd4f0a69ed1d58404307fc49c25247956852b0c71b0baf0f39/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/screencast-media-resume-green-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-cursors-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-final-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-consent-probe-old-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-resume-final-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-distribution-cancel-baseline-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-media-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-media-dark-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-cursors-dark-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-clipboard-control-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-resume-final-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-final-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-cursors-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-status-media-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-distribution-cancel-baseline-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-exchange-old-control-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 153149440
+    },
+    {
+      "sha256": "73b993cbc3c5036701bf612ecb8e260152cce79f408be61b7d2d4cf1bc923026",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/73b993cbc3c5036701bf612ecb8e260152cce79f408be61b7d2d4cf1bc923026/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-regressions-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-media-dark-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-full-matrix-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-clipboard-lifetime-selector-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-cancel-green-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-exchange-dark-03/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-consent-probe-new-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-media-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-media-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/niri-desktop-compat-exchange-dark-02/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 306520064
+    },
+    {
+      "sha256": "ecd14ac0d3d591114e5b1d198403bd8d83c9e6f229db045113dcb3ce787b4d0b",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/ecd14ac0d3d591114e5b1d198403bd8d83c9e6f229db045113dcb3ce787b4d0b/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/remote-desktop-media-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-desktop-media-dark-04/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-desktop-media-dark-03/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-desktop-media-dark-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-desktop-media-dark-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 616767488
+    },
+    {
+      "sha256": "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/remote-input-mapped-pointer-05/native-mapped-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-input-mapped-pointer-05/native-mapped-padded-03/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/remote-input-mapped-pointer-05/native-mapped-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 314310656
+    },
+    {
+      "sha256": "2d0bfbefbb0e8985661beccb33aef54e5213d68827513748d9e7073afc1f1a9c",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/2d0bfbefbb0e8985661beccb33aef54e5213d68827513748d9e7073afc1f1a9c/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/screencast-media-resume-red-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-repeat-light-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-repeat-light-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-dark-01/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-resume-red-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-repeat-light-03/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-light-trace-02/compositor/bin/niri",
+        "/home/kevinard/projects/canopa/target/screencast-media-window-fractional-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 0
+    },
+    {
+      "sha256": "f09e0b1cb2144794fb615c90e9cdaff6adc0cb6b05347503123bc392aeea66d3",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/f09e0b1cb2144794fb615c90e9cdaff6adc0cb6b05347503123bc392aeea66d3/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/screencast-distribution-cancel-sway-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 0
+    },
+    {
+      "sha256": "e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f",
+      "canonical": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f/niri",
+      "paths": [
+        "/home/kevinard/projects/canopa/target/remote-input-symbols-media-dark-01/compositor/bin/niri"
+      ],
+      "reclaimed_allocated_bytes": 0
+    }
+  ],
+  "root_debug_untouched": true,
+  "active_executable_inodes_skipped": true
+}

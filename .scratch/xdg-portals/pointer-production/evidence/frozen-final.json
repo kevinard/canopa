@@ -1,0 +1,12 @@
+{
+  "portal": {
+    "path": "/tmp/canopa-pointer-production-11-final/xdg-desktop-portal-canopa",
+    "sha256": "1a221a6d4847d06d08a5f1d04d1689cdacbb1b2acdaaca1da02abb514408bcaf",
+    "bytes": 181475848
+  },
+  "harness": {
+    "path": "/tmp/canopa-pointer-production-11-final/canopa-portal-tests",
+    "sha256": "31eb7007c20413b89742ea259a75e308f9d1093f16bfa261961620207cf0abec",
+    "bytes": 110539608
+  }
+}

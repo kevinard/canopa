@@ -1,0 +1,123 @@
+{
+  "desktop": "niri",
+  "configuration_home": "/home/kevinard/.config",
+  "niri_socket": "/run/user/1000/niri.wayland-1.1264.sock",
+  "owners": {
+    "org.freedesktop.portal.Desktop": {
+      "present": true,
+      "pid": 1359,
+      "executable": "/usr/lib/xdg-desktop-portal"
+    },
+    "org.freedesktop.impl.portal.desktop.gnome": {
+      "present": true,
+      "pid": 1481,
+      "executable": "/usr/lib/xdg-desktop-portal-gnome"
+    },
+    "org.freedesktop.impl.portal.desktop.gtk": {
+      "present": true,
+      "pid": 1643,
+      "executable": "/usr/lib/xdg-desktop-portal-gtk"
+    },
+    "org.freedesktop.impl.portal.desktop.canopa": {
+      "present": false
+    },
+    "org.freedesktop.impl.portal.desktop.canopa.notify": {
+      "present": false
+    },
+    "org.gnome.Mutter.ScreenCast": {
+      "present": true,
+      "pid": 1264,
+      "executable": "/usr/bin/niri",
+      "properties": {
+        "Version": 4
+      }
+    },
+    "org.canopa.Shell.Wallpaper": {
+      "present": false
+    },
+    "org.freedesktop.Notifications": {
+      "present": true
+    }
+  },
+  "units": {
+    "niri.service": {
+      "exit_code": 0,
+      "properties": {
+        "Id": "niri.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "FragmentPath": "/usr/lib/systemd/user/niri.service",
+        "DropInPaths": "",
+        "ExecStart": "{ path=niri ; argv[]=niri --session ; ignore_errors=no ; start_time=[Tue 2026-10-27 23:03:34 CET] ; stop_time=[n/a] ; pid=1264 ; code=(null) ; status=0/0 }"
+      }
+    },
+    "xdg-desktop-portal.service": {
+      "exit_code": 0,
+      "properties": {
+        "Id": "xdg-desktop-portal.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "FragmentPath": "/usr/lib/systemd/user/xdg-desktop-portal.service",
+        "DropInPaths": "",
+        "ExecStart": "{ path=/usr/lib/xdg-desktop-portal ; argv[]=/usr/lib/xdg-desktop-portal ; ignore_errors=no ; start_time=[Tue 2026-10-27 23:03:36 CET] ; stop_time=[n/a] ; pid=1359 ; code=(null) ; status=0/0 }"
+      }
+    },
+    "xdg-desktop-portal-canopa.service": {
+      "exit_code": 0,
+      "properties": {
+        "Id": "xdg-desktop-portal-canopa.service",
+        "LoadState": "not-found",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "FragmentPath": "",
+        "DropInPaths": ""
+      }
+    },
+    "canopa-shell.service": {
+      "exit_code": 0,
+      "properties": {
+        "Id": "canopa-shell.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "FragmentPath": "/home/kevinard/.config/systemd/user/canopa-shell.service",
+        "DropInPaths": "/home/kevinard/.config/systemd/user/canopa-shell.service.d/50-niri-readiness.conf",
+        "ExecStart": "{ path=/home/kevinard/.local/bin/canopa-shell ; argv[]=/home/kevinard/.local/bin/canopa-shell ; ignore_errors=no ; start_time=[Tue 2026-10-27 23:03:35 CET] ; stop_time=[n/a] ; pid=1302 ; code=(null) ; status=0/0 }"
+      },
+      "readiness": ""
+    },
+    "canopa-notify.service": {
+      "exit_code": 0,
+      "properties": {
+        "Id": "canopa-notify.service",
+        "LoadState": "loaded",
+        "ActiveState": "active",
+        "SubState": "running",
+        "FragmentPath": "/home/kevinard/.config/systemd/user/canopa-notify.service",
+        "DropInPaths": "/home/kevinard/.config/systemd/user/canopa-notify.service.d/50-niri-readiness.conf",
+        "ExecStart": "{ path=/home/kevinard/.local/bin/canopa-notify ; argv[]=/home/kevinard/.local/bin/canopa-notify daemon --service --socket /run/user/1000/canopa-notify/control.sock ; ignore_errors=no ; start_time=[Tue 2026-10-27 23:03:35 CET] ; stop_time=[n/a] ; pid=1298 ; code=(null) ; status=0/0 }"
+      },
+      "readiness": ""
+    }
+  },
+  "read_only": true,
+  "frontend_environment": {
+    "XDG_CURRENT_DESKTOP": "niri",
+    "XDG_CONFIG_HOME": "/home/kevinard/.config",
+    "XDG_CONFIG_DIRS": null,
+    "XDG_DATA_HOME": "/home/kevinard/.local/share",
+    "XDG_DATA_DIRS": null,
+    "XDG_DESKTOP_PORTAL_DIR": null
+  },
+  "niri_version": {
+    "exit_code": 0,
+    "value": "{\"cli\":\"26.04 (8ed0da4)\",\"compositor\":\"26.04 (8ed0da4)\"}"
+  },
+  "niri_configuration_environment": {
+    "NIRI_CONFIG": null,
+    "XDG_CONFIG_HOME": "/home/kevinard/.config",
+    "XDG_CONFIG_DIRS": null
+  }
+}

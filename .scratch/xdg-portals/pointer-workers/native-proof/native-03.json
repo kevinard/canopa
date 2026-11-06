@@ -1,0 +1,140 @@
+{
+  "status": "passed",
+  "started_at": "2026-10-31T14:27:23.037613+00:00",
+  "pid": 1355269,
+  "scope": "Private pointer worker mapping, retirement, resize renewal and actual video/client input twice, plus public Iced capture, legacy view-only compatibility and combined keyboard EIS/media regressions; no public pointer grant or canonical compositor adoption",
+  "suites": [
+    {
+      "name": "native-pointer-03",
+      "command": [
+        "python3",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py",
+        "--name",
+        "native-pointer-03",
+        "--busy",
+        "--iterations",
+        "192",
+        "--frozen",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/receipt.json"
+      ],
+      "status": "passed",
+      "pid": 1355270,
+      "exit_code": 0,
+      "seconds": 80.76,
+      "checks": 11,
+      "record_monitor_calls": null,
+      "identity_precondition_calls": null,
+      "all_processes_terminal": true,
+      "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-03/summary.json"
+    },
+    {
+      "name": "native-pointer-04",
+      "command": [
+        "python3",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py",
+        "--name",
+        "native-pointer-04",
+        "--busy",
+        "--iterations",
+        "192",
+        "--frozen",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/frozen-03/receipt.json"
+      ],
+      "status": "passed",
+      "pid": 1355664,
+      "exit_code": 0,
+      "seconds": 54.85,
+      "checks": 11,
+      "record_monitor_calls": null,
+      "identity_precondition_calls": null,
+      "all_processes_terminal": true,
+      "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer-04/summary.json"
+    },
+    {
+      "name": "native-pinned-video-01",
+      "command": [
+        "python3",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-video.py",
+        "--name",
+        "native-pinned-video-01",
+        "--sha256",
+        "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+        "--scheme",
+        "dark",
+        "--scale",
+        "1.25",
+        "--pinned"
+      ],
+      "status": "passed",
+      "pid": 1355998,
+      "exit_code": 0,
+      "seconds": 94.78,
+      "checks": 17,
+      "record_monitor_calls": 9,
+      "identity_precondition_calls": 9,
+      "all_processes_terminal": true,
+      "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pinned-video-01/summary.json"
+    },
+    {
+      "name": "native-legacy-video-01",
+      "command": [
+        "python3",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-video.py",
+        "--name",
+        "native-legacy-video-01",
+        "--sha256",
+        "e5e79252438ed2caf2d8fc0a9adeab45c543aaa0bd0792d7060feb38117d815f",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.0"
+      ],
+      "status": "passed",
+      "pid": 1357361,
+      "exit_code": 0,
+      "seconds": 88.55,
+      "checks": 17,
+      "record_monitor_calls": 9,
+      "identity_precondition_calls": 0,
+      "all_processes_terminal": true,
+      "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-legacy-video-01/summary.json"
+    },
+    {
+      "name": "native-pinned-remote-01",
+      "command": [
+        "python3",
+        "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-remote.py",
+        "--name",
+        "native-pinned-remote-01",
+        "--sha256",
+        "c56e0779dfa85234813bb654a378e30b15206434c95e808a8673f5ca5302552b",
+        "--scheme",
+        "light",
+        "--scale",
+        "1.25",
+        "--pinned"
+      ],
+      "status": "passed",
+      "pid": 1358680,
+      "exit_code": 0,
+      "seconds": 42.48,
+      "checks": 6,
+      "record_monitor_calls": 6,
+      "identity_precondition_calls": 6,
+      "all_processes_terminal": true,
+      "summary": "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pinned-remote-01/summary.json"
+    }
+  ],
+  "fixture_pins": {
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-03.py": "0ffb986965570d4492fce8da9f18e4e9d08c08980d763b396a70dc817ce5b3d1",
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-video.py": "24e465997ed9db55399ee27ed65e722f8985f40ed1d92c219379f40b8f7fb4e4",
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-remote.py": "b489e046b2a04adfe56397b4a32adc8305bd8d29093066e4f2e5c9de291e9506",
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/native-pointer.py": "e91652edfdaf107221f37aeef3a34ade60ce84a9133478c83a3dc3ec72de9304",
+    "/home/kevinard/projects/canopa/target/portal-pointer-workers-07/receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce"
+  },
+  "seconds": 361.44,
+  "total_checks": 62,
+  "changed_sources": [],
+  "changed_fixture_sources": [],
+  "all_binaries_unchanged": true
+}

@@ -1,0 +1,150 @@
+{
+  "status": "failed",
+  "scope": "Private descriptor, pinned ordered standard frontend, production Rust backend/Iced consent and real pointer/keyboard delivery; no shipped advertisement or Flatpak/distribution acceptance",
+  "checks": [],
+  "pins": {
+    "/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py": "96491521d49e375cf49f25d3f1b0fcdb691f9fc87932044e7ee8054d3c81389c",
+    "/home/kevinard/projects/canopa/scripts/screencast_media.py": "a7e525fb26448e8e26856ef17160a49a0040b97822b5f8946fbf1324b6976439",
+    "/home/kevinard/projects/canopa/scripts/validate-desktop.py": "309b5a598f50f6de32f25f46035e91badd85f8b471efe254e899b63b4f1092bf",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/remote-input-ei-pointer.c": "b12dcfd2dfd9137b7d56877dca648775e56df2dc736df01c1fc28df93500bbb5",
+    "/home/kevinard/projects/canopa/scripts/desktop-fixture/remote-input-pointer-receiver.c": "2e3591049a01f9f5ad11d950ca604ddefbfad062f32b070b03554859c73b0dce"
+  },
+  "binaries": {
+    "portal": {
+      "path": "/tmp/canopa-pointer-production-11-frozen/xdg-desktop-portal-canopa",
+      "sha256": "3eb7b5e083d8b49054877943a04e36ca52199fadd73cc31ef339d70d9466dfae"
+    },
+    "harness": {
+      "path": "/tmp/canopa-pointer-production-11-frozen/canopa-portal-tests",
+      "sha256": "b6052d7e804e3710a5ad510e02081ce1e3f1fc1a40f7931d9425df039d092938"
+    },
+    "niri": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/compositor-by-sha256/84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9/niri",
+      "sha256": "84acceed40ace2be1362ecfd32239b0bc58b909f070801144a3e0962952168c9"
+    },
+    "frontend": {
+      "path": "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+      "sha256": "b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3"
+    }
+  },
+  "starts": [
+    {
+      "case": "view-only",
+      "results": {
+        "streams": [
+          [
+            41,
+            {
+              "mapping_id": "canopa-niri::1.10:u3",
+              "pipewire-serial": 44,
+              "size": [
+                400,
+                300
+              ],
+              "source_type": 2
+            }
+          ]
+        ],
+        "devices": 0,
+        "clipboard_enabled": false
+      }
+    }
+  ],
+  "frames": [
+    {
+      "node": 41,
+      "serial": 44,
+      "mapping_id": "canopa-niri::1.10:u3",
+      "size": [
+        500,
+        375
+      ],
+      "file": "view-only-before.png"
+    }
+  ],
+  "error": "RuntimeError('Timed out waiting for view-only session closed')",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 262, in main\n    try: verify(args,session,result); result['status']='passed'; code=0\n         ~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/test-remote-desktop-pointer.py\", line 181, in verify\n    session.wait_for(lambda:(drain(),key in closed)[1],'view-only session closed')\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/kevinard/projects/canopa/scripts/validate-desktop.py\", line 90, in wait_for\n    raise RuntimeError(f\"Timed out waiting for {description}\")\nRuntimeError: Timed out waiting for view-only session closed\n",
+  "processes": [
+    {
+      "pid": 1387333,
+      "command": [
+        "dbus-daemon",
+        "--config-file=/tmp/canopa-public-pointer-7205f_gy/bus.conf",
+        "--nofork",
+        "--print-address=1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1387334,
+      "command": [
+        "pipewire"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1387336,
+      "command": [
+        "wireplumber",
+        "--profile",
+        "policy"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1387344,
+      "command": [
+        "weston",
+        "--backend=headless",
+        "--renderer=gl",
+        "--fake-seat",
+        "--width=1280",
+        "--height=800",
+        "--socket=wayland-parent",
+        "--no-config",
+        "--idle-time=0"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1387354,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-production-11/native-dark-02/compositor/bin/niri",
+        "-c",
+        "/tmp/canopa-public-pointer-7205f_gy/niri.kdl"
+      ],
+      "exit_code": 0
+    },
+    {
+      "pid": 1387407,
+      "command": [
+        "/home/kevinard/projects/canopa/target/portal-pointer-production-11/native-dark-02/receiver"
+      ],
+      "exit_code": -15
+    },
+    {
+      "pid": 1387624,
+      "command": [
+        "/tmp/canopa-pointer-production-11-frozen/canopa-portal-tests",
+        "--exact",
+        "screencast::remote::production::tests::native_backend_fixture",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit_code": -15
+    },
+    {
+      "pid": 1387673,
+      "command": [
+        "/home/kevinard/projects/canopa/target/native-test-snapshots/frontend-by-sha256/b77492eb34753d19901f1d0825cbb226a61c2436474445718504e850995d33b3/xdg-desktop-portal",
+        "--verbose"
+      ],
+      "exit_code": -15
+    }
+  ],
+  "seconds": 34.61,
+  "changed_sources": [],
+  "exit_code": 1,
+  "binaries_unchanged": true
+}
