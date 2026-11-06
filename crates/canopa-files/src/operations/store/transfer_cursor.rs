@@ -37,13 +37,13 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
         PRIMARY KEY(request,role,position));",
         )
         .map_err(db_error)?;
-    let has_bytes: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('request_transfer_cursors') WHERE name='bytes')", [], |row| row.get(0)).map_err(db_error)?;
+    let has_bytes: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM pragma_table_info('request_transfer_cursors') WHERE name='bytes')", [], |row| row.get(0)).map_err(db_error)?;
     if !has_bytes {
         connection.execute_batch("ALTER TABLE request_transfer_cursors ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0 CHECK(bytes BETWEEN 0 AND 67108864);
         UPDATE request_transfer_cursors SET bytes=length(CAST(spec AS BLOB))+length(CAST(progress AS BLOB))+256+(SELECT coalesce(sum(length(CAST(body AS BLOB))+length(position)+128),0) FROM request_transfer_tasks WHERE request=request_transfer_cursors.request);").map_err(db_error)?;
     }
     let task_schema: String = connection
-        .query_row(
+        .query_row_cached(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='request_transfer_tasks'",
             [],
             |row| row.get(0),
@@ -160,7 +160,7 @@ fn row_digest(prefix: &[u8; 32], role: u8, key: &[u8], body: &str) -> [u8; 32] {
     hash.finalize().into()
 }
 fn require_idle(connection: &Connection) -> io::Result<()> {
-    let pending: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM pending UNION ALL SELECT 1 FROM recovery_pending UNION ALL SELECT 1 FROM directory_access)", [], |row| row.get(0)).map_err(db_error)?;
+    let pending: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM pending UNION ALL SELECT 1 FROM recovery_pending UNION ALL SELECT 1 FROM directory_access)", [], |row| row.get(0)).map_err(db_error)?;
     if pending {
         return Err(invalid(
             "Reconcile interrupted filesystem work before continuing this transfer.",
@@ -170,7 +170,7 @@ fn require_idle(connection: &Connection) -> io::Result<()> {
 }
 fn ordinal(connection: &Connection, operation: u64) -> io::Result<u64> {
     let exists: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM operations WHERE id=?1)",
             [operation],
             |row| row.get(0),
@@ -180,7 +180,7 @@ fn ordinal(connection: &Connection, operation: u64) -> io::Result<u64> {
         return Err(invalid("The active transfer's history is unavailable."));
     }
     connection
-        .query_row(
+        .query_row_cached(
             "SELECT COALESCE(MAX(ordinal)+1,0) FROM changes WHERE operation=?1",
             [operation],
             |row| row.get(0),
@@ -189,7 +189,7 @@ fn ordinal(connection: &Connection, operation: u64) -> io::Result<u64> {
 }
 fn budget(connection: &Connection) -> io::Result<()> {
     let (count, bytes): (u64, u64) = connection
-        .query_row(
+        .query_row_cached(
             "SELECT count(*),coalesce(sum(bytes),0) FROM request_transfer_cursors",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -214,10 +214,10 @@ fn edits(connection: &Connection, scope: &Scope, edits: Vec<Edit>) -> io::Result
         match edit {
             Edit::Put(Row { role, key, body }) => {
                 let hash = row_digest(&scope.prefix, role, &key, &body);
-                connection.execute("INSERT INTO request_transfer_tasks VALUES(?1,?2,?3,?4,?5) ON CONFLICT(request,role,position) DO UPDATE SET body=excluded.body,body_sha256=excluded.body_sha256", params![scope.request, role, key, body, &hash[..]]).map_err(db_error)?;
+                connection.execute_cached("INSERT INTO request_transfer_tasks VALUES(?1,?2,?3,?4,?5) ON CONFLICT(request,role,position) DO UPDATE SET body=excluded.body,body_sha256=excluded.body_sha256", params![scope.request, role, key, body, &hash[..]]).map_err(db_error)?;
             }
             Edit::Remove { role, key } => {
-                let changed = connection.execute("DELETE FROM request_transfer_tasks WHERE request=?1 AND role=?2 AND position=?3", params![scope.request,role,key]).map_err(db_error)?;
+                let changed = connection.execute_cached("DELETE FROM request_transfer_tasks WHERE request=?1 AND role=?2 AND position=?3", params![scope.request,role,key]).map_err(db_error)?;
                 if changed != 1 {
                     return Err(invalid("The active transfer task is missing."));
                 }
@@ -250,7 +250,7 @@ impl Store {
         let next = ordinal(&transaction, operation)?;
         let hash = progress_digest(&scope.prefix, next, &update.progress);
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO request_transfer_cursors VALUES(?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     request.id,
@@ -301,7 +301,7 @@ impl Store {
             .map_err(db_error)?;
         if preparation.is_some() {
             let pending: bool = transaction
-                .query_row(
+                .query_row_cached(
                     "SELECT EXISTS(SELECT 1 FROM pending UNION ALL SELECT 1 FROM recovery_pending)",
                     [],
                     |row| row.get(0),
@@ -315,7 +315,7 @@ impl Store {
         } else {
             require_idle(&transaction)?;
         }
-        let current: bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM requests r JOIN request_executions e ON e.request=r.id WHERE r.id=?1 AND r.revision=?2 AND r.phase=1 AND e.revision=?2 AND e.operation=?3)",params![scope.request,scope.revision,scope.operation],|row|row.get(0)).map_err(db_error)?;
+        let current: bool=transaction.query_row_cached("SELECT EXISTS(SELECT 1 FROM requests r JOIN request_executions e ON e.request=r.id WHERE r.id=?1 AND r.revision=?2 AND r.phase=1 AND e.revision=?2 AND e.operation=?3)",params![scope.request,scope.revision,scope.operation],|row|row.get(0)).map_err(db_error)?;
         if !current {
             return Err(invalid(
                 "The active transfer's scheduling revision changed.",
@@ -349,7 +349,7 @@ impl Store {
                 source_retention::check_intent(&transaction, preparing)?;
                 context::prepare(&transaction, self.identity, IntentLane::Primary, preparing)?;
                 transaction
-                    .execute(
+                    .execute_cached(
                         "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                         [encode(preparing)?],
                     )
@@ -357,12 +357,12 @@ impl Store {
             }
         }
         let hash = progress_digest(&scope.prefix, next, &update.progress);
-        let changed=transaction.execute("UPDATE request_transfer_cursors SET ordinal=?2,progress=?3,progress_sha256=?4,bytes=bytes+length(CAST(?3 AS BLOB))-length(CAST(progress AS BLOB)) WHERE request=?1",params![scope.request,next,update.progress,&hash[..]]).map_err(db_error)?;
+        let changed=transaction.execute_cached("UPDATE request_transfer_cursors SET ordinal=?2,progress=?3,progress_sha256=?4,bytes=bytes+length(CAST(?3 AS BLOB))-length(CAST(progress AS BLOB)) WHERE request=?1",params![scope.request,next,update.progress,&hash[..]]).map_err(db_error)?;
         if changed != 1 {
             return Err(invalid("The active transfer cursor is unavailable."));
         }
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM request_transfer_cursor_steps WHERE request=?1",
                 [scope.request],
             )
@@ -458,7 +458,7 @@ impl Store {
 }
 pub(super) fn retire(connection: &Connection, request: u64) -> io::Result<()> {
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM request_transfer_cursors WHERE request=?1",
             [request],
         )
@@ -487,7 +487,7 @@ struct Head {
 }
 fn active_head(connection: &Connection, history: Identity, id: u64) -> io::Result<Option<Head>> {
     type Binding = (u64, u64, Vec<u8>, u64, Vec<u8>, String, Vec<u8>);
-    let binding: Option<Binding> = connection.query_row("SELECT c.request,e.revision,e.payload_sha256,c.ordinal,c.spec_sha256,c.progress,c.progress_sha256
+    let binding: Option<Binding> = connection.query_row_cached("SELECT c.request,e.revision,e.payload_sha256,c.ordinal,c.spec_sha256,c.progress,c.progress_sha256
         FROM request_transfer_cursors c JOIN request_executions e ON e.request=c.request JOIN requests r ON r.id=e.request
         WHERE e.operation=?1 AND e.revision=r.revision AND r.phase=1", [id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?))).optional().map_err(db_error)?;
     let Some((request, revision, payload, first, spec, progress, progress_sha)) = binding else {
@@ -497,7 +497,7 @@ fn active_head(connection: &Connection, history: Identity, id: u64) -> io::Resul
     if progress_sha != progress_digest(&prefix, first, &progress) {
         return Err(invalid("The active task cannot bind this filesystem step."));
     }
-    let head: Option<(Vec<u8>,String,Vec<u8>)> = connection.query_row("SELECT position,body,body_sha256 FROM request_transfer_tasks WHERE request=?1 AND role=0 ORDER BY position LIMIT 1",[request],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(db_error)?;
+    let head: Option<(Vec<u8>,String,Vec<u8>)> = connection.query_row_cached("SELECT position,body,body_sha256 FROM request_transfer_tasks WHERE request=?1 AND role=0 ORDER BY position LIMIT 1",[request],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(db_error)?;
     let (key, task, task_sha) =
         head.ok_or_else(|| invalid("The active transfer has no durable head."))?;
     let row = Row {
@@ -546,7 +546,7 @@ pub(super) fn stage_task(
         return Ok(None);
     }
     type RequestRow = (u64, u64, Vec<u8>, i64);
-    let row: Option<RequestRow> = connection.query_row("SELECT r.id,r.revision,r.body,r.phase FROM requests r JOIN request_executions e ON e.request=r.id WHERE e.operation=?1", [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
+    let row: Option<RequestRow> = connection.query_row_cached("SELECT r.id,r.revision,r.body,r.phase FROM requests r JOIN request_executions e ON e.request=r.id WHERE e.operation=?1", [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
     let Some((request, revision, body, phase)) = row else {
         return Ok(None);
     };
@@ -568,8 +568,8 @@ pub(super) fn stage_task(
     if head.request != request.id {
         return Err(invalid("The staged-work request changed."));
     }
-    let (spec, digest, progress): (String, Vec<u8>, Vec<u8>) = connection.query_row("SELECT spec,spec_sha256,progress_sha256 FROM request_transfer_cursors WHERE request=?1", [request.id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(db_error)?;
-    if digest != Sha256::digest(spec.as_bytes()).as_slice() {
+    let (spec, digest, progress): (String, Vec<u8>, Vec<u8>) = connection.query_row_cached("SELECT spec,spec_sha256,progress_sha256 FROM request_transfer_cursors WHERE request=?1", [request.id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(db_error)?;
+    if digest != serialized::digest(spec.as_bytes()).as_slice() {
         return Err(invalid("The original staged-work specification changed."));
     }
     let (kind, destination) = transfer::cursor::scope(&spec)?;
@@ -594,7 +594,7 @@ pub(super) fn stage_step(
     body: &str,
 ) -> io::Result<Vec<u8>> {
     type StepRow = (Vec<u8>, Vec<u8>, String, Vec<u8>);
-    let row: Option<StepRow> = connection.query_row("SELECT position,task_sha256,body,body_sha256 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2", params![task.request,ordinal], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
+    let row: Option<StepRow> = connection.query_row_cached("SELECT position,task_sha256,body,body_sha256 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2", params![task.request,ordinal], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
     let (position, sha, recorded, digest) =
         row.ok_or_else(|| invalid("The cleanup lost its original filesystem-step receipt."))?;
     if ordinal < task.first
@@ -770,7 +770,7 @@ pub(super) fn require_forward(
     };
     let body = encode(change)?;
     let sha = step_digest(&head.prefix, *ordinal, &head.row.key, &head.task_sha, &body);
-    let exact: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6)", params![head.request, ordinal, head.row.key, head.task_sha, body, &sha[..]], |r| r.get(0)).map_err(db_error)?;
+    let exact: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6)", params![head.request, ordinal, head.row.key, head.task_sha, body, &sha[..]], |r| r.get(0)).map_err(db_error)?;
     if !exact {
         return Err(invalid(
             "The interrupted filesystem step lost its original active-task receipt.",
@@ -822,7 +822,7 @@ pub(super) fn bind_forward(
             .is_some_and(|r| r.replacement_facts.is_some())
     {
         let previous: Option<String> = connection
-            .query_row("SELECT body FROM pending WHERE singleton=1", [], |r| {
+            .query_row_cached("SELECT body FROM pending WHERE singleton=1", [], |r| {
                 r.get(0)
             })
             .optional()
@@ -840,7 +840,7 @@ pub(super) fn bind_forward(
                     "The transfer phase update differs from its original intent.",
                 ));
             }
-            let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2)",params![request,ordinal],|r|r.get(0)).map_err(db_error)?;
+            let exists: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2)",params![request,ordinal],|r|r.get(0)).map_err(db_error)?;
             if !exists {
                 return Err(invalid(
                     "The transfer phase update lost its original task receipt.",
@@ -850,12 +850,12 @@ pub(super) fn bind_forward(
     }
     let sha = step_digest(&prefix, *ordinal, &row.key, &task_sha, &body);
     connection
-        .execute(
+        .execute_cached(
             "INSERT OR IGNORE INTO request_transfer_cursor_steps VALUES(?1,?2,?3,?4,?5,?6)",
             params![request, ordinal, row.key, task_sha, body, &sha[..]],
         )
         .map_err(db_error)?;
-    let exact: bool = connection.query_row("SELECT position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2",params![request,ordinal,row.key,task_sha,body,&sha[..]],|row|row.get(0)).map_err(db_error)?;
+    let exact: bool = connection.query_row_cached("SELECT position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2",params![request,ordinal,row.key,task_sha,body,&sha[..]],|row|row.get(0)).map_err(db_error)?;
     if !exact {
         return Err(invalid(
             "The filesystem step differs from its original task binding.",
@@ -891,17 +891,17 @@ pub(super) fn refresh_replacement(
     }
     let body = encode(before)?;
     let sha = step_digest(&head.prefix, step, &head.row.key, &head.task_sha, &body);
-    let exact: bool = connection.query_row("SELECT count(*)=1 AND coalesce(min(ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6),0) FROM request_transfer_cursor_steps WHERE request=?1", params![head.request,step,head.row.key,head.task_sha,body,&sha[..]], |r| r.get(0)).map_err(db_error)?;
+    let exact: bool = connection.query_row_cached("SELECT count(*)=1 AND coalesce(min(ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6),0) FROM request_transfer_cursor_steps WHERE request=?1", params![head.request,step,head.row.key,head.task_sha,body,&sha[..]], |r| r.get(0)).map_err(db_error)?;
     if !exact {
         return Err(invalid("The replacement lost its original task receipt."));
     }
     let updated = encode(after)?;
     let digest = step_digest(&head.prefix, step, &head.row.key, &head.task_sha, &updated);
-    connection.execute("UPDATE request_transfer_cursor_steps SET body=?3,body_sha256=?4 WHERE request=?1 AND ordinal=?2", params![head.request,step,updated,&digest[..]]).map_err(db_error)?;
+    connection.execute_cached("UPDATE request_transfer_cursor_steps SET body=?3,body_sha256=?4 WHERE request=?1 AND ordinal=?2", params![head.request,step,updated,&digest[..]]).map_err(db_error)?;
     // Current supported refreshes change scalar version data only, not size;
     // maintain the bounded cursor budget even if future encodings differ.
     connection
-        .execute(
+        .execute_cached(
             "UPDATE request_transfer_cursors SET bytes=bytes+?2 WHERE request=?1",
             params![head.request, updated.len() as i64 - body.len() as i64],
         )
@@ -927,7 +927,7 @@ pub(super) fn retire_returned(
         return Ok(());
     };
     type Receipt = (Vec<u8>, Vec<u8>, String, Vec<u8>);
-    let receipt:Option<Receipt>=connection.query_row("SELECT position,task_sha256,body,body_sha256 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2",params![head.request,step],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
+    let receipt:Option<Receipt>=connection.query_row_cached("SELECT position,task_sha256,body,body_sha256 FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2",params![head.request,step],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(db_error)?;
     let Some((position, task, body, sha)) = receipt else {
         if transfer::cursor::binds_entry_move(&head.row, change)?
             || transfer::cursor::binds_saved_move(&head.row, change)?
@@ -964,7 +964,7 @@ pub(super) fn retire_returned(
         ));
     }
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal=?2",
             params![head.request, step],
         )
@@ -989,7 +989,7 @@ fn verified_steps(
         .find(|row| row.role == transfer::cursor::QUEUE)
         .ok_or_else(|| invalid("The completed filesystem step has no active task."))?;
     let task_sha = row_digest(&scope.prefix, head.role, &head.key, &head.body);
-    let mut statement = connection.prepare("SELECT s.ordinal,s.position,s.task_sha256,s.body,s.body_sha256,c.body
+    let mut statement = connection.prepare_cached("SELECT s.ordinal,s.position,s.task_sha256,s.body,s.body_sha256,c.body
         FROM request_transfer_cursor_steps s LEFT JOIN changes c ON c.operation=?2 AND c.ordinal=s.ordinal
         WHERE s.request=?1 ORDER BY s.ordinal").map_err(db_error)?;
     let mut query = statement
@@ -1076,7 +1076,7 @@ fn read_expansion(
     prefix: &[u8; 32],
     key: &[u8],
 ) -> io::Result<Row> {
-    let (body, sha): (String, Vec<u8>) = connection.query_row("SELECT body,body_sha256 FROM request_transfer_tasks WHERE request=?1 AND role=?2 AND position=?3", params![request,transfer::cursor::EXPANSION,key], |r| Ok((r.get(0)?,r.get(1)?))).map_err(db_error)?;
+    let (body, sha): (String, Vec<u8>) = connection.query_row_cached("SELECT body,body_sha256 FROM request_transfer_tasks WHERE request=?1 AND role=?2 AND position=?3", params![request,transfer::cursor::EXPANSION,key], |r| Ok((r.get(0)?,r.get(1)?))).map_err(db_error)?;
     if sha != row_digest(prefix, transfer::cursor::EXPANSION, key, &body) {
         return Err(invalid(
             "The directory expansion changed before publication.",
@@ -1114,7 +1114,7 @@ fn read_active(
     problems: Problems,
 ) -> io::Result<Option<Active>> {
     type Header = (u64, String, String, Vec<u8>, Vec<u8>);
-    let header:Option<Header>=connection.query_row("SELECT ordinal,spec,progress,spec_sha256,progress_sha256 FROM request_transfer_cursors WHERE request=?1",[request.id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).optional().map_err(db_error)?;
+    let header:Option<Header>=connection.query_row_cached("SELECT ordinal,spec,progress,spec_sha256,progress_sha256 FROM request_transfer_cursors WHERE request=?1",[request.id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).optional().map_err(db_error)?;
     let Some((next, spec, progress, spec_hash, progress_hash)) = header else {
         return Ok(None);
     };
@@ -1133,7 +1133,7 @@ fn read_active(
         ));
     }
     let rows = {
-        let mut statement=connection.prepare("SELECT role,position,body,body_sha256 FROM request_transfer_tasks WHERE request=?1 ORDER BY role,position").map_err(db_error)?;
+        let mut statement=connection.prepare_cached("SELECT role,position,body,body_sha256 FROM request_transfer_tasks WHERE request=?1 ORDER BY role,position").map_err(db_error)?;
         let mut query = statement.query([request.id]).map_err(db_error)?;
         let mut rows = Vec::new();
         let mut bytes = spec.len() + progress.len();
@@ -1179,7 +1179,7 @@ pub(super) fn prepared_expansion(
         return Ok(None);
     };
     let current: String = connection
-        .query_row("SELECT body FROM pending WHERE singleton=1", [], |row| {
+        .query_row_cached("SELECT body FROM pending WHERE singleton=1", [], |row| {
             row.get(0)
         })
         .map_err(db_error)?;
@@ -1197,7 +1197,7 @@ pub(super) fn prepared_expansion(
         ));
     }
     let count: u64 = connection
-        .query_row(
+        .query_row_cached(
             "SELECT count(*) FROM request_transfer_cursor_steps WHERE request=?1",
             [request.id],
             |row| row.get(0),
@@ -1240,7 +1240,7 @@ impl Store {
         context::prepare(&transaction, self.identity, IntentLane::Primary, &forward)?;
         bind_forward(&transaction, self.identity, IntentLane::Primary, &forward)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                 [encode(&forward)?],
             )
@@ -1305,7 +1305,7 @@ impl Store {
         let task = directory_digest(&active.scope.prefix, head, expansion);
         let body = encode(change)?;
         let sha = step_digest(&active.scope.prefix, *step, &head.key, &task, &body);
-        let exact: bool = self.connection.query_row("SELECT count(*)=1 AND coalesce(min(ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6),0) FROM request_transfer_cursor_steps WHERE request=?1", params![request.id,step,head.key,&task[..],body,&sha[..]], |row| row.get(0)).map_err(db_error)?;
+        let exact: bool = self.connection.query_row_cached("SELECT count(*)=1 AND coalesce(min(ordinal=?2 AND position=?3 AND task_sha256=?4 AND body=?5 AND body_sha256=?6),0) FROM request_transfer_cursor_steps WHERE request=?1", params![request.id,step,head.key,&task[..],body,&sha[..]], |row| row.get(0)).map_err(db_error)?;
         if !exact {
             return Err(invalid(
                 "The directory lost its original pre-mutation receipt.",
@@ -1319,7 +1319,7 @@ fn directory_request(
     history: Identity,
     operation: u64,
 ) -> io::Result<Option<RequestRecord>> {
-    let row: Option<(u64,u64,Vec<u8>)> = connection.query_row("SELECT r.id,r.revision,r.body FROM requests r JOIN request_executions e ON e.request=r.id JOIN request_transfer_cursors c ON c.request=r.id WHERE e.operation=?1 AND r.phase=1", [operation], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(db_error)?;
+    let row: Option<(u64,u64,Vec<u8>)> = connection.query_row_cached("SELECT r.id,r.revision,r.body FROM requests r JOIN request_executions e ON e.request=r.id JOIN request_transfer_cursors c ON c.request=r.id WHERE e.operation=?1 AND r.phase=1", [operation], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(db_error)?;
     Ok(row.map(|(id, revision, body)| RequestRecord {
         history,
         id,

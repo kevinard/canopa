@@ -7,6 +7,25 @@ use crate::operations::{
 };
 use sha2::{Digest, Sha256};
 
+// Completion records include the complete selection, rather than one filesystem
+// step. Match this table's existing bound without widening the step codec.
+const COMPLETION_LIMIT: usize = 4 * 1024 * 1024;
+
+fn encode(value: &impl Serialize) -> io::Result<String> {
+    let body = serde_json::to_string(value).map_err(io::Error::other)?;
+    if body.len() > COMPLETION_LIMIT {
+        return Err(invalid("transfer completion exceeds its storage budget"));
+    }
+    Ok(body)
+}
+
+fn decode<T: serde::de::DeserializeOwned>(body: &str) -> io::Result<T> {
+    if body.len() > COMPLETION_LIMIT {
+        return Err(invalid("transfer completion exceeds its storage budget"));
+    }
+    serde_json::from_str(body).map_err(io::Error::other)
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Intent {
@@ -17,6 +36,14 @@ struct Intent {
     destination: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     original: Option<RestartObservation>,
+}
+
+thread_local! {
+    static INTENT: std::cell::RefCell<serialized::Last<Intent>> =
+        const { std::cell::RefCell::new(serialized::Last::new()) };
+}
+fn intent(body: &str) -> io::Result<std::sync::Arc<Intent>> {
+    INTENT.with(|cached| cached.borrow_mut().read(body, decode))
 }
 
 pub(super) fn create(connection: &Connection) -> io::Result<()> {
@@ -60,7 +87,7 @@ pub(super) fn reserve(
         original: original.cloned(),
     })?;
     connection
-        .execute(
+        .execute_cached(
             "INSERT INTO request_transfer_ends(request,intent,intent_sha256) VALUES(?1,?2,?3)",
             params![request.id, intent, &Sha256::digest(intent.as_bytes())[..]],
         )
@@ -87,10 +114,10 @@ pub(super) fn read(
     if request.phase != RequestPhase::Running {
         return Ok(None);
     }
-    connection.query_row("SELECT e.operation,t.intent,t.intent_sha256,t.result,t.result_sha256
+    connection.query_row_cached("SELECT e.operation,t.intent,t.intent_sha256,t.result,t.result_sha256
         FROM request_executions e JOIN request_transfer_ends t ON t.request=e.request JOIN requests r ON r.id=e.request
         WHERE e.request=?1 AND e.revision=?2 AND e.payload_sha256=?3 AND r.revision=?2 AND r.phase=1 AND r.body=?4",
-        params![request.id,request.revision,&Sha256::digest(&request.body)[..],request.body],
+        params![request.id,request.revision,&serialized::digest(&request.body)[..],request.body],
         |row| Ok(Receipt { operation:row.get(0)?,intent:row.get(1)?,intent_digest:row.get(2)?,result:row.get(3)?,digest:row.get(4)? }))
         .optional().map_err(db_error)
 }
@@ -116,14 +143,14 @@ pub(super) fn require_active_operation(
 
 impl Receipt {
     pub(super) fn history_original(&self) -> io::Result<Option<original::Original>> {
-        Ok(decode::<Intent>(&self.intent)?.history_original)
+        Ok(intent(&self.intent)?.history_original)
     }
     pub(super) fn require_restart_history(
         &self,
         connection: &Connection,
         history: Identity,
     ) -> io::Result<()> {
-        let intent: Intent = decode(&self.intent)?;
+        let intent = intent(&self.intent)?;
         intent
             .history_original
             .ok_or_else(|| invalid("This older transfer has no original history-file proof."))?
@@ -142,10 +169,10 @@ impl Receipt {
         destination: &Path,
         operation: Option<u64>,
     ) -> io::Result<()> {
-        if self.intent_digest.as_slice() != Sha256::digest(self.intent.as_bytes()).as_slice() {
+        if self.intent_digest.as_slice() != serialized::digest(self.intent.as_bytes()).as_slice() {
             return Err(invalid("The transfer completion intent changed."));
         }
-        let intent: Intent = decode(&self.intent)?;
+        let intent = intent(&self.intent)?;
         if intent.original.as_ref().is_some_and(|original| {
             !original.covers(&TransferRequest {
                 kind: intent.kind,
@@ -171,7 +198,7 @@ pub(super) fn history_file(connection: &Connection, history: Identity) -> io::Re
     use rustix::fs::{Mode, OFlags, open};
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
     let bytes: Vec<u8> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT CAST(file AS BLOB) FROM pragma_database_list WHERE name='main'",
             [],
             |row| row.get(0),
@@ -195,7 +222,7 @@ pub(super) fn require_saved_scope(
     request: &RequestRecord,
     stop: &crate::operations::transfer::StoppedTransfer,
 ) -> io::Result<()> {
-    let receipt = connection.query_row("SELECT e.operation,t.intent,t.intent_sha256,t.result,t.result_sha256 FROM request_executions e JOIN request_transfer_ends t ON t.request=e.request WHERE e.request=?1", [request.id],
+    let receipt = connection.query_row_cached("SELECT e.operation,t.intent,t.intent_sha256,t.result,t.result_sha256 FROM request_executions e JOIN request_transfer_ends t ON t.request=e.request WHERE e.request=?1", [request.id],
         |row| Ok(Receipt { operation: row.get(0)?, intent: row.get(1)?, intent_digest: row.get(2)?, result: row.get(3)?, digest: row.get(4)? })).optional().map_err(db_error)?
         .ok_or_else(|| invalid("The original transfer execution is unavailable."))?;
     receipt.validate_scope(
@@ -231,7 +258,7 @@ pub(super) fn completed(
 
 fn require_no_stop(connection: &Connection, request: &RequestRecord) -> io::Result<()> {
     let stopped: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM request_transfer_stops WHERE request=?1)",
             [request.id],
             |row| row.get(0),
@@ -288,7 +315,7 @@ pub(super) fn record(
 ) -> io::Result<()> {
     let body = validate_record(connection, history, request, completion, digest)?;
     connection
-        .execute(
+        .execute_cached(
             "UPDATE request_transfer_ends SET result=?2,result_sha256=?3 WHERE request=?1 AND result IS NULL",
             params![request.id, body, &digest[..]],
         )

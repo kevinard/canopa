@@ -113,6 +113,7 @@ pub struct RecoveryPage {
     pub items: Vec<RecoveryItem>,
     pub next: Option<RecoveryCursor>,
     pub interrupted: Vec<InterruptedOperation>,
+    #[cfg_attr(not(feature = "local-runtime"), allow(dead_code))]
     pub(crate) observation_paths: Vec<PathBuf>,
 }
 

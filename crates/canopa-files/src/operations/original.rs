@@ -25,8 +25,10 @@ pub(in crate::operations) struct Original {
 #[serde(deny_unknown_fields)]
 struct Wire {
     version: u8,
+    #[serde(serialize_with = "serialized::bytes")]
     boot: [u8; 16],
     mount: u64,
+    #[serde(serialize_with = "serialized::bytes")]
     object: [u8; 32],
 }
 

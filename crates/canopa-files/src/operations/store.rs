@@ -20,6 +20,8 @@ pub(in crate::operations) mod reverse_cleanup;
 mod saved;
 pub(super) mod saved_return;
 mod source_retention;
+mod sql;
+use sql::CachedSql;
 mod stage_intent;
 #[cfg(test)]
 pub(in crate::operations) use stage_intent::legacy_reproduction_fixture;
@@ -67,6 +69,21 @@ pub(in crate::operations) mod undo_work;
 const VERSION: u32 = 60;
 
 type Problems = Arc<Mutex<[Option<String>; 2]>>;
+
+thread_local! {
+    static CHANGES: std::cell::RefCell<serialized::Last<Change>> =
+        const { std::cell::RefCell::new(serialized::Last::new()) };
+    static JOURNAL: std::cell::RefCell<serialized::Last<Pending>> =
+        const { std::cell::RefCell::new(serialized::Last::new()) };
+}
+
+fn decode_change(body: &str) -> io::Result<Change> {
+    CHANGES.with(|cached| Ok(cached.borrow_mut().read(body, decode)?.as_ref().clone()))
+}
+
+fn decode_pending(body: &str) -> io::Result<Pending> {
+    JOURNAL.with(|cached| Ok(cached.borrow_mut().read(body, decode)?.as_ref().clone()))
+}
 
 #[derive(Clone)]
 pub(super) struct ReadSource {
@@ -175,6 +192,7 @@ impl Store {
                 | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )
         .map_err(db_error)?;
+        connection.set_prepared_statement_cache_capacity(128);
         let version: u32 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(db_error)?;
@@ -232,7 +250,7 @@ impl Store {
         if version < 7 {
             references::populate(&transaction)?;
             transaction
-                .execute("DELETE FROM bindings", [])
+                .execute_cached("DELETE FROM bindings", [])
                 .map_err(db_error)?;
         }
         if version < VERSION {
@@ -266,7 +284,7 @@ impl Store {
 
     pub fn imported(&self) -> io::Result<bool> {
         self.connection
-            .query_row(
+            .query_row_cached(
                 "SELECT value FROM metadata WHERE key='legacy-imported'",
                 [],
                 |row| row.get::<_, String>(0),
@@ -287,13 +305,13 @@ impl Store {
             for record in legacy.entries {
                 validate_change(&record.change)?;
                 transaction
-                    .execute(
+                    .execute_cached(
                         "INSERT INTO operations(id,label) VALUES(?1,?2)",
                         params![record.id, record.label],
                     )
                     .map_err(db_error)?;
                 transaction
-                    .execute(
+                    .execute_cached(
                         "INSERT INTO changes(operation,ordinal,body) VALUES(?1,0,?2)",
                         params![record.id, encode(&record.change)?],
                     )
@@ -305,7 +323,7 @@ impl Store {
                 Some(LegacyPending::Forward { record, stage }) => {
                     validate_change(&record.change)?;
                     transaction
-                        .execute(
+                        .execute_cached(
                             "INSERT OR IGNORE INTO operations(id,label) VALUES(?1,?2)",
                             params![record.id, record.label],
                         )
@@ -319,7 +337,7 @@ impl Store {
                 }
                 Some(LegacyPending::Undo { id }) => {
                     let body: String = transaction
-                        .query_row(
+                        .query_row_cached(
                             "SELECT body FROM changes WHERE operation=?1 AND ordinal=0",
                             [id],
                             |row| row.get(0),
@@ -338,11 +356,11 @@ impl Store {
             };
             if let Some(pending) = pending {
                 transaction
-                    .execute("INSERT INTO pending VALUES(1,?1)", [encode(&pending)?])
+                    .execute_cached("INSERT INTO pending VALUES(1,?1)", [encode(&pending)?])
                     .map_err(db_error)?;
             }
             let sequence: u64 = transaction
-                .query_row(
+                .query_row_cached(
                     "SELECT COALESCE(MAX(seq),0) FROM sqlite_sequence WHERE name='operations'",
                     [],
                     |row| row.get(0),
@@ -350,18 +368,18 @@ impl Store {
                 .map_err(db_error)?;
             if legacy.next_id.saturating_sub(1) > sequence {
                 transaction
-                    .execute(
+                    .execute_cached(
                         "INSERT INTO operations(id,label) VALUES(?1,'migration sequence')",
                         [legacy.next_id - 1],
                     )
                     .map_err(db_error)?;
                 transaction
-                    .execute("DELETE FROM operations WHERE id=?1", [legacy.next_id - 1])
+                    .execute_cached("DELETE FROM operations WHERE id=?1", [legacy.next_id - 1])
                     .map_err(db_error)?;
             }
         }
         transaction
-            .execute("INSERT INTO metadata VALUES('legacy-imported','1')", [])
+            .execute_cached("INSERT INTO metadata VALUES('legacy-imported','1')", [])
             .map_err(db_error)?;
         transaction.commit().map_err(db_error)
     }
@@ -370,7 +388,7 @@ impl Store {
         self.begin_request(label, None)
     }
     pub fn latest(&self) -> io::Result<Option<(u64, String)>> {
-        self.connection.query_row("SELECT id,label FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) ORDER BY id DESC LIMIT 1", [], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(db_error)
+        self.connection.query_row_cached("SELECT id,label FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) ORDER BY id DESC LIMIT 1", [], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(db_error)
     }
     pub fn last_change(&self, id: u64) -> io::Result<Option<(u64, Change)>> {
         self.change_before(id, None)
@@ -378,7 +396,7 @@ impl Store {
     pub fn change_before(&self, id: u64, before: Option<u64>) -> io::Result<Option<(u64, Change)>> {
         let result: Option<(u64, String)> = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT ordinal,body FROM changes WHERE operation=?1 AND (?2 IS NULL OR ordinal<?2) ORDER BY ordinal DESC LIMIT 1",
                 params![id, before],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -387,7 +405,7 @@ impl Store {
             .map_err(db_error)?;
         result
             .map(|(ordinal, body)| {
-                decode(&body).and_then(|change| {
+                decode_change(&body).and_then(|change| {
                     validate_change(&change)?;
                     Ok((ordinal, change))
                 })
@@ -396,7 +414,7 @@ impl Store {
     }
     pub fn next_ordinal(&self, id: u64) -> io::Result<u64> {
         self.connection
-            .query_row(
+            .query_row_cached(
                 "SELECT COALESCE(MAX(ordinal)+1,0) FROM changes WHERE operation=?1",
                 [id],
                 |row| row.get(0),
@@ -409,7 +427,7 @@ impl Store {
     pub fn pending_in(&self, lane: IntentLane) -> io::Result<Option<Pending>> {
         let result: Option<String> = self
             .connection
-            .query_row(
+            .query_row_cached(
                 match lane {
                     IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -421,7 +439,7 @@ impl Store {
             )
             .optional()
             .map_err(db_error)?;
-        let pending = result.map(|body| decode(&body)).transpose()?;
+        let pending = result.map(|body| decode_pending(&body)).transpose()?;
         if matches!(lane, IntentLane::RecoveryCopy)
             && pending.as_ref().is_some_and(|pending| {
                 !matches!(
@@ -503,7 +521,7 @@ impl Store {
             undo_work::clear(&transaction)?;
         }
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => {
@@ -541,7 +559,7 @@ impl Store {
         }
         source_retention::check_intent(&transaction, transition.after())?;
         let changed = transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "UPDATE pending SET body=?1 WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -555,7 +573,7 @@ impl Store {
             return Err(invalid("The disposal phase was not recorded."));
         }
         let body: String = transaction
-            .query_row(
+            .query_row_cached(
                 match self.lane {
                     IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -632,7 +650,7 @@ impl Store {
         source_retention::check_intent(&transaction, &pending)?;
         context::prepare(&transaction, self.identity, self.lane, &pending)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => {
@@ -654,7 +672,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let body: String = transaction
-            .query_row("SELECT body FROM pending WHERE singleton=1", [], |r| {
+            .query_row_cached("SELECT body FROM pending WHERE singleton=1", [], |r| {
                 r.get(0)
             })
             .map_err(db_error)?;
@@ -691,7 +709,7 @@ impl Store {
             history_original,
         )?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                 [encode(pending)?],
             )
@@ -758,7 +776,7 @@ impl Store {
     }
     pub fn label(&self, id: u64) -> io::Result<Option<String>> {
         self.connection
-            .query_row("SELECT label FROM operations WHERE id=?1", [id], |row| {
+            .query_row_cached("SELECT label FROM operations WHERE id=?1", [id], |row| {
                 row.get(0)
             })
             .optional()
@@ -801,7 +819,7 @@ impl Store {
         )?;
         append_transaction(&transaction, self.lane, id, ordinal, change)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "INSERT INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => "INSERT INTO recovery_pending VALUES(1,?1)",
@@ -830,7 +848,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let body: String = transaction
-            .query_row(
+            .query_row_cached(
                 match self.lane {
                     IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -893,7 +911,7 @@ impl Store {
             stage: stage.clone(),
         };
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "INSERT INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => "INSERT INTO recovery_pending VALUES(1,?1)",
@@ -1078,7 +1096,7 @@ impl Store {
                         kept.push(folder);
                     }
                     transaction
-                        .execute(
+                        .execute_cached(
                             "DELETE FROM changes WHERE operation=?1 AND ordinal=?2",
                             params![id, folder_ordinal],
                         )
@@ -1095,7 +1113,7 @@ impl Store {
     }
     pub fn remaining_changes(&self, id: u64) -> io::Result<usize> {
         self.connection
-            .query_row(
+            .query_row_cached(
                 "SELECT COUNT(*) FROM changes WHERE operation=?1",
                 [id],
                 |row| row.get(0),
@@ -1113,7 +1131,7 @@ impl Store {
                 return Ok(());
             }
         }
-        self.connection.execute("DELETE FROM operations WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM changes WHERE operation=?1) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=?1)", [id]).map(|_| ()).map_err(db_error)
+        self.connection.execute_cached("DELETE FROM operations WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM changes WHERE operation=?1) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=?1)", [id]).map(|_| ()).map_err(db_error)
     }
     pub(in crate::operations) fn require_original_change_history(
         &self,
@@ -1152,7 +1170,7 @@ impl Store {
         }
         archive(&transaction, displaced)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(change)?],
             )
@@ -1205,7 +1223,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         {
-            let mut statement = transaction.prepare("SELECT changes.operation,changes.ordinal,changes.body,operations.label FROM changes JOIN operations ON operations.id=changes.operation WHERE operation IN (SELECT id FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM directory_returns WHERE operation=operations.id) ORDER BY id DESC LIMIT -1 OFFSET ?1)").map_err(db_error)?;
+            let mut statement = transaction.prepare_cached("SELECT changes.operation,changes.ordinal,changes.body,operations.label FROM changes JOIN operations ON operations.id=changes.operation WHERE operation IN (SELECT id FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM directory_returns WHERE operation=operations.id) ORDER BY id DESC LIMIT -1 OFFSET ?1)").map_err(db_error)?;
             let rows = statement
                 .query_map([HISTORY_LIMIT], |row| {
                     Ok((
@@ -1229,14 +1247,14 @@ impl Store {
                 }
             }
         }
-        transaction.execute("DELETE FROM operations WHERE NOT EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=operations.id)", []).map_err(db_error)?;
+        transaction.execute_cached("DELETE FROM operations WHERE NOT EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=operations.id)", []).map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM bindings WHERE NOT EXISTS(SELECT 1 FROM changes)",
                 [],
             )
             .map_err(db_error)?;
-        transaction.execute("DELETE FROM operations WHERE id IN (SELECT id FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM directory_returns WHERE operation=operations.id) ORDER BY id DESC LIMIT -1 OFFSET ?1)", [HISTORY_LIMIT]).map_err(db_error)?;
+        transaction.execute_cached("DELETE FROM operations WHERE id IN (SELECT id FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) AND NOT EXISTS(SELECT 1 FROM directory_returns WHERE operation=operations.id) ORDER BY id DESC LIMIT -1 OFFSET ?1)", [HISTORY_LIMIT]).map_err(db_error)?;
         origins::prune(&transaction)?;
         transaction.commit().map_err(db_error)?;
         self.collect_garbage()
@@ -1247,7 +1265,7 @@ impl Store {
             let rows: Vec<(i64, String)> = {
                 let mut statement = self
                     .connection
-                    .prepare("SELECT id,body FROM garbage WHERE id>?1 ORDER BY id LIMIT 256")
+                    .prepare_cached("SELECT id,body FROM garbage WHERE id>?1 ORDER BY id LIMIT 256")
                     .map_err(db_error)?;
                 statement
                     .query_map([cursor], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -1269,12 +1287,12 @@ impl Store {
                 match result {
                     Ok(()) => {
                         self.connection
-                            .execute("DELETE FROM garbage WHERE id=?1", [id])
+                            .execute_cached("DELETE FROM garbage WHERE id=?1", [id])
                             .map_err(db_error)?;
                     }
                     Err(error) => {
                         self.connection
-                            .execute(
+                            .execute_cached(
                                 "UPDATE garbage SET error=?2 WHERE id=?1",
                                 params![id, error.to_string()],
                             )
@@ -1310,7 +1328,7 @@ impl Store {
                 Some(RecoveryCursor(Key::Active { operation, ordinal })) => (*operation, *ordinal),
                 _ => (0, 0),
             };
-            let row: Option<(u64, u64, String, String)> = self.connection.query_row(
+            let row: Option<(u64, u64, String, String)> = self.connection.query_row_cached(
                 "SELECT changes.operation,changes.ordinal,changes.body,operations.label FROM changes JOIN operations ON operations.id=changes.operation WHERE changes.operation>?1 OR(changes.operation=?1 AND changes.ordinal>?2) ORDER BY changes.operation,changes.ordinal LIMIT 1",
                 params![operation, ordinal], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).optional().map_err(db_error)?;
             if let Some((operation, ordinal, body, label)) = row {
@@ -1332,7 +1350,7 @@ impl Store {
         };
         let row: Option<(u64, String)> = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT id,body FROM garbage WHERE id>?1 ORDER BY id LIMIT 1",
                 [after],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -1351,7 +1369,7 @@ impl Store {
         match key {
             recovery::Key::Pending(slot) => self.pending_record(*slot),
             recovery::Key::Active { operation, ordinal } => {
-                let row: Option<(String, String)> = self.connection.query_row("SELECT changes.body,operations.label FROM changes JOIN operations ON operations.id=changes.operation WHERE changes.operation=?1 AND changes.ordinal=?2", params![operation, ordinal], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(db_error)?;
+                let row: Option<(String, String)> = self.connection.query_row_cached("SELECT changes.body,operations.label FROM changes JOIN operations ON operations.id=changes.operation WHERE changes.operation=?1 AND changes.ordinal=?2", params![operation, ordinal], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(db_error)?;
                 row.map(|(body, label)| {
                     let change: Change = decode(&body)?;
                     validate_change(&change)?;
@@ -1367,7 +1385,7 @@ impl Store {
             recovery::Key::Archived(id) => {
                 let body: Option<String> = self
                     .connection
-                    .query_row("SELECT body FROM garbage WHERE id=?1", [id], |row| {
+                    .query_row_cached("SELECT body FROM garbage WHERE id=?1", [id], |row| {
                         row.get(0)
                     })
                     .optional()
@@ -1397,13 +1415,13 @@ fn append_transaction(
     let body = encode(change)?;
     let bindings = context::for_append(transaction, lane, id, ordinal, change)?;
     transaction
-            .execute(
+            .execute_cached(
                 "INSERT OR IGNORE INTO changes(operation,ordinal,body,binding_revision,bindings) VALUES(?1,?2,?3,?4,?5)",
                 params![id, ordinal, body, 0, bindings],
             )
             .map_err(db_error)?;
     let existing: String = transaction
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
             params![id, ordinal],
             |row| row.get(0),
@@ -1464,13 +1482,13 @@ fn complete_reversal(
     lane: IntentLane,
 ) -> io::Result<()> {
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM changes WHERE operation=?1 AND ordinal=?2",
             params![id, ordinal],
         )
         .map_err(db_error)?;
     let remains: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM changes WHERE operation=?1 AND ordinal=?2)",
             params![id, ordinal],
             |r| r.get(0),
@@ -1480,9 +1498,9 @@ fn complete_reversal(
         return Err(invalid("The original Undo history step was not retired."));
     }
     clear_intent(connection, lane)?;
-    connection.execute("DELETE FROM operations WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM changes WHERE operation=?1) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=?1)", [id]).map_err(db_error)?;
+    connection.execute_cached("DELETE FROM operations WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM changes WHERE operation=?1) AND NOT EXISTS(SELECT 1 FROM request_executions e JOIN request_transfer_cursors c ON c.request=e.request WHERE e.operation=?1)", [id]).map_err(db_error)?;
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM bindings WHERE NOT EXISTS(SELECT 1 FROM changes)",
             [],
         )
@@ -1500,7 +1518,7 @@ fn clear_intent(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     stage_intent::clear(connection, lane)?;
     context::clear(connection, lane)?;
     connection
-        .execute(
+        .execute_cached(
             match lane {
                 IntentLane::Primary => "DELETE FROM pending",
                 IntentLane::RecoveryCopy => "DELETE FROM recovery_pending",
@@ -1509,7 +1527,7 @@ fn clear_intent(connection: &Connection, lane: IntentLane) -> io::Result<()> {
         )
         .map_err(db_error)?;
     let remains: bool = connection
-        .query_row(
+        .query_row_cached(
             match lane {
                 IntentLane::Primary => "SELECT EXISTS(SELECT 1 FROM pending) OR EXISTS(SELECT 1 FROM undo_work) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=0) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=0)",
                 IntentLane::RecoveryCopy => "SELECT EXISTS(SELECT 1 FROM recovery_pending) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=1) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=1)",
@@ -1530,7 +1548,7 @@ fn archive(connection: &Connection, record: Option<&recovery::Record>) -> io::Re
     if let Some(record) = record {
         let encoded = encode(record)?;
         if connection
-            .execute("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
+            .execute_cached("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
             .map_err(db_error)?
             != 1
         {
@@ -1538,7 +1556,7 @@ fn archive(connection: &Connection, record: Option<&recovery::Record>) -> io::Re
         }
         let entry = u64::try_from(connection.last_insert_rowid()).map_err(io::Error::other)?;
         let saved: Option<String> = connection
-            .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
+            .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
                 r.get(0)
             })
             .optional()
@@ -1575,7 +1593,7 @@ fn follow_later(
     let base_operation = operation;
     let base_ordinal = ordinal;
     let expected_owner = references::primary(connection, base_operation, base_ordinal)?;
-    let mut statement = connection.prepare("SELECT operation,ordinal,body FROM changes WHERE operation>?1 OR(operation=?1 AND ordinal>?2) ORDER BY operation,ordinal").map_err(db_error)?;
+    let mut statement = connection.prepare_cached("SELECT operation,ordinal,body FROM changes WHERE operation>?1 OR(operation=?1 AND ordinal>?2) ORDER BY operation,ordinal").map_err(db_error)?;
     let rows = statement
         .query_map(params![operation, ordinal], |row| {
             Ok((
@@ -1617,13 +1635,13 @@ fn follow_later(
 
 fn stored_change(connection: &Connection, operation: u64, ordinal: u64) -> io::Result<Change> {
     let body: String = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
             params![operation, ordinal],
             |row| row.get(0),
         )
         .map_err(db_error)?;
-    decode(&body)
+    decode_change(&body)
 }
 
 fn follow_archived(
@@ -1653,7 +1671,7 @@ fn follow_archived(
         _ => None,
     };
     let mut statement = connection
-        .prepare(if namespace.is_some() {
+        .prepare_cached(if namespace.is_some() {
             "SELECT g.id,g.body FROM garbage_paths p JOIN garbage g ON g.id=p.entry WHERE p.path=?1 ORDER BY g.id"
         } else { "SELECT id,body FROM garbage ORDER BY id" })
         .map_err(db_error)?;
@@ -1677,7 +1695,7 @@ fn follow_archived(
         if updated != body {
             followed.insert(id);
             connection
-                .execute(
+                .execute_cached(
                     "UPDATE garbage SET body=?2 WHERE id=?1",
                     params![id, updated],
                 )
@@ -1758,7 +1776,7 @@ fn relocate_return(
             let updated = encode(&change)?;
             if updated != body {
                 transaction
-                    .execute(
+                    .execute_cached(
                         "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                         params![operation, step, updated],
                     )
@@ -1799,7 +1817,7 @@ fn relocate_return(
             let updated = encode(&record)?;
             if updated != body {
                 transaction
-                    .execute(
+                    .execute_cached(
                         "UPDATE garbage SET body=?2 WHERE id=?1",
                         params![entry, updated],
                     )
@@ -1820,7 +1838,7 @@ fn resolve_binding(
     let mut visited = std::collections::HashSet::new();
     while visited.insert((identity.device, identity.inode)) {
         let next: Option<String> = connection
-            .query_row(
+            .query_row_cached(
                 "SELECT replacement FROM bindings WHERE path=?1 AND previous=?2 AND revision>?3",
                 params![
                     path.as_os_str().as_encoded_bytes(),

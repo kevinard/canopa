@@ -1,6 +1,5 @@
 //! Creator-bound Undo return work. Retention retires metadata, never file names.
 use super::*;
-use sha2::{Digest, Sha256};
 mod displaced;
 mod disposal;
 pub(super) use disposal::{reproduce, transition as disposal_transition};
@@ -11,7 +10,9 @@ struct Binding {
     history: original::Original,
     operation: u64,
     ordinal: u64,
+    #[serde(serialize_with = "serialized::bytes")]
     canonical: [u8; 32],
+    #[serde(serialize_with = "serialized::bytes")]
     pending: [u8; 32],
     source: Option<fingerprint::source::Reproduction>,
 }
@@ -29,7 +30,7 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
 }
 pub(super) fn clear(connection: &Connection) -> io::Result<()> {
     connection
-        .execute("DELETE FROM undo_work", [])
+        .execute_cached("DELETE FROM undo_work", [])
         .map_err(db_error)?;
     if body(connection)?.is_some() {
         return Err(invalid("The original Undo work binding was not retired."));
@@ -38,7 +39,7 @@ pub(super) fn clear(connection: &Connection) -> io::Result<()> {
 }
 fn body(connection: &Connection) -> io::Result<Option<String>> {
     connection
-        .query_row("SELECT body FROM undo_work WHERE singleton=1", [], |r| {
+        .query_row_cached("SELECT body FROM undo_work WHERE singleton=1", [], |r| {
             r.get(0)
         })
         .optional()
@@ -46,7 +47,7 @@ fn body(connection: &Connection) -> io::Result<Option<String>> {
 }
 fn pending(connection: &Connection) -> io::Result<Option<String>> {
     connection
-        .query_row("SELECT body FROM pending WHERE singleton=1", [], |r| {
+        .query_row_cached("SELECT body FROM pending WHERE singleton=1", [], |r| {
             r.get(0)
         })
         .optional()
@@ -182,12 +183,21 @@ fn canonical(
     };
     if let (
         Change::Rename {
-            reviewed: selected, ..
+            reviewed: selected,
+            retained: selected_previous,
+            ..
         },
-        Change::Rename { reviewed, .. },
+        Change::Rename {
+            reviewed, retained, ..
+        },
     ) = (change, &mut expected)
     {
         *reviewed = selected.clone();
+        // A live source-only review can defer an unavailable saved version.
+        // The binding still hashes the full original history below.
+        if selected_previous.is_none() {
+            *retained = None;
+        }
     }
     if let (Some(selected), Some(retained)) = (change.retained(), expected.retained_mut())
         && selected.version.is_some()
@@ -247,7 +257,7 @@ fn canonical(
             "Undo return work differs from its original history step.",
         ));
     }
-    Ok(Sha256::digest(encode(&stored)?.as_bytes()).into())
+    Ok(serialized::digest(encode(&stored)?.as_bytes()))
 }
 pub(super) fn require(
     connection: &Connection,
@@ -281,7 +291,7 @@ pub(super) fn require(
     if binding.operation != id
         || binding.ordinal != ordinal
         || binding.canonical != canonical(connection, id, ordinal, change, origin(value)?)?
-        || binding.pending != <[u8; 32]>::from(Sha256::digest(encode(value)?.as_bytes()))
+        || binding.pending != serialized::digest(encode(value)?.as_bytes())
     {
         return Err(invalid(
             "Interrupted Undo work changed from its original binding. Its files are preserved for Recovery.",
@@ -299,7 +309,7 @@ pub(super) fn preserve(
     }
     let current = pending(connection)?
         .ok_or_else(|| invalid("The original Undo work journal is missing."))?;
-    let current: Pending = decode(&current)?;
+    let current: Pending = decode_pending(&current)?;
     require(connection, history, &current)?;
     if encode(&current)? != encode(next)? {
         return Err(invalid(
@@ -310,7 +320,7 @@ pub(super) fn preserve(
 }
 fn access(connection: &Connection) -> io::Result<String> {
     let mut q = connection
-        .prepare("SELECT id,body FROM directory_access WHERE lane=0 ORDER BY id")
+        .prepare_cached("SELECT id,body FROM directory_access WHERE lane=0 ORDER BY id")
         .map_err(db_error)?;
     let rows = q
         .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
@@ -357,7 +367,7 @@ impl Store {
         let old =
             pending(&transaction)?.ok_or_else(|| invalid("Undo work lost its original intent."))?;
         let mut expected = value.clone();
-        let previous: Pending = decode(&old)?;
+        let previous: Pending = decode_pending(&old)?;
         let Pending::Undo { stage: before, .. } = &previous else {
             return Err(invalid("Another operation owns this file journal."));
         };
@@ -407,11 +417,11 @@ impl Store {
             operation: id,
             ordinal,
             canonical,
-            pending: Sha256::digest(encoded.as_bytes()).into(),
+            pending: serialized::digest(encoded.as_bytes()),
             source,
         })?;
-        if transaction.execute("INSERT OR REPLACE INTO pending VALUES(1,?1)",[&encoded]).map_err(db_error)?!=1
-            ||transaction.execute("INSERT INTO undo_work VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[&binding]).map_err(db_error)?!=1
+        if transaction.execute_cached("INSERT OR REPLACE INTO pending VALUES(1,?1)",[&encoded]).map_err(db_error)?!=1
+            ||transaction.execute_cached("INSERT INTO undo_work VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[&binding]).map_err(db_error)?!=1
             ||pending(&transaction)?.as_deref()!=Some(encoded.as_str())||body(&transaction)?.as_deref()!=Some(binding.as_str()) {
             return Err(invalid("Undo preparation was not saved with its original binding."));
         }
@@ -430,7 +440,7 @@ impl Store {
         let Some(pending) = pending(&self.connection)? else {
             return Ok(None);
         };
-        let decoded: Pending = decode(&pending)?;
+        let decoded: Pending = decode_pending(&pending)?;
         if direct_preparation(&decoded).is_none()
             && !matches!(
                 decoded,
@@ -457,7 +467,7 @@ impl Store {
     }
     pub(in crate::operations) fn keep_undo_work(&mut self, review: &Review) -> io::Result<()> {
         self.ensure_location()?;
-        let value: Pending = decode(&review.pending)?;
+        let value: Pending = decode_pending(&review.pending)?;
         let (_, _, change, stage) = task(&value)?;
         let check = || -> io::Result<()> {
             if staging::disposal::container_version(stage)? != review.root
@@ -539,7 +549,7 @@ impl Store {
             record.retained.version = Some(record.available()?);
             let encoded = encode(&record)?;
             if transaction
-                .execute("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
+                .execute_cached("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
                 .map_err(db_error)?
                 != 1
             {
@@ -547,7 +557,7 @@ impl Store {
             }
             let entry = u64::try_from(transaction.last_insert_rowid()).map_err(io::Error::other)?;
             let saved: String = transaction
-                .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
+                .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
                     r.get(0)
                 })
                 .map_err(db_error)?;
@@ -586,7 +596,7 @@ pub(in crate::operations::store) fn returned_context(
     let Some(value) = pending(connection)? else {
         return Ok(false);
     };
-    let value: Pending = decode(&value)?;
+    let value: Pending = decode_pending(&value)?;
     if direct_preparation(&value).is_none() {
         return Ok(false);
     }

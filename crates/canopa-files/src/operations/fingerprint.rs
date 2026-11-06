@@ -65,6 +65,7 @@ pub(super) struct Fingerprint {
     link: bool,
     // The algorithm-specific required field rejects old SHA-256 receipts rather
     // than reinterpreting them. Development histories have no conversion path.
+    #[serde(serialize_with = "serialized::bytes")]
     xxh3_128: [u8; 16],
 }
 

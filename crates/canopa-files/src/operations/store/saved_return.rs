@@ -1,18 +1,19 @@
 //! Independently bind selected saved-return execution to its original history.
 use super::*;
-use sha2::{Digest, Sha256};
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Binding {
     history: original::Original,
+    #[serde(serialize_with = "serialized::bytes")]
     canonical: [u8; 32],
+    #[serde(serialize_with = "serialized::bytes")]
     pending: [u8; 32],
 }
 pub(super) fn create(c: &Connection) -> io::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS saved_return(lane INTEGER PRIMARY KEY CHECK(lane IN(0,1)),body TEXT NOT NULL CHECK(length(CAST(body AS BLOB))<=262144));").map_err(db_error)
 }
 fn body(c: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
-    c.query_row(
+    c.query_row_cached(
         "SELECT body FROM saved_return WHERE lane=?1",
         [lane.index()],
         |r| r.get(0),
@@ -21,7 +22,7 @@ fn body(c: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
     .map_err(db_error)
 }
 fn pending(c: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
-    c.query_row(
+    c.query_row_cached(
         match lane {
             IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
             IntentLane::RecoveryCopy => "SELECT body FROM recovery_pending WHERE singleton=1",
@@ -33,10 +34,10 @@ fn pending(c: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
     .map_err(db_error)
 }
 fn digest(lane: IntentLane, task: &undo::saved_return::Return) -> io::Result<[u8; 32]> {
-    let mut hash = Sha256::new();
-    hash.update(b"canopa-files-saved-return-undo-v1\0");
-    hash.update(encode(&(lane.index(), task))?.as_bytes());
-    Ok(hash.finalize().into())
+    Ok(serialized::tagged_digest(
+        b"canopa-files-saved-return-undo-v1\0",
+        encode(&(lane.index(), task))?.as_bytes(),
+    ))
 }
 fn canonical(c: &Connection, task: &undo::saved_return::Return) -> io::Result<[u8; 32]> {
     let (id, ordinal, change, relocation, _) = task.parts()?;
@@ -53,6 +54,19 @@ fn canonical(c: &Connection, task: &undo::saved_return::Return) -> io::Result<[u
             Change::RetainedOnly { .. },
         ) => Change::RetainedOnly {
             path: path.clone(),
+            retained: retained.clone(),
+            replaced: Some(*identity),
+        },
+        (
+            Change::Rename {
+                current,
+                identity,
+                retained: Some(retained),
+                ..
+            },
+            Change::RetainedOnly { .. },
+        ) => Change::RetainedOnly {
+            path: current.clone(),
             retained: retained.clone(),
             replaced: Some(*identity),
         },
@@ -112,14 +126,13 @@ fn canonical(c: &Connection, task: &undo::saved_return::Return) -> io::Result<[u
             "Saved return differs from its original Undo history.",
         ));
     }
-    Ok(Sha256::digest(
+    Ok(serialized::digest(
         match paired_copy {
             Some(copied) => encode(&("saved-only-pair-v1", &canonical, copied))?,
             None => encode(&canonical)?,
         }
         .as_bytes(),
-    )
-    .into())
+    ))
 }
 fn canonical_matches(
     c: &Connection,
@@ -128,13 +141,13 @@ fn canonical_matches(
 ) -> io::Result<bool> {
     let (id, ordinal, _, _, _) = task.parts()?;
     let body: String = c
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
             params![id, ordinal],
             |r| r.get(0),
         )
         .map_err(db_error)?;
-    if <[u8; 32]>::from(Sha256::digest(body.as_bytes())) == expected {
+    if serialized::digest(body.as_bytes()) == expected {
         // Registration checked this selection against the canonical history.
         // Its separate task digest preserves that exact selection in each phase.
         return Ok(true);
@@ -174,7 +187,7 @@ pub(super) fn require(
     Ok(())
 }
 pub(super) fn clear(c: &Connection, lane: IntentLane) -> io::Result<()> {
-    c.execute("DELETE FROM saved_return WHERE lane=?1", [lane.index()])
+    c.execute_cached("DELETE FROM saved_return WHERE lane=?1", [lane.index()])
         .map_err(db_error)?;
     if body(c, lane)?.is_some() {
         return Err(invalid("The saved return binding was not retired."));
@@ -236,7 +249,7 @@ impl Store {
         let encoded = encode(&value)?;
         let bound = encode(&binding)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "UPDATE pending SET body=?1 WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -247,7 +260,7 @@ impl Store {
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO saved_return(lane,body) VALUES(?1,?2)",
                 params![self.lane.index(), bound],
             )
@@ -309,7 +322,7 @@ impl Store {
         let next = encode(&after)?;
         let bound = encode(&binding)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => {
                         "UPDATE pending SET body=?1 WHERE singleton=1 AND body=?2"
@@ -322,7 +335,7 @@ impl Store {
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE saved_return SET body=?2 WHERE lane=?1",
                 params![self.lane.index(), bound],
             )
@@ -400,7 +413,7 @@ impl Store {
     }
     pub(in crate::operations) fn keep_saved_return(&mut self, review: &Review) -> io::Result<()> {
         self.ensure_location()?;
-        let value: Pending = decode(&review.pending)?;
+        let value: Pending = decode_pending(&review.pending)?;
         let Pending::UndoSavedReturn { returning } = &value else {
             return Err(invalid("Expected selected saved return work."));
         };
@@ -472,7 +485,7 @@ pub(super) fn returned_context(
     let Some(value) = pending(c, lane)? else {
         return Ok(false);
     };
-    let value: Pending = decode(&value)?;
+    let value: Pending = decode_pending(&value)?;
     let Pending::UndoSavedReturn { returning } = &value else {
         return Ok(false);
     };

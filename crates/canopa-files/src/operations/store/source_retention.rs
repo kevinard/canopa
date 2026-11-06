@@ -33,7 +33,7 @@ impl Store {
             .unwrap_or_else(|_| path.clone());
             selections.push((resolved, tree));
         }
-        let mut query = self.connection.prepare("SELECT stage FROM saved_stage_changes UNION SELECT stage FROM saved_stage_records ORDER BY stage").map_err(db_error)?;
+        let mut query = self.connection.prepare_cached("SELECT stage FROM saved_stage_changes UNION SELECT stage FROM saved_stage_records ORDER BY stage").map_err(db_error)?;
         let rows = query
             .query_map([], |row| row.get::<_, String>(0))
             .map_err(db_error)?;
@@ -82,7 +82,7 @@ fn held_except(
     owner: Option<u64>,
 ) -> io::Result<bool> {
     connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM request_sources WHERE stage=?1 AND (?2 IS NULL OR request<>?2))",
             params![encode(&identity)?, owner],
             |row| row.get(0),
@@ -197,7 +197,7 @@ fn changes_inside_stage(
     // have no receipt-directory ancestor. Keep the same stage reservation for
     // its actual payload tree, including changing the payload root itself.
     let mut query = connection
-        .prepare(
+        .prepare_cached(
             "SELECT g.body FROM saved_stage_records s JOIN garbage g ON g.id=s.entry ORDER BY g.id",
         )
         .map_err(db_error)?;
@@ -231,7 +231,7 @@ pub(super) fn check_intent(connection: &Connection, pending: &Pending) -> io::Re
         return Err(busy());
     }
     let any_held: bool = connection
-        .query_row("SELECT EXISTS(SELECT 1 FROM request_sources)", [], |row| {
+        .query_row_cached("SELECT EXISTS(SELECT 1 FROM request_sources)", [], |row| {
             row.get(0)
         })
         .map_err(db_error)?;
@@ -245,7 +245,7 @@ pub(super) fn check_intent(connection: &Connection, pending: &Pending) -> io::Re
             change: Change::Rename { .. },
             ..
         } => connection
-            .query_row(
+            .query_row_cached(
                 "SELECT request FROM request_executions WHERE operation=?1",
                 [id],
                 |row| row.get(0),
@@ -278,7 +278,7 @@ pub(super) fn acquire(
         }
         for table in ["pending", "recovery_pending"] {
             let body: Option<String> = connection
-                .query_row(
+                .query_row_cached(
                     &format!("SELECT body FROM {table} WHERE singleton=1"),
                     [],
                     |row| row.get(0),
@@ -304,7 +304,7 @@ pub(super) fn acquire(
             }
         }
         connection
-            .execute(
+            .execute_cached(
                 "INSERT INTO request_sources VALUES(?1,?2)",
                 params![request, encode(identity)?],
             )
@@ -323,7 +323,7 @@ pub(super) fn acquire_lease(
     history: Identity,
 ) -> io::Result<()> {
     let exists: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM source_leases WHERE request=?1)",
             [lease],
             |row| row.get(0),
@@ -336,7 +336,7 @@ pub(super) fn acquire_lease(
         ));
     }
     let mut query = connection
-        .prepare("SELECT stage FROM request_sources WHERE request=?1 ORDER BY stage")
+        .prepare_cached("SELECT stage FROM request_sources WHERE request=?1 ORDER BY stage")
         .map_err(db_error)?;
     let rows = query
         .query_map([lease], |row| row.get::<_, String>(0))
@@ -364,9 +364,9 @@ pub(super) fn relocate(connection: &Connection, from: Identity, to: Identity) ->
     }
     let from = encode(&from)?;
     let to = encode(&to)?;
-    connection.execute("INSERT OR IGNORE INTO request_sources(request,stage) SELECT request,?2 FROM request_sources WHERE stage=?1", params![from,to]).map_err(db_error)?;
+    connection.execute_cached("INSERT OR IGNORE INTO request_sources(request,stage) SELECT request,?2 FROM request_sources WHERE stage=?1", params![from,to]).map_err(db_error)?;
     connection
-        .execute("DELETE FROM request_sources WHERE stage=?1", [from])
+        .execute_cached("DELETE FROM request_sources WHERE stage=?1", [from])
         .map_err(db_error)?;
     Ok(())
 }

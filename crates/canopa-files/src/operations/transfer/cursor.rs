@@ -43,6 +43,11 @@ struct Spec {
     destination: PathBuf,
     restart: RestartObservation,
 }
+
+thread_local! {
+    static SPEC: std::cell::RefCell<serialized::Last<Spec>> =
+        const { std::cell::RefCell::new(serialized::Last::new()) };
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Progress {
@@ -910,8 +915,10 @@ pub(in crate::operations) fn advance(
 }
 
 pub(in crate::operations) fn scope(spec: &str) -> io::Result<(TransferKind, PathBuf)> {
-    let spec: Spec = decoded(spec)?;
-    Ok((spec.kind, spec.destination))
+    SPEC.with(|cached| {
+        let spec = cached.borrow_mut().read(spec, decoded)?;
+        Ok((spec.kind, spec.destination.clone()))
+    })
 }
 
 fn advance_entry_move(record: &mut Recorded, operation: u64, steps: &[Change]) -> io::Result<()> {

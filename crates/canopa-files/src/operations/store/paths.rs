@@ -5,7 +5,7 @@ use super::*;
 use std::{collections::BTreeSet, os::unix::ffi::OsStringExt};
 
 pub(super) fn create(connection: &Connection) -> io::Result<()> {
-    let namespace_exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='namespace_moves')", [], |row|row.get(0)).map_err(db_error)?;
+    let namespace_exists: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='namespace_moves')", [], |row|row.get(0)).map_err(db_error)?;
     connection
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS change_paths (
@@ -39,7 +39,7 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
         let mut after: Option<(u64, u64)> = None;
         loop {
             let rows: Vec<(u64, u64, String)> = {
-                let mut statement=connection.prepare("SELECT operation,ordinal,body FROM changes WHERE ?1 IS NULL OR (operation,ordinal)>(?1,?2) ORDER BY operation,ordinal LIMIT 256").map_err(db_error)?;
+                let mut statement=connection.prepare_cached("SELECT operation,ordinal,body FROM changes WHERE ?1 IS NULL OR (operation,ordinal)>(?1,?2) ORDER BY operation,ordinal LIMIT 256").map_err(db_error)?;
                 statement
                     .query_map(
                         params![after.map(|key| key.0), after.map(|key| key.1)],
@@ -70,7 +70,7 @@ fn index_namespace(
     change: &Change,
 ) -> io::Result<()> {
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM namespace_moves WHERE operation=?1 AND ordinal=?2",
             params![operation, ordinal],
         )
@@ -86,7 +86,7 @@ fn index_namespace(
     } = change
     {
         connection
-            .execute(
+            .execute_cached(
                 "INSERT INTO namespace_moves VALUES(?1,?2,?3,?4)",
                 params![operation, ordinal, key(original), key(current)],
             )
@@ -153,7 +153,7 @@ pub(super) fn follow_namespace(
 
 pub(super) fn populate(connection: &Connection) -> io::Result<()> {
     let mut statement = connection
-        .prepare("SELECT operation,ordinal,body FROM changes ORDER BY operation,ordinal")
+        .prepare_cached("SELECT operation,ordinal,body FROM changes ORDER BY operation,ordinal")
         .map_err(db_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -171,7 +171,7 @@ pub(super) fn populate(connection: &Connection) -> io::Result<()> {
         index_change(connection, operation, ordinal, &change)?;
     }
     let mut statement = connection
-        .prepare("SELECT id,body FROM garbage ORDER BY id")
+        .prepare_cached("SELECT id,body FROM garbage ORDER BY id")
         .map_err(db_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -183,7 +183,7 @@ pub(super) fn populate(connection: &Connection) -> io::Result<()> {
         index_record(connection, entry, &recovery::Record::decode(&body)?)?;
     }
     let mut statement = connection
-        .prepare("SELECT path,previous FROM bindings ORDER BY path,previous")
+        .prepare_cached("SELECT path,previous FROM bindings ORDER BY path,previous")
         .map_err(db_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -205,14 +205,14 @@ pub(super) fn index_change(
 ) -> io::Result<()> {
     index_namespace(connection, operation, ordinal, change)?;
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM folder_changes WHERE operation=?1 AND ordinal=?2",
             params![operation, ordinal],
         )
         .map_err(db_error)?;
     if let Change::CreatedFolder { path, .. } = change {
         connection
-            .execute(
+            .execute_cached(
                 "INSERT INTO folder_changes VALUES(?1,?2,?3)",
                 params![key(path), operation, ordinal],
             )
@@ -223,7 +223,7 @@ pub(super) fn index_change(
         .clone()
         .visit_paths(|path| ancestors(path, &mut keys));
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM change_paths WHERE operation=?1 AND ordinal=?2",
             params![operation, ordinal],
         )
@@ -248,7 +248,7 @@ pub(super) fn index_record(
     origins::index_record(connection, entry, record)?;
     let keys = record_keys(record);
     connection
-        .execute("DELETE FROM garbage_paths WHERE entry=?1", [entry])
+        .execute_cached("DELETE FROM garbage_paths WHERE entry=?1", [entry])
         .map_err(db_error)?;
     let mut statement = connection
         .prepare_cached("INSERT INTO garbage_paths VALUES(?1,?2)")
@@ -278,7 +278,7 @@ pub(super) fn require_retained_record(
     record: &recovery::Record,
 ) -> io::Result<()> {
     let mut statement = connection
-        .prepare("SELECT path FROM garbage_paths WHERE entry=?1")
+        .prepare_cached("SELECT path FROM garbage_paths WHERE entry=?1")
         .map_err(db_error)?;
     let actual = statement
         .query_map([entry], |row| row.get::<_, Vec<u8>>(0))
@@ -286,7 +286,7 @@ pub(super) fn require_retained_record(
         .collect::<Result<BTreeSet<_>, _>>()
         .map_err(db_error)?;
     let root: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM saved_stage_records WHERE entry=?1 AND stage=?2)",
             params![entry, encode(&record.retained.stage.identity)?],
             |row| row.get(0),
@@ -311,7 +311,7 @@ pub(super) fn index_binding(
         &mut keys,
     );
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM binding_paths WHERE path=?1 AND previous=?2",
             params![path, previous],
         )

@@ -21,7 +21,7 @@ pub(in crate::operations::store) fn transition(
     let old = body(connection)?
         .ok_or_else(|| invalid("The original Undo disposal binding is missing."))?;
     let mut binding: Binding = decode(&old)?;
-    binding.pending = Sha256::digest(encode(transition.after())?.as_bytes()).into();
+    binding.pending = serialized::digest(encode(transition.after())?.as_bytes());
     let next = encode(&binding)?;
     if connection
         .execute(

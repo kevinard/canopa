@@ -37,7 +37,7 @@ impl Store {
             operation: id,
             ordinal,
             canonical: canonical(&transaction, id, ordinal, change, value)?,
-            pending: Sha256::digest(encoded.as_bytes()).into(),
+            pending: serialized::digest(encoded.as_bytes()),
             source: None,
         })?;
         if transaction

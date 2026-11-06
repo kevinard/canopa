@@ -30,7 +30,7 @@ pub(super) fn primary(
     ordinal: u64,
 ) -> io::Result<Option<Identity>> {
     let body: Option<String> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT expected FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=0",
             params![operation, ordinal],
             |row| row.get(0),
@@ -154,7 +154,7 @@ pub(super) fn index(
     for role in [PRIMARY, PARENT] {
         if !fields.iter().any(|field| field.0 == role) {
             connection
-                .execute(
+                .execute_cached(
                     "DELETE FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3",
                     params![operation, ordinal, role],
                 )
@@ -162,7 +162,7 @@ pub(super) fn index(
         }
     }
     for (role, path, logical) in fields {
-        let previous: Option<(String,String)> = connection.query_row("SELECT logical,expected FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3", params![operation,ordinal,role], |row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
+        let previous: Option<(String,String)> = connection.query_row_cached("SELECT logical,expected FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3", params![operation,ordinal,role], |row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
         let encoded = encode(&logical)?;
         let expected = if let Some((_, expected)) =
             previous.filter(|previous| previous.0 == encoded)
@@ -170,7 +170,7 @@ pub(super) fn index(
             expected
         } else if legacy {
             let after: u64 = connection
-                .query_row(
+                .query_row_cached(
                     "SELECT binding_revision FROM changes WHERE operation=?1 AND ordinal=?2",
                     params![operation, ordinal],
                     |row| row.get(0),
@@ -187,14 +187,14 @@ pub(super) fn index(
         } else {
             encoded.clone()
         };
-        connection.execute("INSERT INTO identity_refs(operation,ordinal,role,path,logical,expected) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(operation,ordinal,role) DO UPDATE SET path=excluded.path,logical=excluded.logical,expected=excluded.expected", params![operation,ordinal,role,paths::key(&path),encoded,expected]).map_err(db_error)?;
+        connection.execute_cached("INSERT INTO identity_refs(operation,ordinal,role,path,logical,expected) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(operation,ordinal,role) DO UPDATE SET path=excluded.path,logical=excluded.logical,expected=excluded.expected", params![operation,ordinal,role,paths::key(&path),encoded,expected]).map_err(db_error)?;
     }
     Ok(())
 }
 
 pub(super) fn populate(connection: &Connection) -> io::Result<()> {
     let mut statement = connection
-        .prepare("SELECT operation,ordinal,body FROM changes ORDER BY operation,ordinal")
+        .prepare_cached("SELECT operation,ordinal,body FROM changes ORDER BY operation,ordinal")
         .map_err(db_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -221,7 +221,7 @@ pub(super) fn resolve(
     path: &Path,
     logical: Identity,
 ) -> io::Result<Identity> {
-    let body: String = connection.query_row("SELECT expected FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND path=?3 AND logical=?4", params![operation,ordinal,paths::key(path),encode(&logical)?], |row| row.get(0)).map_err(db_error)?;
+    let body: String = connection.query_row_cached("SELECT expected FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND path=?3 AND logical=?4", params![operation,ordinal,paths::key(path),encode(&logical)?], |row| row.get(0)).map_err(db_error)?;
     decode(&body)
 }
 
@@ -235,7 +235,7 @@ pub(super) fn resolved_original(
     path: &Path,
     logical: Identity,
 ) -> io::Result<Option<original::Original>> {
-    let body: Option<String> = connection.query_row("SELECT o.body FROM identity_ref_origins o JOIN identity_refs r ON r.operation=o.operation AND r.ordinal=o.ordinal AND r.role=o.role AND r.expected=o.expected WHERE r.operation=?1 AND r.ordinal=?2 AND r.path=?3 AND r.logical=?4", params![operation,ordinal,paths::key(path),encode(&logical)?], |r| r.get(0)).optional().map_err(db_error)?;
+    let body: Option<String> = connection.query_row_cached("SELECT o.body FROM identity_ref_origins o JOIN identity_refs r ON r.operation=o.operation AND r.ordinal=o.ordinal AND r.role=o.role AND r.expected=o.expected WHERE r.operation=?1 AND r.ordinal=?2 AND r.path=?3 AND r.logical=?4", params![operation,ordinal,paths::key(path),encode(&logical)?], |r| r.get(0)).optional().map_err(db_error)?;
     body.map(|body| decode(&body)).transpose()
 }
 
@@ -250,7 +250,7 @@ pub(super) fn owned(
     // enclosing Rename can nevertheless put that same physical file at this
     // source. Resolve that namespace chain before capturing ownership; matching
     // an inode elsewhere in history alone does not grant ownership at this path.
-    let mut statement = connection.prepare("SELECT operation,ordinal,role,path FROM identity_refs WHERE expected=?1 AND (operation,ordinal)<(?2,?3) ORDER BY operation,ordinal,role").map_err(db_error)?;
+    let mut statement = connection.prepare_cached("SELECT operation,ordinal,role,path FROM identity_refs WHERE expected=?1 AND (operation,ordinal)<(?2,?3) ORDER BY operation,ordinal,role").map_err(db_error)?;
     let rows: Vec<(Owner, Vec<u8>)> = statement
         .query_map(params![encode(&expected)?, operation, ordinal], |row| {
             Ok((
@@ -354,12 +354,12 @@ pub(super) fn returned_directory(
         .iter()
         .filter(|owner| !parents_only || owner.role == PARENT)
     {
-        let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3)", params![owner.operation,owner.ordinal,owner.role], |r| r.get(0)).map_err(db_error)?;
+        let exists: bool = connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3)", params![owner.operation,owner.ordinal,owner.role], |r| r.get(0)).map_err(db_error)?;
         if !exists {
             continue;
         }
-        if connection.execute("INSERT INTO identity_ref_origins(operation,ordinal,role,expected,body) SELECT operation,ordinal,role,expected,?4 FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3 AND expected=?5 ON CONFLICT(operation,ordinal,role) DO UPDATE SET expected=excluded.expected,body=excluded.body", params![owner.operation,owner.ordinal,owner.role,encode(&original)?,encode(&expected)?]).map_err(db_error)? != 1 { return Err(invalid("The returned parent generation was not saved.")); }
-        let saved: String = connection.query_row("SELECT o.body FROM identity_ref_origins o JOIN identity_refs r ON r.operation=o.operation AND r.ordinal=o.ordinal AND r.role=o.role AND r.expected=o.expected WHERE o.operation=?1 AND o.ordinal=?2 AND o.role=?3",params![owner.operation,owner.ordinal,owner.role],|r|r.get(0)).map_err(db_error)?;
+        if connection.execute_cached("INSERT INTO identity_ref_origins(operation,ordinal,role,expected,body) SELECT operation,ordinal,role,expected,?4 FROM identity_refs WHERE operation=?1 AND ordinal=?2 AND role=?3 AND expected=?5 ON CONFLICT(operation,ordinal,role) DO UPDATE SET expected=excluded.expected,body=excluded.body", params![owner.operation,owner.ordinal,owner.role,encode(&original)?,encode(&expected)?]).map_err(db_error)? != 1 { return Err(invalid("The returned parent generation was not saved.")); }
+        let saved: String = connection.query_row_cached("SELECT o.body FROM identity_ref_origins o JOIN identity_refs r ON r.operation=o.operation AND r.ordinal=o.ordinal AND r.role=o.role AND r.expected=o.expected WHERE o.operation=?1 AND o.ordinal=?2 AND o.role=?3",params![owner.operation,owner.ordinal,owner.role],|r|r.get(0)).map_err(db_error)?;
         if saved != encode(&original)? {
             return Err(invalid(
                 "The returned parent generation was not recorded exactly.",
@@ -386,7 +386,7 @@ pub(super) fn expect_primary(
     identity: Identity,
 ) -> io::Result<()> {
     let count = connection
-        .execute(
+        .execute_cached(
             "UPDATE identity_refs SET expected=?3 WHERE operation=?1 AND ordinal=?2 AND role=0",
             params![operation, ordinal, encode(&identity)?],
         )

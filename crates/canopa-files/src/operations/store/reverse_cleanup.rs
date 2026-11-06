@@ -1,6 +1,5 @@
 //! Completion ends Undo execution rights, retaining only original empty roots.
 use super::*;
-use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -13,6 +12,7 @@ pub(in crate::operations) struct Cleanup {
 #[serde(deny_unknown_fields)]
 struct Binding {
     history: original::Original,
+    #[serde(serialize_with = "serialized::bytes")]
     digest: [u8; 32],
 }
 #[derive(Clone, Debug)]
@@ -27,10 +27,10 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
 }
 pub(super) fn clear(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     connection
-        .execute("DELETE FROM undo_cleanup WHERE lane=?1", [lane.index()])
+        .execute_cached("DELETE FROM undo_cleanup WHERE lane=?1", [lane.index()])
         .map_err(db_error)?;
     let exists: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM undo_cleanup WHERE lane=?1)",
             [lane.index()],
             |r| r.get(0),
@@ -44,10 +44,10 @@ pub(super) fn clear(connection: &Connection, lane: IntentLane) -> io::Result<()>
     Ok(())
 }
 fn digest(lane: IntentLane, pending: &Pending) -> io::Result<[u8; 32]> {
-    let mut hash = Sha256::new();
-    hash.update(b"canopa-files-completed-undo-cleanup-v1\0");
-    hash.update(encode(&(lane.index(), pending))?.as_bytes());
-    Ok(hash.finalize().into())
+    Ok(serialized::tagged_digest(
+        b"canopa-files-completed-undo-cleanup-v1\0",
+        encode(&(lane.index(), pending))?.as_bytes(),
+    ))
 }
 pub(super) fn require(
     connection: &Connection,
@@ -56,7 +56,7 @@ pub(super) fn require(
     pending: &Pending,
 ) -> io::Result<()> {
     let body: Option<String> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM undo_cleanup WHERE lane=?1",
             [lane.index()],
             |r| r.get(0),
@@ -87,7 +87,7 @@ pub(super) fn require(
 fn require_retired_step(connection: &Connection, pending: &Pending) -> io::Result<()> {
     if let Pending::UndoCleanup { cleanup } = pending {
         let occupied: bool = connection
-            .query_row(
+            .query_row_cached(
                 "SELECT EXISTS(SELECT 1 FROM changes WHERE operation=?1 AND ordinal=?2)",
                 params![cleanup.id, cleanup.ordinal],
                 |r| r.get(0),
@@ -114,7 +114,7 @@ pub(super) fn prepare(
     change: &Change,
 ) -> io::Result<Option<Completion>> {
     let body: Option<String> = connection
-        .query_row(
+        .query_row_cached(
             match lane {
                 IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                 IntentLane::RecoveryCopy => "SELECT body FROM recovery_pending WHERE singleton=1",
@@ -127,7 +127,7 @@ pub(super) fn prepare(
     let Some(body) = body else {
         return Ok(None);
     };
-    let pending: Pending = decode(&body)?;
+    let pending: Pending = decode_pending(&body)?;
     if let Pending::UndoSavedReturn { returning } = &pending {
         saved_return::require(connection, history, lane, &pending)?;
         let (owner, step, actual, _, _) = returning.parts()?;
@@ -251,7 +251,7 @@ impl Completion {
         let pending = encode(&self.pending)?;
         let binding = encode(&self.binding)?;
         connection
-            .execute(
+            .execute_cached(
                 match lane {
                     IntentLane::Primary => "INSERT INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => "INSERT INTO recovery_pending VALUES(1,?1)",
@@ -260,13 +260,13 @@ impl Completion {
             )
             .map_err(db_error)?;
         connection
-            .execute(
+            .execute_cached(
                 "INSERT INTO undo_cleanup(lane,body) VALUES(?1,?2)",
                 params![lane.index(), binding],
             )
             .map_err(db_error)?;
         let saved: String = connection
-            .query_row(
+            .query_row_cached(
                 match lane {
                     IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -278,7 +278,7 @@ impl Completion {
             )
             .map_err(db_error)?;
         let saved_binding: String = connection
-            .query_row(
+            .query_row_cached(
                 "SELECT body FROM undo_cleanup WHERE lane=?1",
                 [lane.index()],
                 |r| r.get(0),
@@ -366,7 +366,7 @@ impl Store {
         require(&self.connection, self.identity, lane, &pending)?;
         let binding = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT body FROM undo_cleanup WHERE lane=?1",
                 [lane.index()],
                 |r| r.get(0),
@@ -381,7 +381,7 @@ impl Store {
     }
     pub(in crate::operations) fn keep_undo_cleanup(&mut self, reviewed: &Review) -> io::Result<()> {
         self.ensure_location()?;
-        let pending: Pending = decode(&reviewed.pending)?;
+        let pending: Pending = decode_pending(&reviewed.pending)?;
         let Pending::UndoCleanup { cleanup } = &pending else {
             return Err(invalid("Expected completed Undo cleanup."));
         };
@@ -396,7 +396,7 @@ impl Store {
             .map_err(db_error)?;
         require(&transaction, self.identity, reviewed.lane, &pending)?;
         let actual: String = transaction
-            .query_row(
+            .query_row_cached(
                 match reviewed.lane {
                     IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                     IntentLane::RecoveryCopy => {
@@ -408,7 +408,7 @@ impl Store {
             )
             .map_err(db_error)?;
         let binding: String = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT body FROM undo_cleanup WHERE lane=?1",
                 [reviewed.lane.index()],
                 |r| r.get(0),
@@ -427,7 +427,7 @@ impl Store {
             record.retained.version = Some(version.clone());
             let body = encode(&record)?;
             if transaction
-                .execute("INSERT INTO garbage(body) VALUES(?1)", [&body])
+                .execute_cached("INSERT INTO garbage(body) VALUES(?1)", [&body])
                 .map_err(db_error)?
                 != 1
             {
@@ -435,7 +435,7 @@ impl Store {
             }
             let entry = u64::try_from(transaction.last_insert_rowid()).map_err(io::Error::other)?;
             let saved: String = transaction
-                .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
+                .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
                     r.get(0)
                 })
                 .map_err(db_error)?;

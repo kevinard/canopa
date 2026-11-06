@@ -4,7 +4,7 @@ use undo::directory_return;
 pub(super) mod relocation;
 
 pub(super) fn create(connection: &Connection, version: u32) -> io::Result<()> {
-    let indexed: bool = connection.query_row(
+    let indexed: bool = connection.query_row_cached(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='moved_directory_roots')",
         [], |row| row.get(0),
     ).map_err(db_error)?;
@@ -39,7 +39,7 @@ pub(super) fn create(connection: &Connection, version: u32) -> io::Result<()> {
             ALTER TABLE directory_archives ADD COLUMN scope INTEGER REFERENCES directory_scopes(id);").map_err(db_error)?;
         let roots: Vec<(u64, u64)> = {
             let mut statement = connection
-                .prepare(
+                .prepare_cached(
                     "SELECT operation,ordinal FROM directory_returns ORDER BY operation,ordinal",
                 )
                 .map_err(db_error)?;
@@ -56,19 +56,19 @@ pub(super) fn create(connection: &Connection, version: u32) -> io::Result<()> {
                 None => new_scope(connection, operation, Some(ordinal))?,
             };
             connection
-                .execute(
+                .execute_cached(
                     "UPDATE directory_returns SET scope=?3 WHERE operation=?1 AND ordinal=?2",
                     params![operation, ordinal, scope.id],
                 )
                 .map_err(db_error)?;
             connection
-                .execute(
+                .execute_cached(
                     "UPDATE directory_members SET scope=?3 WHERE operation=?1 AND parent=?2",
                     params![operation, ordinal, scope.id],
                 )
                 .map_err(db_error)?;
             connection
-                .execute(
+                .execute_cached(
                     "UPDATE directory_archives SET scope=?3 WHERE operation=?1 AND parent=?2",
                     params![operation, ordinal, scope.id],
                 )
@@ -105,7 +105,7 @@ pub(super) fn create(connection: &Connection, version: u32) -> io::Result<()> {
         CREATE INDEX IF NOT EXISTS moved_directory_roots_source ON moved_directory_roots(operation,current,identity);").map_err(db_error)?;
     if !indexed {
         let mut statement = connection
-            .prepare("SELECT operation,ordinal,body FROM changes")
+            .prepare_cached("SELECT operation,ordinal,body FROM changes")
             .map_err(db_error)?;
         let rows = statement
             .query_map([], |row| {
@@ -138,12 +138,12 @@ pub(super) fn index_moved(
         moved: Some(moved), ..
     } = inner
     {
-        connection.execute("INSERT INTO moved_directory_roots(operation,ordinal,current,identity) VALUES(?1,?2,?3,?4)
+        connection.execute_cached("INSERT INTO moved_directory_roots(operation,ordinal,current,identity) VALUES(?1,?2,?3,?4)
             ON CONFLICT(operation,ordinal) DO UPDATE SET current=excluded.current,identity=excluded.identity",
             params![operation,ordinal,paths::key(&moved.current),encode(&moved.identity)?]).map_err(db_error)?;
     } else {
         connection
-            .execute(
+            .execute_cached(
                 "DELETE FROM moved_directory_roots WHERE operation=?1 AND ordinal=?2",
                 params![operation, ordinal],
             )
@@ -170,7 +170,7 @@ fn new_scope(
     historical_before: Option<u64>,
 ) -> io::Result<Scope> {
     connection
-        .execute(
+        .execute_cached(
             "INSERT INTO directory_scopes(operation,historical_before) VALUES(?1,?2)",
             params![operation, historical_before],
         )
@@ -186,7 +186,7 @@ fn member_scope(
     operation: u64,
     ordinal: u64,
 ) -> io::Result<Option<Scope>> {
-    let row: Option<(Option<u64>,Option<u64>)> = connection.query_row("SELECT m.scope,s.historical_before FROM directory_members m LEFT JOIN directory_scopes s ON s.id=m.scope WHERE m.operation=?1 AND m.ordinal=?2",params![operation,ordinal],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
+    let row: Option<(Option<u64>,Option<u64>)> = connection.query_row_cached("SELECT m.scope,s.historical_before FROM directory_members m LEFT JOIN directory_scopes s ON s.id=m.scope WHERE m.operation=?1 AND m.ordinal=?2",params![operation,ordinal],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
     row.map(|(id, historical_before)| {
         Ok(Scope {
             id: id.ok_or_else(|| invalid("directory member has no scope"))?,
@@ -206,7 +206,7 @@ pub(super) fn history_before(
 }
 
 fn parents(connection: &Connection, id: u64, ordinal: u64) -> io::Result<Vec<u64>> {
-    let mut statement = connection.prepare("WITH RECURSIVE parents(ordinal) AS (
+    let mut statement = connection.prepare_cached("WITH RECURSIVE parents(ordinal) AS (
         SELECT parent FROM directory_members WHERE operation=?1 AND ordinal=?2
         UNION ALL SELECT m.parent FROM directory_members m JOIN parents p ON m.ordinal=p.ordinal WHERE m.operation=?1)
         SELECT ordinal FROM parents").map_err(db_error)?;
@@ -226,7 +226,7 @@ pub(super) fn owns_archive(
     let Some(scope) = member_scope(connection, id, ordinal)? else {
         return Ok(false);
     };
-    connection.query_row("SELECT EXISTS(SELECT 1 FROM directory_archives WHERE operation=?1 AND scope=?2 AND entry=?3)",params![id,scope.id,entry],|row|row.get(0)).map_err(db_error)
+    connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM directory_archives WHERE operation=?1 AND scope=?2 AND entry=?3)",params![id,scope.id,entry],|row|row.get(0)).map_err(db_error)
 }
 
 impl Store {
@@ -310,7 +310,7 @@ impl Store {
             *path = relocation.from.clone();
         }
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(&staged)?],
             )
@@ -318,12 +318,12 @@ impl Store {
         paths::index_change(&transaction, id, ordinal, &staged)?;
         references::index(&transaction, id, ordinal, &staged, false)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO directory_returns(operation,ordinal,scope) VALUES(?1,?2,?3)",
                 params![id, ordinal, scope.id],
             )
             .map_err(db_error)?;
-        transaction.execute("INSERT INTO directory_members(operation,ordinal,parent,scope)
+        transaction.execute_cached("INSERT INTO directory_members(operation,ordinal,parent,scope)
             SELECT operation,ordinal,?3,?4 FROM changes WHERE operation=?1 AND ordinal>=?2 AND ordinal<?3
             ON CONFLICT(operation,ordinal) DO UPDATE SET parent=excluded.parent,scope=excluded.scope",params![id,moved.first,ordinal,scope.id]).map_err(db_error)?;
         context::returned(&transaction, id, ordinal, marker)?;
@@ -337,7 +337,7 @@ impl Store {
                 Some(ordinal),
             )?;
             transaction
-                .execute(
+                .execute_cached(
                     "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                     params![id, ordinal, encode(marker)?],
                 )
@@ -355,7 +355,7 @@ impl Store {
             };
             context::prepare(&transaction, self.identity, self.lane, &pending)?;
             transaction
-                .execute(
+                .execute_cached(
                     "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                     [encode(&pending)?],
                 )
@@ -367,7 +367,7 @@ impl Store {
     pub fn directory_source_cleanup(&self, id: u64, ordinal: u64) -> io::Result<bool> {
         let parent: Option<u64> = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT parent FROM directory_members WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
                 |row| row.get(0),
@@ -388,7 +388,7 @@ impl Store {
         id: u64,
         deferred: &std::collections::BTreeSet<u64>,
     ) -> io::Result<bool> {
-        let mut statement=self.connection.prepare("SELECT r.ordinal,c.body FROM directory_returns r JOIN changes c ON c.operation=r.operation AND c.ordinal=r.ordinal WHERE r.operation=?1 ORDER BY r.ordinal DESC").map_err(db_error)?;
+        let mut statement=self.connection.prepare_cached("SELECT r.ordinal,c.body FROM directory_returns r JOIN changes c ON c.operation=r.operation AND c.ordinal=r.ordinal WHERE r.operation=?1 ORDER BY r.ordinal DESC").map_err(db_error)?;
         let rows = statement
             .query_map([id], |row| {
                 Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
@@ -413,7 +413,7 @@ impl Store {
         {
             return Ok(false);
         }
-        self.connection.query_row("SELECT EXISTS(SELECT 1 FROM moved_directory_roots own
+        self.connection.query_row_cached("SELECT EXISTS(SELECT 1 FROM moved_directory_roots own
             JOIN moved_directory_roots other ON other.operation=own.operation AND other.current=own.current AND other.identity=own.identity
             WHERE own.operation=?1 AND own.ordinal=?2 AND other.ordinal!=own.ordinal)",
             params![id,ordinal], |row| row.get(0)).map_err(db_error)
@@ -434,16 +434,16 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let (parent,scope,bindings):(u64,u64,Option<String>)=transaction.query_row("SELECT m.parent,m.scope,c.bindings FROM directory_members m JOIN changes c ON c.operation=m.operation AND c.ordinal=m.ordinal WHERE m.operation=?1 AND m.ordinal=?2",params![id,ordinal],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(db_error)?;
+        let (parent,scope,bindings):(u64,u64,Option<String>)=transaction.query_row_cached("SELECT m.parent,m.scope,c.bindings FROM directory_members m JOIN changes c ON c.operation=m.operation AND c.ordinal=m.ordinal WHERE m.operation=?1 AND m.ordinal=?2",params![id,ordinal],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(db_error)?;
         let available: u64 = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT COALESCE(MAX(ordinal)+1,0) FROM changes WHERE operation=?1",
                 [id],
                 |row| row.get(0),
             )
             .map_err(db_error)?;
         let next: u64 = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT next_ordinal FROM directory_sequences WHERE operation=?1",
                 [id],
                 |row| row.get(0),
@@ -463,22 +463,22 @@ impl Store {
             (returned_ordinal, returned, bindings),
         ] {
             transaction
-                .execute(
+                .execute_cached(
                     "INSERT INTO changes(operation,ordinal,body,bindings) VALUES(?1,?2,?3,?4)",
                     params![id, step, encode(change)?, bindings],
                 )
                 .map_err(db_error)?;
             paths::index_change(&transaction, id, step, change)?;
             references::index(&transaction, id, step, change, false)?;
-            transaction.execute("INSERT INTO directory_members(operation,ordinal,parent,scope) VALUES(?1,?2,?3,?4)",params![id,step,parent,scope]).map_err(db_error)?;
+            transaction.execute_cached("INSERT INTO directory_members(operation,ordinal,parent,scope) VALUES(?1,?2,?3,?4)",params![id,step,parent,scope]).map_err(db_error)?;
         }
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM changes WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
             )
             .map_err(db_error)?;
-        transaction.execute("INSERT INTO directory_sequences(operation,next_ordinal) VALUES(?1,?2) ON CONFLICT(operation) DO UPDATE SET next_ordinal=excluded.next_ordinal",params![id,after]).map_err(db_error)?;
+        transaction.execute_cached("INSERT INTO directory_sequences(operation,next_ordinal) VALUES(?1,?2) ON CONFLICT(operation) DO UPDATE SET next_ordinal=excluded.next_ordinal",params![id,after]).map_err(db_error)?;
         transaction.commit().map_err(db_error)
     }
 
@@ -509,13 +509,13 @@ impl Store {
             .map_err(db_error)?;
         context::returned(&transaction, id, ordinal, marker)?;
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM directory_returns WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(&remainder)?],
             )
@@ -537,7 +537,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let rows: Vec<(u64, String)> = {
-            let mut statement = transaction.prepare("WITH RECURSIVE branch(ordinal) AS (
+            let mut statement = transaction.prepare_cached("WITH RECURSIVE branch(ordinal) AS (
                 SELECT ?2 UNION ALL SELECT m.ordinal FROM directory_members m JOIN branch b ON m.parent=b.ordinal WHERE m.operation=?1)
                 SELECT c.ordinal,c.body FROM changes c JOIN branch b ON b.ordinal=c.ordinal WHERE c.operation=?1 ORDER BY c.ordinal DESC").map_err(db_error)?;
             statement
@@ -586,7 +586,7 @@ impl Store {
         let mut roots = parents(&self.connection, id, ordinal)?;
         let marker: bool = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT EXISTS(SELECT 1 FROM directory_returns WHERE operation=?1 AND ordinal=?2)",
                 params![id, ordinal],
                 |row| row.get(0),
@@ -686,7 +686,7 @@ impl Store {
         let cleanup = directory_return::moved(&stored_change(&self.connection, id, ordinal)?)
             .and_then(|moved| moved.created);
         self.connection
-            .query_row(
+            .query_row_cached(
                 "SELECT EXISTS(SELECT 1 FROM directory_members WHERE operation=?1 AND parent=?2 AND (?3 IS NULL OR ordinal!=?3))",
                 params![id, ordinal,cleanup],
                 |row| row.get(0),
@@ -764,7 +764,7 @@ impl Store {
             }
         };
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(marker)?],
             )
@@ -772,20 +772,20 @@ impl Store {
         paths::index_change(&transaction, id, ordinal, marker)?;
         references::index(&transaction, id, ordinal, marker, false)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO directory_returns(operation,ordinal,scope) VALUES(?1,?2,?3) ON CONFLICT(operation,ordinal) DO NOTHING",
                 params![id, ordinal,scope.id],
             )
             .map_err(db_error)?;
         let next_available: u64 = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT COALESCE(MAX(ordinal)+1,0) FROM changes WHERE operation=?1",
                 [id],
                 |row| row.get(0),
             )
             .map_err(db_error)?;
         let mut next = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT next_ordinal FROM directory_sequences WHERE operation=?1",
                 [id],
                 |row| row.get::<_, u64>(0),
@@ -802,7 +802,7 @@ impl Store {
                 None => context::Bindings::default(),
             })?;
             transaction
-                .execute(
+                .execute_cached(
                     "INSERT INTO changes(operation,ordinal,body,bindings) VALUES(?1,?2,?3,?4)",
                     params![id, next, encode(child)?, bindings],
                 )
@@ -810,7 +810,7 @@ impl Store {
             paths::index_change(&transaction, id, next, child)?;
             references::index(&transaction, id, next, child, false)?;
             transaction
-                .execute(
+                .execute_cached(
                     "INSERT INTO directory_members(operation,ordinal,parent,scope) VALUES(?1,?2,?3,?4)",
                     params![id, next, ordinal,scope.id],
                 )
@@ -819,10 +819,10 @@ impl Store {
                 .checked_add(1)
                 .ok_or_else(|| invalid("directory return is too large"))?;
         }
-        transaction.execute("INSERT INTO directory_sequences(operation,next_ordinal) VALUES(?1,?2) ON CONFLICT(operation) DO UPDATE SET next_ordinal=excluded.next_ordinal",params![id,next]).map_err(db_error)?;
+        transaction.execute_cached("INSERT INTO directory_sequences(operation,next_ordinal) VALUES(?1,?2) ON CONFLICT(operation) DO UPDATE SET next_ordinal=excluded.next_ordinal",params![id,next]).map_err(db_error)?;
         let records: Vec<(u64, String)> = {
             let mut statement = transaction
-                .prepare("SELECT id,body FROM garbage ORDER BY id")
+                .prepare_cached("SELECT id,body FROM garbage ORDER BY id")
                 .map_err(db_error)?;
             statement
                 .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -833,7 +833,7 @@ impl Store {
         for (entry, body) in records {
             let mut record = recovery::Record::decode(&body)?;
             if record.retained.stage.directory.starts_with(source) {
-                let other_scope: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM directory_archives WHERE operation=?1 AND entry=?2 AND scope!=?3)",params![id,entry,scope.id],|row|row.get(0)).map_err(db_error)?;
+                let other_scope: bool = transaction.query_row_cached("SELECT EXISTS(SELECT 1 FROM directory_archives WHERE operation=?1 AND entry=?2 AND scope!=?3)",params![id,entry,scope.id],|row|row.get(0)).map_err(db_error)?;
                 if other_scope {
                     continue;
                 }
@@ -846,7 +846,7 @@ impl Store {
                     .apply(&mut context.original);
                 }
                 transaction
-                    .execute(
+                    .execute_cached(
                         "UPDATE garbage SET body=?2 WHERE id=?1",
                         params![entry, encode(&record)?],
                     )
@@ -854,9 +854,9 @@ impl Store {
                 paths::index_record(&transaction, entry, &record)?;
                 // Bind the logical destination to the most specific active
                 // container, preserving the scope after that container finishes.
-                transaction.execute("DELETE FROM directory_archives WHERE operation=?1 AND entry=?2 AND scope=?3",params![id,entry,scope.id]).map_err(db_error)?;
+                transaction.execute_cached("DELETE FROM directory_archives WHERE operation=?1 AND entry=?2 AND scope=?3",params![id,entry,scope.id]).map_err(db_error)?;
                 transaction
-                    .execute(
+                    .execute_cached(
                         "INSERT INTO directory_archives(operation,parent,entry,scope) VALUES(?1,?2,?3,?4)",
                         params![id, ordinal, entry,scope.id],
                     )
@@ -873,7 +873,7 @@ impl Store {
             };
             context::prepare(&transaction, self.identity, self.lane, &pending)?;
             transaction
-                .execute(
+                .execute_cached(
                     "INSERT OR REPLACE INTO pending VALUES(1,?1)",
                     [encode(&pending)?],
                 )
@@ -912,15 +912,15 @@ impl Store {
             original.relocate(&reversed);
             relocate(&transaction, id, ordinal, &reversed, &BTreeSet::new())?;
         }
-        transaction.execute("DELETE FROM changes WHERE operation=?1 AND ordinal IN(SELECT ordinal FROM directory_members WHERE operation=?1 AND parent=?2)",params![id,ordinal]).map_err(db_error)?;
+        transaction.execute_cached("DELETE FROM changes WHERE operation=?1 AND ordinal IN(SELECT ordinal FROM directory_members WHERE operation=?1 AND parent=?2)",params![id,ordinal]).map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM directory_returns WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(&original)?],
             )
@@ -965,7 +965,7 @@ impl Store {
         }
         context::restore_source_context(&transaction, id, ordinal, &original)?;
         let parent: Option<(u64, u64)> = transaction
-            .query_row(
+            .query_row_cached(
                 "SELECT parent,scope FROM directory_members WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -973,23 +973,23 @@ impl Store {
             .optional()
             .map_err(db_error)?;
         if let Some((parent, scope)) = parent {
-            transaction.execute("UPDATE directory_members SET parent=?3,scope=?4 WHERE operation=?1 AND parent=?2",params![id,ordinal,parent,scope]).map_err(db_error)?;
+            transaction.execute_cached("UPDATE directory_members SET parent=?3,scope=?4 WHERE operation=?1 AND parent=?2",params![id,ordinal,parent,scope]).map_err(db_error)?;
         } else {
             transaction
-                .execute(
+                .execute_cached(
                     "DELETE FROM directory_members WHERE operation=?1 AND parent=?2",
                     params![id, ordinal],
                 )
                 .map_err(db_error)?;
         }
         transaction
-            .execute(
+            .execute_cached(
                 "DELETE FROM directory_returns WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal],
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                 params![id, ordinal, encode(&original)?],
             )

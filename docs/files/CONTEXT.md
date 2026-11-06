@@ -62,6 +62,12 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Reuse pure journal computations while checking current authority, functional verification complete; Undo timing gate open](adr/0159-reuse-pure-journal-computations.md).
+
+- [Bounded transfer completion records, workspace regression verified](adr/0158-bounded-transfer-completion-records.md).
+
+- [Reviewed Move Undo projections retain their original history binding, workspace functional verification complete](adr/0157-reviewed-move-undo-projections.md).
+
 - [XXH3-128 content fingerprints without development-history compatibility](adr/0156-fast-content-fingerprints.md).
 
 - [Trust upstream Copy and fingerprint its output once](adr/0155-trust-upstream-copy.md).

@@ -1,12 +1,13 @@
 //! An original Copy Undo creator binds its task before either name is consumed.
 use super::*;
-use sha2::{Digest, Sha256};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Binding {
     history: original::Original,
+    #[serde(serialize_with = "serialized::bytes")]
     canonical: [u8; 32],
+    #[serde(serialize_with = "serialized::bytes")]
     pending: [u8; 32],
 }
 #[derive(Clone, Debug)]
@@ -27,7 +28,7 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
 }
 fn body(connection: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
     connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM copy_undo WHERE lane=?1",
             [lane.index()],
             |r| r.get(0),
@@ -37,7 +38,7 @@ fn body(connection: &Connection, lane: IntentLane) -> io::Result<Option<String>>
 }
 fn pending(connection: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
     connection
-        .query_row(
+        .query_row_cached(
             match lane {
                 IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                 IntentLane::RecoveryCopy => "SELECT body FROM recovery_pending WHERE singleton=1",
@@ -49,10 +50,10 @@ fn pending(connection: &Connection, lane: IntentLane) -> io::Result<Option<Strin
         .map_err(db_error)
 }
 fn digest(lane: IntentLane, removal: &undo::copied::Removal) -> io::Result<[u8; 32]> {
-    let mut hash = Sha256::new();
-    hash.update(b"canopa-files-original-copy-undo-v1\0");
-    hash.update(encode(&(lane.index(), removal))?.as_bytes());
-    Ok(hash.finalize().into())
+    Ok(serialized::tagged_digest(
+        b"canopa-files-original-copy-undo-v1\0",
+        encode(&(lane.index(), removal))?.as_bytes(),
+    ))
 }
 fn canonical_digest(
     connection: &Connection,
@@ -82,7 +83,7 @@ fn canonical_digest(
     if encode(&approved)? != encode(&removal.change)? {
         return Err(invalid("Copy Undo differs from its original history step."));
     }
-    Ok(Sha256::digest(encode(&canonical)?.as_bytes()).into())
+    Ok(serialized::digest(encode(&canonical)?.as_bytes()))
 }
 fn canonical_matches(
     connection: &Connection,
@@ -90,13 +91,13 @@ fn canonical_matches(
     expected: [u8; 32],
 ) -> io::Result<bool> {
     let body: String = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
             params![removal.id, removal.ordinal],
             |row| row.get(0),
         )
         .map_err(db_error)?;
-    if <[u8; 32]>::from(Sha256::digest(body.as_bytes())) == expected {
+    if serialized::digest(body.as_bytes()) == expected {
         // Registration proved the selected task against this canonical Change.
         // The independent pending digest below preserves that selection through
         // every phase. Exact canonical bytes need no repeated deserialization.
@@ -138,7 +139,7 @@ pub(super) fn require(
 }
 pub(super) fn clear(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     connection
-        .execute("DELETE FROM copy_undo WHERE lane=?1", [lane.index()])
+        .execute_cached("DELETE FROM copy_undo WHERE lane=?1", [lane.index()])
         .map_err(db_error)?;
     if body(connection, lane)?.is_some() {
         return Err(invalid("The original Copy Undo binding was not retired."));
@@ -171,7 +172,7 @@ impl Store {
     }
     pub(in crate::operations) fn keep_copy_undo(&mut self, reviewed: &Review) -> io::Result<()> {
         self.ensure_location()?;
-        let value: Pending = decode(&reviewed.pending)?;
+        let value: Pending = decode_pending(&reviewed.pending)?;
         let Pending::UndoCopied { removal } = &value else {
             return Err(invalid("Expected Copy Undo work."));
         };
@@ -195,7 +196,7 @@ impl Store {
         record.retained.version = Some(reviewed.root.clone());
         let encoded = encode(&record)?;
         if transaction
-            .execute("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
+            .execute_cached("INSERT INTO garbage(body) VALUES(?1)", [&encoded])
             .map_err(db_error)?
             != 1
         {
@@ -203,7 +204,7 @@ impl Store {
         }
         let entry = u64::try_from(transaction.last_insert_rowid()).map_err(io::Error::other)?;
         let actual: String = transaction
-            .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
+            .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |r| {
                 r.get(0)
             })
             .map_err(db_error)?;
@@ -290,7 +291,7 @@ impl Store {
         let encoded = encode(&value)?;
         let bound = encode(&binding)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => "INSERT INTO pending VALUES(1,?1)",
                     IntentLane::RecoveryCopy => "INSERT INTO recovery_pending VALUES(1,?1)",
@@ -299,7 +300,7 @@ impl Store {
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO copy_undo(lane,body) VALUES(?1,?2)",
                 params![self.lane.index(), bound],
             )
@@ -362,7 +363,7 @@ impl Store {
         let next = encode(&after)?;
         let bound = encode(&binding)?;
         transaction
-            .execute(
+            .execute_cached(
                 match self.lane {
                     IntentLane::Primary => {
                         "UPDATE pending SET body=?1 WHERE singleton=1 AND body=?2"
@@ -375,7 +376,7 @@ impl Store {
             )
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE copy_undo SET body=?2 WHERE lane=?1 AND body=?3",
                 params![self.lane.index(), bound, old_binding],
             )

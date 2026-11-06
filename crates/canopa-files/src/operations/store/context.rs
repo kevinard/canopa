@@ -139,7 +139,7 @@ pub(super) fn prepare(
             digest: forward_digest(history, lane, pending, original)?,
         });
         let body = encode(&bindings)?;
-        connection.execute("INSERT INTO pending_bindings(lane,operation,ordinal,body) VALUES(?1,?2,?3,?4) ON CONFLICT(lane) DO UPDATE SET operation=excluded.operation,ordinal=excluded.ordinal,body=excluded.body", params![lane.index(), id, ordinal, body]).map_err(db_error)?;
+        connection.execute_cached("INSERT INTO pending_bindings(lane,operation,ordinal,body) VALUES(?1,?2,?3,?4) ON CONFLICT(lane) DO UPDATE SET operation=excluded.operation,ordinal=excluded.ordinal,body=excluded.body", params![lane.index(), id, ordinal, body]).map_err(db_error)?;
     } else {
         clear(connection, lane)?;
     }
@@ -196,7 +196,7 @@ pub(super) fn history_original(
         _ => return Err(invalid("Expected the original Forward history.")),
     };
     let body: String = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM pending_bindings WHERE lane=?1 AND operation=?2",
             params![lane.index(), id],
             |r| r.get(0),
@@ -237,7 +237,7 @@ pub(super) fn require_forward(
             || stage.source_claim.is_some()
     });
     let prepared: Option<(u64, u64, String)> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT operation,ordinal,body FROM pending_bindings WHERE lane=?1",
             [lane.index()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -275,14 +275,14 @@ pub(super) fn require_forward(
     validate(&bindings, *id, *ordinal)?;
     require_history(connection, history, lane, *id, proof, required)?;
     let exists: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM operations WHERE id=?1)",
             [id],
             |row| row.get(0),
         )
         .map_err(db_error)?;
     let next: u64 = connection
-        .query_row(
+        .query_row_cached(
             "SELECT COALESCE(MAX(ordinal)+1,0) FROM changes WHERE operation=?1",
             [id],
             |row| row.get(0),
@@ -312,7 +312,7 @@ pub(super) fn require_saved_migration(
     }
     let expected = saved_phase_bindings(connection, history, lane, migration)?;
     let actual: Option<(u64, u64, String)> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT operation,ordinal,body FROM pending_bindings WHERE lane=?1",
             [lane.index()],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -335,7 +335,7 @@ fn committed_saved_bindings(
 ) -> io::Result<Bindings> {
     let forward = saved_stage::forward::virtual_forward(migration);
     let row: Option<(String, String)> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body,bindings FROM changes WHERE operation=?1 AND ordinal=?2",
             params![migration.id, migration.ordinal],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -361,7 +361,7 @@ fn committed_saved_bindings(
                 bindings.forward.as_ref().and_then(|p| p.original),
             )?)
         || connection
-            .query_row(
+            .query_row_cached(
                 "SELECT coalesce(max(ordinal)+1,0) FROM changes WHERE operation=?1",
                 [migration.id],
                 |r| r.get::<_, u64>(0),
@@ -419,7 +419,7 @@ pub(super) fn install_saved_phase(
     migration: &saved_stage::Migration,
 ) -> io::Result<()> {
     let bindings = saved_phase_bindings(connection, history, lane, migration)?;
-    connection.execute("INSERT INTO pending_bindings(lane,operation,ordinal,body) VALUES(?1,?2,?3,?4) ON CONFLICT(lane) DO UPDATE SET operation=excluded.operation,ordinal=excluded.ordinal,body=excluded.body", params![lane.index(),migration.id,migration.ordinal,encode(&bindings)?]).map_err(db_error)?;
+    connection.execute_cached("INSERT INTO pending_bindings(lane,operation,ordinal,body) VALUES(?1,?2,?3,?4) ON CONFLICT(lane) DO UPDATE SET operation=excluded.operation,ordinal=excluded.ordinal,body=excluded.body", params![lane.index(),migration.id,migration.ordinal,encode(&bindings)?]).map_err(db_error)?;
     Ok(())
 }
 
@@ -431,7 +431,7 @@ pub(super) fn for_append(
     change: &Change,
 ) -> io::Result<String> {
     let prepared: Option<(u64, u64, String)> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT operation,ordinal,body FROM pending_bindings WHERE lane=?1",
             [lane.index()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -454,7 +454,7 @@ pub(super) fn for_append(
 
 fn read(connection: &Connection, id: u64, ordinal: u64) -> io::Result<Option<Bindings>> {
     let body: Option<String> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT bindings FROM changes WHERE operation=?1 AND ordinal=?2",
             params![id, ordinal],
             |row| row.get(0),
@@ -593,7 +593,7 @@ pub(super) fn restore_source_context(
 
 pub(super) fn clear(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     connection
-        .execute("DELETE FROM pending_bindings WHERE lane=?1", [lane.index()])
+        .execute_cached("DELETE FROM pending_bindings WHERE lane=?1", [lane.index()])
         .map(|_| ())
         .map_err(db_error)
 }

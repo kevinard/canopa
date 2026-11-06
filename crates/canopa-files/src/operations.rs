@@ -42,6 +42,7 @@ mod entry_move;
 #[cfg(test)]
 mod entry_move_boundary;
 mod original;
+mod serialized;
 mod source_removal;
 #[cfg(test)]
 mod source_removal_boundary;
