@@ -425,8 +425,16 @@ pub struct NotificationsConfig {
     pub tooltip: TooltipSetting,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum IdleBackend {
+    #[default]
+    Wayland,
+    Stasis,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct IdleInhibitorConfig {
+    pub backend: IdleBackend,
     pub icons: IconRulesConfig,
     pub format: FormatConfig,
     pub tooltip: TooltipSetting,
@@ -508,6 +516,7 @@ pub struct MenuConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuSourceKind {
     InstalledApps,
+    Launcher(crate::launcher::Config),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

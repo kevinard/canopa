@@ -27,7 +27,7 @@ def main():
             return [json.loads(line) for line in result.stdout.splitlines()]
 
         default = reports(run("check"))
-        assert {r["component"] for r in default} == {"shell", "notifications", "files"}
+        assert {r["component"] for r in default} == {"shell", "notifications", "files", "wallpaper", "lockscreen", "greeter", "polkit", "pinentry"}
         assert all(r["source"]["defaults"] for r in default)
         shell = base / "shell.kdl"
         notifications = base / "notifications.kdl"
@@ -54,7 +54,7 @@ def main():
         failed = run("check", "--file", invalid, success=False)
         assert all(r["error"]["code"] == "appearance" for r in reports(failed))
         assert "private-appearance" not in failed.stdout + failed.stderr
-        invalid.write_text('schema-version 1\nshell { private-shell 42; }\nnotifications { private-notify 42; }\nfiles { private-files 42; }\n')
+        invalid.write_text('schema-version 1\nshell { private-shell 42; }\nnotifications { private-notify 42; }\nfiles { private-files 42; }\nwallpaper { private-wallpaper 42; }\nlockscreen { private-lockscreen 42; }\ngreeter { private-greeter 42; }\npolkit { private-polkit 42; }\npinentry { private-pinentry 42; }\n')
         failed = run("check", "--file", invalid, success=False)
         assert all("error" in r for r in reports(failed))
         assert "private-shell" not in failed.stdout + failed.stderr
@@ -81,7 +81,7 @@ def main():
         oversized = base / "oversized.kdl"
         oversized.write_bytes(b" " * (1024 * 1024 + 1))
         oversize_reports = reports(run("check", "--file", oversized, success=False))
-        assert {r["component"] for r in oversize_reports} == {"shell", "notifications", "files"}
+        assert {r["component"] for r in oversize_reports} == {"shell", "notifications", "files", "wallpaper", "lockscreen", "greeter", "polkit", "pinentry"}
         assert all(r["error"]["code"] == "read" for r in oversize_reports)
         # A legacy file must not override a present invalid shared file.
         (base / "niribar").mkdir()

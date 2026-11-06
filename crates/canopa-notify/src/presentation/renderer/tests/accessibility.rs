@@ -91,6 +91,13 @@ registry=$!
         return;
     }
     let session = zbus::Connection::session().await.unwrap();
+    // AT-SPI 2.62 removed --a11y; enable only this private bus through its property.
+    zbus::Proxy::new(&session, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Status")
+        .await
+        .unwrap()
+        .set_property("IsEnabled", true)
+        .await
+        .unwrap();
     let bus = zbus::Proxy::new(&session, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus")
         .await
         .unwrap();

@@ -54,6 +54,8 @@ fn icon_work_is_bounded_deduplicated_and_retargets_after_scrolling() {
             .collect(),
         show_icons: true,
         prompt: None,
+        launcher_session: None,
+        launcher_status: String::new(),
         search_query: String::new(),
         focused_index: None,
         keyboard_focus: true,

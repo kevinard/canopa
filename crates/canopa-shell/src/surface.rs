@@ -7,7 +7,6 @@ pub mod panel;
 pub mod panel_motion;
 pub mod placement;
 pub mod pointer_focus;
-pub mod scroll_speed;
 pub mod tooltip_popup;
 
 use crate::modules::ModuleId;

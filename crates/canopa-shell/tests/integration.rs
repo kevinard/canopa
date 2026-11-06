@@ -8,6 +8,8 @@ mod configuration;
 #[cfg(feature = "desktop")]
 mod diagnostics;
 #[cfg(feature = "desktop")]
+mod hardware_panel;
+#[cfg(feature = "desktop")]
 mod menu_cli;
 mod provider_protocol;
 #[cfg(feature = "desktop")]

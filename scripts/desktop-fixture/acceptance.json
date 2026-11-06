@@ -1,6 +1,11 @@
 {
   "scenarios": [
     {
+      "id": "shell-launcher-fractional",
+      "script": "verify-shell-launcher.py",
+      "args": ["--binary", "{shell}", "--files-binary", "{files}", "--scale", "1.25", "--output", "{artifacts}"]
+    },
+    {
       "id": "files-filemanager1-dark",
       "script": "verify-files-manager.py",
       "args": [
@@ -2712,6 +2717,83 @@
         "--scale",
         "1.25"
       ]
+    },
+    {
+      "id": "session-stasis",
+      "script": "verify-stasis.py",
+      "args": ["--bin-dir", "{session}", "--shell", "{shell}", "--stasis", "{stasis}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "wallpaper-followups",
+      "script": "verify-wallpaper-followups.py",
+      "args": ["--binary", "{session}/canopa-wallpaper", "--output", "{artifacts}"]
+    },
+    {
+      "id": "session-wallpaper-lock",
+      "script": "verify-session-tools.py",
+      "args": [
+        "--bin-dir",
+        "{session}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "lockscreen-logind-auth-layout",
+      "script": "verify-lockscreen-integration.py",
+      "args": [
+        "--bin-dir",
+        "{session}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-followups",
+      "script": "verify-greeter-followups.py",
+      "args": ["--binary", "{greeter}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "greeter-login",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary",
+        "{greeter}",
+        "--output",
+        "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-weston",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary", "{greeter}", "--compositor", "weston",
+        "--output", "{artifacts}"
+      ]
+    },
+    {
+      "id": "greeter-cage",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary", "{greeter}", "--compositor", "cage",
+        "--output", "{artifacts}"
+      ]
+    },
+    {
+      "id": "polkit-agent",
+      "script": "verify-polkit.py",
+      "args": ["--binary", "{polkit}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "settings-desktop",
+      "script": "verify-settings.py",
+      "args": ["--binary", "{session}/canopa-settings", "--tools-dir", "{session}",
+        "--stasis", "{stasis}", "--output", "{artifacts}"]
+    },
+    {
+      "id": "pinentry-dialog",
+      "script": "verify-pinentry.py",
+      "args": ["--binary", "{pinentry}", "--output", "{artifacts}"]
     }
   ]
 }

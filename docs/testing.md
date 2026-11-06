@@ -33,9 +33,9 @@ cargo test --locked -p canopa-config --test integration themes::
 
 Use the same feature selection and incremental debug cache between edits. Direct
 `cargo test FILTER` still selects every enabled target before applying the filter.
-Consolidation reduces the number of integration executables from 115 to 12; it
-does not combine dependency crates, library unit tests, or the actual programs
-used by process-level tests. The first build links the new suites.
+The workspace has at most 17 integration executables, including the five
+standalone Files targets. Library unit tests and programs launched by process-level
+tests build separately. The first build links the new suites.
 
 Files keeps `uutils_copy`, `local_actions`, `local_operation_attention`,
 `file_clipboard_wayland`, and the custom `device_runtime` executable separate for

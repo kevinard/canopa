@@ -557,6 +557,16 @@ impl App {
                 self.handle_bar_keyboard_activate(window)
             }
             SurfaceInputEffect::PanelKeyboardActivate => self.handle_panel_keyboard_activate(),
+            SurfaceInputEffect::PanelLauncherActions => {
+                if self.foreground.launcher().is_some() {
+                    self.handle_panel_event(super::messages::PanelEvent::LauncherActions(None))
+                } else {
+                    self.handle_panel_focus_move(true)
+                }
+            }
+            SurfaceInputEffect::PanelLauncherAction(action) => {
+                self.handle_panel_event(super::messages::PanelEvent::LauncherAction(action))
+            }
             SurfaceInputEffect::MenuKeyboardActivate { window } => {
                 self.handle_menu_keyboard_activate(window)
             }

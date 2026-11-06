@@ -50,18 +50,37 @@ reachable when status is unavailable; disconnected toggles show their availabili
 Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
 cards and Enter activates them. Battery and media appear when they have content;
 Calendar opens separately from the clock.
+
+**Bluetooth** uses the system BlueZ service. Turn on an adapter, choose **Find
+devices**, and pair or reconnect from the device list. Passkey and PIN
+requests appear in the same panel. Closing the panel ends its discovery and
+cancels an unfinished pairing.
+**Power & brightness** shows the built-in display backlight when the active
+Wayland login can use logind. The power profile list reflects the options
+advertised by the system Power Profiles daemon or a compatible service.
+The launcher can also open both panels.
+
 Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
-`canopa-shell lock` with session ownership. This executes `swaylock`, passing the
-Shell-owned lockscreen image through an open descriptor when one is selected.
-Unavailable wallpaper state falls back to locking without an image. Custom launch
-commands remain literal argv. The other buttons open confirmation menus with
+`canopa-lock` with session ownership (install its PAM service first; see
+[session tools](../../docs/session-tools.md)). The other buttons open confirmation menus with
 Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to quit,
 and Reboot/Power off use `systemctl` without force options. These ordinary button
 actions and menus can be rebound in the configuration.
 
-To use Canopa's selected lockscreen image from an existing bar action or Niri
-binding, route that action through `canopa-shell lock`. A custom action that
-launches Swaylock directly continues to use its own image configuration.
+For Swaylock sessions, `canopa-shell lock` passes the lockscreen image selected
+through the Wallpaper portal to Swaylock. Custom launch commands remain literal argv.
+
+The bundled Applications menu searches applications, open windows, file/folder
+names, desktop controls, arithmetic and unit conversions using the same panel
+facilities. Use `files budget`,
+`apps firefox`, `= 12*(8+3)`, or `10 km to miles` to search or calculate. Enter
+copies a calculator result. File actions include Copy path, reveal, Open with and
+Quick Look. Recent/frequent selections improve ranking; history can be cleared or
+disabled. Use `web query`, paste a URL, or try `time in Tokyo` and `timestamp 0`.
+Tab searches a result's actions, including Pin and Set alias. The Launcher page
+in Settings manages extensions, keywords, search templates and last provider status.
+Configured executable extensions add results and named actions. See the [launcher guide](../../docs/shell/launcher.md)
+for file coverage, refresh behavior, calculator setup, and extension configuration.
 
 ### Bar text and icons
 
@@ -187,7 +206,7 @@ printf 'First\nSecond\n' | canopa-shell --dmenu --prompt 'Choose' --no-custom
 The IPC commands require a running bar. Selection input is bounded to 1 MiB.
 
 `--open-menu NAME` opens any named menu in the running bar's configuration,
-including menus with `source "installed-apps"`. Names are exact and case-sensitive;
+including menus with `source "installed-apps"` or `source "launcher"`. Names are exact and case-sensitive;
 quote names containing spaces and use `--open-menu=NAME` or `--toggle-menu=NAME`
 for names starting with `-`. The request uses a bar on Niri's focused output,
 falling back to one deterministic bar surface if that output has no bar or focus

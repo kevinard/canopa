@@ -40,8 +40,8 @@ executes Swaylock with an inherited descriptor. Unlinking an old image cannot
 invalidate a locker already starting. Invalid or unavailable appearance state
 falls back to Swaylock without an image; a busy state lock also uses that fallback
 instead of waiting behind an image installation. Appearance failure must not
-disable locking. The bundled Lock action uses this entry point through the existing
-session-owned Launch adapter. Explicit user launch commands remain literal argv.
+disable locking. The bundled Lock action launches `canopa-lock` in the supported Canopa session.
+The Shell command remains available for Swaylock sessions. Explicit user launch commands remain literal argv.
 No Niri, Swaylock or user bar configuration is rewritten.
 Existing actions and compositor bindings must opt into `canopa-shell lock` to use
 this selection; custom locker routes retain their own appearance behavior.

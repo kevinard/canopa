@@ -4,6 +4,7 @@ use super::ModuleState;
 pub enum ModuleDataSourceIdentity {
     Media,
     IdleInhibitor,
+    Stasis,
     Battery,
     Network,
     Notifications,
@@ -17,9 +18,10 @@ pub trait ModuleDataSourceMapper: Send + Sync {
 }
 
 impl ModuleDataSourceIdentity {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Media,
         Self::IdleInhibitor,
+        Self::Stasis,
         Self::Battery,
         Self::Network,
         Self::Volume,
@@ -50,6 +52,7 @@ pub struct VolumeReading {
 pub enum ModuleDataSourceState {
     Media(canopa_shell::media::Snapshot),
     IdleInhibitor(super::idle_inhibitor::IdleInhibitorState),
+    Stasis(canopa_widgets::idle::Snapshot),
     Battery(BatteryReading),
     Network(NetworkReading),
     Notifications(canopa_notify_client::Summary),
@@ -59,6 +62,7 @@ pub enum ModuleDataSourceState {
 impl ModuleDataSourceState {
     pub fn identity(&self) -> ModuleDataSourceIdentity {
         match self {
+            Self::Stasis(_) => ModuleDataSourceIdentity::Stasis,
             Self::IdleInhibitor(_) => ModuleDataSourceIdentity::IdleInhibitor,
             Self::Battery(_) => ModuleDataSourceIdentity::Battery,
             Self::Media(_) => ModuleDataSourceIdentity::Media,

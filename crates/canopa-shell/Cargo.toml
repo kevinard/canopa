@@ -10,6 +10,8 @@ license = "MIT"
 default = ["desktop"]
 desktop = [
     "dep:canopa-apps",
+    "dep:canopa-launcher",
+    "dep:gio",
     "dep:canopa-assets",
     "dep:canopa-file",
     "dep:canopa-notify-client",
@@ -43,6 +45,9 @@ path = "tests/integration.rs"
 
 [dependencies]
 canopa-apps = { workspace = true, optional = true }
+canopa-launcher = { workspace = true, optional = true }
+gio = { workspace = true, optional = true }
+canopa-widgets.workspace = true
 futures-util.workspace = true
 canopa-assets = { workspace = true, optional = true }
 canopa-file = { workspace = true, optional = true }

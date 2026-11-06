@@ -2,6 +2,7 @@ mod actions;
 mod bars;
 mod error;
 mod fields;
+mod launcher;
 mod modules;
 mod style;
 
@@ -419,6 +420,16 @@ fn parse_menu_prompt(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Option<Stri
 }
 
 fn parse_menu_source(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<MenuSourceConfig> {
+    if node
+        .entries()
+        .first()
+        .and_then(|entry| entry.value().as_string())
+        == Some("launcher")
+    {
+        return launcher::parse(node, ctx).map(|config| MenuSourceConfig {
+            kind: MenuSourceKind::Launcher(config),
+        });
+    }
     if node.children().is_some() || node.entries().iter().any(|entry| entry.name().is_some()) {
         return Err(ctx.node_err(node, "source options are not supported yet", None));
     }
@@ -435,7 +446,7 @@ fn parse_menu_source(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<MenuSourceC
         other => Err(ctx.entry_err(
             &node.entries()[0],
             format!("unknown menu source {other:?}"),
-            Some("expected `installed-apps`".into()),
+            Some("expected `installed-apps` or `launcher`".into()),
         )),
     }
 }

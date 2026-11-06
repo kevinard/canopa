@@ -2,8 +2,16 @@
 resolver = "3"
 members = [
   "crates/canopa-apps",
+  "crates/canopa-settings",
+  "crates/canopa-launcher",
   "crates/canopa-portal",
   "crates/canopa-cli",
+  "crates/canopa-session",
+  "crates/canopa-session-ui",
+  "crates/canopa-greeter",
+  "crates/canopa-polkit",
+  "crates/canopa-pinentry",
+  "crates/canopa-widgets",
   "crates/canopa-assets",
   "crates/canopa-file",
   "crates/canopa-files",
@@ -32,6 +40,9 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 canopa-apps = { path = "crates/canopa-apps" }
+canopa-launcher = { path = "crates/canopa-launcher" }
+canopa-session-ui = { path = "crates/canopa-session-ui" }
+canopa-widgets = { path = "crates/canopa-widgets" }
 canopa-assets = { path = "crates/canopa-assets" }
 canopa-notify-client = { path = "crates/canopa-notify-client" }
 canopa-file = { path = "crates/canopa-file" }
@@ -119,6 +130,18 @@ winit = { path = "vendor/winit" }
 layershellev = { path = "vendor/layershellev" }
 uucore = { path = "vendor/uucore" }
 reis = { path = "vendor/reis" }
+
+# Keep file/line panic backtraces without duplicating full debugger data in
+# every integration-test executable. The test profile inherits these settings.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+# Opt in when inspecting variables/types with a debugger. This uses
+# target/debugging/ and leaves the ordinary development cache intact.
+[profile.debugging]
+inherits = "dev"
+debug = "full"
 
 [profile.release]
 lto = "thin"

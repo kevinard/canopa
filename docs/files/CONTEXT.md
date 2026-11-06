@@ -67,6 +67,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 - [Bounded transfer completion records, workspace regression verified](adr/0158-bounded-transfer-completion-records.md).
 
 - [Reviewed Move Undo projections retain their original history binding, workspace functional verification complete](adr/0157-reviewed-move-undo-projections.md).
+- [Launcher Quick Look admission](adr/0161-launcher-quick-look-admission.md).
+- [Saved-only Rename restoration retains original history binding](adr/0160-saved-only-rename-history-binding.md).
 
 - [XXH3-128 content fingerprints without development-history compatibility](adr/0156-fast-content-fingerprints.md).
 

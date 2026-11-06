@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Canopa Settings
+Comment=Configure displays, input, appearance and idle behavior
+Exec=canopa-settings
+TryExec=canopa-settings
+Icon=preferences-system
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;
+Keywords=Display;Monitor;Keyboard;Mouse;Touchpad;Wallpaper;Power;

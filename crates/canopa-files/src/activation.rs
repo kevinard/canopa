@@ -47,6 +47,7 @@ impl Configuration {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Command {
+    QuickLook(#[serde(with = "crate::path_serde")] PathBuf),
     Open(#[serde(with = "crate::path_serde::sequence")] Vec<PathBuf>),
     Resident,
     Quit,
@@ -124,6 +125,13 @@ impl Instance {
     ) -> io::Result<Claim> {
         if let Some(Configuration::File(path)) = &mut configuration {
             *path = std::path::absolute(&*path)?;
+        }
+        if let Command::QuickLook(path) = &mut command {
+            let presentation = crate::presentation::Presentation::quick_look(path.clone())?;
+            let crate::presentation::View::QuickLook(normalized) = presentation.view else {
+                unreachable!()
+            };
+            *path = normalized;
         }
         if let Command::Open(paths) = &mut command {
             for path in paths {
@@ -209,7 +217,7 @@ impl Instance {
                 Err(error) => return Err(error.into()),
             }
         }
-        if matches!(request.command, Command::Open(_)) && !can_open {
+        if matches!(request.command, Command::Open(_) | Command::QuickLook(_)) && !can_open {
             return Err(io::Error::other(
                 "A display environment is required to open a Files browser.",
             ));
@@ -388,6 +396,9 @@ impl Instance {
 }
 
 fn validate(request: &Request) -> io::Result<()> {
+    if let Command::QuickLook(path) = &request.command {
+        crate::presentation::Presentation::quick_look(path.clone())?;
+    }
     if request.protocol != PROTOCOL {
         return Err(io::Error::other(
             "The running Files activation protocol is incompatible. Close its windows and finish its work before upgrading.",
@@ -407,6 +418,10 @@ fn accept(shared: &Shared, request: Request) -> Reply {
         return Reply::Refused(error.to_string());
     }
     let intent = match request.command {
+        Command::QuickLook(path) => match crate::presentation::Presentation::quick_look(path) {
+            Ok(presentation) => Intent::Present(presentation),
+            Err(error) => return Reply::Refused(error.to_string()),
+        },
         Command::Open(paths) => Intent::Present(crate::presentation::Presentation::open(paths)),
         Command::Resident => Intent::Resident,
         Command::Quit => Intent::Quit,

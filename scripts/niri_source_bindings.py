@@ -6,9 +6,9 @@ import tomllib
 from vendor_sources import digest
 
 
-def bind_sources(sources, record):
+def bind_sources(sources, record, inputs=None, *, write=True):
     manifest = sources["niri"] / "Cargo.toml"
-    text = manifest.read_text()
+    text = manifest.read_text() if inputs is None else inputs[0]
     original = digest(text.encode())
     revision = record["sources"]["smithay"]["revision"]
     packages = {"smithay": sources["smithay"], "smithay-drm-extras": sources["smithay"] / "smithay-drm-extras"}
@@ -25,7 +25,7 @@ def bind_sources(sources, record):
         lines.insert(1, "path = " + json.dumps(str(path)) + "\n")
         text = text[:start] + "".join(lines) + text[end:]
     lock = sources["niri"] / "Cargo.lock"
-    before = lock.read_text()
+    before = lock.read_text() if inputs is None else inputs[1]
     blocks = before.split("[[package]]")
     changed = []
     for index in range(1, len(blocks)):
@@ -49,8 +49,9 @@ def bind_sources(sources, record):
         if new != expected:
             raise ValueError("The prepared lockfile changed unrelated dependencies")
     # Validate both transformations before modifying either prepared file.
-    manifest.write_text(text)
-    lock.write_text(after)
+    if write:
+        manifest.write_text(text)
+        lock.write_text(after)
     return {"manifest_upstream_sha256": original, "manifest_prepared_sha256": digest(text.encode()),
             "lock_upstream_sha256": digest(before.encode()), "lock_prepared_sha256": digest(after.encode()),
             "local_source_packages": sorted(changed), "other_locked_dependencies_unchanged": True}

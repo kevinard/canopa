@@ -99,7 +99,7 @@ mod config_tests {
             vec!["notifications", "system", "clock"]
         );
         // All default modules declared
-        assert_eq!(config.modules.len(), 16);
+        assert_eq!(config.modules.len(), 18);
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));
@@ -108,6 +108,8 @@ mod config_tests {
         assert!(names.contains(&"battery"));
         assert!(names.contains(&"clock"));
         assert!(names.contains(&"notifications"));
+        assert!(names.contains(&"bluetooth"));
+        assert!(names.contains(&"power-and-brightness"));
     }
 
     #[test]

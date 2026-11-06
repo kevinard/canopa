@@ -49,4 +49,4 @@ if [[ -n "$BIN" ]]; then
 fi
 
 cd "$ROOT_DIR"
-exec cargo run -p canopa-notify -- daemon --service --socket "$SOCKET" --database "$DATABASE"
+exec bash scripts/cargo.sh run -p canopa-notify -- daemon --service --socket "$SOCKET" --database "$DATABASE"

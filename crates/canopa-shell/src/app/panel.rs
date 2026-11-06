@@ -931,6 +931,59 @@ impl App {
                 self.panel_icons.complete(loaded);
                 Task::none()
             }
+            PanelEvent::Launcher(event) => self.handle_launcher_event(event),
+            PanelEvent::FocusLauncher(target) => {
+                if self
+                    .foreground
+                    .launcher()
+                    .is_some_and(|active| active.accepts(&target))
+                {
+                    let menu = self.foreground.active_panel_menu_render_state();
+                    if let Some(position) = menu.entries.iter().position(|entry| matches!(&entry.target, super::panel_menu_session::PanelMenuEntryTarget::Launcher(current) if current.identity() == target.identity())) {
+                        return self.handle_panel_event(PanelEvent::FocusIndex(position));
+                    }
+                }
+                Task::none()
+            }
+            PanelEvent::LauncherAction(action) => {
+                let menu = self.foreground.active_panel_menu_render_state();
+                if let Some(position) = menu.focused_index
+                    && let Some(entry) = menu.entries.get(position)
+                    && let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) =
+                        &entry.target
+                {
+                    return self
+                        .handle_panel_event(PanelEvent::ActivateLauncher(target.clone(), action));
+                }
+                Task::none()
+            }
+            PanelEvent::LauncherSearchChanged { session, query } => {
+                if self
+                    .foreground
+                    .launcher()
+                    .is_some_and(|active| active.id == session)
+                {
+                    self.handle_panel_event(PanelEvent::SearchChanged(query))
+                } else {
+                    Task::none()
+                }
+            }
+            PanelEvent::LauncherActions(target) => {
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::LauncherActions(target),
+                    ));
+                Task::batch(self.apply_foreground_effects(effects))
+            }
+            PanelEvent::ActivateLauncher(target, action) => {
+                let effects = self
+                    .foreground
+                    .handle(super::foreground::ForegroundIntent::Panel(
+                        super::foreground::PanelInteraction::ActivateLauncher(target, action),
+                    ));
+                Task::batch(self.apply_foreground_effects(effects))
+            }
             PanelEvent::InstalledAppsLoaded { generation, apps } => {
                 let effects =
                     self.foreground
@@ -1228,7 +1281,14 @@ impl App {
             0
         };
         let edge = bar.edge.clone();
-        let animation = bar.panel.animation.clone();
+        let animation = if self.config.appearance.reduced_motion() {
+            crate::config::PanelAnimationConfig {
+                open_ms: 0.0,
+                close_ms: 0.0,
+            }
+        } else {
+            bar.panel.animation.clone()
+        };
         let settings = panel_window_settings(plan);
         let resize_bar = self.set_drawer_bar_width(tree.origin_window, drawer_width);
         let (panel_window, open_task) = Message::layershell_open(settings);
@@ -2815,6 +2875,12 @@ mod tests {
             app.modules
                 .set_state(ModuleId::new(name), ModuleState::Unavailable);
         }
+        for name in ["bluetooth", "power-and-brightness"] {
+            app.modules.set_state(
+                ModuleId::new(name),
+                ModuleState::Button(crate::modules::button::ButtonState),
+            );
+        }
         let origin = PanelOrigin::Module(ModuleId::new("system"));
         let anchor = Some(iced::Rectangle {
             x: 10.0,
@@ -2834,7 +2900,14 @@ mod tests {
         let names: Vec<_> = layout.iter().map(|entry| entry.id.display_name()).collect();
         assert_eq!(
             names,
-            ["network", "volume", "notifications", "idle-inhibitor"]
+            [
+                "network",
+                "volume",
+                "notifications",
+                "idle-inhibitor",
+                "bluetooth",
+                "power-and-brightness"
+            ]
         );
         assert!(
             !app.bar_render_model(origin_window)
@@ -2843,7 +2916,12 @@ mod tests {
                 .any(|entry| entry.id == ModuleId::new("volume"))
         );
 
-        for (name, provider) in [("network", "wifi"), ("volume", "audio")] {
+        for (name, provider) in [
+            ("network", "wifi"),
+            ("volume", "audio"),
+            ("bluetooth", "bluetooth"),
+            ("power-and-brightness", "power"),
+        ] {
             app.set_external_panel_response_for_test(provider, Err("Backend unavailable".into()));
             let _ = app.interact_panel_module(
                 panel_window,

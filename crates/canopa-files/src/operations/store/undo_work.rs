@@ -172,6 +172,12 @@ fn canonical(
                 identity,
                 retained: Some(retained),
                 ..
+            }
+            | Change::Rename {
+                current: path,
+                identity,
+                retained: Some(retained),
+                ..
             },
             Change::RetainedOnly { .. },
         ) => Change::RetainedOnly {
@@ -198,6 +204,13 @@ fn canonical(
         if selected_previous.is_none() {
             *retained = None;
         }
+    }
+    // ReturnItem can defer an unavailable previous destination. The task omits
+    // that retained record; the digest below still binds the complete history.
+    if let (Change::Rename { retained: None, .. }, Change::Rename { retained, .. }) =
+        (change, &mut expected)
+    {
+        *retained = None;
     }
     if let (Some(selected), Some(retained)) = (change.retained(), expected.retained_mut())
         && selected.version.is_some()

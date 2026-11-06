@@ -20,7 +20,7 @@ spec.loader.exec_module(desktop)
 def test_binary(output, workflow):
     target = {"actions": "local_actions", "operations": "local_operation_attention", "devices": "device_runtime"}[workflow]
     feature = "local-runtime" if workflow == "devices" else f"background-{workflow}"
-    command = ["cargo", "test", "--locked", "--offline", "-j1", "-p", "canopa-files",
+    command = ["bash", str(ROOT / "scripts/cargo.sh"), "test", "--locked", "--offline", "-j1", "-p", "canopa-files",
                "--no-default-features", "--features", feature, "--test", target,
                "--no-run", "--message-format=json"]
     # Compile before starting the private bus, as in clipboard acceptance.

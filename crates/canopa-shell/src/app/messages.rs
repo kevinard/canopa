@@ -276,6 +276,15 @@ pub enum PanelEvent {
         closing: bool,
     },
     IconsLoaded(super::panel_icons::Loaded),
+    Launcher(super::launcher::Event),
+    LauncherSearchChanged {
+        session: u64,
+        query: String,
+    },
+    ActivateLauncher(super::launcher::Target, usize),
+    LauncherActions(Option<super::launcher::Target>),
+    FocusLauncher(super::launcher::Target),
+    LauncherAction(usize),
     InstalledAppsLoaded {
         generation: u64,
         apps: Vec<crate::desktop_apps::DesktopApplication>,
@@ -328,6 +337,12 @@ impl PanelEvent {
             PanelEvent::MotionScale { .. } => "Panel::MotionScale",
             PanelEvent::MotionFinished { .. } => "Panel::MotionFinished",
             PanelEvent::IconsLoaded(_) => "Panel::IconsLoaded",
+            PanelEvent::Launcher(_) => "Panel::Launcher",
+            PanelEvent::LauncherSearchChanged { .. } => "Panel::LauncherSearchChanged",
+            PanelEvent::LauncherActions(..) => "Panel::LauncherActions",
+            PanelEvent::ActivateLauncher(..) => "Panel::ActivateLauncher",
+            PanelEvent::FocusLauncher(_) => "Panel::FocusLauncher",
+            PanelEvent::LauncherAction(_) => "Panel::LauncherAction",
             PanelEvent::InstalledAppsLoaded { .. } => "Panel::InstalledAppsLoaded",
             PanelEvent::Open { .. } => "Panel::Open",
             PanelEvent::Dismiss(_) => "Panel::Dismiss",
@@ -352,6 +367,9 @@ impl PanelEvent {
 #[derive(Debug, Clone)]
 pub enum ModuleRuntimeEvent {
     ToggleIdleInhibitor,
+    ToggleStasis,
+    StasisToggleFinished(bool),
+    Stasis(Option<canopa_widgets::idle::Snapshot>),
     IdleInhibitorApplied {
         window: iced::window::Id,
         requested: bool,
@@ -376,6 +394,9 @@ pub enum ModuleRuntimeEvent {
 impl ModuleRuntimeEvent {
     pub(super) fn diagnostic_label(&self) -> &'static str {
         match self {
+            Self::ToggleStasis => "Modules::ToggleStasis",
+            Self::StasisToggleFinished(_) => "Modules::StasisToggleFinished",
+            Self::Stasis(_) => "Modules::Stasis",
             Self::ToggleIdleInhibitor => "Modules::ToggleIdleInhibitor",
             Self::IdleInhibitorApplied { .. } => "Modules::IdleInhibitorApplied",
             ModuleRuntimeEvent::Module(_, event) => module_event_diagnostic_label(event),

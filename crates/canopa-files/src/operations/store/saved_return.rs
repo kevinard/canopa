@@ -50,23 +50,16 @@ fn canonical(c: &Connection, task: &undo::saved_return::Return) -> io::Result<[u
                 identity,
                 retained: Some(retained),
                 ..
-            },
-            Change::RetainedOnly { .. },
-        ) => Change::RetainedOnly {
-            path: path.clone(),
-            retained: retained.clone(),
-            replaced: Some(*identity),
-        },
-        (
-            Change::Rename {
-                current,
+            }
+            | Change::Rename {
+                current: path,
                 identity,
                 retained: Some(retained),
                 ..
             },
             Change::RetainedOnly { .. },
         ) => Change::RetainedOnly {
-            path: current.clone(),
+            path: path.clone(),
             retained: retained.clone(),
             replaced: Some(*identity),
         },

@@ -11,6 +11,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -32,6 +33,7 @@ def run(args):
     from gi.repository import Gio, GLib, Atspi
     root = args.artifacts
     env = os.environ.copy()
+    runtime = Path(env['XDG_RUNTIME_DIR'])
     children = []
     logs = []
     def start(name, command, input_text=None):
@@ -111,14 +113,14 @@ def run(args):
              GLib.Variant('(ssv)', ('org.a11y.Status', 'IsEnabled', GLib.Variant('b', True))))
         start('a11y-registry', [registry])
         start('sway', ['sway', '-c', str(root / 'sway.conf')])
-        sway_socket = eventually(lambda: next(iter((root / 'runtime').glob('sway-ipc.*.sock')), None), 'Sway IPC')
-        outer = eventually(lambda: next((p for p in (root / 'runtime').glob('wayland-*') if p.is_socket()), None), 'outer Wayland socket')
+        sway_socket = eventually(lambda: next(iter(runtime.glob('sway-ipc.*.sock')), None), 'Sway IPC')
+        outer = eventually(lambda: next((p for p in runtime.glob('wayland-*') if p.is_socket()), None), 'outer Wayland socket')
         env['WAYLAND_DISPLAY'] = str(outer)
         env['SWAYSOCK'] = str(sway_socket)
         start('niri', ['niri', '-c', str(root / 'niri.kdl')])
-        niri_socket = eventually(lambda: next(iter((root / 'runtime').glob('niri.*.sock')), None), 'Niri IPC')
+        niri_socket = eventually(lambda: next(iter(runtime.glob('niri.*.sock')), None), 'Niri IPC')
         env['NIRI_SOCKET'] = str(niri_socket)
-        inner = eventually(lambda: next((p for p in (root / 'runtime').glob('wayland-*') if p.is_socket() and p != outer), None), 'nested Wayland socket')
+        inner = eventually(lambda: next((p for p in runtime.glob('wayland-*') if p.is_socket() and p != outer), None), 'nested Wayland socket')
         env['WAYLAND_DISPLAY'] = str(inner)
         output = next(iter(json.loads(command('niri', 'msg', '--json', 'outputs'))))
         command('niri', 'msg', 'output', output, 'scale', str(args.scale))
@@ -127,7 +129,7 @@ def run(args):
         # headless seat otherwise loses its last keyboard when wtype exits,
         # legitimately clearing native window focus before AT-SPI can inspect it.
         start('keyboard', ['wtype', '-s', '600000'])
-        notify_socket = root / 'runtime' / 'canopa-notify' / 'control.sock'
+        notify_socket = runtime / 'canopa-notify' / 'control.sock'
         notify = start('notify', [str(args.notify), 'daemon', '--service'])
         shell_process = start('canopa-shell', [str(args.shell)])
         def ready():
@@ -457,6 +459,11 @@ modules { module "notifications"; }
         (root / 'config' / 'canopa' / 'config.kdl').write_text(
             'schema-version 1\nappearance { color-scheme "' + args.color_scheme + '"; }\n'
             'notifications { sound enabled=#false; }\nshell {\n' + shell + '\n}\n')
-        sys.exit(subprocess.call(['dbus-run-session', '--config-file='+str(root/'bus.conf'), '--', sys.executable,
-            str(Path(__file__).resolve()), '--notify', str(args.notify), '--shell', str(args.shell),
-            '--artifacts', str(root), '--color-scheme', args.color_scheme, '--scale', str(args.scale), '--inside-private-bus'], env=env))
+        # Unix socket names (Sway/Niri/AT-SPI/Notify) must fit sun_path even
+        # when the requested evidence directory has a long absolute name.
+        with tempfile.TemporaryDirectory(prefix='canopa-desktop-runtime-') as runtime:
+            env['XDG_RUNTIME_DIR'] = runtime
+            env['PULSE_SERVER'] = 'unix:' + str(Path(runtime) / 'no-pulse')
+            sys.exit(subprocess.call(['dbus-run-session', '--config-file='+str(root/'bus.conf'), '--', sys.executable,
+                str(Path(__file__).resolve()), '--notify', str(args.notify), '--shell', str(args.shell),
+                '--artifacts', str(root), '--color-scheme', args.color_scheme, '--scale', str(args.scale), '--inside-private-bus'], env=env))

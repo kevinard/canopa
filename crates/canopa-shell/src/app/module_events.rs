@@ -28,6 +28,44 @@ impl App {
             "module runtime event received"
         );
         match event {
+            ModuleRuntimeEvent::Stasis(value) => {
+                let transition = self.data_sources.handle_stasis_event(value);
+                self.apply_module_data_source_transition(transition)
+            }
+            ModuleRuntimeEvent::StasisToggleFinished(success) => {
+                self.data_sources.stasis_toggle_pending = false;
+                if !success {
+                    tracing::warn!("Stasis manual hold request failed");
+                }
+                Task::none()
+            }
+            ModuleRuntimeEvent::ToggleStasis => {
+                if self.data_sources.stasis_toggle_pending
+                    || !self.modules.has_data_source(
+                        crate::modules::data_source::ModuleDataSourceIdentity::Stasis,
+                    )
+                {
+                    return Task::none();
+                }
+                self.data_sources.stasis_toggle_pending = true;
+                Task::perform(
+                    async {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(3),
+                            tokio::process::Command::new(canopa_widgets::idle::companion())
+                                .arg("toggle")
+                                .stdin(std::process::Stdio::null())
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .kill_on_drop(true)
+                                .status(),
+                        )
+                        .await
+                        .is_ok_and(|r| r.is_ok_and(|s| s.success()))
+                    },
+                    |success| Message::Modules(ModuleRuntimeEvent::StasisToggleFinished(success)),
+                )
+            }
             ModuleRuntimeEvent::ToggleIdleInhibitor => {
                 if self
                     .modules

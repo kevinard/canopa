@@ -1,0 +1,12 @@
+[Unit]
+Description=Canopa compatible Niri compositor
+BindsTo=graphical-session.target
+Before=graphical-session.target canopa-session.target xdg-desktop-autostart.target
+Wants=graphical-session-pre.target canopa-session.target xdg-desktop-autostart.target
+After=graphical-session-pre.target
+
+[Service]
+Type=notify
+Slice=session.slice
+ExecStart=/usr/lib/canopa/niri --session
+TimeoutStopSec=10

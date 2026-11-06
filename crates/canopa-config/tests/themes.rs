@@ -30,7 +30,16 @@ fn theme_file_inline_and_kind_overrides_resolve_per_property() {
     "##,
     )
     .unwrap();
-    for component in [Component::Shell, Component::Notifications, Component::Files] {
+    for component in [
+        Component::Shell,
+        Component::Notifications,
+        Component::Files,
+        Component::Wallpaper,
+        Component::Lockscreen,
+        Component::Greeter,
+        Component::Polkit,
+        Component::Pinentry,
+    ] {
         let document = Document::load(&Request::common(&config), component, "").unwrap();
         let appearance = document.appearance();
         assert_eq!(appearance.palette().background, Rgb(17, 34, 51));

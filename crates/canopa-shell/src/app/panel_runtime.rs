@@ -28,6 +28,7 @@ pub(super) enum PanelRuntimeEffect {
     LoadInstalledAppsThenPreparePanel(PendingPanelOpen),
     RunPanelAction(crate::config::PanelAction),
     LaunchInstalledApp(String),
+    LauncherAction(super::launcher::Target, usize),
     SendDmenuResponse {
         responder: super::messages::IpcResponder,
         response: crate::ipc::protocol::IpcResponse,
@@ -39,6 +40,8 @@ pub(super) struct PanelMenuRenderState {
     pub(super) entries: Arc<[SelectableMenuEntry]>,
     pub(super) show_icons: bool,
     pub(super) prompt: Option<String>,
+    pub(super) launcher_session: Option<u64>,
+    pub(super) launcher_status: String,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) keyboard_focus: bool,
@@ -66,8 +69,13 @@ impl<'a> PanelMenuCatalog<'a> {
     }
 
     fn is_installed_apps_menu(&self, name: &str) -> bool {
-        self.source_kind_for(name)
-            .is_some_and(|kind| matches!(kind, crate::config::MenuSourceKind::InstalledApps))
+        self.source_kind_for(name).is_some_and(|kind| {
+            matches!(
+                kind,
+                crate::config::MenuSourceKind::InstalledApps
+                    | crate::config::MenuSourceKind::Launcher(_)
+            )
+        })
     }
 
     fn configured_menu_source(&self, name: &str) -> Option<SelectableMenuSource> {
@@ -86,11 +94,22 @@ impl<'a> PanelMenuCatalog<'a> {
         self.menus
             .iter()
             .find(|menu| menu.name == name)
-            .map(|menu| SelectableMenuSource::InstalledApps {
-                prompt: menu.prompt.clone(),
-                show_icons: menu.show_icons,
-                apps,
-            })
+            .map(
+                |menu| match menu.source.as_ref().map(|source| &source.kind) {
+                    Some(crate::config::MenuSourceKind::Launcher(config)) => {
+                        SelectableMenuSource::Launcher {
+                            prompt: menu.prompt.clone(),
+                            show_icons: menu.show_icons,
+                            session: Box::new(super::launcher::Session::new(config.clone(), apps)),
+                        }
+                    }
+                    _ => SelectableMenuSource::InstalledApps {
+                        prompt: menu.prompt.clone(),
+                        show_icons: menu.show_icons,
+                        apps,
+                    },
+                },
+            )
     }
 }
 
@@ -125,6 +144,8 @@ pub(super) enum PanelInteraction {
     Back,
     Escape,
     Activate(Option<usize>),
+    ActivateLauncher(super::launcher::Target, usize),
+    LauncherActions(Option<super::launcher::Target>),
 }
 
 impl PartialEq for PanelRuntimeEffect {
@@ -139,6 +160,9 @@ impl PartialEq for PanelRuntimeEffect {
             ) => left == right,
             (Self::RunPanelAction(left), Self::RunPanelAction(right)) => left == right,
             (Self::LaunchInstalledApp(left), Self::LaunchInstalledApp(right)) => left == right,
+            (Self::LauncherAction(left, la), Self::LauncherAction(right, ra)) => {
+                left == right && la == ra
+            }
             (
                 Self::SendDmenuResponse { response: left, .. },
                 Self::SendDmenuResponse {
@@ -225,6 +249,25 @@ impl PanelRuntime {
             PanelInteraction::Back => self.back(),
             PanelInteraction::Escape => self.escape(),
             PanelInteraction::Activate(index) => self.activate(index),
+            PanelInteraction::LauncherActions(target) => {
+                if self
+                    .session
+                    .as_mut()
+                    .is_some_and(|s| s.launcher_actions(target))
+                {
+                    vec![self.request_search_focus()]
+                } else {
+                    Vec::new()
+                }
+            }
+            PanelInteraction::ActivateLauncher(target, action) => {
+                let activation = self
+                    .session
+                    .as_mut()
+                    .map(|session| session.activate_launcher(target, action))
+                    .unwrap_or(SelectedMenuEntry::None);
+                self.activation_effects(activation)
+            }
         }
     }
 
@@ -634,6 +677,11 @@ impl PanelRuntime {
     pub(super) fn panel_menu_render_state(&self) -> PanelMenuRenderState {
         let snapshot = self.panel_menu_snapshot();
         PanelMenuRenderState {
+            launcher_session: self.launcher().map(|session| session.id),
+            launcher_status: self
+                .launcher()
+                .map(|session| session.status())
+                .unwrap_or_default(),
             entries: snapshot
                 .as_ref()
                 .map(|snapshot| snapshot.entries.clone())
@@ -673,13 +721,41 @@ impl PanelRuntime {
         self.active_panel_menu_entries()
     }
 
+    pub(super) fn launcher(&self) -> Option<&super::launcher::Session> {
+        self.session.as_ref().and_then(|session| session.launcher())
+    }
+
+    pub(super) fn launcher_event(
+        &mut self,
+        event: super::launcher::Event,
+    ) -> Vec<PanelRuntimeEffect> {
+        let close = matches!(&event, super::launcher::Event::ActionFinished { session, generation, result: Ok(()) } if self.launcher().is_some_and(|active| active.id == *session && active.generation == *generation && active.action_running));
+        let applied = self
+            .session
+            .as_mut()
+            .is_some_and(|session| session.apply_launcher(event));
+        if close && applied {
+            vec![PanelRuntimeEffect::RequestPanelClose]
+        } else {
+            vec![]
+        }
+    }
+
     fn activate(&mut self, index: Option<usize>) -> Vec<PanelRuntimeEffect> {
         let activation = match (self.session.as_mut(), index) {
             (Some(session), Some(index)) => session.activate_index(index),
             (Some(session), None) => session.activate_focused(),
             (None, _) => SelectedMenuEntry::None,
         };
+        self.activation_effects(activation)
+    }
+
+    fn activation_effects(&mut self, activation: SelectedMenuEntry) -> Vec<PanelRuntimeEffect> {
         match activation {
+            SelectedMenuEntry::LauncherMenuChanged => vec![self.request_search_focus()],
+            SelectedMenuEntry::Launcher(target, action) => {
+                vec![PanelRuntimeEffect::LauncherAction(target, action)]
+            }
             SelectedMenuEntry::ConfiguredPath(path) => self
                 .session
                 .as_ref()
@@ -1273,10 +1349,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             lock.actions.action_for(&ActionTrigger::Click),
-            Some(&PanelAction::Launch(vec![
-                "canopa-shell".into(),
-                "lock".into()
-            ]))
+            Some(&PanelAction::Launch(vec!["canopa-lock".into()]))
         );
         for (module, menu, program, arguments) in [
             (

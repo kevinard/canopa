@@ -48,6 +48,8 @@ pub(super) enum SurfaceInputEffect {
         forward: bool,
     },
     PanelKeyboardActivate,
+    PanelLauncherAction(usize),
+    PanelLauncherActions,
     BarEscape {
         window: iced::window::Id,
     },
@@ -164,13 +166,30 @@ fn route_panel_input(event: &super::messages::SurfaceEvent) -> SurfaceInputEffec
         SurfaceEvent::BarFocusLost(_) => SurfaceInputEffect::Ignore,
         SurfaceEvent::BackPressed(_) => SurfaceInputEffect::PanelBack,
         SurfaceEvent::EscapePressed(_) => SurfaceInputEffect::PanelEscape,
-        SurfaceEvent::FocusMoveNext(_) | SurfaceEvent::FocusNextZone(_) => {
-            SurfaceInputEffect::PanelMoveFocus { forward: true }
-        }
+        SurfaceEvent::FocusNextZone(_) => SurfaceInputEffect::PanelLauncherActions,
+        SurfaceEvent::FocusMoveNext(_) => SurfaceInputEffect::PanelMoveFocus { forward: true },
         SurfaceEvent::FocusMovePrev(_) | SurfaceEvent::FocusPrevZone(_) => {
             SurfaceInputEffect::PanelMoveFocus { forward: false }
         }
         SurfaceEvent::KeyboardActivate(_) => SurfaceInputEffect::PanelKeyboardActivate,
+        SurfaceEvent::ActionKeyPressed { modifiers, key, .. }
+            if *modifiers == iced::keyboard::Modifiers::CTRL =>
+        {
+            match key {
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) => {
+                    SurfaceInputEffect::PanelLauncherAction(1)
+                }
+                iced::keyboard::Key::Character(value) => match value.as_str() {
+                    "1" => SurfaceInputEffect::PanelLauncherAction(0),
+                    "2" => SurfaceInputEffect::PanelLauncherAction(1),
+                    "3" => SurfaceInputEffect::PanelLauncherAction(2),
+                    "4" => SurfaceInputEffect::PanelLauncherAction(3),
+                    "5" => SurfaceInputEffect::PanelLauncherAction(4),
+                    _ => SurfaceInputEffect::Ignore,
+                },
+                _ => SurfaceInputEffect::Ignore,
+            }
+        }
         _ => SurfaceInputEffect::Ignore,
     }
 }
@@ -296,6 +315,7 @@ impl PartialEq for SurfaceInputEffect {
         use SurfaceInputEffect::*;
 
         match (self, other) {
+            (PanelLauncherAction(left), PanelLauncherAction(right)) => left == right,
             (
                 BarActionKey {
                     window: lw,
@@ -410,6 +430,7 @@ impl PartialEq for SurfaceInputEffect {
             | (Ignore, Ignore)
             | (PanelBack, PanelBack)
             | (PanelEscape, PanelEscape)
+            | (PanelLauncherActions, PanelLauncherActions)
             | (PanelKeyboardActivate, PanelKeyboardActivate)
             | (PanelMoveFocus { forward: true }, PanelMoveFocus { forward: true })
             | (PanelMoveFocus { forward: false }, PanelMoveFocus { forward: false })

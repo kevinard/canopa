@@ -17,12 +17,11 @@ application omits `set-on`, Canopa chooses the desktop background and preserves
 the existing lock image. Review cannot silently substitute a different destination.
 
 Shell must be running. Desktop images cover its current named outputs without
-taking input or reserving space. Lockscreen images are used at the next
-`canopa-shell lock` invocation. The bundled Lock button uses this entry point.
-Existing custom bar actions and Niri bindings that invoke another locker route,
-including Swaylock directly, retain their own image behavior; change those routes
-to `canopa-shell lock` to use Canopa's selection. The portal does not rewrite them
-or automatically start a Shell instance.
+taking input or reserving space. In a Swaylock session, use `canopa-shell lock`
+to load the lock image selected through the portal. The bundled Lock button uses
+`canopa-lock`, whose appearance comes from the [session tools](session-tools.md).
+Canopa Settings changes the wallpaper daemon's per-output assignments. The
+Wallpaper portal stores its Shell selections separately.
 
 The backend freezes the source before review and gives Shell that same sealed
 image after Apply. Editing or deleting the original file or changing the remote

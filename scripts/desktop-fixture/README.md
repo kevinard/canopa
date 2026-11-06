@@ -53,6 +53,24 @@ manifest entry. The matrix includes both appearances, fractional placement, fork
 lifetimes, drawers, transitions and close flashes, scrolling, content rotation,
 focused icons, and idle inhibition on both Sway and Niri.
 
+`greeter-login` runs the frontend directly under the private Niri. `greeter-cage`
+and `greeter-weston` run the same 28-check authentication/input/lifetime matrix
+through the product `session --compositor` launcher. Install Cage and Weston 15+
+with kiosk-shell for those cases. Weston can exit zero on a failed frontend;
+the fixture verifies its explicit failure log and absence of greetd handoff.
+All authentication uses the test-owned protocol peer, never host accounts/PAM.
+Sessions are discovered from fixture-owned desktop entries, including literal
+argument/environment handoff; an empty catalog must not begin authentication.
+User discovery uses a private Gio AccountsService peer and private system-bus
+address. Its roster includes human, system, root, non-local, invalid and missing-
+metadata records. Only the four permitted properties may be read; account mutation,
+password hints and home/avatar data fail the fixture. Native cases verify
+AccountsService-only selection, canonical greetd handoff, preservation of typed
+usernames on late replies, and manual authentication after denied/slow discovery.
+`scripts/measure-greeter.py` is a separate alternating performance measurement;
+finish acceptance/builds before running it. See `docs/greeter-performance.md` for
+metrics, rendering conditions and reproduction.
+
 Select a Niri executable explicitly with `--niri PATH`; `--niri-sha256 HEX`
 requires its exact checksum before any desktop starts. Otherwise the runner
 resolves Niri from PATH once. A private executable copy in
@@ -1132,3 +1150,42 @@ separate 16 MiB evidence cap per continuation and the existing 3 GiB free-space
 floor. They change no system routing, installed services, queues or physical
 printer. This is local SIGKILL/restart acceptance at the recorded boundaries;
 power loss, kernel-stalled I/O and cross-restart quotas remain separate.
+
+`session-keyboard.c` supplies named keys, typed text and alternate keymaps for
+the session tool fixtures.
+
+`nss.c` is a test-only libc enumeration provider, active only in the isolated
+`internal-nss-users` helper role. Synthetic records cover UID/shell filtering,
+GECOS privacy, duplicate/invalid identities, enumeration/output budgets and blocked
+or failed providers. CLI tests check automatic source precedence, authoritative
+empty AccountsService responses, parent-death cleanup and timeout reaping. A
+supervisor unit test checks prompt cancellation. `scripts/test-nss-discovery.py`
+uses real libc in private Bubblewrap namespaces with synthetic passwd/nsswitch/
+login.defs files. No host NSS policy or account files are changed. Native greeter
+acceptance now includes NSS-only selection, automatic fallback and blocked NSS
+with manual login and helper cleanup, on either Cage or Weston (31 checks).
+
+
+Greeter avatar acceptance uses synthetic, solid-color PNGs (including extensionless
+AccountsService/NSS files). It checks the selected account's rendered pixels,
+canonical greetd username, image persistence during password prompts, explicit
+per-user override priority, NSS directory fallback and disabling avatars. The
+expanded matrix has 35 checks per compositor. Unit/integration tests cover crop,
+alpha, placeholders/static fallback, image budgets/nonregular files, optional
+IconFile metadata, coalescing/cancellation, cache eviction and command-free preview.
+No host avatar files or user homes are modified.
+
+
+`polkit.py` is a private authority, with no host grants or action execution.
+`polkit-session.c` independently models the native session signals and records only
+synthetic identity/status events, issuing receipts solely to that private authority.
+`verify-polkit.py` covers 22 actual Wayland/session lifecycle cases.
+`test-polkit-helper.py` uses real native polkit and its helper in isolated user/PID/
+mount/network namespaces with test-only account/PAM files; host rules and PAM are
+untouched. These complement the native caller-filter/stale-response tests and
+do not replace deployed policy/enrollment acceptance.
+
+`pinentry-dialog` runs `verify-pinentry.py` with the selected pinentry executable.
+It checks native input/repeat/confirm/cancel/timeout/EOF behavior and a real GnuPG
+symmetric encrypt/decrypt operation in a temporary GNUPGHOME. Requires `gpg`,
+`gpg-agent` and `gpgconf`; host keys and GnuPG configuration are not accessed.

@@ -24,8 +24,8 @@
 // Named panel menus can be opened from bar or module actions.
 // Use launch for desktop applications; command actions are bounded automation.
 menus {
-    menu "Applications" show-icons=#true prompt="Search applications" {
-        source "installed-apps"
+    menu "Applications" show-icons=#true prompt="Search apps, files, or = calculation" {
+        source "launcher"
     }
     // Cancel is first so Enter never ends the session by default.
     menu "Log out?" prompt="Unsaved work may be lost" {
@@ -124,7 +124,7 @@ bar "main" {
         width 392
         ui { margin 12 0; radius 24; border width=0; }
         start "network" "volume"
-        center "notifications" "idle-inhibitor"
+        center "notifications" "idle-inhibitor" "bluetooth" "power-and-brightness"
         // Trailing buttons form a compact footer with two columns.
         end "battery" "media" "session-lock" "session-logout" "session-reboot" "session-poweroff"
     }
@@ -184,13 +184,25 @@ modules {
         ui { padding 12 0; }
         actions { click { toggle-bar-panel; } }
     }
+    module "bluetooth" {
+        type "button"
+        label "Bluetooth"
+        icon "canopa:bluetooth"
+        actions { click { open-provider "bluetooth"; } }
+    }
+    module "power-and-brightness" {
+        type "button"
+        label "Power & brightness"
+        icon "canopa:brightness"
+        actions { click { open-provider "power"; } }
+    }
     // Session controls use ordinary buttons and can be rebound to another locker
     // or session manager. Launch lets the locker outlive the shell's command timeout.
     module "session-lock" {
         type "button"
         label "Lock"
         icon "canopa:lock"
-        actions { click { launch "canopa-shell" "lock"; } }
+        actions { click { launch "canopa-lock"; } }
     }
     module "session-logout" {
         type "button"

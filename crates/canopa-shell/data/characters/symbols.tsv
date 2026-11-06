@@ -1,0 +1,612 @@
+—	em dash	dash | em
+–	en dash	dash | en
+…	ellipsis	dots | ellipsis | omission
+•	bullet	bullet | dot
+✓	check mark	tick | done
+×	multiplication sign	multiplication | multiply | sign | times
+÷	division sign	divide | division | obelus | sign
+±	plus-minus	plus-minus
+≈	almost equal	almost | approximate | approximation | equal
+≠	not equal	equal | inequality | inequation | not
+≤	less-than or equal	equal | equals | inequality | less-than | or
+≥	greater-than or equal	equal | equals | greater-than | inequality | or
+∞	infinity sign	infinity | sign
+°	degree	degree | hour | proof
+π	pi	greek letter
+←	left-pointing arrow	arrow | left | left-pointing
+↑	up-pointing arrow	arrow | up | up-pointing
+→	right-pointing arrow	arrow | right | right-pointing
+↓	down-pointing arrow	arrow | down | down-pointing
+€	euro	currency | EUR | euro
+£	pound	currency | EGP | GBP | pound
+¥	yen	CNY | currency | JPY | yen | yuan
+©	copyright	C | copyright
+®	registered	R | registered
+™	trade mark	mark | TM | trade | trademark
+{	open curly bracket	brace | bracket | curly | gullwing | open
+‾	overline	overline | overstrike | vinculum
+_	low line	dash | line | low | underdash | underline
+-	hyphen-minus	dash | hyphen | hyphen-minus | minus
+‐	hyphen	dash | hyphen
+―	horizontal bar	bar | dash | horizontal | line
+・	katakana middle dot	dot | dots | interpunct | katakana | middle | middot
+,	comma	comma
+،	arabic comma	arabic | comma
+、	ideographic comma	comma | ideographic
+;	semicolon	semi-colon | semicolon
+؛	arabic semicolon	arabic | semi-colon | semicolon
+:	colon	colon
+!	exclamation mark	bang | exclamation | mark | point
+¡	inverted exclamation mark	bang | exclamation | inverted | mark | point
+?	question mark	mark | question
+¿	inverted question mark	inverted | mark | question
+؟	arabic question mark	arabic | mark | question
+‽	interrobang	interabang | interrobang
+.	period	dot | full | period | stop
+。	ideographic period	full | ideographic | period | stop
+·	middle dot	dot | interpunct | middle | middot
+'	typewriter apostrophe	apostrophe | quote | single | typewriter
+‘	left apostrophe	apostrophe | left | quote | single | smart
+’	right apostrophe	apostrophe | quote | right | single | smart
+‚	low right apostrophe	apostrophe | low | quote | right
+“	left quotation mark	double | left | mark | quotation | quote | smart
+”	right quotation mark	double | mark | quotation | quote | right | smart
+„	low right quotation mark	double | low | mark | quotation | quote | right | smart
+«	left guillemet	angle | brackets | carets | chevron | guillemet | left | quote
+»	right guillemet	angle | brackets | carets | chevron | guillemet | quote | right
+)	close parenthesis	bracket | close | paren | parens | parenthesis | round
+[	open square bracket	bracket | crotchet | open | square
+]	close square bracket	bracket | close | crotchet | square
+}	close curly bracket	brace | bracket | close | curly | gullwing
+〈	open angle bracket	angle | bracket | brackets | chevron | diamond | open | pointy | tuple
+〉	close angle bracket	angle | bracket | brackets | chevron | close | diamond | pointy | tuple
+《	open double angle bracket	angle | bracket | double | open
+》	close double angle bracket	angle | bracket | close | double
+「	open corner bracket	bracket | corner | open
+」	close corner bracket	bracket | close | corner
+『	open hollow corner bracket	bracket | corner | hollow | open
+』	close hollow corner bracket	bracket | close | corner | hollow
+【	open black lens bracket	black | bracket | lens | lenticular | open
+】	close black lens bracket	black | bracket | close | lens | lenticular
+〔	open tortoise shell bracket	bracket | open | shell | tortoise
+〕	close tortoise shell bracket	bracket | close | shell | tortoise
+〖	open hollow lens bracket	bracket | hollow | lens | lenticular | open
+〗	close hollow lens bracket	bracket | close | hollow | lens | lenticular
+§	section	paragraph | part | section | silcrow
+¶	paragraph mark	alinea | mark | paragraph | paraph | pilcrow
+@	at-sign	ampersat | arobase | arroba | at | at-sign | commercial | mark | sign | strudel
+*	asterisk	asterisk | star | wildcard
+/	slash	oblique | slash | solidus | stroke | virgule | whack
+\	backslash	backslash | reverse | solidus | whack
+&	ampersand	ampersand | and | et
+#	hash sign	hash | hashtag | lb | number | pound | sign
+%	percent	cent | per | per-cent | percent
+‰	per mille	mil | mille | per | permil | permille
+†	dagger sign	dagger | obelisk | obelus | sign
+‡	double dagger sign	dagger | double | obelisk | obelus | sign
+‧	hyphenation point	dash | hyphen | hyphenation | point
+′	prime	prime
+″	double prime	double | prime
+‴	triple prime	prime | triple
+‸	caret	caret
+※	reference mark	mark | reference
+⁂	asterism	asterism | dinkus | stars
+`	grave accent	accent | grave | tone
+´	acute accent	accent | acute | tone
+^	circumflex accent	accent | caret | chevron | circumflex | control | hat | pointer | power | sign | wedge | xor
+¨	diaeresis	diaeresis | tréma | umlaut
+℗	sound recording copyright	copyright | recording | sound
+↚	leftwards arrow stroke	arrow | leftwards | stroke
+↛	rightwards arrow stroke	arrow | rightwards | stroke
+↜	leftwards wave arrow	arrow | leftwards | wave
+↝	rightwards wave arrow	arrow | rightwards | wave
+↞	leftwards two headed arrow	arrow | headed | leftwards | two
+↟	upwards two headed arrow	arrow | headed | two | upwards
+↠	rightwards two headed arrow	arrow | headed | rightwards | two
+↡	downwards two headed arrow	arrow | downwards | headed | two
+↢	leftwards arrow tail	arrow | leftwards | tail
+↣	rightwards arrow tail	arrow | rightwards | tail
+↤	leftwards arrow from bar	arrow | bar | from | leftwards
+↥	upwards arrow from bar	arrow | bar | from | upwards
+↦	rightwards arrow from bar	arrow | bar | from | rightwards
+↧	downwards arrow from bar	arrow | bar | downwards | from
+↨	up down arrow with base	arrow | base | down | up | with
+↫	leftwards arrow loop	arrow | leftwards | loop
+↬	rightwards arrow loop	arrow | loop | rightwards
+↭	left right wave arrow	arrow | left | right | wave
+↯	downwards zigzag arrow	arrow | downwards | zigzag
+↰	upwards arrow tip leftwards	arrow | leftwards | tip | upwards
+↱	upwards arrow tip rightwards	arrow | rightwards | tip | upwards
+↲	downwards arrow tip leftwards	arrow | downwards | leftwards | tip
+↳	downwards arrow tip rightwards	arrow | downwards | rightwards | tip
+↴	rightwards arrow corner downwards	arrow | corner | downwards | rightwards
+↵	downwards arrow corner leftwards	arrow | corner | downwards | leftwards
+↶	anticlockwise top semicircle arrow	anticlockwise | arrow | semicircle | top
+↷	clockwise top semicircle arrow	arrow | clockwise | semicircle | top
+↸	north west arrow long bar	arrow | bar | long | north | west
+↹	leftwards over rightwards arrow bars	arrow | bar | bars | leftwards | over | rightwards
+↺	anticlockwise open circle arrow	anticlockwise | arrow | circle | open
+↻	clockwise open circle arrow	arrow | circle | clockwise | open
+↼	leftwards harpoon barb upwards	barb | harpoon | leftwards | upwards
+↽	leftwards harpoon barb downwards	barb | downwards | harpoon | leftwards
+↾	upwards harpoon barb rightwards	barb | harpoon | rightwards | upwards
+↿	upwards harpoon barb leftwards	barb | harpoon | leftwards | upwards
+⇀	rightwards harpoon barb upwards	barb | harpoon | rightwards | upwards
+⇁	rightwards harpoon barb downwards	barb | downwards | harpoon | rightwards
+⇂	downwards harpoon barb rightwards	barb | downwards | harpoon | rightwards
+⇃	downwards harpoon barb leftwards	barb | downwards | harpoon | leftwards
+⇄	rightwards arrow over leftwards arrow	arrow | leftwards | over | rightwards
+⇅	up-pointing and down-pointing arrows	and | arrow | arrows | down | down-pointing | up | up-pointing
+⇆	left-pointing over right-pointing arrows	arrow | arrows | left | left-pointing | over | right | right-pointing
+⇇	leftwards paired arrows	arrows | leftwards | paired
+⇈	upwards paired arrows	arrows | paired | upwards
+⇉	rightwards paired arrows	arrows | paired | rightwards
+⇊	downwards paired arrows	arrows | downwards | paired
+⇋	leftwards harpoon over rightwards harpoon	harpoon | leftwards | over | rightwards
+⇌	rightwards harpoon over leftwards harpoon	harpoon | leftwards | over | rightwards
+⇐	leftwards double arrow	arrow | double | leftwards
+⇍	leftwards double arrow stroke	arrow | double | leftwards | stroke
+⇑	upwards double arrow	arrow | double | upwards
+⇒	rightwards double arrow	arrow | double | rightwards
+⇏	rightwards double arrow stroke	arrow | double | rightwards | stroke
+⇓	downwards double arrow	arrow | double | downwards
+⇔	left right double arrow	arrow | double | left | right
+⇎	left right double arrow stroke	arrow | double | left | right | stroke
+⇖	north west double arrow	arrow | double | north | west
+⇗	north east double arrow	arrow | double | east | north
+⇘	south east double arrow	arrow | double | east | south
+⇙	south west double arrow	arrow | double | south | west
+⇚	leftwards triple arrow	arrow | leftwards | triple
+⇛	rightwards triple arrow	arrow | rightwards | triple
+⇜	leftwards squiggle arrow	arrow | leftwards | squiggle
+⇝	rightwards squiggle arrow	arrow | rightwards | squiggle
+⇞	upwards arrow double stroke	arrow | double | stroke | upwards
+⇟	downwards arrow double stroke	arrow | double | downwards | stroke
+⇠	leftwards dashed arrow	arrow | dashed | leftwards
+⇡	upwards dashed arrow	arrow | dashed | upwards
+⇢	rightwards dashed arrow	arrow | dashed | rightwards
+⇣	downwards dashed arrow	arrow | dashed | downwards
+⇤	leftwards arrow bar	arrow | bar | leftwards
+⇥	rightwards arrow bar	arrow | bar | rightwards
+⇦	leftwards hollow arrow	arrow | hollow | leftwards
+⇧	upwards hollow arrow	arrow | hollow | upwards
+⇨	rightwards hollow arrow	arrow | hollow | rightwards
+⇩	downwards hollow arrow	arrow | downwards | hollow
+⇪	upwards hollow arrow from bar	arrow | bar | from | hollow | upwards
+⇵	downwards arrow leftwards upwards arrow	arrow | downwards | leftwards | upwards
+∀	for all	all | any | for | given | universal
+∂	partial differential	differential | partial
+∃	there exists	exists | there
+∅	empty set	empty | mathematics | operator | set
+∆	increment	increment | triangle
+∇	nabla	nabla | triangle
+∈	element of	contains | element | membership | of | set
+∉	not an element	an | element | not
+∋	contains as member	as | contains | element | member
+∎	end proof	end | halmos | proof | q.e.d. | qed | tombstone
+∏	n-ary product	logic | n-ary | product
+∑	n-ary summation	mathematics | n-ary | summation
++	plus sign	add | plus | sign
+<	less-than	less | less-than | open | tag | than
+≮	not less-than	inequality | less-than | mathematics | not
+=	equal	equal | equals
+>	greater-than	close | greater | greater-than | tag | than
+≯	not greater-than	greater-than | inequality | mathematics | not
+¬	negation	negation | not
+|	vertical line	bar | line | pike | pipe | sheffer | stick | stroke | vbar | vertical
+~	tilde	tilde
+−	minus sign	minus | sign | subtract
+⁻	superscript minus	minus | superscript
+∓	minus-or-plus	minus-or-plus | plus-minus
+∕	division slash	division | slash | stroke | virgule
+⁄	fraction slash	fraction | slash | stroke | virgule
+∗	asterisk operator	asterisk | operator | star
+∘	ring operator	composition | operator | ring
+∙	bullet operator	bullet | operator
+√	square root	radical | radix | root | square | surd
+∝	proportional	proportional | proportionality
+∟	right angle	angle | mathematics | right
+∠	angle	acute | angle
+∣	divides	divides | divisor
+∥	parallel	parallel
+∧	logical and	ac | and | atque | logical | wedge
+∩	intersection	intersection | set
+∪	union	collection | set | union
+∫	integral	calculus | integral
+∬	double integral	calculus | double | integral
+∮	contour integral	contour | integral
+∴	therefore	logic | therefore
+∵	because	because | logic
+∶	ratio	ratio
+∷	proportion	proportion | proportionality
+∼	tilde operator	operator | tilde
+∽	reversed tilde	reversed | tilde
+∾	inverted lazy s	inverted | lazy | s
+≃	asymptotically equal	asymptote | asymptotically | equal | mathematics
+≅	approximately equal	approximately | congruence | equal | equality | isomorphism | mathematics
+≌	all equal	all | equal | equality | mathematics
+≒	approximately equal the image	approximately | equal | image | the
+≖	ring in equal	equal | equality | in | mathematics | ring
+≡	identical to	exact | identical | to | triple
+≣	strictly equivalent	equality | equivalent | mathematics | strictly
+≦	less-than over equal	equal | inequality | less-than | mathematics | over
+≧	greater-than over equal	equal | greater-than | inequality | mathematics | over
+≪	much less-than	inequality | less-than | mathematics | much
+≫	much greater-than	greater-than | inequality | mathematics | much
+≬	between	between
+≳	greater-than equivalent	equivalent | greater-than | inequality | mathematics
+≺	precedes	mathematics | operator | precedes | set
+≻	succeeds	mathematics | operator | set | succeeds
+⊁	does not succeed	does | mathematics | not | operator | set | succeed
+⊂	subset of	of | set | subset
+⊃	superset	mathematics | operator | set | superset
+⊆	subset equal	equal | subset
+⊇	superset equal	equal | equality | mathematics | superset
+⊕	circled plus	circled | plus
+⊖	circled minus	circled | difference | erosion | minus | symmetric
+⊗	circled times	circled | product | tensor | times
+⊘	circled division slash	circled | division | division-like | mathematics | slash
+⊙	circled dot operator	circled | dot | operator | XNOR
+⊚	circled ring operator	circled | operator | ring
+⊛	circled asterisk operator	asterisk | circled | operator
+⊞	squared plus	addition-like | mathematics | plus | squared
+⊟	squared minus	mathematics | minus | squared | subtraction-like
+⊥	up tack	eet | falsum | tack | up
+⊮	does not force	does | force | not
+⊰	precedes under relation	mathematics | operator | precedes | relation | set | under
+⊱	succeeds under relation	mathematics | operator | relation | set | succeeds | under
+⋭	does not contain as normal subgroup equal	as | contain | does | equal | group | mathematics | normal | not | subgroup | theory
+⊶	original	original
+⊹	hermitian conjugate matrix	conjugate | hermitian | mathematics | matrix | self-adjoint | square
+⊿	right triangle	mathematics | right | right-angled | triangle
+⋁	n-ary logical or	disjunction | logic | logical | n-ary | or
+⋂	n-ary intersection	intersection | mathematics | n-ary | operator | set
+⋃	n-ary union	mathematics | n-ary | operator | set | union
+⋅	dot operator	dot | operator
+⋆	star operator	operator | star
+⋈	natural join	binary | bowtie | join | natural | operator
+⋒	double intersection	double | intersection | mathematics | operator | set
+⋘	very much less-than	inequality | less-than | mathematics | much | very
+⋙	very much greater-than	greater-than | inequality | mathematics | much | very
+⋮	vertical ellipsis	ellipsis | mathematics | vertical
+⋯	midline horizontal ellipsis	ellipsis | horizontal | midline
+⋰	up right diagonal ellipsis	diagonal | ellipsis | mathematics | right | up
+⋱	down right diagonal ellipsis	diagonal | down | ellipsis | mathematics | right
+■	filled square	filled | square
+□	hollow square	hollow | square
+▢	hollow square with rounded corners	corners | hollow | rounded | square | with
+▣	hollow square containing filled square	containing | filled | hollow | square
+▤	square with horizontal fill	fill | horizontal | square | with
+▥	square with vertical fill	fill | square | vertical | with
+▦	square orthogonal crosshatch fill	crosshatch | fill | orthogonal | square
+▧	square upper left lower right fill	fill | left | lower | right | square | upper
+▨	square upper right lower left fill	fill | left | lower | right | square | upper
+▩	square diagonal crosshatch fill	crosshatch | diagonal | fill | square
+▬	filled rectangle	filled | rectangle
+▭	hollow rectangle	hollow | rectangle
+▮	filled vertical rectangle	filled | rectangle | vertical
+▰	filled parallelogram	filled | parallelogram
+▲	filled up-pointing triangle	arrow | filled | triangle | up | up-pointing
+△	hollow up-pointing triangle	hollow | triangle | up-pointing
+▴	filled up-pointing small triangle	filled | small | triangle | up-pointing
+▵	hollow up-pointing small triangle	hollow | small | triangle | up-pointing
+▷	hollow right-pointing triangle	hollow | right-pointing | triangle
+▸	filled right-pointing small triangle	filled | right-pointing | small | triangle
+▹	hollow right-pointing small triangle	hollow | right-pointing | small | triangle
+►	filled right-pointing pointer	filled | pointer | right-pointing
+▻	hollow right-pointing pointer	hollow | pointer | right-pointing
+▼	filled down-pointing triangle	arrow | down | down-pointing | filled | triangle
+▽	hollow down-pointing triangle	down-pointing | hollow | triangle
+▾	filled down-pointing small triangle	down-pointing | filled | small | triangle
+▿	hollow down-pointing small triangle	down-pointing | hollow | small | triangle
+◁	hollow left-pointing triangle	hollow | left-pointing | triangle
+◂	filled left-pointing small triangle	filled | left-pointing | small | triangle
+◃	hollow left-pointing small triangle	hollow | left-pointing | small | triangle
+◄	filled left-pointing pointer	filled | left-pointing | pointer
+◅	hollow left-pointing pointer	hollow | left-pointing | pointer
+◆	filled diamond	diamond | filled
+◇	hollow diamond	diamond | hollow
+◈	hollow diamond containing filled diamond	containing | diamond | filled | hollow
+◉	hollow circle containing filled circle	cicles | circle | circled | concentric | containing | dot | filled | fisheye | hollow | ward
+◊	lozenge	diamond | lozenge | rhombus
+○	hollow circle	circle | hollow | ring
+◌	dotted circle	circle | dotted
+◍	circle with vertical fill	circle | fill | vertical | with
+◎	concentric circles	circle | circles | concentric | double | target
+●	filled circle	circle | filled
+◐	circle left half filled	circle | filled | half | left
+◑	circle right half filled	circle | filled | half | right
+◒	circle lower half filled	circle | filled | half | lower
+◓	circle upper half filled	circle | filled | half | upper
+◔	circle upper right quadrant filled	circle | filled | quadrant | right | upper
+◕	circle all but upper left quadrant filled	all | but | circle | filled | left | quadrant | upper
+◖	left half filled circle	circle | filled | half | left
+◗	right half filled circle	circle | filled | half | right
+◘	inverse bullet	bullet | inverse
+◙	filled square containing hollow circle	circle | containing | filled | hollow | inverse | square
+◜	upper left quadrant circular arc	arc | circular | left | quadrant | upper
+◝	upper right quadrant circular arc	arc | circular | quadrant | right | upper
+◞	lower right quadrant circular arc	arc | circular | lower | quadrant | right
+◟	lower left quadrant circular arc	arc | circular | left | lower | quadrant
+◠	upper half circle	circle | half | upper
+◡	lower half circle	circle | half | lower
+◢	filled lower right triangle	filled | lower | right | triangle
+◣	filled lower left triangle	filled | left | lower | triangle
+◤	filled upper left triangle	filled | left | triangle | upper
+◥	filled upper right triangle	filled | right | triangle | upper
+◦	hollow bullet	bullet | hollow
+◯	large hollow circle	circle | hollow | large | ring
+◳	hollow square upper right quadrant	hollow | quadrant | right | square | upper
+◷	hollow circle with upper right quadrant	circle | hollow | quadrant | right | upper | with
+◿	lower right triangle	lower | right | triangle
+♪	eighth note	eighth | music | note
+⨧	plus subscript two	plus | subscript | two
+⨯	vector cross product	cross | product | vector
+⨼	interior product	interior | product
+⩣	logical or double underbar	double | logical | or | underbar
+⩽	less-than slanted equal	equal | less-than | slanted
+⪍	less-than above similar equal	above | equal | less-than | similar
+⪚	double-line equal greater-than	double-line | equal | greater-than | inequality | mathematics
+⪺	succeeds above not almost equal	above | almost | equal | not | succeeds
+♭	flat	bemolle | flat | music | note
+♯	sharp	dièse | diesis | music | note | sharp
+☺	smiling face	face | happy | outlined | relaxed | smile | smiling
+☹	frowning face	face | frown | frowning | sad
+☠	skull and crossbones	bone | crossbones | dead | death | face | monster | skull
+❣	heart exclamation	exclamation | heart | heavy | mark | punctuation
+❤	red heart	emotion | heart | love | red
+🕳	hole	hole
+🗨	left speech bubble	balloon | bubble | dialog | left | speech
+🗯	right anger bubble	anger | angry | balloon | bubble | mad | right
+🖐	hand with fingers splayed	finger | fingers | hand | raised | splayed | stop
+✌	victory hand	hand | peace | v | victory
+☝	index pointing up	finger | hand | index | point | pointing | this | up
+✍	writing hand	hand | write | writing
+👁	eye	1 | body | eye | one
+🕵	detective	detective | sleuth | spy
+🕴	person in suit levitating	business | levitating | person | suit
+⛷	skier	ski | skier | snow
+🏌	person golfing	ball | birdie | caddy | driving | golf | golfing | green | person | pga | putt | range | tee
+⛹	person bouncing ball	athletic | ball | basketball | bouncing | championship | dribble | net | person | player | throw
+🏋	person lifting weights	barbell | bodybuilder | deadlift | lifter | lifting | person | powerlifting | weight | weightlifter | weights | workout
+🗣	speaking head	face | head | silhouette | speak | speaking
+🐿	chipmunk	animal | chipmunk | squirrel
+🕊	dove	bird | dove | fly | ornithology | peace
+🕷	spider	animal | insect | spider
+🕸	spider web	spider | web
+🏵	rosette	plant | rosette
+☘	shamrock	irish | plant | shamrock
+🌶	hot pepper	hot | pepper
+🍽	fork and knife with plate	cooking | dinner | eat | fork | knife | plate
+🗺	world map	map | world
+🏔	snow-capped mountain	cold | mountain | snow | snow-capped
+⛰	mountain	mountain
+🏕	camping	camping
+🏖	beach with umbrella	beach | umbrella
+🏜	desert	desert
+🏝	desert island	desert | island
+🏞	national park	national | park
+🏟	stadium	stadium
+🏛	classical building	building | classical
+🏗	building construction	building | construction | crane
+🏘	houses	house | houses
+🏚	derelict house	derelict | home | house
+⛩	shinto shrine	religion | shinto | shrine
+🏙	cityscape	city | cityscape
+♨	hot springs	hot | hotsprings | springs | steaming
+🏎	racing car	car | racing | zoom
+🏍	motorcycle	motorcycle | racing
+🛣	motorway	highway | motorway | road
+🛤	railway track	railway | track | train
+🛢	oil drum	drum | oil
+🛳	passenger ship	passenger | ship
+⛴	ferry	boat | ferry | passenger
+🛥	motor boat	boat | motor | motorboat
+✈	airplane	aeroplane | airplane | fly | flying | jet | plane | travel
+🛩	small airplane	aeroplane | airplane | plane | small
+🛰	satellite	satellite | space
+🛎	bellhop bell	bell | bellhop | hotel
+⏱	stopwatch	clock | stopwatch | time
+⏲	timer clock	clock | timer
+🕰	mantelpiece clock	clock | mantelpiece | time
+🌡	thermometer	thermometer | weather
+☀	sun	bright | rays | space | sun | sunny | weather
+☁	cloud	cloud | weather
+⛈	cloud with lightning and rain	cloud | lightning | rain | thunder | thunderstorm
+🌤	sun behind small cloud	behind | cloud | sun | weather
+🌥	sun behind large cloud	behind | cloud | sun | weather
+🌦	sun behind rain cloud	behind | cloud | rain | sun | weather
+🌧	cloud with rain	cloud | rain | weather
+🌨	cloud with snow	cloud | cold | snow | weather
+🌩	cloud with lightning	cloud | lightning | weather
+🌪	tornado	cloud | tornado | weather | whirlwind
+🌫	fog	cloud | fog | weather
+🌬	wind face	blow | cloud | face | wind
+☂	umbrella	clothing | rain | umbrella
+⛱	umbrella on ground	ground | rain | sun | umbrella
+❄	snowflake	cold | snow | snowflake | weather
+☃	snowman	cold | man | snow | snowman
+☄	comet	comet | space
+🎗	reminder ribbon	celebration | reminder | ribbon
+🎟	admission tickets	admission | ticket | tickets
+🎖	military medal	award | celebration | medal | military
+⛸	ice skate	ice | skate | skating
+🕹	joystick	game | joystick | video | videogame
+♠	spade suit	card | game | spade | suit
+♥	heart suit	card | emotion | game | heart | hearts | suit
+♦	diamond suit	card | diamond | game | suit
+♣	club suit	card | club | clubs | game | suit
+♟	chess pawn	chess | dupe | expendable | pawn
+🖼	framed picture	art | frame | framed | museum | painting | picture
+🕶	sunglasses	dark | eye | eyewear | glasses | sunglasses
+🛍	shopping bags	bag | bags | hotel | shopping
+⛑	rescue worker’s helmet	aid | cross | face | hat | helmet | rescue | worker’s
+🎙	studio microphone	mic | microphone | music | studio
+🎚	level slider	level | music | slider
+🎛	control knobs	control | knobs | music
+☎	telephone	phone | telephone
+🖥	desktop computer	computer | desktop | monitor
+🖨	printer	computer | printer
+⌨	keyboard	computer | keyboard
+🖱	computer mouse	computer | mouse
+🖲	trackball	computer | trackball
+🎞	film frames	cinema | film | frames | movie
+📽	film projector	cinema | film | movie | projector | video
+🕯	candle	candle | light
+🗞	rolled-up newspaper	news | newspaper | paper | rolled | rolled-up
+🏷	label	label | tag
+✉	envelope	e-mail | email | envelope | letter
+🗳	ballot box with ballot	ballot | box
+✏	pencil	pencil
+✒	black nib	black | nib | pen
+🖋	fountain pen	fountain | pen
+🖊	pen	ballpoint | pen
+🖌	paintbrush	paintbrush | painting
+🖍	crayon	crayon
+🗂	card index dividers	card | dividers | index
+🗒	spiral notepad	note | notepad | pad | spiral
+🗓	spiral calendar	calendar | pad | spiral
+🖇	linked paperclips	link | linked | paperclip | paperclips
+✂	scissors	cut | cutting | paper | scissors | tool
+🗃	card file box	box | card | file
+🗄	file cabinet	cabinet | file | filing | paper
+🗑	wastebasket	can | garbage | trash | waste | wastebasket
+🗝	old key	clue | key | lock | old
+⛏	pick	hammer | mining | pick | tool
+⚒	hammer and pick	hammer | pick | tool
+🛠	hammer and wrench	hammer | spanner | tool | wrench
+🗡	dagger	dagger | knife | weapon
+⚔	crossed swords	crossed | swords | weapon
+🛡	shield	shield | weapon
+⚙	gear	cog | cogwheel | gear | tool
+🗜	clamp	clamp | compress | tool | vice
+⚖	balance scale	balance | justice | Libra | scale | scales | tool | weight | zodiac
+⛓	chains	chain | chains
+⚗	alembic	alembic | chemistry | tool
+🛏	bed	bed | hotel | sleep
+🛋	couch and lamp	couch | hotel | lamp
+⚰	coffin	coffin | dead | death | vampire
+⚱	funeral urn	ashes | death | funeral | urn
+⚠	warning	caution | warning
+☢	radioactive	radioactive | sign
+☣	biohazard	biohazard | sign
+⬆	up arrow	arrow | cardinal | direction | north | up
+↗	up-right arrow	arrow | direction | intercardinal | northeast | up-right
+➡	right arrow	arrow | cardinal | direction | east | right
+↘	down-right arrow	arrow | direction | down-right | intercardinal | southeast
+⬇	down arrow	arrow | cardinal | direction | down | south
+↙	down-left arrow	arrow | direction | down-left | intercardinal | southwest
+⬅	left arrow	arrow | cardinal | direction | left | west
+↖	up-left arrow	arrow | direction | intercardinal | northwest | up-left
+↕	up-down arrow	arrow | up-down
+↔	left-right arrow	arrow | left-right
+↮	left right arrow stroke	arrow | left | right | stroke
+↩	right arrow curving left	arrow | curving | left | right
+↪	left arrow curving right	arrow | curving | left | right
+⤴	right arrow curving up	arrow | curving | right | up
+⤵	right arrow curving down	arrow | curving | down | right
+⚛	atom symbol	atheist | atom | symbol
+🕉	om	Hindu | om | religion
+✡	star of David	David | Jew | Jewish | judaism | religion | star
+☸	wheel of dharma	Buddhist | dharma | religion | wheel
+☯	yin yang	difficult | lives | religion | tao | taoist | total | yang | yin | yinyang
+✝	latin cross	christ | Christian | cross | latin | religion
+☦	orthodox cross	Christian | cross | orthodox | religion
+☪	star and crescent	crescent | islam | Muslim | ramadan | religion | star
+☮	peace symbol	healing | peace | peaceful | symbol
+▶	play button	arrow | button | play | right | triangle
+⏭	next track button	arrow | button | next | scene | track | triangle
+⏯	play or pause button	arrow | button | pause | play | right | triangle
+◀	reverse button	arrow | button | left | reverse | triangle
+⏮	last track button	arrow | button | last | previous | scene | track | triangle
+⏸	pause button	bar | button | double | pause | vertical
+⏹	stop button	button | square | stop
+⏺	record button	button | circle | record
+⏏	eject button	button | eject
+♀	female sign	female | sign | woman
+♂	male sign	male | man | sign
+⚧	transgender symbol	symbol | transgender
+✖	multiply	× | cancel | multiplication | multiply | sign | x
+♾	infinity	forever | infinity | unbounded | universal
+‼	double exclamation mark	! | !! | bangbang | double | exclamation | mark | punctuation
+⁉	exclamation question mark	! | !? | ? | exclamation | interrobang | mark | punctuation | question
+〰	wavy dash	dash | punctuation | wavy
+⚕	medical symbol	aesculapius | medical | medicine | staff | symbol
+♻	recycling symbol	recycle | recycling | symbol
+⚜	fleur-de-lis	fleur-de-lis | knights
+☑	check box with check	✓ | ballot | box | check | checked | done | off | tick
+✔	check mark	✓ | check | checked | checkmark | done | heavy | mark | tick
+〽	part alternation mark	alternation | mark | part
+✳	eight-spoked asterisk	* | asterisk | eight-spoked
+✴	eight-pointed star	* | eight-pointed | star
+❇	sparkle	* | sparkle
+🅰	A button (blood type)	blood | button | type
+🅱	B button (blood type)	B | blood | button | type
+ℹ	information	I | information
+Ⓜ	circled M	circle | circled | M
+🅾	O button (blood type)	blood | button | O | type
+🅿	P button	button | P | parking
+🈂	Japanese “service charge” button	button | charge | Japanese | katakana | service
+🈷	Japanese “monthly amount” button	amount | button | ideograph | Japanese | monthly
+㊗	Japanese “congratulations” button	button | congratulations | ideograph | Japanese
+㊙	Japanese “secret” button	button | ideograph | Japanese | secret
+◼	black medium square	black | geometric | medium | square
+◻	white medium square	geometric | medium | square | white
+▪	black small square	black | geometric | small | square
+▫	white small square	geometric | small | square | white
+🏳	white flag	flag | waving | white
+¢	cent	cent
+$	dollar	dollar | money | peso | USD
+₢	cruzeiro	BRB | cruzeiro | currency
+₣	french franc	currency | franc | french
+₤	lira	currency | lira
+₥	mill	mil | mill
+₩	won	KPW | KRW | won
+₰	german penny	currency | german | penny | pfennig
+₱	peso	peso
+₳	austral	ARA | austral | currency
+₶	livre tournois	currency | livre | tournois
+₷	spesmilo	currency | spesmilo
+₹	indian rupee	currency | indian | rupee
+₽	ruble	currency | ruble
+₿	bitcoin	bitcoin | BTC
+¹	superscript one	one | superscript
+²	superscript two	squared | superscript | two
+³	superscript three	cubed | superscript | three
+₨	rupee	currency | rupee
+µ	micro sign	measure | micro | sign
+﷼	rial	currency | rial
+✗	ballot x	cross mark | x
+⌘	command key	command | cmd
+⌥	option key	option | alt
+⌫	backspace	delete | keyboard
+⏎	return key	enter | newline | keyboard
+½	one half	fraction | 1/2
+¼	one quarter	fraction | 1/4
+¾	three quarters	fraction | 3/4
+Δ	capital delta	greek letter | change
+Ω	capital omega	greek letter | ohm
+Σ	capital sigma	greek letter | sum
+α	alpha	greek letter
+β	beta	greek letter
+γ	gamma	greek letter
+δ	delta	greek letter
+ε	epsilon	greek letter
+ζ	zeta	greek letter
+η	eta	greek letter
+θ	theta	greek letter
+ι	iota	greek letter
+κ	kappa	greek letter
+λ	lambda	greek letter
+μ	mu	greek letter
+ν	nu	greek letter
+ξ	xi	greek letter
+ο	omicron	greek letter
+ρ	rho	greek letter
+σ	sigma	greek letter
+τ	tau	greek letter
+υ	upsilon	greek letter
+φ	phi	greek letter
+χ	chi	greek letter
+ψ	psi	greek letter
+ω	omega	greek letter

@@ -1,0 +1,40 @@
+{
+  "status": "passed",
+  "results": {
+    "cage": {
+      "runs": 5,
+      "startup_median_ms": 100.529144,
+      "startup_range_ms": [
+        92.243447,
+        131.504326
+      ],
+      "idle_cpu_percent_one_core": 0.21332962649212553,
+      "idle_cpu_ticks": 64,
+      "idle_elapsed_seconds": 300.00521283602575,
+      "cpu_resolution_percentage_points": 0.0033332754139394614,
+      "rss_sum_median_mib": 45.1171875,
+      "rss_sum_range_mib": [
+        44.98828125,
+        45.25390625
+      ]
+    },
+    "weston": {
+      "runs": 5,
+      "startup_median_ms": 85.477833,
+      "startup_range_ms": [
+        82.67826,
+        112.840721
+      ],
+      "idle_cpu_percent_one_core": 0.24332905522567996,
+      "idle_cpu_ticks": 73,
+      "idle_elapsed_seconds": 300.0052744720306,
+      "cpu_resolution_percentage_points": 0.0033332747291189035,
+      "rss_sum_median_mib": 70.97265625,
+      "rss_sum_range_mib": [
+        70.38671875,
+        74.6484375
+      ]
+    }
+  },
+  "limitations": "nested Wayland on the same private Weston/Niri; parent/backend/greetd peer excluded"
+}

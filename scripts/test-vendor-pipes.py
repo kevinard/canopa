@@ -18,6 +18,8 @@ def main():
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str((ROOT / "target").resolve())
     env.setdefault("CARGO_INCREMENTAL", "1")
+    profile = tomllib.loads((ROOT / "Cargo.toml").read_text())["profile"]["dev"]
+    env.setdefault("CARGO_PROFILE_DEV_DEBUG", profile["debug"])
     with test_workspace("pipes") as snapshot:
         write_if_changed(snapshot / "lib.rs", (ROOT / "vendor/winit/src/platform_impl/linux/wayland/drag_drop/pipes.rs").read_bytes())
         write_if_changed(snapshot / "Cargo.lock", (ROOT / "Cargo.lock").read_bytes())
@@ -29,7 +31,7 @@ def main():
         for p in metadata["packages"]:
             if p["source"] and (p["name"], p["version"], p["source"]) not in locked:
                 raise RuntimeError(f"Pipe tests escaped root locked graph: {p['name']} {p['version']}")
-        subprocess.run(["cargo", "test", "--locked", "--offline", "-j1", "--manifest-path", str(snapshot / "Cargo.toml")],
+        subprocess.run(["bash", str(ROOT / "scripts/cargo.sh"), "test", "--locked", "--offline", "-j1", "--manifest-path", str(snapshot / "Cargo.toml")],
                        cwd=ROOT, env=env, check=True)
 
 

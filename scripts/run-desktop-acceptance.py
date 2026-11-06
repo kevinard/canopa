@@ -31,7 +31,7 @@ def scenarios():
         if "{artifacts}" not in args:
             raise ValueError(f"Scenario must retain artifacts: {name}")
         for arg in args:
-            arg.format(shell="shell", notify="notify", files="files", artifacts="artifacts")
+            arg.format(shell="shell", notify="notify", files="files", session="session", greeter="greeter", polkit="polkit", pinentry="pinentry", stasis="stasis", artifacts="artifacts")
         ids.add(name)
         covered.add(script)
     required = {p.name for p in (ROOT / "scripts").glob("verify-*.py")}
@@ -47,6 +47,12 @@ def main():
     parser.add_argument("--shell", type=Path, default=ROOT / "target/debug/canopa-shell")
     parser.add_argument("--notify", type=Path, default=ROOT / "target/debug/canopa-notify")
     parser.add_argument("--files", type=Path, default=ROOT / "target/debug/canopa-files")
+    parser.add_argument("--pinentry", type=Path, default=ROOT / "target/debug/canopa-pinentry")
+    parser.add_argument("--polkit", type=Path, default=ROOT / "target/debug/canopa-polkit")
+    parser.add_argument("--greeter", type=Path, default=ROOT / "target/debug/canopa-greeter")
+    parser.add_argument("--session-bin-dir", type=Path, default=ROOT / "target/debug")
+    parser.add_argument("--stasis", type=Path, default=ROOT / "target/debug/stasis",
+                        help="External Stasis 1.7 executable for idle/sleep acceptance")
     parser.add_argument("--niri", type=Path, help="Niri executable for private sessions; default: resolve PATH")
     parser.add_argument("--niri-sha256", help="Require this exact Niri executable SHA-256")
     parser.add_argument("--output", type=Path)
@@ -80,8 +86,8 @@ def main():
             env["PATH"] = str(Path(niri["snapshot"]).parent) + os.pathsep + env.get("PATH", os.defpath)
         for case in selected:
             paths = {"shell": str(args.shell.resolve()), "notify": str(args.notify.resolve()),
-                     "files": str(args.files.resolve()),
-                     "artifacts": str(output / case["id"])}
+                     "files": str(args.files.resolve()), "greeter": str(args.greeter.resolve()), "polkit": str(args.polkit.resolve()), "pinentry": str(args.pinentry.resolve()), "session": str(args.session_bin_dir.resolve()),
+                     "stasis": str(args.stasis.resolve()), "artifacts": str(output / case["id"])}
             command = [sys.executable, str(ROOT / "scripts" / case["script"])]
             command.extend(arg.format(**paths) for arg in case["args"])
             result = {"id": case["id"], "command": command, "status": "interrupted"}

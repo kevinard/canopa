@@ -1,0 +1,8 @@
+# Example only. Merge deliberately into /etc/greetd/config.toml after installing
+# root-owned binaries/assets and creating the unprivileged greeter account.
+[terminal]
+vt = 1
+
+[default_session]
+command = "dbus-run-session /usr/local/bin/canopa-greeter session --compositor cage"
+user = "greeter"

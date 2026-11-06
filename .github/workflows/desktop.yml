@@ -11,6 +11,11 @@ on:
         description: SHA-256 of that exact executable
         required: true
         type: string
+      stasis:
+        description: Absolute path to the external Stasis 1.7 executable
+        required: true
+        default: /usr/bin/stasis
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -24,18 +29,25 @@ jobs:
       CARGO_INCREMENTAL: '0'
       ACCEPTANCE_NIRI: ${{ inputs.niri }}
       ACCEPTANCE_NIRI_SHA256: ${{ inputs.niri_sha256 }}
+      ACCEPTANCE_STASIS: ${{ inputs.stasis }}
     steps:
       - uses: actions/checkout@v4
       - name: Check runner prerequisites
-        run: dbus-run-session -- python3 scripts/check-desktop-runner.py --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256"
+        run: |
+          test "${ACCEPTANCE_STASIS:0:1}" = /
+          test -x "$ACCEPTANCE_STASIS"
+          "$ACCEPTANCE_STASIS" --version
+          dbus-run-session -- python3 scripts/check-desktop-runner.py --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256"
       - name: Verify common protocol
         run: bash scripts/check-panel-protocol.sh
       - name: Build the workspace desktop binaries
-        run: cargo build --locked --workspace --bins
+        run: bash scripts/cargo.sh build --locked --workspace --bins
       - name: Build the ordinary-window drag transport probe
-        run: cargo build --locked -p canopa-files --example drag_transport
+        run: bash scripts/cargo.sh build --locked -p canopa-files --example drag_transport
+      - name: Validate Settings with the selected native compositor parser
+        run: CANOPA_NIRI_BIN="$ACCEPTANCE_NIRI" bash scripts/cargo.sh test --locked --workspace --test backend -- --ignored
       - name: Run the maintained desktop acceptance matrix
-        run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256" --output desktop-artifacts
+        run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256" --stasis "$ACCEPTANCE_STASIS" --output desktop-artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

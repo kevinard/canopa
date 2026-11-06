@@ -1,0 +1,268 @@
+{
+  "updated_utc": "2026-11-02T01:13:29.096648+00:00",
+  "native": {
+    "stasis-final-native": {
+      "status": "passed",
+      "checks": 18,
+      "summary": ".scratch/session-followups/stasis-final-native/summary.json",
+      "sha256": "1d4e4f7d6fd445fe51f8f6401e796d92a30b803649a97ce4f759f2882102fba2"
+    },
+    "greeter-input-native": {
+      "status": "passed",
+      "checks": 35,
+      "summary": ".scratch/session-followups/greeter-input-native/summary.json",
+      "sha256": "2fb2dd6e012d641ca78ee2d7ef546424b1fc5289391c068a2506d0546b6099f4"
+    },
+    "polkit-input-native-2": {
+      "status": "passed",
+      "checks": 22,
+      "summary": ".scratch/session-followups/polkit-input-native-2/summary.json",
+      "sha256": "92893be6d39402ca1c2c92c7bc903f4dd83d0445729b71c94b362476e837319d"
+    },
+    "lock-input-native": {
+      "status": "passed",
+      "checks": 23,
+      "summary": ".scratch/session-followups/lock-input-native/summary.json",
+      "sha256": "66e192b4c10536a3618bd787d41b4f09b15a712abe6d4d45c6241f5bf89b7bfa"
+    },
+    "pinentry-layout-native": {
+      "status": "passed",
+      "checks": 20,
+      "summary": ".scratch/session-followups/pinentry-layout-native/summary.json",
+      "sha256": "004264fff2034eac43bc479c48b3c0f214b7e0e130345c9e226da182107b4880"
+    },
+    "greeter-followups-native": {
+      "status": "passed",
+      "checks": 15,
+      "summary": ".scratch/session-followups/greeter-followups-native/summary.json",
+      "sha256": "da08b567d0f2e1b23c2bceb87feb7c74f477019413e0bdf60f2bab9f85aa4bac"
+    },
+    "wallpaper-picker-native-2": {
+      "status": "passed",
+      "checks": 23,
+      "summary": ".scratch/session-followups/wallpaper-picker-native-2/summary.json",
+      "sha256": "78dcb10b845b71ddc1cef6734fc35f645712e23d729b0ef54eda143878af82bd"
+    },
+    "lock-expired-native": {
+      "status": "passed",
+      "checks": 25,
+      "summary": ".scratch/session-followups/lock-expired-native/summary.json",
+      "sha256": "981186a3710f27770c592f50c0e3008ea4a6d5799e7c55da552f504bc2a69b45"
+    },
+    "polkit-identity-native-3": {
+      "status": "passed",
+      "checks": 23,
+      "summary": ".scratch/session-followups/polkit-identity-native-3/summary.json",
+      "sha256": "2ff7a2c42fe1f4d38dcdb44b08ba55aef1bff06b459d3a5555de39ff7c565a40"
+    },
+    "pinentry-reveal-native": {
+      "status": "passed",
+      "checks": 24,
+      "summary": ".scratch/session-followups/pinentry-reveal-native/summary.json",
+      "sha256": "317097bbe71dad8de9bc2adb06120342904dc2403e02eb03f7565c3a073ac5a8"
+    },
+    "solo-u2f-native-3": {
+      "status": "passed",
+      "checks": 5,
+      "summary": ".scratch/session-followups/solo-u2f-native-3/summary.json",
+      "sha256": "4367184ff28c8ed30526507794d2abc694fbdcf8818677ec068a3df3c76433b5"
+    }
+  },
+  "workspace": {
+    "command": [
+      "bash",
+      "scripts/check.sh",
+      "--workspace"
+    ],
+    "jobs": 1,
+    "started": "2026-11-01T23:57:33.851404+00:00",
+    "runner": 946581,
+    "disk_guard_gib": 10,
+    "pid": 946582,
+    "start_ticks": "13462033",
+    "returncode": 0,
+    "finished": "2026-11-02T00:15:09.520700+00:00"
+  },
+  "release_attempt_1": {
+    "command": [
+      "cargo",
+      "build",
+      "--workspace",
+      "--bins",
+      "--locked",
+      "--release"
+    ],
+    "cwd": "/home/kevinard/Projects/canopa",
+    "jobs": 1,
+    "started": "2026-11-01T23:34:31.500896+00:00",
+    "runner": 904964,
+    "disk_guard_gib": 10,
+    "pid": 904967,
+    "start_ticks": "13323801",
+    "returncode": 101,
+    "finished": "2026-11-02T00:18:52.009577+00:00"
+  },
+  "release_status": "passed",
+  "limitations": [
+    "Physical DRM/VT, host PAM and kernel suspend/resume require a test installation.",
+    "Real Solo U2F/PAM unlock passed in an isolated graphical seat.",
+    "Stasis scheduler-wakeup tracepoint was not readable; context switches are only a sleep proxy."
+  ],
+  "release_build": {
+    "command": [
+      "cargo",
+      "build",
+      "--workspace",
+      "--bins",
+      "--locked",
+      "--release"
+    ],
+    "cwd": "/home/kevinard/Projects/canopa",
+    "jobs": 2,
+    "started": "2026-11-02T00:22:38.789772+00:00",
+    "runner": 1002719,
+    "disk_guard_gib": 10,
+    "pid": 1002720,
+    "start_ticks": "13612527",
+    "returncode": 0,
+    "finished": "2026-11-02T00:43:26.347744+00:00"
+  },
+  "release_greeter": {
+    "cage": {
+      "status": "passed",
+      "checks": [
+        "AccountsService avatars follow selection and password prompts",
+        "per-user avatar override takes priority",
+        "avatar directory works with NSS",
+        "disabled avatars leave login available",
+        "NSS username selection and labels",
+        "automatic NSS fallback after service denial",
+        "NSS timeout keeps manual authentication available and reaps helpers",
+        "AccountsService cached user filtering and labels",
+        "AccountsService-only username selection",
+        "late account metadata preserves manual username",
+        "AccountsService timeout keeps manual authentication available",
+        "installed desktop session discovery",
+        "empty catalog stays in greeter",
+        "command-free preview",
+        "fullscreen software rendering",
+        "configured user selection",
+        "pointer selection and submit",
+        "keyboard user/session selection",
+        "manual username entry",
+        "held Backspace edits username",
+        "session selection and argv/environment boundaries",
+        "fresh password and visible OTP prompts",
+        "failed authentication retry",
+        "authenticated exit/handoff",
+        "custom widget environment and cleanup",
+        "hardware cue",
+        "cancel in-flight PAM and drain late success",
+        "fresh authentication after cancellation",
+        "fingerprint-style no-password authentication",
+        "bounded transaction timeout",
+        "retry after timeout",
+        "oversized protocol rejection",
+        "disconnect fails closed",
+        "failed session launch stays in greeter",
+        "unacknowledged cancellation fails closed"
+      ],
+      "summary_sha256": "dcbecc60add21ef2612b209d83f3502380e0220ce485752f0be4c5a675b5e0a8"
+    },
+    "weston": {
+      "status": "passed",
+      "checks": [
+        "AccountsService avatars follow selection and password prompts",
+        "per-user avatar override takes priority",
+        "avatar directory works with NSS",
+        "disabled avatars leave login available",
+        "NSS username selection and labels",
+        "automatic NSS fallback after service denial",
+        "NSS timeout keeps manual authentication available and reaps helpers",
+        "AccountsService cached user filtering and labels",
+        "AccountsService-only username selection",
+        "late account metadata preserves manual username",
+        "AccountsService timeout keeps manual authentication available",
+        "installed desktop session discovery",
+        "empty catalog stays in greeter",
+        "command-free preview",
+        "fullscreen software rendering",
+        "configured user selection",
+        "pointer selection and submit",
+        "keyboard user/session selection",
+        "manual username entry",
+        "held Backspace edits username",
+        "session selection and argv/environment boundaries",
+        "fresh password and visible OTP prompts",
+        "failed authentication retry",
+        "authenticated exit/handoff",
+        "custom widget environment and cleanup",
+        "hardware cue",
+        "cancel in-flight PAM and drain late success",
+        "fresh authentication after cancellation",
+        "fingerprint-style no-password authentication",
+        "bounded transaction timeout",
+        "retry after timeout",
+        "oversized protocol rejection",
+        "disconnect fails closed",
+        "failed session launch stays in greeter",
+        "unacknowledged cancellation fails closed"
+      ],
+      "summary_sha256": "9bd8698e111936fd0dd26cf0c41ca55b0b9be2a6300c5f27ec45fccd4caa58f1"
+    }
+  },
+  "benchmark": {
+    "status": "passed",
+    "results": {
+      "cage": {
+        "runs": 5,
+        "startup_median_ms": 100.529144,
+        "startup_range_ms": [
+          92.243447,
+          131.504326
+        ],
+        "idle_cpu_percent_one_core": 0.21332962649212553,
+        "idle_cpu_ticks": 64,
+        "idle_elapsed_seconds": 300.00521283602575,
+        "cpu_resolution_percentage_points": 0.0033332754139394614,
+        "rss_sum_median_mib": 45.1171875,
+        "rss_sum_range_mib": [
+          44.98828125,
+          45.25390625
+        ]
+      },
+      "weston": {
+        "runs": 5,
+        "startup_median_ms": 85.477833,
+        "startup_range_ms": [
+          82.67826,
+          112.840721
+        ],
+        "idle_cpu_percent_one_core": 0.24332905522567996,
+        "idle_cpu_ticks": 73,
+        "idle_elapsed_seconds": 300.0052744720306,
+        "cpu_resolution_percentage_points": 0.0033332747291189035,
+        "rss_sum_median_mib": 70.97265625,
+        "rss_sum_range_mib": [
+          70.38671875,
+          74.6484375
+        ]
+      }
+    },
+    "limitations": "nested Wayland on the same private Weston/Niri; parent/backend/greetd peer excluded"
+  },
+  "resolved_fixture_issue": "The intentionally blocked cancellation retained peer connections beyond the frontend deadline. Native scenarios now drain those clients before the next conversation. No application binary change was needed.",
+  "release_archive": {
+    "status": "passed",
+    "archive": ".scratch/session-followups/release/canopa-x86_64-unknown-linux-gnu.tar.gz",
+    "sha256": "ddadcba708881aae02250cfe5676c574678cfc396ef53f43a1750f783de7da8e",
+    "bytes": 62743586,
+    "greeter_matches_measured_binary": true,
+    "documentation_files": 47,
+    "offline_links": 68,
+    "package_log": ".scratch/session-followups/release-package.log",
+    "smoke_log": ".scratch/session-followups/release-smoke-2.log"
+  },
+  "workspace_scope_note": "Full workspace gate passed with final production Rust changes. Subsequent changes were limited to Python fixture isolation, benchmark provenance, smoke-stream parsing and documentation, validated with both release greeter matrices, the actual benchmark and archive smoke.",
+  "resolved_smoke_issue": "v5 providers emit line-delimited JSON updates. The smoke reader now validates each response and increasing revisions while retaining its initial-content assertions."
+}

@@ -897,7 +897,7 @@ version = "0.1.0"
 dependencies = [
  "canopa-file",
  "canopa-theme",
- "kdl",
+ "kdl 6.7.1",
  "serde",
  "sha2",
  "tempfile",
@@ -908,6 +908,7 @@ name = "canopa-file"
 version = "0.1.0"
 dependencies = [
  "rustix 1.1.4",
+ "tempfile",
 ]
 
 [[package]]
@@ -930,7 +931,7 @@ dependencies = [
  "gstreamer-video",
  "iced",
  "image",
- "kdl",
+ "kdl 6.7.1",
  "resvg",
  "rusqlite",
  "rustix 1.1.4",
@@ -947,6 +948,49 @@ dependencies = [
  "wayland-protocols",
  "xxhash-rust",
  "zbus",
+]
+
+[[package]]
+name = "canopa-greeter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "calloop 0.14.4",
+ "calloop-wayland-source 0.4.1",
+ "canopa-assets",
+ "canopa-config",
+ "canopa-file",
+ "canopa-session-ui",
+ "canopa-widgets",
+ "chrono",
+ "clap",
+ "futures-util",
+ "image",
+ "kdl 6.7.1",
+ "libc",
+ "serde",
+ "serde_json",
+ "shlex 2.0.1",
+ "smithay-client-toolkit 0.20.0",
+ "tempfile",
+ "tokio",
+ "wayland-client",
+ "xkbcommon",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "canopa-launcher"
+version = "0.1.0"
+dependencies = [
+ "canopa-file",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "url",
 ]
 
 [[package]]
@@ -970,9 +1014,9 @@ dependencies = [
  "iced_layershell",
  "iced_runtime",
  "image",
- "kdl",
+ "kdl 6.7.1",
  "libc",
- "miette",
+ "miette 7.6.0",
  "predicates",
  "rodio",
  "roxmltree",
@@ -1006,6 +1050,57 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "canopa-pinentry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "calloop 0.14.4",
+ "calloop-wayland-source 0.4.1",
+ "canopa-config",
+ "canopa-session-ui",
+ "canopa-theme",
+ "clap",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "smithay-client-toolkit 0.20.0",
+ "tempfile",
+ "wayland-client",
+ "xkbcommon",
+ "zeroize",
+]
+
+[[package]]
+name = "canopa-polkit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "calloop 0.14.4",
+ "calloop-wayland-source 0.4.1",
+ "canopa-assets",
+ "canopa-config",
+ "canopa-session-ui",
+ "canopa-theme",
+ "cc",
+ "clap",
+ "image",
+ "libc",
+ "pkg-config",
+ "serde",
+ "serde_json",
+ "smithay-client-toolkit 0.20.0",
+ "tempfile",
+ "tokio",
+ "wayland-client",
+ "xkbcommon",
+ "zbus",
+ "zeroize",
 ]
 
 [[package]]
@@ -1048,6 +1143,92 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-session"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "calloop 0.14.4",
+ "calloop-wayland-source 0.4.1",
+ "canopa-config",
+ "canopa-file",
+ "canopa-session-ui",
+ "canopa-theme",
+ "canopa-widgets",
+ "chrono",
+ "clap",
+ "futures-util",
+ "image",
+ "libc",
+ "predicates",
+ "serde",
+ "serde_json",
+ "smithay-client-toolkit 0.20.0",
+ "tempfile",
+ "tokio",
+ "wayland-client",
+ "xkbcommon",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "canopa-session-ui"
+version = "0.1.0"
+dependencies = [
+ "accesskit",
+ "accesskit_unix",
+ "anyhow",
+ "canopa-assets",
+ "canopa-config",
+ "canopa-theme",
+ "canopa-widgets",
+ "chrono",
+ "clap",
+ "cosmic-text",
+ "image",
+ "kdl 6.7.1",
+ "libc",
+ "serde",
+ "serde_json",
+ "shlex 2.0.1",
+ "tempfile",
+ "tokio",
+ "unicode-segmentation",
+ "xkbcommon",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "canopa-settings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "canopa-config",
+ "canopa-file",
+ "canopa-launcher",
+ "canopa-session-ui",
+ "canopa-theme",
+ "canopa-ui",
+ "clap",
+ "futures-util",
+ "iced",
+ "kdl 6.7.1",
+ "libc",
+ "niri-ipc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "wayland-client",
+ "wayland-protocols-wlr",
+ "xkbcommon",
+ "zbus",
+]
+
+[[package]]
 name = "canopa-shell"
 version = "0.1.0"
 dependencies = [
@@ -1058,18 +1239,21 @@ dependencies = [
  "canopa-assets",
  "canopa-config",
  "canopa-file",
+ "canopa-launcher",
  "canopa-notify-client",
  "canopa-panel-protocol",
  "canopa-theme",
  "canopa-ui",
+ "canopa-widgets",
  "chrono",
  "futures-util",
+ "gio",
  "iced",
  "iced_layershell",
  "image",
- "kdl",
+ "kdl 6.7.1",
  "libpulse-binding",
- "miette",
+ "miette 7.6.0",
  "niri-ipc",
  "resvg",
  "rustix 1.1.4",
@@ -1095,6 +1279,21 @@ version = "0.1.0"
 dependencies = [
  "canopa-theme",
  "iced",
+]
+
+[[package]]
+name = "canopa-widgets"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "canopa-file",
+ "futures-util",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]
@@ -3533,11 +3732,23 @@ dependencies = [
 
 [[package]]
 name = "kdl"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e03e2e96c5926fe761088d66c8c2aee3a4352a2573f4eaca50043ad130af9117"
+dependencies = [
+ "miette 5.10.0",
+ "nom 7.1.3",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "kdl"
 version = "6.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "082ddf81b2acd76fe04412655d17befedfff1837db772f8e74c38050d25ed670"
 dependencies = [
- "miette",
+ "kdl 4.7.1",
+ "miette 7.6.0",
  "num-traits",
  "serde",
  "winnow 0.7.15",
@@ -3990,6 +4201,18 @@ dependencies = [
 
 [[package]]
 name = "miette"
+version = "5.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59bb584eaeeab6bd0226ccf3509a69d7936d148cf3d036ad350abe35e8c6856e"
+dependencies = [
+ "miette-derive",
+ "once_cell",
+ "thiserror 1.0.69",
+ "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette"
 version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
@@ -4004,6 +4227,17 @@ dependencies = [
  "terminal_size",
  "textwrap",
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette-derive"
+version = "5.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e7bc1560b95a3c4a25d03de42fe76ca718ab92d1a22a55b9b4cf67b3ae635c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
 ]
 
 [[package]]

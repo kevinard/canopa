@@ -830,6 +830,18 @@ Configured names and child identities are structurally distinct. A child identit
 
 ### Panel Actions and Panel Menus
 
+- A **Launcher** is a `launcher` **Panel Menu Source** combining applications,
+  file/folder names, open windows, desktop controls, arithmetic and unit conversions,
+  and explicitly configured
+  executable providers, including bundled web/date tools. Searchable actions, pins
+  and aliases remain child modes/preferences of this same Panel Menu. See
+  [shared ADR 0131](../adr/0131-launcher-preferences-and-bundled-extensions.md).
+  It uses existing **Panel** placement and **Foreground** lifetime. Its bounded
+  asynchronous groups retain selection by result identity and reject stale
+  query/results/action revisions. Existing **Selectable Search** contracts for
+  other sources keep their meaning. See [ADR 0023](adr/0023-unified-launcher-providers.md)
+  and the [launcher guide](launcher.md) for provider ownership and configuration.
+
 - **Panel Actions** are typed operations, not shell commands by default.
 - A **Panel Action** trigger may be a pointer trigger such as `click` or `right-click`, or a focused keybind such as `Ctrl+E`.
 - Repeating a **Module** click that targets its current **Panel** on the same **Bar Surface** dismisses that **Panel**. A repeat click also cancels that origin's pending **External Panel Session**. Direct **Panel Actions** keep their explicit open/toggle semantics.

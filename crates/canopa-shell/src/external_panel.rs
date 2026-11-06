@@ -66,6 +66,8 @@ const WIFI_PROVIDER_CLOSE_GRACE: std::time::Duration = std::time::Duration::from
 fn provider_close_grace(name: &str) -> std::time::Duration {
     if name == "wifi" {
         WIFI_PROVIDER_CLOSE_GRACE
+    } else if name == "bluetooth" {
+        std::time::Duration::from_secs(3)
     } else {
         PROVIDER_CLOSE_GRACE
     }
@@ -454,7 +456,10 @@ impl<'a> PanelProviderCatalog<'a> {
 }
 
 pub(crate) fn is_builtin_provider_name(name: &str) -> bool {
-    matches!(name, "wifi" | "notifications" | "audio" | "media")
+    matches!(
+        name,
+        "wifi" | "notifications" | "audio" | "media" | "bluetooth" | "power"
+    )
 }
 
 pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::ConfiguredCommand> {
@@ -462,6 +467,7 @@ pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::Conf
         "wifi" => "canopa-wifi-provider",
         "audio" => "canopa-audio-provider",
         "media" => "canopa-media-provider",
+        "bluetooth" | "power" => "canopa-shell",
         "notifications" => "canopa-notify",
         _ => return None,
     };
@@ -472,6 +478,8 @@ pub(crate) fn builtin_provider_command(name: &str) -> Option<crate::config::Conf
             "--protocol".into(),
             "canopa-v5".into(),
         ]
+    } else if matches!(name, "bluetooth" | "power") {
+        vec!["--hardware-panel".into(), name.into()]
     } else {
         vec!["--protocol".into(), "canopa-v5".into()]
     };

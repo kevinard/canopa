@@ -19,3 +19,6 @@ pub mod media_provider;
 mod provider_io;
 
 pub mod network_integration;
+
+#[cfg(feature = "desktop")]
+pub mod hardware_panel;

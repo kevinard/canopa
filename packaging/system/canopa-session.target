@@ -1,0 +1,8 @@
+[Unit]
+Description=Canopa desktop session
+ConditionEnvironment=CANOPA_SESSION=1
+BindsTo=canopa-compositor.service
+After=graphical-session-pre.target canopa-compositor.service
+Before=graphical-session.target
+PartOf=graphical-session.target
+Wants=canopa-shell.service canopa-notify.service canopa-wallpaper.service canopa-lock.service canopa-polkit.service canopa-idle.service canopa-display-profiles.service

@@ -1,8 +1,8 @@
 # Niri drag-source lifetime compatibility
 
-Status: scoped native correction verified, 2026-10-20. Extends ADR0023;
-distribution selection and broader acceptance remain required. The full Files
-goal remains active.
+Status: scoped native correction verified, 2026-10-20; pinned Arch package
+selection implemented, 2026-11-02. Extends ADR0023. Physical installation and
+broader acceptance remain required. The full Files goal remains active.
 
 The GTK-only reproducer fails on installed Niri 26.04 and on an unmodified build
 of its exact upstream commit, using the Smithay revision pinned by that lockfile.
@@ -101,9 +101,10 @@ alongside the application executables so the strict transport scenario is usable
 Hosted results still require actual run evidence; selecting a binary does not
 prove its compatibility. The Canopa application archive does not install or
 replace the session compositor. Provision the compatible compositor separately;
-its release build, complete matrix and distribution acceptance remain open.
+see the Arch package selection below. The complete matrix and physical
+distribution acceptance remain open.
 
-The serialized hosted job has a twelve-hour budget for the full 176-scenario
+The serialized hosted job has a twelve-hour budget for the full maintained
 inventory, replacing the earlier forty-five-minute budget. This permits a full
 run without dropping required scenarios; it is not a measured completion time.
 
@@ -118,3 +119,16 @@ selection does not hide that failure. Headless startup and same-runtime reopenin
 remain verified on the unchanged Files executable. These are local checks; no
 hosted run or full shared-stack/release acceptance is established. See
 [the selection evidence](../../.scratch/file-manager/niri-selection-verification.json).
+
+## Arch package selection
+
+The system recipe now builds this exact Niri/Smithay source pair and canonical
+patch in its independently locked workspace. `canopa-compositor` installs the
+executable at `/usr/lib/canopa/niri`, together with source provenance, its binary
+SHA-256 and original dependency notices. It preserves `/usr/bin/niri` and the
+ordinary Niri session. The dedicated Canopa session selects the private executable;
+see [ADR0129](0129-supported-session-and-settings.md) and
+[installation](../installation.md). The new release candidate passes the unchanged
+strict independent GTK source/receiver cancellation control. This selects a
+compatible distribution candidate; complete matrix, physical touch, DRM/VT and
+package-manager installation/upgrade acceptance remain separate requirements.

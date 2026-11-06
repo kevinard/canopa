@@ -3,6 +3,9 @@ pub enum Command {
     Run(ConfigOptions),
     CheckConfig(ConfigOptions),
     PrintVersion,
+    ClipboardFrame(crate::launcher::clipboard::Kind),
+    LauncherExtension(String, Option<String>),
+    HardwarePanel(String),
     Reload,
     Lock,
     IpcCommand(String),
@@ -102,6 +105,53 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     Command::PrintVersion
                 });
             }
+            "--clipboard-frame" | "--clipboard-image-frame" => {
+                let kind = if arg == "--clipboard-frame" {
+                    crate::launcher::clipboard::Kind::Text
+                } else {
+                    crate::launcher::clipboard::Kind::Image
+                };
+                if special_mode
+                    .replace(Command::ClipboardFrame(kind))
+                    .is_some()
+                {
+                    return Command::UsageError("choose one command mode".into());
+                }
+            }
+            "--launcher-extension" => {
+                if special_mode.is_some() {
+                    return Command::UsageError("choose one command mode".into());
+                }
+                let Some(mode) = args.next() else {
+                    return Command::UsageError("--launcher-extension requires a mode".into());
+                };
+                if !matches!(
+                    mode.as_str(),
+                    "web" | "web-search" | "date-time" | "date-time-search"
+                ) {
+                    return Command::UsageError("unknown launcher extension".into());
+                }
+                let template = if mode == "web-search" {
+                    args.next()
+                } else {
+                    None
+                };
+                special_mode = Some(Command::LauncherExtension(mode, template));
+            }
+            "--hardware-panel" => {
+                if special_mode.is_some() {
+                    return Command::UsageError("choose one command mode".into());
+                }
+                let Some(name) = args
+                    .next()
+                    .filter(|name| matches!(name.as_str(), "bluetooth" | "power"))
+                else {
+                    return Command::UsageError(
+                        "--hardware-panel requires bluetooth or power".into(),
+                    );
+                };
+                special_mode = Some(Command::HardwarePanel(name));
+            }
             "--check-config" => check_config = true,
             "--show-source" => configuration.show_source = true,
             "--config" | "--canopa-config" | "--defaults" => {
@@ -174,7 +224,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     if let Some(command) = special_mode {
         if matches!(
             command,
-            Command::OpenMenu(_) | Command::ToggleMenu(_) | Command::Reload | Command::Lock
+            Command::OpenMenu(_)
+                | Command::ToggleMenu(_)
+                | Command::Reload
+                | Command::Lock
+                | Command::LauncherExtension(..)
+                | Command::ClipboardFrame(_)
         ) {
             if dmenu_option {
                 return Command::UsageError(

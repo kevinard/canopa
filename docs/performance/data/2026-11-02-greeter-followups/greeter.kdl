@@ -1,0 +1,35 @@
+schema-version 1
+appearance {
+    color-scheme "dark"
+}
+greeter {
+    // Prefer AccountsService, falling back to NSS on failure; manual entry always works.
+    discover-users #true
+    user-source "auto"
+    user-avatars #true
+    // Optional per-user images; otherwise use AccountsService or avatar-dir/USERNAME.
+    // avatar-dir "/usr/local/share/canopa/faces"
+    // user-avatar "alice" "/usr/local/share/canopa/alice.png"
+    // NSS defaults use UID_MIN/UID_MAX from /etc/login.defs and omit nologin/false.
+    // nss-uid-min 1000
+    // nss-uid-max 300000
+    // nss-include-nologin #false
+    // Explicit users keep priority over automatically discovered users.
+    // users "alice" "bob"
+    // default-user "alice"
+    // Installed /usr/local/share/wayland-sessions and /usr/share/wayland-sessions
+    // entries populate the selector. Install the bundled canopa.desktop there.
+    discover-sessions #true
+    // For a curated list, set #false and add explicit session blocks instead.
+    view {
+        widgets "avatar" "keyboard" "battery"
+        auth-timeout 120
+        // image "/usr/local/share/canopa/login-background.jpg"
+        dim 65
+        layout {
+            top-left "clock" "date"
+            center "avatar" "authentication"
+            bottom-center "keyboard" "battery" flow="row"
+        }
+    }
+}

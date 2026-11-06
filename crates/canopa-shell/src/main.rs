@@ -12,6 +12,7 @@ mod external_panel;
 mod focused_window_icons;
 mod icon_theme;
 mod ipc;
+mod launcher;
 mod modules;
 mod niri;
 mod surface;
@@ -28,6 +29,9 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::Run(_) => "run",
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
+        cli::Command::ClipboardFrame(_) => "clipboard-frame",
+        cli::Command::LauncherExtension(..) => "launcher-extension",
+        cli::Command::HardwarePanel(_) => "hardware-panel",
         cli::Command::Reload => "reload",
         cli::Command::Lock => "lock",
         cli::Command::IpcCommand(_) => "ipc",
@@ -39,11 +43,40 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
 }
 
 fn main() {
-    let diagnostics = diagnostics::init();
     let command = cli::parse();
+    if let cli::Command::ClipboardFrame(kind) = command {
+        std::process::exit(i32::from(launcher::clipboard::write_frame(kind).is_err()));
+    }
+    let diagnostics = diagnostics::init();
     diagnostics::log_startup(cli_mode_label(&command), &diagnostics);
 
     match command {
+        cli::Command::ClipboardFrame(_) => unreachable!(),
+        cli::Command::LauncherExtension(mode, template) => {
+            if let Err(error) = launcher::bundled::run(&mode, template.as_deref()) {
+                eprintln!("canopa-shell: {error}");
+                std::process::exit(1);
+            }
+        }
+        cli::Command::HardwarePanel(name) => {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let result = runtime.map_err(anyhow::Error::from).and_then(|runtime| {
+                runtime.block_on(canopa_shell::hardware_panel::run(
+                    &name,
+                    tokio::io::BufReader::new(tokio::io::stdin()),
+                    tokio::io::stdout(),
+                ))
+            });
+            if result.is_err() {
+                tracing::error!(
+                    component = "hardware_panel",
+                    "hardware provider session failed"
+                );
+                std::process::exit(1);
+            }
+        }
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::Reload => std::process::exit(run_reload_cli()),
         cli::Command::Lock => {

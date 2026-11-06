@@ -35,6 +35,16 @@ output geometry/scales, network daemon version, and audio daemon version.
 5. With a screen reader and AT-SPI inspector, inspect Canopa roles/names/state,
    focus changes, long text, live content replacement, action invocation, and
    keyboard-only use. Record broader bar/menu coverage separately.
+6. On a laptop running the installed Canopa session, pair Bluetooth headphones,
+   disconnect and reconnect them, and confirm audio routing. Repeat pairing
+   with a passkey device and close the panel during confirmation. Adjust
+   brightness, then verify a hardware brightness key is reflected when it
+   changes the same backlight. Switch among supported power profiles and
+   verify the active profile after reopening Quick settings.
+7. Save a keyboard shortcut and verify that the new combination runs its
+   action while the old combination is released. Enable larger text and
+   reduced motion, dock and undock, then suspend and resume into the lock
+   screen. Check readability and keyboard navigation at both output scales.
 
 ## Focused-window rotation regression
 

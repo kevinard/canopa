@@ -1,4 +1,4 @@
-//! Panel touchpad gain and frame-paced movement through existing scroll widgets.
+//! Touchpad gain and frame-paced movement through existing scroll widgets.
 mod motion;
 mod operation;
 use iced::advanced::{
@@ -9,6 +9,9 @@ use iced::{Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector, mou
 
 const TOUCHPAD_SCROLL_MULTIPLIER: f32 = 3.0;
 
+/// Apply Canopa's touchpad response to scrollable descendants.
+///
+/// Discrete wheel events and widget scroll operations retain their native behavior.
 pub fn scroll_speed<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {

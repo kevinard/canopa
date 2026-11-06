@@ -1,30 +1,30 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum SearchField {
+pub(crate) enum SearchField {
     Label = 0,
     Secondary = 1,
     Breadcrumb = 2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SearchScore {
-    pub(super) field: SearchField,
-    pub(super) score: i32,
+pub(crate) struct SearchScore {
+    pub(crate) field: SearchField,
+    pub(crate) score: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct SearchText<'a> {
-    pub(super) field: SearchField,
-    pub(super) text: &'a str,
+pub(crate) struct SearchText<'a> {
+    pub(crate) field: SearchField,
+    pub(crate) text: &'a str,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct SearchMatch<T> {
-    pub(super) item: T,
-    pub(super) score: SearchScore,
-    pub(super) source_index: usize,
+pub(crate) struct SearchMatch<T> {
+    pub(crate) item: T,
+    pub(crate) score: SearchScore,
+    pub(crate) source_index: usize,
 }
 
-pub(super) fn query_tokens(query: &str) -> Vec<String> {
+pub(crate) fn query_tokens(query: &str) -> Vec<String> {
     query
         .split_whitespace()
         .map(str::to_ascii_lowercase)
@@ -32,11 +32,11 @@ pub(super) fn query_tokens(query: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn is_blank_query(query: &str) -> bool {
+pub(crate) fn is_blank_query(query: &str) -> bool {
     query_tokens(query).is_empty()
 }
 
-pub(super) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<SearchScore> {
+pub(crate) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<SearchScore> {
     let tokens = query_tokens(query);
     if tokens.is_empty() {
         return Some(SearchScore {
@@ -81,7 +81,7 @@ pub(super) fn best_match(fields: &[SearchText<'_>], query: &str) -> Option<Searc
     })
 }
 
-pub(super) fn rank_matches<T>(mut matches: Vec<SearchMatch<T>>) -> Vec<T> {
+pub(crate) fn rank_matches<T>(mut matches: Vec<SearchMatch<T>>) -> Vec<T> {
     matches.sort_by(|left, right| {
         left.score
             .field

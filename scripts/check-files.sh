@@ -96,12 +96,12 @@ run_integration() {
         if [[ "$argument" == --exact ]]; then exact=true; fi
     done
     if [[ -z "$case_filter" ]] && ! "$exact"; then
-        dbus-run-session -- cargo test --locked -p canopa-files --test integration -- "${suite_filters[@]}" "${test_args[@]}"
+        dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test integration -- "${suite_filters[@]}" "${test_args[@]}"
         return
     fi
     # libtest combines filters with OR. Select actual names first to preserve
     # case membership AND substring matching inside the original case's names.
-    listing=$(dbus-run-session -- cargo test --locked -p canopa-files --test integration -- --list --format=terse)
+    listing=$(dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test integration -- --list --format=terse)
     selection_flags=()
     if "$whole_suite"; then selection_flags+=(--all-cases); fi
     if "$exact"; then selection_flags+=(--exact); fi
@@ -113,17 +113,17 @@ run_integration() {
     mapfile -t names <<< "$selected"
     exact_argument=()
     if ! "$exact"; then exact_argument+=(--exact); fi
-    dbus-run-session -- cargo test --locked -p canopa-files --test integration -- "${names[@]}" "${exact_argument[@]}" "${test_args[@]}"
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test integration -- "${names[@]}" "${exact_argument[@]}" "${test_args[@]}"
 }
 
 # Override stale measurement settings inherited from a terminal or agent wrapper.
 export CARGO_INCREMENTAL=1
-cargo fmt --all -- --check
+bash scripts/cargo.sh fmt --all -- --check
 if [[ ${#selection[@]} -eq 0 && ${#cases[@]} -eq 0 ]]; then
-    dbus-run-session -- cargo test --locked -p canopa-files --lib operations::fingerprint::receipt_tests
-    dbus-run-session -- cargo test --locked -p canopa-files --test uutils_copy
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --lib operations::fingerprint::receipt_tests
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test uutils_copy
 elif [[ ${#selection[@]} -gt 0 ]]; then
-    dbus-run-session -- cargo test --locked -p canopa-files "${selection[@]}" -- "${test_args[@]}"
+    dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files "${selection[@]}" -- "${test_args[@]}"
 else
     if [[ ${#suite_filters[@]} -gt 0 ]]; then
         run_integration
@@ -131,6 +131,6 @@ else
     for name in "${standalone[@]}"; do
         filter=()
         if [[ -n "$case_filter" ]]; then filter+=("$case_filter"); fi
-        dbus-run-session -- cargo test --locked -p canopa-files --test "$name" "${filter[@]}" -- "${test_args[@]}"
+        dbus-run-session -- bash scripts/cargo.sh test --locked -p canopa-files --test "$name" "${filter[@]}" -- "${test_args[@]}"
     done
 fi

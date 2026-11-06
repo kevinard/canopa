@@ -5,6 +5,9 @@ mod copy_check;
 #[derive(Parser)]
 #[command(name = "canopa-files", version, about = "Canopa's local file manager")]
 struct Arguments {
+    /// Open a local file in Quick Look, owned by a new Files browser window.
+    #[arg(long,conflicts_with_all=["paths","daemon","quit","check_config","internal_check_copy","internal_volume_monitor"])]
+    quick_look: Option<PathBuf>,
     #[arg(long, hide = true, conflicts_with_all = ["paths", "config", "defaults", "check_config", "show_source", "daemon", "quit", "internal_volume_monitor"])]
     internal_check_copy: bool,
     #[arg(long, hide = true, conflicts_with_all = ["paths", "config", "defaults", "check_config", "show_source", "daemon", "quit"])]
@@ -87,6 +90,8 @@ fn main() -> std::process::ExitCode {
         Command::Resident
     } else if arguments.quit {
         Command::Quit
+    } else if let Some(path) = arguments.quick_look {
+        Command::QuickLook(path)
     } else {
         Command::Open(arguments.paths)
     };

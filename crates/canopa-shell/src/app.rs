@@ -13,6 +13,7 @@ mod external_panel_session;
 mod focus;
 mod foreground;
 mod idle_inhibitor;
+pub(crate) mod launcher;
 mod layer_shell_message;
 mod layout;
 mod menu;
@@ -30,7 +31,7 @@ mod panel;
 mod panel_icons;
 mod panel_menu_session;
 mod panel_runtime;
-mod panel_search;
+pub(crate) mod panel_search;
 mod panel_sizing;
 mod perf;
 mod render;
@@ -61,6 +62,10 @@ pub(crate) struct App {
     surfaces: surfaces::SurfaceManager,
     foreground: foreground::Foreground,
     panel_icons: panel_icons::PanelIcons,
+    launcher_files: Option<launcher::CachedIndex>,
+    launcher_history: crate::launcher::history::Runtime,
+    launcher_clipboard: crate::launcher::clipboard::Runtime,
+    launcher_preferences: crate::launcher::preferences::Runtime,
     modules: module_runtime::ModuleRuntime,
     data_sources: module_data_sources::ModuleDataSourceRuntime,
     niri: niri::AppNiriState,
@@ -83,6 +88,15 @@ pub(crate) struct App {
 pub enum Message {
     Configuration(configuration::Event),
     Wallpaper(crate::wallpaper::Event),
+    LauncherHistory(crate::launcher::history::Event),
+    LauncherClipboardLoaded(crate::launcher::clipboard::SavedChange),
+    LauncherClipboardObserved(crate::launcher::clipboard::Observation),
+    LauncherClipboardSaved {
+        session: u64,
+        generation: u64,
+        result: Result<canopa_launcher::clipboard::Saved, String>,
+    },
+    LauncherPreferences(crate::launcher::preferences::Event),
     ConfiguredModule {
         id: crate::modules::ModuleId,
         generation: u64,
@@ -147,6 +161,11 @@ impl Message {
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Configuration(_) => "Configuration",
             Message::Wallpaper(_) => "Wallpaper",
+            Message::LauncherHistory(_) => "LauncherHistory",
+            Message::LauncherClipboardLoaded(_) => "LauncherClipboardLoaded",
+            Message::LauncherClipboardObserved(_) => "LauncherClipboardObserved",
+            Message::LauncherClipboardSaved { .. } => "LauncherClipboardSaved",
+            Message::LauncherPreferences(_) => "LauncherPreferences",
             Message::ConfiguredModule { message, .. } => message.diagnostic_label(),
             Message::Ipc(event) => event.diagnostic_label(),
             Message::ExternalPanel(event) => event.diagnostic_label(),
@@ -307,6 +326,10 @@ impl App {
             surfaces,
             foreground: foreground::Foreground::default(),
             panel_icons: panel_icons::PanelIcons::default(),
+            launcher_files: None,
+            launcher_history: Default::default(),
+            launcher_clipboard: Default::default(),
+            launcher_preferences: Default::default(),
             modules,
             data_sources,
             niri: niri::AppNiriState::new(),
@@ -380,6 +403,35 @@ impl App {
         let task = match message {
             Message::Configuration(event) => self.handle_configuration_event(event),
             Message::Wallpaper(event) => self.handle_wallpaper(event),
+            Message::LauncherPreferences(event) => {
+                self.launcher_preferences.apply(event);
+                Task::none()
+            }
+            Message::LauncherHistory(event) => self.handle_launcher_history(event),
+            Message::LauncherClipboardLoaded(result) => {
+                self.launcher_clipboard.load(result);
+                Task::none()
+            }
+            Message::LauncherClipboardObserved(event) => {
+                self.launcher_clipboard.observe(event);
+                Task::none()
+            }
+            Message::LauncherClipboardSaved {
+                session,
+                generation,
+                result,
+            } => {
+                self.launcher_clipboard.saving = false;
+                let result = result.map(|saved| {
+                    self.launcher_clipboard.commit_save(saved);
+                    None
+                });
+                self.handle_launcher_event(launcher::Event::ClipboardFinished {
+                    session,
+                    generation,
+                    result,
+                })
+            }
             Message::CanopaAccessibilityFrame(window) => self.measure_canopa_accessibility(window),
             Message::CanopaAccessibilityBounds {
                 window,
@@ -486,6 +538,8 @@ impl App {
         if !cfg!(test) {
             self.sync_canopa_accessibility();
         }
+        self.seed_launcher_index();
+        self.sync_launcher_context();
         let task = Task::batch([
             task,
             self.prepare_panel_icons(),

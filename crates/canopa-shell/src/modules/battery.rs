@@ -1,52 +1,5 @@
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum BatteryPowerState {
-    #[default]
-    Unknown,
-    Charging,
-    Discharging,
-    Empty,
-    FullyCharged,
-    PendingCharge,
-    PendingDischarge,
-}
-
-impl BatteryPowerState {
-    pub fn from_upower(value: u32) -> Self {
-        match value {
-            1 => Self::Charging,
-            2 => Self::Discharging,
-            3 => Self::Empty,
-            4 => Self::FullyCharged,
-            5 => Self::PendingCharge,
-            6 => Self::PendingDischarge,
-            _ => Self::Unknown,
-        }
-    }
-    pub fn is_charging(self) -> bool {
-        self == Self::Charging
-    }
-}
-
 use crate::theme;
-
-/// Runtime state for the battery module, fed by UPower D-Bus signals via app.rs.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct BatteryState {
-    pub percentage: f64, // 0.0–100.0
-    pub power_state: crate::modules::battery::BatteryPowerState,
-    pub present: bool,
-}
-
-/// Events emitted by the UPower D-Bus subscription.
-#[derive(Debug, Clone, PartialEq)]
-pub enum BatteryEvent {
-    StateChanged {
-        percentage: f64,
-        power_state: BatteryPowerState,
-        present: bool,
-    },
-    Unavailable,
-}
+pub use canopa_widgets::battery::{BatteryEvent, BatteryPowerState, BatteryState};
 
 /// Maps percentage + threshold to a charge tier.
 /// Tiers: Critical (≤threshold) / Low (threshold+1–30) / Medium (31–60) / High (61–95) / Full (≥96)

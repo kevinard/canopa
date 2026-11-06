@@ -1,4 +1,6 @@
 //! Descriptor-safe, content-free bounded reads for local assets and configuration.
+pub mod private_state;
+pub mod watch;
 use std::io::Read;
 use std::path::Path;
 

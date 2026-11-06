@@ -4,7 +4,6 @@ use futures_util::{
     future::BoxFuture,
     stream::{self, FuturesUnordered},
 };
-use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::sync::{mpsc, oneshot, watch};
 use zbus::zvariant::OwnedValue;
@@ -17,102 +16,7 @@ const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
 const DEADLINE: Duration = Duration::from_millis(800);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlayerId {
-    pub bus: String,
-    pub owner: String,
-    pub server: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Player {
-    pub id: PlayerId,
-    pub name: String,
-    pub title: String,
-    pub artist: String,
-    pub track: String,
-    pub status: String,
-    pub can_play: bool,
-    pub can_pause: bool,
-    pub can_next: bool,
-    pub can_previous: bool,
-}
-
-impl Player {
-    pub fn allows(&self, operation: Operation) -> bool {
-        match operation {
-            Operation::Play => self.can_play,
-            Operation::Pause => self.can_pause,
-            Operation::Next => self.can_next,
-            Operation::Previous => self.can_previous,
-        }
-    }
-    pub fn label(&self) -> String {
-        if self.title.is_empty() {
-            self.name.clone()
-        } else if self.artist.is_empty() {
-            self.title.clone()
-        } else {
-            format!("{} — {}", self.artist, self.title)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Snapshot {
-    pub available: bool,
-    pub players: Vec<Player>,
-    pub selected: Option<PlayerId>,
-    pub pinned: bool,
-}
-
-impl Snapshot {
-    pub fn current(&self) -> Option<&Player> {
-        self.players
-            .iter()
-            .find(|p| Some(&p.id) == self.selected.as_ref())
-    }
-
-    fn reconcile(&mut self, mut players: Vec<Player>) {
-        players.sort_by(|a, b| a.id.bus.cmp(&b.id.bus));
-        self.players = players;
-        if self.current().is_none() {
-            self.pinned = false;
-        }
-        if !self.pinned {
-            let rank = |p: &Player| match p.status.as_str() {
-                "Playing" => 0,
-                "Paused" => 1,
-                _ => 2,
-            };
-            // Retain the current player among equally active candidates.
-            self.selected = self
-                .players
-                .iter()
-                .min_by_key(|p| (rank(p), Some(&p.id) != self.selected.as_ref()))
-                .map(|p| p.id.clone());
-        }
-        self.available = true;
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Operation {
-    Previous,
-    Play,
-    Pause,
-    Next,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Request {
-    Select(Option<PlayerId>),
-    Control {
-        player: PlayerId,
-        track: String,
-        operation: Operation,
-    },
-}
+pub use canopa_widgets::media::{Operation, Player, PlayerId, Request, Snapshot};
 
 struct Command {
     expires: tokio::time::Instant,

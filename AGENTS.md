@@ -14,6 +14,12 @@ the same feature/profile selection between edits. Do not carry
 `CARGO_INCREMENTAL=0`, release/measurement settings, a fresh target directory or
 cache cleanup into ordinary checks. The focused script explicitly enables
 incremental compilation even if a measurement wrapper exported zero.
+Normal dev/test builds use line-table debug info for file/line backtraces; opt in
+to full debugger data with `--profile debugging`. Use `bash scripts/cargo.sh`
+instead of invoking Cargo directly for compiling commands: it checks free space
+before and during the build. Existing check/update scripts use that guard.
+The default reserves are 10 GiB on build/cache filesystems and 1 GiB on a separate
+temporary filesystem. See `docs/building.md` for overrides and additional paths.
 This policy supersedes build flags in historical `.scratch/` execution notes;
 retain those notes as evidence rather than copying their settings into new runs.
 

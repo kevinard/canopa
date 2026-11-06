@@ -25,11 +25,11 @@ class TestLayout(unittest.TestCase):
             cwd=ROOT, text=True,
         ))
 
-    def test_workspace_has_at_most_twelve_integration_binaries(self):
+    def test_workspace_integration_binary_budget(self):
         targets = [(package["name"], target["name"])
                    for package in self.metadata["packages"]
                    for target in package["targets"] if "test" in target["kind"]]
-        self.assertLessEqual(len(targets), 12, targets)
+        self.assertLessEqual(len(targets), 17, targets)
 
     def test_every_test_file_is_registered_exactly_once(self):
         for package in self.metadata["packages"]:

@@ -10,7 +10,13 @@ The combined repository preserves the original source licenses:
   Notify and Niribar attribution in `crates/canopa-panel-protocol/LICENSE`.
   The original v4 license texts are also retained in its crate directory.
 - Canopa local assets: MIT, with Notify and Niribar attribution in `crates/canopa-assets/LICENSE`.
-- Canopa Files, configuration, appearance, UI, notification client, bounded file intake, portal, and CLI: MIT OR Apache-2.0,
+- Launcher emoji and symbol data: [Unicode License v3](crates/canopa-shell/data/characters/LICENSE-UNICODE),
+  with [source attribution](crates/canopa-shell/data/characters/README.md).
+- Canopa widget data: MIT, preserving extracted Canopa Shell attribution in
+  `crates/canopa-widgets/LICENSE`.
+- Canopa launcher contracts, Files, Settings, session tools, session presentation, greeter, polkit agent, pinentry,
+  configuration, appearance, UI, notification client, bounded file intake, portal,
+  and CLI: MIT OR Apache-2.0,
   with both texts in their crate directories.
 - Shared workspace tooling and integration documentation: MIT OR Apache-2.0,
   using the texts in `crates/canopa-notify/`.
@@ -34,3 +40,11 @@ The combined repository preserves the original source licenses:
   component configures no CUPS service or printer queue.
 
 Moving code into the shared workspace does not change its existing license.
+
+The virtual-keyboard acceptance protocol in `scripts/desktop-fixture/` retains
+its upstream MIT notice (Wayland/wlroots contributors). It is test infrastructure,
+not part of the greeter executable.
+
+Canopa Polkit links the distribution’s `libpolkit-agent-1` and `libpolkit-gobject-1`
+(LGPL-2.0-or-later), GLib/GIO and the existing Wayland libraries. These system
+libraries and the privileged polkit backend retain their distribution notices.
