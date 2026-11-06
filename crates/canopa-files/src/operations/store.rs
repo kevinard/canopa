@@ -1863,11 +1863,17 @@ fn resolve_binding(
 }
 
 pub(super) fn encode(value: &impl Serialize) -> io::Result<String> {
-    let body = serde_json::to_string(value).map_err(io::Error::other)?;
+    let mut body = Vec::new();
+    value
+        .serialize(&mut serde_json::Serializer::with_formatter(
+            &mut body,
+            serialized::CompactJournal,
+        ))
+        .map_err(io::Error::other)?;
     if body.len() > 128 * 1024 {
         return Err(invalid("operation step exceeds its storage budget"));
     }
-    Ok(body)
+    String::from_utf8(body).map_err(io::Error::other)
 }
 pub(super) fn decode<T: serde::de::DeserializeOwned>(body: &str) -> io::Result<T> {
     if body.len() > 128 * 1024 {

@@ -1,7 +1,6 @@
 //! A descriptor-derived, persistent object identity. This is evidence only:
 //! callers still need the exact request, placement and mutation ownership.
 use super::*;
-use sha2::{Digest, Sha256};
 use std::{
     ffi::{c_char, c_int},
     os::fd::AsRawFd,
@@ -116,14 +115,16 @@ impl Original {
                 "This filesystem has no bounded persistent file identity.",
             ));
         }
-        let mut digest = Sha256::new();
-        digest.update(handle.kind.to_le_bytes());
-        digest.update(handle.bytes.to_le_bytes());
-        digest.update(&handle.data[..size]);
+        // Parents and the history file recur throughout Undo. Keep obtaining
+        // their current kernel handles and reuse only SHA-256 of exact bytes.
+        let mut bytes = [0; 8 + MAX_HANDLE];
+        bytes[..4].copy_from_slice(&handle.kind.to_le_bytes());
+        bytes[4..8].copy_from_slice(&handle.bytes.to_le_bytes());
+        bytes[8..8 + size].copy_from_slice(&handle.data[..size]);
         Ok(Self {
             boot,
             mount: status.stx_mnt_id,
-            object: digest.finalize().into(),
+            object: serialized::digest(&bytes[..8 + size]),
         })
     }
 

@@ -1,7 +1,7 @@
 # Reuse pure journal computations while checking current authority
 
-Status: computation equivalence and functional regressions verified;
-the 500-item Undo performance budget remains unmet.
+Status: computation equivalence, functional regressions and the 500-item Undo
+performance budget verified.
 
 After the completion codec correction, the 270-item queued Copy gets its conflict
 question but completes only eleven steps in nine seconds. Its CPU profile puts
@@ -59,3 +59,22 @@ fresh-process run passed that assertion, but does not override the workspace
 failure. Keep the performance gate open. Strict workspace Clippy and all Portal
 tests pass. Receipts: `target/portal-audit-83/workspace-final-results-06.json` and
 `files-keep-both-isolated-06.log` in the same directory.
+
+## Keep Both Undo follow-up
+
+The compact journal encoder batches writes of proof byte arrays. It emits the
+same decimal integers, separators and brackets as the default encoder, so
+stored JSON and digest preimages remain compatible. The wire-format test covers
+all 256 byte values, including an array spanning multiple write batches and an
+empty array.
+
+Original-entry checks still obtain the current mount ID and descriptor-derived
+kernel handle on every call. The existing bounded digest cache can reuse SHA-256
+only when the handle kind, length and data produce the same input bytes. Mount
+and boot identity checks, transaction boundaries and recovery rules are unchanged.
+
+The focused Files run passed 85 tests. The merged workspace test run passed
+376 Files library tests and 608 Files integration tests, including the 500-item
+Keep Both case with its original 20-second budget and recovery assertions.
+The full `bash scripts/check.sh --workspace` gate passed with the existing
+private Clang runtime and resource headers supplied for the PipeWire bindings.

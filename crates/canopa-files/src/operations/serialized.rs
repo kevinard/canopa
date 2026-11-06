@@ -14,6 +14,58 @@ pub(super) fn bytes<const N: usize, S: serde::Serializer>(
     serializer.serialize_bytes(value)
 }
 
+// The compact journal writes many short proof arrays. Batch their decimal
+// bytes into one write per chunk, keeping Serde's JSON representation intact.
+pub(super) struct CompactJournal;
+
+const DECIMAL_BYTES: [([u8; 3], usize); 256] = {
+    let mut table = [([0; 3], 0); 256];
+    let mut byte = 0;
+    while byte < table.len() {
+        let digits = [
+            b'0' + (byte / 100) as u8,
+            b'0' + (byte / 10 % 10) as u8,
+            b'0' + (byte % 10) as u8,
+        ];
+        let start = if byte >= 100 {
+            0
+        } else if byte >= 10 {
+            1
+        } else {
+            2
+        };
+        table[byte] = (digits, start);
+        byte += 1;
+    }
+    table
+};
+
+impl serde_json::ser::Formatter for CompactJournal {
+    fn write_byte_array<W: io::Write + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        value: &[u8],
+    ) -> io::Result<()> {
+        const CHUNK: usize = 32;
+        let mut buffer = [0; CHUNK * 4];
+        let mut separator = b'[';
+        for chunk in value.chunks(CHUNK) {
+            let mut length = 0;
+            for &byte in chunk {
+                let (digits, start) = DECIMAL_BYTES[usize::from(byte)];
+                let digits = &digits[start..];
+                buffer[length] = separator;
+                length += 1;
+                buffer[length..length + digits.len()].copy_from_slice(digits);
+                length += digits.len();
+                separator = b',';
+            }
+            writer.write_all(&buffer[..length])?;
+        }
+        writer.write_all(if value.is_empty() { b"[]" } else { b"]" })
+    }
+}
+
 /// One previous body per decoder/thread. Changed bytes always run the decoder.
 pub(super) struct Last<T> {
     previous: Option<(String, Arc<T>)>,
@@ -114,12 +166,25 @@ mod tests {
             };
             let body = serde_json::to_string(&current).unwrap();
             assert_eq!(body, serde_json::to_string(&previous).unwrap());
+            assert_eq!(body, store::encode(&current).unwrap());
             assert_eq!(
                 serde_json::to_string_pretty(&current).unwrap(),
                 serde_json::to_string_pretty(&previous).unwrap()
             );
             assert_eq!(serde_json::from_str::<Previous>(&body).unwrap(), previous);
         }
+        struct Array<const N: usize>([u8; N]);
+        impl<const N: usize> Serialize for Array<N> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                bytes(&self.0, serializer)
+            }
+        }
+        let all = Array::<256>(std::array::from_fn(|index| index as u8));
+        assert_eq!(
+            store::encode(&all).unwrap(),
+            serde_json::to_string(&all).unwrap()
+        );
+        assert_eq!(store::encode(&Array([])).unwrap(), "[]");
     }
 
     #[test]
