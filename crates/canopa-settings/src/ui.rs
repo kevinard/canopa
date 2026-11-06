@@ -889,9 +889,11 @@ impl State {
         ]
         .spacing(16);
         let content = column![
-            scrollable(body.padding(4))
-                .id("settings-page-scroll")
-                .height(Length::Fill),
+            canopa_ui::scroll_speed(
+                scrollable(body.padding(4))
+                    .id("settings-page-scroll")
+                    .height(Length::Fill)
+            ),
             footer
         ]
         .spacing(18)

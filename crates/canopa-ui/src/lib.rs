@@ -1,6 +1,7 @@
 //! Shared Iced visual treatment. Callers retain events, focus, identity and accessibility trees.
 mod customization;
 pub mod panel;
+mod scroll_speed;
 pub use canopa_theme::metrics;
 use canopa_theme::{Appearance, ColorScheme, Rgb};
 pub use customization::*;
@@ -8,6 +9,7 @@ use iced::{
     Color, Theme,
     widget::{button, container, text},
 };
+pub use scroll_speed::scroll_speed;
 
 pub fn color(Rgb(r, g, b): Rgb) -> Color {
     Color::from_rgb8(r, g, b)

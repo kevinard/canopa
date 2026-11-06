@@ -41,7 +41,7 @@ impl App {
 
         if let Some(model) = self.panel_render_model(window) {
             return crate::surface::panel_motion::wrap(
-                crate::surface::scroll_speed::scroll_speed(render_panel_model(model)),
+                canopa_ui::scroll_speed(render_panel_model(model)),
                 window,
                 self.foreground.panel_presentation(window),
             );
