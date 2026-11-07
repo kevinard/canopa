@@ -60,8 +60,17 @@ def main():
         subprocess.run(["systemctl", "--user", "unset-environment", *VARIABLES], check=True)
         subprocess.run(["systemctl", "--user", "import-environment", *sorted(env)], env=env, check=True)
         subprocess.run(["dbus-update-activation-environment", "--all"], env=env, check=True)
+        # Discard frontend and backend instances carrying the previous desktop environment.
+        subprocess.run(["systemctl", "--user", "stop", "xdg-desktop-portal.service",
+                        "xdg-desktop-portal-canopa.service"], check=True)
         units = ["canopa-compositor.service", "canopa-session.target", *[f"canopa-{name}.service" for name in ("shell", "notify", "wallpaper", "lock", "polkit", "idle", "display-profiles")]]
-        subprocess.run(["systemctl", "--user", "reset-failed", *units], check=True)
+        # A fresh user manager has not loaded these units and refuses to reset them.
+        failed = subprocess.check_output(
+            ["systemctl", "--user", "list-units", "--state=failed", "--plain",
+             "--no-legend", "--no-pager", *units], text=True)
+        failed_units = [line.split()[0] for line in failed.splitlines() if line.strip()]
+        if failed_units:
+            subprocess.run(["systemctl", "--user", "reset-failed", *failed_units], check=True)
         if interrupted:
             return 128 + interrupted[0]
         started = True

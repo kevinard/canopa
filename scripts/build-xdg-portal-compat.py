@@ -7,6 +7,7 @@ Use --reuse to continue the same verified source tree and Meson/Ninja cache.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
@@ -58,10 +59,14 @@ def main():
     parser.add_argument("--native-file", type=Path, help="Explicit Meson build-tool overrides")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--reuse", action="store_true", help="Reuse this recipe's existing sources and build cache")
+    parser.add_argument("--release", action="store_true", help="Build the optimized distribution executable")
     args = parser.parse_args()
     work, archives = args.work_dir.resolve(), args.archives.resolve()
-    if not (work.is_relative_to(ROOT / "target") or work.is_relative_to(Path("/tmp"))):
-        parser.error("--work-dir must be beneath root target/ or /tmp")
+    roots = {ROOT / "target", Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")).resolve()}
+    if Path("/") in roots:
+        parser.error("the Cargo target root cannot be /")
+    if not (any(work.is_relative_to(root) for root in roots) or work.is_relative_to(Path("/tmp"))):
+        parser.error("--work-dir must be beneath the workspace/configured target or /tmp")
     record = vendor_sources.records(ROOT)[OVERLAY]
     recipe = vendor_sources.digest(json.dumps(record, sort_keys=True).encode())
     path = work / "canopa-build.json"
@@ -81,9 +86,10 @@ def main():
     native_spec = {"path": str(native), "sha256": file_digest(native)} if native else None
     if args.reuse and (build / "meson-private/coredata.dat").exists() and previous.get("native_file") != native_spec:
         raise ValueError("Configured build-tool overrides differ; retain the existing native file")
+    profile = "release" if args.release else "debug"
     receipt = {"overlay": OVERLAY, "recipe_sha256": recipe, "source": str(source),
                "source_file_count": len(inputs), "source_inputs_sha256": vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode()),
-               "build": str(build), "profile": "debug", "jobs": 1, "installed": False,
+               "build": str(build), "profile": profile, "jobs": 1, "installed": False,
                "native_file": native_spec,
                "status": "prepared"}
     (work / "source-inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
@@ -95,7 +101,7 @@ def main():
     if (build / "meson-private/coredata.dat").exists():
         configure.append("--reconfigure")
     configure += [str(build), str(source), "--prefix=/usr", "--libexecdir=/usr/lib",
-                  "--buildtype=debug", "--wrap-mode=nodownload", "-Db_sanitize=none", "-Dtests=disabled",
+                  "--buildtype=" + profile, "--wrap-mode=nodownload", "-Db_sanitize=none", "-Dtests=disabled",
                   "-Ddocumentation=disabled", "-Dman-pages=disabled"]
     if native:
         configure.append("--native-file=" + str(native))

@@ -1,4 +1,4 @@
-# Optional Canopa desktop sharing
+# Canopa desktop sharing
 
 Canopa provides Rust/Iced ScreenCast, RemoteDesktop and Clipboard portals. Screen
 and window selection, separate keyboard/pointer/touch/clipboard approval, and the ongoing
@@ -7,11 +7,13 @@ requests, sandbox identity and restricted PipeWire access.
 
 Desktop sharing needs both maintained companions: Niri supplies capture lifetime
 and input leases; the frontend supplies ordered input and original-owner session
-cleanup. The optional release component contains their executables, exact source
+cleanup. The [Arch packages](installation.md#desktop-portals) include both
+companions and select the Canopa sharing backends in the Canopa session. The
+optional portable release component contains their executables, exact source
 recipes, patches and original notices. It extends `canopa.portal` with only these
 three interfaces. An additional explicit option includes InputCapture,
 GlobalShortcuts and Usb. These interfaces remain experimental. Print retains its
-separate opt-in. The default release does not include the companion component.
+separate opt-in. The base portable archive ships without the companion component.
 
 ## Build and package
 

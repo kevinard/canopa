@@ -57,16 +57,22 @@ def main():
     parser.add_argument("--overlay", choices=(OVERLAY, "niri-desktop-compat", "niri-remote-input", "niri-desktop-pointer", "niri-input-capture", "niri-global-shortcuts", "niri-input-capture-keyboard", "niri-remote-touch"), default=OVERLAY,
                         help="Explicit recording, desktop, injected-input, or experimental input-capture recipe")
     parser.add_argument("--work-dir", type=Path, required=True)
-    parser.add_argument("--target-dir", type=Path, default=ROOT / "target/niri-screencast-native")
+    build_root = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")).resolve()
+    parser.add_argument("--target-dir", type=Path, default=build_root / "niri-screencast-native")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--reuse", action="store_true", help="Validate and reuse unchanged prepared sources and their Cargo package paths")
+    parser.add_argument("--fetch", action="store_true", help="Fetch missing locked dependencies")
+    parser.add_argument("--release", action="store_true", help="Build the optimized distribution executable")
     parser.add_argument("--toolchain", help="Explicit Rustup toolchain for a controlled baseline comparison")
     args = parser.parse_args()
     work, target = args.work_dir.resolve(), args.target_dir.resolve()
-    if not (work.is_relative_to(ROOT / "target") or work.is_relative_to(Path("/tmp"))):
-        parser.error("--work-dir must be beneath root target/ or /tmp")
-    if not target.is_relative_to(ROOT / "target"):
-        parser.error("--target-dir must be beneath root target/")
+    roots = {ROOT / "target", build_root}
+    if Path("/") in roots:
+        parser.error("the Cargo target root cannot be /")
+    if not (any(work.is_relative_to(root) for root in roots) or work.is_relative_to(Path("/tmp"))):
+        parser.error("--work-dir must be beneath the workspace/configured target or /tmp")
+    if not any(target.is_relative_to(root) for root in roots):
+        parser.error("--target-dir must be beneath the workspace/configured target")
     record = vendor_sources.records(ROOT)[args.overlay]
     errors = vendor_sources.check(ROOT)
     if errors:
@@ -88,9 +94,10 @@ def main():
                "revision": record["sources"]["niri"]["revision"],
                "recipe_sha256": vendor_sources.digest(json.dumps(record, sort_keys=True).encode()),
                "lock_upstream_sha256": original_lock, "lock_sha256": prepared_lock, "binding": binding,
-               "profile": "dev", "incremental": True, "jobs": 1,
+               "jobs": 1,
                "status": "prepared", "installed": False,
                "inputs": source_inputs(sources)}
+    receipt.update(profile="release" if args.release else "dev", incremental=not args.release)
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     if args.prepare_only:
         print(json.dumps(summary(receipt), indent=2))
@@ -103,13 +110,19 @@ def main():
               "niri-input-capture-keyboard": "+canopa-keyboard-capture",
               "niri-remote-touch": "+canopa-remote-touch"}[args.overlay]
     receipt["build_commit"] = receipt["revision"] + suffix
-    env.update(CARGO_INCREMENTAL="1", NIRI_BUILD_COMMIT=receipt["revision"] + suffix,
+    env.update(CARGO_INCREMENTAL="0" if args.release else "1", NIRI_BUILD_COMMIT=receipt["build_commit"],
                GIT_CEILING_DIRECTORIES=str(work))
     if args.toolchain:
         env["RUSTUP_TOOLCHAIN"] = args.toolchain
     receipt["compiler"] = subprocess.check_output(["rustc", "--version"], cwd=source, env=env, text=True).strip()
-    command = ["cargo", "build", "--locked", "--offline", "-p", "niri", "--bin", "niri", "--jobs", "1",
+    cargo = ["bash", str(ROOT / "scripts/cargo.sh")]
+    if args.fetch:
+        subprocess.run([*cargo, "fetch", "--locked"], cwd=source, env=env, check=True)
+    command = [*cargo, "build", "--locked", "--offline", "-p", "niri", "--bin", "niri", "--jobs", "1",
                "--target-dir", str(target)]
+    if args.release:
+        env["CARGO_PROFILE_RELEASE_STRIP"] = "symbols"
+        command.append("--release")
     receipt.update(status="building", command=command)
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     result = subprocess.run(command, cwd=source, env=env)
@@ -117,7 +130,7 @@ def main():
     if result.returncode == 0:
         if vendor_sources.digest((source / "Cargo.lock").read_bytes()) != prepared_lock:
             raise RuntimeError("Prepared lockfile changed during build")
-        binary = target / "debug/niri"
+        binary = target / ("release" if args.release else "debug") / "niri"
         with binary.open("rb") as stream:
             checksum = hashlib.file_digest(stream, "sha256").hexdigest()
         receipt.update(status="built", binary=str(binary), binary_sha256=checksum)

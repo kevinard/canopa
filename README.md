@@ -137,11 +137,11 @@ selection also includes [InputCapture](docs/input-capture-portal.md) and
 The [experimental ScreenCast backend](docs/screencast-portal.md) has Rust sessions
 and Iced source consent and ongoing stop controls. Display/window video, static
 resume, all cursor modes and crash cleanup pass on a pinned compatibility
-compositor, with runtime cursor capability gating. Selecting a compatible
-compositor and frontend is explicit through the
-[optional desktop-sharing package](docs/desktop-sharing.md), which also enables
-the implemented RemoteDesktop and Clipboard interfaces. Default routing remains
-unchanged while broader distribution acceptance continues.
+compositor, with runtime cursor capability gating. The
+[Arch packages](docs/installation.md#desktop-portals) select the compatible
+compositor and frontend by default, including RemoteDesktop and Clipboard.
+Portable installations can select the
+[desktop-sharing component](docs/desktop-sharing.md) explicitly.
 The [Print backend in development](docs/print-portal.md) has Rust/Iced consent and
 isolated document workers. `--experimental-print` enables it in the normal backend
 for explicit integration; normal packaged routing awaits its remaining acceptance.

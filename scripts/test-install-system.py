@@ -37,6 +37,10 @@ with open(os.environ['CANOPA_TEST_CALLS'],'a') as output:
  output.write(json.dumps({'program':name,'args':sys.argv[1:],'config':os.environ.get('NIRI_CONFIG'),'desktop':os.environ.get('XDG_CURRENT_DESKTOP'),'session_pid':os.environ.get('CANOPA_SESSION_PID')})+'\\n')
 if name=='systemctl':
  if 'is-active' in sys.argv: sys.exit(0 if os.environ.get('CANOPA_TEST_ACTIVE') else 3)
+ if 'list-units' in sys.argv and os.environ.get('CANOPA_TEST_FAILED_UNIT'):
+  print(os.environ['CANOPA_TEST_FAILED_UNIT'] + ' loaded failed failed Private fixture')
+ if 'reset-failed' in sys.argv:
+  sys.exit(0 if sys.argv[3:] == [os.environ.get('CANOPA_TEST_FAILED_UNIT')] else 1)
  if '--wait' in sys.argv and os.environ.get('CANOPA_TEST_WAIT'): __import__('time').sleep(120)
  if '--wait' in sys.argv: sys.exit(int(os.environ.get('CANOPA_TEST_START_STATUS','0')))
 if name=='canopa-settings':
@@ -55,10 +59,26 @@ class SystemInstallTests(unittest.TestCase):
             path = self.bin / name
             path.write_text('#!/bin/sh\nexit 0\n')
             path.chmod(0o755)
+        self.frontend = self.root / 'frontend-build.json'
+        self.compositor = self.root / 'niri-build.json'
+        builds = {
+            self.frontend: ('frontend', 'xdg-desktop-portal-input-order'),
+            self.compositor: ('niri', 'niri-remote-touch'),
+        }
+
+        def verify_build(receipt, kind):
+            expected_kind, overlay = builds[receipt]
+            self.assertEqual(kind, expected_kind)
+            _, recipe_hash = install.desktop_sharing.recipe(overlay)
+            return self.bin / 'canopa-shell', dict(overlay=overlay, recipe_sha256=recipe_hash, sha256='a' * 64)
+
+        verifier = mock.patch.object(install.desktop_sharing, 'verified_build', side_effect=verify_build)
+        verifier.start()
+        self.addCleanup(verifier.stop)
 
     def test_desktop_staging_uses_system_paths_and_does_not_enable_units(self):
         destination = self.root / 'desktop'
-        install.stage(destination, self.bin)
+        install.stage(destination, self.bin, frontend=self.frontend)
         for name in install.PROGRAMS:
             self.assertTrue(os.access(destination / 'usr/bin' / name, os.X_OK))
         units = destination / 'usr/lib/systemd/user'
@@ -69,12 +89,60 @@ class SystemInstallTests(unittest.TestCase):
         self.assertEqual(list(destination.rglob('*.wants')), [])
         self.assertIn('CANOPA_SESSION=1', (units / 'canopa-session.target').read_text())
         self.assertIn('/usr/bin/stasis', (units / 'canopa-idle.service').read_text())
-        self.assertIn('Exec=/usr/bin/canopa-files', (destination / 'usr/share/dbus-1/services/org.freedesktop.FileManager1.service').read_text())
+        service = 'org.freedesktop.FileManager1.service'
+        self.assertFalse((destination / 'usr/share/dbus-1/services' / service).exists())
+        activation = (destination / 'usr/share/canopa/dbus-1/services' / service).read_text()
+        self.assertIn('Name=org.freedesktop.FileManager1\n', activation)
+        self.assertIn('Exec=/usr/bin/canopa-files --daemon\n', activation)
+        self.assertTrue((destination / 'usr/share/applications/org.canopa.Files.desktop').is_file())
         self.assertTrue((destination / 'etc/pam.d/canopa-lock').is_file())
         self.assertFalse((destination / 'etc/greetd/config.toml').exists())
-        self.assertIn('Settings=canopa;', (destination / 'usr/share/xdg-desktop-portal/canopa-portals.conf').read_text())
+        data = destination / 'usr/share/xdg-desktop-portal'
+        portal = configparser.ConfigParser(interpolation=None)
+        portal.optionxform = str
+        portal.read(data / 'canopa-portals.conf')
+        self.assertEqual(dict(portal['preferred']), {
+            'default': 'canopa;gtk;',
+            'org.freedesktop.impl.portal.Notification': 'canopa-notify;',
+            'org.freedesktop.impl.portal.Secret': 'gnome-keyring;',
+        })
+        descriptor = configparser.ConfigParser(interpolation=None)
+        descriptor.read(data / 'portals/canopa.portal')
+        self.assertEqual(set(descriptor['portal']['Interfaces'].strip(';').split(';')), {
+            'org.freedesktop.impl.portal.' + name for name in (
+                'Settings', 'FileChooser', 'AppChooser', 'Access', 'Account', 'Background', 'DynamicLauncher',
+                'Lockdown', 'Wallpaper', 'Screenshot', 'ScreenCast', 'RemoteDesktop', 'Clipboard',
+            )
+        })
+        self.assertTrue(os.access(destination / 'usr/lib/canopa/xdg-desktop-portal', os.X_OK))
+        self.assertFalse((destination / 'usr/lib/xdg-desktop-portal').exists())
+        self.assertIn('ExecStart=/usr/lib/canopa/portal-frontend',
+                      (units / 'xdg-desktop-portal.service.d/50-canopa.conf').read_text())
+        wireplumber = destination / 'usr/share/wireplumber'
+        self.assertTrue((wireplumber / 'scripts/canopa-screencast.lua').is_file())
+        self.assertTrue((wireplumber / 'wireplumber.conf.d/90-canopa-screencast.conf').is_file())
         for path in (destination / 'usr/share/applications').glob('*.desktop'):
             subprocess.run(['desktop-file-validate', str(path)], check=True)
+
+    def test_frontend_dispatch_requires_the_canopa_session(self):
+        stock = self.bin / 'stock'
+        private = self.bin / 'private'
+        for binary in (stock, private):
+            binary.write_text(f'#!/bin/sh\nprintf "%s\\n" {binary.name} "$XDG_CURRENT_DESKTOP" "$@"\n')
+            binary.chmod(0o755)
+        wrapper = (ROOT / 'packaging/system/canopa-portal-frontend').read_text().replace(
+            '/usr/lib/canopa/xdg-desktop-portal', str(private)).replace(
+            '/usr/lib/xdg-desktop-portal', str(stock))
+        for active, session_desktop, desktop, selected, portal_desktop in [
+                ('1', 'canopa', 'niri', 'private', 'canopa:niri'),
+                ('1', 'canopa', 'canopa:niri', 'private', 'canopa:niri'),
+                ('1', 'niri', 'niri', 'stock', 'niri'),
+                ('', 'canopa', 'canopa', 'stock', 'canopa')]:
+            with self.subTest(active=active, session_desktop=session_desktop, desktop=desktop):
+                result = subprocess.check_output(['sh', '-c', wrapper, 'portal-frontend', '--version'],
+                    env={**os.environ, 'CANOPA_SESSION': active, 'XDG_SESSION_DESKTOP': session_desktop,
+                         'XDG_CURRENT_DESKTOP': desktop}, text=True)
+                self.assertEqual(result.splitlines(), [selected, portal_desktop, '--version'])
 
     def test_login_and_compositor_packages_preserve_ownership_and_provenance(self):
         login = self.root / 'login'
@@ -82,11 +150,11 @@ class SystemInstallTests(unittest.TestCase):
         self.assertFalse((login / 'etc/greetd/config.toml').exists())
         self.assertIn('canopa-greeter', (login / 'usr/lib/sysusers.d/canopa-login.conf').read_text())
         compositor = self.root / 'compositor'
-        install.stage(compositor, self.bin, self.bin / 'canopa-shell', component='compositor')
+        install.stage(compositor, self.bin, self.compositor, component='compositor')
         self.assertTrue((compositor / 'usr/lib/canopa/niri').is_file())
         self.assertFalse((compositor / 'usr/bin/niri').exists())
         record = json.loads((compositor / 'usr/share/canopa/compositor-provenance.json').read_text())
-        self.assertEqual(record['source']['sources']['niri']['revision'], '8ed0da44d974c32c6877d2f4630c314da0717ecb')
+        self.assertEqual(record['source']['sources']['niri']['revision'], 'b22eb842ca9506d4e2ff997b116031cdb3f650f8')
         self.assertEqual(len(record['binary_sha256']), 64)
 
     def test_oo7_package_is_separate_and_preserves_other_portal_choices(self):
@@ -107,6 +175,8 @@ class SystemInstallTests(unittest.TestCase):
         portal.read(destination / 'etc/xdg/xdg-desktop-portal/canopa-portals.conf')
         self.assertEqual(dict(portal['preferred']), expected)
         self.assertTrue(os.access(destination / 'usr/lib/canopa/oo7-wait-for-pam', os.X_OK))
+        drop_in = destination / 'usr/lib/systemd/user/oo7-daemon.service.d/50-canopa-login.conf'
+        self.assertIn('ExecStartPost=/usr/lib/canopa/oo7-wait-for-pam %t ${MAINPID}', drop_in.read_text())
         self.assertTrue(os.access(destination / 'usr/lib/canopa/canopa-keyring-prompter', os.X_OK))
         service = 'org.gnome.keyring.SystemPrompter.service'
         self.assertFalse((destination / 'usr/share/dbus-1/services' / service).exists())
@@ -116,7 +186,7 @@ class SystemInstallTests(unittest.TestCase):
 
     def test_system_unit_graph_has_no_ordering_cycle(self):
         destination = self.root / 'desktop'
-        install.stage(destination, self.bin)
+        install.stage(destination, self.bin, frontend=self.frontend)
         units = destination / 'usr/lib/systemd/user'
         for name in ('basic', 'shutdown', 'sockets', 'graphical-session-pre', 'graphical-session', 'xdg-desktop-autostart'):
             (units / f'{name}.target').write_text('[Unit]\nDescription=Private fixture\n')
@@ -132,17 +202,20 @@ class SystemInstallTests(unittest.TestCase):
 
     def test_refuses_root_destination_and_missing_builds(self):
         with self.assertRaises(ValueError): install.stage(Path('/'), self.bin)
+        with self.assertRaisesRegex(ValueError, 'frontend.*build receipt'):
+            install.stage(self.root / 'missing-frontend', self.bin)
         (self.bin / 'canopa-settings').unlink()
         with self.assertRaisesRegex(ValueError, 'canopa-settings'): install.stage(self.root / 'missing', self.bin)
 
-    def invoke_session(self, *, active=False, status=0, print_command=False):
+    def invoke_session(self, *, active=False, status=0, print_command=False, failed_unit=''):
         tools = self.root / 'tools'
         tools.mkdir()
         for name in ('systemctl', 'dbus-update-activation-environment', 'canopa-settings'):
             path = tools / name; path.write_text(STUB); path.chmod(0o755)
         calls = self.root / 'calls.jsonl'
         environment = {'PATH': str(tools) + os.pathsep + os.environ['PATH'], 'XDG_CONFIG_HOME': str(self.root / 'config'),
-                       'CANOPA_TEST_CALLS': str(calls), 'CANOPA_TEST_START_STATUS': str(status)}
+                       'CANOPA_TEST_CALLS': str(calls), 'CANOPA_TEST_START_STATUS': str(status),
+                       'CANOPA_TEST_FAILED_UNIT': failed_unit}
         if active: environment['CANOPA_TEST_ACTIVE'] = '1'
         with mock.patch.dict(os.environ, environment), mock.patch.object(session, 'COMPOSITOR', self.bin / 'canopa-shell'), \
                 mock.patch.object(sys, 'argv', ['canopa-session', *(['--print-command'] if print_command else [])]), contextlib.redirect_stdout(io.StringIO()) as output:
@@ -161,10 +234,23 @@ class SystemInstallTests(unittest.TestCase):
         imported = next(item for item in calls if 'import-environment' in item['args'])
         self.assertIn('CANOPA_SESSION_PID', imported['args'])
         self.assertEqual(imported['session_pid'], str(os.getpid()))
+        reset_portals = next(i for i, item in enumerate(calls) if item['args'] == [
+            '--user', 'stop', 'xdg-desktop-portal.service', 'xdg-desktop-portal-canopa.service'])
+        self.assertLess(calls.index(imported), reset_portals)
+        self.assertLess(reset_portals, next(i for i, item in enumerate(calls) if '--wait' in item['args']))
         self.assertIn('CANOPA_SESSION_PID', calls[-2]['args'])
         self.assertIn('unset-environment', calls[-2]['args'])
         self.assertEqual(calls[-1]['program'], 'dbus-update-activation-environment')
         self.assertFalse(any('enable' in item['args'] for item in calls))
+        self.assertFalse(any('reset-failed' in item['args'] for item in calls))
+
+    def test_retry_resets_only_failed_session_units(self):
+        unit = 'canopa-compositor.service'
+        result, calls, _ = self.invoke_session(failed_unit=unit)
+        self.assertEqual(result, 0)
+        reset = next(i for i, item in enumerate(calls) if 'reset-failed' in item['args'])
+        self.assertEqual(calls[reset]['args'], ['--user', 'reset-failed', unit])
+        self.assertLess(reset, next(i for i, item in enumerate(calls) if '--wait' in item['args']))
 
     def test_active_session_is_refused_before_initialization(self):
         result, calls, _ = self.invoke_session(active=True)

@@ -2,23 +2,27 @@
 pkgbase=canopa
 pkgname=(canopa canopa-compositor canopa-login canopa-oo7)
 pkgver=@VERSION@
-pkgrel=1
+pkgrel=5
 arch=(x86_64)
 url='https://github.com/kevinard/canopa'
 license=('MIT' 'Apache-2.0')
-makedepends=(rust git pkgconf python clang cmake wayland-protocols
+makedepends=(rust git pkgconf python clang cmake wayland-protocols meson ninja
+    bubblewrap fuse3 gdk-pixbuf2 geoclue glib2-devel json-glib libgudev
     alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
     gst-plugins-base-libs libinput libdisplay-info libpipewire seatd pango
     cairo gcr libdrm mesa systemd-libs)
 options=(!lto !debug !strip)
 source=('canopa-@VERSION@.tar.gz'
-    'niri-8ed0da44d974c32c6877d2f4630c314da0717ecb.tar.gz::https://codeload.github.com/niri-wm/niri/tar.gz/8ed0da44d974c32c6877d2f4630c314da0717ecb'
-    'smithay-ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef.tar.gz::https://codeload.github.com/Smithay/smithay/tar.gz/ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef')
-noextract=('niri-8ed0da44d974c32c6877d2f4630c314da0717ecb.tar.gz'
-    'smithay-ff5fa7df392cecfba049ffed55cdaa4e98a8e7ef.tar.gz')
+    'niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz::https://codeload.github.com/niri-wm/niri/tar.gz/b22eb842ca9506d4e2ff997b116031cdb3f650f8'
+    'smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz::https://codeload.github.com/Smithay/smithay/tar.gz/8a270232f1bfc416c781273c98a3f52a812a0bba'
+    'https://github.com/flatpak/xdg-desktop-portal/releases/download/1.22.1/xdg-desktop-portal-1.22.1.tar.xz')
+noextract=('niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8.tar.gz'
+    'smithay-8a270232f1bfc416c781273c98a3f52a812a0bba.tar.gz'
+    'xdg-desktop-portal-1.22.1.tar.xz')
 sha256sums=('@SOURCE_SHA256@'
-    'b065863db54ee44ea64c5019d70655b02f04a252966779f325600e7f953906d0'
-    '2df0f01fd83ee01dc2fcd5976ac0004334b03ef567f467b6c511f11fc1c8a7b9')
+    '865b04ff9f45a9d1285f7370eb20874f3d79fad56b0c3698e443a6a1aac77e60'
+    '3c49f63df8665c8639bae0dabb36705be921c9619f1ebe08bad20fdda34fb558'
+    'd4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3')
 
 build() {
     cd "$srcdir/canopa-$pkgver"
@@ -28,53 +32,62 @@ build() {
     cc $CPPFLAGS $CFLAGS $(pkg-config --cflags gcr-ui-3 libsystemd) \
         packaging/keyring/prompter.c packaging/keyring/session.c $LDFLAGS \
         $(pkg-config --libs gcr-ui-3 libsystemd) -o "$CARGO_TARGET_DIR/release/canopa-keyring-prompter"
-    local niri_sources="${CANOPA_NIRI_WORK_DIR:-$CARGO_TARGET_DIR/niri-package-sources}"
-    local resume=()
-    if [[ -f "$niri_sources/canopa-build.json" ]]; then resume=(--resume); fi
-    python3 scripts/build-niri-compat.py --archives "$srcdir" \
+    local niri_sources="${CANOPA_NIRI_WORK_DIR:-$CARGO_TARGET_DIR/niri-arch-sharing-sources}"
+    local frontend_sources="$CARGO_TARGET_DIR/arch-portal-frontend"
+    local reuse_niri=() reuse_frontend=()
+    if [[ -f "$niri_sources/canopa-build.json" ]]; then reuse_niri=(--reuse); fi
+    if [[ -f "$frontend_sources/canopa-build.json" ]]; then reuse_frontend=(--reuse); fi
+    python3 scripts/build-niri-screencast.py --archives "$srcdir" --overlay niri-remote-touch \
         --work-dir "$niri_sources" --target-dir "$CARGO_TARGET_DIR/niri-compat-release" \
-        --release --fetch "${resume[@]}"
+        --release --fetch "${reuse_niri[@]}"
+    python3 scripts/build-xdg-portal-compat.py --archives "$srcdir" \
+        --work-dir "$frontend_sources" --release "${reuse_frontend[@]}"
 }
 
 package_canopa() {
     pkgdesc='Canopa desktop environment and settings for Niri'
-    depends=("canopa-compositor=$pkgver" niri bash python systemd dbus
+    license+=('LGPL-2.1-or-later')
+    depends=("canopa-compositor=$pkgver-$pkgrel" niri bash python systemd dbus
         alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
         gst-plugins-base-libs gst-plugins-good gst-libav at-spi2-core
         fontconfig ttf-dejavu pipewire-pulse wireplumber upower udisks2
-        foot libqalculate coreutils tzdata wl-clipboard xdg-utils xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome)
+        foot libqalculate coreutils tzdata wl-clipboard xdg-utils
+        'xdg-desktop-portal>=1.22.1' xdg-desktop-portal-gtk bubblewrap
+        glib2 json-glib libgudev libpipewire)
     optdepends=('stasis: automatic idle locking, display power and suspend policy'
         'networkmanager: Wi-Fi management' 'iwd: Wi-Fi management with networkd'
         'bluez: Bluetooth discovery, pairing and device controls'
         'power-profiles-daemon: system power profile selection'
         'xwayland-satellite: legacy X11 applications' 'poppler: PDF previews'
-        'gnome-keyring: Secret Service and Secret portal' 'canopa-login: greetd login integration')
+        'gnome-keyring: Secret Service and Secret portal' 'canopa-login: greetd login integration'
+        'geoclue: Location portal')
     backup=('etc/pam.d/canopa-lock')
     cd "$srcdir/canopa-$pkgver"
-    python3 scripts/install-system.py --destdir "$pkgdir" \
-        --build-dir "${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/release"
+    local target="${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}"
+    python3 scripts/install-system.py --destdir "$pkgdir" --build-dir "$target/release" \
+        --portal-frontend-build "$target/arch-portal-frontend/canopa-build.json"
     python3 scripts/dependency-attributions.py --output "$pkgdir/usr/share/canopa/dependency-attributions.md" \
         --notices "$pkgdir/usr/share/licenses/canopa/dependencies"
 }
 
 package_canopa-compositor() {
-    pkgdesc='Pinned Niri compositor with the Canopa drag-source lifetime correction'
+    pkgdesc='Pinned Niri compositor with Canopa desktop sharing and drag-source fixes'
     license=('GPL-3.0-or-later' 'MIT')
     depends=(glibc cairo glib2 libdisplay-info libinput libpipewire libxkbcommon
         mesa pango pixman seatd systemd-libs libgcc)
     cd "$srcdir/canopa-$pkgver"
+    local niri_sources="${CANOPA_NIRI_WORK_DIR:-${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/niri-arch-sharing-sources}"
     python3 scripts/install-system.py --destdir "$pkgdir" --component compositor \
-        --compositor "${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/niri-compat-release/release/niri"
-    local niri_sources="${CANOPA_NIRI_WORK_DIR:-${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}/niri-package-sources}"
+        --compositor-build "$niri_sources/canopa-build.json"
     python3 scripts/dependency-attributions.py \
-        --manifest-path "$niri_sources/niri-8ed0da44d974c32c6877d2f4630c314da0717ecb/Cargo.toml" --root niri \
+        --manifest-path "$niri_sources/niri-b22eb842ca9506d4e2ff997b116031cdb3f650f8/Cargo.toml" --root niri \
         --output "$pkgdir/usr/share/canopa/compositor-dependency-attributions.md" \
         --notices "$pkgdir/usr/share/licenses/canopa-compositor/dependencies"
 }
 
 package_canopa-login() {
     pkgdesc='Optional greetd integration for the Canopa login screen'
-    depends=("canopa=$pkgver" greetd cage)
+    depends=("canopa=$pkgver-$pkgrel" greetd cage)
     optdepends=('canopa-oo7: optional oo7 keyring and Secret portal integration')
     backup=('etc/canopa/greeter.kdl')
     cd "$srcdir/canopa-$pkgver"
@@ -83,7 +96,7 @@ package_canopa-login() {
 
 package_canopa-oo7() {
     pkgdesc='Optional oo7 keyring integration for Canopa and greetd'
-    depends=("canopa-login=$pkgver" 'oo7>=0.6.0-5' gcr)
+    depends=("canopa-login=$pkgver-$pkgrel" 'oo7>=0.6.0-5' gcr)
     backup=('etc/pam.d/canopa-oo7' 'etc/xdg/xdg-desktop-portal/canopa-portals.conf')
     cd "$srcdir/canopa-$pkgver"
     python3 scripts/install-system.py --destdir "$pkgdir" --component oo7 \

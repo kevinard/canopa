@@ -11,20 +11,19 @@ python3 scripts/package-arch.py --output "$PWD/.scratch/artifacts/canopa-arch" -
 The output directory must be new. The script creates a reproducible source archive,
 an exact SHA-256 PKGBUILD and `.SRCINFO`, then runs makepkg without installing or
 fetching system dependencies. Install missing build dependencies through pacman
-before retrying makepkg in that directory. Cargo may fetch locked Rust sources;
-the compositor recipe verifies the pinned Niri/Smithay archives and canonical
-patch before building. Both builds use the permanent disk guard. The application
-build reuses root `target/`; the independently locked compositor uses
-`target/niri-compat-release/`. Verified prepared sources remain beneath that
-target root and are checked again before reuse.
+before retrying makepkg in that directory. Cargo may fetch locked Rust sources.
+The build verifies the pinned Niri, Smithay and XDG portal frontend archives and
+their canonical patches. The guarded build reuses root `target/`, with separate
+caches for the independently locked compositor and the Meson frontend.
+Verified prepared sources remain beneath that target root for reuse.
 
 The build produces these packages.
 
 - `canopa`: applications, Settings, services, session entry, PAM lock policy,
-  portal selection and defaults.
+  portal defaults and the private XDG portal frontend.
 - `canopa-compositor`: the pinned compatible Niri executable installed privately
-  at `/usr/lib/canopa/niri`. It preserves the distribution's `/usr/bin/niri` and
-  the existing ordinary Niri session. See [the compatibility decision](adr/0024-niri-drag-source-lifetime.md).
+  at `/usr/lib/canopa/niri`, with Canopa screen sharing and the Files drag
+  lifetime fixes. See [the compositor recipe](adr/0045-combined-niri-desktop-companion.md).
 - `canopa-login`: optional greetd/Cage integration, a dedicated unprivileged
   `canopa-greeter` account and administrator-owned greeter settings/examples.
 - `canopa-oo7`: optional Secret Service setup for greetd logins, with oo7's Secret
@@ -66,6 +65,42 @@ networkd/iwd combination. Quick settings uses the system BlueZ service for
 Bluetooth and Power Profiles daemon for power profile selection. Both are
 optional Arch dependencies. Secret storage remains the chosen system provider;
 packaging does not create or replace a password vault.
+
+## Desktop portals
+
+The Canopa session uses Canopa's portal backends by default, including its Iced
+file chooser and screen sharing consent, and uses Canopa Notify for portal
+notifications. ScreenCast, RemoteDesktop and Clipboard use the packaged Niri
+and XDG frontend builds. GTK supplies interfaces such as Print and Email. The
+Secret portal uses the selected keyring provider. Arch's GNOME portal and
+Nautilus are outside the package dependency chain.
+
+The public XDG portal service selects the private frontend for the dedicated
+Canopa session. Other sessions use the distribution frontend. A user's
+`canopa-portals.conf` takes precedence over the packaged routing, so review
+older overrides if an application still opens a different dialog. Log out of
+all sessions for the account after upgrading so the user services load the new
+frontend and WirePlumber policy. If the user manager persists, restart
+`wireplumber.service` before sharing.
+
+## Optional FileManager1 activation
+
+Canopa Files is available from the launcher and Super+E. The system package
+keeps its FileManager1 activation file under `/usr/share/canopa/` so it can
+coexist with Nautilus and other file managers. To select Canopa for on-demand
+D-Bus requests such as Show in Folder, opt in for your account:
+
+```sh
+service=org.freedesktop.FileManager1.service
+services="${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services"
+mkdir -p "$services"
+ln -s "/usr/share/canopa/dbus-1/services/$service" "$services/$service"
+```
+
+Review any existing file at that user path before replacing it. The link
+applies to the account's session bus across desktops, separately from the
+default folder application. It takes effect on the next D-Bus activation after
+the current FileManager1 owner exits. Remove the link to undo the opt-in.
 
 ## Optional Canopa login screen
 
@@ -110,7 +145,7 @@ oo7 collections. Legacy GNOME Keyring migration has a separate lifecycle in oo7.
    administrator-owned file at that path before installing the package. The
    portal reads the first matching configuration file, so update the Secret
    entry in any higher-priority user override as well. The packaged configuration
-   includes Canopa's Settings portal and the usual desktop portal selections.
+   uses the same Canopa and GTK routing as the desktop package.
 
 A matching login password opens the keyring automatically. If the keyring is
 locked after a hardware-only login, the first application that needs it can ask
@@ -155,7 +190,8 @@ remove the link and let the service activate again.
 ## Upgrade, recovery and validation
 
 Build the new revision into a new package directory, log out, then install the
-matching desktop/compositor versions together. Pacman's backup handling preserves
+matching desktop/compositor versions together. Include `canopa-login` and
+`canopa-oo7` in the transaction if you use those packages. Pacman's backup handling preserves
 modified PAM and greeter configuration and offers `.pacnew` files for review.
 Per-user preferences are never installed over or reset. Keep the previous matching
 package pair for `pacman -U` rollback. Keep the existing Niri session available as

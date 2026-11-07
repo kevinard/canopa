@@ -30,7 +30,10 @@ def verify(args,session):
     if not args.shipped_descriptor and not args.portal_descriptor and IMPL+';' not in descriptor:descriptor=descriptor.replace('Interfaces=','Interfaces='+IMPL+';')
     assert IMPL+';' in descriptor
     (portals/'canopa.portal').write_text(descriptor)
-    (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
+    if args.portal_config:
+        shutil.copyfile(args.portal_config, portals/'canopa-portals.conf')
+    else:
+        (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
     applications=Path(session.env['XDG_DATA_HOME'])/'applications';applications.mkdir(parents=True)
     (applications/'org.canopa.CastTest.desktop').write_text('[Desktop Entry]\nType=Application\nName=Screen sharing fixture\nExec=true\n')
     session.env.update(HOME=str(home),XDG_CURRENT_DESKTOP='Canopa',XDG_DESKTOP_PORTAL_DIR=str(portals),XDG_DATA_DIRS=session.env['XDG_DATA_HOME'],GIO_USE_VFS='local',GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas',PATH=str(args.binary.parent)+os.pathsep+session.env['PATH'],RUST_LOG='niri=debug')
@@ -257,6 +260,7 @@ def main():
     parser.add_argument('--media',action='store_true');parser.add_argument('--niri',type=Path);parser.add_argument('--niri-sha256')
     parser.add_argument('--frontend',type=Path);parser.add_argument('--frontend-sha256')
     parser.add_argument('--portal-descriptor',type=Path,help='Use an exact packaged descriptor without adding interfaces')
+    parser.add_argument('--portal-config',type=Path,help='Use the packaged Canopa desktop routing')
     args=parser.parse_args();args.binary=args.binary.resolve(strict=True);args.output=args.output.resolve()
     if bool(args.frontend)!=bool(args.frontend_sha256):parser.error('--frontend requires its --frontend-sha256')
     args.frontend=(args.frontend or next(p for p in [Path('/usr/libexec/xdg-desktop-portal'),Path('/usr/lib/xdg-desktop-portal')] if p.is_file())).resolve(strict=True)

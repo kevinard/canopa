@@ -2,15 +2,14 @@
 
 The Rust backend implements ScreenCast version 6 sessions and Iced display/window
 consent. It uses Niri's compositor capture API and Rust PipeWire metadata lookup.
-It remains experimental and absent from the default portal descriptor. The
-[optional desktop-sharing component](desktop-sharing.md) packages compatible
-companions and an extended descriptor for explicit selection. Real
+The [Arch packages](installation.md#desktop-portals) ship compatible companions
+and select Canopa ScreenCast in the dedicated session. The
+[portable desktop-sharing component](desktop-sharing.md) ships the companions
+and extended descriptor for explicit selection. Real
 display/window video and static-window resume pass on the pinned compatibility
 candidate. Session-owned Iced stop controls and active caller/backend-death cleanup
 also pass private native checks, as do all cursor modes for both source types at
-100%/125%. Runtime cursor capability gating is implemented. Compatible compositor
-distribution acceptance precedes default advertisement.
-The installed session continues using its configured ScreenCast provider.
+100%/125%. Runtime cursor capability gating is implemented.
 
 Capture requires the compositor's creator-cleanup contract: an independently
 killed worker must retire its recording even when it cannot send Stop. The
@@ -75,9 +74,7 @@ consent. Public Notify input, held-input cleanup, legacy-to-EI handoff on the sa
 recording and relative-only input without capture pass scoped native checks in
 both appearances. The normal backend registers RemoteDesktop alongside ScreenCast
 and Clipboard, sharing their session controller and publishing input availability
-changes. Desktop sharing is advertised only in the optional companion package.
-Broader projection,
-loss/race and physical-input acceptance remain open. See
+changes. Broader projection, loss/race and physical-input acceptance remain open. See
 [the production pointer decision](adr/0053-pointer-consent-and-production-input.md).
 
 The private RemoteDesktop fixture also supports Clipboard v1. Requesting it adds

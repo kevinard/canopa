@@ -35,8 +35,11 @@ session environment at process start. A runtime that started without a display
 refuses presentation requests while its backend stays alive; never mutate its
 environment from a later request.
 
-The activation file selects Canopa as an on-demand FileManager1 provider when
-installed. Packaging prepares metadata without changing the live bus, session
+Installing the activation file in a user session-bus service directory selects
+Canopa as an on-demand FileManager1 provider for that account. The Arch package
+ships the file under `/usr/share/canopa/dbus-1/services/` for explicit opt-in.
+Nautilus, pulled in by Arch's GNOME portal backend, owns the standard system
+path. Packaging prepares metadata without changing the live bus, session
 services or folder MIME defaults. The desktop entry keeps normal Exec launching:
 FileManager1 does not implement the distinct desktop-entry DBusActivatable
 application interface. Native acceptance must install the real activation file

@@ -9,8 +9,18 @@ idle lifetimes. Existing owners validate and apply their own configuration.
 The system installation has a dedicated Canopa compositor user unit/session
 launcher. Companion units use system binary paths and start only as part of that
 session. Existing per-user companion installation remains supported separately.
-Packaging selects ADR0024's pinned compatible compositor at a private path;
-installation does not replace the distribution's Niri or enable greetd.
+Packaging selects the pinned combined desktop-sharing compositor at a private
+path, including the Files drag fixes from ADR0024. The Canopa session selects
+Canopa portal backends, with a separate Notify backend, GTK for unimplemented
+interfaces, and a keyring provider for Secret. The packaged descriptor enables
+ScreenCast, RemoteDesktop and Clipboard. The systemd portal service dispatches
+to the pinned frontend inside the Canopa session and the distribution frontend
+in other sessions. It uses the launcher's session marker and
+`XDG_SESSION_DESKTOP`, since Niri publishes its own `XDG_CURRENT_DESKTOP`.
+The private frontend restores the Canopa desktop name for its routing lookup.
+The session retires stale portal processes before starting
+the compositor so they pick up the new environment. Packaging installs the
+WirePlumber policy from ADR0112 to preserve frontend-owned grants.
 
 Canopa's Niri entry configuration lives under the user's Canopa configuration
 directory, with separate managed display and input includes. Existing Niri

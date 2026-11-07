@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ "${CANOPA_SESSION:-}" = 1 ] && [ "${XDG_SESSION_DESKTOP:-}" = canopa ]; then
+    # Niri imports its own XDG_CURRENT_DESKTOP when started with --session.
+    export XDG_CURRENT_DESKTOP=canopa:niri
+    exec /usr/lib/canopa/xdg-desktop-portal "$@"
+fi
+exec /usr/lib/xdg-desktop-portal "$@"

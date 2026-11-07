@@ -127,6 +127,27 @@ def descriptor(interfaces=INTERFACES):
     return base.replace('Interfaces=', 'Interfaces=' + additions, 1).encode()
 
 
+def source_assets(kind, component):
+    record, recipe_hash = recipe(component['overlay'])
+    if component['overlay'] not in OVERLAYS[kind] or component['recipe_sha256'] != recipe_hash:
+        raise ValueError('Packaged companion recipe differs from canonical provenance')
+    files = {}
+    for source, spec in record['sources'].items():
+        for asset in vendor_sources.license_assets(spec):
+            path = ROOT / asset['path']
+            regular(path)
+            if digest(path) != asset['sha256']:
+                raise ValueError('Companion notice differs from canonical provenance')
+            files[Path(source) / path.name] = path
+    for patch in record['patches']:
+        path = ROOT / patch['path']
+        regular(path)
+        if digest(path) != patch['sha256']:
+            raise ValueError('Companion patch differs from canonical provenance')
+        files[Path('patches') / path.name] = path
+    return files, record
+
+
 def assets(components, interfaces=INTERFACES):
     if interfaces not in (INTERFACES, INTERFACES + EXTRA_INTERFACES):
         raise ValueError('Unsupported optional portal selection')
@@ -141,22 +162,8 @@ def assets(components, interfaces=INTERFACES):
     for name in ('canopa-screencast.lua', '90-canopa-screencast.conf'):
         files[PROFILE / 'wireplumber' / name] = ROOT / 'packaging/portal/desktop-sharing' / name
     for kind, component in components.items():
-        record, recipe_hash = recipe(component['overlay'])
-        if component['overlay'] not in OVERLAYS[kind] or component['recipe_sha256'] != recipe_hash:
-            raise ValueError('Packaged companion recipe differs from canonical provenance')
-        for source, spec in record['sources'].items():
-            for asset in vendor_sources.license_assets(spec):
-                path = ROOT / asset['path']
-                regular(path)
-                if digest(path) != asset['sha256']:
-                    raise ValueError('Companion notice differs from canonical provenance')
-                files[NOTICES / kind / source / path.name] = path
-        for patch in record['patches']:
-            path = ROOT / patch['path']
-            regular(path)
-            if digest(path) != patch['sha256']:
-                raise ValueError('Companion patch differs from canonical provenance')
-            files[NOTICES / kind / 'patches' / path.name] = path
+        sources, record = source_assets(kind, component)
+        files.update({NOTICES / kind / relative: path for relative, path in sources.items()})
         generated[NOTICES / kind / 'recipe.json'] = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
     return files, generated
 
