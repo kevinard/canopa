@@ -75,18 +75,17 @@ fn run(cli: Cli) -> Result<i32> {
         let controller = canopa_pinentry::controller::Controller::new(
             &settings,
             canopa_pinentry::protocol::Request {
-                description: "Enter the passphrase to unlock your OpenPGP key.".into(),
+                title: "Alex Morgan · OpenPGP signing key".into(),
+                description: "Fingerprint\n3CE7 7DD6 4F0A 2C50 27D5 45F4 C6C4 1BA5 2B00 921E"
+                    .into(),
+                ok: "Unlock key".into(),
                 ..Default::default()
             },
         )?;
-        let color = settings.color;
+        let (width, height) = canopa_session_ui::view::DIALOG_SIZE;
         controller
             .ui
-            .render_at_scale(
-                &settings,
-                image::RgbImage::from_pixel(800, 720, image::Rgb([color.0, color.1, color.2])),
-                1.,
-            )?
+            .render_dialog(&settings, width, height, 1.)?
             .0
             .save_with_format(output, image::ImageFormat::Png)?;
         return Ok(0);

@@ -10,6 +10,8 @@ pub struct Session {
     pub argv: Vec<String>,
     pub env: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub desktop_file: Option<PathBuf>,
 }
 impl Session {
@@ -242,6 +244,7 @@ impl Config {
                         label: "X11 wrapper".into(),
                         argv: command.clone(),
                         env: Vec::new(),
+                        comment: None,
                         desktop_file: None,
                     }
                     .validate()?;
@@ -274,6 +277,7 @@ impl Config {
                         label: id,
                         argv: Vec::new(),
                         env: Vec::new(),
+                        comment: None,
                         desktop_file: None,
                     };
                     let mut fields = std::collections::HashSet::new();

@@ -16,7 +16,7 @@ parser.add_argument('--click',action='store_true')
 args=parser.parse_args()
 
 def find(node,name,depth=0):
-    if depth>15:return None
+    if node is None or depth>15:return None
     try:
         if node.get_name()==name:return node
         for i in range(min(node.get_child_count(),256)):

@@ -249,6 +249,7 @@ def verify(binary, session):
         assert peer.process.wait(timeout=5) == 0
         retired()
         # Actual agent/key derivation/crypto, isolated from the user's agent/keyring.
+        session.run(['gpgconf', '--homedir', str(home), '--kill', 'gpg-agent'])
         (home/'gpg-agent.conf').write_text(f'pinentry-program {binary}\nno-allow-external-cache\n')
         plain = session.runtime/'plain'
         cipher = session.runtime/'cipher.gpg'

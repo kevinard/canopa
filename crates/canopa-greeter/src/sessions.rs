@@ -255,7 +255,11 @@ fn flag(fields: &BTreeMap<String, String>, key: &str) -> Result<bool> {
         _ => bail!("invalid desktop boolean"),
     }
 }
-fn label(fields: &BTreeMap<String, String>, locale: &str) -> Result<String> {
+fn localized<'a>(
+    fields: &'a BTreeMap<String, String>,
+    key: &str,
+    locale: &str,
+) -> Option<&'a String> {
     let (base, modifier) = locale
         .split_once('@')
         .map_or((locale, None), |(b, m)| (b, Some(m)));
@@ -263,20 +267,20 @@ fn label(fields: &BTreeMap<String, String>, locale: &str) -> Result<String> {
     let language = base.split('_').next().unwrap_or(base);
     let mut keys = Vec::new();
     if let Some(m) = modifier {
-        keys.push(format!("Name[{base}@{m}]"));
+        keys.push(format!("{key}[{base}@{m}]"));
     }
-    keys.push(format!("Name[{base}]"));
+    keys.push(format!("{key}[{base}]"));
     if let Some(m) = modifier {
-        keys.push(format!("Name[{language}@{m}]"));
+        keys.push(format!("{key}[{language}@{m}]"));
     }
-    keys.push(format!("Name[{language}]"));
-    keys.push("Name".into());
+    keys.push(format!("{key}[{language}]"));
+    keys.iter()
+        .find_map(|key| fields.get(key))
+        .or_else(|| fields.get(key))
+}
+fn label(fields: &BTreeMap<String, String>, locale: &str) -> Result<String> {
     ensure!(fields.contains_key("Name"), "missing default session name");
-    unescape(
-        keys.iter()
-            .find_map(|k| fields.get(k))
-            .context("missing session name")?,
-    )
+    unescape(localized(fields, "Name", locale).context("missing session name")?)
 }
 
 fn parse(
@@ -305,6 +309,11 @@ fn parse(
         return Ok(None);
     }
     let label = label(&fields, locale)?;
+    let comment = localized(&fields, "Comment", locale)
+        .and_then(|value| unescape(value).ok())
+        .filter(|value| {
+            !value.trim().is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+        });
     let command = unescape(fields.get("Exec").context("missing session command")?)?;
     let icon = fields.get("Icon").map(|v| unescape(v)).transpose()?;
     let mut argv = exec(&command, &label, path, icon.as_deref())?;
@@ -361,6 +370,7 @@ fn parse(
             format!("XDG_SESSION_DESKTOP={stem}"),
             format!("XDG_CURRENT_DESKTOP={}", desktops.replace(';', ":")),
         ],
+        comment,
         desktop_file: Some(path.to_owned()),
     };
     session.validate()?;
@@ -514,17 +524,18 @@ mod tests {
     }
     #[test]
     fn parser_honors_only_the_main_group_and_rejects_duplicate_main_groups() {
-        let text = "[Desktop Entry]\nType=Application\nName=Main\nExec=/usr/bin/true\n[Desktop Action Other]\nName=Action\nExec=/no/such/action\n";
+        let text = "[Desktop Entry]\nType=Application\nName=Main\nComment=Start the desktop\nComment[fr]=Démarrer le bureau\nExec=/usr/bin/true\n[Desktop Action Other]\nName=Action\nExec=/no/such/action\n";
         let result = parse(
             text,
             Path::new("/tmp/main.desktop"),
             "main",
             "main",
             "wayland",
-            "C",
+            "fr_FR.UTF-8",
         )
         .unwrap()
         .unwrap();
+        assert_eq!(result.comment.as_deref(), Some("Démarrer le bureau"));
         assert_eq!(result.label, "Main");
         assert_eq!(result.argv, ["/usr/bin/true"]);
         assert!(fields(&(text.to_owned() + "[Desktop Entry]\nName=Duplicate\n")).is_err());

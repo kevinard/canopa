@@ -4,8 +4,9 @@ use crate::{
     protocol::{Command, Event, Kind},
 };
 use anyhow::Result;
-use canopa_session_ui::view::{Control, Prompt, SessionView};
+use canopa_session_ui::view::{AuthenticationPanel, Control, Emblem, Prompt, SessionView};
 use std::time::{Duration, Instant};
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     User,
@@ -17,6 +18,32 @@ pub enum Phase {
     Done,
     Fatal,
 }
+const FIRST_OPTION: usize = 100;
+const OPTIONS_PER_PAGE: usize = 3;
+const CLOSE_CHOOSER: usize = 30;
+const PREVIOUS_PAGE: usize = 31;
+const NEXT_PAGE: usize = 32;
+
+#[derive(Clone, Copy)]
+pub enum Choice {
+    Account,
+    Desktop,
+}
+
+struct Chooser {
+    kind: Choice,
+    // Keep the displayed choices tied to their IDs across live catalog updates.
+    options: Vec<ChoiceOption>,
+    selected: usize,
+    current: Option<usize>,
+}
+
+struct ChoiceOption {
+    key: String,
+    title: String,
+    detail: Option<String>,
+}
+
 pub struct Controller {
     pub ui: SessionView,
     pub phase: Phase,
@@ -30,6 +57,7 @@ pub struct Controller {
     pub preferences: crate::preferences::Preferences,
     pub power_menu: crate::power::Menu,
     pub power_capabilities: crate::power::Capabilities,
+    chooser: Option<Chooser>,
     session_edited: bool,
     accounts: Vec<Account>,
     user_edited: bool,
@@ -41,8 +69,22 @@ impl Controller {
         } else {
             config.default_user.clone()
         };
+        let mut ui = SessionView::new(&config.view, user.clone())?;
+        ui.authentication_panel = Some(AuthenticationPanel {
+            height_reserve: 408.,
+            heading: "Sign in",
+            eyebrow: "CANOPA",
+            emblem: Emblem::Canopa,
+            dialog: false,
+            choices: &[(1, Emblem::Accounts), (2, Emblem::Cycle)],
+            utilities: &[20, 23, CLOSE_CHOOSER, PREVIOUS_PAGE, NEXT_PAGE],
+            disclosure: None,
+            list_actions: false,
+            checked_control: None,
+            choice_details: Default::default(),
+        });
         let mut this = Self {
-            ui: SessionView::new(&config.view, user.clone())?,
+            ui,
             phase: Phase::User,
             session: 0,
             user,
@@ -54,6 +96,7 @@ impl Controller {
             preferences: Default::default(),
             power_menu: Default::default(),
             power_capabilities: Default::default(),
+            chooser: None,
             session_edited: false,
             accounts: accounts::merge(&config.users, Vec::new()),
             user_edited: false,
@@ -61,7 +104,7 @@ impl Controller {
         this.choose_user(if config.sessions.is_empty() {
             "No desktop sessions available. Install a session or configure one."
         } else {
-            "Enter: continue · Tab: session · ↑/↓: user"
+            ""
         });
         this.refresh(config);
         Ok(this)
@@ -76,7 +119,7 @@ impl Controller {
             && let Some(user) = &self.preferences.last_user
         {
             self.user = user.clone();
-            self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
+            self.choose_user("");
         }
         self.recall_session();
         self.refresh(config);
@@ -94,10 +137,15 @@ impl Controller {
             return None;
         }
         let selected = self.sessions.get(self.session).map(|s| s.id.clone());
-        let same = self
-            .auth_session
-            .as_ref()
-            .is_none_or(|active| sessions.iter().any(|s| s == active));
+        let same = self.auth_session.as_ref().is_none_or(|active| {
+            sessions.iter().any(|session| {
+                session.id == active.id
+                    && session.label == active.label
+                    && session.argv == active.argv
+                    && session.env == active.env
+                    && session.desktop_file == active.desktop_file
+            })
+        });
         self.sessions = sessions;
         self.session = selected
             .and_then(|id| self.sessions.iter().position(|s| s.id == id))
@@ -141,7 +189,7 @@ impl Controller {
             }
             (23, Menu::Choose(_) | Menu::Confirm(_)) => {
                 self.power_menu = Menu::Closed;
-                self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
+                self.choose_user("");
             }
             _ => {}
         }
@@ -172,8 +220,67 @@ impl Controller {
     }
     pub fn refresh(&mut self, config: &Config) {
         use crate::power::{Action, Menu};
-        self.ui.hide_input = self.power_menu != Menu::Closed;
+        self.ui.hide_input = self.power_menu != Menu::Closed || self.chooser.is_some();
         self.ui.primary_control = (!self.ui.hide_input && !self.ui.busy).then_some(3);
+        let panel = self
+            .ui
+            .authentication_panel
+            .as_mut()
+            .expect("greeter panel");
+        panel.list_actions = self.chooser.is_some();
+        panel.choice_details.clear();
+        panel.checked_control = self
+            .chooser
+            .as_ref()
+            .and_then(|chooser| chooser.current)
+            .map(|index| FIRST_OPTION + index);
+        (panel.heading, panel.emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
+            Some(Choice::Account) => ("Choose an account", Emblem::Accounts),
+            Some(Choice::Desktop) => ("Choose a desktop", Emblem::Display),
+            None if self.ui.hide_input => ("Power options", Emblem::Canopa),
+            None => ("Sign in", Emblem::Canopa),
+        };
+        if let Some(chooser) = &self.chooser {
+            let start = chooser.selected / OPTIONS_PER_PAGE * OPTIONS_PER_PAGE;
+            let end = (start + OPTIONS_PER_PAGE).min(chooser.options.len());
+            self.ui.controls = chooser.options[start..end]
+                .iter()
+                .enumerate()
+                .map(|(offset, option)| {
+                    let index = start + offset;
+                    let id = FIRST_OPTION + index;
+                    let prefix = if chooser.selected == index {
+                        "› "
+                    } else {
+                        ""
+                    };
+                    if let Some(detail) = &option.detail {
+                        panel.choice_details.insert(id, detail.clone());
+                    }
+                    Control {
+                        id,
+                        label: format!("{prefix}{}", option.title),
+                    }
+                })
+                .collect();
+            if start > 0 {
+                self.ui.controls.push(Control {
+                    id: PREVIOUS_PAGE,
+                    label: "Previous choices".into(),
+                });
+            }
+            if end < chooser.options.len() {
+                self.ui.controls.push(Control {
+                    id: NEXT_PAGE,
+                    label: "More choices".into(),
+                });
+            }
+            self.ui.controls.push(Control {
+                id: CLOSE_CHOOSER,
+                label: "← Back to sign in".into(),
+            });
+            return;
+        }
         if let Menu::Choose(action) | Menu::Confirm(action) | Menu::Pending(action) =
             self.power_menu
         {
@@ -233,25 +340,31 @@ impl Controller {
                 .map(Account::chooser_label)
                 .unwrap_or_else(|| displayed_user.to_owned())
         };
+        let account_is_username = chooser_label == displayed_user;
         self.ui.username = account
             .map(|a| a.display_name.clone())
             .unwrap_or_else(|| displayed_user.to_owned());
         self.ui.set_avatar_initials(
-            config
-                .avatars_enabled()
+            (config.avatars_enabled() && self.phase != Phase::User)
                 .then(|| crate::avatars::initials(&self.ui.username)),
         );
         self.ui.controls = vec![
             Control {
                 id: 1,
-                label: format!("User: {chooser_label}"),
+                label: if self.phase == Phase::User && account_is_username {
+                    "Choose account".into()
+                } else if self.phase == Phase::User {
+                    format!("Choose account · {chooser_label}")
+                } else {
+                    format!("Change account · {chooser_label}")
+                },
             },
             Control {
                 id: 2,
                 label: config
                     .sessions
                     .get(self.session)
-                    .map(|s| format!("Session: {}   ‹ Tab ›", s.label))
+                    .map(|s| format!("Desktop: {}", s.label))
                     .unwrap_or_else(|| "No desktop sessions available".into()),
             },
             Control {
@@ -267,6 +380,9 @@ impl Controller {
                 .into(),
             },
         ];
+        if self.phase == Phase::User && self.accounts.is_empty() {
+            self.ui.controls.retain(|control| control.id != 1);
+        }
         if config.power_controls
             && matches!(self.phase, Phase::User | Phase::Failed)
             && (self.power_capabilities.shutdown || self.power_capabilities.restart)
@@ -291,7 +407,7 @@ impl Controller {
         (username.into(), config.avatars.paths(username, icon))
     }
     pub fn submit(&mut self) -> Option<Command> {
-        if self.power_menu != crate::power::Menu::Closed {
+        if self.power_menu != crate::power::Menu::Closed || self.chooser.is_some() {
             return None;
         }
         match self.phase {
@@ -397,7 +513,6 @@ impl Controller {
         if self.phase != Phase::User || self.accounts.is_empty() {
             return;
         }
-        self.user_edited = true;
         let n = self.accounts.len();
         let index = self
             .accounts
@@ -405,11 +520,120 @@ impl Controller {
             .position(|a| a.username == self.ui.secret.text())
             .map(|i| (i + if previous { n - 1 } else { 1 }) % n)
             .unwrap_or(if previous { n - 1 } else { 0 });
+        self.pick_account(index);
+    }
+
+    fn pick_account(&mut self, index: usize) {
+        self.user_edited = true;
         self.user = self.accounts[index].username.clone();
         self.session_edited = false;
         self.recall_session();
-        self.choose_user("Enter: continue · Tab: session · ↑/↓: user");
+        self.choose_user("");
     }
+
+    pub fn open_chooser(&mut self, kind: Choice) {
+        if self.phase != Phase::User || self.power_menu != crate::power::Menu::Closed {
+            return;
+        }
+        let (options, current) = match kind {
+            Choice::Account => (
+                self.accounts
+                    .iter()
+                    .map(|account| ChoiceOption {
+                        key: account.username.clone(),
+                        title: account.display_name.clone(),
+                        detail: (account.username != account.display_name)
+                            .then(|| account.username.clone()),
+                    })
+                    .collect::<Vec<_>>(),
+                self.accounts
+                    .iter()
+                    .position(|account| account.username == self.ui.secret.text()),
+            ),
+            Choice::Desktop => (
+                self.sessions
+                    .iter()
+                    .map(|session| ChoiceOption {
+                        key: session.id.clone(),
+                        title: session.label.clone(),
+                        detail: session.comment.clone(),
+                    })
+                    .collect(),
+                Some(self.session),
+            ),
+        };
+        if !options.is_empty() {
+            let current = current.filter(|index| *index < options.len());
+            self.chooser = Some(Chooser {
+                kind,
+                options,
+                selected: current.unwrap_or(0),
+                current,
+            });
+        }
+    }
+
+    pub fn choosing(&self) -> bool {
+        self.chooser.is_some()
+    }
+
+    pub fn close_chooser(&mut self) {
+        self.chooser = None;
+    }
+
+    pub fn move_choice(&mut self, previous: bool) {
+        if let Some(chooser) = &mut self.chooser {
+            let count = chooser.options.len();
+            chooser.selected = (chooser.selected + if previous { count - 1 } else { 1 }) % count;
+        }
+    }
+
+    pub fn confirm_choice(&mut self) {
+        if let Some(chooser) = &self.chooser {
+            self.chooser_action(FIRST_OPTION + chooser.selected);
+        }
+    }
+
+    pub fn chooser_action(&mut self, id: usize) {
+        let Some(chooser) = &mut self.chooser else {
+            return;
+        };
+        let start = chooser.selected / OPTIONS_PER_PAGE * OPTIONS_PER_PAGE;
+        match id {
+            CLOSE_CHOOSER => self.close_chooser(),
+            PREVIOUS_PAGE => chooser.selected = start.saturating_sub(OPTIONS_PER_PAGE),
+            NEXT_PAGE => {
+                chooser.selected = (start + OPTIONS_PER_PAGE).min(chooser.options.len() - 1)
+            }
+            id if id >= FIRST_OPTION && self.phase == Phase::User => {
+                let Some(option) = chooser.options.get(id - FIRST_OPTION) else {
+                    return;
+                };
+                let index = match chooser.kind {
+                    Choice::Account => self
+                        .accounts
+                        .iter()
+                        .position(|account| account.username == option.key),
+                    Choice::Desktop => self
+                        .sessions
+                        .iter()
+                        .position(|session| session.id == option.key),
+                };
+                let kind = chooser.kind;
+                self.close_chooser();
+                match (kind, index) {
+                    (Choice::Account, Some(index)) => self.pick_account(index),
+                    (Choice::Desktop, Some(index)) => {
+                        self.session = index;
+                        self.session_edited = true;
+                    }
+                    _ => self.ui.message = "This choice is no longer available.".into(),
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn apply_accounts(&mut self, config: &Config, detected: Vec<Account>) {
         self.accounts = accounts::merge(&config.users, detected);
         if self.phase == Phase::User
@@ -556,6 +780,8 @@ mod tests {
         c.submit();
         let old = c.generation;
         let mut changed = config.sessions.clone();
+        changed[0].comment = Some("Presentation-only update".into());
+        assert!(c.apply_sessions(changed.clone()).is_none());
         changed[0].argv = vec!["different-program".into()];
         assert!(matches!(
             c.apply_sessions(changed),
@@ -605,6 +831,7 @@ mod tests {
             label: "Test".into(),
             argv: vec!["true".into()],
             env: Vec::new(),
+            comment: None,
             desktop_file: None,
         });
         config
@@ -617,6 +844,24 @@ mod tests {
             icon_file: None,
         }
     }
+    #[test]
+    fn chooser_focus_does_not_change_the_current_account_before_confirmation() {
+        let config = configured();
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_accounts(&config, vec![alice(), Account::manual("bob")]);
+        c.open_chooser(Choice::Account);
+        c.move_choice(false);
+        c.refresh(&config);
+
+        assert_eq!(
+            c.ui.authentication_panel.as_ref().unwrap().checked_control,
+            Some(FIRST_OPTION)
+        );
+        assert_eq!(c.ui.secret.text(), "alice");
+        c.confirm_choice();
+        assert_eq!(c.ui.secret.text(), "bob");
+    }
+
     #[test]
     fn avatar_sources_follow_canonical_selection_and_never_read_password_input() {
         let config = configured();
@@ -705,6 +950,7 @@ mod tests {
             label: "Test".into(),
             argv: vec!["true".into()],
             env: Vec::new(),
+            comment: None,
             desktop_file: None,
         });
         let mut c = Controller::new(&config).unwrap();

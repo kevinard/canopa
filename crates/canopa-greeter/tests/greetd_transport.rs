@@ -86,6 +86,7 @@ fn failed_password_retries_then_hands_off_to_real_greetd() {
                                 String::new(),
                             ],
                             env: vec!["CANOPA_HANDOFF=literal value".into()],
+                            comment: None,
                             desktop_file: None,
                         },
                     })

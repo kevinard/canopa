@@ -130,7 +130,9 @@ fn run() -> Result<()> {
     }) = cli.command
     {
         background::dimensions(width, height)?;
-        let ui = LockUi::preview(&settings, auth::username()?)?;
+        let mut ui = LockUi::preview(&settings, auth::username()?)?;
+        canopa_session::lock_ui::configure(&mut ui);
+        canopa_session::lock_ui::update_actions(&mut ui, false);
         ui.render(&settings, &monitor, width, height)?
             .save_with_format(output, image::ImageFormat::Png)?;
         return Ok(());

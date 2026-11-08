@@ -50,7 +50,9 @@ def verify(binary,session):
     def stop(process,expected=0):
         process.send_signal(signal.SIGTERM);assert process.wait(timeout=8)==expected;session.processes.remove(process)
     # Preview and schema checks have no registration or custom command execution.
-    preview=session.output/'preview.png';session.run([str(binary),'--canopa-config',str(config),'preview',str(preview)]);assert Image.open(preview).size==(800,720);assert not any(e['event']=='registered' for e in events())
+    preview=session.output/'preview.png';session.run([str(binary),'--canopa-config',str(config),'preview',str(preview)])
+    with Image.open(preview) as image:image.verify()
+    assert not any(e['event']=='registered' for e in events())
     foreign=session.start([str(binary),'--canopa-config',str(config),'--session','other-user'],'foreign-session.log');assert foreign.wait(timeout=6)!=0;session.processes.remove(foreign)
     (root/'logind-control.json').write_text(json.dumps({'no-pid-session':True,'ambiguous':True}))
     ambiguous=session.start([str(binary),'--canopa-config',str(config)],'ambiguous-session.log');assert ambiguous.wait(timeout=6)!=0;session.processes.remove(ambiguous)
@@ -58,11 +60,13 @@ def verify(binary,session):
     app=start('agent');assert not windows()
     duplicate=session.start([str(binary),'--canopa-config',str(config),'--session','canopa-fixture'],'duplicate.log');assert duplicate.wait(timeout=8)!=0;session.processes.remove(duplicate);assert app.poll() is None
     nonce=0
-    def request(mode='password',uids=None,message=None):
+    def request(mode='password',uids=None,message=None,details=None,publisher=None):
         nonlocal nonce
         nonce+=1;(root/'polkit-touch').unlink(missing_ok=True)
         data=dict(nonce=nonce,mode=mode,uids=[os.getuid()] if uids is None else uids)
         if message is not None:data['message']=message
+        if details is not None:data['details']=details
+        if publisher is not None:data['publisher']=publisher
         before=len(events());native_before=len(native_events());(root/'polkit-control.json').write_text(json.dumps(data))
         wait(lambda:len(events())>before and any(e['event']=='begin' for e in events()[before:]),'authority request')
         wait(windows,'authentication dialog');window=windows()[-1];session.run(['niri','msg','action','focus-window','--id',str(window['id'])]);time.sleep(.4)
@@ -71,12 +75,18 @@ def verify(binary,session):
     def done(before,authorized=True):
         wait(lambda:any(e['event']=='done' and e['authorized']==authorized for e in events()[before:]),'authorization result')
         wait(lambda:not windows(),'dialog retired');assert app.poll() is None
-    before=request(uids=[1000])
-    a11y.request(session,'--window','Canopa Authorization','--name','Authenticate as: Alice Example · alice (UID 1000)   ‹ Tab ›')
+    before=request(uids=[1000],message='Change DNS servers',details={'polkit.subject-pid':'2481'},
+                   publisher='Fixture Network Settings')
+    a11y.request(session,'--window','Canopa Authorization','--name','Account: Alice Example')
+    a11y.request(session,'--window','Canopa Authorization','--name','Process 2481')
+    a11y.request(session,'--window','Canopa Authorization','--name','Fixture Network Settings')
     shot=session.capture('identity-avatar.png').convert('RGB')
     assert sum(r>180 and g<80 and b<100 for r,g,b in shot.getdata())>100, 'identity avatar absent'
     lookups=[e['uid'] for e in json.loads((root/'accounts-events.json').read_text()) if e.get('event')=='find-user']
     assert lookups == [1000], lookups
+    a11y.request(session,'--window','Canopa Authorization','--name','Policy details','--click')
+    a11y.request(session,'--window','Canopa Authorization','--name','Back to authentication','--click')
+    a11y.request(session,'--window','Canopa Authorization','--name','Password:')
     answer('canopa-fixture-password');done(before)
     before=request('otp');session.capture('password.png')
     a11y.request(session,'--window','Canopa Authorization','--name','Password:','--value','canopa-fixture-password')
@@ -86,7 +96,12 @@ def verify(binary,session):
     a11y.request(session,'--window','Canopa Authorization','--name','Submit response','--click')
     wait(lambda:sum(line.startswith('accepted') for line in native_events())>=1,'first factor');time.sleep(.4);session.capture('otp.png');answer('123456');done(before)
     before=request(uids=[0,os.getuid()]);session.run([str(keyboard),'type','discarded']);key('Tab');time.sleep(.4);answer('canopa-fixture-password');done(before);assert any(e['event']=='receipt' and e['uid']==0 for e in events()[before:])
-    before=request();answer('wrong');time.sleep(2.3);key('Return');time.sleep(.4);answer('canopa-fixture-password');done(before)
+    before=request();rejected=sum(line.startswith('rejected ') for line in native_events());answer('wrong')
+    wait(lambda:sum(line.startswith('rejected ') for line in native_events())>rejected,'first password rejected')
+    time.sleep(2.3);started=sum(line.startswith('initiate ') for line in native_events());key('Return')
+    wait(lambda:sum(line.startswith('initiate ') for line in native_events())>started,'retry session started')
+    a11y.request(session,'--window','Canopa Authorization','--name','Password:')
+    answer('canopa-fixture-password');done(before)
     before=request(message='A long authorization description. '*12);key('Next');session.capture('details.png');key('Next');key('Prior');key('Return');answer('canopa-fixture-password');done(before)
     before=request('device');session.capture('device.png');assert not any(line.startswith('accepted') for line in native_events()[-1:]);(root/'polkit-touch').touch();done(before)
     before=request('late');key('Escape');done(before,False)

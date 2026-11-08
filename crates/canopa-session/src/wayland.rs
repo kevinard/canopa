@@ -379,7 +379,8 @@ pub fn lock(
             eprintln!("lock wallpaper unavailable; using the theme background");
         }
     }
-    let ui = LockUi::new(&settings, username)?;
+    let mut ui = LockUi::new(&settings, username)?;
+    crate::lock_ui::configure(&mut ui);
     let ready = if let Some(fd) = ready_fd {
         ensure!(
             fd > 2,
@@ -425,7 +426,7 @@ fn run(app: &mut App, event_loop: &mut EventLoop<'static, App>) -> Result<()> {
     }
     Ok(())
 }
-const CHANGE_PASSWORD: usize = usize::MAX - 2;
+use crate::lock_ui::{CHANGE_PASSWORD, UNLOCK};
 const CANCEL_CHANGE: usize = usize::MAX - 3;
 impl App {
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
@@ -481,6 +482,9 @@ impl App {
     }
 
     fn redraw(&mut self) {
+        if let Some(ui) = &mut self.ui {
+            crate::lock_ui::update_actions(ui, self.confirmed && self.authentication.is_none());
+        }
         for surface in &mut self.surfaces {
             surface.dirty = true;
         }
@@ -1166,24 +1170,41 @@ impl App {
             if let Some(ui) = &mut self.ui {
                 ui.layout = self.input.label();
             }
-        } else if self
-            .ui
-            .as_ref()
-            .is_some_and(|ui| ui.hide_input && ui.prompt.is_some())
+        } else if self.confirmed
+            && self
+                .ui
+                .as_ref()
+                .is_some_and(|ui| ui.controls.iter().any(|control| control.id == id))
         {
-            let keysym = match id {
-                CHANGE_PASSWORD => Keysym::Return,
-                CANCEL_CHANGE => Keysym::Escape,
+            match id {
+                UNLOCK | CHANGE_PASSWORD => self.submit_authentication(),
+                CANCEL_CHANGE => {
+                    self.cancel_authentication("Authentication cancelled. Enter to retry.")
+                }
                 _ => return,
-            };
-            self.key(KeyEvent {
-                time: 0,
-                raw_code: 0,
-                keysym,
-                utf8: None,
-            });
+            }
         }
         self.redraw();
+    }
+    fn submit_authentication(&mut self) {
+        if self.authentication.is_none() {
+            self.begin_authentication();
+        } else if let Some(prompt) = self.ui.as_mut().unwrap().prompt.take() {
+            let ui = self.ui.as_mut().unwrap();
+            ui.hide_input = false;
+            ui.controls.clear();
+            ui.action_labels = None;
+            let answer = std::mem::take(&mut ui.secret);
+            if self
+                .authentication
+                .as_mut()
+                .unwrap()
+                .respond(prompt.id, answer)
+                .is_err()
+            {
+                self.cancel_authentication("Authentication failed. Enter to retry.");
+            }
+        }
     }
     fn key(&mut self, mut event: KeyEvent) {
         let (symbol, text) = self
@@ -1205,24 +1226,7 @@ impl App {
                 self.cancel_authentication("Authentication cancelled. Enter to retry.");
             }
         } else if matches!(event.keysym, Keysym::Return | Keysym::KP_Enter) {
-            if self.authentication.is_none() {
-                self.begin_authentication();
-            } else if let Some(prompt) = self.ui.as_mut().unwrap().prompt.take() {
-                let ui = self.ui.as_mut().unwrap();
-                ui.hide_input = false;
-                ui.controls.clear();
-                ui.action_labels = None;
-                let answer = std::mem::take(&mut ui.secret);
-                if self
-                    .authentication
-                    .as_mut()
-                    .unwrap()
-                    .respond(prompt.id, answer)
-                    .is_err()
-                {
-                    self.cancel_authentication("Authentication failed. Enter to retry.");
-                }
-            }
+            self.submit_authentication();
         } else if self
             .ui
             .as_ref()

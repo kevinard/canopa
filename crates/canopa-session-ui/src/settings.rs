@@ -24,6 +24,7 @@ pub struct Settings {
     pub hidden_widgets: BTreeMap<String, Vec<String>>,
     pub appearance: Appearance,
     pub color: Rgb,
+    pub solid_color: bool,
     pub font: String,
     pub clock_format: String,
     pub date_format: String,
@@ -57,6 +58,7 @@ impl Settings {
     ) -> Result<Self> {
         let mut value = Self {
             color: appearance.palette().background,
+            solid_color: false,
             appearance: appearance.clone(),
             background: Background::default(),
             outputs: BTreeMap::new(),
@@ -86,8 +88,44 @@ impl Settings {
             custom: BTreeMap::new(),
         };
         if component == Component::Greeter {
+            use crate::layout::{Anchor, Region};
+            value.layout.margin = 42.;
+            value.layout.gap = 18.;
+            value.layout.regions = vec![
+                Region {
+                    anchor: Anchor::Center,
+                    widgets: [
+                        "clock",
+                        "date",
+                        "username",
+                        "avatar",
+                        "authentication",
+                        "keyboard",
+                    ]
+                    .map(String::from)
+                    .into(),
+                    row: false,
+                    x: 0.,
+                    y: 0.,
+                },
+                Region {
+                    anchor: Anchor::BottomCenter,
+                    widgets: ["battery", "media", "weather"].map(String::from).into(),
+                    row: true,
+                    x: 0.,
+                    y: 0.,
+                },
+            ];
             value.widgets = vec!["keyboard".into(), "battery".into()];
             value.use_wallpaper = false;
+        }
+        if component == Component::Lockscreen {
+            value.layout.gap = 18.;
+            value.layout.regions[0].y = 16.;
+            value.layout.regions[0].widgets.push("keyboard".into());
+            value.layout.regions[1]
+                .widgets
+                .retain(|name| name != "keyboard");
         }
         let mut explicit_layout = false;
         let mut seen = HashSet::new();
@@ -191,6 +229,7 @@ impl Settings {
                 }
                 "image" | "fit" => parse_background(&mut value.background, node, source)?,
                 "color" => {
+                    value.solid_color = true;
                     value.color = Rgb::parse_hex(&string(node)?)
                         .ok_or_else(|| anyhow::anyhow!("expected #rrggbb color"))?
                 }

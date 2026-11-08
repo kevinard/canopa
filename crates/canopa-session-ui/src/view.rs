@@ -3,6 +3,13 @@ use anyhow::Result;
 use canopa_theme::{ColorRole, Rgb};
 use image::RgbImage;
 
+mod panel;
+mod raster;
+pub use panel::{AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_SIZE};
+pub use raster::Emblem;
+
+pub const REQUEST_PAGE_LINES: usize = 6;
+
 pub struct Prompt {
     pub id: u64,
     pub text: String,
@@ -21,6 +28,7 @@ pub struct SessionView {
     avatar_initials: Option<String>,
     pub controls: Vec<Control>,
     pub primary_control: Option<usize>,
+    pub authentication_panel: Option<AuthenticationPanel>,
     /// Pair controls when the consumer has a dedicated settings surface.
     pub pair_controls: bool,
     pub username: String,
@@ -54,6 +62,7 @@ impl SessionView {
             avatar_initials: None,
             controls: Vec::new(),
             primary_control: None,
+            authentication_panel: None,
             pair_controls: false,
             username,
             secret: Secret::default(),
@@ -123,6 +132,12 @@ impl SessionView {
         height: u32,
     ) -> Result<RgbImage> {
         let bg = settings.for_output(name);
+        if bg.image.is_none()
+            && !settings.solid_color
+            && settings.color == settings.appearance.palette().background
+        {
+            return raster::backdrop(&settings.appearance, width, height);
+        }
         let mut image =
             background::render(bg.image.as_deref(), bg.fit, settings.color, width, height)?;
         if bg.image.is_some() {
@@ -165,7 +180,7 @@ impl SessionView {
         self.render_filtered(settings, image, scale, settings.hidden_on(output))
     }
 
-    /// Ordinary dialogs choose their logical scale; fullscreen consumers derive it above.
+    /// Ordinary windows choose their logical scale; fullscreen consumers derive it above.
     pub fn render_at_scale(
         &self,
         settings: &Settings,
@@ -173,6 +188,22 @@ impl SessionView {
         scale: f32,
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
         self.render_filtered(settings, image, scale, &[])
+    }
+
+    pub fn render_dialog(
+        &self,
+        settings: &Settings,
+        width: u32,
+        height: u32,
+        scale: f32,
+    ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
+        background::dimensions(width, height)?;
+        let Rgb(r, g, b) = settings.appearance.palette().surface;
+        self.render_at_scale(
+            settings,
+            RgbImage::from_pixel(width, height, image::Rgb([r, g, b])),
+            scale,
+        )
     }
 
     fn render_filtered(
@@ -215,6 +246,24 @@ impl SessionView {
             .iter()
             .filter(|name| !hidden.contains(name))
         {
+            if self.authentication_panel.as_ref().is_some_and(|panel| {
+                panel.dialog
+                    && matches!(
+                        widget.as_str(),
+                        "heading"
+                            | "subject"
+                            | "request-title"
+                            | "message-0"
+                            | "message-1"
+                            | "action"
+                            | "account"
+                            | "subject-process"
+                            | "policy-publisher"
+                            | "avatar"
+                    )
+            }) {
+                continue;
+            }
             let value = match widget.as_str() {
                 "username" => Some(self.username.clone()),
                 "keyboard" => Some(self.layout.clone()).filter(|s| !s.is_empty()),
@@ -256,7 +305,12 @@ impl SessionView {
                 let text =
                     definition.map_or(value.clone(), |w| w.format.replace("{output}", &value));
                 let size = definition.map_or(15., |w| w.size as f32);
-                let color = definition.map_or(palette.muted, |w| match w.color.as_str() {
+                let default_color = if widget == "keyboard" && self.authentication_panel.is_some() {
+                    palette.text
+                } else {
+                    palette.muted
+                };
+                let color = definition.map_or(default_color, |w| match w.color.as_str() {
                     "text" => palette.text,
                     "accent" => palette.accent,
                     "warning" => palette.warning,
@@ -290,6 +344,50 @@ impl SessionView {
             + label_height
             + 20. * hints.len().max(1) as f32
             + 42. * control_rows as f32;
+        // Adjacent identity widgets share the authentication header in a column.
+        // Independently placed widgets and per-output visibility remain intact.
+        let auth_region = settings.layout.regions.iter().find(|region| {
+            !region.row && region.widgets.iter().any(|name| name == "authentication")
+        });
+        let inline_identity = auth_region
+            .and_then(|region| {
+                region
+                    .widgets
+                    .windows(2)
+                    .find(|pair| pair[1] == "authentication")
+            })
+            .map(|pair| pair[0].as_str());
+        let pin_origin = auth_region.is_some_and(|region| {
+            use crate::layout::Anchor;
+            matches!(
+                region.anchor,
+                Anchor::Center | Anchor::CenterLeft | Anchor::CenterRight
+            ) && region
+                .widgets
+                .iter()
+                .any(|name| name == "clock" || name == "date")
+        });
+        let panel = self.authentication_panel.as_ref().map(|panel| {
+            let username =
+                inline_identity == Some("username") && content.remove("username").is_some();
+            let avatar = inline_identity == Some("avatar") && content.remove("avatar").is_some();
+            let keyboard_inline = !panel.dialog
+                && auth_region.is_some_and(|region| {
+                    region
+                        .widgets
+                        .windows(2)
+                        .any(|pair| pair[0] == "authentication" && pair[1] == "keyboard")
+                })
+                && content.remove("keyboard").is_some();
+            panel.plan(
+                self,
+                layout_control.as_ref(),
+                keyboard_inline,
+                username,
+                avatar,
+                pin_origin,
+            )
+        });
         let items: Vec<_> = content
             .iter()
             .map(|(name, content)| {
@@ -303,7 +401,9 @@ impl SessionView {
                         (size + 7.) * lines.len() as f32,
                     ),
                     Content::Avatar => (64., 64.),
-                    Content::Authentication => (400., auth_height),
+                    Content::Authentication => panel
+                        .as_ref()
+                        .map_or((400., auth_height), |panel| panel.size()),
                 };
                 Item {
                     name: name.clone(),
@@ -384,6 +484,10 @@ impl SessionView {
                     }
                 }
                 Content::Authentication => {
+                    if let Some(panel) = &panel {
+                        hits.extend(panel.draw(self, settings, &mut image, bounds, scale));
+                        continue;
+                    }
                     if let Some(lines) = &label {
                         let size = 14. * scale;
                         for (index, line) in lines.iter().enumerate() {
@@ -668,6 +772,24 @@ fn wrap(text: &str, columns: usize, maximum: usize) -> Vec<String> {
     lines
 }
 
+/// Wrap request text before paging so each displayed line is part of one page.
+pub fn request_lines(text: &str) -> Vec<String> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    wrap(text, 52, usize::MAX)
+}
+
+/// Keep the summary short enough for the credentials and actions to remain full size.
+pub fn request_summary(text: &str) -> Vec<String> {
+    let mut lines = request_lines(text);
+    if lines.len() > 2 {
+        lines.truncate(2);
+        lines[1].push('…');
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,21 +815,21 @@ output "DP-1" { hide-widgets "username"; }
         let view = SessionView::preview(&settings, "Sample user".into()).unwrap();
         let visible = view.render(&settings, "eDP-1", 640, 400).unwrap();
         let hidden = view.render(&settings, "DP-1", 640, 400).unwrap();
-        let background = image::Rgb([settings.color.0, settings.color.1, settings.color.2]);
+        let background = SessionView::prepare_background(&settings, "DP-1", 640, 400).unwrap();
         assert!(
             visible
                 .enumerate_pixels()
-                .any(|(_, y, pixel)| y < 100 && *pixel != background)
+                .any(|(x, y, pixel)| y < 100 && pixel != background.get_pixel(x, y))
         );
         assert!(
             hidden
                 .enumerate_pixels()
-                .all(|(_, y, pixel)| y >= 100 || *pixel == background)
+                .all(|(x, y, pixel)| y >= 100 || pixel == background.get_pixel(x, y))
         );
         assert!(
             hidden
                 .enumerate_pixels()
-                .any(|(_, y, pixel)| y > 250 && *pixel != background)
+                .any(|(x, y, pixel)| y > 250 && pixel != background.get_pixel(x, y))
         );
         assert!(
             Settings::parse(

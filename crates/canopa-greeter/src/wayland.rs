@@ -325,6 +325,8 @@ impl App {
         }
         match request.operation {
             Operation::Control(id) => self.action(id),
+            Operation::Submit if self.controller.choosing() => self.controller.confirm_choice(),
+            Operation::Cancel if self.controller.choosing() => self.controller.close_chooser(),
             Operation::Submit => {
                 let cmd = self.controller.submit();
                 self.send(cmd);
@@ -334,7 +336,9 @@ impl App {
                 self.send(cmd);
             }
             Operation::Replace(secret) => {
-                if matches!(self.controller.phase, Phase::User | Phase::Prompt) {
+                if !self.controller.choosing()
+                    && matches!(self.controller.phase, Phase::User | Phase::Prompt)
+                {
                     self.controller.clear_input();
                     self.controller.input(secret.text());
                 }
@@ -344,7 +348,9 @@ impl App {
                 focus,
                 echo,
             } => {
-                if matches!(self.controller.phase, Phase::User | Phase::Prompt) {
+                if !self.controller.choosing()
+                    && matches!(self.controller.phase, Phase::User | Phase::Prompt)
+                {
                     select(&mut self.controller.ui.secret, anchor, focus, echo);
                 }
             }
@@ -361,6 +367,11 @@ impl App {
         }
     }
     fn action(&mut self, id: usize) {
+        if self.controller.choosing() && id != canopa_session_ui::input::LAYOUT_CONTROL {
+            self.controller.chooser_action(id);
+            self.dirty = true;
+            return;
+        }
         if (20..=24).contains(&id) && self.config.power_controls {
             if let Some(action) = self.controller.power_action(id)
                 && !self
@@ -382,11 +393,17 @@ impl App {
         let command = match id {
             1 => {
                 if self.controller.phase == Phase::User {
-                    self.controller.user_next(false);
+                    self.controller
+                        .open_chooser(crate::controller::Choice::Account);
                     None
                 } else {
                     self.controller.cancel()
                 }
+            }
+            2 if self.controller.phase == Phase::User => {
+                self.controller
+                    .open_chooser(crate::controller::Choice::Desktop);
+                None
             }
             2 => self.controller.session_next(&self.config),
             3 => self.controller.submit(),
@@ -410,6 +427,18 @@ impl App {
             .input
             .translate(event.raw_code, event.keysym, event.utf8.take());
         event.keysym = symbol;
+        if self.controller.choosing() {
+            match event.keysym {
+                Keysym::Escape => self.controller.close_chooser(),
+                Keysym::Return | Keysym::KP_Enter => self.controller.confirm_choice(),
+                Keysym::Up | Keysym::ISO_Left_Tab => self.controller.move_choice(true),
+                Keysym::Down | Keysym::Tab => self.controller.move_choice(false),
+                Keysym::F6 => self.action(canopa_session_ui::input::LAYOUT_CONTROL),
+                _ => {}
+            }
+            self.dirty = true;
+            return;
+        }
         if text.as_str() == "\u{15}" {
             self.controller.clear_input();
             self.dirty = true;

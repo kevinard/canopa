@@ -3,7 +3,10 @@ use anyhow::Result;
 use canopa_session_ui::{
     secret::Secret,
     settings::Settings,
-    view::{Control, Prompt, SessionView},
+    view::{
+        AuthenticationPanel, Control, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
+        request_lines, request_summary,
+    },
 };
 
 pub struct Controller {
@@ -44,22 +47,9 @@ fn excerpt(text: &str, limit: usize) -> String {
     }
     out
 }
-// Match the shared text widget's 64-column limit before assigning its four lines.
-// Paging by characters would lose context containing many explicit line breaks.
-fn lines(text: &str) -> Vec<String> {
-    text.lines()
-        .flat_map(|line| {
-            let chars: Vec<_> = line.chars().filter(|c| !c.is_control()).collect();
-            chars
-                .chunks(64)
-                .map(|chunk| chunk.iter().collect())
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
 impl Controller {
     pub fn new(settings: &Settings, request: Request) -> Result<Self> {
-        Self::new_named(settings, request, "Canopa Pinentry")
+        Self::new_named(settings, request, "Canopa Secure Input")
     }
 
     pub(crate) fn new_named(
@@ -68,6 +58,19 @@ impl Controller {
         heading: &'static str,
     ) -> Result<Self> {
         let mut ui = SessionView::new(settings, String::new())?;
+        ui.authentication_panel = Some(AuthenticationPanel {
+            height_reserve: 0.,
+            heading: "Passphrase required",
+            eyebrow: "SECURE INPUT",
+            emblem: Emblem::Key,
+            dialog: true,
+            choices: &[(7, Emblem::Key), (8, Emblem::Cycle)],
+            utilities: &[4, 5],
+            disclosure: Some(4),
+            list_actions: false,
+            checked_control: None,
+            choice_details: Default::default(),
+        });
         ui.secret = Secret::with_capacity(8193);
         ui.message = excerpt(&request.error, 96);
         ui.failed = !request.error.is_empty();
@@ -101,18 +104,40 @@ impl Controller {
         self.ui.busy = self.checking;
         self.ui.custom.clear();
         self.ui.custom.insert("heading".into(), self.heading.into());
+        let fingerprint = self.request.description.lines().any(|line| {
+            line.trim()
+                .trim_end_matches(':')
+                .eq_ignore_ascii_case("fingerprint")
+        });
+        let openpgp = fingerprint && self.request.title.to_ascii_lowercase().contains("openpgp");
+        let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
+        panel.disclosure = self.details.is_none().then_some(4);
+        panel.heading = match (
+            self.details.is_some(),
+            self.request.kind,
+            self.first.is_some(),
+        ) {
+            (true, _, _) => "Request details",
+            (false, Kind::Pin, true) => "Confirm passphrase",
+            (false, Kind::Pin, false) if openpgp => "Unlock OpenPGP key",
+            (false, Kind::Pin, false) => "Passphrase required",
+            (false, Kind::Confirm, _) => "Confirmation required",
+            (false, Kind::Message, _) => "Message",
+        };
+        if self.details.is_none() && !self.request.title.is_empty() {
+            self.ui
+                .custom
+                .insert("subject".into(), excerpt(&self.request.title, 96));
+        }
         self.ui.controls.clear();
         let description: Vec<_> = if let Some(page) = self.details {
-            lines(&self.details_text())
+            request_lines(&self.details_text())
                 .into_iter()
-                .skip(page * 8)
-                .take(8)
+                .skip(page * REQUEST_PAGE_LINES)
+                .take(REQUEST_PAGE_LINES)
                 .collect()
         } else {
-            lines(&self.request.description)
-                .into_iter()
-                .take(8)
-                .collect()
+            request_summary(&self.request.description)
         };
         for (index, chunk) in description.chunks(4).enumerate() {
             self.ui
@@ -172,7 +197,12 @@ impl Controller {
             }
             self.ui.controls.push(Control {
                 id: 4,
-                label: "Details (Page Down)".into(),
+                label: if fingerprint {
+                    "Key details"
+                } else {
+                    "Request details"
+                }
+                .into(),
             });
         }
         if self.details.is_none() && self.request.kind == Kind::Pin && self.first.is_none() {
@@ -230,7 +260,10 @@ impl Controller {
         .join("\n")
     }
     fn pages(&self) -> usize {
-        lines(&self.details_text()).len().div_ceil(8).max(1)
+        request_lines(&self.details_text())
+            .len()
+            .div_ceil(REQUEST_PAGE_LINES)
+            .max(1)
     }
     pub fn cycle(&mut self) {
         let index = self

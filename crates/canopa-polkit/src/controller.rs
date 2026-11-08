@@ -1,7 +1,10 @@
 use crate::native::{Event, Runtime};
 use canopa_session_ui::{
     settings::Settings,
-    view::{Control, Prompt, SessionView},
+    view::{
+        AuthenticationPanel, Control, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
+        request_lines, request_summary,
+    },
 };
 use std::time::{Duration, Instant};
 
@@ -24,14 +27,30 @@ pub struct Controller {
     retry_after: Instant,
     action: String,
     description: String,
+    subject_pid: Option<u32>,
+    policy_publisher: String,
     notice: String,
     prompt: Option<Prompt>,
     details: Option<usize>,
 }
 impl Controller {
     pub fn new(settings: &Settings) -> anyhow::Result<Self> {
+        let mut ui = SessionView::new(settings, String::new())?;
+        ui.authentication_panel = Some(AuthenticationPanel {
+            height_reserve: 0.,
+            heading: "Authorize system change",
+            eyebrow: "SYSTEM AUTHORIZATION",
+            emblem: Emblem::Shield,
+            dialog: true,
+            choices: &[(1, Emblem::Cycle)],
+            utilities: &[4],
+            disclosure: Some(4),
+            list_actions: false,
+            checked_control: None,
+            choice_details: Default::default(),
+        });
         Ok(Self {
-            ui: SessionView::new(settings, String::new())?,
+            ui,
             phase: Phase::Idle,
             generation: 0,
             serial: 0,
@@ -41,6 +60,8 @@ impl Controller {
             retry_after: Instant::now(),
             action: String::new(),
             description: String::new(),
+            subject_pid: None,
+            policy_publisher: String::new(),
             notice: String::new(),
             prompt: None,
             details: None,
@@ -74,6 +95,7 @@ impl Controller {
                 generation,
                 action,
                 message,
+                subject_pid,
                 uids,
                 selected,
             } if generation > self.generation => {
@@ -86,6 +108,8 @@ impl Controller {
                 self.ui.secret.clear();
                 self.prompt = None;
                 self.action = action;
+                self.subject_pid = subject_pid;
+                self.policy_publisher.clear();
                 self.description = message
                     .chars()
                     .map(|c| if c.is_control() { ' ' } else { c })
@@ -130,7 +154,7 @@ impl Controller {
                     echo,
                 });
                 self.phase = Phase::Prompt;
-                self.notice = "Enter: authenticate · Escape: cancel · Tab: account".into();
+                self.notice.clear();
                 self.ui.failed = false;
             }
             Event::Info {
@@ -156,6 +180,16 @@ impl Controller {
                 self.notice = "Authentication failed. Try again.".into();
                 self.ui.failed = true;
             }
+            Event::PolicyPublisher { generation, name }
+                if generation == self.generation && self.active() =>
+            {
+                self.policy_publisher = name
+                    .chars()
+                    .filter(|character| !character.is_control())
+                    .collect::<String>()
+                    .trim()
+                    .to_owned();
+            }
             Event::Closed { generation } if generation == self.generation => self.clear(),
             _ => {}
         }
@@ -168,6 +202,8 @@ impl Controller {
         self.ui.custom.clear();
         self.action.clear();
         self.description.clear();
+        self.subject_pid = None;
+        self.policy_publisher.clear();
         self.details = None;
         self.notice.clear();
         self.ui.username.clear();
@@ -177,6 +213,13 @@ impl Controller {
     }
     pub fn refresh(&mut self) {
         self.ui.interaction_epoch = (self.generation, self.serial);
+        let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
+        panel.disclosure = self.details.is_none().then_some(4);
+        panel.heading = if self.details.is_some() {
+            "Request details"
+        } else {
+            "Authorize system change"
+        };
         self.ui.custom.clear();
         self.ui.prompt = if self.details.is_none() {
             self.prompt.as_ref().map(|p| Prompt {
@@ -188,66 +231,106 @@ impl Controller {
             None
         };
         let (display, page_count) = if let Some(page) = self.details {
+            let account = self
+                .identity
+                .as_ref()
+                .filter(|i| Some(i.uid) == self.selected_uid())
+                .map(crate::identity::Identity::label)
+                .or_else(|| self.selected_uid().map(|uid| format!("UID {uid}")))
+                .unwrap_or_default();
+            let process = self
+                .subject_pid
+                .map_or_else(String::new, |pid| format!("Request subject: Process {pid}"));
+            let publisher = if self.policy_publisher.is_empty() {
+                String::new()
+            } else {
+                format!("Policy publisher: {}", self.policy_publisher)
+            };
             let full = format!(
-                "{}\n{}\n{}\n{}",
+                "{}\n{}\n{}\n{}\n{}\n{}\n{}",
                 self.action,
                 self.description,
+                account,
+                publisher,
+                process,
                 self.prompt.as_ref().map(|p| p.text.as_str()).unwrap_or(""),
                 self.notice
             );
-            let chars: Vec<_> = full.chars().collect();
-            let count = chars.len().div_ceil(512).max(1);
-            let start = (page % count) * 512;
+            let lines = request_lines(&full);
+            let count = lines.len().div_ceil(REQUEST_PAGE_LINES).max(1);
             (
-                chars[start..chars.len().min(start + 512)]
-                    .iter()
-                    .collect::<String>(),
+                lines
+                    .into_iter()
+                    .skip((page % count) * REQUEST_PAGE_LINES)
+                    .take(REQUEST_PAGE_LINES)
+                    .collect::<Vec<_>>(),
                 count,
             )
         } else {
             self.ui.custom.insert("action".into(), self.action.clone());
-            (self.description.clone(), 1)
+            if !self.description.is_empty()
+                && !self.description.contains('\n')
+                && self.description.chars().count() <= 40
+            {
+                self.ui
+                    .custom
+                    .insert("request-title".into(), self.description.clone());
+                (Vec::new(), 1)
+            } else {
+                (request_summary(&self.description), 1)
+            }
         };
-        let chars: Vec<_> = display.chars().collect();
-        for (index, part) in chars.chunks(256).take(2).enumerate() {
+        for (index, part) in display.chunks(4).enumerate() {
             self.ui
                 .custom
-                .insert(format!("message-{index}"), part.iter().collect());
+                .insert(format!("message-{index}"), part.join("\n"));
         }
         self.ui.message = if self.details.is_some() {
             "Details · Page Up/Down: page · Enter: back".into()
         } else {
             self.notice.clone()
         };
-        let label = self
-            .uids
-            .get(self.selected)
-            .map(|uid| {
-                if *uid == 0 {
-                    "root".into()
-                } else if *uid == unsafe { libc::getuid() } {
-                    format!("Your account (UID {uid})")
-                } else {
-                    format!("User ID {uid}")
-                }
-            })
-            .unwrap_or_default();
-        let label = self
+        let identity = self
             .identity
             .as_ref()
-            .filter(|i| Some(i.uid) == self.selected_uid())
-            .map(|i| i.label())
-            .unwrap_or(label);
+            .filter(|i| Some(i.uid) == self.selected_uid());
+        let label = if let Some(identity) = identity {
+            if identity.name.is_empty() {
+                identity.username.clone()
+            } else {
+                identity.name.clone()
+            }
+        } else if let Some(uid) = self.selected_uid() {
+            if uid == 0 {
+                "root".into()
+            } else if uid == unsafe { libc::getuid() } {
+                "Your account".into()
+            } else {
+                format!("User ID {uid}")
+            }
+        } else {
+            String::new()
+        };
         self.ui.username = label.clone();
+        let account = format!("Account: {label}");
+        if self.uids.len() == 1 && self.details.is_none() {
+            self.ui.custom.insert("account".into(), account.clone());
+            if let Some(pid) = self.subject_pid {
+                self.ui
+                    .custom
+                    .insert("subject-process".into(), format!("Process {pid}"));
+            }
+            if !self.policy_publisher.is_empty() {
+                self.ui
+                    .custom
+                    .insert("policy-publisher".into(), self.policy_publisher.clone());
+            }
+        }
         self.ui.busy = self.phase == Phase::Waiting || self.details.is_some();
         self.ui.primary_control = (matches!(self.phase, Phase::Prompt | Phase::Failed)
             && self.details.is_none())
         .then_some(2);
         self.ui.controls = vec![
-            Control {
-                id: 1,
-                label: format!("Authenticate as: {label}   ‹ Tab ›"),
-            },
             Control {
                 id: 2,
                 label: if self.phase == Phase::Failed {
@@ -265,9 +348,18 @@ impl Controller {
             },
             Control {
                 id: 4,
-                label: "Request details".into(),
+                label: "Policy details".into(),
             },
         ];
+        if self.uids.len() > 1 && self.details.is_none() {
+            self.ui.controls.insert(
+                0,
+                Control {
+                    id: 1,
+                    label: account,
+                },
+            );
+        }
         if let Some(page) = self.details {
             self.ui.controls = vec![
                 Control {
@@ -369,8 +461,9 @@ impl Controller {
         let mut c = Self::new(settings)?;
         c.event(Event::Begin {
             generation: 1,
-            action: "org.canopa.example.authorization".into(),
-            message: "Authentication is required to change a system setting.".into(),
+            action: "org.freedesktop.NetworkManager.settings.modify.system".into(),
+            message: "Change DNS servers".into(),
+            subject_pid: Some(2481),
             uids: vec![unsafe { libc::getuid() }],
             selected: 0,
         });
@@ -379,6 +472,16 @@ impl Controller {
             serial: 1,
             text: "Password:".into(),
             echo: false,
+        });
+        c.event(Event::PolicyPublisher {
+            generation: 1,
+            name: "NetworkManager".into(),
+        });
+        c.identity(crate::identity::Identity {
+            uid: unsafe { libc::getuid() },
+            username: "alex".into(),
+            name: "Alex Morgan".into(),
+            rgba: None,
         });
         Ok(c)
     }
@@ -389,7 +492,10 @@ mod tests {
     use super::*;
     fn controller() -> Controller {
         let (settings, _) = crate::config::load(&canopa_config::Request::Defaults).unwrap();
-        Controller::preview(&settings).unwrap()
+        let mut controller = Controller::preview(&settings).unwrap();
+        controller.identity = None;
+        controller.refresh();
+        controller
     }
     #[test]
     fn metadata_never_adds_an_identity_or_changes_its_uid() {
@@ -447,6 +553,7 @@ mod tests {
             generation: 2,
             action: "org.test.second".into(),
             message: "Second request".into(),
+            subject_pid: None,
             uids: vec![0, 1000],
             selected: 0,
         });

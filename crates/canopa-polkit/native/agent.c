@@ -12,13 +12,14 @@ typedef struct {
     const char *action, *message, *text;
     const uint32_t *uids;
     size_t count;
-    uint32_t selected, echo;
+    uint32_t selected, echo, subject_pid;
 } Message;
 typedef void (*Emit)(const Message *, void *);
 typedef struct _CanopaAgent {
     PolkitAgentListener parent;
     GMainContext *context;
     GMainLoop *loop;
+    GDBusConnection *bus;
     Emit emit;
     void *data;
     GTask *task;
@@ -82,6 +83,53 @@ static gboolean expired(gpointer data) { CanopaAgent *a=data; a->deadline=0; fin
 static gboolean valid_text(const char *s, size_t maximum) {
     return s && strlen(s)<=maximum && g_utf8_validate(s,-1,NULL);
 }
+typedef struct {
+    GWeakRef agent;
+    uint64_t generation;
+    char *action;
+} PolicyLookup;
+
+static void policy_lookup_done(GObject *bus, GAsyncResult *result, gpointer data) {
+    PolicyLookup *lookup=data;
+    GVariant *reply=g_dbus_connection_call_finish(G_DBUS_CONNECTION(bus),result,NULL);
+    CanopaAgent *a=g_weak_ref_get(&lookup->agent);
+    if (reply && a && !a->stopping && a->task && a->generation==lookup->generation) {
+        GVariant *actions=g_variant_get_child_value(reply,0);
+        GVariantIter iter;
+        g_variant_iter_init(&iter,actions);
+        GVariant *entry;
+        while ((entry=g_variant_iter_next_value(&iter))) {
+            const char *id, *publisher;
+            g_variant_get_child(entry,0,"&s",&id);
+            gboolean match=g_str_equal(id,lookup->action);
+            if (match) {
+                g_variant_get_child(entry,3,"&s",&publisher);
+                if (valid_text(publisher,96) && *publisher) emit(a,11,publisher,FALSE);
+            }
+            g_variant_unref(entry);
+            if (match) break;
+        }
+        g_variant_unref(actions);
+    }
+    g_clear_pointer(&reply,g_variant_unref);
+    g_clear_object(&a);
+    g_weak_ref_clear(&lookup->agent);
+    g_free(lookup->action);
+    g_free(lookup);
+}
+
+/* Optional presentation context. A slow or missing catalog cannot delay PAM. */
+static void lookup_policy_publisher(CanopaAgent *a, const char *action) {
+    if (!a->owner) return;
+    PolicyLookup *lookup=g_new0(PolicyLookup,1);
+    g_weak_ref_init(&lookup->agent,a);
+    lookup->generation=a->generation;
+    lookup->action=g_strdup(action);
+    g_dbus_connection_call(a->bus,a->owner,"/org/freedesktop/PolicyKit1/Authority",
+        "org.freedesktop.PolicyKit1.Authority","EnumerateActions",g_variant_new("(s)",""),
+        G_VARIANT_TYPE("(a(ssssssuuua{ss}))"),G_DBUS_CALL_FLAGS_NO_AUTO_START,500,
+        a->cancel,policy_lookup_done,lookup);
+}
 static void request(PolkitAgentSession *s, const char *text, gboolean echo, gpointer data) {
     CanopaAgent *a=data;
     if (s!=a->session || !a->task) return;
@@ -120,7 +168,7 @@ static void start_session(CanopaAgent *a, uint32_t selected) {
     polkit_agent_session_initiate(a->session);
 }
 static void begin(PolkitAgentListener *listener, const gchar *action, const gchar *message,
-                  const gchar *icon G_GNUC_UNUSED, PolkitDetails *details G_GNUC_UNUSED,
+                  const gchar *icon G_GNUC_UNUSED, PolkitDetails *details,
                   const gchar *cookie, GList *identities, GCancellable *cancel,
                   GAsyncReadyCallback callback, gpointer user_data) {
     CanopaAgent *a=(CanopaAgent *)listener;
@@ -151,11 +199,20 @@ static void begin(PolkitAgentListener *listener, const gchar *action, const gcha
     a->cancel_id=g_signal_connect(a->cancel,"cancelled",G_CALLBACK(cancelled),a);
     GSource *timer=g_timeout_source_new_seconds(a->timeout);
     g_source_set_callback(timer,expired,a,NULL); a->deadline=g_source_attach(timer,a->context); g_source_unref(timer);
+    uint32_t subject_pid=0;
+    const char *pid=details ? polkit_details_lookup(details,"polkit.subject-pid") : NULL;
+    if (pid && *pid && strnlen(pid,11)<=10 && strspn(pid,"0123456789")==strlen(pid)) {
+        guint64 value=g_ascii_strtoull(pid,NULL,10);
+        if (value<=INT32_MAX) subject_pid=(uint32_t)value;
+    }
     Message m={ .kind=1,.generation=a->generation,.action=action,.message=message,
-                .uids=a->uids,.count=a->count,.selected=a->selected };
+                .uids=a->uids,.count=a->count,.selected=a->selected,.subject_pid=subject_pid };
     a->emit(&m,a->data);
     if (g_cancellable_is_cancelled(a->cancel)) finish(a,FALSE);
-    else start_session(a,a->selected);
+    else {
+        start_session(a,a->selected);
+        if (a->task) lookup_policy_publisher(a,action);
+    }
 }
 static gboolean begin_finish(PolkitAgentListener *listener G_GNUC_UNUSED, GAsyncResult *result, GError **error_out) {
     return g_task_propagate_boolean(G_TASK(result),error_out);
@@ -256,6 +313,7 @@ int canopa_polkit_run(const char *session_id, uint32_t timeout, Emit callback, v
     gpointer registration=NULL; guint filter_id=0,term=0,interrupt=0;
     gulong owner_id=0,closed_id=0;
     if (!authority || !bus) { a->result=1; goto out; }
+    a->bus=bus;
     g_dbus_connection_set_exit_on_close(bus,FALSE);
     a->owner=polkit_authority_get_owner(authority);
     filter_id=g_dbus_connection_add_filter(bus,filter,g_object_ref(a),g_object_unref);

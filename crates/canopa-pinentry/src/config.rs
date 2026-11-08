@@ -3,6 +3,7 @@ use canopa_config::{Component, Document, Request};
 use canopa_session_ui::{
     layout::{Anchor, Layout, Region},
     settings::Settings,
+    view::DIALOG_MARGIN,
 };
 
 pub fn load(request: &Request) -> Result<(Settings, Document)> {
@@ -22,12 +23,18 @@ pub fn load(request: &Request) -> Result<(Settings, Document)> {
         Component::Pinentry,
     )?;
     settings.use_wallpaper = false;
-    settings.widgets = vec!["heading".into(), "message-0".into(), "message-1".into()];
+    settings.widgets = vec![
+        "heading".into(),
+        "subject".into(),
+        "message-0".into(),
+        "message-1".into(),
+    ];
     settings.layout = Layout {
         regions: vec![Region {
             anchor: Anchor::Center,
             widgets: vec![
                 "heading".into(),
+                "subject".into(),
                 "message-0".into(),
                 "message-1".into(),
                 "authentication".into(),
@@ -36,7 +43,7 @@ pub fn load(request: &Request) -> Result<(Settings, Document)> {
             x: 0.,
             y: 0.,
         }],
-        margin: 24.,
+        margin: DIALOG_MARGIN,
         gap: 12.,
     };
     Ok((settings, document))

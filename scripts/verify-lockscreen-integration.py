@@ -145,13 +145,19 @@ lockscreen {{
     retry();before=mark();answer('canopa-fixture-password');wait_event('One-time code:',before)
     answer('123456');unlocked();session.wait_for(lambda:not alive(pid),'locker exit')
     session.wait_for(lambda:(root/'widget-runs').exists(),'custom widget execution')
-    if (root/'slow-pid').exists():assert not alive(int((root/'slow-pid').read_text())), 'custom command survived normal locker exit'
+    if (root/'slow-pid').exists():
+        slow_pid=int((root/'slow-pid').read_text())
+        session.wait_for(lambda:not alive(slow_pid),'custom command reaped after normal locker exit')
     run_count=len((root/'widget-runs').read_text().splitlines());time.sleep(1.5)
     assert not state()['locked'],'duplicate Lock queued a new lock after authenticated unlock'
     assert len((root/'widget-runs').read_text().splitlines())==run_count,'custom widget kept polling after exit'
 
     # Expiration is a distinct consent step; cancelling never changes the token.
-    before,pid=request('expired');answer('canopa-fixture-password');wait_event('password expired',before)
+    before,pid=request('expired')
+    wait_event('Password:',before)
+    a11y.request(session,'--window','Canopa Lock','--name','Password:','--value','canopa-fixture-password')
+    a11y.request(session,'--window','Canopa Lock','--name','Unlock','--click')
+    wait_event('password expired',before)
     time.sleep(.5)
     assert not any(line.endswith('password change called') for line in events()[before:])
     a11y.request(session,'--window','Canopa Lock','--name','Cancel password change','--click')
@@ -188,7 +194,9 @@ lockscreen {{
     cue=wait_event('Touch your security key',before);worker_pid=int(cue.split()[0])
     session.wait_for(lambda:not alive(worker_pid),'timed-out worker reap')
     (root/'touch').touch();time.sleep(.5);assert state()['locked'] and alive(pid)
-    (root/'touch').unlink();before=retry();answer('canopa-fixture-password');wait_event('Touch your security key',before)
+    (root/'touch').unlink();before=mark()
+    a11y.request(session,'--window','Canopa Lock','--name','Try again','--click')
+    wait_event('Password:',before);answer('canopa-fixture-password');wait_event('Touch your security key',before)
     (root/'touch').touch();unlocked()
 
     # A failed worker never authorizes unlock; another loginctl request can recover.

@@ -288,10 +288,23 @@ impl Accessibility {
             children.push(NodeId(id));
             nodes.push((NodeId(id), node));
         }
-        for (i, (_, label)) in meaning.controls.iter().enumerate() {
+        for (i, (control, label)) in meaning.controls.iter().enumerate() {
             let id = NodeId(10 + i as u64);
             let mut node = Node::new(Role::Button);
             node.set_label(label.clone());
+            if let Some(panel) = &view.authentication_panel {
+                match (
+                    panel.checked_control == Some(*control),
+                    panel.choice_details.get(control),
+                ) {
+                    (true, Some(detail)) => {
+                        node.set_description(format!("Current selection. {detail}"))
+                    }
+                    (true, None) => node.set_description("Current selection"),
+                    (false, Some(detail)) => node.set_description(detail.clone()),
+                    (false, None) => {}
+                }
+            }
             node.add_action(Action::Click);
             children.push(id);
             nodes.push((id, node));

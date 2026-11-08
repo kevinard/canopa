@@ -75,7 +75,9 @@ greeter {{
         (root/'device-touch').unlink(missing_ok=True);(root/'greetd-control.json').write_text(json.dumps(dict(mode=value,**options)))
     def key(value):session.run([str(keyboard),'key',value])
     def answer(value):session.run([str(keyboard),'text',value])
-    def prompt(text,after):wait(lambda:event('prompt',after,text=text),text);time.sleep(.4)
+    def prompt(text,after):
+        wait(lambda:event('prompt',after,text=text),text)
+        a11y.request(session,'--window','Canopa Login','--name',text)
     def start(name,backend='otp',accounts_mode='ok',accounts_delay=0,nss_mode=None,**options):
         (root/'accounts-control.json').write_text(json.dumps({'mode':accounts_mode,'delay_ms':accounts_delay}))
         mode(backend,**options);before=len(events())
@@ -115,19 +117,28 @@ greeter {{
 
     app,before=start('otp')
     def controls():
-        image=session.capture('startup.png');w,h=image.size
-        background=image.getpixel((0,0));column=w//2-150
-        ranges=[];begin=None
-        for y in range(h):
-            if image.getpixel((column,y))!=background:
-                if begin is None:begin=y
-            elif begin is not None:
-                if y-begin>=20:ranges.append((begin,y))
-                begin=None
-        return (ranges,h) if len(ranges)>=4 else None
-    ranges,h=wait(controls,'authentication controls presented')
-    for top,bottom in ranges[-3:]:
-        session.run([str(click),str(800),str(round((top+bottom)/2/h*1000))]);time.sleep(.2)
+        image=session.capture('startup.png')
+        w,h=image.size
+        # Find the button fill across a strip inside the left selector.
+        # Sampling a strip lets labels and the pointer interrupt individual pixels.
+        scale=min(w/1280,h/800)
+        columns=range(round(w/2-156*scale),round(w/2-34*scale),4)
+        def center(color, columns, area):
+            rows=[y for y in area if sum(image.getpixel((x,y))==color for x in columns)>len(columns)//2]
+            if len(rows)>=20:return rows[len(rows)//2]
+        desktop_columns=range(round(w/2+34*scale),round(w/2+156*scale),4)
+        primary=center((176,222,195),columns,range(h))
+        if primary is None:return None
+        desktop=center((40,55,59),desktop_columns,range(primary))
+        if desktop is not None:
+            return tuple(round(y/h*1000) for y in (desktop,primary))
+    choices,primary=wait(controls,'authentication controls presented')
+    for name,x in [('account',680),('desktop',920)]:
+        session.run([str(click),str(x),str(choices)])
+        time.sleep(.2)
+        session.capture(name+'-chooser.png')
+        key('Down');key('Return');time.sleep(.2)
+    session.run([str(click),'800',str(primary)])
     prompt('Password:',before)
     assert event('begin',before,user='bob')
     answer('wrong');time.sleep(2.3);no_handoff(before);assert app.poll() is None;assert event('failed-worker-cleanup',before)

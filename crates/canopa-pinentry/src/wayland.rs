@@ -11,7 +11,7 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
-use canopa_session_ui::{background, layout::Rect, settings::Settings};
+use canopa_session_ui::{layout::Rect, settings::Settings, view::DIALOG_SIZE};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     output::{OutputHandler, OutputState},
@@ -115,7 +115,8 @@ fn run_inner(
     } else {
         ("org.canopa.Pinentry", "Canopa Pinentry")
     };
-    let controller = Controller::new_named(settings, request.clone(), name)?;
+    let heading = if keyring { name } else { "Canopa Secure Input" };
+    let controller = Controller::new_named(settings, request.clone(), heading)?;
     let window = shell.create_window(
         compositor.create_surface(&qh),
         WindowDecorations::RequestServer,
@@ -133,8 +134,8 @@ fn run_inner(
         if title.is_empty() { "" } else { " · " },
         title
     ));
-    window.set_min_size(Some((800, 720)));
-    window.set_max_size(Some((800, 720)));
+    window.set_min_size(Some(DIALOG_SIZE));
+    window.set_max_size(Some(DIALOG_SIZE));
     window.commit();
     let mut app = App {
         accessibility: None,
@@ -152,8 +153,8 @@ fn run_inner(
         pointers: Vec::new(),
         controller: Some(controller),
         settings: settings.clone(),
-        width: 800,
-        height: 720,
+        width: DIALOG_SIZE.0,
+        height: DIALOG_SIZE.1,
         scale: 1,
         dirty: true,
         exit: false,
@@ -412,13 +413,8 @@ impl App {
         }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
-        background::dimensions(width, height)?;
-        let color = self.settings.color;
-        let (image, hits) = c.ui.render_at_scale(
-            &self.settings,
-            image::RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2])),
-            self.scale as f32,
-        )?;
+        let (image, hits) =
+            c.ui.render_dialog(&self.settings, width, height, self.scale as f32)?;
         self.hits = hits;
         let (buffer, canvas) = self.pool.create_buffer(
             width as i32,
@@ -466,8 +462,8 @@ impl WindowHandler for App {
         {
             return;
         }
-        self.width = c.new_size.0.map(|v| v.get()).unwrap_or(800);
-        self.height = c.new_size.1.map(|v| v.get()).unwrap_or(720);
+        self.width = c.new_size.0.map(|v| v.get()).unwrap_or(DIALOG_SIZE.0);
+        self.height = c.new_size.1.map(|v| v.get()).unwrap_or(DIALOG_SIZE.1);
         self.configured = true;
         self.dirty = true;
     }

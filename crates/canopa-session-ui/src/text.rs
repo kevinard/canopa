@@ -1,10 +1,16 @@
 //! CPU-only advanced shaping, bidi layout, font fallback and glyph rasterization.
 use canopa_theme::Rgb;
 use cosmic_text::{
-    Attrs, Buffer, Color, Cursor, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap,
+    Attrs, Buffer, Color, Cursor, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, Wrap,
 };
 use image::RgbImage;
 use std::ops::Range;
+
+pub(crate) enum Style {
+    Centered(Weight),
+    Leading(Weight),
+    Code,
+}
 
 pub struct Text {
     fonts: FontSystem,
@@ -25,12 +31,21 @@ impl Text {
         })
     }
     fn buffer(&mut self, text: &str, size: f32) -> Buffer {
+        self.styled_buffer(text, size, Weight::NORMAL, false)
+    }
+    fn styled_buffer(&mut self, text: &str, size: f32, weight: Weight, monospace: bool) -> Buffer {
         let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size, size * 1.3));
         buffer.set_wrap(&mut self.fonts, Wrap::None);
         buffer.set_text(
             &mut self.fonts,
             text,
-            &Attrs::new().family(Family::Name(&self.family)),
+            &Attrs::new()
+                .family(if monospace {
+                    Family::Monospace
+                } else {
+                    Family::Name(&self.family)
+                })
+                .weight(weight),
             Shaping::Advanced,
             None,
         );
@@ -54,15 +69,48 @@ impl Text {
         color: Rgb,
         selection: Option<(Range<usize>, usize, Rgb)>,
     ) {
-        let mut buffer = self.buffer(text, size);
+        self.draw_styled(
+            image,
+            text,
+            position,
+            size,
+            max_width,
+            color,
+            selection,
+            Style::Centered(Weight::NORMAL),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_styled(
+        &mut self,
+        image: &mut RgbImage,
+        text: &str,
+        position: (f32, f32),
+        size: f32,
+        max_width: f32,
+        color: Rgb,
+        selection: Option<(Range<usize>, usize, Rgb)>,
+        style: Style,
+    ) {
+        let (weight, leading, monospace) = match style {
+            Style::Centered(weight) => (weight, false, false),
+            Style::Leading(weight) => (weight, true, false),
+            Style::Code => (Weight::MEDIUM, true, true),
+        };
+        let mut buffer = self.styled_buffer(text, size, weight, monospace);
         let width = buffer.layout_runs().map(|r| r.line_w).fold(0., f32::max);
         let fit = (max_width.max(1.) / width.max(1.)).min(1.);
         if fit < 1. {
-            buffer = self.buffer(text, size * fit);
+            buffer = self.styled_buffer(text, size * fit, weight, monospace);
         }
         let width = width * fit;
         let baseline = buffer.layout_runs().next().map_or(0., |r| r.line_y);
-        let left = position.0 - width / 2.;
+        let left = if leading {
+            position.0
+        } else {
+            position.0 - width / 2.
+        };
         let top = position.1 - baseline;
         if let Some((range, cursor, accent)) = selection {
             for run in buffer.layout_runs() {

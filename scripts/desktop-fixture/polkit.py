@@ -28,7 +28,7 @@ def start_request(config):
             error=Gio.DBusError.get_remote_error(e) or 'error';success=False
         record('done',id=key,authorized=success,error=error);pending[cookie]['done']=True
     bus.call(agent[0],agent[1],'org.freedesktop.PolicyKit1.AuthenticationAgent','BeginAuthentication',
-             variant('(sssa{ss}sa(sa{sv}))',config.get('action','org.canopa.test.authorize'),config.get('message','Authentication is required to change a test setting.'),'',{},cookie,identities(config.get('uids',[os.getuid()]))),
+             variant('(sssa{ss}sa(sa{sv}))',config.get('action','org.canopa.test.authorize'),config.get('message','Authentication is required to change a test setting.'),'',config.get('details',{}),cookie,identities(config.get('uids',[os.getuid()]))),
              GLib.VariantType.new('()'),Gio.DBusCallFlags.NONE,20000,None,completed)
 def foreign():
     if not agent:return
@@ -49,6 +49,12 @@ def foreign():
 def method(connection,sender,object_path,interface,name,parameters,invocation):
     global agent
     args=parameters.unpack()
+    if name=='EnumerateActions':
+        config=settings()
+        publisher=config.get('publisher')
+        actions=[(config.get('action','org.canopa.test.authorize'),'Test authorization',
+                  'Authenticate to change a fixture setting',publisher,'','',0,0,0,{})] if publisher else []
+        invocation.return_value(variant('(a(ssssssuuua{ss}))',actions));return
     if name in ('RegisterAuthenticationAgent','RegisterAuthenticationAgentWithOptions'):
         if agent:
             invocation.return_dbus_error('org.freedesktop.PolicyKit1.Error.Failed','Agent already registered');return
@@ -73,6 +79,7 @@ def property_(connection,sender,object_path,interface,name):
     values={'DaemonVersion':GLib.Variant('s','128'),'BackendName':GLib.Variant('s','local'),'BackendVersion':GLib.Variant('s','128'),'BackendFeatures':GLib.Variant('u',1)}
     return values.get(name)
 xml='''<node><interface name="org.freedesktop.PolicyKit1.Authority">
+<method name="EnumerateActions"><arg type="s" direction="in"/><arg type="a(ssssssuuua{ss})" direction="out"/></method>
 <method name="RegisterAuthenticationAgent"><arg type="(sa{sv})" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/></method>
 <method name="RegisterAuthenticationAgentWithOptions"><arg type="(sa{sv})" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="a{sv}" direction="in"/></method>
 <method name="UnregisterAuthenticationAgent"><arg type="(sa{sv})" direction="in"/><arg type="s" direction="in"/></method>

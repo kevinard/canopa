@@ -137,7 +137,9 @@ searched. Normal system discovery requires root-owned source files and ancestor
 directories without group/world write access; explicit `--canopa-config` development
 mode permits fixture/admin-provided sources, matching its configuration policy.
 
-Names follow the greeter's `LC_ALL`/`LC_MESSAGES`/`LANG` locale. Entries marked
+Names and optional `Comment` descriptions follow the greeter's
+`LC_ALL`/`LC_MESSAGES`/`LANG` locale. The desktop chooser displays valid
+descriptions below each session name. Entries marked
 `Hidden`, `NoDisplay`, `Terminal` or `DBusActivatable` are skipped. `TryExec` and
 the executable must be available; pathless executables are resolved using absolute
 components of the greeter's PATH. Earlier directory entries mask later files with

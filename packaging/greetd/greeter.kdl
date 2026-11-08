@@ -27,9 +27,10 @@ greeter {
         // image "/usr/local/share/canopa/login-background.jpg"
         dim 65
         layout {
-            top-left "clock" "date"
-            center "avatar" "authentication"
-            bottom-center "keyboard" "battery" flow="row"
+            margin 42
+            gap 18
+            center "clock" "date" "avatar" "authentication" "keyboard"
+            bottom-center "battery" flow="row"
         }
     }
 }

@@ -39,7 +39,7 @@ impl Default for Request {
             title: String::new(),
             description: String::new(),
             prompt: "Passphrase:".into(),
-            ok: "OK".into(),
+            ok: "Continue".into(),
             cancel: "Cancel".into(),
             notok: String::new(),
             error: String::new(),

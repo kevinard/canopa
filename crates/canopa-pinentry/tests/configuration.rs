@@ -21,7 +21,7 @@ fn configuration_preview_and_validation_do_not_connect_or_execute_commands() {
     }
     assert_eq!(
         image::open(output).unwrap().to_rgb8().dimensions(),
-        (800, 720)
+        canopa_session_ui::view::DIALOG_SIZE
     );
     for setting in [
         "auth-timeout 1;",

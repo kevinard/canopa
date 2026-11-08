@@ -15,6 +15,7 @@ pub enum Event {
         generation: u64,
         action: String,
         message: String,
+        subject_pid: Option<u32>,
         uids: Vec<u32>,
         selected: usize,
     },
@@ -28,6 +29,10 @@ pub enum Event {
         generation: u64,
         text: String,
         error: bool,
+    },
+    PolicyPublisher {
+        generation: u64,
+        name: String,
     },
     Failed {
         generation: u64,
@@ -56,6 +61,7 @@ struct Message {
     count: usize,
     selected: u32,
     echo: u32,
+    subject_pid: u32,
 }
 unsafe extern "C" {
     fn canopa_polkit_run(
@@ -93,6 +99,7 @@ unsafe extern "C" fn receive(message: *const Message, data: *mut c_void) {
                 generation: m.generation,
                 action: text(m.action),
                 message: text(m.message),
+                subject_pid: (m.subject_pid != 0).then_some(m.subject_pid),
                 uids: unsafe { std::slice::from_raw_parts(m.uids, m.count) }.to_vec(),
                 selected: m.selected as usize,
             }
@@ -120,6 +127,10 @@ unsafe extern "C" fn receive(message: *const Message, data: *mut c_void) {
             selected: m.selected as usize,
         },
         10 => Event::Stopping,
+        11 => Event::PolicyPublisher {
+            generation: m.generation,
+            name: text(m.text),
+        },
         _ => Event::Fatal,
     };
     let _ = sender.send(event);

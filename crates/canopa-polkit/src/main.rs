@@ -82,14 +82,10 @@ fn run(cli: Cli) -> Result<()> {
     let (settings, _) = loaded?;
     if let Some(Operation::Preview { output }) = cli.command {
         let controller = canopa_polkit::controller::Controller::preview(&settings)?;
-        let color = settings.color;
+        let (width, height) = canopa_session_ui::view::AUTHORIZATION_DIALOG_SIZE;
         controller
             .ui
-            .render_at_scale(
-                &settings,
-                image::RgbImage::from_pixel(800, 720, image::Rgb([color.0, color.1, color.2])),
-                1.,
-            )?
+            .render_dialog(&settings, width, height, 1.)?
             .0
             .save_with_format(output, image::ImageFormat::Png)?;
         return Ok(());

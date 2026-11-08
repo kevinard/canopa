@@ -79,15 +79,15 @@ greeter {{
     assert state.stat().st_mode&0o777==0o600
     app,before=start('remembered')
     assert json.loads(node('Username:'))['text']=='bob'
-    node('Session: Other   ‹ Tab ›')
-    key('Up');node('Session: Canopa   ‹ Tab ›')
+    node('Desktop: Other')
+    key('Up');node('Desktop: Canopa')
     key('Return');prompt(before);authenticate();completed(app)
     saved=json.loads(state.read_text());assert saved['sessions']=={'alice':'canopa','bob':'other'}
     app,before=start('live')
     # AccountsService changes refresh labels without replacing typed canonical input.
     (root/'accounts-control.json').write_text(json.dumps({'revision':1,'real_names':{'alice':'Alice Updated'},'extra_user':True}))
-    node('User: Alice Updated (alice)')
-    node('Username:','--value','carol');time.sleep(.2);node('User: Carol Example (carol)')
+    node('Choose account · Alice Updated (alice)')
+    node('Username:','--value','carol');time.sleep(.2);node('Choose account · Carol Example (carol)')
     node('Username:','--value','bob');time.sleep(.2)
     def avatar(color,name):
         def visible():
@@ -100,7 +100,7 @@ greeter {{
     avatar((30,190,80),'avatar-after.png')
     # A newly installed desktop appears without restarting the frontend.
     third=sessions/'third.desktop';third.write_text('[Desktop Entry]\nType=Application\nName=Third\nExec=/usr/bin/true\n')
-    time.sleep(.3);key('Tab');key('Tab');node('Session: Third   ‹ Tab ›')
+    time.sleep(.3);key('Tab');key('Tab');node('Desktop: Third')
     at=len(events());key('Return');prompt(at)
     third.unlink()
     session.wait_for(lambda:any(e['event']=='cancel' for e in events()[at:]),'catalog removal cancels active authentication')

@@ -92,6 +92,7 @@ fn greetd_shell_launch_preserves_spaces_quotes_empty_args_and_metacharacters() {
             String::new(),
         ],
         env: Vec::new(),
+        comment: None,
         desktop_file: None,
     };
     // Match greetd's actual shell launch rather than treating its array as execve argv.

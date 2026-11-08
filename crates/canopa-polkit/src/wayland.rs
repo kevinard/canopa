@@ -10,7 +10,7 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
-use canopa_session_ui::{background, layout::Rect, settings::Settings};
+use canopa_session_ui::{layout::Rect, settings::Settings, view::AUTHORIZATION_DIALOG_SIZE};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     output::{OutputHandler, OutputState},
@@ -126,8 +126,8 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
         pointers: Vec::new(),
         controller: None,
         settings,
-        width: 800,
-        height: 720,
+        width: AUTHORIZATION_DIALOG_SIZE.0,
+        height: AUTHORIZATION_DIALOG_SIZE.1,
         scale: 1,
         dirty: false,
         exit: false,
@@ -315,14 +315,14 @@ impl App {
                         );
                         window.set_app_id("org.canopa.Polkit");
                         window.set_title("Authentication required");
-                        window.set_min_size(Some((800, 720)));
-                        window.set_max_size(Some((800, 720)));
+                        window.set_min_size(Some(AUTHORIZATION_DIALOG_SIZE));
+                        window.set_max_size(Some(AUTHORIZATION_DIALOG_SIZE));
                         window.commit();
                         self.window = Some(window);
                         self.configured = false;
                         self.focused = false;
-                        self.width = 800;
-                        self.height = 720;
+                        self.width = AUTHORIZATION_DIALOG_SIZE.0;
+                        self.height = AUTHORIZATION_DIALOG_SIZE.1;
                         self.scale = 1;
                     }
                 }
@@ -485,13 +485,8 @@ impl App {
         }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
-        background::dimensions(width, height)?;
-        let color = self.settings.color;
-        let (image, hits) = c.ui.render_at_scale(
-            &self.settings,
-            image::RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2])),
-            self.scale as f32,
-        )?;
+        let (image, hits) =
+            c.ui.render_dialog(&self.settings, width, height, self.scale as f32)?;
         self.hits = hits;
         let (buffer, canvas) = self.pool.create_buffer(
             width as i32,
@@ -539,8 +534,16 @@ impl WindowHandler for App {
         {
             return;
         }
-        self.width = c.new_size.0.map(|v| v.get()).unwrap_or(800);
-        self.height = c.new_size.1.map(|v| v.get()).unwrap_or(720);
+        self.width = c
+            .new_size
+            .0
+            .map(|v| v.get())
+            .unwrap_or(AUTHORIZATION_DIALOG_SIZE.0);
+        self.height = c
+            .new_size
+            .1
+            .map(|v| v.get())
+            .unwrap_or(AUTHORIZATION_DIALOG_SIZE.1);
         self.configured = true;
         self.dirty = true;
     }
