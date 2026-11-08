@@ -1,12 +1,16 @@
 //! Configuration order is preserved across both toolbar arrangements. A narrow
 //! tile gets a full-width location field and a scrollable command strip.
-use super::*;
+use super::{chrome::Icon, *};
 use crate::actions::CustomAction;
-use canopa_theme::UiKind;
+use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Alignment, Length,
-    widget::{column, container, row, scrollable, text, text_input, tooltip},
+    font::Weight,
+    widget::{button, column, container, responsive, row, scrollable, text, text_input, tooltip},
 };
+
+const SIDE_PADDING: f32 = 14.0;
+const COMMAND_ICON: f32 = 20.0;
 
 enum Item<'a> {
     Location,
@@ -31,38 +35,88 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
                     .find(|action| action.id == id)
                     .map(Item::Action)
             } else {
-                Command::from_id(id).map(Item::Builtin)
+                Command::from_id(id)
+                    .filter(|command| *command != Command::QuickLook)
+                    .map(Item::Builtin)
             }
         })
         .collect()
 }
 
-fn label(command: Command) -> &'static str {
-    match command {
-        Command::Back => "‹",
-        Command::Forward => "›",
-        Command::Parent => "↑",
-        Command::QuickLook => "Look",
-        Command::Search => "Search",
-        _ => command.label(),
+fn command_icon(command: Command) -> Option<(Icon, &'static str)> {
+    Some(match command {
+        Command::Back => (Icon::Back, ""),
+        Command::Forward => (Icon::Forward, ""),
+        Command::Parent => (Icon::Up, ""),
+        Command::Search => (Icon::Search, "Search"),
+        Command::Columns => (Icon::Columns, ""),
+        Command::List => (Icon::List, ""),
+        Command::Icons => (Icon::Grid, ""),
+        _ => return None,
+    })
+}
+
+fn navigation(item: &Item<'_>) -> bool {
+    matches!(
+        item,
+        Item::Builtin(Command::Back | Command::Forward | Command::Parent)
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Labels {
+    Full,
+    Icons,
+}
+
+fn action_label(command: Command, full: &'static str, labels: Labels) -> &'static str {
+    match (command, labels) {
+        (Command::Search, Labels::Icons) => "",
+        _ => full,
     }
 }
 
-fn width(item: &Item<'_>, appearance: &canopa_theme::Appearance) -> f32 {
-    let padding = canopa_ui::content_padding(appearance.style(UiKind::Button));
-    let glyphs = match item {
-        Item::Location => return 144.0,
-        Item::Builtin(Command::Back | Command::Forward | Command::Parent) => 1.5,
-        Item::Builtin(Command::QuickLook | Command::Search) => 5.0,
-        _ => 12.0,
-    };
-    let icon = if matches!(item, Item::Action(action) if action.icon.is_some()) {
-        24.0
-    } else {
-        0.0
-    };
-    (glyphs * appearance.typography().label_size.px() * 0.7 + padding.left + padding.right + icon)
-        .ceil()
+fn control_padding(
+    item: &Item<'_>,
+    appearance: &canopa_theme::Appearance,
+    labels: Labels,
+) -> iced::Padding {
+    let style = appearance.style(UiKind::Button);
+    let mut padding = canopa_ui::content_padding(style);
+    if !style.custom_padding {
+        let reduction = match item {
+            _ if navigation(item) => 5.0,
+            Item::Builtin(Command::Search) if matches!(labels, Labels::Icons) => 4.0,
+            _ => 0.0,
+        };
+        padding.left -= reduction;
+        padding.right -= reduction;
+    }
+    padding
+}
+
+fn width(item: &Item<'_>, appearance: &canopa_theme::Appearance, labels: Labels) -> f32 {
+    let padding = control_padding(item, appearance, labels);
+    let horizontal = padding.left + padding.right;
+    let size = appearance.typography().label_size.px();
+    match item {
+        Item::Location => 144.0,
+        Item::Builtin(command) => match command_icon(*command) {
+            Some((_, label)) => {
+                let label = action_label(*command, label, labels);
+                let text = if label.is_empty() {
+                    0.0
+                } else {
+                    6.0 + chrome::text_width(label, canopa_ui::font(appearance), size)
+                };
+                (COMMAND_ICON + text + horizontal).ceil()
+            }
+            None => (size * 8.4 + horizontal).ceil(),
+        },
+        Item::Action(action) => {
+            (size * 8.4 + horizontal + if action.icon.is_some() { 24.0 } else { 0.0 }).ceil()
+        }
+    }
 }
 
 fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
@@ -94,7 +148,8 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
         }
         Command::Forward => browser.history_target(HistoryDirection::Forward).is_some(),
         Command::Parent => browser.parent().is_some(),
-        Command::QuickLook | Command::Open => browser.focused().is_some(),
+        Command::Open => browser.focused().is_some(),
+        Command::QuickLook => false,
         Command::EnterFolder => browser
             .visible_entries()
             .into_iter()
@@ -125,7 +180,12 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
     }
 }
 
-fn location<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> Element<'a, Message> {
+fn location<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    tab: &'a Tab,
+    compact_path: bool,
+) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     if let Some(value) = &tab.location {
@@ -141,23 +201,178 @@ fn location<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> Element<'
             .width(Length::Fill)
             .into()
     } else {
-        canopa_ui::styled_action(
-            container(
-                text(display_location(tab.path()))
-                    .font(font)
-                    .size(appearance.typography().body_size.px())
-                    .wrapping(text::Wrapping::None),
-            )
-            .width(Length::Fill)
-            .clip(true),
-            Some(Message::Command(id, Command::Location)),
-            canopa_ui::Action::Quiet,
-            false,
-            appearance,
-        )
-        .width(Length::Fill)
-        .into()
+        breadcrumb(desktop, id, tab, compact_path)
     }
+}
+
+fn breadcrumb<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    tab: &'a Tab,
+    compact: bool,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let mut current_font = font;
+    current_font.weight = Weight::Semibold;
+    let size = appearance.typography().body_size.px();
+    let path = tab.path();
+    let within_home = path.starts_with(&desktop.home);
+    let mut ancestors: Vec<_> = path
+        .ancestors()
+        .take_while(|ancestor| !within_home || ancestor.starts_with(&desktop.home))
+        .map(|ancestor| {
+            let name = if ancestor == desktop.home {
+                "Home".to_owned()
+            } else {
+                ancestor
+                    .file_name()
+                    .unwrap_or(ancestor.as_os_str())
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            (ancestor, name)
+        })
+        .collect();
+    let current = ancestors.remove(0).1;
+    let current_width = chrome::text_width(&current, current_font, size);
+    let ancestors: Vec<_> = ancestors
+        .into_iter()
+        .map(|(path, label)| {
+            let width = chrome::text_width(&label, font, size);
+            (path, label, width)
+        })
+        .collect();
+
+    let input_style = appearance.style(UiKind::Input);
+    let mut padding = canopa_ui::content_padding(input_style);
+    let button_inset = if compact { 3.0 } else { 6.0 };
+    if compact && !input_style.custom_padding {
+        padding.left -= 6.0;
+        padding.right -= 6.0;
+    }
+    let crumbs = responsive(move |bounds| {
+        let origin_width = if compact { 0.0 } else { 34.0 };
+        let mut available = bounds.width - current_width - origin_width - 2.0 * button_inset;
+        let count = ancestors
+            .iter()
+            .take_while(|(_, _, width)| {
+                available -= width + 20.0;
+                available >= 0.0
+            })
+            .count();
+        let origin_icon = desktop.icons.chrome(
+            if within_home {
+                Icon::Home
+            } else {
+                Icon::Folder
+            },
+            18.0,
+            0.87,
+        );
+        let origin: Element<'_, Message> = if within_home && count < ancestors.len() {
+            let home =
+                crumb_button(origin_icon, Message::Go(id, desktop.home.clone())).padding([4, 2]);
+            if tab.search.is_some() || desktop.action_menu.is_some() {
+                home.into()
+            } else {
+                tooltip(
+                    home,
+                    text("Home").font(font).size(size),
+                    tooltip::Position::Bottom,
+                )
+                .into()
+            }
+        } else {
+            container(origin_icon).padding([0, 2]).into()
+        };
+        let mut trail = row![].align_y(Alignment::Center);
+        // When space is tight, keep a clickable parent instead of using
+        // the same room for a Home icon. Places still exposes Home.
+        if !compact || count == 0 {
+            trail = trail.push(origin);
+            if within_home && count != 0 && count < ancestors.len() {
+                trail = trail.push(desktop.icons.chrome(Icon::Forward, 12.0, 0.82));
+            }
+        }
+        for (path, label, _) in ancestors[..count].iter().rev() {
+            trail = trail
+                .push(
+                    crumb_button(
+                        text(label.clone())
+                            .font(font)
+                            .size(size)
+                            .shaping(text::Shaping::Advanced)
+                            .color(chrome::ink(appearance, ColorRole::Muted))
+                            .wrapping(text::Wrapping::None),
+                        Message::Go(id, (*path).to_owned()),
+                    )
+                    .padding([4, 4]),
+                )
+                .push(desktop.icons.chrome(Icon::Forward, 12.0, 0.82));
+        }
+        trail
+            .push(
+                crumb_button(
+                    chrome::single_line(current.clone(), current_font, size, None, false),
+                    Message::Command(id, Command::Location),
+                )
+                .padding([4.0, button_inset])
+                .width(Length::Fill),
+            )
+            .into()
+    })
+    .height(Length::Shrink);
+
+    let edit = crumb_button(
+        desktop.icons.chrome(Icon::Edit, 18.0, 0.93),
+        Message::Command(id, Command::Location),
+    )
+    .padding([4.0, button_inset]);
+    let edit: Element<'_, Message> = if tab.search.is_some() || desktop.action_menu.is_some() {
+        edit.into()
+    } else {
+        tooltip(
+            edit,
+            text("Edit location")
+                .font(font)
+                .size(appearance.typography().label_size.px()),
+            tooltip::Position::Bottom,
+        )
+        .into()
+    };
+    container(row![crumbs, edit].spacing(2).align_y(Alignment::Center))
+        .width(Length::Fill)
+        .height((size * 1.3).ceil() + padding.top + padding.bottom)
+        .align_y(Alignment::Center)
+        .padding(iced::Padding {
+            top: 0.0,
+            right: padding.right,
+            bottom: 0.0,
+            left: padding.left,
+        })
+        .clip(true)
+        .style(move |theme| {
+            let input = view::input_style(appearance, theme, text_input::Status::Active);
+            container::Style::default()
+                .background(input.background)
+                .border(input.border)
+        })
+        .into()
+}
+
+fn crumb_button<'a>(
+    content: impl Into<Element<'a, Message>>,
+    message: Message,
+) -> button::Button<'a, Message> {
+    button(content)
+        .padding([4, 6])
+        .on_press(message)
+        .style(|theme, status| {
+            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+            style.border.radius = 6.0.into();
+            style
+        })
 }
 
 fn control<'a>(
@@ -165,13 +380,14 @@ fn control<'a>(
     tab: &'a Tab,
     source: &Option<Arc<actions_ui::Source>>,
     item: &Item<'a>,
+    labels: Labels,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let (title, content, message) = match item {
         Item::Location => unreachable!("location fills its own layout slot"),
         Item::Builtin(command) => (
             command.label(),
-            label(*command),
+            command.label(),
             source
                 .as_ref()
                 .filter(|_| enabled(desktop, *command, tab))
@@ -191,25 +407,64 @@ fn control<'a>(
         ),
     };
     let font = canopa_ui::font(appearance);
-    let icon = match item {
-        Item::Action(action) => action.icon.as_deref(),
-        _ => None,
+    let content: Element<'_, Message> = match item {
+        Item::Builtin(command) if command_icon(*command).is_some() => {
+            let (icon, label) = command_icon(*command).unwrap();
+            let icon = desktop.icons.chrome(
+                icon,
+                COMMAND_ICON,
+                if message.is_some() { 1.0 } else { 0.48 },
+            );
+            let label = action_label(*command, label, labels);
+            if label.is_empty() {
+                icon
+            } else {
+                row![
+                    icon,
+                    text(label)
+                        .size(appearance.typography().label_size.px())
+                        .font(font)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into()
+            }
+        }
+        Item::Action(action) => desktop.icons.label(
+            action.icon.as_deref(),
+            content,
+            appearance.typography().label_size.px(),
+            font,
+            message.is_some(),
+        ),
+        _ => text(content)
+            .size(appearance.typography().label_size.px())
+            .font(font)
+            .wrapping(text::Wrapping::None)
+            .into(),
     };
-    let content = desktop.icons.label(
-        icon,
-        content,
-        appearance.typography().label_size.px(),
-        font,
-        message.is_some(),
-    );
+    let search = matches!(item, Item::Builtin(Command::Search));
+    let outlined_search = search && (tab.search.is_some() || matches!(labels, Labels::Full));
     let button = canopa_ui::styled_action(
         container(content).width(Length::Fill).clip(true),
         message,
-        canopa_ui::Action::Quiet,
+        if outlined_search {
+            canopa_ui::Action::Normal
+        } else {
+            canopa_ui::Action::Quiet
+        },
         false,
         appearance,
     )
-    .width(width(item, appearance));
+    .padding(control_padding(item, appearance, labels))
+    .width(width(item, appearance, labels));
+    let button: Element<'_, Message> = if navigation(item) {
+        container(button)
+            .style(move |_| chrome::highlight(appearance, ColorRole::Spine))
+            .into()
+    } else {
+        button.into()
+    };
     if tab.search.is_some()
         || tab.location.is_some()
         || desktop.action_menu.as_ref().is_some_and(|menu| {
@@ -218,7 +473,7 @@ fn control<'a>(
                 .is_some_and(|source| source.window == menu.window())
         })
     {
-        return button.into();
+        return button;
     }
     tooltip(
         button,
@@ -234,32 +489,131 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
     let appearance = &desktop.configuration.appearance;
     let items = items(desktop);
     let source = desktop.action_source(id);
-    let menu_width = width(&Item::Builtin(Command::Back), appearance);
+    let button_style = appearance.style(UiKind::Button);
+    let mut menu_padding = canopa_ui::content_padding(button_style);
+    if !button_style.custom_padding {
+        menu_padding.left -= 6.0;
+        menu_padding.right -= 6.0;
+    }
+    let menu_width = 18.0 + menu_padding.left + menu_padding.right;
     let menu = canopa_ui::styled_action(
-        text("⋮").size(19).font(canopa_ui::font(appearance)),
+        desktop.icons.chrome(Icon::More, 18.0, 1.0),
         source
             .as_ref()
             .map(|_| Message::Action(actions_ui::Event::Menu(id))),
-        canopa_ui::Action::Quiet,
+        canopa_ui::Action::Normal,
         false,
         appearance,
     )
+    .padding(menu_padding)
     .width(menu_width);
+    let menu: Element<'_, Message> =
+        if tab.location.is_some() || tab.search.is_some() || desktop.action_menu.is_some() {
+            menu.into()
+        } else {
+            tooltip(
+                menu,
+                text("Actions").size(appearance.typography().label_size.px()),
+                tooltip::Position::Bottom,
+            )
+            .into()
+        };
+    let window_width = desktop.windows.get(&id).map_or(0.0, |window| window.width);
+    let show_places = !sidebar_visible(desktop.configuration.settings.sidebar, window_width);
+    let (menu, menu_width) = if show_places {
+        let mut padding = canopa_ui::content_padding(button_style);
+        if !button_style.custom_padding {
+            padding.left -= 5.0;
+            padding.right -= 5.0;
+        }
+        let font = canopa_ui::font(appearance);
+        let size = appearance.typography().label_size.px();
+        let places_width =
+            chrome::text_width("Places", font, size) + padding.left + padding.right + 24.0;
+        let places = canopa_ui::styled_action(
+            row![
+                desktop.icons.chrome(
+                    Icon::Places,
+                    18.0,
+                    if source.is_some() { 1.0 } else { 0.45 }
+                ),
+                text("Places").size(size).font(font)
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+            source
+                .as_ref()
+                .map(|_| Message::Action(actions_ui::Event::Locations(id))),
+            canopa_ui::Action::Normal,
+            false,
+            appearance,
+        )
+        .padding(padding)
+        .width(places_width);
+        (
+            row![places, menu]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into(),
+            places_width + 4.0 + menu_width,
+        )
+    } else {
+        (menu, menu_width)
+    };
+    let (menu, menu_width) = if let Some(browser) = &tab.browser
+        && browser.search().is_none()
+        && window_width >= super::view::TOOLBAR_MODES_WIDTH
+    {
+        let (width, modes) =
+            super::view::view_switcher(desktop, id, tab, browser.view().mode, true, true);
+        (
+            row![modes, menu]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into(),
+            width + 6.0 + menu_width,
+        )
+    } else {
+        (menu, menu_width)
+    };
+    let side_padding = if show_places { 10.0 } else { SIDE_PADDING };
+    let available = window_width
+        - 2.0 * side_padding
+        - if show_places {
+            0.0
+        } else {
+            chrome::SIDEBAR_WIDTH + 1.0
+        };
+    let required = |items: &[Item<'_>], labels| {
+        let commands = items
+            .iter()
+            .filter(|item| !matches!(item, Item::Location))
+            .map(|item| width(item, appearance, labels))
+            .sum();
+        super::toolbar_layout::required(commands, menu_width, items.len())
+    };
+    let labels = if available < required(&items, Labels::Full) + 68.0
+        && available >= required(&items, Labels::Icons)
+    {
+        Labels::Icons
+    } else {
+        Labels::Full
+    };
     let primary_items = items
         .iter()
         .map(|item| {
             (
-                width(item, appearance),
+                width(item, appearance, labels),
                 match item {
                     Item::Location => None,
-                    _ => Some(control(desktop, tab, &source, item)),
+                    _ => Some(control(desktop, tab, &source, item, labels)),
                 },
             )
         })
         .collect();
     let mut body = column![super::toolbar_layout::primary(
-        location(desktop, id, tab),
-        menu.into(),
+        location(desktop, id, tab, matches!(labels, Labels::Icons)),
+        menu,
         menu_width,
         primary_items
     )]
@@ -272,14 +626,23 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
                 .iter()
                 .any(|item| matches!(item, Item::Action(existing) if existing.id == action.id))
         {
-            additional = additional.push(control(desktop, tab, &source, &Item::Action(action)));
+            additional = additional.push(control(
+                desktop,
+                tab,
+                &source,
+                &Item::Action(action),
+                Labels::Full,
+            ));
             has_additional = true;
         }
     }
     if has_additional {
         body = body.push(horizontal(additional.into()));
     }
-    container(body).padding([8, 10]).into()
+    container(body)
+        .padding([10.0, side_padding])
+        .width(Length::Fill)
+        .into()
 }
 
 fn horizontal(content: Element<'_, Message>) -> Element<'_, Message> {

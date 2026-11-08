@@ -89,12 +89,13 @@ def verify(session, fixture, browser, launched, scheme, scale):
     assert floating["is_floating"], floating
     initial_size = floating["layout"]["window_size"]
     assert abs(initial_size[0] - 760) <= 4, floating
-    assert 560 <= initial_size[1] <= min(logical["height"], 640), floating
+    # The compositor may include its decorations in the reported height.
+    assert 510 <= initial_size[1] <= min(logical["height"], 560), floating
     assert title("Downloads — Canopa Files")["layout"]["window_size"][0] == 360
     x, y, width, height = position(floating)
     focus(floating)
     # Text copy inspects the actual editor contents, not just its window title.
-    click(x + 60, y + 110)
+    click(x + 60, y + 160)
     chord("a")
     chord("c")
     session.wait_for(lambda: session.run(["wl-paste", "--no-newline"]).rstrip("\n") == (fixture / "B-notes.txt").read_text().rstrip("\n"), "actual text preview clipboard")
@@ -140,7 +141,7 @@ def verify(session, fixture, browser, launched, scheme, scale):
 
     syntax_pixels("preview-syntax.png", scheme)
     focus(syntax_preview)
-    click(x + 60, y + 110)
+    click(x + 60, y + 160)
     chord("a")
     chord("c")
     copied = subprocess.check_output(["wl-paste", "--no-newline"], env=session.env, timeout=10)
@@ -164,7 +165,7 @@ def verify(session, fixture, browser, launched, scheme, scale):
     focus(syntax_preview)
 
     def plain_text():
-        click(x + 60, y + 110)
+        click(x + 60, y + 160)
         chord("a")
         chord("c")
         return subprocess.check_output(["wl-paste", "--no-newline"], env=session.env, timeout=10) == (fixture / "B-notes.txt").read_bytes()
@@ -197,7 +198,7 @@ def verify(session, fixture, browser, launched, scheme, scale):
     def image_edge(name, inside):
         def rendered():
             frame = session.capture(name)
-            color = frame.getpixel((round((logical["width"] / 2 + 300) * scale), frame.height // 2))
+            color = frame.getpixel((round((logical["width"] / 2 + 245) * scale), frame.height // 2))
             matches = all(abs(a-b) <= 12 for a,b in zip(color, (24, 160, 120)))
             return matches == inside
         session.wait_for(rendered, f"actual image extent {name}")

@@ -110,7 +110,7 @@ impl Worker {
             error: None,
             rejected_before_execution: false,
         };
-        let mut snapshot = saved.snapshot(0, Phase::Queued)?;
+        let mut snapshot = saved.snapshot(0, Phase::Queued, None)?;
         let mut old_saved = previous.saved.clone();
         let Saved::TransferPending { outcome, .. } = &mut old_saved else {
             return Err(io::Error::other("The stopped result is not a transfer."));
@@ -138,6 +138,7 @@ impl Worker {
                 .handoff_transfer(&previous.record, before, after, &old_saved, &saved)?;
         let next = record.id();
         snapshot.id = next;
+        snapshot.accepted_at = record.accepted_at();
         if let Some(cut) = &cut_progress {
             cut.handoff(id, next, part, &plan);
         }

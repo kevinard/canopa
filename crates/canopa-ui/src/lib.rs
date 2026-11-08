@@ -157,6 +157,7 @@ pub fn link(theme: &Theme) -> text::Style {
 
 #[derive(Clone, Copy)]
 pub enum Action {
+    Primary,
     Normal,
     Quiet,
     Destructive,
@@ -172,11 +173,14 @@ pub fn action_style(
     let disabled = status == button::Status::Disabled;
     let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
     let foreground = match action {
+        Action::Primary => p.on_accent,
         Action::Destructive => p.danger,
         _ => p.text,
     };
     button::Style {
-        background: if engaged {
+        background: if matches!(action, Action::Primary) {
+            (!disabled).then_some(p.accent.into())
+        } else if engaged {
             // Quiet controls can contain explicitly styled links and muted body text.
             // Their foreground roles need the same contrast as the resting surface.
             Some(
@@ -196,12 +200,16 @@ pub fn action_style(
         border: iced::Border {
             color: if focused && !disabled {
                 p.focus
+            } else if engaged && matches!(action, Action::Primary) {
+                p.on_accent
             } else {
                 p.border
             },
             width: if focused && !disabled {
                 2.0
-            } else if matches!(action, Action::Normal) {
+            } else if matches!(action, Action::Normal)
+                || engaged && matches!(action, Action::Primary)
+            {
                 1.0
             } else {
                 0.0

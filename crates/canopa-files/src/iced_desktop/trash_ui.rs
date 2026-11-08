@@ -21,7 +21,6 @@ pub(super) enum Event {
     Refresh(window::Id),
     Restore(window::Id, bool),
     Copy(window::Id),
-    Preview(window::Id),
     Scroll(window::Id, u64, f32, f32),
     Viewport(window::Id, u64, Size),
     OpenFailed(window::Id, String),
@@ -84,7 +83,7 @@ impl Desktop {
             }
         };
         let (id, opened) = window::open(window::Settings {
-            size: Size::new(760.0, 540.0),
+            size: Size::new(720.0, 460.0),
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -190,7 +189,6 @@ impl Desktop {
             | Event::Refresh(id)
             | Event::Restore(id, _)
             | Event::Copy(id)
-            | Event::Preview(id)
             | Event::Scroll(id, ..)
             | Event::Viewport(id, ..)
             | Event::OpenFailed(id, _) => *id,
@@ -270,7 +268,6 @@ impl Desktop {
                 }
             }
             Event::OpenFailed(_, error) => trash.error = Some(error),
-            Event::Preview(_) => return self.toggle_preview(id),
             Event::Copy(_) => return self.copy_trash(id),
             Event::Restore(_, elsewhere) => {
                 let Some(item) = trash
@@ -393,9 +390,12 @@ impl Desktop {
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<'a, Message> {
+    iced::widget::responsive(move |size| contents(desktop, trash, size.width >= 570.0)).into()
+}
+
+fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = trash.window;
     let ready = desktop.file_operations.ready() && !trash.snapshot.loading;
@@ -409,44 +409,70 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
             order.push(widget.clone());
         }
         let message = enabled.then_some(message);
+        let scope_selected = (name == "all" && trash.snapshot.scope == Scope::All)
+            || (name == "main" && trash.snapshot.scope == Scope::Main);
+        let button = canopa_ui::styled_action(
+            text(label).font(font).size(small),
+            message.clone(),
+            if name == "restore" {
+                canopa_ui::Action::Primary
+            } else if matches!(name, "refresh" | "operations")
+                || (matches!(name, "restore-to" | "copy") && enabled)
+            {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
+            false,
+            appearance,
+        )
+        .width(if name == "restore" && wide {
+            Length::Fill
+        } else {
+            Length::Shrink
+        });
         focus::control(
             widget,
-            message.clone(),
+            message,
             appearance,
-            canopa_ui::styled_action(
-                text(label).font(font).size(small),
-                message,
-                canopa_ui::Action::Quiet,
-                false,
-                appearance,
-            ),
+            container(button).style(move |_| {
+                if scope_selected {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                } else {
+                    container::Style::default()
+                }
+            }),
         )
     };
-    let buttons = row![
-        action(
-            "Restore",
-            "restore",
-            Message::Trash(Event::Restore(id, false)),
-            restore
-        ),
-        action(
-            "Restore to…",
-            "restore-to",
-            Message::Trash(Event::Restore(id, true)),
-            restore
-        ),
-        action(
-            "Copy",
-            "copy",
-            Message::Trash(Event::Copy(id)),
-            selected.is_some() && !trash.snapshot.loading && desktop.file_clipboard.ready()
-        ),
-        action(
-            "Quick Look",
-            "preview",
-            Message::Trash(Event::Preview(id)),
-            selected.is_some()
-        ),
+    let restore_button = action(
+        "Restore",
+        "restore",
+        Message::Trash(Event::Restore(id, false)),
+        restore,
+    );
+    let alternate = action(
+        "Restore to…",
+        "restore-to",
+        Message::Trash(Event::Restore(id, true)),
+        restore,
+    );
+    let copy = action(
+        "Copy to clipboard",
+        "copy",
+        Message::Trash(Event::Copy(id)),
+        selected.is_some() && !trash.snapshot.loading && desktop.file_clipboard.ready(),
+    );
+    let buttons: Element<'a, Message> = if wide {
+        column![restore_button, row![alternate, copy].spacing(6).wrap()]
+            .spacing(6)
+            .into()
+    } else {
+        row![restore_button, alternate, copy]
+            .spacing(6)
+            .wrap()
+            .into()
+    };
+    let tools = row![
         action(
             "Refresh",
             "refresh",
@@ -460,9 +486,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
             true
         ),
     ]
-    .spacing(4)
-    .wrap();
+    .spacing(6);
     let scope = row![
+        chrome::section_title(appearance, "Locations"),
         action(
             "All locations",
             "all",
@@ -475,63 +501,95 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
             Message::Trash(Event::Scope(id, Scope::Main)),
             true
         ),
-        text(if trash.snapshot.scope == Scope::Main {
-            "Main Trash"
-        } else {
-            "All locations"
-        })
-        .font(font)
-        .size(small),
     ]
-    .spacing(6)
+    .spacing(8)
+    .align_y(iced::Alignment::Center)
     .wrap();
     let row_height = height(appearance);
+    let mut item_font = font;
+    item_font.weight = iced::font::Weight::Semibold;
+    let muted = Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted));
     let items = &trash.snapshot.catalog.items;
     let first = (trash.offset / row_height).floor().max(0.0) as usize;
     let first = first.saturating_sub(4).min(items.len());
     let end = (first + (trash.viewport / row_height).ceil() as usize + 12).min(items.len());
     let mut rows = column![space().height(first as f32 * row_height)].spacing(0);
     for item in &items[first..end] {
-        let label = column![
-            text(item.name().to_string_lossy().into_owned())
-                .font(font)
-                .size(size)
-                .wrapping(text::Wrapping::None),
-            text(
-                item.original
-                    .as_ref()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| "Original location unknown".into())
-            )
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::None),
-            text(
-                item.problem
-                    .as_deref()
-                    .or(item.deletion_date.as_deref())
-                    .unwrap_or("Deletion date unknown")
-            )
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::None),
+        let original = item
+            .original
+            .as_ref()
+            .map(|path| {
+                let location = path.parent().unwrap_or(path);
+                location.strip_prefix(&desktop.home).map_or_else(
+                    |_| location.to_string_lossy().into_owned(),
+                    |path| format!("Home / {}", path.to_string_lossy().replace('/', " / ")),
+                )
+            })
+            .unwrap_or_else(|| "Original location unknown".into());
+        let date = item
+            .problem
+            .clone()
+            .or_else(|| {
+                item.deletion_date.as_ref().map(|date| {
+                    let display = chrono::NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%M:%S")
+                        .map(|time| time.format("%b %-d, %Y · %H:%M").to_string())
+                        .unwrap_or_else(|_| date.replace('T', " "));
+                    format!("Deleted {display}")
+                })
+            })
+            .unwrap_or_else(|| "Deletion date unknown".into());
+        let selected = trash.selected.as_ref() == Some(&item.path);
+        let label = row![
+            container(desktop.icons.chrome(chrome::Icon::Documents, 18.0, 0.9))
+                .padding(8)
+                .style(move |_| chrome::highlight(
+                    appearance,
+                    canopa_theme::ColorRole::AccentSurface
+                )),
+            column![
+                chrome::single_line(
+                    item.name().to_string_lossy().into_owned(),
+                    item_font,
+                    appearance.typography().body_size.px(),
+                    None,
+                    true,
+                ),
+                chrome::single_line(original, font, small, muted, true),
+                chrome::single_line(date, font, small, muted, true),
+            ]
+            .spacing(2)
+            .width(Length::Fill),
+            if wide {
+                if selected {
+                    space().width(15).into()
+                } else {
+                    desktop.icons.chrome(chrome::Icon::Forward, 15.0, 0.82)
+                }
+            } else {
+                chrome::selection_mark(appearance, selected)
+            },
         ]
-        .spacing(2);
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
         rows = rows.push(row_state::keyed_row(
             view::RowKey::Trash(item.path.clone()),
-            canopa_ui::styled_action(
-                container(label).width(Length::Fill).clip(true),
-                Some(Message::Trash(Event::Select(
-                    id,
-                    trash.snapshot.revision,
-                    item.path.clone(),
-                ))),
-                canopa_ui::Action::Quiet,
-                trash.selected.as_ref() == Some(&item.path),
-                appearance,
+            container(
+                canopa_ui::styled_action(
+                    container(label).width(Length::Fill).clip(true),
+                    Some(Message::Trash(Event::Select(
+                        id,
+                        trash.snapshot.revision,
+                        item.path.clone(),
+                    ))),
+                    canopa_ui::Action::Quiet,
+                    selected,
+                    appearance,
+                )
+                .width(Length::Fill)
+                .height(row_height),
             )
             .width(Length::Fill)
-            .height(row_height),
+            .style(move |_| chrome::catalogue_row(appearance, selected)),
         ));
     }
     rows = rows.push(space().height((items.len() - end) as f32 * row_height));
@@ -563,23 +621,105 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
                 "Original information is unavailable. Copy this item to recover its contents."
                     .into()
             } else if items.is_empty() && trash.snapshot.catalog.warnings.is_empty() {
-                "Trash is empty.".into()
+                String::new()
             } else {
-                format!("{} items · Select an item to restore it", items.len())
+                format!(
+                    "{} {}{}",
+                    items.len(),
+                    if items.len() == 1 { "item" } else { "items" },
+                    if !wide && selected.is_none() {
+                        " · Select an item to see restore options"
+                    } else {
+                        ""
+                    }
+                )
             }
         });
+    let listing: Element<'_, Message> = if items.is_empty() && !trash.snapshot.loading {
+        chrome::empty_state(
+            desktop,
+            chrome::Icon::Trash,
+            "Trash is empty",
+            "Items moved to Trash will appear here.",
+            None,
+        )
+    } else {
+        listing.into()
+    };
+    let subtitle = "Restore deleted files to their original location or another folder.";
+    let heading: Element<'a, Message> = if wide {
+        chrome::heading_with_action(
+            desktop,
+            chrome::Icon::Trash,
+            "Trash",
+            subtitle,
+            Some(
+                tools
+                    .push(chrome::dismiss(desktop, id))
+                    .align_y(iced::Alignment::Center)
+                    .into(),
+            ),
+        )
+    } else {
+        column![
+            chrome::heading_with_action(
+                desktop,
+                chrome::Icon::Trash,
+                "Trash",
+                subtitle,
+                Some(chrome::dismiss(desktop, id))
+            ),
+            tools.wrap(),
+        ]
+        .spacing(6)
+        .into()
+    };
     let mut body = column![
-        buttons,
-        scope,
-        listing,
-        text(status)
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::WordOrGlyph)
+        heading,
+        container(scope)
+            .padding([4, 8])
+            .width(Length::Fill)
+            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine)),
     ]
-    .spacing(8)
-    .padding(10)
+    .spacing(10)
+    .padding(16)
     .height(Length::Fill);
+    let buttons = if wide && !items.is_empty() {
+        let inspector = selected.map(|item| {
+            let original = item.original.as_deref().map_or_else(
+                || "Original location unknown".to_owned(),
+                |path| {
+                    super::question_dialog::display_location(
+                        &desktop.home,
+                        path.parent().unwrap_or(path),
+                    )
+                },
+            );
+            let details = column![
+                chrome::section_title(appearance, item.name().to_string_lossy().into_owned())
+                    .wrapping(text::Wrapping::WordOrGlyph),
+                text(original)
+                    .size(small)
+                    .font(font)
+                    .style(canopa_ui::muted)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+                buttons,
+            ]
+            .spacing(10);
+            (control(id, "details-scroll"), 260.0, details.into())
+        });
+        body = body.push(chrome::catalogue(
+            appearance,
+            "Items in Trash",
+            "Select an item to see restore options",
+            listing,
+            inspector,
+        ));
+        None
+    } else {
+        body = body.push(listing);
+        (!wide).then_some(buttons)
+    };
     if !trash.snapshot.catalog.warnings.is_empty() {
         body = body.push(
             scrollable(
@@ -591,8 +731,29 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
             .height(64),
         );
     }
+    let status = text(status)
+        .font(font)
+        .size(small)
+        .style(canopa_ui::muted)
+        .wrapping(text::Wrapping::WordOrGlyph);
+    let footer: Element<'_, Message> = match buttons {
+        Some(buttons) => column![status, buttons].spacing(4).into(),
+        None => status.into(),
+    };
+    body = body
+        .push(iced::widget::rule::horizontal(1).style(chrome::divider))
+        .push(footer);
+    order.push(chrome::dismiss_id(id));
+    let reveal = if wide {
+        ["restore", "restore-to", "copy"]
+            .into_iter()
+            .map(|name| (control(id, name), control(id, "details-scroll")))
+            .collect()
+    } else {
+        Vec::new()
+    };
     focus::group(
-        container(body)
+        chrome::centered(body, 940.0)
             .id(control(id, "root"))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -600,7 +761,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, trash: &'a TrashWindow) -> Element<
                 canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
             }),
         order,
-        Vec::new(),
+        reveal,
         None,
     )
 }

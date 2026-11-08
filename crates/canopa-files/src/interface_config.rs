@@ -98,7 +98,13 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                         .collect::<io::Result<_>>()?;
                 }
             }
-            "toolbar" => settings.toolbar = strings(node)?.into_iter().map(str::to_owned).collect(),
+            "toolbar" => {
+                settings.toolbar = strings(node)?
+                    .into_iter()
+                    .filter(|id| *id != Command::QuickLook.id())
+                    .map(str::to_owned)
+                    .collect();
+            }
             "sidebar" => {
                 let values = strings(node)?;
                 if values.len() != 1 {

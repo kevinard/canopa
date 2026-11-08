@@ -43,6 +43,9 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
         phase INTEGER NOT NULL CHECK(phase BETWEEN 0 AND 5),
         body BLOB NOT NULL CHECK(length(body)<=4194304));
         CREATE INDEX IF NOT EXISTS requests_phase ON requests(phase,id);
+        CREATE TABLE IF NOT EXISTS request_times (
+        request INTEGER PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
+        accepted_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS request_sources (
         request INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
         stage TEXT NOT NULL, PRIMARY KEY(request,stage));
@@ -51,6 +54,28 @@ pub(super) fn create(connection: &Connection) -> io::Result<()> {
         request INTEGER PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE);
         DELETE FROM requests WHERE id IN (SELECT request FROM source_leases);",
         )
+        .map_err(db_error)
+}
+
+fn record_admission(connection: &Connection, id: u64) -> io::Result<i64> {
+    let at = chrono::Utc::now().timestamp();
+    connection
+        .execute(
+            "INSERT INTO request_times(request,accepted_at) VALUES(?1,?2)",
+            params![id, at],
+        )
+        .map_err(db_error)?;
+    Ok(at)
+}
+
+pub(super) fn accepted_at(connection: &Connection, id: u64) -> io::Result<Option<i64>> {
+    connection
+        .query_row_cached(
+            "SELECT accepted_at FROM request_times WHERE request=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
         .map_err(db_error)
 }
 
@@ -221,11 +246,15 @@ impl ReadSource {
                     .map_err(db_error)?;
             }
             require_budget(transaction)?;
+            let accepted_at = (!source_lease)
+                .then(|| record_admission(transaction, id))
+                .transpose()?;
             Ok(RequestRecord {
                 history: self.identity,
                 id,
                 revision: 1,
                 phase: RequestPhase::Queued,
+                accepted_at,
                 body,
             })
         })
@@ -405,6 +434,7 @@ impl ReadSource {
                 id: previous.id,
                 revision,
                 phase,
+                accepted_at: previous.accepted_at,
                 body,
             })
         })
@@ -508,12 +538,14 @@ impl ReadSource {
             }
             prune_finished(transaction)?;
             require_budget(transaction)?;
+            let accepted_at = record_admission(transaction, id)?;
             Ok((
                 RequestRecord {
                     history: self.identity,
                     id: previous.id,
                     revision,
                     phase: remaining_phase,
+                    accepted_at: previous.accepted_at,
                     body: remaining,
                 },
                 RequestRecord {
@@ -521,6 +553,7 @@ impl ReadSource {
                     id,
                     revision: 1,
                     phase: RequestPhase::Queued,
+                    accepted_at: Some(accepted_at),
                     body: successor,
                 },
             ))
@@ -557,7 +590,7 @@ impl Store {
         &self,
         before: Option<u64>,
     ) -> io::Result<Vec<RequestRecord>> {
-        let mut statement = self.connection.prepare("SELECT id,revision,phase,length(body),body FROM requests WHERE (?1 IS NULL OR id<?1) AND NOT EXISTS(SELECT 1 FROM source_leases WHERE request=requests.id) ORDER BY id DESC LIMIT 100").map_err(db_error)?;
+        let mut statement = self.connection.prepare("SELECT r.id,r.revision,r.phase,length(r.body),r.body,t.accepted_at FROM requests r LEFT JOIN request_times t ON t.request=r.id WHERE (?1 IS NULL OR r.id<?1) AND NOT EXISTS(SELECT 1 FROM source_leases WHERE request=r.id) ORDER BY r.id DESC LIMIT 100").map_err(db_error)?;
         let mut rows = statement.query([before]).map_err(db_error)?;
         let mut records = Vec::new();
         while let Some(row) = rows.next().map_err(db_error)? {
@@ -580,6 +613,7 @@ impl Store {
                 revision: row.get(1).map_err(db_error)?,
                 phase,
                 body: row.get(4).map_err(db_error)?,
+                accepted_at: row.get(5).map_err(db_error)?,
             };
             if record.id == 0 || record.revision == 0 {
                 return Err(invalid("invalid saved request identity"));

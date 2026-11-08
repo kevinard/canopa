@@ -204,7 +204,7 @@ def verify(session, fixture, browser, launched, scheme, scale, process, formats_
     else:
         audio = fixture / "Media/A-audio.wav"
         floating = preview(audio)
-        assert abs(bounds(floating)[2] - 760) <= 4, floating
+        assert abs(bounds(floating)[2] - 560) <= 4, floating
         actual_browser = next(w for w in windows() if w["id"] == current_browser["id"])
         assert abs(actual_browser["layout"]["window_size"][0] - 360) <= 4, actual_browser
         silent()

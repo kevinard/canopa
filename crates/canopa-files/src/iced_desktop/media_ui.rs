@@ -232,7 +232,7 @@ impl State {
         self.snapshot.duration.map_or(0.0, |d| d.as_secs_f64())
     }
 
-    pub fn body(&self, video: bool, body_size: f32) -> Element<'_, Message> {
+    pub fn body<'a>(&'a self, desktop: &'a Desktop, video: bool) -> Element<'a, Message> {
         if let Some(bitmap) = &self.bitmap {
             return image(bitmap.clone())
                 .width(Length::Fill)
@@ -240,14 +240,38 @@ impl State {
                 .content_fit(iced::ContentFit::Contain)
                 .into();
         }
+        let appearance = &desktop.configuration.appearance;
+        let body_size = appearance.typography().body_size.px();
+        let font = canopa_ui::font(appearance);
         let notice = match &self.snapshot.phase {
             playback::Phase::Preparing => "Preparing media…",
             playback::Phase::Failed(error) => error,
             playback::Phase::Stopped => "Media preview stopped.",
             _ if video => "Preparing video frame…",
-            _ => "Audio preview",
+            phase => {
+                let title = match phase {
+                    playback::Phase::Playing => "Playing audio",
+                    playback::Phase::Ended => "Playback finished",
+                    playback::Phase::Paused if !self.snapshot.position.is_zero() => {
+                        "Playback paused"
+                    }
+                    _ => "Ready to play",
+                };
+                let icon = container(desktop.icons.chrome(chrome::Icon::Activity, 32.0, 1.0))
+                    .padding(14)
+                    .style(move |_| {
+                        chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                    });
+                return container(
+                    column![icon, chrome::section_title(appearance, title)]
+                        .spacing(10)
+                        .align_x(iced::Alignment::Center),
+                )
+                .center(Length::Fill)
+                .into();
+            }
         };
-        container(text(notice).size(body_size))
+        container(text(notice).font(font).size(body_size))
             .padding(20)
             .center(Length::Fill)
             .into()
@@ -263,16 +287,29 @@ impl State {
         let controls = self.controls();
         let body_size = appearance.typography().body_size.px();
         let label_size = appearance.typography().label_size.px();
+        let font = canopa_ui::font(appearance);
+        let padding = canopa_ui::content_padding(appearance.style(canopa_theme::UiKind::Button));
+        let play_width =
+            chrome::text_width("Pause", font, label_size) + padding.left + padding.right + 2.0;
         let button = |label, control| {
             canopa_ui::styled_action(
-                text(label).size(label_size),
+                text(label).font(font).size(label_size),
                 controls.contains(&control).then_some(Message::Preview(
                     preview_ui::Event::Activate(id, revision, control),
                 )),
-                canopa_ui::Action::Quiet,
+                if control == Control::Play {
+                    canopa_ui::Action::Normal
+                } else {
+                    canopa_ui::Action::Quiet
+                },
                 focused == Some(control),
                 appearance,
             )
+            .width(if control == Control::Play {
+                Length::Fixed(play_width)
+            } else {
+                Length::Shrink
+            })
         };
         let message = move |event| Message::Preview(preview_ui::Event::Media(id, revision, event));
         let position = self
@@ -290,12 +327,13 @@ impl State {
                 ""
             }
         ))
-        .size(body_size);
-        let mut transport = column![time].spacing(6);
+        .font(font)
+        .size(label_size);
+        let mut transport = column![].spacing(6);
         if controls.contains(&Control::Seek) {
             transport = transport.push(
                 row![
-                    text("Seek").size(body_size),
+                    text("Seek").font(font).size(label_size),
                     focus_frame(
                         slider(0.0..=self.duration(), position, move |v| message(
                             Event::SeekDraft(v)
@@ -305,16 +343,23 @@ impl State {
                         .into(),
                         focused == Some(Control::Seek),
                     )
-                    .width(Length::Fill)
+                    .width(Length::Fill),
+                    time,
                 ]
                 .spacing(8)
                 .align_y(iced::Alignment::Center),
             );
         } else {
             transport = transport.push(
-                text("Seek unavailable")
-                    .size(body_size)
-                    .style(canopa_ui::muted),
+                row![
+                    text("Seek unavailable")
+                        .font(font)
+                        .size(label_size)
+                        .style(canopa_ui::muted)
+                        .width(Length::Fill),
+                    time,
+                ]
+                .spacing(8),
             );
         }
         let mut actions = row![
@@ -338,9 +383,10 @@ impl State {
                 "Volume {}%",
                 (self.snapshot.volume * 100.0).round() as u32
             ))
-            .size(body_size),
+            .font(font)
+            .size(label_size),
         ]
-        .spacing(8)
+        .spacing(7)
         .align_y(iced::Alignment::Center);
         if controls.contains(&Control::Volume) {
             actions = actions.push(
@@ -353,14 +399,19 @@ impl State {
                     .into(),
                     focused == Some(Control::Volume),
                 )
-                .width(120),
+                .width(Length::Fill)
+                .max_width(220),
             );
         }
-        transport = transport.push(actions.wrap());
+        transport = transport.push(actions);
         if let Some(notice) = self.error.as_ref().or(self.snapshot.notice.as_ref()) {
             transport = transport.push(text(notice).size(body_size));
         }
-        container(transport).padding(8).into()
+        container(transport)
+            .padding(8)
+            .width(Length::Fill)
+            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine))
+            .into()
     }
 }
 

@@ -11,8 +11,17 @@ typedef struct { GObject parent; } FixtureMount;
 typedef struct { GObjectClass parent; } FixtureMountClass;
 typedef struct { GObject parent; } FixtureDrive;
 typedef struct { GObjectClass parent; } FixtureDriveClass;
+#ifdef CANOPA_FIXTURE_NATIVE_MONITOR
+typedef struct { GNativeVolumeMonitor parent; } FixtureMonitor;
+typedef struct { GNativeVolumeMonitorClass parent; } FixtureMonitorClass;
+#define FIXTURE_MONITOR_TYPE G_TYPE_NATIVE_VOLUME_MONITOR
+#define FIXTURE_MONITOR_EXTENSION G_NATIVE_VOLUME_MONITOR_EXTENSION_POINT_NAME
+#else
 typedef struct { GVolumeMonitor parent; } FixtureMonitor;
 typedef struct { GVolumeMonitorClass parent; } FixtureMonitorClass;
+#define FIXTURE_MONITOR_TYPE G_TYPE_VOLUME_MONITOR
+#define FIXTURE_MONITOR_EXTENSION G_VOLUME_MONITOR_EXTENSION_POINT_NAME
+#endif
 
 static void volume_iface(GVolumeIface *iface);
 static void mount_iface(GMountIface *iface);
@@ -23,7 +32,7 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED(FixtureMount, fixture_mount, G_TYPE_OBJECT, 0,
     G_IMPLEMENT_INTERFACE_DYNAMIC(G_TYPE_MOUNT, mount_iface))
 G_DEFINE_DYNAMIC_TYPE_EXTENDED(FixtureDrive, fixture_drive, G_TYPE_OBJECT, 0,
     G_IMPLEMENT_INTERFACE_DYNAMIC(G_TYPE_DRIVE, drive_iface))
-G_DEFINE_DYNAMIC_TYPE(FixtureMonitor, fixture_monitor, G_TYPE_VOLUME_MONITOR)
+G_DEFINE_DYNAMIC_TYPE(FixtureMonitor, fixture_monitor, FIXTURE_MONITOR_TYPE)
 
 static GVolume *volume;
 static GMount *mount_item;
@@ -384,12 +393,12 @@ G_MODULE_EXPORT void g_io_module_load(GIOModule *module) {
     fixture_mount_register_type(G_TYPE_MODULE(module));
     fixture_drive_register_type(G_TYPE_MODULE(module));
     fixture_monitor_register_type(G_TYPE_MODULE(module));
-    g_io_extension_point_implement(G_VOLUME_MONITOR_EXTENSION_POINT_NAME,
+    g_io_extension_point_implement(FIXTURE_MONITOR_EXTENSION,
         fixture_monitor_get_type(), "canopa-private-volume-fixture", 1000);
 }
 G_MODULE_EXPORT void g_io_module_unload(GIOModule *module) { (void)module; }
 G_MODULE_EXPORT char **g_io_module_query(void) {
     char **points = g_new0(char *, 2);
-    points[0] = g_strdup(G_VOLUME_MONITOR_EXTENSION_POINT_NAME);
+    points[0] = g_strdup(FIXTURE_MONITOR_EXTENSION);
     return points;
 }

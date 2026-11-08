@@ -199,7 +199,7 @@ impl OperationJobs {
 }
 impl Job {
     pub(super) fn recovery_snapshot(&self, id: u64, phase: Phase) -> io::Result<JobSnapshot> {
-        let mut snapshot = self.saved.snapshot(id, phase)?;
+        let mut snapshot = self.saved.snapshot(id, phase, self.record.accepted_at())?;
         if matches!(phase, Phase::Stopped | Phase::Failed) {
             snapshot.recovery_actions = self
                 .recovery_pending
@@ -282,7 +282,7 @@ impl Worker {
         let old_snapshot = previous.recovery_snapshot(id, phase).ok();
         self.update_job(id, phase, error, old_snapshot);
         let next = record.id();
-        let snapshot = saved.snapshot(next, Phase::Queued)?;
+        let snapshot = saved.snapshot(next, Phase::Queued, record.accepted_at())?;
         self.jobs.insert(
             next,
             Job {

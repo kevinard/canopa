@@ -333,6 +333,7 @@ impl Editor {
             Change::AddToolbar(id) => {
                 if self.draft.toolbar.len() >= 64
                     || self.draft.toolbar.contains(&id)
+                    || id == Command::QuickLook.id()
                     || !(Command::from_id(&id).is_some()
                         || id
                             .strip_prefix("action:")
@@ -417,7 +418,7 @@ impl Desktop {
             return window::gain_focus(editor.window);
         }
         let (id, opened) = window::open(window::Settings {
-            size: Size::new(720.0, 680.0),
+            size: Size::new(720.0, 472.0),
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {

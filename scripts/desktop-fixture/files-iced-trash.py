@@ -118,7 +118,7 @@ def verify(session, fixture, browser, scheme, scale, process):
 
     def preview_text(expected):
         focus(preview)
-        session.run([str(pointer), str(round((x + 60) / logical["width"] * 1600)), str(round((y + 110) / logical["height"] * 1000))])
+        session.run([str(pointer), str(round((x + 60) / logical["width"] * 1600)), str(round((y + 160) / logical["height"] * 1000))])
         chord("a")
         chord("c")
         return copied_text() == expected
@@ -157,13 +157,28 @@ def verify(session, fixture, browser, scheme, scale, process):
     dialog = session.wait_for(lambda: title("Restore to folder"), "captured Restore destination dialog")
     assert dialog["is_floating"]
     focus(dialog)
-    session.run(["wtype", str(root / "Elsewhere"), "-k", "Return"])
-    target = root / "Elsewhere/A-trash.txt"
+    session.run(["wtype", "-d", "5", str(root)])
+    key("Tab")
+    key("Return")
+    chooser = session.wait_for(lambda: title("Choose a folder"), "Restore folder browser")
+    assert chooser["id"] == dialog["id"]
+    focus(chooser)
+    # Use this folder is focused on open, followed by Home, Up and the first subfolder.
+    for _ in range(3):
+        key("Tab")
+    key("Return")
+    key("Return")
+    session.wait_for(lambda: title("Restore to folder"), "folder browser returns to the draft")
+    target = root / "Copies/A-trash.txt"
+    assert not target.exists() and payload.exists(), "choosing a folder must never restore the item"
+    key("Tab")
+    key("Tab")
+    key("Return")
     session.wait_for(lambda: target.exists() and not payload.exists(), "chosen Restore destination")
     destination_closed(dialog)
     assert target.read_bytes() == b"Updated retained preview bytes\n"
     assert source.read_bytes() == b"Preserve newer original occupant\n"
-    checks.append("occupied names are preserved and the captured Restore-to dialog chooses another folder")
+    checks.append("the folder browser supports keyboard navigation and stages a destination before an explicit Restore")
 
     raw = os.fsencode(root) + b"/B-raw-\xff.rs"
     navigate(raw)

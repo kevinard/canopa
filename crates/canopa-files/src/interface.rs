@@ -163,16 +163,9 @@ impl Default for InterfaceSettings {
     fn default() -> Self {
         Self {
             view: ViewSettings::default(),
-            toolbar: [
-                "back",
-                "forward",
-                "parent",
-                "location",
-                "search",
-                "quick-look",
-            ]
-            .map(str::to_owned)
-            .to_vec(),
+            toolbar: ["back", "forward", "parent", "location", "search"]
+                .map(str::to_owned)
+                .to_vec(),
             places: PlaceKind::ALL.iter().copied().map(Place::Builtin).collect(),
             sidebar: SidebarMode::Auto,
             shortcuts: BTreeMap::new(),

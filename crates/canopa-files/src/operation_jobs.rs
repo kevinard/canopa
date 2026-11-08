@@ -107,6 +107,7 @@ impl Phase {
 #[derive(Clone, Debug)]
 pub struct JobSnapshot {
     pub id: u64,
+    pub accepted_at: Option<i64>,
     pub title: String,
     pub phase: Phase,
     pub error: Option<String>,
@@ -997,7 +998,7 @@ impl Worker {
                     ),
                     None => (record, saved, phase, None, None),
                 };
-                let mut snapshot = saved.snapshot(record.id(), phase)?;
+                let mut snapshot = saved.snapshot(record.id(), phase, record.accepted_at())?;
                 if phase == Phase::Interrupted {
                     let effects = worker.engine.request_effects(&record)?;
                     for effect in effects {
@@ -1568,6 +1569,7 @@ impl Worker {
         let id = record.id();
         self.state().jobs.push(JobSnapshot {
             id,
+            accepted_at: record.accepted_at(),
             title: request.title(),
             paths: request.paths().into(),
             phase: Phase::Queued,
@@ -2536,9 +2538,10 @@ impl Saved {
         }
     }
 
-    fn snapshot(&self, id: u64, phase: Phase) -> io::Result<JobSnapshot> {
+    fn snapshot(&self, id: u64, phase: Phase, accepted_at: Option<i64>) -> io::Result<JobSnapshot> {
         let mut snapshot = JobSnapshot {
             id,
+            accepted_at,
             title: String::new(),
             phase,
             error: self.error(),
@@ -2559,7 +2562,7 @@ impl Saved {
                 version: 1,
                 previous,
             } => {
-                snapshot = previous.snapshot(id, phase)?;
+                snapshot = previous.snapshot(id, phase, accepted_at)?;
                 let detail = snapshot.detail.get_or_insert_with(String::new);
                 if !detail.is_empty() {
                     detail.push_str(" · ");

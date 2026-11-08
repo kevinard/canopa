@@ -1,6 +1,6 @@
 //! One admitted asset worker and one replaceable pending catalog. Views only
 //! clone prepared handles; lookup, reads and decoding never run during layout.
-use super::*;
+use super::{chrome::Icon, *};
 use canopa_assets::{
     DecoderAllocation, FileAccess, Formats, Raster, RasterBatch, RasterBudget, RasterPolicy,
     icons::{IconFormats, IconLookup, LookupOptions},
@@ -24,7 +24,10 @@ struct Request {
     revision: u64,
     names: Vec<String>,
     foreground: [u8; 4],
+    on_accent: [u8; 4],
     file_foreground: [u8; 4],
+    folder_foreground: [u8; 4],
+    media_foreground: [u8; 4],
 }
 
 #[derive(Debug)]
@@ -32,6 +35,7 @@ pub(super) struct Prepared {
     revision: u64,
     handles: BTreeMap<String, image::Handle>,
     file_handles: BTreeMap<super::file_icon::FileIcon, image::Handle>,
+    chrome_handles: BTreeMap<Icon, image::Handle>,
 }
 
 #[derive(Default)]
@@ -41,6 +45,7 @@ pub(super) struct Icons {
     pending: Option<Request>,
     handles: BTreeMap<String, image::Handle>,
     file_handles: BTreeMap<super::file_icon::FileIcon, image::Handle>,
+    chrome_handles: BTreeMap<Icon, image::Handle>,
 }
 
 impl Icons {
@@ -49,6 +54,7 @@ impl Icons {
         // Never display pixels prepared for a superseded catalog/appearance.
         self.handles.clear();
         self.file_handles.clear();
+        self.chrome_handles.clear();
         let foreground = canopa_ui::resolve_color(
             &configuration.appearance,
             configuration
@@ -69,6 +75,18 @@ impl Icons {
             revision: self.revision,
             names,
             foreground,
+            on_accent: chrome::ink(&configuration.appearance, canopa_theme::ColorRole::OnAccent)
+                .into_rgba8(),
+            folder_foreground: chrome::ink(
+                &configuration.appearance,
+                canopa_theme::ColorRole::Accent,
+            )
+            .into_rgba8(),
+            media_foreground: chrome::ink(
+                &configuration.appearance,
+                canopa_theme::ColorRole::Brand,
+            )
+            .into_rgba8(),
             file_foreground: canopa_ui::resolve_color(
                 &configuration.appearance,
                 configuration
@@ -105,6 +123,7 @@ impl Icons {
                     revision,
                     handles: BTreeMap::new(),
                     file_handles: BTreeMap::new(),
+                    chrome_handles: BTreeMap::new(),
                 }))
             },
             Message::IconsReady,
@@ -120,6 +139,7 @@ impl Icons {
         if prepared.revision == self.revision {
             self.handles = prepared.handles.clone();
             self.file_handles = prepared.file_handles.clone();
+            self.chrome_handles = prepared.chrome_handles.clone();
         }
         self.pending.take()
     }
@@ -136,6 +156,17 @@ impl Icons {
             |handle| image(handle.clone()).width(size).height(size).into(),
         );
         container(content).width(size).height(size).into()
+    }
+
+    pub(super) fn chrome(&self, icon: Icon, size: f32, opacity: f32) -> Element<'_, Message> {
+        match self.chrome_handles.get(&icon) {
+            Some(handle) => image(handle.clone())
+                .width(size)
+                .height(size)
+                .opacity(opacity)
+                .into(),
+            None => iced::widget::space().width(size).height(size).into(),
+        }
     }
 
     pub fn label<'a>(
@@ -210,11 +241,32 @@ fn prepare(request: Request, roots: &[PathBuf], cancelled: &dyn Fn() -> bool) ->
     // SVG and raster reads each have an 8 MiB batch ceiling; all output shares
     // the same RGBA admission budget. No compressed SVG or embedded resources.
     let mut svg_bytes = ENCODED_BUDGET;
+    let chrome_handles = Icon::ALL
+        .into_iter()
+        .take_while(|_| !cancelled())
+        .filter_map(|icon| {
+            let ink = match icon {
+                Icon::ActiveFolder | Icon::ActiveForward => request.on_accent,
+                _ => request.foreground,
+            };
+            let raster = svg(icon.svg().as_bytes(), ink)?;
+            Some((
+                icon,
+                image::Handle::from_rgba(raster.width, raster.height, raster.pixels),
+            ))
+        })
+        .collect();
     let mut file_handles = BTreeMap::new();
     for icon in super::file_icon::FileIcon::ALL {
         if cancelled() {
             break;
         }
+        use super::file_icon::FileIcon;
+        let foreground = match icon {
+            FileIcon::Folder | FileIcon::Table => request.folder_foreground,
+            FileIcon::Pdf | FileIcon::Image | FileIcon::Archive => request.media_foreground,
+            _ => request.file_foreground,
+        };
         let name = icon.name().to_owned();
         let raster = lookup
             .resolve(std::slice::from_ref(&name), 48)
@@ -234,7 +286,7 @@ fn prepare(request: Request, roots: &[PathBuf], cancelled: &dyn Fn() -> bool) ->
                     svg_bytes = svg_bytes.saturating_sub(consumed);
                     read.ok()
                         .filter(|_| !cancelled())
-                        .and_then(|bytes| svg_sized(&bytes, request.file_foreground, FILE_SIDE))
+                        .and_then(|bytes| svg_sized(&bytes, foreground, FILE_SIDE))
                         .filter(|raster| {
                             rasters.admit_rgba(raster.width, raster.height, raster.pixels.len())
                         })
@@ -243,15 +295,14 @@ fn prepare(request: Request, roots: &[PathBuf], cancelled: &dyn Fn() -> bool) ->
                 }
             })
             .or_else(|| {
-                svg_sized(icon.fallback(), request.file_foreground, FILE_SIDE).filter(|raster| {
+                svg_sized(icon.fallback(), foreground, FILE_SIDE).filter(|raster| {
                     rasters.admit_rgba(raster.width, raster.height, raster.pixels.len())
                 })
             });
         if let Some(mut raster) = raster.filter(|_| !cancelled()) {
             for pixel in raster.pixels.chunks_exact_mut(4) {
-                pixel[..3].copy_from_slice(&request.file_foreground[..3]);
-                pixel[3] =
-                    ((u16::from(pixel[3]) * u16::from(request.file_foreground[3])) / 255) as u8;
+                pixel[..3].copy_from_slice(&foreground[..3]);
+                pixel[3] = ((u16::from(pixel[3]) * u16::from(foreground[3])) / 255) as u8;
             }
             file_handles.insert(
                 icon,
@@ -307,6 +358,7 @@ fn prepare(request: Request, roots: &[PathBuf], cancelled: &dyn Fn() -> bool) ->
         revision: request.revision,
         handles,
         file_handles,
+        chrome_handles,
     }
 }
 
@@ -388,7 +440,10 @@ mod tests {
         let request = || Request {
             revision: 7,
             foreground: [255; 4],
+            on_accent: [255; 4],
             file_foreground: [255; 4],
+            folder_foreground: [255; 4],
+            media_foreground: [255; 4],
             names: vec!["valid".into(), "missing".into(), "../invalid".into()],
         };
         let prepared = prepare(request(), &[root.path().to_owned()], &|| false);
@@ -411,14 +466,19 @@ mod tests {
                 revision: 3,
                 names: vec!["new".into()],
                 foreground: [255; 4],
+                on_accent: [255; 4],
                 file_foreground: [255; 4],
+                folder_foreground: [255; 4],
+                media_foreground: [255; 4],
             }),
             handles: BTreeMap::new(),
             file_handles: BTreeMap::new(),
+            chrome_handles: BTreeMap::new(),
         };
         let old = Prepared {
             revision: 1,
             file_handles: BTreeMap::new(),
+            chrome_handles: BTreeMap::new(),
             handles: BTreeMap::from([("old".into(), image::Handle::from_rgba(1, 1, vec![255; 4]))]),
         };
         let next = icons.accept(&old).unwrap();
@@ -430,6 +490,7 @@ mod tests {
         let current = Prepared {
             revision: 3,
             file_handles: BTreeMap::new(),
+            chrome_handles: BTreeMap::new(),
             handles: BTreeMap::from([("new".into(), image::Handle::from_rgba(1, 1, vec![255; 4]))]),
         };
         assert!(icons.accept(&current).is_none());

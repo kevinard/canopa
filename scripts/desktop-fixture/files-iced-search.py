@@ -106,19 +106,24 @@ def verify(session, fixture, browser, launched, scheme, scale):
         before = session.capture("search-01-original-scroll.png")
 
         # Start with the actual visible Search button, not an internal message.
-        click(172, 102)
+        click(311, 105)
         session.run(["wtype", "needle"])
         wait_title(search_title("needle", root))
         current = session.capture("search-02-current-folder.png")
-        # The narrow layout puts Search below the location, which must stop before the menu.
-        # Test the painted gap as well as the button's real click target.
-        background = current.getpixel((round(300 * scale), round(50 * scale)))
-        overlap = sum(
-            max(abs(a-b) for a,b in zip(current.getpixel((x, y)), background)) > 40
-            for x in range(round(299 * scale), round(309 * scale))
-            for y in range(round(56 * scale), round(72 * scale))
-        )
-        assert overlap <= round(2 * scale * scale), f"location text overlaps menu: {overlap} pixels"
+        # The narrow layout puts Search below the location. Verify that a
+        # continuous band of toolbar background separates the breadcrumb and
+        # Places, allowing the controls' widths to follow their contents.
+        top, bottom = (round(y * scale) for y in (56, 72))
+        background = current.getpixel((round(5 * scale), top))
+        run = widest = 0
+        for x in range(round(190 * scale), round(250 * scale)):
+            clear = all(
+                max(abs(a - b) for a, b in zip(current.getpixel((x, y)), background)) <= 4
+                for y in range(top, bottom)
+            )
+            run = run + 1 if clear else 0
+            widest = max(widest, run)
+        assert widest >= round(3 * scale), f"no visible gap before Places: {widest} pixels"
         # An old toolbar tooltip must not paint over the active input's top
         # edge after the pointer starts Search and the user begins typing.
         input_background = current.getpixel((round(250 * scale), round(140 * scale)))

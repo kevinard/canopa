@@ -51,8 +51,7 @@ def verify(session, fixture, browser, scheme, scale, process):
         return "file://" + quote_from_bytes(os.fsencode(path), safe="/")
 
     def type_text(value, submit=False):
-        for start in range(0, len(value), 40):
-            session.run(["wtype", value[start:start + 40]])
+        session.run(["wtype", "-d", "5", value])
         if submit:
             key("Return")
 
@@ -211,8 +210,9 @@ def verify(session, fixture, browser, scheme, scale, process):
         assert not (recovered / "nested").exists()
         assert (recovered / note).read_bytes() == newer_bytes
 
-    focus(recovery)
-    chord("w")
+    # Close the identified source even when the compositor keeps keyboard
+    # focus on the pending decision in the other window.
+    session.run(["niri", "msg", "action", "close-window", "--id", str(recovery["id"])])
     session.wait_for(lambda: title("Recovery") is None, "Recovery source window retires")
     focus(browser)
     chord("w")
@@ -255,7 +255,14 @@ def verify(session, fixture, browser, scheme, scale, process):
         "outcome_events": intervening}, indent=2) + "\n")
     checks.append("all windows can close without answering Recovery; activation reuses the owner and Review explicitly keeps both")
 
-    navigate(recovered / copy_name)
+    focus(browser)
+    chord("l")
+    location = uri(recovered / copy_name)
+    session.start(["wl-copy", "--foreground", "--type", "text/plain", location], "recovered-location-clipboard.log")
+    session.wait_for(lambda: session.run(["wl-paste", "--no-newline"]) == location, "private recovered path clipboard")
+    chord("v")
+    key("Return")
+    session.wait_for(lambda: title("Recovered directory"), "browse the recovered file's folder")
     session.run(["niri", "msg", "action", "set-window-width", "340"])
     session.wait_for(lambda: next(w for w in windows() if w["id"] == browser["id"])["layout"]["window_size"][0] == 340, "actual narrow recovered-folder Browser")
     key("space")

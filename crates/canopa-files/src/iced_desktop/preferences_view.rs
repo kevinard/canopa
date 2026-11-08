@@ -12,6 +12,8 @@ use iced::{
 };
 
 struct Form<'a> {
+    desktop: &'a Desktop,
+    wide: bool,
     appearance: &'a Appearance,
     editor: &'a Editor,
     order: Vec<iced::widget::Id>,
@@ -38,6 +40,15 @@ impl<'a> Form<'a> {
         in_form: bool,
     ) -> Element<'a, Message> {
         let id = self.register(name, in_form, event.is_some());
+        let primary = name == "save";
+        let icon = match name {
+            "page-Views" => Some(chrome::Icon::Columns),
+            "page-Toolbar" => Some(chrome::Icon::Edit),
+            "page-Locations" => Some(chrome::Icon::Places),
+            "page-Shortcuts" => Some(chrome::Icon::Terminal),
+            _ => None,
+        };
+        let tab = icon.is_some();
         let keyboard_message = event.as_ref().map(|event| match event {
             Event::Change(target, Change::Record(false)) => {
                 Message::Preferences(Event::Change(*target, Change::Record(true)))
@@ -45,25 +56,55 @@ impl<'a> Form<'a> {
             other => Message::Preferences(other.clone()),
         });
         let message = event.map(Message::Preferences);
-        focus::control_with_keyboard(
-            id,
+        let label = text(label.into())
+            .font(canopa_ui::font(self.appearance))
+            .size(self.appearance.typography().label_size.px() + if tab { 1.0 } else { 0.0 });
+        let label: Element<'a, Message> = if let Some(icon) = icon {
+            row![self.desktop.icons.chrome(icon, 16.0, 0.9), label]
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .into()
+        } else {
+            label.into()
+        };
+        let button = canopa_ui::styled_action(
+            label,
             message.clone(),
-            keyboard_message,
+            if primary {
+                canopa_ui::Action::Primary
+            } else if name == "reload" {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
+            false,
             self.appearance,
-            canopa_ui::styled_action(
-                text(label.into())
-                    .font(canopa_ui::font(self.appearance))
-                    .size(self.appearance.typography().label_size.px()),
-                message,
-                if active {
-                    canopa_ui::Action::Normal
-                } else {
-                    canopa_ui::Action::Quiet
-                },
-                false,
-                self.appearance,
-            ),
         )
+        .width(if tab && self.wide {
+            Length::Fill
+        } else {
+            Length::Shrink
+        });
+        let content = container(button).style({
+            let appearance = self.appearance;
+            move |_| {
+                if active && tab {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                } else if active && !primary {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface).border(
+                        iced::Border {
+                            width: 1.0,
+                            color: chrome::ink(appearance, canopa_theme::ColorRole::Accent)
+                                .scale_alpha(0.60),
+                            radius: 8.0.into(),
+                        },
+                    )
+                } else {
+                    container::Style::default()
+                }
+            }
+        });
+        focus::control_with_keyboard(id, message, keyboard_message, self.appearance, content)
     }
     fn change(
         &mut self,
@@ -120,7 +161,8 @@ impl<'a> Form<'a> {
         let mut check = checkbox(value)
             .label(label.to_owned())
             .font(canopa_ui::font(self.appearance))
-            .text_size(self.appearance.typography().body_size.px());
+            .text_size(self.appearance.typography().body_size.px())
+            .style(canopa_ui::checkbox_style);
         if enabled {
             let event = event.clone();
             check = check.on_toggle(move |_| Message::Preferences(event.clone()));
@@ -135,8 +177,14 @@ impl<'a> Form<'a> {
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, Message> {
+    iced::widget::responsive(move |size| contents(desktop, editor, size.width >= 620.0)).into()
+}
+
+fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let mut form = Form {
+        desktop,
+        wide,
         appearance,
         editor,
         order: vec![],
@@ -144,9 +192,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
     };
     let target = editor.target();
     let id = editor.window;
-    let mut tabs = row![].spacing(4);
+    let mut tabs = Vec::new();
     for page in Page::ALL {
-        tabs = tabs.push(form.button(
+        tabs.push(form.button(
             page.label(),
             &format!("page-{page:?}"),
             editor.enabled().then_some(Event::Page(target, page)),
@@ -164,7 +212,24 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
     } else {
         String::new()
     };
-    let mut body = column![tabs.wrap(), container(form.note(notice))].spacing(8);
+    let navigation: Element<'a, Message> = if wide {
+        container(column(tabs).spacing(4))
+            .padding(7)
+            .width(142)
+            .into()
+    } else {
+        container(row(tabs).spacing(4).wrap())
+            .padding(4)
+            .width(Length::Fill)
+            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine))
+            .into()
+    };
+    let mut body = column![container(if notice.is_empty() {
+        space().height(0).into()
+    } else {
+        form.note(notice)
+    })]
+    .spacing(8);
     // The prompt has its own fixed slot, so source/error notices never reparent fields.
     let prompt: Element<'a, Message> = if let Some(confirmation) = editor.confirmation {
         column![
@@ -202,47 +267,93 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
     };
     body = body.push(container(prompt));
     let page = match editor.page {
-        Page::Views => views(&mut form),
+        Page::Views => views(&mut form, wide),
         Page::Toolbar => toolbar(&mut form),
         Page::Locations => locations(&mut form),
         Page::Shortcuts => shortcuts(&mut form),
     };
-    body = body.push(
-        scrollable(container(page).padding(iced::Padding {
-            right: 12.0,
-            ..Default::default()
-        }))
+    let page = scrollable(column![page, space().height(8)].spacing(0))
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new()
+                .width(6)
+                .scroller_width(6)
+                .spacing(8),
+        ))
         .id(editor.focus_id("scroll"))
-        .height(Length::Fill),
+        .width(Length::Fill)
+        .height(Length::Fill);
+    let page: Element<'a, Message> = if wide {
+        row![
+            navigation,
+            iced::widget::rule::vertical(1).style(chrome::divider),
+            page
+        ]
+        .spacing(10)
+        .height(Length::Fill)
+        .into()
+    } else {
+        column![navigation, page]
+            .spacing(8)
+            .height(Length::Fill)
+            .into()
+    };
+    body = body.push(page);
+    let reload = form.button(
+        "Reload",
+        "reload",
+        editor.enabled().then_some(Event::Reload(id)),
+        false,
+        false,
     );
-    body = body.push(form.note(&editor.status));
+    body = body.push(iced::widget::rule::horizontal(1).style(chrome::divider));
     body = body.push(
         row![
-            form.button(
-                "Reload",
-                "reload",
-                editor.enabled().then_some(Event::Reload(id)),
-                false,
-                false
-            ),
+            column![
+                form.note(&editor.status),
+                text("Alt+1–4 pages · Ctrl+S Save · Ctrl+R Reload")
+                    .font(canopa_ui::font(appearance))
+                    .size(appearance.typography().label_size.px() + 1.0)
+                    .style(canopa_ui::muted),
+            ]
+            .spacing(3)
+            .width(Length::Fill),
             form.button(
                 "Save preferences",
                 "save",
                 (editor.enabled() && editor.base.is_editable()).then_some(Event::Save(id)),
-                false,
+                true,
                 false
             )
         ]
+        .align_y(iced::Alignment::Center)
         .spacing(8),
     );
-    body = body.push(form.note("Alt+1–4 pages · Ctrl+S Save · Ctrl+R Reload"));
+    form.order.push(chrome::dismiss_id(id));
     let default = editor.confirmation.map(|_| editor.focus_id("keep"));
     let appearance = appearance.clone();
-    let content = container(body)
-        .padding(16)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+    let content = chrome::centered(
+        column![
+            chrome::heading_with_action(
+                desktop,
+                chrome::Icon::Settings,
+                "Preferences",
+                "Choose how Files looks and behaves.",
+                Some(
+                    row![reload, chrome::dismiss(desktop, id)]
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center)
+                        .into()
+                ),
+            ),
+            body,
+        ]
+        .spacing(8),
+        760.0,
+    )
+    .padding(16)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
     let shortcuts = if editor.enabled() {
         Page::ALL
             .iter()
@@ -259,7 +370,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
     };
     focus::group_with_shortcuts(content, form.order, form.reveal, default, shortcuts)
 }
-fn views<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
+fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
     let v = &form.editor.draft.view;
     let mut modes = row![].spacing(4);
     for (mode, label) in [
@@ -284,24 +395,34 @@ fn views<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
             true,
         ));
     }
-    let mut body = column![
-        form.note("Default view"),
-        modes.wrap(),
-        form.note("Sort by"),
-        sorts.wrap(),
+    let appearance = form.appearance;
+    let segment = |choices: Element<'a, Message>| {
+        container(choices)
+            .padding(3)
+            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine))
+    };
+    let ordering = column![
+        chrome::section_title(appearance, "Default view"),
+        segment(modes.wrap().into()),
+        chrome::section_title(appearance, "Sort by"),
+        segment(sorts.wrap().into()),
         form.toggle(
             "Descending order",
             "descending",
             v.descending,
             Change::Descending(!v.descending)
-        ),
-        form.field(
-            "Column width (160–640)",
-            "width",
-            &form.editor.width,
-            Field::Width
-        ),
-        form.note("Visible file details")
+        )
+    ]
+    .spacing(10);
+    let mut details = column![
+        chrome::section_title(form.appearance, "Column layout"),
+        container(form.field("Column width", "width", &form.editor.width, Field::Width))
+            .max_width(220),
+        text("160–640 pixels")
+            .font(canopa_ui::font(form.appearance))
+            .size(form.appearance.typography().label_size.px())
+            .style(canopa_ui::muted),
+        chrome::section_title(form.appearance, "Details in List view")
     ]
     .spacing(10);
     for (detail, label) in [
@@ -310,15 +431,41 @@ fn views<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
         (Detail::Kind, "Kind"),
     ] {
         let checked = v.details.contains(&detail);
-        body = body.push(form.toggle(
+        details = details.push(form.toggle(
             label,
             &format!("detail-{detail:?}"),
             checked,
             Change::Detail(detail, !checked),
         ));
     }
-    body.push(form.note("Folders inherit these defaults except for choices explicitly saved for that folder. Use defaults in View options clears a folder’s choices.")).into()
+    let settings: Element<'a, Message> = if wide {
+        row![
+            container(ordering).width(Length::FillPortion(1)),
+            container(details).width(Length::FillPortion(1)),
+        ]
+        .spacing(20)
+        .into()
+    } else {
+        column![
+            ordering,
+            iced::widget::rule::horizontal(1).style(chrome::divider),
+            details,
+        ]
+        .spacing(14)
+        .into()
+    };
+    column![
+        container(settings).padding([6, 4]).width(Length::Fill),
+        iced::widget::rule::horizontal(1).style(chrome::divider),
+        container(
+            form.note("Folders inherit these settings unless they have their own view options.")
+        )
+        .padding([4, 4])
+    ]
+    .spacing(10)
+    .into()
 }
+
 fn item_label(editor: &Editor, id: &str) -> String {
     if id == "location" {
         "Location field".into()
@@ -378,13 +525,17 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
         Field::Filter,
     ));
     let filter = editor.filter.to_lowercase();
-    let choices = Command::ALL.iter().map(|c| c.id().to_owned()).chain(
-        editor
-            .base
-            .actions
-            .iter()
-            .map(|a| format!("action:{}", a.id)),
-    );
+    let choices = Command::ALL
+        .iter()
+        .filter(|c| **c != Command::QuickLook)
+        .map(|c| c.id().to_owned())
+        .chain(
+            editor
+                .base
+                .actions
+                .iter()
+                .map(|a| format!("action:{}", a.id)),
+        );
     for id in choices.filter(|id| {
         !editor.draft.toolbar.contains(id)
             && item_label(editor, id).to_lowercase().contains(&filter)

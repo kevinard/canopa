@@ -67,11 +67,14 @@ def verify(session, fixture, browser, launched, scheme, scale):
     session.run(["wtype", "/uncommitted-location"])
     keys("Escape")
     keys("End")
-    end_frame = session.capture("iced-02-end-revealed.png")
     expect_open(fixture / "document-69.txt")
+    # Wait for the actual target to open before taking the reference frame.
+    # The key events can reach Files before the compositor paints the selection.
+    end_frame = session.capture("iced-02-end-revealed.png")
     session.run(["niri", "msg", "action", "set-window-width", "360"])
-    time.sleep(.7)
-    assert title("Downloads")["layout"]["window_size"][0] == 360
+    session.wait_for(lambda: (window := title("Downloads")) and window["layout"]["window_size"][0] == 360,
+                     "narrow Browser geometry")
+    time.sleep(.25)
     narrow_frame = session.capture("iced-03-narrow-keeps-selection.png")
     # The selected final row must remain painted at the same vertical offset.
     # Checking its fill away from text avoids accepting an offscreen selection.

@@ -1,14 +1,33 @@
 use super::row_state::keyed_row;
-use super::*;
+use super::{chrome::Icon, *};
 use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Alignment, Length,
-    widget::{self, checkbox, column, container, row, scrollable, sensor, space, text, text_input},
+    font::Weight,
+    widget::{
+        self, checkbox, column, container, row, rule, scrollable, sensor, space, text, text_input,
+    },
 };
 
+pub(super) const TOOLBAR_MODES_WIDTH: f32 = 1120.0;
+
+pub(super) fn entry_padding(appearance: &canopa_theme::Appearance, grid: bool) -> iced::Padding {
+    let style = appearance.style(UiKind::MenuRow);
+    let mut padding = canopa_ui::content_padding(style);
+    if !grid && !style.custom_padding {
+        padding.top -= 5.0;
+        padding.bottom -= 5.0;
+    }
+    padding
+}
+
 pub(super) fn row_height(appearance: &canopa_theme::Appearance) -> f32 {
-    let padding = canopa_ui::content_padding(appearance.style(UiKind::MenuRow));
-    (appearance.typography().body_size.px() * 1.3).ceil() + padding.top + padding.bottom
+    let padding = entry_padding(appearance, false);
+    (appearance.typography().body_size.px() * 1.3)
+        .ceil()
+        .max(18.0)
+        + padding.top
+        + padding.bottom
 }
 
 pub(super) fn entry_height(appearance: &canopa_theme::Appearance, searching: bool) -> f32 {
@@ -63,7 +82,62 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     let appearance = &desktop.configuration.appearance;
     let body_size = appearance.typography().body_size.px();
     let label_size = appearance.typography().label_size.px();
-    let mut body = column![toolbar::view(desktop, id, tab)].spacing(0);
+    let sidebar = sidebar_visible(desktop.configuration.settings.sidebar, window.width);
+    let font = canopa_ui::font(appearance);
+    let mut title_font = font;
+    title_font.weight = Weight::Semibold;
+    // Keep the toolbar at the same tree index as the sidebar comes and goes.
+    // Iced stores the active location editor's focus and caret in this tree.
+    let brand: Element<'_, Message> = if sidebar {
+        let mark = container(desktop.icons.chrome(Icon::Folder, 20.0, 1.0))
+            .padding(7)
+            .style(move |_| {
+                container::Style::default()
+                    .background(chrome::ink(appearance, ColorRole::AccentSurface))
+                    .border(iced::Border::default().rounded(9))
+            });
+        container(
+            row![
+                mark,
+                text("Files")
+                    .font(title_font)
+                    .size(appearance.typography().title_size.px())
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        )
+        .padding([0, 16])
+        .width(chrome::SIDEBAR_WIDTH + 1.0)
+        .into()
+    } else {
+        space().width(0).into()
+    };
+    let paths = tab.column_paths(window.width, desktop.configuration.settings.sidebar);
+    let minimum = tab
+        .browser
+        .as_ref()
+        .map_or(0.0, |browser| f32::from(browser.view().column_width));
+    let content_width = window.width
+        - if sidebar {
+            chrome::SIDEBAR_WIDTH + 1.0
+        } else {
+            0.0
+        };
+    let spare = (content_width - paths.len() as f32 * minimum).max(0.0);
+    // Share surplus with the immediate parent while keeping the larger share
+    // available for the current folder.
+    let parent_extra = if paths.len() > 1 {
+        (spare * 0.46).min(68.0)
+    } else {
+        0.0
+    };
+    let toolbar = iced::widget::Row::from_vec(vec![brand, toolbar::view(desktop, id, tab)])
+        .width(Length::Fill)
+        .align_y(Alignment::Center);
+    let mut body = column![
+        container(toolbar).style(move |_| chrome::bar(appearance, true)),
+        rule::horizontal(1).style(chrome::divider)
+    ];
     let notice: Element<'_, Message> = if let Some(error) = &desktop.configuration_error {
         container(text(format!("Configuration was not applied: {error}")).size(label_size))
             .padding([6, 12])
@@ -122,14 +196,17 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     if let Some(session) = &tab.search {
         body = body.push(search_bar(desktop, id, tab, session));
     }
-    let mut content = row![].height(Length::Fill).spacing(1);
-    let sidebar = sidebar_visible(desktop.configuration.settings.sidebar, window.width);
+    let mut content = row![].height(Length::Fill);
     if sidebar {
-        content = content.push(places(desktop, id));
+        content = content
+            .push(places(desktop, id))
+            .push(rule::vertical(1).style(chrome::divider));
     }
     if let Some(browser) = &tab.browser {
-        let paths = tab.column_paths(window.width, desktop.configuration.settings.sidebar);
         for (index, path) in paths.iter().enumerate() {
+            if index != 0 {
+                content = content.push(rule::vertical(1).style(chrome::divider));
+            }
             let current = path == browser.path();
             let searching = current && browser.search().is_some();
             let grid =
@@ -163,9 +240,11 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                             } else {
                                 "Empty folder"
                             })
-                            .size(body_size),
+                            .size(body_size)
+                            .font(font)
+                            .color(chrome::ink(appearance, ColorRole::Muted)),
                         )
-                        .padding(12),
+                        .padding([16, 18]),
                     ));
                 }
                 let offset = if current {
@@ -183,7 +262,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     RowKey::Top,
                     space().height(range.start as f32 * height),
                 ));
-                for entry in visible[range.clone()].iter().copied() {
+                for (index, entry) in visible[range.clone()].iter().copied().enumerate() {
                     let selected = if current {
                         browser.selected().contains(&entry.path)
                     } else {
@@ -203,6 +282,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                                 focused,
                                 searching,
                                 grid: false,
+                                alternate: !(range.start + index).is_multiple_of(2),
                             },
                         ),
                     ));
@@ -227,19 +307,15 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             }
             let heading = if searching {
                 "Search results".to_owned()
+            } else if path == Path::new("/") {
+                "Filesystem".to_owned()
+            } else if path == &desktop.home {
+                "Home".to_owned()
             } else {
                 path.file_name()
                     .unwrap_or(path.as_os_str())
                     .to_string_lossy()
                     .into_owned()
-            };
-            let heading = if current
-                && !searching
-                && browser.view().mode != crate::preferences::ViewMode::Columns
-            {
-                format!("{heading} · {}", if grid { "Icons" } else { "List" })
-            } else {
-                heading
             };
             let path_for_drop = path.clone();
             let path = path.clone();
@@ -277,14 +353,112 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             } else {
                 list.into()
             };
-            let appearance = appearance.clone();
+            let symbol = desktop.icons.chrome(
+                if searching {
+                    Icon::Search
+                } else if path_for_drop == Path::new("/") {
+                    Icon::Drive
+                } else if path_for_drop == desktop.home {
+                    Icon::Home
+                } else {
+                    Icon::Folder
+                },
+                18.0,
+                if current { 1.0 } else { 0.82 },
+            );
+            let symbol: Element<'_, Message> = if current {
+                container(symbol)
+                    .padding(5)
+                    .style(move |_| chrome::highlight(appearance, ColorRole::Raised))
+                    .into()
+            } else {
+                container(symbol).padding(5).into()
+            };
+            let inline = current
+                && !searching
+                && super::listing_ui::inline_details(
+                    appearance,
+                    browser.view(),
+                    tab.viewport_width,
+                );
+            let heading = if inline {
+                let trailing = entry_padding(appearance, false).right + 14.0;
+                row![
+                    space().width(30),
+                    chrome::single_line(
+                        super::listing_ui::name_heading(browser.view()),
+                        title_font,
+                        label_size,
+                        Some(chrome::ink(
+                            appearance,
+                            if browser.view().sort == crate::preferences::SortField::Name {
+                                ColorRole::Text
+                            } else {
+                                ColorRole::Muted
+                            },
+                        )),
+                        true,
+                    ),
+                    super::listing_ui::detail_cells(appearance, browser.view(), None),
+                    space().width(trailing),
+                ]
+            } else {
+                row![
+                    symbol,
+                    chrome::single_line(
+                        heading,
+                        title_font,
+                        if current { body_size + 4.0 } else { body_size },
+                        Some(chrome::ink(appearance, ColorRole::Text)),
+                        tab.location.is_none() && desktop.action_menu.is_none(),
+                    ),
+                ]
+            }
+            .spacing(7)
+            .align_y(Alignment::Center);
+            let heading = container(heading)
+                .height((body_size * 1.3 + 23.0).ceil())
+                .align_y(Alignment::Center)
+                .padding([0, 11])
+                .width(Length::Fill)
+                .style(move |_| {
+                    let role = if current && !inline {
+                        ColorRole::AccentSurface
+                    } else {
+                        ColorRole::Raised
+                    };
+                    let mut background = chrome::ink(appearance, role);
+                    background.a = if current { 1.0 } else { 0.58 };
+                    container::Style::default().background(background)
+                });
             let folder: Element<'_, Message> = container(column![
-                container(text(heading).size(label_size)).padding([8, 10]),
-                list
+                heading,
+                rule::horizontal(if current { 2 } else { 1 }).style(move |theme| {
+                    let mut style = chrome::divider(theme);
+                    if current && !inline {
+                        style.color = chrome::ink(appearance, ColorRole::Accent);
+                        style.color.a = 0.72;
+                    }
+                    style
+                }),
+                container(list).padding([6, 7]).height(Length::Fill)
             ])
-            .width(Length::FillPortion(1))
+            .width(if current {
+                Length::Fill
+            } else if index + 2 == paths.len() {
+                Length::Fixed(minimum + parent_extra - 1.0)
+            } else {
+                Length::Fixed(minimum - 1.0)
+            })
             .height(Length::Fill)
-            .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)))
+            .style(move |_| {
+                if current {
+                    container::Style::default()
+                } else {
+                    container::Style::default()
+                        .background(chrome::ink(appearance, ColorRole::Spine))
+                }
+            })
             .into();
             content = content.push(super::drag_ui::target_region(
                 desktop,
@@ -368,11 +542,6 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
         .map_or(status.clone(), |(_, feedback)| {
             format!("{feedback} · {status}")
         });
-    body = body.push(
-        container(text(status).size(label_size).wrapping(text::Wrapping::None))
-            .clip(true)
-            .padding([6, 12]),
-    );
     let summary = [
         desktop.file_operations.summary(),
         desktop.jobs.summary(),
@@ -382,24 +551,87 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     .flatten()
     .collect::<Vec<_>>()
     .join(" · ");
-    if !summary.is_empty() {
-        body = body.push(
-            container(
-                row![
-                    text(summary).size(label_size).width(Length::Fill),
-                    canopa_ui::styled_action(
-                        text("Operations").size(label_size),
-                        Some(Message::Command(id, Command::Operations)),
-                        canopa_ui::Action::Quiet,
-                        false,
-                        appearance
-                    )
-                ]
-                .spacing(8),
+    let wide_status = window.width >= 620.0;
+    let status = if wide_status && !summary.is_empty() && tab.error.is_none() {
+        format!("{status}  ·  {summary}")
+    } else {
+        status
+    };
+    let mut footer = row![
+        container(
+            text(status)
+                .font(font)
+                .size(label_size + 1.0)
+                .color(chrome::ink(
+                    appearance,
+                    if tab.error.is_some() {
+                        ColorRole::Danger
+                    } else {
+                        ColorRole::Text
+                    },
+                ))
+                .wrapping(text::Wrapping::None)
+        )
+        .clip(true)
+        .width(Length::Fill)
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+    let operation_button = || {
+        canopa_ui::styled_action(
+            row![
+                desktop.icons.chrome(Icon::Activity, 15.0, 0.90),
+                text("Operations").font(font).size(label_size),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+            Some(Message::Command(id, Command::Operations)),
+            canopa_ui::Action::Normal,
+            false,
+            appearance,
+        )
+    };
+    if wide_status && !summary.is_empty() {
+        footer = footer.push(operation_button());
+    }
+    if let Some(browser) = &tab.browser
+        && browser.search().is_none()
+        && window.width < TOOLBAR_MODES_WIDTH
+    {
+        footer = footer.push(
+            view_switcher(
+                desktop,
+                id,
+                tab,
+                browser.view().mode,
+                window.width >= 560.0,
+                false,
             )
-            .padding([4, 10]),
+            .1,
         );
     }
+    let mut status_bar = column![footer].spacing(3);
+    if !summary.is_empty() && (!wide_status || tab.error.is_some()) {
+        let activity = row![
+            text(summary)
+                .font(font)
+                .size(label_size)
+                .style(canopa_ui::muted)
+                .width(Length::Fill),
+        ]
+        .align_y(Alignment::Center);
+        status_bar = status_bar.push(if wide_status {
+            activity
+        } else {
+            activity.push(operation_button())
+        });
+    }
+    body = body.push(rule::horizontal(1).style(chrome::divider)).push(
+        container(status_bar)
+            .width(Length::Fill)
+            .padding([5, 14])
+            .style(move |_| chrome::bar(appearance, false)),
+    );
     let shortcuts = if desktop
         .action_menu
         .as_ref()
@@ -610,61 +842,181 @@ fn search_bar<'a>(
     super::focus::editing_shortcuts(container(body).padding([4, 10]), shortcuts)
 }
 
+pub(super) fn view_switcher<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    tab: &Tab,
+    current: crate::preferences::ViewMode,
+    show_labels: bool,
+    top: bool,
+) -> (f32, Element<'a, Message>) {
+    use crate::preferences::ViewMode;
+    use iced::widget::{button, tooltip};
+
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let size = appearance.typography().label_size.px() + 1.0;
+    let mut controls = row![].spacing(2).align_y(Alignment::Center);
+    let mut width = 10.0;
+    for (mode, icon, command) in [
+        (ViewMode::Columns, Icon::Columns, Command::Columns),
+        (ViewMode::List, Icon::List, Command::List),
+        (ViewMode::Icons, Icon::Grid, Command::Icons),
+    ] {
+        let active = mode == current;
+        width += 32.0;
+        let mut content = row![
+            desktop
+                .icons
+                .chrome(icon, 16.0, if active { 1.0 } else { 0.8 })
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+        if active || show_labels {
+            let label = match mode {
+                ViewMode::Columns => "Columns",
+                ViewMode::List => "List",
+                ViewMode::Icons => "Icons",
+            };
+            width += 6.0 + chrome::text_width(label, font, size);
+            content = content.push(text(label).font(font).size(size));
+        }
+        let control = button(content)
+            .padding([4, 8])
+            .on_press_maybe((!active && !tab.loading).then_some(Message::Command(id, command)))
+            .style(move |theme, status| {
+                let mut style =
+                    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+                style.border.radius = 6.0.into();
+                if active {
+                    style.text_color = chrome::ink(appearance, ColorRole::Text);
+                    style.border.width = 1.0;
+                    style.border.color = chrome::ink(appearance, ColorRole::Accent);
+                    style.border.color.a = 0.32;
+                    style.background =
+                        Some(chrome::ink(appearance, ColorRole::AccentSurface).into());
+                }
+                style
+            });
+        let control: Element<'_, Message> = if active
+            || show_labels
+            || tab.location.is_some()
+            || desktop.action_menu.is_some()
+            || desktop.folder_options.is_some()
+        {
+            control.into()
+        } else {
+            tooltip(
+                control,
+                text(command.label()).font(font).size(size),
+                if top {
+                    tooltip::Position::Bottom
+                } else {
+                    tooltip::Position::Top
+                },
+            )
+            .into()
+        };
+        controls = controls.push(control);
+    }
+    (
+        width,
+        container(controls)
+            .padding(3)
+            .style(move |_| chrome::highlight(appearance, ColorRole::Spine))
+            .into(),
+    )
+}
+
 fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
     let appearance = &desktop.configuration.appearance;
-    let mut places = column![text("Places").size(appearance.typography().label_size.px())]
-        .spacing(6)
-        .padding(10);
-    for place in &desktop.configuration.settings.places {
-        if matches!(
-            place,
-            crate::interface::Place::Builtin(
-                crate::interface::PlaceKind::Trash | crate::interface::PlaceKind::Recovery
-            )
-        ) {
-            places = places.push(
-                canopa_ui::styled_action(
-                    text(place.label()).size(appearance.typography().body_size.px()),
-                    Some(Message::Command(
-                        id,
-                        if matches!(
-                            place,
-                            crate::interface::Place::Builtin(crate::interface::PlaceKind::Recovery)
-                        ) {
-                            Command::Recovery
-                        } else {
-                            Command::ShowTrash
-                        },
-                    )),
-                    canopa_ui::Action::Quiet,
-                    false,
-                    appearance,
-                )
-                .width(Length::Fill),
-            );
-            continue;
-        }
-        let Some(path) = desktop.place_path(place) else {
-            continue;
+    use crate::interface::{Place, PlaceKind};
+    let tab = desktop.active(id).expect("Places has an active tab");
+    let active_index = desktop
+        .configuration
+        .settings
+        .places
+        .iter()
+        .enumerate()
+        .filter_map(|(index, place)| {
+            let path = desktop.place_path(place)?;
+            (path == tab.path() || path != Path::new("/") && tab.path().starts_with(&path))
+                .then(|| (index, path.components().count()))
+        })
+        .max_by_key(|&(index, depth)| (depth, std::cmp::Reverse(index)))
+        .map(|(index, _)| index);
+    let mut places = column![chrome::section(appearance, "Places")]
+        .spacing(2)
+        .padding([10, 10]);
+    for (index, place) in desktop.configuration.settings.places.iter().enumerate() {
+        let icon = match place {
+            Place::Builtin(PlaceKind::Home) => Icon::Home,
+            Place::Builtin(PlaceKind::Desktop) => Icon::Desktop,
+            Place::Builtin(PlaceKind::Documents) => Icon::Documents,
+            Place::Builtin(PlaceKind::Downloads) => Icon::Downloads,
+            Place::Builtin(PlaceKind::Pictures) => Icon::Pictures,
+            Place::Builtin(PlaceKind::Filesystem) => Icon::Drive,
+            Place::Builtin(PlaceKind::Trash) => Icon::Trash,
+            Place::Builtin(PlaceKind::Recovery) => Icon::Recovery,
+            Place::Bookmark { .. } => Icon::Folder,
         };
-        let place: Element<'_, Message> = canopa_ui::styled_action(
-            text(place.label()).size(appearance.typography().body_size.px()),
-            Some(Message::Go(id, path.clone())),
+        let path = desktop.place_path(place);
+        let active = active_index == Some(index);
+        let message = match place {
+            Place::Builtin(PlaceKind::Trash) => Message::Command(id, Command::ShowTrash),
+            Place::Builtin(PlaceKind::Recovery) => Message::Command(id, Command::Recovery),
+            _ => {
+                let Some(path) = &path else {
+                    continue;
+                };
+                Message::Go(id, path.clone())
+            }
+        };
+        let mut font = canopa_ui::font(appearance);
+        if active {
+            font.weight = Weight::Semibold;
+        }
+        let label = chrome::single_line(
+            place.label(),
+            font,
+            appearance.typography().body_size.px(),
+            None,
+            tab.location.is_none() && desktop.action_menu.is_none(),
+        );
+        let button = canopa_ui::styled_action(
+            row![
+                desktop
+                    .icons
+                    .chrome(icon, 18.0, if active { 1.0 } else { 0.86 }),
+                label
+            ]
+            .spacing(9)
+            .align_y(Alignment::Center),
+            Some(message),
             canopa_ui::Action::Quiet,
             false,
-            &desktop.configuration.appearance,
+            appearance,
         )
-        .width(Length::Fill)
-        .into();
-        places = places.push(super::drag_ui::target_region(
-            desktop,
-            id,
-            desktop.active(id).expect("Places has an active tab"),
-            path,
-            None,
-            2,
-            place,
-        ));
+        .width(Length::Fill);
+        let button: Element<'_, Message> = if active {
+            container(button)
+                .width(Length::Fill)
+                .style(move |_| {
+                    let mut style = chrome::highlight(appearance, ColorRole::AccentSurface);
+                    style.border.width = 1.0;
+                    style.border.color = chrome::ink(appearance, ColorRole::Accent);
+                    style.border.color.a = 0.42;
+                    style
+                })
+                .into()
+        } else {
+            button.into()
+        };
+        let button = match path {
+            Some(path) => super::drag_ui::target_region(desktop, id, tab, path, None, 2, button),
+            None => button,
+        };
+        places = places.push(button);
     }
     if !desktop.devices.catalog.devices.is_empty()
         || matches!(
@@ -673,11 +1025,16 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         )
         || desktop.devices.error.is_some()
     {
-        places = places.push(super::devices_ui::places(desktop, id));
+        places = places
+            .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
+            .push(super::devices_ui::places(desktop, id));
     }
     container(scrollable(places))
-        .width(160)
+        .width(chrome::SIDEBAR_WIDTH)
         .height(Length::Fill)
+        .style(move |_| {
+            container::Style::default().background(chrome::ink(appearance, ColorRole::Background))
+        })
         .into()
 }
 
@@ -706,6 +1063,7 @@ pub(super) fn input_style(
     if let Some(color) = frame.text_color {
         result.value = color;
     }
+    result.selection = chrome::ink(appearance, ColorRole::AccentSurface);
     result.border = frame.border;
     if focused && style.states[4].border_color.is_none() {
         result.border.width = result.border.width.max(1.0);

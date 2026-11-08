@@ -281,7 +281,10 @@ impl Editor {
                 Focus::Check(Check::Toolbar),
             ]);
         }
-        controls.extend([Focus::Reload, Focus::Save]);
+        controls.push(Focus::Reload);
+        if self.dirty {
+            controls.push(Focus::Save);
+        }
         controls
     }
 
@@ -308,8 +311,13 @@ impl Desktop {
         if let Some(editor) = &self.action_editor {
             return window::gain_focus(editor.window);
         }
+        let size = if self.configuration.actions.is_empty() {
+            Size::new(600.0, 332.0)
+        } else {
+            Size::new(720.0, 700.0)
+        };
         let (id, opened) = window::open(window::Settings {
-            size: Size::new(720.0, 700.0),
+            size,
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -675,6 +683,10 @@ impl Desktop {
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, Message> {
+    iced::widget::responsive(move |size| contents(desktop, editor, size.width >= 720.0)).into()
+}
+
+fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let size = appearance.typography().body_size.px();
     let label_size = appearance.typography().label_size.px();
@@ -704,7 +716,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
         let button = canopa_ui::styled_action(
             text(label).size(label_size).font(font),
             message.clone(),
-            canopa_ui::Action::Quiet,
+            match focus {
+                Some(Focus::Save) => canopa_ui::Action::Primary,
+                Some(Focus::Add) if editor.drafts.is_empty() => canopa_ui::Action::Primary,
+                Some(Focus::Add | Focus::Reload | Focus::Record) => canopa_ui::Action::Normal,
+                Some(Focus::Delete) => canopa_ui::Action::Destructive,
+                _ => canopa_ui::Action::Quiet,
+            },
             false,
             appearance,
         );
@@ -723,27 +741,44 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
     let mut chooser = row![].spacing(4);
     for draft in &editor.drafts {
         let message = enabled.then_some(Message::ActionEditor(Event::Select(id, draft.serial)));
+        let selected = Some(draft.serial) == editor.selected;
+        let label = chrome::section_title(appearance, &draft.name);
+        let button = canopa_ui::styled_action(
+            label,
+            message.clone(),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        );
         chooser = chooser.push(super::focus::control(
             editor.focus_id(Focus::Select(draft.serial)),
-            message.clone(),
+            message,
             appearance,
-            canopa_ui::styled_action(
-                text(&draft.name).size(label_size).font(font),
-                message,
-                if Some(draft.serial) == editor.selected {
-                    canopa_ui::Action::Normal
+            container(button).style(move |_| {
+                if selected {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
                 } else {
-                    canopa_ui::Action::Quiet
-                },
-                false,
-                appearance,
-            ),
+                    container::Style::default()
+                }
+            }),
         ));
     }
     let mut body = column![
-        text("Run your commands on selected files and folders.")
-            .size(size)
-            .font(font),
+        chrome::heading_with_action(
+            desktop,
+            chrome::Icon::Terminal,
+            "Custom Actions",
+            "Commands for files and folders",
+            Some(
+                row![
+                    action("Reload", enabled.then_some(Event::Reload(id))),
+                    chrome::dismiss(desktop, id),
+                ]
+                .spacing(4)
+                .align_y(iced::Alignment::Center)
+                .into()
+            ),
+        ),
         scrollable(chooser)
             .id(chooser_id(id))
             .direction(scrollable::Direction::Horizontal(
@@ -769,29 +804,35 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
         .drafts
         .iter()
         .position(|draft| Some(draft.serial) == editor.selected);
-    body = body.push(
-        row![
-            action(
-                "Add action",
-                (enabled && editor.drafts.len() < 256).then_some(Event::Add(id))
-            ),
-            action("Delete", target.filter(|_| enabled).map(Event::Remove)),
-            action(
-                "Earlier",
-                target
-                    .filter(|_| enabled && index.is_some_and(|n| n > 0))
-                    .map(|target| Event::Move(target, true))
-            ),
-            action(
-                "Later",
-                target
-                    .filter(|_| enabled && index.is_some_and(|n| n + 1 < editor.drafts.len()))
-                    .map(|target| Event::Move(target, false))
-            )
-        ]
-        .spacing(6)
-        .wrap(),
+    let add = action(
+        "Add action",
+        (enabled && editor.drafts.len() < 256).then_some(Event::Add(id)),
     );
+    let empty_action = if editor.drafts.is_empty() {
+        Some(add)
+    } else {
+        body = body.push(
+            row![
+                add,
+                action("Delete", target.filter(|_| enabled).map(Event::Remove)),
+                action(
+                    "Earlier",
+                    target
+                        .filter(|_| enabled && index.is_some_and(|n| n > 0))
+                        .map(|target| Event::Move(target, true))
+                ),
+                action(
+                    "Later",
+                    target
+                        .filter(|_| enabled && index.is_some_and(|n| n + 1 < editor.drafts.len()))
+                        .map(|target| Event::Move(target, false))
+                )
+            ]
+            .spacing(6)
+            .wrap(),
+        );
+        None
+    };
     if let Some(confirmation) = editor.confirmation {
         body = body.push(
             container(column![
@@ -830,7 +871,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
             let mut input = text_input(hint, value)
                 .id(editor.focus_id(Focus::Field(which)))
                 .size(size)
-                .font(font)
+                .font(if which == Field::Command {
+                    iced::Font::MONOSPACE
+                } else {
+                    font
+                })
                 .padding(canopa_ui::content_padding(appearance.style(UiKind::Input)))
                 .style(move |theme, status| view::input_style(&input_appearance, theme, status));
             if enabled {
@@ -840,29 +885,39 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
             }
             column![text(label).size(label_size).font(font), input].spacing(4)
         };
-        form = form
-            .push(field("Name", "Resize images", &draft.name, Field::Name))
-            .push(field(
-                "Icon (optional)",
-                "image-x-generic-symbolic",
-                &draft.icon,
-                Field::Icon,
-            ))
-            .push(field(
-                "Command",
-                "my-script %F",
-                &draft.command,
-                Field::Command,
-            ));
-        form = form.push(text("%f first path · %F all paths · %n first name · %N all names\n%d current folder · %% percent\nQuote arguments with spaces. Commands run directly; call a shell explicitly when needed.").size(label_size).font(font));
-        form = form.push(field(
-            "Filename patterns (separated by ;)",
-            "*.png; *.jpg",
-            &draft.patterns,
-            Field::Patterns,
-        ));
+        let section = |label| chrome::section_title(appearance, label);
+        let divider = || iced::widget::rule::horizontal(1).style(chrome::divider);
+        let hint = |label: &'static str| {
+            text(label)
+                .size(label_size)
+                .font(font)
+                .style(canopa_ui::muted)
+                .wrapping(text::Wrapping::WordOrGlyph)
+        };
+        let details = column![
+            section("Action details"),
+            field("Name", "Resize images", &draft.name, Field::Name),
+            field("Icon (optional)", "image-x-generic-symbolic", &draft.icon, Field::Icon),
+            field("Command", "my-script %F", &draft.command, Field::Command),
+            hint("%f first path · %F all paths · %n first name · %N all names\n%d current folder · %% percent\nQuote arguments with spaces. Call a shell explicitly when a command needs one."),
+        ].spacing(12);
+        let conditions = column![
+            section("Availability"),
+            field(
+                "Filename patterns",
+                "*.png; *.jpg",
+                &draft.patterns,
+                Field::Patterns
+            ),
+            hint("Separate patterns with a semicolon."),
+        ]
+        .spacing(12);
         let toggle = |label: &'static str, value, which| {
-            let mut control = checkbox(value).label(label).text_size(size).font(font);
+            let mut control = checkbox(value)
+                .label(label)
+                .text_size(size)
+                .font(font)
+                .style(canopa_ui::checkbox_style);
             if enabled {
                 control = control.on_toggle(move |value| {
                     Message::ActionEditor(Event::Toggle(target, which, value))
@@ -875,61 +930,87 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
                 container(control).padding(2),
             )
         };
-        form = form.push(
-            row![
+        let conditions = conditions
+            .push(row![
                 toggle("Files", draft.files, Check::Files),
                 toggle("Folders", draft.folders, Check::Folders)
+            ].spacing(16))
+            .push(row![
+                container(field("Minimum items", "1", &draft.minimum, Field::Minimum)).width(Length::FillPortion(1)),
+                container(field("Maximum items", "0", &draft.maximum, Field::Maximum)).width(Length::FillPortion(1)),
+            ].spacing(10))
+            .push(hint("A minimum of 0 allows an empty selection. A maximum of 0 allows any number of items."))
+            .push(divider())
+            .push(section("Ways to run it"))
+            .push(field("Shortcut (optional)", "<Control><Alt>i", &draft.shortcut, Field::Shortcut))
+            .push(action("Record shortcut…", enabled.then_some(Event::Record(id))))
+            .push(toggle("Show in the toolbar", draft.toolbar, Check::Toolbar))
+            .push(hint("Custom commands run outside Files’ Undo history."));
+        form = if wide {
+            column![
+                row![
+                    chrome::card(appearance, details).width(Length::FillPortion(1)),
+                    chrome::card(appearance, conditions).width(Length::FillPortion(1)),
+                ]
+                .spacing(12)
             ]
-            .spacing(16),
-        );
-        form = form
-            .push(field(
-                "Minimum items (0 allows no selection)",
-                "1",
-                &draft.minimum,
-                Field::Minimum,
-            ))
-            .push(field(
-                "Maximum items (0 means any)",
-                "0",
-                &draft.maximum,
-                Field::Maximum,
-            ))
-            .push(field(
-                "Shortcut (optional)",
-                "<Control><Alt>i",
-                &draft.shortcut,
-                Field::Shortcut,
-            ))
-            .push(action(
-                "Record shortcut…",
-                enabled.then_some(Event::Record(id)),
-            ))
-            .push(toggle("Toolbar button", draft.toolbar, Check::Toolbar));
-        form = form.push(text("Actions run only when invoked. Commands own their effects; Files does not add them to Undo.").size(label_size).font(font));
-    } else {
-        form = form.push(text("Add an action to get started.").size(size).font(font));
+        } else {
+            details.push(divider()).push(conditions)
+        };
     }
-    body = body.push(
-        scrollable(container(form).padding(iced::Padding {
-            right: 12.0,
-            ..Default::default()
-        }))
-        .id(form_id(id))
-        .height(Length::Fill),
-    );
-    body = body.push(text(&editor.status).size(label_size).font(font));
-    body = body.push(
-        row![
-            action("Reload", enabled.then_some(Event::Reload(id))),
-            action("Save actions", enabled.then_some(Event::Save(id)))
-        ]
-        .spacing(8),
-    );
+    if editor.drafts.is_empty() {
+        body = body.push(chrome::empty_state(
+            desktop,
+            chrome::Icon::Edit,
+            "No custom actions yet",
+            "Add a command to the context menu or assign a keyboard shortcut.",
+            empty_action,
+        ));
+    } else {
+        body = body.push(
+            scrollable(form)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new()
+                        .width(6)
+                        .scroller_width(6)
+                        .spacing(9),
+                ))
+                .id(form_id(id))
+                .height(Length::Fill),
+        );
+    }
+    let status = if editor.drafts.is_empty()
+        && editor.status == "Configure an action, then save. Ctrl+S saves all actions."
+    {
+        ""
+    } else {
+        &editor.status
+    };
+    let mut footer = row![
+        text(status)
+            .size(label_size)
+            .font(font)
+            .style(canopa_ui::muted)
+            .width(Length::Fill),
+    ]
+    .spacing(8)
+    .align_y(iced::Alignment::Center);
+    if !editor.drafts.is_empty() || editor.dirty {
+        footer = footer.push(action(
+            "Save actions",
+            (enabled && editor.dirty).then_some(Event::Save(id)),
+        ));
+    }
+    if !status.is_empty() || !editor.drafts.is_empty() || editor.dirty {
+        body = body
+            .push(iced::widget::rule::horizontal(1).style(chrome::divider))
+            .push(footer);
+    }
     let controls = editor.controls();
     let order = controls
         .iter()
         .map(|control| editor.focus_id(*control))
+        .chain(std::iter::once(chrome::dismiss_id(id)))
         .collect();
     let reveal = controls
         .iter()
@@ -944,7 +1025,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, editor: &'a Editor) -> Element<'a, 
         .collect();
     let default = editor.confirmation.map(|_| editor.focus_id(Focus::Keep));
     let appearance = appearance.clone();
-    let content = container(body)
+    let content = chrome::centered(body, 800.0)
         .id(root_id(id))
         .padding(16)
         .width(Length::Fill)

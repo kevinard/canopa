@@ -66,6 +66,36 @@ fn reopening_keeps_each_phase_without_executing_queued_or_running_requests() {
 }
 
 #[test]
+fn request_admission_time_survives_checkpoints_and_legacy_histories() {
+    let root = tempfile::tempdir().unwrap();
+    let history = root.path().join("history");
+    let engine = OperationEngine::open(&history).unwrap();
+    let old = engine.queue_request(&"older record").unwrap();
+    drop(engine);
+    rusqlite::Connection::open(&history)
+        .unwrap()
+        .execute("DROP TABLE request_times", [])
+        .unwrap();
+
+    let engine = OperationEngine::open(&history).unwrap();
+    assert_eq!(all(&engine)[0].id(), old.id());
+    assert_eq!(all(&engine)[0].accepted_at(), None);
+    let before = chrono::Utc::now().timestamp();
+    let new = engine.queue_request(&"new record").unwrap();
+    let accepted = new.accepted_at().unwrap();
+    assert!((before..=chrono::Utc::now().timestamp()).contains(&accepted));
+    let finished = engine
+        .checkpoint_request(&new, RequestPhase::Finished, &"finished record")
+        .unwrap();
+    assert_eq!(finished.accepted_at(), Some(accepted));
+    drop(engine);
+    let engine = OperationEngine::open(&history).unwrap();
+    let records = all(&engine);
+    assert_eq!(records[0].accepted_at(), Some(accepted));
+    assert_eq!(records[1].accepted_at(), None);
+}
+
+#[test]
 fn stale_checkpoints_cannot_replace_newer_plans_or_resurrect_dismissed_work() {
     let root = tempfile::tempdir().unwrap();
     let engine = OperationEngine::open(root.path().join("state/history")).unwrap();

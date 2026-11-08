@@ -171,7 +171,7 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     checks.append("360px Views form saves its actual uncommitted width and default List; invalid width leaves disk unchanged")
 
     page(2)
-    key("Tab", 13)
+    key("Tab", 12)
     type_text("Refresh")
     key("Tab")
     key("Return")
@@ -184,16 +184,16 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
                 "checks": checks + ["actual Refresh addition through filtered keyboard traversal"],
                 "scope": "reduced reproduction; not full preference acceptance"}
     page(2)
-    key("Tab", 11)
+    key("Tab", 10)
     key("Return")  # Select final Refresh item.
-    key("Tab", 12)
+    key("Tab", 11)
     key("Return")  # Move it earlier.
     chord("s", "ctrl")
-    saved(lambda s: toolbar()[-2:] == ["refresh", "quick-look"])
+    saved(lambda s: toolbar()[-2:] == ["refresh", "search"])
     checks.append("toolbar command search adds Refresh and Earlier changes its actual saved order")
 
     page(2)
-    key("Tab", 14)
+    key("Tab", 13)
     type_text("Marker")
     key("Tab")
     key("Return")
@@ -232,7 +232,7 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     chord("d", "ctrl")
     wait_title("Preferences")
     width(360)
-    key("Tab", 18)  # Four pages, three sidebar choices, eight places, order controls, name.
+    key("Tab", 19)  # Four pages, three sidebar choices, nine places, two order controls, name.
     replace("draft part")
     chord("a", "ctrl")
     chord("c", "ctrl")
@@ -272,7 +272,7 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     focus_browser()
     chord("d", "ctrl")
     wait_title("Preferences")
-    key("Tab", 18)  # Four pages, three sidebar choices, eight places, order controls, name.
+    key("Tab", 19)  # Four pages, three sidebar choices, nine places, two order controls, name.
     replace("Raw bookmark")
     chord("s", "ctrl")
     saved(lambda s: any(n[1] == "Raw bookmark" and "path-bytes=" + raw.hex() in n for n in nodes("bookmark")))
@@ -291,8 +291,9 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     key("End")
     key("Up")
     key("Return")
-    key("End")
-    key("Return")  # Raw bookmark.
+    key("Home")
+    key("Down", 9)  # Back, eight built-in places, then the bookmark.
+    key("Return")
     wait_title(os.path.basename(raw).decode(errors="replace"))
     type_text("note")
     chord("m", "ctrl", "alt")

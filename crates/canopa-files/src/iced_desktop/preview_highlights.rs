@@ -202,7 +202,16 @@ pub(super) fn style(
 ) -> iced::widget::text_editor::Style {
     let mut style = iced::widget::text_editor::default(theme, status);
     // Keep all lexical foregrounds readable when their text is selected.
-    style.selection = canopa_ui::colors(theme).raised;
+    let palette = canopa_ui::colors(theme);
+    style.selection = palette.raised;
+    style.background = if theme.extended_palette().is_dark {
+        palette.background.into()
+    } else {
+        palette.background.scale_alpha(0.42).into()
+    };
+    style.border.color = palette.border.scale_alpha(0.58);
+    style.border.width = 1.0;
+    style.border.radius = 9.0.into();
     style
 }
 

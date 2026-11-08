@@ -35,6 +35,7 @@ pub(super) struct RowTarget {
 #[derive(Clone, Debug)]
 pub(super) enum Event {
     Menu(window::Id),
+    Locations(window::Id),
     Row(RowTarget),
     Close(window::Id),
     Builtin(Arc<Source>, Command),
@@ -189,21 +190,13 @@ impl Desktop {
                 ));
                 items.push(("Locations…".into(), Item::Locations));
                 items.push(("View options…".into(), Item::FolderOptions));
-                self.action_menu = Some(Menu {
-                    source,
-                    items,
-                    focused: 0,
-                });
-                if let Some(tab) = self.active_mut(id) {
-                    tab.location = None;
-                }
-                use iced::advanced::widget::{operate, operation};
-                if let Some(tab) = self.active(id) {
-                    return operate(operation::scope(
-                        view::root_id(id, tab.id),
-                        operation::focusable::unfocus(),
-                    ));
-                }
+                return self.present_menu(source, items);
+            }
+            Event::Locations(id) => {
+                let Some(source) = self.action_source(id) else {
+                    return Task::none();
+                };
+                return self.present_menu(source, self.location_items(false));
             }
             Event::Row(target) => {
                 let Some(tab) = self.active(target.window).filter(|tab| {
@@ -313,45 +306,7 @@ impl Desktop {
                 };
                 self.action_menu = None;
                 return match item {
-                    Item::Locations => {
-                        let mut items = vec![("Back".into(), Item::Back)];
-                        for place in &self.configuration.settings.places {
-                            if let Some(path) = self.place_path(place) {
-                                items.push((place.label().to_owned(), Item::Place(path)));
-                            }
-                        }
-                        if self.devices.catalog.status == crate::local_volumes::DeviceStatus::Ready
-                        {
-                            for device in &self.devices.catalog.devices {
-                                if device.root.is_some() || device.can_mount {
-                                    items.push((
-                                        format!(
-                                            "{}{}",
-                                            if device.root.is_some() {
-                                                "Open "
-                                            } else {
-                                                "Mount "
-                                            },
-                                            device.name
-                                        ),
-                                        Item::Device(device.token, false),
-                                    ));
-                                }
-                                if let Some(kind) = device.removal {
-                                    items.push((
-                                        format!("{} {}", kind.label(), device.name),
-                                        Item::Device(device.token, true),
-                                    ));
-                                }
-                            }
-                        }
-                        self.action_menu = Some(Menu {
-                            source,
-                            items,
-                            focused: 0,
-                        });
-                        Task::none()
-                    }
+                    Item::Locations => self.present_menu(source, self.location_items(true)),
                     Item::Back => self.action_event(Event::Menu(source.window)),
                     Item::Place(path) => {
                         self.navigate(source.window, path, Navigation::Visit, None)
@@ -380,6 +335,65 @@ impl Desktop {
             }
         }
         Task::none()
+    }
+
+    fn present_menu(&mut self, source: Arc<Source>, items: Vec<(String, Item)>) -> Task<Message> {
+        let id = source.window;
+        self.action_menu = Some(Menu {
+            source,
+            items,
+            focused: 0,
+        });
+        let Some(tab) = self.active_mut(id) else {
+            return Task::none();
+        };
+        tab.location = None;
+        use iced::advanced::widget::{operate, operation};
+        operate(operation::scope(
+            view::root_id(id, tab.id),
+            operation::focusable::unfocus(),
+        ))
+    }
+
+    fn location_items(&self, back: bool) -> Vec<(String, Item)> {
+        use crate::interface::{Place, PlaceKind};
+
+        let mut items = Vec::new();
+        if back {
+            items.push(("Back".into(), Item::Back));
+        }
+        for place in &self.configuration.settings.places {
+            let item = match place {
+                Place::Builtin(PlaceKind::Trash) => Some(Item::Command(Command::ShowTrash)),
+                Place::Builtin(PlaceKind::Recovery) => Some(Item::Command(Command::Recovery)),
+                _ => self.place_path(place).map(Item::Place),
+            };
+            if let Some(item) = item {
+                items.push((place.label().to_owned(), item));
+            }
+        }
+        if self.devices.catalog.status == crate::local_volumes::DeviceStatus::Ready {
+            for device in &self.devices.catalog.devices {
+                if device.root.is_some() || device.can_mount {
+                    let verb = if device.root.is_some() {
+                        "Open"
+                    } else {
+                        "Mount"
+                    };
+                    items.push((
+                        format!("{verb} {}", device.name),
+                        Item::Device(device.token, false),
+                    ));
+                }
+                if let Some(kind) = device.removal {
+                    items.push((
+                        format!("{} {}", kind.label(), device.name),
+                        Item::Device(device.token, true),
+                    ));
+                }
+            }
+        }
+        items
     }
 
     pub(super) fn action_shortcut(

@@ -4,8 +4,10 @@ mod action_editor;
 mod actions_ui;
 mod activation_ui;
 mod catalog_notices;
+mod chrome;
 mod clipboard_ui;
 mod configuration_ui;
+mod destination_browser;
 mod device_question;
 mod devices_ui;
 mod drag_geometry;
@@ -267,7 +269,7 @@ impl Tab {
             browser.column_paths_for_content(
                 width
                     - if sidebar_visible(sidebar, width) {
-                        161.0
+                        chrome::SIDEBAR_WIDTH + 1.0
                     } else {
                         0.0
                     },
@@ -1219,9 +1221,11 @@ impl Desktop {
                             .is_some_and(|index| {
                                 old.visible(index, browser.scroll(), tab.viewport_height)
                             });
-                        if tab.viewport_width > 0.0 && old.columns != new.columns {
+                        let reflow = old.columns != new.columns || old.height != new.height;
+                        if tab.viewport_width > 0.0 && reflow {
                             let row = (browser.scroll() / old.height).floor() as usize;
-                            let remainder = browser.scroll() % old.height;
+                            let remainder =
+                                (browser.scroll() % old.height) * new.height / old.height;
                             browser.set_scroll(new.top(row * old.columns) + remainder);
                             remapped = true;
                         }
@@ -1233,8 +1237,7 @@ impl Desktop {
                             && (std::mem::take(&mut tab.reveal_on_show)
                                 || !empty_search
                                     && was_visible
-                                    && (size.height < tab.viewport_height
-                                        || old.columns != new.columns));
+                                    && (size.height < tab.viewport_height || reflow));
                     }
                     tab.viewport_height = size.height.max(0.0);
                     tab.viewport_width = size.width.max(0.0);
@@ -1746,12 +1749,17 @@ impl Desktop {
         {
             return "Recovery — Canopa Files".into();
         }
-        if self
+        if let Some(dialog) = self
             .recovery_destination
             .as_ref()
-            .is_some_and(|d| d.window == id)
+            .filter(|dialog| dialog.window == id)
         {
-            return "Recover a copy — Canopa Files".into();
+            return if dialog.browser.open() {
+                "Choose a folder — Canopa Files"
+            } else {
+                "Recover a copy — Canopa Files"
+            }
+            .into();
         }
         if self
             .trash_window
@@ -1760,12 +1768,17 @@ impl Desktop {
         {
             return "Trash — Canopa Files".into();
         }
-        if self
+        if let Some(dialog) = self
             .trash_restore
             .as_ref()
-            .is_some_and(|dialog| dialog.window == id)
+            .filter(|dialog| dialog.window == id)
         {
-            return "Restore to folder — Canopa Files".into();
+            return if dialog.browser.open() {
+                "Choose a folder — Canopa Files"
+            } else {
+                "Restore to folder — Canopa Files"
+            }
+            .into();
         }
         if let Some(dialog) = self
             .file_operations

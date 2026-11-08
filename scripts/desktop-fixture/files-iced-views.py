@@ -131,7 +131,9 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
         expect_open(root / following)
 
     foreground = (237, 244, 240) if scheme == "dark" else (32, 52, 44)
-    selected = (61, 80, 78) if scheme == "dark" else (208, 223, 213)
+    accent = (176, 222, 195) if scheme == "dark" else (37, 105, 72)
+    muted = (167, 186, 182) if scheme == "dark" else (82, 103, 94)
+    selected = (48, 75, 65) if scheme == "dark" else (224, 238, 225)
     def pixels(frame, area, color, tolerance=4):
         box = tuple(round(v * scale) for v in area)
         return sum(max(abs(a-b) for a, b in zip(pixel[:3], color)) <= tolerance
@@ -142,7 +144,7 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
             frame = session.capture(name)
             focused = next(w for w in windows() if w["is_focused"])
             width = focused["layout"]["window_size"][0]
-            return pixels(frame, (0, 165, width, frame.height / scale - 40), selected) > 500 * scale * scale
+            return pixels(frame, (0, 190, width, frame.height / scale - 40), selected) > 500 * scale * scale
         session.wait_for(painted, "actual selected tile is painted in the viewport")
 
     def selection_border_visible(name):
@@ -150,7 +152,9 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
             frame = session.capture(name).convert("RGB")
             focused = next(w for w in windows() if w["is_focused"])
             width = round(focused["layout"]["window_size"][0] * scale)
-            top = round(165 * scale)
+            # The active column heading now uses the selected surface color.
+            # Measure the grid below the two-line toolbar and heading.
+            top = round(190 * scale)
             region = frame.crop((0, top, width, frame.height - round(40 * scale)))
             difference = ImageChops.difference(region, Image.new("RGB", region.size, selected))
             channels = difference.split()
@@ -178,7 +182,7 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
         def painted():
             frame = session.capture(name)
             height = frame.height / scale
-            return pixels(frame, (100, height - 135, 240, height - 32), foreground, tolerance=24) > 80 * scale * scale
+            return pixels(frame, (100, height - 135, 240, height - 32), muted, tolerance=24) > 80 * scale * scale
         session.wait_for(painted, "actual detail text is painted beyond the filename")
 
     initial_width = browser["layout"]["window_size"][0]
@@ -247,14 +251,22 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
     session.wait_for(middle_scroll_restored, "empty Search restores the middle-folder scroll, without end clamping")
     quick_look("item-010.txt", "item-011.txt", "views-preview-list.png")
     navigate(root / "item-159.txt")
+    width(initial_width)
+    def wide_list_details():
+        frame = session.capture("views-wide-list-details.png")
+        return pixels(frame, (initial_width - 280, 69, initial_width - 20, 97), muted, tolerance=24) > 35 * scale * scale
+    session.wait_for(wide_list_details, "List detail headings are visible beside the current folder")
+    expect_open(root / "item-159.txt")
+    width(360)
+    expect_open(root / "item-159.txt")
     chord("3", "ctrl")
     saved(root, mode="icons")
     selection_visible("views-03-icon-selection.png")
     key("Home")
     def grid_painted():
         frame = session.capture("views-04-two-column-icons.png")
-        return all(pixels(frame, area, foreground) > 100 * scale * scale
-                   for area in ((64, 164, 116, 220), (244, 164, 296, 220)))
+        return all(pixels(frame, area, foreground) + pixels(frame, area, accent) > 100 * scale * scale
+                   for area in ((64, 183, 116, 240), (230, 183, 282, 240)))
     session.wait_for(grid_painted, "two distinct file icons across the grid row")
     key("Down")
     expect_open(root / "item-000.txt")
@@ -415,6 +427,7 @@ def verify(session, fixture, browser, launched, config, scheme, scale, binary, p
     assert reopened.poll() is None
     return {"status": "passed", "scheme": scheme, "scale": scale, "checks": [
         "columns remain the initial global default", "Ctrl+2 shows a detailed list and keeps the actual selected launch target",
+        "wide List shows aligned detail headings and preserves the selection through wide and narrow row heights",
         "opening and closing empty Search preserves a middle-folder scroll position",
         "Ctrl+3 shows distinct file icons in two columns at 360px", "Up/Down follows grid rows while Left/Right retains folder navigation",
         "List Quick Look opens as a floating source preview", "List preview navigation returns to the exact following file",

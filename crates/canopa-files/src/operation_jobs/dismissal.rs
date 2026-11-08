@@ -65,7 +65,9 @@ impl Worker {
         job.placement = None;
         job.source_placement = None;
         job.work = None;
-        let replacement = job.saved.snapshot(id, Phase::Finished)?;
+        let replacement = job
+            .saved
+            .snapshot(id, Phase::Finished, job.record.accepted_at())?;
         self.update_job(id, Phase::Finished, None, Some(replacement));
         self.trim();
         Ok(())

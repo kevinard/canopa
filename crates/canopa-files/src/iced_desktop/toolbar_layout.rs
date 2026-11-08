@@ -12,9 +12,13 @@ use iced::{
 };
 use std::{cell::Cell, rc::Rc};
 
-const GAP: f32 = 6.0;
+const GAP: f32 = 5.0;
 const ROW_GAP: f32 = 4.0;
 const MIN_LOCATION: f32 = 144.0;
+
+pub(super) fn required(commands: f32, menu: f32, slots: usize) -> f32 {
+    commands + MIN_LOCATION + menu + GAP * slots as f32
+}
 
 #[derive(Clone, Copy)]
 struct Metrics {
@@ -32,7 +36,7 @@ struct Plan {
 }
 impl Metrics {
     fn plan(self, width: f32) -> Plan {
-        let required = self.commands + MIN_LOCATION + self.menu + GAP * self.count as f32;
+        let required = required(self.commands, self.menu, self.count);
         let compact = width < required;
         let menu = self.menu.min(width);
         let location = if compact {
@@ -137,8 +141,13 @@ impl Widget<Message, Theme, Renderer> for Toolbar<'_> {
     ) -> layout::Node {
         let width = limits.max().width;
         let plan = self.metrics.plan(width);
-        self.spacer
-            .set(if plan.compact { 0.0 } else { plan.location });
+        self.spacer.set(if plan.compact {
+            // The location moves to the first row. Its old slot keeps commands
+            // on either side together without changing configured ordering.
+            (width - self.metrics.commands - GAP * (self.metrics.count - 1) as f32).max(0.0)
+        } else {
+            plan.location
+        });
         let widths = [plan.location, plan.menu, plan.commands];
         let mut nodes: Vec<_> = self
             .children

@@ -73,6 +73,7 @@ fn admit_phase(
 ) {
     desktop.file_operations.snapshot.jobs.push(JobSnapshot {
         id: 1,
+        accepted_at: None,
         title: "Create folder".into(),
         phase,
         error: None,

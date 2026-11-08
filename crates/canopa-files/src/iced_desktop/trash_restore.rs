@@ -7,6 +7,7 @@ use iced::{
 };
 
 pub(super) struct Dialog {
+    pub browser: destination_browser::Browser,
     pub window: window::Id,
     pub owner: window::Id,
     pub busy: bool,
@@ -19,6 +20,7 @@ pub(super) struct Dialog {
 pub(super) enum Event {
     Opened(window::Id, Option<window::Id>),
     Folder(window::Id, String),
+    Browser(window::Id, destination_browser::Event),
     Submit(window::Id),
     Close(window::Id),
 }
@@ -39,7 +41,7 @@ impl Desktop {
         let (id, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(500.0, 300.0),
+                size: Size::new(520.0, 320.0),
                 min_size: Some(Size::new(320.0, 240.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -50,12 +52,13 @@ impl Desktop {
             },
         );
         self.trash_restore = Some(Dialog {
+            browser: destination_browser::Browser::default(),
             window: id,
             owner,
             busy: false,
             error: None,
             item,
-            folder: display_location(&self.home),
+            folder: "~".into(),
         });
         opened.map(move |opened| Message::TrashRestore(Event::Opened(id, opened)))
     }
@@ -83,6 +86,15 @@ impl Desktop {
         modifiers: keyboard::Modifiers,
     ) -> Task<Message> {
         if key == keyboard::Key::Named(keyboard::key::Named::Escape)
+            && self
+                .trash_restore
+                .as_ref()
+                .is_some_and(|dialog| dialog.window == id && dialog.browser.open())
+        {
+            return self
+                .trash_restore_event(Event::Browser(id, destination_browser::Event::Cancel));
+        }
+        if key == keyboard::Key::Named(keyboard::key::Named::Escape)
             || (modifiers.control() && key.as_ref() == keyboard::Key::Character("w"))
         {
             return self.close_trash_restore(id);
@@ -92,9 +104,11 @@ impl Desktop {
 
     pub(super) fn trash_restore_event(&mut self, event: Event) -> Task<Message> {
         let id = match &event {
-            Event::Opened(id, _) | Event::Folder(id, _) | Event::Submit(id) | Event::Close(id) => {
-                *id
-            }
+            Event::Opened(id, _)
+            | Event::Folder(id, _)
+            | Event::Browser(id, _)
+            | Event::Submit(id)
+            | Event::Close(id) => *id,
         };
         let Some(dialog) = self
             .trash_restore
@@ -120,12 +134,27 @@ impl Desktop {
                     .chain(iced::widget::operation::focus(control(id, "folder")))
                     .chain(iced::widget::operation::select_all(control(id, "folder")));
             }
-            Event::Folder(_, folder) if !dialog.busy => {
+            Event::Browser(_, event) if !dialog.busy => {
+                let using =
+                    dialog.browser.open() && matches!(event, destination_browser::Event::Use(_));
+                let task = dialog.browser.update(
+                    id,
+                    event,
+                    &mut dialog.folder,
+                    &self.home,
+                    move |event| Message::TrashRestore(Event::Browser(id, event)),
+                );
+                if using && !dialog.browser.open() {
+                    dialog.error = None;
+                }
+                return task;
+            }
+            Event::Folder(_, folder) if !dialog.busy && !dialog.browser.open() => {
                 dialog.folder = folder;
                 dialog.error = None;
             }
             Event::Close(_) => return self.close_trash_restore(id),
-            Event::Submit(_) if !dialog.busy => {
+            Event::Submit(_) if !dialog.busy && !dialog.browser.open() => {
                 if !self.file_operations.ready() {
                     dialog.error = Some("The operation queue is not ready. Try again.".into());
                     return Task::none();
@@ -159,7 +188,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
-    let mut input = text_input("Destination folder or local file URI", &dialog.folder)
+    let message = move |event| Message::TrashRestore(Event::Browser(id, event));
+    if let Some(browser) = dialog.browser.view(desktop, id, message) {
+        return browser;
+    }
+    let browse = destination_browser::browse_button(
+        desktop,
+        id,
+        (!dialog.busy).then_some(message(destination_browser::Event::Browse)),
+    );
+    let mut input = text_input("Folder path", &dialog.folder)
         .id(control(id, "folder"))
         .font(font)
         .size(size)
@@ -181,47 +219,83 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             canopa_ui::styled_action(
                 text(label).font(font).size(small),
                 message,
-                canopa_ui::Action::Quiet,
+                if name == "submit" {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Quiet
+                },
                 false,
                 appearance,
             ),
         )
     };
-    let body = column![
-        text("Restore to folder").font(font).size(size),
-        text(dialog.item.name().to_string_lossy().into_owned())
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::WordOrGlyph),
-        input,
+    let location = local_path(
+        Path::new(&dialog.folder),
+        &desktop.home,
+        Some(&desktop.home),
+    )
+    .ok()
+    .filter(|_| !dialog.folder.is_empty() && !dialog.busy)
+    .map(|path| {
+        chrome::single_line(
+            format!(
+                "Location · {}",
+                super::question_dialog::display_location(&desktop.home, &path)
+            ),
+            font,
+            small,
+            Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
+            true,
+        )
+    });
+    let facts = column![
+        chrome::dialog_heading(
+            desktop,
+            chrome::Icon::Folder,
+            "Restore to folder",
+            dialog.item.name().to_string_lossy().into_owned()
+        ),
+        column![
+            chrome::section_title(appearance, "Destination folder"),
+            row![input, browse]
+                .spacing(8)
+                .align_y(iced::Alignment::Center),
+        ]
+        .spacing(5),
+        location,
         text(dialog.error.as_deref().unwrap_or(if dialog.busy {
             "Accepting operation…"
         } else {
-            "Choose a folder. Existing files are kept."
+            "If this name is already taken, the item stays in Trash."
         }))
         .font(font)
         .size(small)
+        .style(canopa_ui::muted)
         .wrapping(text::Wrapping::WordOrGlyph),
-        row![
-            action("Cancel", "cancel", Event::Close(id)),
-            action("Restore here", "submit", Event::Submit(id))
-        ]
-        .spacing(8)
-        .wrap(),
     ]
-    .spacing(12);
-    let body = container(body)
-        .padding(16)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| {
-            canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
-        });
+    .spacing(10);
+    let actions = row![
+        action("Cancel", "cancel", Event::Close(id)),
+        action("Restore here", "submit", Event::Submit(id))
+    ]
+    .spacing(8);
+    let body = container(
+        column![
+            iced::widget::scrollable(facts).height(Length::Fill),
+            super::question_dialog::decision_actions(actions, None),
+        ]
+        .spacing(10),
+    )
+    .padding(16)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_| canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel)));
     let order = if dialog.busy {
         Vec::new()
     } else {
         vec![
             control(id, "folder"),
+            destination_browser::browse_id(id),
             control(id, "cancel"),
             control(id, "submit"),
         ]

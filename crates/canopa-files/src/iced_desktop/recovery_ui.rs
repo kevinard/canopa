@@ -19,7 +19,6 @@ pub(super) enum Event {
     More(window::Id),
     Recover(window::Id),
     Keep(window::Id),
-    Preview(window::Id),
     Reconcile(window::Id),
     Scroll(window::Id, u64, f32, f32),
     Viewport(window::Id, u64, Size),
@@ -83,7 +82,7 @@ impl Desktop {
             }
         };
         let (id, opened) = window::open(window::Settings {
-            size: Size::new(760.0, 540.0),
+            size: Size::new(680.0, 350.0),
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -134,7 +133,6 @@ impl Desktop {
             | Event::More(id)
             | Event::Recover(id)
             | Event::Keep(id)
-            | Event::Preview(id)
             | Event::Reconcile(id)
             | Event::Scroll(id, ..)
             | Event::Viewport(id, ..)
@@ -198,7 +196,6 @@ impl Desktop {
                 recovery.viewport = size.height
             }
             Event::OpenFailed(_, error) => recovery.error = Some(error),
-            Event::Preview(_) => return self.toggle_preview(id),
             Event::Recover(_) => {
                 let Some(item) = recovery
                     .selected()
@@ -341,9 +338,16 @@ impl Desktop {
     }
 }
 pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> Element<'a, Message> {
+    iced::widget::responsive(move |size| contents(desktop, recovery, size.width >= 620.0)).into()
+}
+
+fn contents<'a>(
+    desktop: &'a Desktop,
+    recovery: &'a RecoveryWindow,
+    wide: bool,
+) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = recovery.window;
     let selected = recovery.selected();
@@ -362,7 +366,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
             canopa_ui::styled_action(
                 text(label).font(font).size(small),
                 message,
-                canopa_ui::Action::Quiet,
+                if name == "recover" {
+                    canopa_ui::Action::Primary
+                } else if name == "refresh" {
+                    canopa_ui::Action::Normal
+                } else {
+                    canopa_ui::Action::Quiet
+                },
                 false,
                 appearance,
             ),
@@ -375,49 +385,57 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
             .jobs
             .iter()
             .any(|j| j.phase == Phase::Interrupted);
-    let buttons = row![
-        action(
+    let has_items = !recovery.snapshot.catalog.items.is_empty();
+    let show_empty_action = !has_items && !recovery.snapshot.loading && !interrupted;
+    let mut item_actions = row![].spacing(6);
+    if has_items {
+        item_actions = item_actions.push(action(
             "Recover a copy…",
             "recover",
             Event::Recover(id),
-            ready && selected.is_some_and(|i| i.entry.is_some())
-        ),
-        action(
-            "Quick Look",
-            "preview",
-            Event::Preview(id),
-            selected.is_some_and(|i| i.entry.is_some())
-        ),
-        action(
-            "Keep in Recovery",
-            "keep",
-            Event::Keep(id),
-            ready && selected.is_some_and(RecoveryItem::can_keep_in_recovery)
-        ),
-        action("Refresh", "refresh", Event::Refresh(id), true),
-        action(
+            ready && selected.is_some_and(|item| item.entry.is_some()),
+        ));
+    }
+    if selected.is_some_and(RecoveryItem::can_keep_in_recovery) {
+        item_actions =
+            item_actions.push(action("Keep in Recovery", "keep", Event::Keep(id), ready));
+    }
+    let refresh = action("Refresh", "refresh", Event::Refresh(id), true);
+    let mut buttons = row![].spacing(6);
+    if recovery.snapshot.catalog.has_more {
+        buttons = buttons.push(action(
             "Load more",
             "more",
             Event::More(id),
-            !recovery.snapshot.loading && recovery.snapshot.catalog.has_more
-        ),
-        action(
+            !recovery.snapshot.loading,
+        ));
+    }
+    if interrupted {
+        buttons = buttons.push(action(
             "Reconcile interrupted work",
             "reconcile",
             Event::Reconcile(id),
-            ready && interrupted
-        ),
-    ]
-    .spacing(4)
-    .wrap();
+            ready,
+        ));
+    }
     let operations = focus::control(
         control(id, "operations"),
         Some(Message::Command(id, Command::Operations)),
         appearance,
         canopa_ui::styled_action(
-            text("Operations").font(font).size(small),
+            text(if show_empty_action {
+                "View Operations"
+            } else {
+                "Operations"
+            })
+            .font(font)
+            .size(small),
             Some(Message::Command(id, Command::Operations)),
-            canopa_ui::Action::Quiet,
+            if show_empty_action {
+                canopa_ui::Action::Primary
+            } else {
+                canopa_ui::Action::Normal
+            },
             false,
             appearance,
         ),
@@ -429,41 +447,93 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
         .saturating_sub(4)
         .min(items.len());
     let end = (first + (recovery.viewport / row_height).ceil() as usize + 12).min(items.len());
+    let mut item_font = font;
+    item_font.weight = iced::font::Weight::Semibold;
+    let muted = Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted));
     let mut rows = column![space().height(first as f32 * row_height)].spacing(0);
     for item in &items[first..end] {
-        let label = column![
-            text(item.name().to_string_lossy().into_owned())
-                .font(font)
-                .size(size)
-                .wrapping(text::Wrapping::None),
-            text(item.original.as_ref().map_or_else(
-                || "Original location unknown".into(),
-                |p| p.display().to_string()
-            ))
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::None),
-            text(&item.message)
-                .font(font)
-                .size(small)
-                .wrapping(text::Wrapping::None),
+        let selected = recovery.selected == Some(item.identity());
+        let original = item.original.as_ref().map_or_else(
+            || "Original location unknown".into(),
+            |path| {
+                super::question_dialog::display_location(
+                    &desktop.home,
+                    path.parent().unwrap_or(path),
+                )
+            },
+        );
+        let summary = if item.held_for_undo {
+            item.entry
+                .as_ref()
+                .and_then(|entry| entry.modified)
+                .map(chrono::DateTime::<chrono::Local>::from)
+                .map_or_else(
+                    || "Held for Undo".into(),
+                    |time| {
+                        format!(
+                            "Modified {}  ·  Held for Undo",
+                            time.format("%b %-d, %Y · %H:%M")
+                        )
+                    },
+                )
+        } else {
+            item.message.clone()
+        };
+        let metadata = column![
+            chrome::single_line(
+                item.name().to_string_lossy().into_owned(),
+                item_font,
+                appearance.typography().body_size.px(),
+                None,
+                true,
+            ),
+            chrome::single_line(original, font, small, muted, true),
+            chrome::single_line(summary, font, small, muted, true),
         ]
-        .spacing(2);
+        .spacing(2)
+        .width(Length::Fill);
+        let identity = item.entry.as_ref().map_or_else(
+            || desktop.icons.chrome(chrome::Icon::Documents, 20.0, 0.9),
+            |entry| desktop.icons.file(entry, 20.0),
+        );
+        let label = row![
+            container(identity)
+                .padding(7)
+                .style(move |_| chrome::highlight(
+                    appearance,
+                    canopa_theme::ColorRole::AccentSurface
+                )),
+            metadata,
+            if wide {
+                if selected {
+                    space().width(15).into()
+                } else {
+                    desktop.icons.chrome(chrome::Icon::Forward, 15.0, 0.82)
+                }
+            } else {
+                chrome::selection_mark(appearance, selected)
+            },
+        ]
+        .spacing(9)
+        .align_y(iced::Alignment::Center);
         rows = rows.push(row_state::keyed_row(
             view::RowKey::Recovery(item.identity()),
-            canopa_ui::styled_action(
-                container(label).width(Length::Fill).clip(true),
-                Some(Message::Recovery(Event::Select(
-                    id,
-                    recovery.snapshot.revision,
-                    item.identity(),
-                ))),
-                canopa_ui::Action::Quiet,
-                recovery.selected == Some(item.identity()),
-                appearance,
+            container(
+                canopa_ui::styled_action(
+                    container(label).width(Length::Fill).clip(true),
+                    Some(Message::Recovery(Event::Select(
+                        id,
+                        recovery.snapshot.revision,
+                        item.identity(),
+                    ))),
+                    canopa_ui::Action::Quiet,
+                    selected,
+                    appearance,
+                )
+                .width(Length::Fill)
+                .height(row_height),
             )
-            .width(Length::Fill)
-            .height(row_height),
+            .style(move |_| chrome::catalogue_row(appearance, selected)),
         ));
     }
     rows = rows.push(space().height((items.len() - end) as f32 * row_height));
@@ -492,7 +562,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
             if recovery.snapshot.loading {
                 "Loading Recovery…".into()
             } else if items.is_empty() {
-                "No retained versions.".into()
+                String::new()
             } else {
                 format!(
                     "{} retained {}{} · Recovery creates a copy and keeps the saved version.",
@@ -510,18 +580,116 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
                 )
             }
         });
+    let (empty_action, tools_action) = if show_empty_action {
+        (Some(operations), None)
+    } else {
+        (None, Some(operations))
+    };
+    let listing: Element<'_, Message> = if items.is_empty() && !recovery.snapshot.loading {
+        chrome::empty_state(
+            desktop,
+            chrome::Icon::Documents,
+            "No saved versions",
+            "Saved versions from file replacements appear here. Operations shows your recent file changes.",
+            empty_action,
+        )
+    } else {
+        listing.into()
+    };
+    let tools = row![refresh, tools_action].spacing(6);
+    let subtitle = if interrupted {
+        "Saved versions and interrupted operations"
+    } else {
+        "Recover a copy of an earlier version."
+    };
+    let heading: Element<'a, Message> = if wide {
+        chrome::heading_with_action(
+            desktop,
+            chrome::Icon::Recovery,
+            "Recovery",
+            subtitle,
+            Some(
+                tools
+                    .push(chrome::dismiss(desktop, id))
+                    .align_y(iced::Alignment::Center)
+                    .into(),
+            ),
+        )
+    } else {
+        column![
+            chrome::heading_with_action(
+                desktop,
+                chrome::Icon::Recovery,
+                "Recovery",
+                subtitle,
+                Some(chrome::dismiss(desktop, id))
+            ),
+            tools.wrap(),
+        ]
+        .spacing(6)
+        .into()
+    };
+    let (listing, narrow_actions): (Element<'a, Message>, _) = if wide && has_items {
+        let note = |value: String| {
+            text(value)
+                .font(font)
+                .size(small)
+                .style(canopa_ui::muted)
+                .wrapping(text::Wrapping::WordOrGlyph)
+        };
+        let inspector = selected.map(|item| {
+            let name = item.name().to_string_lossy().into_owned();
+            let mut details = column![
+                chrome::section_title(appearance, name).wrapping(text::Wrapping::WordOrGlyph)
+            ]
+            .spacing(9);
+            if let Some(original) = &item.original {
+                details = details.push(note(super::question_dialog::display_location(
+                    &desktop.home,
+                    original,
+                )));
+            }
+            if let Some(entry) = &item.entry {
+                details = details.push(note(super::question_dialog::entry_metadata(entry)));
+            }
+            details = details
+                .push(note(item.message.clone()))
+                .push(item_actions.wrap());
+            (control(id, "details-scroll"), 260.0, details.into())
+        });
+        (
+            chrome::catalogue(
+                appearance,
+                "Saved versions",
+                "Select a version to choose where to recover it",
+                listing,
+                inspector,
+            ),
+            None,
+        )
+    } else {
+        (listing, has_items.then(|| item_actions.wrap()))
+    };
     let mut body = column![
-        buttons,
-        operations,
+        heading,
         listing,
         text(status)
             .font(font)
             .size(small)
             .wrapping(text::Wrapping::WordOrGlyph)
     ]
-    .spacing(8)
-    .padding(10)
+    .spacing(10)
+    .padding(16)
     .height(Length::Fill);
+    if narrow_actions.is_some() || recovery.snapshot.catalog.has_more || interrupted {
+        body = body
+            .push(iced::widget::rule::horizontal(1).style(chrome::divider))
+            .push(
+                container(column![narrow_actions, buttons.wrap()].spacing(4))
+                    .width(Length::Fill)
+                    .align_x(iced::Alignment::End),
+            );
+    }
     let mut notices = recovery.snapshot.catalog.warnings.clone();
     notices.extend(
         recovery
@@ -542,8 +710,17 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
             .height(64),
         );
     }
+    order.push(chrome::dismiss_id(id));
+    let reveal = if wide {
+        ["recover", "keep"]
+            .into_iter()
+            .map(|name| (control(id, name), control(id, "details-scroll")))
+            .collect()
+    } else {
+        Vec::new()
+    };
     focus::group(
-        container(body)
+        chrome::centered(body, 940.0)
             .id(control(id, "root"))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -551,7 +728,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, recovery: &'a RecoveryWindow) -> El
                 canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
             }),
         order,
-        Vec::new(),
+        reveal,
         None,
     )
 }

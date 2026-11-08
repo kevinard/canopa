@@ -123,6 +123,7 @@ fn display(path: &Path) -> String {
 pub(super) fn progress<'a>(
     job: &'a JobSnapshot,
     appearance: &'a canopa_theme::Appearance,
+    home: &Path,
 ) -> Option<Element<'a, Message>> {
     if !matches!(job.phase, Phase::Running | Phase::Waiting) {
         return None;
@@ -139,10 +140,29 @@ pub(super) fn progress<'a>(
     let size = appearance.typography().label_size.px();
     Some(
         column![
-            text(format!("{stage}\n{}", display(&progress.path)))
-                .font(font)
-                .size(size)
-                .wrapping(text::Wrapping::WordOrGlyph),
+            chrome::section_title(
+                appearance,
+                format!(
+                    "{stage} {}",
+                    bounded(
+                        &progress
+                            .path
+                            .file_name()
+                            .unwrap_or(progress.path.as_os_str())
+                            .to_string_lossy(),
+                        false
+                    )
+                ),
+            )
+            .wrapping(text::Wrapping::WordOrGlyph),
+            text(bounded(
+                &super::question_dialog::display_location(home, &progress.path),
+                false
+            ))
+            .font(font)
+            .size(size)
+            .style(canopa_ui::muted)
+            .wrapping(text::Wrapping::WordOrGlyph),
             text(format!(
                 "{} {} completed · {} bytes",
                 progress.completed,
@@ -164,15 +184,20 @@ pub(super) fn progress<'a>(
 
 impl Desktop {
     pub(super) fn show_operation_details(&mut self, job: u64) -> Task<Message> {
-        if !self
+        let Some(snapshot) = self
             .file_operations
             .snapshot
             .jobs
             .iter()
-            .any(|entry| entry.id == job)
-        {
+            .find(|entry| entry.id == job)
+        else {
             return Task::none();
-        }
+        };
+        let height = if snapshot.transfer.is_some() {
+            440.0
+        } else {
+            310.0
+        };
         if let Some(dialog) = &mut self.file_operations.details {
             if dialog.job != job {
                 dialog.section = None;
@@ -194,7 +219,7 @@ impl Desktop {
         let (id, opened) = window::open_transient(
             parent,
             window::Settings {
-                size: Size::new(720.0, 560.0),
+                size: Size::new(680.0, height),
                 min_size: Some(Size::new(320.0, 240.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -361,15 +386,20 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
 }
 
 fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Element<'a, Message> {
-    let compact = viewport.height < 400.0;
+    let compact = viewport.height < 300.0;
     let padding = if compact { 8.0 } else { 16.0 };
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
-    let mut facts = column![text("Transfer details").font(font).size(size)].spacing(12);
+    let title: Element<'_, Message> = if compact {
+        chrome::section_title(appearance, "Transfer details").into()
+    } else {
+        chrome::dialog_heading(desktop, chrome::Icon::Activity, "Transfer details", "")
+    };
+    let mut facts = column![title].spacing(12);
     let mut sections = row![].spacing(8);
     let mut pagination = None;
+    let mut review = None;
     let mut order = vec![control(dialog.window, 0)];
     if let Some(job) = desktop
         .file_operations
@@ -378,21 +408,60 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
         .iter()
         .find(|job| job.id == dialog.job)
     {
-        facts = facts
-            .push(
-                text(bounded(&job.title, false))
-                    .font(font)
-                    .size(size)
+        let mut overview = column![
+            row![
+                chrome::section_title(appearance, bounded(&job.title, false))
+                    .width(Length::Fill)
                     .wrapping(text::Wrapping::WordOrGlyph),
-            )
-            .push(
-                text(super::file_operations::status(job.phase))
-                    .font(font)
-                    .size(small),
-            );
-        if let Some(progress) = progress(job, appearance) {
-            facts = facts.push(progress);
+                super::file_operation_rows::phase_badge(appearance, job)
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+        ]
+        .spacing(10);
+        if let Some(progress) = progress(job, appearance, &desktop.home) {
+            overview = overview.push(progress);
         }
+        let destination = match job.decision.as_ref().map(|decision| &decision.question) {
+            Some(crate::operation_jobs::Question::Transfer(
+                crate::operation_jobs::TransferQuestion::Conflict { destination, .. },
+            )) => destination.path.parent(),
+            Some(crate::operation_jobs::Question::Transfer(
+                crate::operation_jobs::TransferQuestion::Unavailable { destination, .. },
+            )) => Some(destination.as_path()),
+            _ => job
+                .transfer
+                .as_ref()
+                .map(|report| report.destination.as_path()),
+        };
+        if let Some(destination) = destination {
+            let path = super::question_dialog::display_location(&desktop.home, destination);
+            overview = overview.push(
+                text(format!("Destination · {path}"))
+                    .font(font)
+                    .size(small)
+                    .style(canopa_ui::muted)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            );
+        }
+        if job.decision.is_some() {
+            let id = control(dialog.window, 8);
+            order.push(id.clone());
+            let message = Message::FileOperation(Event::Review(job.id));
+            review = Some(super::focus::control(
+                id,
+                Some(message.clone()),
+                appearance,
+                canopa_ui::styled_action(
+                    text("Review decision").font(font).size(small),
+                    Some(message),
+                    canopa_ui::Action::Primary,
+                    false,
+                    appearance,
+                ),
+            ));
+        }
+        facts = facts.push(chrome::card(appearance, overview));
         for message in [job.detail.as_ref(), job.error.as_ref()]
             .into_iter()
             .flatten()
@@ -411,18 +480,10 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             let page = dialog.page.min(last);
             let start = page * PAGE_SIZE;
             let end = start.saturating_add(PAGE_SIZE).min(count);
-            facts = facts
-                .push(
-                    text("Results recorded when this transfer stopped.")
-                        .font(font)
-                        .size(small),
-                )
-                .push(
-                    text(format!("{} ({count})", section.label()))
-                        .font(font)
-                        .size(size)
-                        .wrapping(text::Wrapping::WordOrGlyph),
-                );
+            facts = facts.push(
+                chrome::section_title(appearance, format!("{} ({count})", section.label()))
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            );
             if count == 0 {
                 facts = facts.push(text("No items in this section.").font(font).size(small));
             }
@@ -526,7 +587,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
         canopa_ui::styled_action(
             text("Close").font(font).size(small),
             Some(message),
-            canopa_ui::Action::Quiet,
+            canopa_ui::Action::Normal,
             false,
             appearance,
         ),
@@ -572,12 +633,21 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
     let body = container(
         column![
             scrollable(facts)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new()
+                        .width(6)
+                        .scroller_width(6)
+                        .spacing(7),
+                ))
                 .id(scroll(dialog.window))
                 .width(Length::Fill)
                 .height(Length::Fill),
             sections,
             pagination,
-            row![close]
+            iced::widget::rule::horizontal(1).style(chrome::divider),
+            row![iced::widget::space().width(Length::Fill), close, review,]
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
         ]
         .spacing(if compact { 6 } else { 12 }),
     )

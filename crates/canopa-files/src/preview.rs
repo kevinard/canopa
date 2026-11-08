@@ -65,6 +65,13 @@ pub struct PreparedPreview {
     pub content: PreviewContent,
 }
 
+pub(crate) fn audio_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "mp3" | "ogg" | "opus" | "flac" | "wav" | "m4a" | "aac" | "oga"
+    )
+}
+
 #[derive(Clone, Debug)]
 pub struct PreviewRequest {
     pub path: PathBuf,
@@ -120,10 +127,7 @@ impl PreviewRequest {
             "mp4" | "mkv" | "webm" | "mov" | "avi" | "mpg" | "mpeg" | "ogv" | "m4v"
         ) {
             PreviewContent::Video(MediaSource::new(file, metadata.len(), cancellation)?)
-        } else if matches!(
-            extension.as_str(),
-            "mp3" | "ogg" | "opus" | "flac" | "wav" | "m4a" | "aac" | "oga"
-        ) {
+        } else if audio_extension(&extension) {
             PreviewContent::Audio(MediaSource::new(file, metadata.len(), cancellation)?)
         } else if !prefix.contains(&0)
             || prefix.starts_with(&[0xff, 0xfe])

@@ -1,12 +1,12 @@
 //! Device presentation and browser intent. Platform work stays in LocalOperations.
-use super::*;
+use super::{chrome::Icon, *};
 use crate::local_volumes::{
     DeviceOpen as Opened, DeviceOutcome, DevicePhase, DeviceQuestionToken, DeviceRequestId,
     DeviceRequestSnapshot, DeviceSnapshot, DeviceStatus, DeviceToken, LocalOperations,
 };
 use iced::{
-    Length,
-    widget::{column, container, row, text},
+    Alignment, Length,
+    widget::{column, container, row, text, tooltip},
 };
 
 #[derive(Clone, Debug)]
@@ -323,8 +323,9 @@ impl Desktop {
 
 pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
-    let size = appearance.typography().label_size.px();
-    let mut body = column![text("Devices").size(size)].spacing(6);
+    let size = appearance.typography().body_size.px();
+    let font = canopa_ui::font(appearance);
+    let mut body = column![chrome::section(appearance, "Devices")].spacing(2);
     let ready = desktop.devices.catalog.status == DeviceStatus::Ready;
     let origin = Origin::capture(desktop, window);
     for device in &desktop.devices.catalog.devices {
@@ -334,29 +335,55 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
                 ready && !desktop.devices.busy() && (device.root.is_some() || device.can_mount)
             })
             .map(|origin| Message::Device(Event::Open(origin.clone(), device.token)));
+        let active = device
+            .root
+            .as_deref()
+            .is_some_and(|root| desktop.active(window).is_some_and(|tab| tab.path() == root));
+        let label = chrome::single_line(device.name.as_str(), font, size, None, true);
         let open = canopa_ui::styled_action(
-            text(&device.name).size(size),
+            row![
+                desktop
+                    .icons
+                    .chrome(Icon::Drive, 17.0, if open.is_some() { 0.74 } else { 0.35 }),
+                label
+            ]
+            .spacing(9)
+            .align_y(Alignment::Center),
             open,
-            canopa_ui::Action::Quiet,
+            if active {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
             false,
             appearance,
         )
         .width(Length::Fill);
-        let mut item = column![super::drag_ui::device_region(
+        let mut item = row![super::drag_ui::device_region(
             desktop,
             window,
             device.token,
             open.into()
         )]
-        .spacing(2);
+        .align_y(Alignment::Center);
         if let Some(kind) = device.removal {
-            item = item.push(canopa_ui::styled_action(
-                text(kind.label()).size(size),
-                (ready && !desktop.devices.busy())
-                    .then_some(Message::Device(Event::Remove(window, device.token))),
+            let enabled = ready && !desktop.devices.busy();
+            let button = canopa_ui::styled_action(
+                desktop
+                    .icons
+                    .chrome(Icon::Eject, 18.0, if enabled { 0.95 } else { 0.35 }),
+                enabled.then_some(Message::Device(Event::Remove(window, device.token))),
                 canopa_ui::Action::Quiet,
                 false,
                 appearance,
+            )
+            .padding([7, 8]);
+            item = item.push(tooltip(
+                button,
+                text(kind.label())
+                    .font(font)
+                    .size(appearance.typography().label_size.px()),
+                tooltip::Position::Right,
             ));
         }
         body = body.push(super::row_state::keyed_row(

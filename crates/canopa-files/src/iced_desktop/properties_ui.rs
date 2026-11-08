@@ -1,25 +1,23 @@
 //! Present prepared metadata; filesystem inspection stays in the shared core.
 use super::*;
 use canopa_theme::UiKind;
+use gio::prelude::FileExt;
 use iced::{
     Length,
-    widget::{column, container, row, scrollable, text},
+    widget::{column, row, scrollable, text},
 };
 
 #[derive(Clone, Debug)]
 pub(super) enum Event {
     Opened(window::Id),
-    Ready(
-        window::Id,
-        Arc<Result<Vec<crate::file_properties::Item>, String>>,
-    ),
+    Ready(window::Id, Arc<Result<Vec<Item>, String>>),
     Copy(window::Id),
 }
 
 pub(super) struct Window {
     paths: Vec<PathBuf>,
     cancellation: Cancellation,
-    result: Option<Arc<Result<Vec<crate::file_properties::Item>, String>>>,
+    result: Option<Arc<Result<Vec<Item>, String>>>,
 }
 impl Drop for Window {
     fn drop(&mut self) {
@@ -41,6 +39,67 @@ impl Window {
                 }
             )
         }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct Item {
+    filesystem: crate::file_properties::Item,
+    kind: Option<String>,
+    owner: Option<String>,
+    group: Option<String>,
+}
+
+impl Item {
+    fn describe(filesystem: crate::file_properties::Item) -> Self {
+        let kind = filesystem.metadata.as_ref().ok().and_then(|metadata| {
+            if metadata.kind != crate::browse::EntryKind::File {
+                return None;
+            }
+            let (content_type, _) = gio::content_type_guess(Some(&filesystem.path), None);
+            (!gio::content_type_is_unknown(&content_type))
+                .then(|| gio::content_type_get_description(&content_type).into())
+        });
+        let identities = filesystem.metadata.as_ref().ok().and_then(|metadata| {
+            gio::File::for_path(&filesystem.path)
+                .query_info(
+                    "owner::user,owner::group,unix::uid,unix::gid",
+                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                    gio::Cancellable::NONE,
+                )
+                .ok()
+                .filter(|info| {
+                    info.has_attribute("unix::uid")
+                        && info.has_attribute("unix::gid")
+                        && info.attribute_uint32("unix::uid") == metadata.owner
+                        && info.attribute_uint32("unix::gid") == metadata.group
+                })
+        });
+        let attribute = |name| {
+            identities
+                .as_ref()
+                .and_then(|info| info.attribute_string(name))
+                .map(Into::into)
+        };
+        Self {
+            filesystem,
+            kind,
+            owner: attribute("owner::user"),
+            group: attribute("owner::group"),
+        }
+    }
+}
+
+fn permission_label(mode: u32) -> &'static str {
+    match mode & 7 {
+        0 => "none",
+        1 => "execute",
+        2 => "write",
+        3 => "write and execute",
+        4 => "read",
+        5 => "read and execute",
+        6 => "read and write",
+        _ => "read, write, and execute",
     }
 }
 
@@ -83,7 +142,7 @@ fn modified(time: std::time::SystemTime) -> String {
         |utc| {
             if (1..=9999).contains(&utc.year()) {
                 utc.with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M:%S")
+                    .format("%b %-d, %Y · %H:%M:%S")
                     .to_string()
             } else {
                 utc.format("%Y-%m-%d %H:%M:%S UTC").to_string()
@@ -95,7 +154,7 @@ fn modified(time: std::time::SystemTime) -> String {
 impl Desktop {
     pub(super) fn show_properties(&mut self, paths: Vec<PathBuf>) -> Task<Message> {
         let settings = window::Settings {
-            size: Size::new(620.0, 520.0),
+            size: Size::new(620.0, if paths.len() == 1 { 320.0 } else { 420.0 }),
             min_size: Some(Size::new(280.0, 220.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -120,8 +179,17 @@ impl Desktop {
             opened.map(move |_| Message::Properties(Event::Opened(id))),
             Task::perform(
                 async move {
-                    crate::file_properties::read(&worker_paths, &worker_cancel)
-                        .map_err(|e| e.to_string())
+                    let items = crate::file_properties::read(&worker_paths, &worker_cancel)
+                        .map_err(|error| error.to_string())?;
+                    items
+                        .into_iter()
+                        .map(|item| {
+                            if worker_cancel.is_cancelled() {
+                                return Err("Properties inspection cancelled.".into());
+                            }
+                            Ok(Item::describe(item))
+                        })
+                        .collect()
                 },
                 move |result| Message::Properties(Event::Ready(id, Arc::new(result))),
             ),
@@ -202,6 +270,16 @@ pub(super) fn view<'a>(
     id: window::Id,
     properties: &'a Window,
 ) -> Element<'a, Message> {
+    iced::widget::responsive(move |size| contents(desktop, id, properties, size.width >= 550.0))
+        .into()
+}
+
+fn contents<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    properties: &'a Window,
+    wide: bool,
+) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().label_size.px();
@@ -211,52 +289,118 @@ pub(super) fn view<'a>(
             .size(size)
             .wrapping(text::Wrapping::WordOrGlyph)
     };
-    let mut facts = column![
-        text("Properties")
-            .font(font)
-            .size(appearance.typography().body_size.px())
-    ]
-    .spacing(14);
+    let fact = |key: &'static str, value: String| {
+        row![
+            text(key)
+                .font(font)
+                .size(size + 1.0)
+                .color(chrome::ink(appearance, canopa_theme::ColorRole::Muted))
+                .width(104),
+            text(value)
+                .font(font)
+                .size(size + 1.0)
+                .width(Length::Fill)
+                .wrapping(text::Wrapping::WordOrGlyph)
+        ]
+        .spacing(10)
+    };
+    let single = properties.paths.len() == 1;
+    let mut facts = column![].spacing(12);
     match properties.result.as_deref() {
-        None => facts = facts.push(label("Reading properties…".into())),
-        Some(Err(error)) => facts = facts.push(label(error.clone())),
+        None => {
+            facts = facts.push(chrome::card(
+                appearance,
+                label("Reading properties…".into()),
+            ))
+        }
+        Some(Err(error)) => facts = facts.push(chrome::card(appearance, label(error.clone()))),
         Some(Ok(items)) => {
             for item in items {
-                let name = item
-                    .path
+                let path = &item.filesystem.path;
+                let name = path
                     .file_name()
-                    .unwrap_or(item.path.as_os_str())
+                    .unwrap_or(path.as_os_str())
                     .to_string_lossy();
-                let mut entry =
-                    column![label(name.into_owned()), label(uri(&item.path))].spacing(5);
-                match &item.metadata {
-                    Err(error) => entry = entry.push(label(format!("Unavailable: {error}"))),
+                let location = super::question_dialog::display_location(
+                    &desktop.home,
+                    path.parent()
+                        .filter(|parent| !parent.as_os_str().is_empty())
+                        .unwrap_or(path),
+                );
+                let mut entry = column![].spacing(10);
+                if !single {
+                    entry = entry
+                        .push(chrome::section_title(appearance, name.into_owned()))
+                        .push(iced::widget::rule::horizontal(1).style(chrome::divider));
+                }
+                entry = entry
+                    .push(chrome::section_title(appearance, "Details"))
+                    .push(fact("Location", location));
+                match &item.filesystem.metadata {
+                    Err(error) => entry = entry.push(fact("Unavailable", error.clone())),
                     Ok(metadata) => {
                         let kind = match metadata.kind {
                             crate::browse::EntryKind::Directory => "Folder",
-                            crate::browse::EntryKind::File => "File",
+                            crate::browse::EntryKind::File => {
+                                item.kind.as_deref().unwrap_or("File")
+                            }
                             crate::browse::EntryKind::Symlink => "Symbolic link",
                             crate::browse::EntryKind::Other => "Special file",
                         };
-                        entry = entry.push(label(kind.into()));
+                        entry = entry.push(fact("Kind", kind.into()));
                         if metadata.kind == crate::browse::EntryKind::File {
-                            entry = entry.push(label(format!("Size: {} bytes", metadata.bytes)));
+                            entry = entry.push(fact("Size", format!("{} bytes", metadata.bytes)));
                         }
                         if let Some(target) = &metadata.link_target {
                             entry = entry
-                                .push(label(format!("Link target: {}", target.to_string_lossy())));
+                                .push(fact("Link target", target.to_string_lossy().into_owned()));
                         }
-                        let modified = metadata
-                            .modified
-                            .map(modified)
-                            .unwrap_or_else(|| "Unavailable".into());
-                        entry = entry.push(label(format!(
-                            "Modified: {modified}\nPermissions: {:04o}\nOwner: {} · Group: {}",
-                            metadata.permissions, metadata.owner, metadata.group
-                        )));
+                        entry = entry.push(fact(
+                            "Modified",
+                            metadata
+                                .modified
+                                .map(modified)
+                                .unwrap_or_else(|| "Unavailable".into()),
+                        ));
+                        let access_line = |who: &str, identity: Option<String>, bits: u32| {
+                            let identity = identity.map_or_else(
+                                || who.to_owned(),
+                                |identity| format!("{who} · {identity}"),
+                            );
+                            row![
+                                label(identity).width(Length::Fill),
+                                label(permission_label(bits).into()).style(canopa_ui::muted),
+                            ]
+                            .spacing(8)
+                        };
+                        let access = column![
+                            chrome::section_title(appearance, "Access"),
+                            access_line("Owner", item.owner.clone(), metadata.permissions >> 6),
+                            access_line("Group", item.group.clone(), metadata.permissions >> 3),
+                            access_line("Others", None, metadata.permissions),
+                            label(format!(
+                                "Mode {:04o} · UID {} · GID {}",
+                                metadata.permissions, metadata.owner, metadata.group
+                            ))
+                            .style(canopa_ui::muted),
+                        ]
+                        .spacing(9);
+                        entry = if wide {
+                            column![
+                                row![
+                                    iced::widget::container(entry).width(Length::FillPortion(3)),
+                                    iced::widget::container(access).width(Length::FillPortion(2)),
+                                ]
+                                .spacing(18)
+                            ]
+                        } else {
+                            entry
+                                .push(iced::widget::rule::horizontal(1).style(chrome::divider))
+                                .push(access)
+                        };
                     }
                 }
-                facts = facts.push(entry);
+                facts = facts.push(chrome::card(appearance, entry));
             }
         }
     }
@@ -268,25 +412,67 @@ pub(super) fn view<'a>(
             canopa_ui::styled_action(
                 text(title).font(font).size(size),
                 Some(message),
-                canopa_ui::Action::Quiet,
+                canopa_ui::Action::Normal,
                 false,
                 appearance,
             ),
         )
     };
-    let body = container(
+    let (title, subtitle, copy_label) = if let [path] = properties.paths.as_slice() {
+        (
+            path.file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .into_owned(),
+            "Properties".into(),
+            "Copy location",
+        )
+    } else {
+        (
+            "Properties".into(),
+            format!("{} items", properties.paths.len()),
+            "Copy locations",
+        )
+    };
+    let icon = if single {
+        match properties
+            .result
+            .as_deref()
+            .and_then(|result| result.as_ref().ok())
+            .and_then(|items| items.first())
+            .and_then(|item| item.filesystem.metadata.as_ref().ok())
+            .map(|metadata| metadata.kind)
+        {
+            Some(crate::browse::EntryKind::Directory) => chrome::Icon::Folder,
+            _ => chrome::Icon::Documents,
+        }
+    } else {
+        chrome::Icon::Info
+    };
+    let actions = row![
+        action(0, copy_label, Message::Properties(Event::Copy(id))),
+        iced::widget::space().width(Length::Fill),
+        action(1, "Close", Message::Close(id))
+    ]
+    .spacing(8);
+    let body = chrome::centered(
         column![
+            chrome::dialog_heading(desktop, icon, title, subtitle),
             scrollable(facts)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new()
+                        .width(6)
+                        .scroller_width(6)
+                        .spacing(8),
+                ))
                 .id(scroll(id))
                 .width(Length::Fill)
                 .height(Length::Fill),
-            row![
-                action(0, "Copy locations", Message::Properties(Event::Copy(id))),
-                action(1, "Close", Message::Close(id))
-            ]
-            .spacing(8),
+            iced::widget::rule::horizontal(1).style(chrome::divider),
+            actions,
         ]
         .spacing(12),
+        720.0,
     )
     .padding(16)
     .width(Length::Fill)

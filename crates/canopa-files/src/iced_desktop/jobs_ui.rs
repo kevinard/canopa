@@ -408,9 +408,21 @@ impl Desktop {
         if let Some(id) = self.operations_window {
             return window::gain_focus(id);
         }
+        let height = if self.jobs.entries.is_empty()
+            && !self.devices.visible()
+            && !self.file_operations.has_active()
+        {
+            match self.file_operations.snapshot.jobs.len() {
+                0 | 1 => 236.0,
+                2 | 3 => 412.0,
+                _ => 450.0,
+            }
+        } else {
+            450.0
+        };
         let (id, opened) = window::open(window::Settings {
-            size: Size::new(720.0, 540.0),
-            min_size: Some(Size::new(280.0, 240.0)),
+            size: Size::new(720.0, height),
+            min_size: Some(Size::new(280.0, 210.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
                 application_id: "org.canopa.Files".into(),
@@ -458,85 +470,151 @@ impl Desktop {
 }
 
 pub(super) fn view(desktop: &Desktop) -> Element<'_, Message> {
+    iced::widget::responsive(move |size| contents(desktop, size.width)).into()
+}
+
+fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
+    let wide = width >= 560.0;
+    let history_wide = width >= 660.0;
     let appearance = &desktop.configuration.appearance;
-    let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let font = canopa_ui::font(appearance);
     let window = desktop.operations_window.unwrap();
     let action = |label: &'static str, control, message: Option<Message>| {
+        let label = text(label).size(small).font(font);
+        let content: Element<'_, Message> = if control == Control::NewBrowser {
+            row![
+                desktop.icons.chrome(chrome::Icon::Columns, 16.0, 0.86),
+                label
+            ]
+            .spacing(7)
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            label.into()
+        };
         super::focus::control(
             control_id(window, control),
             message.clone(),
             appearance,
             canopa_ui::styled_action(
-                text(label).size(small).font(font),
+                content,
                 message,
-                canopa_ui::Action::Quiet,
+                if control == Control::NewBrowser {
+                    canopa_ui::Action::Quiet
+                } else {
+                    canopa_ui::Action::Normal
+                },
                 false,
                 appearance,
             ),
         )
     };
-    let mut body = column![
-        row![
-            text("Operations").size(size).font(font),
-            action(
-                "New browser",
-                Control::NewBrowser,
-                desktop.operations_window.map(Message::NewBrowser)
-            )
-        ]
-        .spacing(12)
-        .wrap()
+    let (file_rows, file_controls, recovery) =
+        super::file_operation_rows::rows(desktop, window, history_wide);
+    let tools = row![
+        action(
+            "New browser",
+            Control::NewBrowser,
+            Some(Message::NewBrowser(window))
+        ),
+        recovery,
     ]
-    .spacing(12);
+    .spacing(6);
+    let subtitle = "File changes, transfers, and command results";
+    let heading: Element<'_, Message> = if wide {
+        chrome::heading_with_action(
+            desktop,
+            chrome::Icon::Activity,
+            "Operations",
+            subtitle,
+            Some(
+                tools
+                    .push(chrome::dismiss(desktop, window))
+                    .align_y(iced::Alignment::Center)
+                    .into(),
+            ),
+        )
+    } else {
+        column![
+            chrome::heading_with_action(
+                desktop,
+                chrome::Icon::Activity,
+                "Operations",
+                subtitle,
+                Some(chrome::dismiss(desktop, window))
+            ),
+            tools.wrap(),
+        ]
+        .spacing(6)
+        .into()
+    };
+    let mut body = column![heading].spacing(14);
     if let Some(error) = &desktop.jobs.error {
         body = body.push(text(error).size(small).font(font));
     }
     let page = desktop.jobs.page();
     let more = desktop.jobs.has_older();
-    body = body.push(
-        row![
-            action(
-                "Latest",
-                Control::Newest,
-                desktop.jobs.before.map(|_| Message::Job(Event::Newest))
-            ),
-            action(
-                "Older",
-                Control::Older,
-                more.then_some(Message::Job(Event::Older))
-            )
-        ]
-        .spacing(8),
-    );
-    let (file_rows, file_controls) = super::file_operation_rows::rows(desktop, window);
     let (device_rows, device_controls) = super::devices_ui::rows(desktop, window);
     let mut rows = column![file_rows].spacing(16);
     if desktop.devices.visible() {
         rows = rows.push(device_rows);
     }
-    rows = rows.push(text("Commands").font(font).size(size));
+    if !desktop.jobs.entries.is_empty() {
+        rows = rows
+            .push(iced::widget::rule::horizontal(1).style(chrome::divider))
+            .push(chrome::section_title(appearance, "Custom commands"));
+        if desktop.jobs.before.is_some() || more {
+            rows = rows.push(
+                row![
+                    action(
+                        "Latest commands",
+                        Control::Newest,
+                        desktop.jobs.before.map(|_| Message::Job(Event::Newest))
+                    ),
+                    action(
+                        "Older commands",
+                        Control::Older,
+                        more.then_some(Message::Job(Event::Older))
+                    )
+                ]
+                .spacing(8),
+            );
+        }
+    }
     for (id, job) in page {
-        let status = job.status();
-        let mut content = column![
-            text(&job.state.title).size(size).font(font),
-            text(status).size(small).font(font),
-            text(format!(
-                "{} · {} selected",
-                job.state.directory.to_string_lossy(),
-                job.state.count
-            ))
-            .size(small)
-            .font(font)
+        let folder = super::question_dialog::display_location(&desktop.home, &job.state.directory);
+        let identity = row![
+            container(desktop.icons.chrome(chrome::Icon::Terminal, 18.0, 0.9))
+                .padding(8)
+                .style(move |_| chrome::highlight(
+                    appearance,
+                    canopa_theme::ColorRole::AccentSurface
+                )),
+            column![
+                chrome::section_title(appearance, job.state.title.clone())
+                    .wrapping(text::Wrapping::WordOrGlyph),
+                text(format!("{folder}  ·  {} selected", job.state.count))
+                    .size(small)
+                    .font(font)
+                    .style(canopa_ui::muted)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            ]
+            .spacing(3)
+            .width(Length::Fill),
+            container(
+                text(job.status())
+                    .size(small)
+                    .font(font)
+                    .wrapping(text::Wrapping::WordOrGlyph)
+            )
+            .padding([5, 8])
+            .max_width(145)
+            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine)),
         ]
-        .spacing(6);
-        let buttons = row![
-            action(
-                "Cancel",
-                Control::Cancel(id),
-                (job.state.phase != Phase::Finished).then_some(Message::Job(Event::Cancel(id)))
-            ),
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+        let primary = if job.state.phase == Phase::Finished {
             action(
                 if job.output.is_some() {
                     "Hide output"
@@ -544,17 +622,29 @@ pub(super) fn view(desktop: &Desktop) -> Element<'_, Message> {
                     "Show output"
                 },
                 Control::Output(id),
-                (job.state.phase == Phase::Finished).then_some(Message::Job(Event::Output(id)))
-            ),
-            action(
-                "Open folder",
-                Control::OpenFolder(id),
-                Some(Message::Job(Event::OpenFolder(id)))
+                Some(Message::Job(Event::Output(id))),
             )
+        } else {
+            action(
+                "Cancel",
+                Control::Cancel(id),
+                Some(Message::Job(Event::Cancel(id))),
+            )
+        };
+        let mut content = column![
+            identity,
+            row![
+                primary,
+                action(
+                    "Open folder",
+                    Control::OpenFolder(id),
+                    Some(Message::Job(Event::OpenFolder(id))),
+                )
+            ]
+            .spacing(8)
+            .wrap(),
         ]
-        .spacing(8)
-        .wrap();
-        content = content.push(buttons);
+        .spacing(9);
         if let Some(error) = &job.notification_error {
             content = content.push(text(error).size(small).font(font));
         }
@@ -591,18 +681,30 @@ pub(super) fn view(desktop: &Desktop) -> Element<'_, Message> {
                     .height(240)
                     .font(iced::Font::MONOSPACE)
                     .size(small)
+                    .padding(10)
+                    .style(super::preview_highlights::style)
                     .on_action(move |action| Message::Job(Event::Text(id, action))),
             );
         }
         rows = rows.push(super::row_state::keyed_row(
             view::RowKey::Job(id),
-            container(content).padding(12).width(Length::Fill),
+            chrome::card(appearance, content),
         ));
     }
-    if desktop.jobs.entries.is_empty() {
-        rows = rows.push(text("No commands yet.").size(size).font(font));
-    }
-    body = body.push(scrollable(rows).id(scroll_id(window)).height(Length::Fill));
+    body = body.push(
+        scrollable(rows.padding(iced::Padding {
+            bottom: 8.0,
+            ..iced::Padding::ZERO
+        }))
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new()
+                .width(6)
+                .scroller_width(6)
+                .spacing(8),
+        ))
+        .id(scroll_id(window))
+        .height(Length::Fill),
+    );
     let controls = desktop.jobs.controls();
     let header = |control: &&Control| {
         matches!(
@@ -622,6 +724,7 @@ pub(super) fn view(desktop: &Desktop) -> Element<'_, Message> {
                 .filter(|control| !header(control))
                 .map(|control| control_id(window, *control)),
         )
+        .chain(std::iter::once(chrome::dismiss_id(window)))
         .collect();
     let reveal = file_controls
         .iter()
@@ -641,7 +744,7 @@ pub(super) fn view(desktop: &Desktop) -> Element<'_, Message> {
         )
         .collect();
     let appearance = appearance.clone();
-    let content = container(body)
+    let content = chrome::centered(body, 920.0)
         .id(root_id(window))
         .padding(16)
         .width(Length::Fill)

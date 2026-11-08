@@ -129,11 +129,28 @@ impl Desktop {
         let Some(parent) = parent else {
             return Task::none();
         };
+        let short = matches!(&prompt.question, DeviceQuestion::Choice { blocked: false, choices, .. } if choices.len() <= 3);
+        let height =
+            prompt
+                .question
+                .password_fields()
+                .map_or(if short { 205.0 } else { 240.0 }, |fields| {
+                    let count = [
+                        fields.username,
+                        fields.domain,
+                        fields.password,
+                        fields.anonymous,
+                    ]
+                    .into_iter()
+                    .filter(|shown| *shown)
+                    .count();
+                    205.0 + count as f32 * 68.0 + if fields.tcrypt { 115.0 } else { 0.0 }
+                });
         let (window, opened) = window::open_transient(
             parent,
             window::Settings {
-                size: Size::new(520.0, 480.0),
-                min_size: Some(Size::new(320.0, 240.0)),
+                size: Size::new(520.0, height),
+                min_size: Some(Size::new(320.0, if short { 190.0 } else { 240.0 })),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Files".into(),
@@ -369,7 +386,7 @@ fn input<'a>(
     let appearance = &desktop.configuration.appearance;
     let id = dialog.window;
     let token = dialog.token;
-    let mut input = text_input(label, value)
+    let mut input = text_input("", value)
         .id(control(id, field))
         .secure(secure)
         .font(canopa_ui::font(appearance))
@@ -398,14 +415,21 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let mut order = vec![control(id, "cancel")];
     let button = |label: String, name: String, event: Event| {
         let message = Message::Device(event);
+        let primary = name == "submit" || matches!(label.as_str(), "Continue" | "Try again");
         super::focus::control(
-            control(id, name),
+            control(id, name.clone()),
             Some(message.clone()),
             appearance,
             canopa_ui::styled_action(
                 text(label).font(font).size(small),
                 Some(message),
-                canopa_ui::Action::Quiet,
+                if primary {
+                    canopa_ui::Action::Primary
+                } else if name == "cancel" {
+                    canopa_ui::Action::Quiet
+                } else {
+                    canopa_ui::Action::Normal
+                },
                 false,
                 appearance,
             ),
@@ -416,13 +440,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             message
         }
     };
+    let many_choices =
+        matches!(&dialog.question, DeviceQuestion::Choice { choices, .. } if choices.len() > 3);
     let mut body = column![
-        text(dialog.title()).font(font).size(size),
-        text(&dialog.name).font(font).size(size),
+        chrome::dialog_heading(desktop, chrome::Icon::Drive, dialog.title(), &dialog.name),
         text(message)
             .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::WordOrGlyph)
+            .size(size)
+            .wrapping(text::Wrapping::WordOrGlyph),
     ]
     .spacing(12);
     let mut actions = row![button(
@@ -500,14 +525,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                         .label(label)
                         .font(font)
                         .text_size(size)
+                        .style(canopa_ui::checkbox_style)
                         .on_toggle(move |_| Message::Device(event.clone())),
                 ));
             }
         }
         body = body.push(
-            text("Credentials are used for this request and are never saved.")
+            text("Files uses these credentials for this request only.")
                 .size(small)
-                .font(font),
+                .font(font)
+                .style(canopa_ui::muted),
         );
         order.push(control(id, "submit"));
         actions = actions.push(button(
@@ -520,7 +547,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     } = &dialog.question
     {
         if *blocked {
-            body = body.push(text("Close applications using the device before continuing. Files will not close them for you.").size(small).font(font));
+            body = body.push(
+                text("Close the application before retrying.")
+                    .size(small)
+                    .font(font),
+            );
         }
         // The shared Cancel already cancels this request. Keep provider indices
         // for every other action without showing two identical Cancel buttons.
@@ -541,13 +572,36 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     if let Some(error) = &dialog.error {
         body = body.push(text(error).size(small).font(font));
     }
-    body = body.push(actions.wrap());
     let reveal = order
         .iter()
         .cloned()
         .map(|control| (control, scroll(id)))
         .collect();
-    let content = container(scrollable(body).id(scroll(id)))
+    let footer = super::question_dialog::decision_actions(actions, None);
+    let scrollbar = scrollable::Direction::Vertical(
+        scrollable::Scrollbar::new()
+            .width(6)
+            .scroller_width(6)
+            .spacing(6),
+    );
+    let body: Element<'_, Message> = if !many_choices {
+        column![
+            scrollable(body)
+                .id(scroll(id))
+                .direction(scrollbar)
+                .height(Length::Fill),
+            footer,
+        ]
+        .spacing(10)
+        .into()
+    } else {
+        scrollable(body.push(footer))
+            .id(scroll(id))
+            .direction(scrollbar)
+            .height(Length::Fill)
+            .into()
+    };
+    let content = container(body)
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)

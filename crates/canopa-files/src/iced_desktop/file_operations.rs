@@ -271,7 +271,13 @@ impl State {
             .jobs
             .iter()
             .max_by_key(|job| job.id)
-            .map(|job| format!("{} · {}", job.title, status(job.phase)))
+            .map(|job| {
+                if job.phase == Phase::Finished {
+                    "Recent activity".into()
+                } else {
+                    format!("{} · {}", status(job.phase), job.title)
+                }
+            })
     }
     pub fn starting(&self) -> bool {
         self.snapshot.initializing

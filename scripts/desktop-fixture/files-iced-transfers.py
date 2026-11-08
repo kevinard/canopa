@@ -51,7 +51,8 @@ def verify(session, fixture, browser, scheme, scale, process, *, focus_only=Fals
 
     def navigate(path):
         chord("l", "ctrl")
-        session.run(["wtype", "file://" + quote_from_bytes(os.fsencode(path), safe="/")])
+        uri = "file://" + quote_from_bytes(os.fsencode(path), safe="/")
+        session.run(["wtype", "-d", "5", uri])
         chord("Return")
         session.wait_for(lambda: title(path.name), "transfer folder navigation")
         time.sleep(.3)

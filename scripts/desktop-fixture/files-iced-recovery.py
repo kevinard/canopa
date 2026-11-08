@@ -116,7 +116,7 @@ def verify(session, fixture, browser, scheme, scale, process):
 
     def preview_text(expected):
         focus(preview)
-        session.run([str(pointer), str(round((x + 60) / logical["width"] * 1600)), str(round((y + 110) / logical["height"] * 1000))])
+        session.run([str(pointer), str(round((x + 60) / logical["width"] * 1600)), str(round((y + 160) / logical["height"] * 1000))])
         chord("a")
         chord("c")
         try:

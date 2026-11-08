@@ -69,6 +69,7 @@ struct Target {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Control {
     Open,
+    Close,
     ZoomOut,
     Fit,
     Actual,
@@ -268,6 +269,7 @@ impl PreviewWindow {
         if let Some(media) = &self.media {
             controls.extend(media.controls());
         }
+        controls.push(Control::Close);
         controls
     }
 
@@ -361,8 +363,25 @@ impl Desktop {
         if !self.preview_source_exists(source) {
             return Task::none();
         }
+        let audio = self.preview_target(source).is_some_and(|target| {
+            let path = target
+                .name_hint
+                .as_deref()
+                .map(Path::new)
+                .unwrap_or(&target.path);
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    crate::preview::audio_extension(&extension.to_ascii_lowercase())
+                })
+        });
+        let size = if audio {
+            Size::new(560.0, 345.0)
+        } else {
+            Size::new(760.0, 510.0)
+        };
         let settings = window::Settings {
-            size: Size::new(760.0, 600.0),
+            size,
             min_size: Some(Size::new(320.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -388,63 +407,63 @@ impl Desktop {
                 page: 1,
                 zoom: None,
                 focused: None,
-                viewport: Size::new(760.0, 500.0),
+                viewport: size,
                 media: None,
             },
         );
         opened.map(move |opened| Message::Preview(Event::Opened(id, opened)))
     }
 
+    fn preview_target(&self, source: window::Id) -> Option<Target> {
+        self.active(source)
+            .filter(|tab| !tab.loading)
+            .and_then(|tab| {
+                let browser = tab.browser.as_ref()?;
+                let path = browser
+                    .focused()
+                    .filter(|path| browser.selected().contains(*path))
+                    .map(Path::to_owned)
+                    .or_else(|| browser.selected().first().cloned())?;
+                Some(Target {
+                    context: TargetContext::Browser {
+                        tab: tab.id,
+                        navigation: tab.revision,
+                    },
+                    path,
+                    name_hint: None,
+                })
+            })
+            .or_else(|| {
+                let trash = self
+                    .trash_window
+                    .as_ref()
+                    .filter(|trash| trash.window == source)?;
+                let item = trash.selected()?;
+                Some(Target {
+                    context: TargetContext::Trash(item.version()),
+                    path: item.path.clone(),
+                    name_hint: Some(item.name().to_owned()),
+                })
+            })
+            .or_else(|| {
+                let recovery = self
+                    .recovery_window
+                    .as_ref()
+                    .filter(|w| w.window == source)?;
+                let item = recovery.selected()?;
+                Some(Target {
+                    context: TargetContext::Recovery(item.version()?),
+                    path: item.entry.as_ref()?.path.clone(),
+                    name_hint: Some(item.name().to_owned()),
+                })
+            })
+    }
+
     pub(super) fn sync_previews(&mut self) -> Task<Message> {
         let changes: Vec<_> = self
             .previews
             .iter()
-            .map(|(id, preview)| {
-                let target = self
-                    .active(preview.source)
-                    .filter(|tab| !tab.loading)
-                    .and_then(|tab| {
-                        let browser = tab.browser.as_ref()?;
-                        let path = browser
-                            .focused()
-                            .filter(|path| browser.selected().contains(*path))
-                            .map(Path::to_owned)
-                            .or_else(|| browser.selected().first().cloned())?;
-                        Some(Target {
-                            context: TargetContext::Browser {
-                                tab: tab.id,
-                                navigation: tab.revision,
-                            },
-                            path,
-                            name_hint: None,
-                        })
-                    })
-                    .or_else(|| {
-                        let trash = self
-                            .trash_window
-                            .as_ref()
-                            .filter(|trash| trash.window == preview.source)?;
-                        let item = trash.selected()?;
-                        Some(Target {
-                            context: TargetContext::Trash(item.version()),
-                            path: item.path.clone(),
-                            name_hint: Some(item.name().to_owned()),
-                        })
-                    })
-                    .or_else(|| {
-                        let recovery = self
-                            .recovery_window
-                            .as_ref()
-                            .filter(|w| w.window == preview.source)?;
-                        let item = recovery.selected()?;
-                        Some(Target {
-                            context: TargetContext::Recovery(item.version()?),
-                            path: item.entry.as_ref()?.path.clone(),
-                            name_hint: Some(item.name().to_owned()),
-                        })
-                    });
-                (*id, target)
-            })
+            .map(|(id, preview)| (*id, self.preview_target(preview.source)))
             .collect();
         let mut tasks = Vec::new();
         for (id, target) in changes {
@@ -604,6 +623,7 @@ impl Desktop {
                     return Task::none();
                 }
                 match control {
+                    Control::Close => return self.dismiss_preview(id),
                     Control::Open => {
                         if let Some(target) = &preview.target {
                             let (source, path) = (preview.source, target.path.clone());
@@ -749,7 +769,9 @@ pub(super) fn view<'a>(
     let controls = preview.controls();
     let button = |label: &'static str, control: Control| {
         canopa_ui::styled_action(
-            text(label).size(appearance.typography().label_size.px()),
+            text(label).font(canopa_ui::font(appearance)).size(
+                appearance.typography().label_size.px() + if label == "×" { 5.0 } else { 0.0 },
+            ),
             controls
                 .contains(&control)
                 .then_some(Message::Preview(Event::Activate(
@@ -757,29 +779,33 @@ pub(super) fn view<'a>(
                     preview.revision,
                     control,
                 ))),
-            canopa_ui::Action::Quiet,
+            if control == Control::Open && preview.media.is_none() {
+                canopa_ui::Action::Primary
+            } else {
+                canopa_ui::Action::Quiet
+            },
             preview.focused == Some(control),
             appearance,
         )
     };
-    let mut header = row![button("Open", Control::Open)].spacing(6);
+    let mut controls_row = row![].spacing(6);
     if preview.bitmap.is_some() {
-        header = header
+        controls_row = controls_row
             .push(button("−", Control::ZoomOut))
             .push(button("Fit", Control::Fit))
             .push(button("100%", Control::Actual))
             .push(button("+", Control::ZoomIn));
     }
     if let Some(PreviewContent::Pdf { page, pages, .. }) = preview.content() {
-        header = header
+        controls_row = controls_row
             .push(button("Previous", Control::Previous))
             .push(text(format!("{page} / {pages}")))
             .push(button("Next", Control::Next));
     }
     let content: Element<'a, Message> = if let Some(media) = &preview.media {
         media.body(
+            desktop,
             matches!(preview.content(), Some(PreviewContent::Video(_))),
-            body_size,
         )
     } else if let Some(bitmap) = &preview.bitmap {
         if let Some(zoom) = preview.zoom {
@@ -810,10 +836,12 @@ pub(super) fn view<'a>(
         }
     } else if let Some(content) = &preview.text {
         let revision = preview.revision;
+        let prose = matches!(preview.content(), Some(PreviewContent::Text { highlights, .. }) if highlights.is_empty());
         iced::widget::sensor(
             text_editor(content)
                 .font(iced::Font::MONOSPACE)
-                .size(body_size)
+                .size(if prose { body_size + 1.0 } else { body_size })
+                .line_height(text::LineHeight::Relative(if prose { 1.48 } else { 1.28 }))
                 .height(Length::Fill)
                 .highlight_with::<preview_highlights::Highlighter>(
                     preview
@@ -825,6 +853,7 @@ pub(super) fn view<'a>(
                         .settings(&desktop.theme),
                     preview_highlights::format,
                 )
+                .padding(14)
                 .style(preview_highlights::style)
                 .on_action(move |action| Message::Preview(Event::Text(id, revision, action))),
         )
@@ -871,8 +900,12 @@ pub(super) fn view<'a>(
                 ""
             };
             format!(
-                "{} bytes{extra}{}",
-                prepared.preview.size,
+                "{}{extra}{}",
+                match prepared.preview.size {
+                    1 => "1\u{a0}byte".to_owned(),
+                    bytes @ 0..=1023 => format!("{bytes}\u{a0}bytes"),
+                    bytes => super::listing_ui::size(bytes).replace(' ', "\u{a0}"),
+                },
                 if preview.loading {
                     " · Preparing…"
                 } else {
@@ -886,7 +919,78 @@ pub(super) fn view<'a>(
         .key((id, revision))
         .on_show(move |size| Message::Preview(Event::Viewport(id, revision, size)))
         .on_resize(move |size| Message::Preview(Event::Viewport(id, revision, size)));
-    let mut body = column![container(header.wrap()).padding(8), content];
+    let filename = preview.target.as_ref().map_or_else(
+        || "Quick Look".into(),
+        |target| {
+            target
+                .name_hint
+                .as_deref()
+                .or_else(|| target.path.file_name())
+                .unwrap_or(target.path.as_os_str())
+                .to_string_lossy()
+                .into_owned()
+        },
+    );
+    let icon = match preview.content() {
+        Some(PreviewContent::Folder { .. }) => chrome::Icon::Folder,
+        Some(PreviewContent::Image(_)) => chrome::Icon::Pictures,
+        Some(PreviewContent::Text { .. } | PreviewContent::Pdf { .. }) => chrome::Icon::Documents,
+        _ => chrome::Icon::Eye,
+    };
+    let compact = preview.viewport.width < 360.0;
+    let kind = match preview.content() {
+        Some(PreviewContent::Text { .. }) => "Text preview",
+        Some(PreviewContent::Image(_)) => "Image preview",
+        Some(PreviewContent::Pdf { .. }) => "PDF preview",
+        Some(PreviewContent::Audio(_)) => {
+            if compact {
+                "Audio"
+            } else {
+                "Audio preview"
+            }
+        }
+        Some(PreviewContent::Video(_)) => {
+            if compact {
+                "Video"
+            } else {
+                "Video preview"
+            }
+        }
+        _ => "Quick Look",
+    };
+    let subtitle = if information.is_empty() {
+        kind.to_owned()
+    } else {
+        format!("{kind} · {information}")
+    };
+    let close = iced::widget::tooltip(
+        button("×", Control::Close).width(32).padding(4),
+        text("Close preview")
+            .font(canopa_ui::font(&appearance))
+            .size(appearance.typography().label_size.px()),
+        iced::widget::tooltip::Position::Bottom,
+    );
+    let mut body = column![chrome::heading_line(
+        desktop,
+        icon,
+        filename,
+        subtitle,
+        row![button("Open", Control::Open), close]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+    )]
+    .spacing(8)
+    .padding(16);
+    if preview.bitmap.is_some() {
+        body = body.push(container(controls_row.wrap()).padding([0, 4]));
+    }
+    body = body.push(
+        container(content)
+            .padding(4)
+            .width(Length::Fill)
+            .height(Length::Fill),
+    );
     if let Some(media) = &preview.media {
         body = body.push(media.transport(
             id,
@@ -895,7 +999,7 @@ pub(super) fn view<'a>(
             &desktop.configuration.appearance,
         ));
     }
-    body = body.push(container(text(information).size(body_size)).padding(8));
+
     container(body)
         .id(root_id(id))
         .width(Length::Fill)

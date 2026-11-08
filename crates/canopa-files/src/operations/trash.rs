@@ -502,7 +502,11 @@ impl OperationEngine {
                 .lock()
                 .map_err(|_| io::Error::other("operation history failed"))?;
             recover(&mut state, cancellation)?;
-            let id = state.begin(&format!("move {} items to Trash", sources.len()))?;
+            let id = state.begin(&format!(
+                "move {} {} to Trash",
+                sources.len(),
+                if sources.len() == 1 { "item" } else { "items" }
+            ))?;
             let mut sources: std::collections::BTreeSet<_> = sources.iter().cloned().collect();
             let folders: Vec<_> = sources
                 .iter()

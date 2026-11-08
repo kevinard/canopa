@@ -6,7 +6,7 @@ use crate::{
     operations::{UndoChoice, UndoConflict, UndoItem, UndoSource},
     transfers::TransferReply,
 };
-use canopa_theme::UiKind;
+use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Length,
     widget::{column, container, row, scrollable, text},
@@ -155,12 +155,20 @@ fn explanation(source: UndoSource) -> &'static str {
     }
 }
 
-pub(super) fn describe(entry: &crate::browse::Entry, label: Option<&str>) -> String {
+pub(super) fn display_location(home: &Path, path: &Path) -> String {
+    match path.strip_prefix(home) {
+        Ok(relative) if relative.as_os_str().is_empty() => "Home".into(),
+        Ok(relative) => format!("Home / {}", relative.to_string_lossy().replace('/', " / ")),
+        Err(_) => path.to_string_lossy().into_owned(),
+    }
+}
+
+pub(super) fn entry_metadata(entry: &crate::browse::Entry) -> String {
     let modified = entry
         .modified
         .map(chrono::DateTime::<chrono::Local>::from)
-        .map(|time| time.format("%Y-%m-%d %H:%M:%S %Z").to_string())
-        .unwrap_or_else(|| "Unknown modification time".into());
+        .map(|time| time.format("%b %-d, %Y · %H:%M:%S").to_string())
+        .unwrap_or_else(|| "Unknown".into());
     let kind = match entry.kind {
         crate::browse::EntryKind::Directory => "Folder",
         crate::browse::EntryKind::File => "File",
@@ -172,10 +180,22 @@ pub(super) fn describe(entry: &crate::browse::Entry, label: Option<&str>) -> Str
     } else {
         format!(" · {} bytes", entry.size)
     };
-    format!(
-        "{}\n{kind}{bytes} · {modified}",
-        label.map_or_else(|| entry.path.to_string_lossy(), std::borrow::Cow::Borrowed)
-    )
+    format!("{kind}{bytes}\nModified {modified}")
+}
+
+pub(super) fn decision_actions<'a>(
+    buttons: iced::widget::Row<'a, Message>,
+    scope: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    column![
+        scope,
+        iced::widget::rule::horizontal(1).style(chrome::divider),
+        container(buttons.wrap())
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right),
+    ]
+    .spacing(8)
+    .into()
 }
 
 impl Desktop {
@@ -243,10 +263,25 @@ impl Desktop {
         let Some(parent) = parent else {
             return self.show_operations();
         };
+        let height = match &decision.question {
+            Question::Undo(conflict)
+                if conflict.existing.is_none()
+                    && conflict.saved_previous.is_none()
+                    && conflict.return_destination.is_none() =>
+            {
+                295.0
+            }
+            Question::Undo(_) => 395.0,
+            Question::Transfer(crate::operation_jobs::TransferQuestion::Unavailable { .. }) => {
+                310.0
+            }
+            Question::Recovery(_) => 397.0,
+            _ => 380.0,
+        };
         let (window, opened) = window::open_transient(
             parent,
             window::Settings {
-                size: Size::new(640.0, 520.0),
+                size: Size::new(640.0, height),
                 min_size: Some(Size::new(320.0, 240.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -410,53 +445,70 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     };
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let logical = match conflict.source {
-        UndoSource::Trash => Some(format!(
-            "{} (from Trash)",
-            conflict.destination.to_string_lossy()
-        )),
+        UndoSource::Trash => Some("Restoring from Trash"),
         UndoSource::PreviousDestination
         | UndoSource::ChangedRetained
         | UndoSource::UnavailableRetained
-        | UndoSource::UnavailableMergeRetained => Some(format!(
-            "{} (saved previous destination)",
-            conflict.destination.to_string_lossy()
-        )),
+        | UndoSource::UnavailableMergeRetained => Some("Saved previous destination"),
         _ => None,
     };
-    let incoming = match &conflict.incoming {
-        UndoItem::Available(entry) => describe(entry, logical.as_deref()),
+    let (path, detail) = match &conflict.incoming {
+        UndoItem::Available(entry) => (entry.path.as_path(), entry_metadata(entry)),
         UndoItem::Unavailable { path, message, .. } => {
-            format!(
-                "{}\nUnavailable: {message}",
-                logical
-                    .as_deref()
-                    .map_or_else(|| path.to_string_lossy(), std::borrow::Cow::Borrowed)
-            )
+            (path.as_path(), format!("Unavailable · {message}"))
         }
     };
+    let name = |path: &Path| {
+        path.file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .into_owned()
+    };
+    let detail_text = |value: String| {
+        text(value)
+            .font(font)
+            .size(small)
+            .style(canopa_ui::muted)
+            .wrapping(text::Wrapping::WordOrGlyph)
+    };
+    let mut item = column![
+        chrome::section_title(
+            appearance,
+            name(if logical.is_some() {
+                &conflict.destination
+            } else {
+                path
+            })
+        ),
+        detail_text(detail),
+        detail_text(display_location(
+            &desktop.home,
+            if logical.is_some() {
+                &conflict.destination
+            } else {
+                path
+            }
+        )),
+    ]
+    .spacing(5);
+    if let Some(label) = logical {
+        item = item.push(detail_text(label.into()));
+    }
+    if path != conflict.destination && logical.is_none() {
+        item = item.push(detail_text(format!(
+            "Destination · {}",
+            display_location(&desktop.home, &conflict.destination)
+        )));
+    }
     let mut facts = column![
-        text("Undo needs a decision")
-            .size(size)
-            .font(font)
-            .wrapping(text::Wrapping::WordOrGlyph),
+        chrome::dialog_heading(desktop, chrome::Icon::Recovery, "Undo needs a decision", ""),
         text(explanation(conflict.source))
-            .size(small)
             .font(font)
+            .size(appearance.typography().body_size.px())
             .wrapping(text::Wrapping::WordOrGlyph),
-        text(format!("Reviewed item\n{incoming}"))
-            .size(small)
-            .font(font)
-            .wrapping(text::Wrapping::WordOrGlyph),
-        text(format!(
-            "Destination\n{}",
-            conflict.destination.to_string_lossy()
-        ))
-        .size(small)
-        .font(font)
-        .wrapping(text::Wrapping::WordOrGlyph),
+        chrome::card(appearance, item),
     ]
     .spacing(12);
     for (label, entry, path) in [
@@ -464,42 +516,41 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         (
             "Saved previous destination",
             &conflict.saved_previous,
-            Some(conflict.destination.to_string_lossy()),
+            Some(conflict.destination.as_path()),
         ),
     ] {
         if let Some(entry) = entry {
-            facts = facts.push(
-                text(format!("{label}\n{}", describe(entry, path.as_deref())))
-                    .size(small)
-                    .font(font)
-                    .wrapping(text::Wrapping::WordOrGlyph),
-            );
+            facts = facts.push(chrome::card(
+                appearance,
+                column![
+                    chrome::section_title(appearance, label),
+                    detail_text(display_location(&desktop.home, path.unwrap_or(&entry.path))),
+                    detail_text(entry_metadata(entry)),
+                ]
+                .spacing(5),
+            ));
         }
     }
     if let Some(path) = &conflict.return_destination {
+        facts = facts.push(detail_text(format!(
+            "Return to · {}",
+            display_location(&desktop.home, path)
+        )));
+    }
+    if let Some(error) = desktop
+        .file_operations
+        .storage_error
+        .as_ref()
+        .or(dialog.error.as_ref())
+    {
         facts = facts.push(
-            text(format!("Return to\n{}", path.to_string_lossy()))
-                .size(small)
+            text(error)
                 .font(font)
+                .size(small)
+                .color(chrome::ink(appearance, ColorRole::Danger))
                 .wrapping(text::Wrapping::WordOrGlyph),
         );
     }
-    facts = facts.push(
-        container(
-            text(
-                desktop
-                    .file_operations
-                    .storage_error
-                    .as_deref()
-                    .or(dialog.error.as_deref())
-                    .unwrap_or(""),
-            )
-            .size(small)
-            .font(font)
-            .wrapping(text::Wrapping::WordOrGlyph),
-        )
-        .height(40),
-    );
     let choices = if desktop.file_operations.storage_error.is_some() {
         vec![("Cancel", UndoChoice::Cancel)]
     } else {
@@ -523,7 +574,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                     .wrapping(text::Wrapping::WordOrGlyph)
                     .size(small),
                 Some(message),
-                canopa_ui::Action::Quiet,
+                if matches!(choice, UndoChoice::Cancel | UndoChoice::Skip) {
+                    canopa_ui::Action::Quiet
+                } else {
+                    canopa_ui::Action::Normal
+                },
                 false,
                 appearance,
             ),
@@ -541,7 +596,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                         .spacing(4),
                 ))
                 .height(Length::Fill),
-            buttons.wrap()
+            decision_actions(buttons, None)
         ]
         .spacing(12),
     )

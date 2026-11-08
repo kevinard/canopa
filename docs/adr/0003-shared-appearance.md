@@ -71,3 +71,8 @@ link colors. Font-family selection, text scaling, motion preferences and icon-th
 resolution are deferred until their resource/layout adapters can honor them. No
 unsupported settings are accepted as no-ops. Protocol convergence and the notification
 summary module remain separate integration phases. No dependency fork changes are needed.
+
+Iced action controls offer a Primary treatment for the affirmative action in a
+form or prompt. It uses Accent and OnAccent, retains the shared focus outline
+and disabled treatment, and accepts configured Button overrides through the
+existing styled action API.

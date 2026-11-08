@@ -21,6 +21,7 @@ pub struct RequestRecord {
     pub(super) id: u64,
     pub(super) revision: u64,
     pub(super) phase: RequestPhase,
+    pub(super) accepted_at: Option<i64>,
     pub(super) body: Vec<u8>,
 }
 
@@ -39,6 +40,11 @@ impl RequestRecord {
 
     pub fn phase(&self) -> RequestPhase {
         self.phase
+    }
+
+    /// Wall-clock time of durable admission, in Unix seconds.
+    pub fn accepted_at(&self) -> Option<i64> {
+        self.accepted_at
     }
 
     pub fn payload<T: serde::de::DeserializeOwned>(&self) -> io::Result<T> {

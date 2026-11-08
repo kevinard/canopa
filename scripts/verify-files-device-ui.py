@@ -40,10 +40,12 @@ def verify(binary, session, scheme, scale, removal):
     modules = session.output / "gio-modules"
     modules.mkdir()
     flags = subprocess.check_output(["pkg-config", "--cflags", "--libs", "gio-2.0"], text=True).split()
+    # Use the fixture as the native provider so host mounts never enter the menu.
     subprocess.run(["cc", "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
+                    "-DCANOPA_FIXTURE_NATIVE_MONITOR",
                     str(ROOT / "scripts/desktop-fixture/files-volume-monitor.c"),
                     "-o", str(modules / "libcanopa-volume-fixture.so"), *flags], check=True, timeout=30)
-    session.env.update(HOME=str(home), GIO_EXTRA_MODULES=str(modules), GIO_USE_VOLUME_MONITOR="unix",
+    session.env.update(HOME=str(home), GIO_EXTRA_MODULES=str(modules), GIO_USE_VOLUME_MONITOR="canopa-private-volume-fixture",
                        GIO_USE_VFS="local", CANOPA_FIXTURE_VOLUMES=str(media))
     session.start_niri('animations { off; }\nxwayland-satellite { off; }\n'
                        'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; border { off; };'
@@ -53,6 +55,10 @@ def verify(binary, session, scheme, scale, removal):
     notices = session.output / "notifications.json"
     session.start([sys.executable, str(ROOT / "scripts/desktop-fixture/files-notifications.py"), str(notices)], "notifications.log")
     session.wait_for(notices.with_suffix(".ready").exists, "private notifications")
+    inventory = session.run(["gio", "mount", "--list"])
+    (session.output / "provider-inventory.txt").write_text(inventory)
+    assert inventory.count("Mount(") == 1 and "Fixture USB" in inventory, inventory
+    (media / "events").unlink(missing_ok=True)
     process = session.start([str(binary), str(local)], "files.log")
     checks = []
 
@@ -144,7 +150,7 @@ def verify(binary, session, scheme, scale, removal):
     # Two configured locations keep the device section at this known position.
     outputs = json.loads(session.run(["niri", "msg", "--json", "outputs"]))
     logical = next(output["logical"] for output in outputs.values() if output.get("logical"))
-    session.run([str(pointer), str(round(75 * 1600 / logical["width"])), str(round(228 * 1000 / logical["height"]))])
+    session.run([str(pointer), str(round(75 * 1600 / logical["width"])), str(round(277 * 1000 / logical["height"]))])
     wait_title("Fixture USB")
     checks.append("wide sidebar opens the prepared device root")
     key("Left")

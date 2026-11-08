@@ -10,13 +10,13 @@ pub(crate) fn highlight(
     language: Option<&str>,
     cancellation: &Cancellation,
 ) -> io::Result<Vec<TextHighlight>> {
-    let Some(language) = language else {
+    let Some(language) = language.filter(|language| *language != "md") else {
         return Ok(Vec::new());
     };
     let chars: Vec<char> = text.chars().take(128 * 1024).collect();
     let hash = matches!(
         language,
-        "py" | "sh" | "rb" | "toml" | "yaml" | "yml" | "ini" | "conf" | "md"
+        "py" | "sh" | "rb" | "toml" | "yaml" | "yml" | "ini" | "conf"
     );
     let slash = matches!(
         language,

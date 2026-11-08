@@ -559,6 +559,7 @@ pub(super) fn stage_task(
         revision,
         body,
         phase: crate::operations::requests::RequestPhase::Running,
+        accepted_at: super::requests::accepted_at(connection, request)?,
     };
     let receipt = transfer_completion::read(connection, history, &request)?
         .ok_or_else(|| invalid("The staged work lost its original execution receipt."))?;
@@ -1320,11 +1321,15 @@ fn directory_request(
     operation: u64,
 ) -> io::Result<Option<RequestRecord>> {
     let row: Option<(u64,u64,Vec<u8>)> = connection.query_row_cached("SELECT r.id,r.revision,r.body FROM requests r JOIN request_executions e ON e.request=r.id JOIN request_transfer_cursors c ON c.request=r.id WHERE e.operation=?1 AND r.phase=1", [operation], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(db_error)?;
-    Ok(row.map(|(id, revision, body)| RequestRecord {
+    let Some((id, revision, body)) = row else {
+        return Ok(None);
+    };
+    Ok(Some(RequestRecord {
         history,
         id,
         revision,
         phase: crate::operations::requests::RequestPhase::Running,
+        accepted_at: super::requests::accepted_at(connection, id)?,
         body,
     }))
 }

@@ -290,7 +290,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             canopa_ui::styled_action(
                 text(label).font(font).size(small),
                 message,
-                canopa_ui::Action::Quiet,
+                if name == "submit" {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Quiet
+                },
                 false,
                 appearance,
             ),
@@ -301,24 +305,47 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .as_deref()
         .and_then(Path::parent)
         .unwrap_or(&dialog.origin.directory);
+    let location = folder.strip_prefix(&desktop.home).map_or_else(
+        |_| folder.to_string_lossy().into_owned(),
+        |path| {
+            if path.as_os_str().is_empty() {
+                "Home".into()
+            } else {
+                format!("Home / {}", path.to_string_lossy().replace('/', " / "))
+            }
+        },
+    );
     let body = column![
-        text(dialog.title()).font(font).size(size),
-        container(
-            text(format!(
-                "{} — {}",
-                folder
-                    .file_name()
-                    .unwrap_or(folder.as_os_str())
-                    .to_string_lossy(),
-                folder.to_string_lossy()
-            ))
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::None)
-        )
-        .width(Length::Fill)
-        .clip(true),
-        input,
+        chrome::dialog_heading(
+            desktop,
+            if dialog.original.is_some() {
+                chrome::Icon::Edit
+            } else {
+                chrome::Icon::Folder
+            },
+            dialog.title(),
+            ""
+        ),
+        chrome::single_line(
+            location,
+            font,
+            small + 1.0,
+            Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
+            true
+        ),
+        column![
+            chrome::section_title(
+                appearance,
+                if dialog.original.is_some() {
+                    "Full name"
+                } else {
+                    "Folder name"
+                },
+            )
+            .size(small + 1.0),
+            input,
+        ]
+        .spacing(4),
         container(
             text(dialog.error.as_deref().unwrap_or(if dialog.busy {
                 "Accepting operation…"
@@ -327,9 +354,22 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             }))
             .font(font)
             .size(small)
+            .color(chrome::ink(
+                appearance,
+                if dialog.error.is_some() {
+                    canopa_theme::ColorRole::Danger
+                } else {
+                    canopa_theme::ColorRole::Muted
+                }
+            ))
         )
-        .height(48),
+        .height(if dialog.error.is_some() || dialog.busy {
+            26
+        } else {
+            1
+        }),
         row![
+            iced::widget::space().width(Length::Fill),
             action("Cancel", "cancel", Event::NameCancel(id)),
             action(
                 if dialog.original.is_some() {
@@ -341,8 +381,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 Event::NameSubmit(id)
             )
         ]
-        .spacing(8)
-        .wrap(),
+        .spacing(8),
     ]
     .spacing(10);
     let appearance = appearance.clone();

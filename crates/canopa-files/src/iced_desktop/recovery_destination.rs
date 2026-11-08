@@ -10,6 +10,7 @@ use iced::{
 };
 
 pub(super) struct Dialog {
+    pub browser: destination_browser::Browser,
     pub window: window::Id,
     pub owner: window::Id,
     pub busy: bool,
@@ -23,6 +24,7 @@ pub(super) struct Dialog {
 pub(super) enum Event {
     Opened(window::Id, Option<window::Id>),
     Folder(window::Id, String),
+    Browser(window::Id, destination_browser::Event),
     Name(window::Id, String),
     Submit(window::Id),
     Close(window::Id),
@@ -67,7 +69,7 @@ impl Desktop {
         let (id, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(520.0, 380.0),
+                size: Size::new(540.0, 350.0),
                 min_size: Some(Size::new(320.0, 300.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -78,13 +80,14 @@ impl Desktop {
             },
         );
         self.recovery_destination = Some(Dialog {
+            browser: destination_browser::Browser::default(),
             window: id,
             owner,
             busy: false,
             error: None,
             job: None,
             item,
-            folder: display_location(&self.home),
+            folder: "~".into(),
             name: String::new(),
         });
         opened.map(move |opened| Message::RecoveryDestination(Event::Opened(id, opened)))
@@ -110,6 +113,17 @@ impl Desktop {
         key: keyboard::Key,
         modifiers: keyboard::Modifiers,
     ) -> Task<Message> {
+        if key == keyboard::Key::Named(keyboard::key::Named::Escape)
+            && self
+                .recovery_destination
+                .as_ref()
+                .is_some_and(|dialog| dialog.window == id && dialog.browser.open())
+        {
+            return self.recovery_destination_event(Event::Browser(
+                id,
+                destination_browser::Event::Cancel,
+            ));
+        }
         if key == keyboard::Key::Named(keyboard::key::Named::Escape)
             || (modifiers.control() && key.as_ref() == keyboard::Key::Character("w"))
         {
@@ -153,6 +167,7 @@ impl Desktop {
         let id = match &event {
             Event::Opened(id, _)
             | Event::Folder(id, _)
+            | Event::Browser(id, _)
             | Event::Name(id, _)
             | Event::Submit(id)
             | Event::Close(id) => *id,
@@ -181,7 +196,22 @@ impl Desktop {
                     .chain(iced::widget::operation::focus(control(id, "folder")))
                     .chain(iced::widget::operation::select_all(control(id, "folder")));
             }
-            Event::Folder(_, folder) if !dialog.busy => {
+            Event::Browser(_, event) if !dialog.busy => {
+                let using =
+                    dialog.browser.open() && matches!(event, destination_browser::Event::Use(_));
+                let task = dialog.browser.update(
+                    id,
+                    event,
+                    &mut dialog.folder,
+                    &self.home,
+                    move |event| Message::RecoveryDestination(Event::Browser(id, event)),
+                );
+                if using && !dialog.browser.open() {
+                    dialog.error = None;
+                }
+                return task;
+            }
+            Event::Folder(_, folder) if !dialog.busy && !dialog.browser.open() => {
                 dialog.folder = folder;
                 dialog.error = None;
             }
@@ -190,7 +220,7 @@ impl Desktop {
                 dialog.error = None;
             }
             Event::Close(_) => return self.close_recovery_destination(id),
-            Event::Submit(_) if !dialog.busy => {
+            Event::Submit(_) if !dialog.busy && !dialog.browser.open() => {
                 if !self.file_operations.ready() {
                     dialog.error = Some("The operation queue is not ready. Try again.".into());
                     return Task::none();
@@ -233,6 +263,15 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
+    let message = move |event| Message::RecoveryDestination(Event::Browser(id, event));
+    if let Some(browser) = dialog.browser.view(desktop, id, message) {
+        return browser;
+    }
+    let browse = destination_browser::browse_button(
+        desktop,
+        id,
+        (!dialog.busy).then_some(message(destination_browser::Event::Browse)),
+    );
     let input = |placeholder: &'static str, value: &'a str, name: &str| {
         text_input(placeholder, value)
             .id(control(id, name))
@@ -243,16 +282,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ))
             .style(move |theme, status| view::input_style(appearance, theme, status))
     };
-    let mut folder = input(
-        "Destination folder or local file URI",
-        &dialog.folder,
-        "folder",
-    );
-    let mut name = input(
-        "Optional filename or full local path / file URI",
-        &dialog.name,
-        "name",
-    );
+    let mut folder = input("Folder path", &dialog.folder, "folder");
+    let mut name = input("Keep the saved filename", &dialog.name, "name");
     if !dialog.busy {
         folder = folder
             .on_input(move |value| Message::RecoveryDestination(Event::Folder(id, value)))
@@ -270,49 +301,70 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             canopa_ui::styled_action(
                 text(label).font(font).size(small),
                 message,
-                canopa_ui::Action::Quiet,
+                if name == "submit" {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Quiet
+                },
                 false,
                 appearance,
             ),
         )
     };
     let body = column![
-        text("Recover a copy").font(font).size(size),
-        text(dialog.item.name().to_string_lossy().into_owned())
-            .font(font)
-            .size(small)
-            .wrapping(text::Wrapping::WordOrGlyph),
-        folder,
-        name,
-        text(dialog.error.as_deref().unwrap_or(if dialog.busy && dialog.job.is_none() {
-            "Submitting Recovery copy…"
-        } else if dialog.busy {
-            "Copy request in progress. Closing this window keeps accepted work running."
-        } else {
-            "Leave the optional name empty to keep the original filename. Existing files are kept."
-        }))
+        chrome::dialog_heading(
+            desktop,
+            chrome::Icon::Recovery,
+            "Recover a copy",
+            dialog.item.name().to_string_lossy().into_owned()
+        ),
+        column![
+            chrome::section_title(appearance, "Destination folder"),
+            row![folder, browse]
+                .spacing(8)
+                .align_y(iced::Alignment::Center),
+        ]
+        .spacing(5),
+        column![
+            chrome::section_title(appearance, "New filename (optional)"),
+            name,
+        ]
+        .spacing(5),
+        text(
+            dialog
+                .error
+                .as_deref()
+                .unwrap_or(if dialog.busy && dialog.job.is_none() {
+                    "Submitting Recovery copy…"
+                } else if dialog.busy {
+                    "Copy request in progress. Closing this window keeps accepted work running."
+                } else {
+                    "~ is your Home folder. Leave the filename blank to keep the saved name."
+                })
+        )
         .font(font)
         .size(small)
+        .style(canopa_ui::muted)
         .wrapping(text::Wrapping::WordOrGlyph),
-        row![
-            action(
-                if dialog.busy { "Close" } else { "Cancel" },
-                "close",
-                Event::Close(id),
-                true
-            ),
-            action("Recover here", "submit", Event::Submit(id), !dialog.busy)
-        ]
-        .spacing(8)
-        .wrap(),
     ]
-    .spacing(12);
+    .spacing(10);
+    let actions = row![
+        action(
+            if dialog.busy { "Close" } else { "Cancel" },
+            "close",
+            Event::Close(id),
+            true
+        ),
+        action("Recover here", "submit", Event::Submit(id), !dialog.busy)
+    ]
+    .spacing(8);
     let order = if dialog.busy {
         vec![control(id, "close")]
     } else {
         vec![
             control(id, "folder"),
             control(id, "name"),
+            destination_browser::browse_id(id),
             control(id, "close"),
             control(id, "submit"),
         ]
@@ -324,9 +376,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .collect();
     focus::group(
         container(
-            scrollable(body)
-                .id(control(id, "scroll"))
-                .height(Length::Fill),
+            column![
+                scrollable(body)
+                    .id(control(id, "scroll"))
+                    .height(Length::Fill),
+                super::question_dialog::decision_actions(actions, None),
+            ]
+            .spacing(10),
         )
         .padding(16)
         .width(Length::Fill)
