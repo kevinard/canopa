@@ -272,38 +272,57 @@ impl crate::modules::render::ModuleRender for VolumeModule {
             None
         };
         let description = match volume {
-            Some(volume) if volume.muted => "Muted · Speakers and microphones",
+            Some(volume) if volume.muted => "Output muted",
             Some(_) => "Speakers and microphones",
-            None => "Audio unavailable · Open sound settings",
+            None => "Audio status unavailable",
         };
         let heading = crate::modules::view::panel_control(
+            include_bytes!("../../assets/sound.svg"),
             "Sound",
             description,
-            "›",
-            context.primary,
-            context.focused,
+            super::view::PanelControlEnd::Navigate,
+            crate::modules::render::PanelModuleContext {
+                primary: context.primary,
+                focused: context.focused,
+                scroll_up: None,
+                scroll_down: None,
+                footer: false,
+                paired_toggle: false,
+                opens_provider: false,
+            },
         );
         let adjust = |label, message| {
             crate::theme::action(
-                crate::theme::text(label),
+                iced::widget::container(crate::theme::strong_text(label).size(18))
+                    .center(iced::Length::Fill),
                 message,
                 canopa_ui::Action::Normal,
                 false,
             )
             .width(44)
             .height(44)
+            .padding(0)
         };
-        let level =
-            volume.map_or_else(|| "Unavailable".to_owned(), |v| format!("{:.0}%", v.volume));
+        let level = volume.map_or_else(|| "—".to_owned(), |v| format!("{:.0}%", v.volume));
         Some(
             column![
                 heading,
                 row![
-                    adjust("−", volume.and(context.scroll_down)),
-                    iced::widget::container(crate::theme::text(level))
-                        .width(iced::Length::Fill)
-                        .center_x(iced::Length::Fill),
-                    adjust("+", volume.and(context.scroll_up)),
+                    iced::widget::container(
+                        crate::theme::text("Output level")
+                            .size(crate::theme::label_size())
+                            .style(canopa_ui::muted)
+                    )
+                    .padding([0, 6])
+                    .width(iced::Length::Fill),
+                    row![
+                        adjust("−", volume.and(context.scroll_down)),
+                        iced::widget::container(crate::theme::strong_text(level).size(16))
+                            .center_x(58),
+                        adjust("+", volume.and(context.scroll_up)),
+                    ]
+                    .spacing(4)
+                    .align_y(iced::Alignment::Center),
                 ]
                 .spacing(12)
                 .align_y(iced::Alignment::Center),

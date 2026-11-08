@@ -59,7 +59,13 @@ impl NumericSlider {
                 ],
                 iced::widget::slider(self.spec.min..=self.spec.max, value, Input::Preview)
                     .step(self.spec.step)
-                    .height(26)
+                    .height(24)
+                    .style(|theme, status| {
+                        let mut style = iced::widget::slider::default(theme, status);
+                        style.rail.backgrounds.1 = canopa_ui::colors(theme).border.into();
+                        style.rail.width = 5.0;
+                        style
+                    })
                     .on_release(Input::Release),
             ]
             .spacing(4),

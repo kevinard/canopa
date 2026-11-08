@@ -257,10 +257,12 @@ async fn provider_marks_transient_items_and_routes_every_action_to_the_live_send
     let content = provider.next().await;
     assert_eq!(content.sections.len(), 1);
     let item = &content.sections[0].items[0];
-    assert!(
-        item.metadata.is_empty(),
+    assert_eq!(
+        item.metadata.len(),
+        1,
         "transient retention is not card content"
     );
+    assert_eq!(item.metadata[0].key, "received");
     let body = item.rich_body.as_ref().unwrap();
     assert!(
         matches!(&body.segments[0], canopa_panel_protocol::RichBodySegment::Text { text, style } if text == "Preview" && style.bold)
@@ -550,8 +552,9 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
         assert_eq!(item.actions.len(), 1);
         let dismissal = &item.actions[0];
         assert_eq!(dismissal.key, "canopa-notify:activate-item");
-        assert_eq!(dismissal.label, "Dismiss notification");
-        assert_eq!(item.metadata.len(), usize::from(!transient));
+        assert_eq!(dismissal.label, "Dismiss");
+        assert_eq!(item.metadata.len(), 1 + usize::from(!transient));
+        assert_eq!(item.metadata.last().unwrap().key, "received");
         if !transient {
             assert_eq!(item.metadata[0].label, "Unread");
             assert!(
@@ -578,7 +581,10 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
             assert_eq!(historical.id, item.id);
             assert!(historical.actions.is_empty());
             assert!(
-                historical.metadata.is_empty(),
+                historical
+                    .metadata
+                    .iter()
+                    .all(|metadata| metadata.key == "received"),
                 "acknowledged cards need no state label"
             );
         }

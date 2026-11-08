@@ -193,23 +193,24 @@ impl ModuleRender for IdleInhibitorModule {
     ) -> Option<iced::Element<'_, Message>> {
         let state = status(state);
         Some(super::view::panel_control(
+            include_bytes!("../../assets/awake.svg"),
             "Keep awake",
             match state {
-                IdleInhibitorState::Active => "Prevent automatic screen idle",
-                IdleInhibitorState::Inactive => "Allow automatic screen idle",
+                IdleInhibitorState::Active => "Screen idle is paused",
+                IdleInhibitorState::Inactive => "Screen can idle automatically",
                 IdleInhibitorState::Pending => "Updating…",
                 IdleInhibitorState::Unavailable if self.config.backend == IdleBackend::Stasis => {
                     "Stasis unavailable"
                 }
                 IdleInhibitorState::Unavailable => "Unavailable on this compositor",
             },
-            if state == IdleInhibitorState::Unavailable {
-                "Retry"
-            } else {
-                state.value()
+            match state {
+                IdleInhibitorState::Active => super::view::PanelControlEnd::Toggle(true),
+                IdleInhibitorState::Inactive => super::view::PanelControlEnd::Toggle(false),
+                IdleInhibitorState::Pending => super::view::PanelControlEnd::Status("Wait"),
+                IdleInhibitorState::Unavailable => super::view::PanelControlEnd::Status("Retry"),
             },
-            context.primary,
-            context.focused,
+            context,
         ))
     }
 

@@ -132,11 +132,17 @@ pub trait WifiControlBackend {
 
 pub fn no_control_document() -> ExternalPanelDocument {
     ExternalPanelDocument {
-        elements: vec![ExternalPanelElement::Status {
-            title: "Wi-Fi unavailable".into(),
-            message: user_message_for_error(WifiBackendErrorCategory::NoControl).into(),
-            severity: ExternalPanelSeverity::Error,
-        }],
+        elements: vec![
+            ExternalPanelElement::Status {
+                title: "Wi-Fi unavailable".into(),
+                message: user_message_for_error(WifiBackendErrorCategory::NoControl).into(),
+                severity: ExternalPanelSeverity::Error,
+            },
+            ExternalPanelElement::Button {
+                id: "refresh".into(),
+                label: "Check again".into(),
+            },
+        ],
     }
 }
 
@@ -651,7 +657,9 @@ fn compare_network_rows(left: &WifiNetwork, right: &WifiNetwork) -> std::cmp::Or
 fn user_message_for_error(category: WifiBackendErrorCategory) -> &'static str {
     match category {
         WifiBackendErrorCategory::TargetChanged => "The selected network changed. Select it again.",
-        WifiBackendErrorCategory::NoControl => "No supported Wi-Fi control backend is available.",
+        WifiBackendErrorCategory::NoControl => {
+            "Check that NetworkManager or iwd is running, then try again."
+        }
         WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed.",
         WifiBackendErrorCategory::ConnectionFailed => "Connection failed.",
         WifiBackendErrorCategory::CredentialRejected => "Network credential was rejected.",

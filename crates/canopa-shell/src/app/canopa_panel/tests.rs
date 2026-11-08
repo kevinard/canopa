@@ -261,15 +261,12 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
             "source label must replace the duplicate group heading"
         );
         assert!(
-            bounds("New message").x >= bounds("M").x + 20.0,
-            "the fallback badge belongs beside the content"
+            bounds("Mail").x >= bounds("M").x + 20.0,
+            "the fallback icon belongs beside its source label"
         );
-        assert_eq!(bounds("Mail").x, bounds("Hello").x);
-        assert!(bounds("Mail").y > bounds("Hello").y);
-        assert!(
-            labels.0.iter().all(|(label, _)| !label.contains("Unread")),
-            "presence indicators must not add a visible metadata line"
-        );
+        assert_eq!(bounds("New message").x, bounds("Hello").x);
+        assert!(bounds("Mail").y < bounds("New message").y);
+        assert!(bounds("Unread").x > bounds("Mail").x);
         let key = semantic_key(
             &snapshot,
             "notifications",
@@ -286,7 +283,7 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
             &mut iced::advanced::widget::operation::black_box(&mut measure),
         );
         let marker = measure.bounds[&key];
-        assert!(marker.width > 0.0 && marker.width <= 20.0 && marker.height <= 20.0);
+        assert!(marker.width >= bounds("Unread").width && marker.height <= 24.0);
         assert!(marker.y < bounds("Hello").y && viewport.contains(marker.center()));
         let reply = bounds("Reply");
         let dismiss = bounds("Dismiss");

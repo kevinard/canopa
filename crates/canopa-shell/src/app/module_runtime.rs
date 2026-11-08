@@ -42,6 +42,8 @@ pub(super) struct BarPanelModuleRenderRequest<'a> {
     pub detail: ModuleDetailRenderRequest<'a>,
     pub window: iced::window::Id,
     pub focused: bool,
+    pub footer: bool,
+    pub paired_toggle: bool,
 }
 
 pub(super) enum ModuleRuntimeIntent<'a> {
@@ -475,6 +477,12 @@ impl ModuleRuntime {
                 .scroll
                 .then(|| message(crate::modules::InteractionEvent::ScrollDown)),
             focused: request.focused,
+            footer: request.footer,
+            paired_toggle: request.paired_toggle,
+            opens_provider: matches!(
+                self.action_for(&request.detail.id, &crate::config::ActionTrigger::Click),
+                Some(crate::config::PanelAction::OpenProvider(_))
+            ),
         };
         if let Some(element) =
             module.render_bar_panel_with_style(state, request.detail.style, context)

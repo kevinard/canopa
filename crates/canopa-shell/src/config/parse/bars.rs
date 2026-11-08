@@ -319,9 +319,10 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     let defaults = PanelConfig::default();
     let presentation = fields::field(panel_children, ctx, "presentation")
         .optional()
-        .one_of("auto, drawer", |value| match value {
+        .one_of("auto, drawer, adaptive", |value| match value {
             "auto" => Some(PanelPresentation::Auto),
             "drawer" => Some(PanelPresentation::Drawer),
+            "adaptive" => Some(PanelPresentation::Adaptive),
             _ => None,
         })
         .unwrap_or(defaults.presentation)?;

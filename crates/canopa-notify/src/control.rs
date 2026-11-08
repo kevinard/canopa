@@ -343,6 +343,9 @@ pub struct NotificationCenterItem {
     pub app_icon: Option<crate::NotificationVisualReference>,
     #[serde(default)]
     pub requires_attention: bool,
+    /// Unix milliseconds when this notification thread was first received.
+    #[serde(default)]
+    pub received_at: i64,
     pub notification_id: InternalNotificationId,
     pub target: NotificationCenterTarget,
     /// Live runtime-only content, never an entry in durable Notification History.

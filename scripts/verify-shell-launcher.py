@@ -344,7 +344,8 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
         session.run(["wtype","-M","ctrl","5","-m","ctrl"])
         time.sleep(.3)
     settings_launcher_focus()
-    session.run(["wtype","-k","Tab","-k","Tab","-k","Tab","-k","Tab","-M","ctrl","a","-m","ctrl","find","-M","ctrl","s","-m","ctrl"])
+    # Date and time precedes Web and adds an enable control and keyword field.
+    session.run(["wtype", *(["-k", "Tab"] * 6), "-M","ctrl","a","-m","ctrl","find","-M","ctrl","s","-m","ctrl"])
     session.wait_for(lambda: json.loads(preferences.read_text())["extensions"]["builtin:web"]["keyword"] == "find","Settings keyboard keyword save")
     assert any(s["alias"] == "work" and s["pinned"] for s in json.loads(preferences.read_text())["shortcuts"])
     time.sleep(1.5)
@@ -355,7 +356,7 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
     session.wait_for(opened.exists,"Settings keyword applied to launcher")
     assert json.loads(opened.read_text()) == ["https://example.test/search?q=settings%20saved"]
     settings_launcher_focus()
-    session.run(["wtype","-k","Tab","-k","Tab","-k","Tab","-k","space","-M","ctrl","s","-m","ctrl"])
+    session.run(["wtype", *(["-k", "Tab"] * 5), "-k","space","-M","ctrl","s","-m","ctrl"])
     session.wait_for(lambda: not json.loads(preferences.read_text())["extensions"]["builtin:web"]["enabled"],"Settings keyboard extension toggle save")
     time.sleep(1.5)
     opened.unlink(missing_ok=True)
@@ -500,9 +501,9 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
         settings_launcher_focus()
         extensions = len(json.loads(extension_catalog.read_text())["extensions"])
         searches = len(json.loads(preferences.read_text())["searches"])
-        # Extension cards, the default URL, custom searches and the add button
-        # precede Clipboard history in the Launcher's keyboard order.
-        tabs = 2 * extensions + 3 * searches + 3
+        # Two page controls precede the extension cards. The default URL,
+        # custom searches and the add button follow the cards.
+        tabs = 2 * extensions + 3 * searches + 5
         session.run(["wtype", *(["-k", "Tab"] * tabs)])
 
     focus_clipboard_settings()

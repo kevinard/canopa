@@ -32,6 +32,7 @@ accesskit_unix = { workspace = true, optional = true }
 anyhow.workspace = true
 canopa-panel-protocol.workspace = true
 clap.workspace = true
+chrono.workspace = true
 futures-util.workspace = true
 iced = { workspace = true, optional = true, features = ["tiny-skia"] }
 iced_layershell = { workspace = true, optional = true }

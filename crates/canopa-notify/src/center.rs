@@ -169,6 +169,7 @@ impl CenterProjection {
                     app_name: notification.app_name,
                     app_icon: notification.app_icon,
                     requires_attention: thread.requires_attention,
+                    received_at: thread.created_at,
                     notification_id: thread.id,
                     target: NotificationCenterTarget {
                         instance: *instance,

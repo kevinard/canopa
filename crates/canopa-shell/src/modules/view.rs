@@ -318,7 +318,6 @@ pub(super) fn spaced_icon_label<'a>(
             crate::theme::palette().text,
             fallback_resolved_style(style)
         ),
-        iced::widget::Space::new().width(Length::Fill),
         styled_segment_text(
             label,
             13,
@@ -326,6 +325,7 @@ pub(super) fn spaced_icon_label<'a>(
             fallback_resolved_style(style)
         ),
     ]
+    .spacing(10)
     .align_y(Alignment::Center)
     .width(Length::Fill)
     .into()
@@ -434,6 +434,7 @@ pub(super) fn styled_segment_text<'a>(
     // glyph icons. No filesystem lookup or extra module kind is needed.
     let icon = match segment.as_str() {
         "canopa:mark" => Some(include_bytes!("../../assets/canopa-mark.svg").as_slice()),
+        "canopa:search" => Some(include_bytes!("../../assets/search.svg").as_slice()),
         "canopa:overview" => Some(include_bytes!("../../assets/overview.svg").as_slice()),
         "canopa:controls" => Some(include_bytes!("../../assets/controls.svg").as_slice()),
         "canopa:bluetooth" => Some(include_bytes!("../../assets/bluetooth.svg").as_slice()),
@@ -447,11 +448,7 @@ pub(super) fn styled_segment_text<'a>(
     if let Some(bytes) = icon {
         let size = style.size.unwrap_or(fallback_size as f32);
         let color = style.color.unwrap_or(fallback_color);
-        return svg(svg::Handle::from_memory(bytes))
-            .width(size)
-            .height(size)
-            .style(move |_, _| svg::Style { color: Some(color) })
-            .into();
+        return crate::theme::icon(bytes, size, color);
     }
     let font = segment_font(&segment, style);
     crate::theme::text(segment)
@@ -845,34 +842,124 @@ fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) 
 }
 
 /// A compact, full-width control within the host's Bar Panel card frame.
+pub(super) enum PanelControlEnd {
+    Navigate,
+    Toggle(bool),
+    Status(&'static str),
+}
+
 pub(super) fn panel_control<'a>(
+    icon: &'static [u8],
     title: impl Into<String>,
     description: impl Into<String>,
-    trailing: impl Into<String>,
-    on_press: Option<crate::app::Message>,
-    focused: bool,
+    end: PanelControlEnd,
+    context: super::render::PanelModuleContext,
 ) -> iced::Element<'a, crate::app::Message> {
     use iced::widget::{column, row};
-    crate::theme::action(
-        row![
-            column![
-                crate::theme::text(title.into()).size(16).font(iced::Font {
-                    weight: iced::font::Weight::Semibold,
-                    ..crate::theme::font()
-                }),
-                crate::theme::text(description.into()).style(canopa_ui::muted),
+    let palette = crate::theme::palette();
+    let toggle = matches!(end, PanelControlEnd::Toggle(_));
+    let (icon_color, icon_fill) = if toggle {
+        let brand =
+            canopa_ui::color(crate::theme::appearance().role(canopa_theme::ColorRole::Brand));
+        (brand, brand.scale_alpha(0.18))
+    } else {
+        (palette.accent, crate::theme::accent_surface())
+    };
+    let trailing: Element<'_, Message> = match end {
+        PanelControlEnd::Navigate => crate::theme::text("›")
+            .size(22)
+            .style(canopa_ui::muted)
+            .into(),
+        PanelControlEnd::Status(label) => crate::theme::text(label)
+            .size(crate::theme::label_size())
+            .style(canopa_ui::muted)
+            .into(),
+        PanelControlEnd::Toggle(active) => {
+            let knob =
+                container(iced::widget::Space::new().width(12).height(12)).style(move |_| {
+                    container::Style::default()
+                        .background(if active {
+                            palette.on_accent
+                        } else {
+                            palette.text
+                        })
+                        .border(iced::Border::default().rounded(6))
+                });
+            row![
+                crate::theme::strong_text(if active { "On" } else { "Off" })
+                    .size(crate::theme::label_size())
+                    .style(canopa_ui::muted),
+                container(knob)
+                    .width(34)
+                    .height(20)
+                    .padding(4)
+                    .align_x(if active {
+                        Alignment::End
+                    } else {
+                        Alignment::Start
+                    })
+                    .align_y(Alignment::Center)
+                    .style(move |_| container::Style::default()
+                        .background(if active {
+                            palette.accent
+                        } else {
+                            palette.muted.scale_alpha(0.4)
+                        })
+                        .border(iced::Border::default().rounded(10))),
             ]
-            .spacing(4)
-            .width(iced::Length::Fill),
-            crate::theme::text(trailing.into()).color(crate::theme::palette().accent),
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .into()
+        }
+    };
+    let icon = container(crate::theme::icon(icon, 19.0, icon_color))
+        .center(if context.paired_toggle { 28 } else { 34 })
+        .style(move |_| {
+            container::Style::default()
+                .background(icon_fill)
+                .border(iced::Border::default().rounded(9))
+        });
+    let title = crate::theme::strong_text(title.into());
+    let description = crate::theme::text(description.into())
+        .size(crate::theme::label_size())
+        .style(canopa_ui::muted);
+    let content: Element<'_, Message> = if context.paired_toggle {
+        let status: Element<'_, Message> = if toggle {
+            trailing
+        } else {
+            row![description.width(Length::Fill), trailing]
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .into()
+        };
+        column![
+            row![icon, title].spacing(8).align_y(Alignment::Center),
+            status,
+        ]
+        .spacing(5)
+        .width(Length::Fill)
+        .into()
+    } else {
+        row![
+            icon,
+            column![title, description].spacing(3).width(Length::Fill),
+            trailing,
         ]
         .spacing(12)
-        .align_y(iced::Alignment::Center),
-        on_press,
+        .align_y(Alignment::Center)
+        .into()
+    };
+    crate::theme::action(
+        content,
+        context.primary,
         canopa_ui::Action::Quiet,
-        focused,
+        context.focused,
     )
-    .padding([8, 6])
+    .padding(if context.paired_toggle {
+        [2, 3]
+    } else {
+        [8, 6]
+    })
     .width(iced::Length::Fill)
     .into()
 }

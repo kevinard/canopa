@@ -394,6 +394,24 @@ fn unexpected_control_reply() -> anyhow::Error {
     anyhow::anyhow!("unexpected reply from Notify Control API")
 }
 
+fn receipt_time(received_at: i64) -> Option<PanelMetadata> {
+    let time = chrono::DateTime::from_timestamp_millis(received_at)?.with_timezone(&chrono::Local);
+    if received_at <= 0 {
+        return None;
+    }
+    let now = chrono::Local::now();
+    let format = if time.date_naive() == now.date_naive() {
+        "%H:%M"
+    } else {
+        "%Y-%m-%d · %H:%M"
+    };
+    Some(PanelMetadata {
+        key: "received".into(),
+        label: "Received".into(),
+        value: time.format(format).to_string(),
+    })
+}
+
 fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
     PanelContent {
         title: "Canopa Notify".to_string(),
@@ -452,6 +470,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                     value: String::new(),
                                 })
                                 .into_iter()
+                                .chain(receipt_time(item.received_at))
                                 .collect(),
                             actions: item
                                 .actions
@@ -474,7 +493,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                                 if item.has_default_action {
                                                     "Open notification"
                                                 } else {
-                                                    "Dismiss notification"
+                                                    "Dismiss"
                                                 }
                                                 .to_string(),
                                             )
@@ -494,7 +513,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                                 if item.status
                                                     == canopa_notify::NotificationStatus::Active
                                                 {
-                                                    "Dismiss notification"
+                                                    "Dismiss"
                                                 } else {
                                                     "Mark as read"
                                                 }
@@ -865,6 +884,7 @@ mod tests {
                     app_name: "Mail".into(),
                     app_icon: None,
                     requires_attention: false,
+                    received_at: 1_700_000_000_000,
                     notification_id: InternalNotificationId::new(42).unwrap(),
                     target: center_target_fixture(),
                     transient: false,
@@ -882,7 +902,13 @@ mod tests {
             }],
         });
 
-        let item_action = &content.sections[0].items[0].actions[0];
+        let item = &content.sections[0].items[0];
+        assert!(
+            item.metadata
+                .iter()
+                .any(|metadata| metadata.key == "received" && !metadata.value.is_empty())
+        );
+        let item_action = &item.actions[0];
         assert_eq!(item_action.key, "canopa-notify:notification-action");
         assert_eq!(
             serde_json::from_str::<ControlCommand>(item_action.value.as_deref().unwrap()).unwrap(),

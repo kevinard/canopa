@@ -1008,6 +1008,7 @@ dependencies = [
  "canopa-panel-protocol",
  "canopa-theme",
  "canopa-ui",
+ "chrono",
  "clap",
  "futures-util",
  "iced",

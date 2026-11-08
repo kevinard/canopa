@@ -24,19 +24,19 @@
 // Named panel menus can be opened from bar or module actions.
 // Use launch for desktop applications; command actions are bounded automation.
 menus {
-    menu "Applications" show-icons=#true prompt="Search apps, files, or = calculation" {
+    menu "Applications" show-icons=#true prompt="Search apps, files, and more" {
         source "launcher"
     }
     // Cancel is first so Enter never ends the session by default.
-    menu "Log out?" prompt="Unsaved work may be lost" {
+    menu "Log out?" prompt="Unsaved work may be lost." {
         item "Cancel" { open-bar-panel; }
         item "Log out" { command { argv "niri" "msg" "action" "quit" "--skip-confirmation"; }; }
     }
-    menu "Reboot?" prompt="Unsaved work may be lost" {
+    menu "Reboot?" prompt="Unsaved work may be lost." {
         item "Cancel" { open-bar-panel; }
         item "Reboot" { command { argv "systemctl" "reboot"; }; }
     }
-    menu "Power off?" prompt="Unsaved work may be lost" {
+    menu "Power off?" prompt="Unsaved work may be lost." {
         item "Cancel" { open-bar-panel; }
         item "Power off" { command { argv "systemctl" "poweroff"; }; }
     }
@@ -78,8 +78,8 @@ bar "main" {
     ui {
         background "spine"
         radius 28
-        border width=0
-        padding 12 10
+        border width=1 color="border"
+        padding 11 6
         gap 8
     }
 
@@ -115,14 +115,14 @@ bar "main" {
     // Default panel content for this bar.
     panel {
         title "Quick settings"
-        // A consistent full-height drawer for all panels on left/right bars.
-        // Use "auto" for content-sized module panels. Horizontal bars use auto sizing.
-        presentation "drawer"
+        // Use a drawer for browsing and a compact popover for individual modules.
+        // "drawer" uses drawers for all panels; horizontal bars use auto sizing.
+        presentation "adaptive"
         // "push-bar" puts the drawer at the edge and moves the bar inward.
         // Both modes overlay windows without resizing them.
         drawer-mode "overlay"
-        width 392
-        ui { margin 12 0; radius 24; border width=0; }
+        width 416
+        ui { margin 12 0; radius 24; border width=1 color="border"; }
         start "network" "volume"
         center "notifications" "idle-inhibitor" "bluetooth" "power-and-brightness"
         // Trailing buttons form a compact footer with two columns.
@@ -162,10 +162,10 @@ modules {
     // These are ordinary configurable buttons; the existing bar is the spine.
     module "launcher" {
         type "button"
-        label "Launcher"
-        icon "canopa:mark"
+        label "Search"
+        icon "canopa:search"
         tooltip "Launcher"
-        ui { padding 12 0; foreground "accent"; }
+        ui { padding 7 0; foreground "accent"; }
         actions { click { toggle-menu "Applications"; } }
     }
     module "overview" {
@@ -173,15 +173,15 @@ modules {
         label "Overview"
         icon "canopa:overview"
         tooltip "Overview"
-        ui { padding 12 0; }
+        ui { padding 7 0; }
         actions { click { command { argv "niri" "msg" "action" "toggle-overview"; }; } }
     }
     module "system" {
         type "button"
-        label "Quick settings"
+        label "Controls"
         icon "canopa:controls"
         tooltip "Quick settings"
-        ui { padding 12 0; }
+        ui { padding 7 0; }
         actions { click { toggle-bar-panel; } }
     }
     module "bluetooth" {
@@ -192,7 +192,7 @@ modules {
     }
     module "power-and-brightness" {
         type "button"
-        label "Power & brightness"
+        label "Power & display"
         icon "canopa:brightness"
         actions { click { open-provider "power"; } }
     }
@@ -268,7 +268,7 @@ modules {
         // Tooltip on hover. Same grammar as `format` (string segments or
         // styled `segment` block). Use `tooltip #false` to disable.
         // Omit to use the module's built-in default (none for workspaces).
-        // tooltip "{label}"
+        tooltip "Workspace {index}"
     }
 
     // focused-window: shows the title of the focused window on this output.
@@ -444,14 +444,13 @@ modules {
     module "clock" {
         ui { padding 16 0; }
         format "{time}"
-        expanded-format "{time}" "{date}"
         actions { click { open-panel; } }
         // Time format string using chrono strftime syntax.
         // Default: "%H:%M" (24-hour, e.g. "14:30"). Use "%I:%M %p" for 12-hour.
         time-format "%H:%M"
         // Date format string using chrono strftime syntax.
         // Default: "%a %d %b" (e.g. "Mon 12 Apr").
-        date-format "%a %d %b"
+        date-format "%A, %-d %B"
         // Optional display templates. Placeholders: {icon}, {value}, {time}, {date}.
         // format "{icon} {time}"
         // expanded-format "{icon} {time}\n{date}"

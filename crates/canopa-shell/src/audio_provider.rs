@@ -51,11 +51,19 @@ impl AudioPanel {
                 "No input devices are available.",
             ),
         ] {
+            let (volume_label, select_label, default_label) = match kind {
+                DeviceKind::Output => ("Output volume", "Set as output", "Default output"),
+                DeviceKind::Input => ("Input level", "Set as input", "Default input"),
+            };
             let mut items = Vec::new();
-            for device in snapshot
+            let devices = snapshot
                 .devices
                 .iter()
-                .filter(|device| device.id.kind == kind)
+                .filter(|device| device.id.kind == kind);
+            for device in devices
+                .clone()
+                .filter(|device| device.is_default)
+                .chain(devices.filter(|device| !device.is_default))
             {
                 let id = format!("{kind:?}-{}-{}", device.id.session, device.id.index);
                 let mut actions = Vec::new();
@@ -65,7 +73,7 @@ impl AudioPanel {
                         if device.muted { "Unmute" } else { "Mute" },
                         DeviceOperation::SetMuted(!device.muted),
                     ),
-                    ("default", "Use this device", DeviceOperation::SetDefault),
+                    ("default", select_label, DeviceOperation::SetDefault),
                 ] {
                     if key == "default" && device.is_default {
                         continue;
@@ -74,17 +82,17 @@ impl AudioPanel {
                         .insert((id.clone(), key.into()), (device.id.clone(), operation));
                     actions.push(PanelAction::new(key, label));
                 }
-                let status = format!(
-                    "{}{}{}",
-                    if device.muted { "Muted" } else { "Unmuted" },
-                    if device.is_default { " · Default" } else { "" },
-                    if busy { " · Applying change…" } else { "" }
-                );
+                let status = match (device.muted, busy) {
+                    (true, true) => Some("Muted · Applying change…"),
+                    (true, false) => Some("Muted"),
+                    (false, true) => Some("Applying change…"),
+                    (false, false) => None,
+                };
                 self.volumes.insert(id.clone(), device.id.clone());
                 items.push(PanelItem {
                     slider: Some(canopa_panel_protocol::PanelSlider {
                         key: "volume".into(),
-                        label: "Volume".into(),
+                        label: volume_label.into(),
                         min: 0,
                         max: 100,
                         step: 1,
@@ -93,11 +101,19 @@ impl AudioPanel {
                     }),
                     id,
                     title: device.description.clone(),
-                    body: Some(status),
+                    body: status.map(str::to_owned),
                     attribution: None,
                     styled_body: None,
                     rich_body: None,
-                    metadata: Vec::new(),
+                    metadata: device
+                        .is_default
+                        .then(|| canopa_panel_protocol::PanelMetadata {
+                            key: "default".into(),
+                            label: default_label.into(),
+                            value: String::new(),
+                        })
+                        .into_iter()
+                        .collect(),
                     actions,
                 });
             }

@@ -202,6 +202,32 @@ async fn assert_wifi_provider_v5_closes(current: Option<&str>, legacy: Option<&s
     assert!(
         matches!(&form.elements[0], v5::FormElement::Status { title, .. } if title == "Wi-Fi unavailable")
     );
+    let v5::FormElement::Button { id, label } = &form.elements[1] else {
+        panic!("missing Wi-Fi retry control");
+    };
+    assert_eq!(label, "Check again");
+    input
+        .write_all(
+            &v5::HostMessage::event(
+                response.revision,
+                v5::Interaction::Form(v5::FormEvent::ButtonActivated {
+                    element_id: id.clone(),
+                }),
+            )
+            .encode()
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let retry = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        v5::Response::read_async(&mut output),
+    )
+    .await
+    .expect("Wi-Fi retry should republish the result")
+    .unwrap()
+    .unwrap();
+    assert!(retry.revision > response.revision);
     input
         .write_all(&v5::HostMessage::close().encode().unwrap())
         .await

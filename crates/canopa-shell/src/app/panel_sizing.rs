@@ -116,6 +116,7 @@ pub(super) fn panel_physical_plan<F>(mut input: PanelSizingInput<'_, F>) -> Pane
 where
     F: FnMut(&ModuleId) -> Option<PanelPreferredSize>,
 {
+    let uses_drawer = input.bar.uses_drawer_for(&input.tree.content);
     let is_notification_center = matches!(
         &input.tree.content,
         PanelContent::ExternalProvider(provider) if provider.provider_name == "notifications"
@@ -128,7 +129,7 @@ where
             fill_height: true,
             ..Default::default()
         }
-    } else if input.bar.uses_drawer() {
+    } else if uses_drawer {
         PanelContentSizeHint {
             preferred_width: Some(DEFAULT_PANEL_FALLBACK_WIDTH),
             fill_edge_span: true,
@@ -170,7 +171,8 @@ where
         // adjustment before bounding provider popovers to that span.
         if !input.bar.edge.is_horizontal()
             && input.tree.screen_size.1 > 0
-            && matches!(input.tree.content, PanelContent::ExternalProvider(_))
+            && (matches!(input.tree.content, PanelContent::ExternalProvider(_))
+                || input.bar.panel.presentation == crate::config::PanelPresentation::Adaptive)
         {
             *height = (*height).min(input.tree.screen_size.1);
         }
@@ -203,7 +205,7 @@ where
         &input.bar.edge,
         // Even a height-capped drawer stays at the start of the usable edge.
         // Switching modules must not move it to the new module's position.
-        if input.bar.uses_drawer() || (hint.fill_height && !input.bar.edge.is_horizontal()) {
+        if uses_drawer || (hint.fill_height && !input.bar.edge.is_horizontal()) {
             None
         } else {
             input.tree.anchor
@@ -227,7 +229,7 @@ where
             let (near, inner, _, _) = input.bar.outer_margins();
             let occupied = near + input.bar.collapsed_width + inner;
             let reserve = if input.bar.reserve_space { occupied } else { 0 };
-            let desired = if input.bar.drawer_pushes_bar() {
+            let desired = if uses_drawer && input.bar.drawer_pushes_bar() {
                 near
             } else {
                 occupied

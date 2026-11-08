@@ -6,16 +6,16 @@ pub(super) fn render<'a>(
     label: &str,
     provider: &str,
     focused: bool,
+    treatment: canopa_ui::Action,
 ) -> Element<'a, Message> {
-    action(
-        id,
-        provider,
+    let label = if matches!(treatment, canopa_ui::Action::Quiet) {
+        crate::theme::strong_text(label.to_owned())
+            .size(crate::theme::label_size())
+            .style(canopa_ui::link)
+    } else {
         crate::theme::text(label.to_owned())
-            .size(crate::theme::body_size())
-            .into(),
-        false,
-        focused,
-    )
+    };
+    action(id, provider, label.into(), false, focused, treatment)
 }
 
 pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, Message> {
@@ -23,7 +23,7 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         id.to_owned(),
         provider,
         // Preserve all sender-controlled context without consuming the panel.
-        container(scrollable(
+        container(crate::theme::panel_scroll(
             crate::theme::text(format!("Selected: {label}")).width(Length::Fill),
         ))
         .width(Length::Fill)
@@ -31,6 +31,7 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         .into(),
         false,
         true,
+        canopa_ui::Action::Normal,
     )
 }
 
@@ -51,7 +52,14 @@ pub(super) fn link<'a>(
         }],
         true,
     );
-    action(id, provider, content, true, focused)
+    action(
+        id,
+        provider,
+        content,
+        true,
+        focused,
+        canopa_ui::Action::Quiet,
+    )
 }
 
 fn action<'a>(
@@ -60,6 +68,7 @@ fn action<'a>(
     content: Element<'a, Message>,
     link: bool,
     focused: bool,
+    treatment: canopa_ui::Action,
 ) -> Element<'a, Message> {
     let content = crate::theme::action(
         content,
@@ -69,11 +78,7 @@ fn action<'a>(
                 element_id: id.clone(),
             },
         )),
-        if link {
-            canopa_ui::Action::Quiet
-        } else {
-            canopa_ui::Action::Normal
-        },
+        treatment,
         focused,
     )
     .width(if link { Length::Fill } else { Length::Shrink });

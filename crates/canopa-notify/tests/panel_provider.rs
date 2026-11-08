@@ -73,13 +73,11 @@ async fn panel_provider_renders_notification_history_from_daemon_snapshot() {
         if names == &["mail-unread"] && theme == "hicolor" && *scale == 1)
     );
     let metadata = &content.sections[0].items[0].metadata;
-    assert_eq!(
-        metadata.len(),
-        1,
-        "cards carry only the attention indicator"
-    );
+    assert_eq!(metadata.len(), 2);
     assert_eq!(metadata[0].label, "Unread");
     assert!(metadata[0].value.is_empty());
+    assert_eq!(metadata[1].label, "Received");
+    assert!(!metadata[1].value.is_empty());
     let body = content.sections[0].items[0].rich_body.as_ref().unwrap();
     assert!(
         matches!(&body.segments[0], RichBodySegment::Text { text, style } if text == "One" && style.bold)

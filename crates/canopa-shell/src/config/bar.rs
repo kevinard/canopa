@@ -108,6 +108,7 @@ pub enum PanelPresentation {
     #[default]
     Auto,
     Drawer,
+    Adaptive,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -181,11 +182,17 @@ impl BarConfig {
 
     /// A drawer is a vertical-bar presentation; horizontal bars keep automatic sizing.
     pub fn uses_drawer(&self) -> bool {
-        self.panel.presentation == PanelPresentation::Drawer && !self.edge.is_horizontal()
+        self.panel.presentation != PanelPresentation::Auto && !self.edge.is_horizontal()
     }
 
     pub fn drawer_pushes_bar(&self) -> bool {
         self.uses_drawer() && self.panel.drawer_mode == DrawerMode::PushBar
+    }
+
+    pub fn uses_drawer_for(&self, content: &crate::surface::panel::PanelContent) -> bool {
+        self.uses_drawer()
+            && !(self.panel.presentation == PanelPresentation::Adaptive
+                && matches!(content, crate::surface::panel::PanelContent::ModulePanel(_)))
     }
 
     pub fn matches_output(&self, output_name: &str) -> bool {

@@ -196,27 +196,15 @@ pub fn panel_module_frame<'a>(
     container(content)
         .padding([8, 10])
         .width(iced::Length::Fill)
-        .style(move |_| iced::widget::container::Style {
-            background: if focused {
-                Some(iced::Background::Color(crate::theme::palette().background))
-            } else {
-                Some(iced::Background::Color(crate::theme::palette().raised))
-            },
-            border: iced::Border {
-                color: if focused {
-                    crate::theme::palette().accent
-                } else {
-                    crate::theme::palette().border
-                },
-                width: 1.0,
-                radius: canopa_ui::frame(
-                    &crate::theme::appearance(),
-                    crate::theme::ui(canopa_theme::UiKind::Card),
-                )
-                .border
-                .radius,
-            },
-            ..Default::default()
+        .style(move |theme| {
+            let mut frame = crate::theme::card(theme);
+            if focused {
+                let palette = crate::theme::palette();
+                frame.background = Some(palette.accent.scale_alpha(0.14).into());
+                frame.border.color = palette.focus;
+                frame.border.width = frame.border.width.max(1.0);
+            }
+            frame
         })
         .into()
 }
@@ -240,15 +228,15 @@ pub fn panel_header_with_back<'a>(
                 Some(crate::app::Message::Panel(
                     crate::app::messages::PanelEvent::Back,
                 )),
-                canopa_ui::Action::Quiet,
+                canopa_ui::Action::Normal,
                 false,
             )
-            .height(44),
+            .height((crate::theme::panel_header_height() - 24) as f32),
         );
     }
     header
         .push(
-            crate::theme::text(title)
+            crate::theme::strong_text(title)
                 .size(crate::theme::title_size())
                 .width(iced::Length::Fill),
         )
@@ -258,7 +246,7 @@ pub fn panel_header_with_back<'a>(
                 Some(crate::app::Message::Panel(
                     crate::app::messages::PanelEvent::Close,
                 )),
-                canopa_ui::Action::Quiet,
+                canopa_ui::Action::Normal,
                 false,
             )
             .height((crate::theme::panel_header_height() - 24) as f32),

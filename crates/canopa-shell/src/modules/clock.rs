@@ -217,55 +217,68 @@ impl ClockModule {
         use iced::widget::{column, container, row};
         use iced::{Alignment, Length};
 
-        let crate::modules::ModuleState::Clock(_) = state else {
+        let crate::modules::ModuleState::Clock(clock) = state else {
             return iced::widget::Space::new().into();
         };
 
-        let summary = <Self as crate::modules::render::ModuleRender>::render_panel_with_style(
-            self, state, bar_style,
-        );
+        let summary = if self.format.expanded.is_some() {
+            <Self as crate::modules::render::ModuleRender>::render_panel_with_style(
+                self, state, bar_style,
+            )
+        } else {
+            column![
+                crate::theme::strong_text(clock.time.clone())
+                    .size(crate::theme::title_size() * 2.0),
+                crate::theme::text(clock.date.clone()).style(canopa_ui::muted),
+            ]
+            .spacing(4)
+            .into()
+        };
         let today = chrono::Local::now().date_naive();
         let month = calendar_month_for(today, month_offset);
         let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
             .expect("calendar month is valid");
         let title = first.format("%B %Y").to_string();
 
+        let action = |label, event| {
+            crate::theme::action(
+                container(crate::theme::strong_text(label).size(crate::theme::label_size()))
+                    .center(Length::Fill),
+                Some(crate::app::Message::Modules(
+                    crate::app::messages::ModuleRuntimeEvent::Detail {
+                        target: self.id.clone(),
+                        message: crate::modules::ModuleDetailMessage::new(event),
+                    },
+                )),
+                canopa_ui::Action::Normal,
+                false,
+            )
+            .height(34)
+            .padding(0)
+        };
         let controls = row![
-            crate::theme::button(crate::theme::text("<")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(
-                        ClockDetailMessage::PreviousMonth,
-                    ),
-                }
-            )),
-            crate::theme::text(title).width(Length::Fill),
-            crate::theme::button(crate::theme::text("Today")).on_press(
-                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(ClockDetailMessage::Today),
-                })
-            ),
-            crate::theme::button(crate::theme::text(">")).on_press(crate::app::Message::Modules(
-                crate::app::messages::ModuleRuntimeEvent::Detail {
-                    target: self.id.clone(),
-                    message: crate::modules::ModuleDetailMessage::new(
-                        ClockDetailMessage::NextMonth
-                    ),
-                }
-            )),
+            crate::theme::strong_text(title).width(Length::Fill),
+            action("Today", ClockDetailMessage::Today).width(54),
+            action("‹", ClockDetailMessage::PreviousMonth).width(32),
+            action("›", ClockDetailMessage::NextMonth).width(32),
         ]
-        .spacing(8)
+        .spacing(5)
         .align_y(Alignment::Center)
         .width(Length::Fill);
 
-        let mut calendar = column![controls].spacing(6).width(Length::Fill);
+        let mut calendar = column![controls, crate::theme::divider()]
+            .spacing(10)
+            .width(Length::Fill);
         let mut weekdays = row![].spacing(4).width(Length::Fill);
         for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
             weekdays = weekdays.push(
-                container(crate::theme::text(label).size(crate::theme::label_size() * 10.0 / 12.0))
-                    .width(Length::FillPortion(1))
-                    .center_x(Length::Fill),
+                container(
+                    crate::theme::strong_text(label)
+                        .size(crate::theme::label_size())
+                        .style(canopa_ui::muted),
+                )
+                .width(Length::FillPortion(1))
+                .center_x(Length::Fill),
             );
         }
         calendar = calendar.push(weekdays);
@@ -273,46 +286,44 @@ impl ClockModule {
         for week in month.weeks {
             let mut row = row![].spacing(4).width(Length::Fill);
             for day in week {
-                let is_today = day == month.today;
+                let is_today = day.is_some() && day == month.today;
                 let label = day.map(|day| day.to_string()).unwrap_or_default();
-                let cell = container(
-                    crate::theme::text(label).size(crate::theme::label_size() * 11.0 / 12.0),
-                )
-                .width(Length::FillPortion(1))
-                .center_x(Length::Fill);
-                let cell = cell.padding([3, 0]).style(move |_| {
-                    if is_today {
-                        iced::widget::container::Style {
-                            background: Some(iced::Background::Color(
-                                crate::theme::palette().surface,
-                            )),
-                            border: iced::Border {
-                                color: crate::theme::palette().accent,
-                                width: 1.0,
-                                radius: iced::border::Radius::from(4.0),
-                            },
-                            ..Default::default()
+                let palette = crate::theme::palette();
+                let cell = container(crate::theme::strong_text(label))
+                    .width(Length::FillPortion(1))
+                    .height((crate::theme::body_size() * 1.7).ceil().max(30.0))
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .style(move |_| {
+                        if is_today {
+                            container::Style::default()
+                                .background(palette.accent)
+                                .color(palette.on_accent)
+                                .border(iced::Border::default().rounded(9))
+                        } else {
+                            container::Style::default()
                         }
-                    } else {
-                        iced::widget::container::Style {
-                            border: iced::Border {
-                                color: iced::Color::TRANSPARENT,
-                                width: 1.0,
-                                radius: iced::border::Radius::from(4.0),
-                            },
-                            ..Default::default()
-                        }
-                    }
-                });
+                    });
                 row = row.push(cell);
             }
             calendar = calendar.push(row);
         }
 
-        column![summary, calendar]
-            .spacing(12)
-            .width(Length::Fill)
-            .into()
+        column![
+            container(summary)
+                .padding([16, 18])
+                .width(Length::Fill)
+                .style(|_| container::Style::default()
+                    .background(crate::theme::accent_surface())
+                    .border(iced::Border::default().rounded(16))),
+            container(calendar)
+                .padding([12, 10])
+                .width(Length::Fill)
+                .style(crate::theme::card)
+        ]
+        .spacing(14)
+        .width(Length::Fill)
+        .into()
     }
 }
 
@@ -461,10 +472,10 @@ impl crate::modules::render::ModuleRender for ClockModule {
         _session: Option<&crate::modules::ModuleDetailSession>,
     ) -> Option<crate::surface::panel::PanelPreferredSize> {
         Some(crate::surface::panel::PanelPreferredSize {
-            width: (300.0
+            width: (324.0
                 * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
             .ceil() as u32,
-            height: (260.0
+            height: (462.0
                 * (crate::theme::body_size() / 14.0).max(crate::theme::label_size() / 12.0))
             .ceil() as u32,
         })

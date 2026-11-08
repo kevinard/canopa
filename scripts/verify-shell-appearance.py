@@ -71,8 +71,11 @@ def start_controls_backends(binary, session):
     session.run(["pactl", "load-module", "module-remap-source", "master=speakers.monitor",
                  "source_name=microphone", "source_properties=device.description=Microphone"])
     session.run(["pactl", "set-default-sink", "speakers"])
+    session.run(["pactl", "set-default-source", "microphone"])
     session.run(["pw-metadata", "-n", "default", "0", "default.audio.sink",
                  '{"name":"speakers"}', "Spa:String:JSON"])
+    session.run(["pw-metadata", "-n", "default", "0", "default.audio.source",
+                 '{"name":"microphone"}', "Spa:String:JSON"])
     session.run(["pactl", "set-sink-volume", "speakers", "50%"])
 
 
@@ -155,17 +158,24 @@ Gtk.main()
     def click(x, y):
         session.run([str(pointer), str(round(x * 1600 / width)), str(round(y * 1000 / height))])
 
+    panel_color = (32, 45, 49) if scheme == "dark" else (251, 252, 248)
+
+    def panel_top(frame):
+        return next((y for y in range(height) if pixel(frame, 110, y) == panel_color), None)
+
     def panel_visible(name):
-        panel_color = (32, 45, 49) if scheme == "dark" else (251, 252, 248)
-        session.wait_for(
-            lambda: pixel(session.capture(name), 110, 300) == panel_color,
+        return session.wait_for(
+            lambda: panel_top(session.capture(name)),
             "native panel palette", timeout=30,
         )
+
+    def panel_click(x, y):
+        click(x, panel_visible("current-panel.png") + y)
 
     def escape(layers=1):
         # OnDemand overlays receive keyboard input after pointer focus. Session
         # launch tests can leave focus on the underlying native client.
-        click(260, 40)
+        panel_click(260, 28)
         session.run(["wtype", "-k", "Escape"])
         session.wait_for_layers(layers)
 
@@ -195,9 +205,9 @@ Gtk.main()
 
         # The real default drawer uses the existing provider names and volume adapter.
         session.wait_for(lambda: "Volume::StateChanged" in (session.output / "shell.log").read_text(), "audio summary")
-        click(432, 286)
+        panel_click(448, 231)
         session.wait_for(lambda: "55%" in session.run(["pactl", "get-sink-volume", "speakers"]), "quick volume increase")
-        click(145, 286)
+        panel_click(338, 231)
         session.wait_for(lambda: "50%" in session.run(["pactl", "get-sink-volume", "speakers"]), "quick volume decrease")
         # At fractional scale the fixed footer leaves a shorter scroll viewport.
         # Keyboard routing activates the same compact card without assuming its Y.
@@ -208,10 +218,10 @@ Gtk.main()
         session.run(["wtype", "-k", "Tab", "-k", "Return"])
         session.wait_for(lambda: "Active" in (session.output / "shell.log").read_text(), "quick keep-awake toggle")
         session.capture("quick-settings.png")
-        click(250, 150)
+        panel_click(250, 98)
         session.wait_for(lambda: provider_running("wifi") and (session.output / "shell.log").read_text().count('content="external-provider"') == 1, "built-in Wi-Fi provider")
         panel_visible("wifi.png")
-        click(148, 46)  # Host Back returns to the same Bar Panel.
+        panel_click(148, 34)  # Host Back returns to the same Bar Panel.
         session.wait_for(lambda: (session.output / "shell.log").read_text().count('content="bar-panel"') == 2, "back from Wi-Fi")
         panel_visible("back-from-wifi.png")
         # Keyboard entry selection opens Sound without needing a volume Module on the spine.
@@ -219,16 +229,20 @@ Gtk.main()
         session.wait_for(lambda: provider_running("audio") and (session.output / "shell.log").read_text().count('content="external-provider"') == 2, "built-in Sound provider")
         panel_visible("sound.png")
         raised = (43, 59, 63) if scheme == "dark" else (231, 237, 231)
-        session.wait_for(lambda: pixel(session.capture("sound.png"), 130, 200) == raised,
-                         "rendered Sound device controls", timeout=30)
+        def sound_rendered():
+            frame = session.capture("sound.png")
+            top = panel_top(frame)
+            return top is not None and top + 145 < height and pixel(frame, 405, top + 145) == raised
+
+        session.wait_for(sound_rendered, "rendered Sound device controls", timeout=30)
         assert client_layout() == reserved, "provider resized native client"
-        click(148, 46)
+        panel_click(148, 34)
         session.wait_for(lambda: (session.output / "shell.log").read_text().count('content="bar-panel"') == 3, "back from Sound")
         panel_visible("back-from-sound.png")
         # The fixture has no hardware system bus. These built-in panels should
         # remain reachable and return to the same Bar Panel.
         for steps, name in [(5, "bluetooth"), (6, "power")]:
-            click(260, 40)
+            panel_click(260, 28)
             session.run(["wtype", *["-k", "Tab"] * steps, "-k", "Return"])
             def hardware_provider_running():
                 children = subprocess.run(["ps", "--ppid", str(shell_process.pid), "-o", "args="],
@@ -237,7 +251,7 @@ Gtk.main()
             session.wait_for(hardware_provider_running, f"built-in {name} provider")
             panel_visible(f"{name}.png")
             bar_count = (session.output / "shell.log").read_text().count('content="bar-panel"')
-            click(148, 46)
+            panel_click(148, 34)
             session.wait_for(lambda: (session.output / "shell.log").read_text().count('content="bar-panel"') == bar_count + 1,
                              f"back from {name}")
             panel_visible(f"back-from-{name}.png")
@@ -249,13 +263,15 @@ Gtk.main()
             return (session.output / "shell.log").read_text().count(f'content="{kind}"')
 
         def quick_settings_visible(name):
-            # A menu has the same panel palette, so wait for the actual footer
-            # frame before sending input to its replacement drawer.
-            raised = (43, 59, 63) if scheme == "dark" else (231, 237, 231)
-            # Sample the outer card padding; the pointer can still hover its button.
-            session.wait_for(lambda: pixel(session.capture(name), 116, height - 90) == raised,
-                             "session footer rendered", timeout=30)
-            click(260, 40)  # Give the replacement OnDemand surface keyboard focus.
+            # The button uses the panel fill. Look for its left edge, away
+            # from the icon and label, to distinguish it from a menu.
+            def footer_rendered():
+                frame = session.capture(name)
+                y = height - 62
+                return any(pixel(frame, x, y) != pixel(frame, 109, y) for x in range(112, 116))
+
+            session.wait_for(footer_rendered, "session footer rendered", timeout=30)
+            panel_click(260, 28)  # Give the replacement OnDemand surface keyboard focus.
 
         # Source controls above the footer are available in this isolated fixture.
         # Lock is the seventh keyboard target and uses a session-owned launch.
@@ -271,13 +287,18 @@ Gtk.main()
                 else:
                     # Pointer activation covers every session button alongside
                     # explicit keyboard confirmation from a fresh drawer.
-                    x, y = {"logout": (372, height - 158),
-                            "reboot": (196, height - 90),
-                            "poweroff": (372, height - 90)}[target]
+                    x, y = {"logout": (372, height - 112),
+                            "reboot": (196, height - 62),
+                            "poweroff": (372, height - 62)}[target]
                     click(x, y)
                 session.wait_for(lambda: count_panels("menu") == menu_count + 1,
                                  f"{target} confirmation menu")
-                panel_visible(f"confirm-{target}.png")
+                def compact_confirmation():
+                    top = panel_top(session.capture(f"confirm-{target}.png"))
+                    return top if top is not None and top > height - 250 else None
+
+                top = session.wait_for(compact_confirmation, "compact confirmation rendered")
+                click(260, top + 28)  # Focus the replacement surface without activating either action.
                 assert not (runtime / f"{target}.requested").exists(), "action ran before confirmation"
                 if confirm:
                     press_keys("Down", "Return")

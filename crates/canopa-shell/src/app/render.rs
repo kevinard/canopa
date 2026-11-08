@@ -22,6 +22,7 @@ pub(super) struct ModuleRenderEntry<'a> {
     pub(super) hovered: bool,
     pub(super) focused: bool,
     pub(super) active: bool,
+    pub(super) paired_toggle: bool,
     pub(super) element: Element<'a, Message>,
     #[cfg(test)]
     pub(super) state: ModuleState,
@@ -42,9 +43,15 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) menu_metrics: crate::theme::MenuMetrics,
     pub(super) title: String,
     pub(super) drawer: bool,
+    pub(super) adaptive: bool,
+    pub(super) compact_at_end: bool,
+    pub(super) confirmation: bool,
+    pub(super) max_height: f32,
+    pub(super) content_width: f32,
     pub(super) tree: &'a crate::surface::panel::PanelTree,
     pub(super) search_input_id: iced::widget::Id,
     pub(super) entries: Vec<ModuleRenderEntry<'a>>,
+    pub(super) footer_start: usize,
     pub(super) external_content: Option<&'a crate::surface::panel::ExternalPanelContent>,
     pub(super) menu_entries: std::sync::Arc<[super::panel_menu_session::PanelMenuEntry]>,
     pub(super) icons: &'a super::panel_icons::PanelIcons,
@@ -97,7 +104,24 @@ impl App {
         tree: &crate::surface::panel::PanelTree,
     ) -> crate::theme::MenuMetrics {
         let ui = self.panel_ui(tree);
-        crate::theme::menu_metrics_with_gap(ui.custom_gap.then_some(ui.gap))
+        let mut metrics = crate::theme::menu_metrics_with_gap(ui.custom_gap.then_some(ui.gap));
+        if !metrics.row.custom_padding
+            && let crate::surface::panel::PanelContent::Menu(name) = &tree.content
+            && self.config.menus.iter().any(|menu| {
+                &menu.name == name
+                    && menu.source.as_ref().is_some_and(|source| {
+                        matches!(&source.kind, crate::config::MenuSourceKind::Launcher(_))
+                    })
+            })
+        {
+            let labels = (crate::theme::body_size() + crate::theme::label_size()) * 1.3 + 1.0;
+            metrics.extent = labels.ceil().max(32.0)
+                + 6.0
+                + metrics.row.margin.vertical()
+                + 2.0 * metrics.row.border_width.px()
+                + metrics.gap;
+        }
+        metrics
     }
 
     pub(super) fn active_menu_metrics(&self) -> crate::theme::MenuMetrics {
@@ -139,11 +163,63 @@ impl App {
         let layout =
             self.panel_module_layout_for_content(tree.origin_window, &tree.origin, &tree.content);
 
-        let entries = layout
+        let is_bar_panel = matches!(tree.content, crate::surface::panel::PanelContent::BarPanel);
+        let adaptive = !bar.edge.is_horizontal()
+            && bar.panel.presentation == crate::config::PanelPresentation::Adaptive;
+        let ui = self.panel_ui(tree);
+        let panel_width = bar
+            .panel
+            .width
+            .unwrap_or_else(|| bar.panel.max_width.unwrap_or(360).min(360));
+        let content_width = panel_width as f32 - ui.padding.horizontal();
+        let paired_toggles = if is_bar_panel && adaptive {
+            layout.windows(2).find(|pair| {
+                pair[0].zone == pair[1].zone
+                    && matches!(
+                        (
+                            self.modules.kind_for(&pair[0].id),
+                            self.modules.kind_for(&pair[1].id)
+                        ),
+                        (
+                            Some(ModuleKind::Notifications),
+                            Some(ModuleKind::IdleInhibitor)
+                        ) | (
+                            Some(ModuleKind::IdleInhibitor),
+                            Some(ModuleKind::Notifications)
+                        )
+                    )
+            })
+        } else {
+            None
+        }
+        .filter(|_| {
+            let tile_width =
+                (crate::theme::text_width("Do Not Disturb", crate::theme::body_size()) + 64.0)
+                    .max(168.0);
+            content_width >= 2.0 * tile_width + ui.gap.px()
+        })
+        .map(|pair| [pair[0].id.clone(), pair[1].id.clone()]);
+        // Use the configured order so an invisible module still separates
+        // controls from the trailing actions.
+        let footer: Vec<_> = if is_bar_panel {
+            self.effective_panel_module_layout_for_bar(bar)
+                .into_iter()
+                .rev()
+                .take_while(|(_, id)| self.modules.kind_for(id) == Some(ModuleKind::Button))
+                .map(|(_, id)| id)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let entries: Vec<_> = layout
             .into_iter()
             .filter_map(|entry| {
                 let id = entry.id;
                 let kind = self.modules.kind_for(&id)?;
+                let in_footer = footer.contains(&id);
+                let paired_toggle = paired_toggles
+                    .as_ref()
+                    .is_some_and(|pair| pair.contains(&id));
                 let state = self.module_render_state(kind, &id, &origin_surface);
                 let request = super::module_runtime::ModuleDetailRenderRequest {
                     id: id.clone(),
@@ -151,19 +227,22 @@ impl App {
                     session: self.foreground.panel_detail_for_render(window, &id),
                     state_override: Some(state.clone()),
                 };
-                let module_view =
-                    if matches!(tree.content, crate::surface::panel::PanelContent::BarPanel) {
-                        self.modules.render_bar_panel_module(
-                            super::module_runtime::BarPanelModuleRenderRequest {
-                                detail: request,
-                                window,
-                                focused: entry.focused,
-                            },
-                        )?
-                    } else {
-                        self.modules.render_module_detail(request)?
-                    };
-                let element = if matches!(
+                let module_view = if is_bar_panel {
+                    self.modules.render_bar_panel_module(
+                        super::module_runtime::BarPanelModuleRenderRequest {
+                            detail: request,
+                            window,
+                            focused: entry.focused,
+                            footer: in_footer,
+                            paired_toggle,
+                        },
+                    )?
+                } else {
+                    self.modules.render_module_detail(request)?
+                };
+                let element = if in_footer {
+                    module_view
+                } else if matches!(
                     tree.content,
                     crate::surface::panel::PanelContent::ModulePanel(_)
                 ) {
@@ -180,14 +259,33 @@ impl App {
                     hovered: false,
                     focused: entry.focused,
                     active: entry.focused,
+                    paired_toggle,
                     element,
                     #[cfg(test)]
                     state,
                 })
             })
             .collect();
+        let footer_start = entries
+            .iter()
+            .position(|entry| footer.contains(&entry.id))
+            .unwrap_or(entries.len());
 
         let menu = panel.menu;
+        let confirmation = bar.panel.presentation == crate::config::PanelPresentation::Adaptive
+            && matches!(&tree.content, crate::surface::panel::PanelContent::Menu(name)
+                if self.config.menus.iter().any(|menu|
+                    &menu.name == name
+                    && menu.source.is_none()
+                    && menu.prompt.is_some()
+                    && matches!(menu.items.as_slice(), [cancel, confirm]
+                        if cancel.children.is_empty() && confirm.children.is_empty()
+                        && cancel.action == Some(crate::config::PanelAction::OpenBarPanel)
+                        && matches!(confirm.action, Some(crate::config::PanelAction::Command(_))))));
+        let compact_at_end = !bar.edge.is_horizontal()
+            && matches!(&tree.origin, crate::surface::panel::PanelOrigin::Module(origin)
+                if self.effective_module_layout_for_bar(bar).iter().any(|(zone, id)|
+                    *zone == Zone::End && id == origin));
 
         let title = {
             use crate::surface::panel::PanelContent;
@@ -213,24 +311,43 @@ impl App {
                         .configured_module_name_for_instance(id)
                         .to_owned(),
                 },
+                PanelContent::Menu(name)
+                    if name == "Applications" && menu.launcher_session.is_some() =>
+                {
+                    "Launcher".into()
+                }
                 PanelContent::Menu(name) => name.clone(),
                 PanelContent::DmenuRequest => "Choose an item".to_owned(),
                 PanelContent::ExternalProvider(content) => content
                     .document
                     .canopa()
                     .map(|snapshot| snapshot.content.title.clone())
-                    .unwrap_or_else(|| content.provider_name.clone()),
+                    .unwrap_or_else(|| match content.provider_name.as_str() {
+                        "wifi" => "Wi-Fi".into(),
+                        _ => content.provider_name.clone(),
+                    }),
             }
         };
 
         Some(PanelRenderModel {
-            ui: self.panel_ui(tree),
+            ui,
             menu_metrics: self.panel_menu_metrics(tree),
             title,
-            drawer: bar.uses_drawer(),
+            drawer: bar.uses_drawer_for(&tree.content),
+            adaptive,
+            compact_at_end,
+            confirmation,
+            content_width,
+            max_height: bar.panel.height.unwrap_or_else(|| {
+                bar.panel
+                    .max_height
+                    .unwrap_or(u32::MAX)
+                    .min(tree.screen_size.1)
+            }) as f32,
             tree,
             search_input_id: super::panel::panel_search_input_id(window),
             entries,
+            footer_start,
             external_content: match &tree.content {
                 crate::surface::panel::PanelContent::ExternalProvider(content) => Some(content),
                 _ => None,
@@ -263,6 +380,7 @@ impl App {
         let mut start = Vec::new();
         let mut center = Vec::new();
         let mut end = Vec::new();
+        let panel_open = self.foreground.active_panel_window().is_some();
 
         for (zone, id) in self.effective_module_layout_for_bar(bar) {
             let Some(kind) = self.modules.kind_for(&id) else {
@@ -278,8 +396,8 @@ impl App {
             if !self.modules.has_content(&id, &state, mode) {
                 continue;
             }
-            let hovered = surface.hovered_module.as_ref() == Some(&id);
-            let focused = surface.focused_module.as_ref() == Some(&id);
+            let hovered = !panel_open && surface.hovered_module.as_ref() == Some(&id);
+            let focused = !panel_open && surface.focused_module.as_ref() == Some(&id);
             let active = self.foreground.active_panel_origin_for(window)
                 == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
 
@@ -375,6 +493,7 @@ impl App {
                 hovered,
                 focused,
                 active,
+                paired_toggle: false,
                 element,
                 #[cfg(test)]
                 state,

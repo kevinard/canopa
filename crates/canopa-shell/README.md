@@ -148,20 +148,22 @@ Closing ends interaction immediately; the remaining exit image cannot receive in
 
 ### Vertical side drawer
 
-The shipped left bar opens panels in a full-height, 392-logical-pixel side drawer,
-with rounded corners and 12-pixel vertical frame margins.
-Clicking another module replaces its contents in the same position; clicking the
-same module again, pressing Escape, or using Close dismisses it. The drawer overlays
-the desktop without resizing tiled windows. Each panel shows its own content;
-the bar icons remain the navigation.
+The shipped left bar opens the launcher, Quick Settings, and provider panels in a
+416-logical-pixel side drawer with rounded corners and 12-pixel vertical margins.
+The `adaptive` presentation opens individual module details, such as Calendar,
+in popovers beside their bar controls and fits short search results and standalone
+provider status messages to their content. The panels overlay the desktop without
+resizing tiled windows. Click the originating module again or use Close to dismiss
+the panel. Escape clears an active search before closing its panel.
 
-To enable this in an existing bar, add `presentation "drawer"` to its `panel` block.
+Use `presentation "adaptive"` in an existing bar's `panel` block to match the
+shipped behavior. Use `presentation "drawer"` for a full-height drawer for every panel.
 Remove any existing `height` or `max-height` to let the drawer fill the screen's
 usable height; for example, an old `height 720` keeps the drawer at 720 logical pixels.
 
 ```kdl
 panel {
-    presentation "drawer"
+    presentation "adaptive"
     // drawer-mode "push-bar" // drawer at the edge, bar on its inner side
     // width 400       // optional consistent drawer width
     // max-height 800  // optional cap; the drawer stays at the top
@@ -180,7 +182,7 @@ the drawer beside it. `drawer-mode "push-bar"` opens the drawer at the bar's edg
 and moves the bar inward: on the left, the drawer is on the left and the bar on
 its right; on the right, this is mirrored. Closing the drawer returns the bar to
 the edge. Both modes overlay application windows without resizing them.
-`drawer-mode` applies only to left/right bars with `presentation "drawer"`.
+`drawer-mode` applies to drawer surfaces on left and right bars.
 
 For an existing module with no click action, add `actions { click { open-panel; } }`
 inside that module to open its details. The shipped clock, sound, battery and

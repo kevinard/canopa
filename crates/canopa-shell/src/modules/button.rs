@@ -112,17 +112,47 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         style: &crate::config::Style,
         context: crate::modules::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        Some(
-            crate::theme::action(
-                self.render_panel_with_style(state, style),
-                context.primary,
-                canopa_ui::Action::Quiet,
-                context.focused,
-            )
-            .width(iced::Length::Fill)
-            .height(44)
-            .into(),
+        use iced::widget::{container, row};
+        let mut style = *style;
+        if context.footer
+            && style.color.is_none()
+            && matches!(self.icon.as_str(), "canopa:reboot" | "canopa:poweroff")
+        {
+            style.color = Some(crate::config::ColorValue::Token(
+                crate::config::ThemeToken::Critical,
+            ));
+        }
+        let content = self.render_panel_with_style(state, &style);
+        let content = if context.opens_provider {
+            row![
+                container(content).width(iced::Length::Fill),
+                crate::theme::text("›").size(22).style(canopa_ui::muted)
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            content
+        };
+        let mut button = crate::theme::action(
+            container(content)
+                .height(iced::Length::Fill)
+                .align_y(iced::Alignment::Center),
+            context.primary,
+            if context.footer {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
+            context.focused,
         )
+        .width(iced::Length::Fill)
+        .height(44);
+        if context.opens_provider && !crate::theme::ui(canopa_theme::UiKind::Button).custom_padding
+        {
+            button = button.padding([8, 4]);
+        }
+        Some(button.into())
     }
 
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
@@ -180,6 +210,28 @@ impl crate::modules::view::IconLabel for ButtonModule {
         style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         match layout {
+            crate::modules::view::IconLabelLayout::Collapsed
+                if matches!(
+                    self.icon.as_str(),
+                    "canopa:search" | "canopa:overview" | "canopa:controls"
+                ) =>
+            {
+                iced::widget::column![
+                    crate::modules::view::styled_segment_text(
+                        self.icon(state),
+                        18,
+                        crate::theme::palette().text,
+                        crate::modules::view::fallback_resolved_style(style),
+                    ),
+                    crate::theme::strong_text(self.label(state))
+                        .size((crate::theme::label_size() - 1.0).max(11.0))
+                        .wrapping(iced::widget::text::Wrapping::None),
+                ]
+                .spacing(1)
+                .width(iced::Length::Fill)
+                .align_x(iced::Alignment::Center)
+                .into()
+            }
             crate::modules::view::IconLabelLayout::Expanded => {
                 crate::modules::view::spaced_icon_label(self.icon(state), self.label(state), style)
             }

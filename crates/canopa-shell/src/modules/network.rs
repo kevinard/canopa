@@ -236,17 +236,15 @@ impl crate::modules::render::ModuleRender for NetworkModule {
         context: crate::modules::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
         let description = match state {
-            crate::modules::ModuleState::Network(network) => {
-                format!("{} · Manage connections", Self::default_label(network))
-            }
-            _ => "Status unavailable · Open Wi-Fi settings".to_owned(),
+            crate::modules::ModuleState::Network(network) => Self::default_label(network),
+            _ => "Network status unavailable".to_owned(),
         };
         Some(crate::modules::view::panel_control(
+            include_bytes!("../../assets/wifi.svg"),
             "Wi-Fi",
             description,
-            "›",
-            context.primary,
-            context.focused,
+            super::view::PanelControlEnd::Navigate,
+            context,
         ))
     }
 

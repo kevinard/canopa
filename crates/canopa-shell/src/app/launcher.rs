@@ -481,6 +481,7 @@ impl Session {
                 );
             }
         }
+        let query = text.to_lowercase();
         let mut ranked: Vec<_> = native
             .into_iter()
             .enumerate()
@@ -507,7 +508,6 @@ impl Session {
                             .to_lowercase(),
                     );
                 }
-                let query = text.to_lowercase();
                 let quality = if query.is_empty() || labels.iter().any(|label| label == &query) {
                     0
                 } else if labels.iter().any(|label| label.starts_with(&query)) {
@@ -548,6 +548,38 @@ impl Session {
                 )
             })
             .collect();
+        // In broad search a literal name hit should not be buried among
+        // incidental subsequences. Keep literal metadata matches and retain
+        // fuzzy fallback for abbreviations and explicitly scoped searches.
+        if scope == Scope::All
+            && query.chars().count() >= 3
+            && ranked.iter().any(|(score, _)| score.0 <= 2)
+        {
+            let words: Vec<_> = query.split_whitespace().collect();
+            ranked.retain(|(score, entry)| {
+                if score.0 <= 2 {
+                    return true;
+                }
+                let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
+                    return false;
+                };
+                let mut fields = vec![entry.label.as_str(), target.result.description.as_str()];
+                if let Some(NamedAction {
+                    action: Action::Application { id },
+                    ..
+                }) = target.result.actions.first()
+                    && let Some(app) = self.apps.iter().find(|app| app.id == *id)
+                {
+                    fields.extend(app.generic_name.as_deref());
+                    fields.extend(app.comment.as_deref());
+                    fields.extend(app.keywords.iter().map(String::as_str));
+                }
+                let fields: Vec<_> = fields.into_iter().map(str::to_lowercase).collect();
+                words
+                    .iter()
+                    .all(|word| fields.iter().any(|field| field.contains(word)))
+            });
+        }
         ranked.sort_by_key(|(score, _)| *score);
         let mut seen = std::collections::HashSet::new();
         ranked.retain(|(_, entry)| {
@@ -687,7 +719,7 @@ impl Session {
             status.push("No matches".into());
         }
         if status.is_empty() && self.query.is_empty() {
-            status.push("Apps, windows, files · = calculator · settings · emoji · symbol".into());
+            status.push("Try files, settings, emoji, or = for a calculation.".into());
         }
         for error in [&self.preferences_error, &self.configuration_error]
             .into_iter()
@@ -1509,6 +1541,34 @@ mod tests {
             dbus_activatable: false,
         }
     }
+
+    #[test]
+    fn broad_search_prefers_literal_names_and_keywords_to_incidental_subsequences() {
+        let mut keyword_match = application("keywords", "Keyword Manager");
+        keyword_match.keywords.push("fire".into());
+        let mut session = Session::new(
+            Config::default(),
+            vec![
+                application("firefox", "Firefox"),
+                application("renderer", "File Renderer"),
+                keyword_match,
+            ],
+        );
+        session.search_changed("fire");
+        let entries = session.entries();
+        assert_eq!(entries[0].label, "Firefox");
+        assert!(entries.iter().any(|entry| entry.label == "Keyword Manager"));
+        assert!(!entries.iter().any(|entry| entry.label == "File Renderer"));
+
+        session.search_changed("frend");
+        assert!(
+            session
+                .entries()
+                .iter()
+                .any(|entry| entry.label == "File Renderer")
+        );
+    }
+
     #[test]
     fn live_window_changes_retire_old_actions_and_preserve_scoped_search() {
         let mut menu = menu();

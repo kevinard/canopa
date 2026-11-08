@@ -109,11 +109,11 @@ impl ModuleRender for MediaModule {
         context: super::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, Message>> {
         Some(super::view::panel_control(
+            include_bytes!("../../assets/play.svg"),
             "Media",
             self.label(state),
-            "›",
-            context.primary,
-            context.focused,
+            super::view::PanelControlEnd::Navigate,
+            context,
         ))
     }
 

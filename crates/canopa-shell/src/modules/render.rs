@@ -11,6 +11,9 @@ pub struct PanelModuleContext {
     pub scroll_up: Option<crate::app::Message>,
     pub scroll_down: Option<crate::app::Message>,
     pub focused: bool,
+    pub footer: bool,
+    pub paired_toggle: bool,
+    pub opens_provider: bool,
 }
 
 pub trait ModuleRender: Send + Sync {

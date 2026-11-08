@@ -443,10 +443,14 @@ bar "main" {
     }
 
     #[test]
-    fn bundled_vertical_bar_opens_module_details_in_its_drawer() {
+    fn bundled_vertical_bar_keeps_a_drawer_and_uses_popovers_for_module_details() {
         let config = parse(crate::config::defaults::DEFAULT_CONFIG).unwrap();
-        assert!(config.bars[0].uses_drawer());
+        use crate::surface::panel::PanelContent;
+        assert!(config.bars[0].uses_drawer_for(&PanelContent::BarPanel));
         for name in ["clock", "volume", "battery", "focused-window"] {
+            assert!(!config.bars[0].uses_drawer_for(&PanelContent::ModulePanel(
+                crate::modules::ModuleId::new(name),
+            )));
             let module = config
                 .modules
                 .iter()

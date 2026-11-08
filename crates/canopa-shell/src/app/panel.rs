@@ -1275,7 +1275,7 @@ impl App {
                 self.module_detail_preferred_content_size(id, bar, &origin_surface)
             },
         });
-        let drawer_width = if bar.drawer_pushes_bar() {
+        let drawer_width = if bar.drawer_pushes_bar() && bar.uses_drawer_for(&tree.content) {
             plan.width.value()
         } else {
             0
@@ -2757,9 +2757,9 @@ mod tests {
             },
         });
 
-        assert_eq!(plan.width, PlannedDimension::Exact(348));
-        assert_eq!(plan.height, PlannedDimension::Exact(364));
-        assert_eq!(panel_window_settings(plan).size, Some((348, 364)));
+        assert_eq!(plan.width, PlannedDimension::Exact(372));
+        assert_eq!(plan.height, PlannedDimension::Exact(566));
+        assert_eq!(panel_window_settings(plan).size, Some((372, 566)));
     }
 
     #[test]

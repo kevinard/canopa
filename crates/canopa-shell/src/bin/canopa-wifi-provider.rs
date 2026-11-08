@@ -1,5 +1,5 @@
 use canopa_panel_protocol::v1::{
-    ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity,
+    ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, ProviderEvent,
 };
 use canopa_panel_protocol::v5::Update;
 use canopa_shell::wifi_provider::backends::choose_backend;
@@ -30,19 +30,30 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = tokio::io::stdout();
     transport.handshake(&mut stdin).await?;
 
-    let Some(backend) = choose_backend().await else {
+    let mut initial = true;
+    let backend = loop {
+        if let Some(backend) = choose_backend().await {
+            break backend;
+        }
         transport
             .write(
                 &mut stdout,
                 canopa_shell::wifi_provider::no_control_document(),
-                true,
+                initial,
                 Update::Replace,
             )
             .await?;
+        initial = false;
         loop {
             let input = transport.read(&mut stdin).await.ok();
-            if matches!(transport.action(input), Action::Close) {
-                return Ok(());
+            match transport.action(input) {
+                Action::Close => return Ok(()),
+                Action::Event(ProviderEvent::ButtonActivated { element_id })
+                    if element_id == "refresh" =>
+                {
+                    break;
+                }
+                _ => {}
             }
         }
     };
@@ -50,7 +61,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let changes = backend.changes().await?;
     let cleanup = backend.cleanup();
     let mut provider = WifiPanelProvider::new(backend);
-    let initial = match tokio::time::timeout(
+    let document = match tokio::time::timeout(
         std::time::Duration::from_secs(2),
         provider.initial_content(),
     )
@@ -61,7 +72,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => backend_error_document("Wi-Fi unavailable", WifiBackendErrorCategory::NoControl),
     };
     transport
-        .write(&mut stdout, initial, true, Update::Replace)
+        .write(&mut stdout, document, initial, Update::Replace)
         .await?;
     let result = canopa_shell::wifi_provider::session::run_with_transport(
         provider, stdin, stdout, changes, transport,

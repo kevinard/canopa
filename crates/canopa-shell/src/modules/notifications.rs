@@ -183,21 +183,23 @@ impl ModuleRender for NotificationsModule {
             || "Notifications unavailable".to_owned(),
             |s| {
                 if s.do_not_disturb {
-                    "Pause notification banners".to_owned()
+                    "Banners are paused".to_owned()
                 } else {
-                    "Show notification banners".to_owned()
+                    "Banners are allowed".to_owned()
                 }
             },
         );
         Some(super::view::panel_control(
+            include_bytes!("../../assets/moon.svg"),
             "Do Not Disturb",
             description,
-            summary.map_or(
-                "Unavailable",
-                |s| if s.do_not_disturb { "On" } else { "Off" },
-            ),
-            summary.and(context.primary),
-            context.focused,
+            summary.map_or(super::view::PanelControlEnd::Status("Unavailable"), |s| {
+                super::view::PanelControlEnd::Toggle(s.do_not_disturb)
+            }),
+            super::render::PanelModuleContext {
+                primary: summary.and(context.primary),
+                ..context
+            },
         ))
     }
 
