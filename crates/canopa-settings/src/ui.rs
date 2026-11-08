@@ -14,8 +14,12 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use iced::{
-    Element, Length, Subscription, Task,
-    widget::{checkbox, column, container, pick_list, row, scrollable, slider, text, text_input},
+    Alignment, Element, Font, Length, Subscription, Task, Theme,
+    font::Weight,
+    widget::{
+        checkbox, column, container, pick_list, row, rule, scrollable, slider, space, text,
+        text_input,
+    },
 };
 use niri_ipc::{Output, Transform};
 use std::{collections::HashMap, process::Stdio, time::Duration};
@@ -135,7 +139,17 @@ impl State {
         message: Option<Message>,
         active: bool,
     ) -> Element<'a, Message> {
-        button(label, message, active, self.busy)
+        button(
+            label,
+            message,
+            if active {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
+            Length::Shrink,
+            self.busy,
+        )
     }
 
     fn boot() -> (Self, Task<Message>) {
@@ -800,21 +814,55 @@ impl State {
         Subscription::batch(subscriptions)
     }
     fn view(&self) -> Element<'_, Message> {
-        let mut navigation = column![text("CANOPA").size(16), text("Settings").size(28)]
-            .spacing(12)
-            .width(210);
+        let mut links = column![].spacing(5);
         for page in Page::ALL {
-            navigation = navigation.push(self.action(
+            links = links.push(button(
                 page.label(),
                 (!self.busy && self.trial.is_none()).then_some(Message::Page(page)),
-                page == self.page,
+                if page == self.page {
+                    canopa_ui::Action::Normal
+                } else {
+                    canopa_ui::Action::Quiet
+                },
+                Length::Fill,
+                self.busy,
             ));
         }
+        let navigation = container(
+            column![
+                column![
+                    text("Canopa").size(13).style(canopa_ui::muted),
+                    heading("Settings", 24)
+                ]
+                .spacing(3)
+                .padding([8, 8]),
+                links
+            ]
+            .spacing(18),
+        )
+        .width(200)
+        .height(Length::Fill)
+        .padding(14)
+        .style(|theme| container::Style::default().background(canopa_ui::colors(theme).surface));
+
+        let description = match self.page {
+            Page::Displays => "Manage connected monitors and save display layouts.",
+            Page::Input => "Adjust keyboard, mouse, and touchpad behavior.",
+            Page::Personal => "Choose how your desktop and lock screen look and feel.",
+            Page::Power => "Set how your desktop responds when you step away.",
+            Page::Launcher => "Choose search providers and manage clipboard history.",
+            Page::Shortcuts => "Find and edit keyboard shortcuts for your desktop.",
+            Page::Widgets => "Arrange widgets on your desktop and lock screen.",
+        };
+        let title = column![
+            heading(self.page.label(), 28),
+            text(description).size(14).style(canopa_ui::muted)
+        ]
+        .spacing(5);
         // Keep this child present so asynchronous notices do not replace the
         // page's widget tree and discard keyboard focus or typed drafts.
         let mut body = column![
-            text(self.page.label()).size(28),
-            container(text(&self.notice))
+            container(text(&self.notice).size(14))
                 .padding(if self.notice.is_empty() { 0 } else { 12 })
                 .height(if self.notice.is_empty() {
                     // Iced filters zero-height children out of a Column.
@@ -848,8 +896,11 @@ impl State {
             );
         }
         if matches!(self.page, Page::Displays | Page::Input) && !self.paths.active() {
-            body = body.push(text(
-                "Log into the Canopa desktop session to save display and input settings.",
+            body = body.push(settings_group(
+                "Changes require a Canopa session",
+                text("Sign in to the Canopa desktop to save display and input settings.")
+                    .size(14)
+                    .style(canopa_ui::muted),
             ));
         }
         body = body.push(match self.page {
@@ -870,7 +921,13 @@ impl State {
             && (self.page != Page::Widgets || self.widget_layouts.dirty())
             && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input));
         let footer = row![
+            space().width(Length::Fill),
             self.action(
+                "Reload and discard edits",
+                (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
+                false
+            ),
+            button(
                 if self.busy {
                     "Applying…"
                 } else if self.page == Page::Displays {
@@ -879,27 +936,28 @@ impl State {
                     "Save changes"
                 },
                 available.then_some(Message::Save),
-                true
-            ),
-            self.action(
-                "Reload and discard edits",
-                (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
-                false
+                canopa_ui::Action::Primary,
+                Length::Shrink,
+                self.busy,
             )
         ]
-        .spacing(16);
+        .align_y(Alignment::Center)
+        .spacing(12)
+        .padding([10, 20]);
         let content = column![
+            container(title).padding([19, 20]).width(Length::Fill),
+            rule::horizontal(1).style(settings_rule),
             canopa_ui::scroll_speed(
-                scrollable(body.padding(4))
+                scrollable(container(body.max_width(800).padding([14, 20])).width(Length::Fill))
                     .id("settings-page-scroll")
                     .height(Length::Fill)
             ),
+            rule::horizontal(1).style(settings_rule),
             footer
         ]
-        .spacing(18)
         .width(Length::Fill);
         focus::group(
-            container(row![navigation, content].spacing(28)).padding(24),
+            row![navigation, rule::vertical(1).style(settings_rule), content],
             self.trial.as_ref().map(|_| Message::Decision(false)),
             format!(
                 "{:?}-{}-{:?}",
@@ -1020,8 +1078,7 @@ impl State {
         body.into()
     }
     fn input_view(&self) -> Element<'_, Message> {
-        column![
-            text("Keyboard").size(22),
+        let keyboard = column![
             field(
                 "Layouts, in switch order (for example us,fr)",
                 &self.input.layouts,
@@ -1056,7 +1113,9 @@ impl State {
                 1.,
                 |v| Message::InputNumber(1, v)
             ),
-            text("Mouse").size(22),
+        ]
+        .spacing(10);
+        let mouse = column![
             text(format!("Pointer speed: {:.2}", self.input.mouse_speed)),
             adjust(
                 "mouse-speed",
@@ -1077,7 +1136,9 @@ impl State {
                 self.input.mouse_natural_scroll,
                 Message::InputFlag(1, !self.input.mouse_natural_scroll)
             ),
-            text("Touchpad").size(22),
+        ]
+        .spacing(10);
+        let touchpad = column![
             text(format!("Touchpad speed: {:.2}", self.input.touchpad_speed)),
             adjust(
                 "touchpad-speed",
@@ -1105,12 +1166,17 @@ impl State {
                 Message::InputFlag(4, !self.input.touchpad_disable_while_typing)
             )
         ]
-        .spacing(12)
+        .spacing(10);
+        column![
+            settings_group("Keyboard", keyboard),
+            settings_group("Mouse", mouse),
+            settings_group("Touchpad", touchpad)
+        ]
+        .spacing(14)
         .into()
     }
     fn personal_view(&self) -> Element<'_, Message> {
-        let content = column![
-            text("Appearance").size(22),
+        let appearance = column![
             toggle(
                 "light",
                 "Light appearance",
@@ -1119,9 +1185,9 @@ impl State {
                     self.personal.appearance.color_scheme != canopa_theme::ColorScheme::Light
                 )
             ),
-            field("Accent color (optional, #RRGGBB)", &self.accent, |v| {
+            container(field("Accent color (optional, #RRGGBB)", &self.accent, |v| {
                 Message::PersonalText(0, v)
-            }),
+            })).max_width(300),
             text(format!("Text size · {}%", self.personal.text_scale)),
             adjust(
                 "settings-text-scale",
@@ -1136,10 +1202,11 @@ impl State {
                 self.personal.reduced_motion,
                 Message::ReducedMotion(!self.personal.reduced_motion)
             ),
-            self.action("Choose wallpaper…", Some(Message::Wallpaper), false),
-            text("The wallpaper picker previews and saves per-monitor assignments."),
-            text("Add images to ~/Pictures/Wallpapers when no wallpaper folder is configured."),
-            text("Lockscreen").size(22),
+            self.action("Choose wallpaper…", Some(Message::Wallpaper), true),
+            text("Preview and save wallpaper for each monitor. The default image folder is ~/Pictures/Wallpapers.")
+                .size(14).style(canopa_ui::muted),
+        ].spacing(12);
+        let lockscreen = column![
             field("Clock format", &self.personal.lock.clock_format, |v| {
                 Message::PersonalText(1, v)
             }),
@@ -1173,10 +1240,10 @@ impl State {
                 Some(Message::OpenLockWidgetEditor),
                 false
             )
-        ];
-        let mut content = content.push(text("Window and workspace motion").size(22));
-        if let Some(reduced) = self.compositor_motion {
-            content = content.push(self.action(
+        ]
+        .spacing(12);
+        let motion = if let Some(reduced) = self.compositor_motion {
+            self.action(
                 if reduced {
                     "Use Niri animation settings"
                 } else {
@@ -1184,15 +1251,22 @@ impl State {
                 },
                 Some(Message::CompositorMotion(!reduced)),
                 false,
-            ));
+            )
         } else {
-            content = content.push(text("Compositor motion is editable in a Canopa session with a managed Niri configuration."));
-        }
-        content.spacing(12).into()
+            text("Compositor motion is editable in a Canopa session with a managed Niri configuration.")
+                .size(14).style(canopa_ui::muted).into()
+        };
+        column![
+            settings_group("Appearance", appearance),
+            settings_group("Lock screen", lockscreen),
+            settings_group("Window and workspace motion", motion),
+        ]
+        .spacing(14)
+        .into()
     }
     fn power_view(&self) -> Element<'_, Message> {
-        let mut ac = column![text("On AC power").size(20)].spacing(12);
-        let mut battery = column![text("On battery").size(20)].spacing(12);
+        let mut ac = column![].spacing(10);
+        let mut battery = column![].spacing(10);
         for (index, label) in [
             "Lock after (seconds)",
             "After lock: displays off (seconds)",
@@ -1214,8 +1288,8 @@ impl State {
                 move |v| Message::IdleTime(true, index, v),
             ));
         }
-        column![
-            text(&self.idle_status),
+        let activity = column![
+            text(&self.idle_status).style(canopa_ui::muted),
             row![
                 self.action(
                     "Pause idle actions",
@@ -1238,16 +1312,27 @@ impl State {
                     false
                 )
             ]
+            .spacing(12)
+            .align_y(Alignment::End),
+        ]
+        .spacing(12);
+        column![
+            settings_group("Idle controls", activity),
+            text("Timeouts run in order: lock, turn off displays, then suspend.")
+                .size(14)
+                .style(canopa_ui::muted),
+            row![
+                settings_group("On AC power", ac),
+                settings_group("On battery", battery)
+            ]
             .spacing(12),
-            text(
-                "Timeouts are sequential: lock, wait before displays off, then wait before suspend."
-            ),
-            row![ac, battery].spacing(24),
             text(
                 "Custom commands, profiles and inhibition rules stay in your existing idle policy."
             )
+            .size(14)
+            .style(canopa_ui::muted),
         ]
-        .spacing(16)
+        .spacing(14)
         .into()
     }
 }
@@ -1275,10 +1360,38 @@ fn field_id<'a>(
     .width(Length::Fill)
     .into()
 }
+fn heading(label: &str, size: u32) -> iced::widget::Text<'_> {
+    text(label).size(size).font(Font {
+        weight: Weight::Semibold,
+        ..Font::DEFAULT
+    })
+}
+
+fn settings_group<'a>(
+    label: &'a str,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    container(column![heading(label, 18), content.into()].spacing(12))
+        .padding(16)
+        .width(Length::Fill)
+        .style(canopa_ui::surface)
+        .into()
+}
+
+fn settings_rule(theme: &Theme) -> rule::Style {
+    rule::Style {
+        color: canopa_ui::colors(theme).border,
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: true,
+    }
+}
+
 fn button<'a>(
     label: &'a str,
     message: Option<Message>,
-    active: bool,
+    treatment: canopa_ui::Action,
+    width: Length,
     preserve_disabled: bool,
 ) -> Element<'a, Message> {
     focus::control(
@@ -1291,16 +1404,9 @@ fn button<'a>(
         None,
         None,
         preserve_disabled,
-        canopa_ui::action(
-            text(label),
-            message,
-            if active {
-                canopa_ui::Action::Normal
-            } else {
-                canopa_ui::Action::Quiet
-            },
-            false,
-        ),
+        canopa_ui::action(text(label), message, treatment, false)
+            .width(width)
+            .padding([8, 12]),
     )
 }
 fn toggle<'a>(

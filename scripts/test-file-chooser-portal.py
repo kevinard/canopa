@@ -158,7 +158,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     session.completed_checks = checks
     handle = begin('OpenFile', {'multiple': GLib.Variant('b', True), 'filters': GLib.Variant('a(sa(us))', [('Text', [(0, '*.txt')])]), 'choices': GLib.Variant('a(ssa(ss)s)', [('encoding', 'Encoding', [('utf8', 'UTF-8'), ('latin1', 'Latin-1')], 'latin1')])})
     session.capture('01-open.png')
-    click(320, 218)
+    click(320, 280)
     # Keep the modifier's device alive until the selection completes. Modern
     # compositors release its state when the wtype connection disappears.
     shift = session.start(['wtype', '-M', 'shift', '-s', '600000'], 'selection-shift.log')
@@ -171,7 +171,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
             sync = re.search(r'\.sync\(new id wl_callback([#@]\d+)\)', tail)
             return sync and f'wl_callback{sync[1]}.done(' in tail[sync.end():]
         session.wait_for(shift_applied, 'selection Shift roundtrip')
-        click(320, 251)
+        click(320, 313)
     finally:
         session.retire(shift)
     click_footer(chooser(), 42)
@@ -188,7 +188,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     session.run(['wtype', 'raw-'])
     time.sleep(.3)
     # The first matching row's Open control must select that row itself.
-    click(795, 185)
+    click(795, 248)
     response = result(handle)
     assert response['uris'] == [uri(raw)], response
     checks.append('row Open selects its file and preserves non-UTF-8 bytes')
@@ -238,7 +238,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
 
     handle = begin('SaveFiles', {'files': GLib.Variant('aay', [b'one.txt\0', b'two.txt\0'])})
     width, _ = chooser()['layout']['window_size']
-    click(20 + width - 65, 103)  # Toolbar below the client-side title bar.
+    click(20 + width - 65, 135)  # Toolbar below the client-side title bar.
     time.sleep(.4)
     session.run(['wtype', 'Batch été']); keys('Return')
     batch = fixture / 'Batch été'
@@ -266,7 +266,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     click_footer(chooser(), 42)
     time.sleep(.3)
     width, height = chooser()['layout']['window_size']
-    click(210, 10 + height - 70)
+    click(210, 10 + height - 78)
     assert result(handle)['uris'] == [uri(fixture / 'a.txt')]
     assert (fixture / 'a.txt').read_text() == 'original content'
     checks.append('confirmed replacement returns its path without modifying bytes')

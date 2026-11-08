@@ -1721,26 +1721,34 @@ fn notification_banner_content<'a>(
     use iced::widget::{button, column, container, progress_bar, row, text};
     use iced::{Alignment, Length};
 
-    let content = column![
-        text(banner_title(banner))
-            .font(canopa_ui::font(appearance))
-            .size(appearance.typography().title_size.px())
-            .width(Length::Fill)
-            .line_height(iced::Pixels(
-                appearance.typography().title_size.px() * 1.375
-            ))
-            .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-        container(notification_body_widget(banner, appearance))
-            .id(accessibility_bounds::widget_id(banner.target(), 1))
-            .width(Length::Fill),
-        text(&banner.app_name)
-            .font(canopa_ui::font(appearance))
-            .size(appearance.typography().label_size.px())
-            .width(Length::Fill)
-            .style(canopa_ui::muted),
-    ]
-    .spacing(1)
-    .width(Length::Fill);
+    let mut title_font = canopa_ui::font(appearance);
+    title_font.weight = iced::font::Weight::Semibold;
+    let mut content = column![].spacing(3).width(Length::Fill);
+    if banner_title(banner) != banner.app_name {
+        content = content.push(
+            text(&banner.app_name)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px())
+                .width(Length::Fill)
+                .style(canopa_ui::muted),
+        );
+    }
+    content = content
+        .push(
+            text(banner_title(banner))
+                .font(title_font)
+                .size(appearance.typography().title_size.px())
+                .width(Length::Fill)
+                .line_height(iced::Pixels(
+                    appearance.typography().title_size.px() * 1.375,
+                ))
+                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+        )
+        .push(
+            container(notification_body_widget(banner, appearance))
+                .id(accessibility_bounds::widget_id(banner.target(), 1))
+                .width(Length::Fill),
+        );
 
     let activate = button(container(content).width(Length::Fill).clip(true))
         .padding(0)
@@ -1785,7 +1793,7 @@ fn notification_banner_content<'a>(
     }
     header = header.push(activate).push(dismiss);
 
-    let mut card = column![header, banner_actions_widget(banner, appearance)]
+    let mut card = column![header]
         .spacing(
             appearance
                 .style(canopa_theme::UiKind::Notification)
@@ -1793,6 +1801,9 @@ fn notification_banner_content<'a>(
                 .px(),
         )
         .width(Length::Fill);
+    if !banner.actions.is_empty() {
+        card = card.push(banner_actions_widget(banner, appearance));
+    }
 
     if let Some(progress) = banner.progress {
         card = card.push(
@@ -1831,15 +1842,7 @@ fn banner_actions_widget<'a>(
     use iced::widget::{column, container, row};
     use iced::{Alignment, Length};
 
-    let mut actions =
-        column![]
-            .spacing(6)
-            .width(Length::Fill)
-            .height(if banner.actions.is_empty() {
-                Length::Fixed(28.0)
-            } else {
-                Length::Shrink
-            });
+    let mut actions = column![].spacing(6).width(Length::Fill);
 
     for (row_index, pair) in banner.actions.chunks(2).enumerate() {
         let mut action_row = row![]
@@ -2298,7 +2301,7 @@ fn close_button<'a>(
     target: BannerTarget,
     appearance: &canopa_theme::Appearance,
 ) -> iced::widget::Button<'a, BannerUiMessage> {
-    let label = iced::widget::text("x")
+    let label = iced::widget::text("×")
         .font(canopa_ui::font(appearance))
         .size(appearance.typography().body_size.px());
     let style = appearance.style(canopa_theme::UiKind::Button);
@@ -2310,7 +2313,7 @@ fn close_button<'a>(
     canopa_ui::styled_action(
         label,
         Some(BannerUiMessage::Dismiss(target)),
-        canopa_ui::Action::Destructive,
+        canopa_ui::Action::Quiet,
         false,
         appearance,
     )

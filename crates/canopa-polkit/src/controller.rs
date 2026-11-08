@@ -240,6 +240,9 @@ impl Controller {
             .unwrap_or(label);
         self.ui.username = label.clone();
         self.ui.busy = self.phase == Phase::Waiting || self.details.is_some();
+        self.ui.primary_control = (matches!(self.phase, Phase::Prompt | Phase::Failed)
+            && self.details.is_none())
+        .then_some(2);
         self.ui.controls = vec![
             Control {
                 id: 1,

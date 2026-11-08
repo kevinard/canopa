@@ -120,6 +120,8 @@ impl Controller {
                 .insert(format!("message-{index}"), chunk.join("\n"));
         }
         self.ui.hide_input = self.details.is_some() || self.request.kind != Kind::Pin;
+        self.ui.primary_control =
+            (self.details.is_none() && self.request.kind != Kind::Confirm).then_some(2);
         self.ui.prompt = if self.ui.hide_input {
             None
         } else {

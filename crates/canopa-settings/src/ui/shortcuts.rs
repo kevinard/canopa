@@ -1,10 +1,15 @@
-use super::{Element, Message, State, column, field_id, text};
+use super::{Element, Message, State, column, field_id, settings_group, text};
 
 impl State {
     pub(super) fn shortcuts_view(&self) -> Element<'_, Message> {
         let editor = match &self.shortcuts {
             None => return text("Loading keyboard shortcuts…").into(),
-            Some(Err(error)) => return text(error).into(),
+            Some(Err(error)) => {
+                return settings_group(
+                    "Shortcuts unavailable",
+                    text(error).style(canopa_ui::muted),
+                );
+            }
             Some(Ok(editor)) => editor,
         };
         let mut content = column![

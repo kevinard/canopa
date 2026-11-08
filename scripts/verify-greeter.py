@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Private Niri/Cage/Weston greeter acceptance against a test-owned greetd peer."""
 import argparse,importlib.util,json,os,subprocess,sys,tempfile,time
-from collections import Counter
 from pathlib import Path
 from PIL import Image
 import native_accessibility as a11y
@@ -117,11 +116,10 @@ greeter {{
     app,before=start('otp')
     def controls():
         image=session.capture('startup.png');w,h=image.size
-        data=image.get_flattened_data() if hasattr(image,'get_flattened_data') else image.getdata()
-        surface=Counter(data).most_common(2)[1][0];column=w//2-150
+        background=image.getpixel((0,0));column=w//2-150
         ranges=[];begin=None
         for y in range(h):
-            if image.getpixel((column,y))==surface:
+            if image.getpixel((column,y))!=background:
                 if begin is None:begin=y
             elif begin is not None:
                 if y-begin>=20:ranges.append((begin,y))

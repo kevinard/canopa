@@ -634,26 +634,32 @@ fn render_panel_menu_model<'a>(
                     .height(Length::Fixed(24.0)),
             );
         } else if model.show_icons {
-            row_content = row_content.push(panel_menu_icon_element(
-                entry.icon.as_deref().and_then(|name| model.icons.get(name)),
-            ));
+            let icon = entry.icon.as_deref().and_then(|name| model.icons.get(name));
+            row_content = row_content.push(if launcher_session.is_some() && icon.is_none() {
+                container(crate::theme::text("·").size(20).style(canopa_ui::muted))
+                    .center(18)
+                    .into()
+            } else {
+                panel_menu_icon_element(icon)
+            });
         }
-        row_content = row_content.push(
-            crate::theme::text(entry.label.clone())
-                .size(crate::theme::body_size())
-                .width(Length::Fill)
-                .wrapping(iced::widget::text::Wrapping::None),
-        );
+        let label = crate::theme::text(entry.label.clone())
+            .size(crate::theme::body_size())
+            .width(Length::Fill)
+            .wrapping(iced::widget::text::Wrapping::None);
+        let mut labels = column![label].width(Length::Fill).spacing(1);
         if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target
             && !target.result.description.is_empty()
         {
-            row_content = row_content.push(
+            labels = labels.push(
                 crate::theme::text(target.result.description.clone())
                     .size(crate::theme::label_size())
+                    .style(canopa_ui::muted)
                     .wrapping(iced::widget::text::Wrapping::None)
                     .width(Length::Fill),
             );
         }
+        row_content = row_content.push(container(labels).width(Length::Fill).clip(true));
         if entry.is_submenu {
             row_content = row_content.push(crate::theme::text(">"));
         }
@@ -665,13 +671,18 @@ fn render_panel_menu_model<'a>(
             super::messages::PanelEvent::ActivateIndex(index)
         };
         let keyboard_focus = model.keyboard_focus;
+        let mut row_padding = canopa_ui::content_padding(metrics.row);
+        if launcher_session.is_some() && !metrics.row.custom_padding {
+            row_padding.top = row_padding.top.min(3.0);
+            row_padding.bottom = row_padding.bottom.min(3.0);
+        }
         let row = iced::widget::button(
             container(row_content)
                 .height(Length::Fill)
                 .align_y(iced::Alignment::Center),
         )
         .on_press(Message::Panel(activation))
-        .padding(canopa_ui::content_padding(metrics.row))
+        .padding(row_padding)
         .width(Length::Fill)
         // Rendering, virtual spacers and keyboard reveal must use one pitch,
         // even for long labels or a different font's line metrics.
@@ -730,6 +741,7 @@ fn render_panel_menu_model<'a>(
         right: model.ui.padding.right.px(),
     });
     let mut content = column![header, menu_scroll.height(Length::Fill)];
+    let mut footer = column![].spacing(4);
     if let Some(entry) = model
         .focused_index
         .and_then(|position| model.menu_entries.get(position))
@@ -771,12 +783,25 @@ fn render_panel_menu_model<'a>(
             }
             actions = actions.push(action_row);
         }
-        content = content.push(container(actions).padding([4, 12]));
+        footer = footer.push(actions);
     }
     if !model.launcher_status.is_empty() {
+        footer = footer.push(
+            crate::theme::text(model.launcher_status)
+                .size(crate::theme::label_size())
+                .style(canopa_ui::muted),
+        );
+    }
+    if launcher_session.is_some() {
         content = content.push(
-            container(crate::theme::text(model.launcher_status).size(crate::theme::label_size()))
-                .padding([4, 12]),
+            container(footer)
+                .padding([8, 12])
+                .width(Length::Fill)
+                .style(|theme| {
+                    iced::widget::container::Style::default()
+                        .background(canopa_ui::colors(theme).background)
+                        .border(iced::Border::default().rounded(10))
+                }),
         );
     }
     panel_frame(

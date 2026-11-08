@@ -9,7 +9,9 @@ use crate::worker::run as worker;
 use canopa_files::browse::{Browser, Directory, SelectionMode};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{button, checkbox, column, container, pick_list, row, scrollable, text, text_input},
+    widget::{
+        button, checkbox, column, container, pick_list, row, rule, scrollable, text, text_input,
+    },
     window,
 };
 use std::{
@@ -853,7 +855,7 @@ impl Picker {
                         text(if self.busy { "Creating…" } else { "Create" }),
                         (!self.busy && folders::valid_name(&draft.name))
                             .then_some(Message::CreateFolder),
-                        canopa_ui::Action::Normal,
+                        canopa_ui::Action::Primary,
                         false
                     ),
                 ]
@@ -888,18 +890,35 @@ impl Picker {
         if self.request.mode != Mode::Open {
             toolbar = toolbar.push(action("New folder", Message::NewFolder));
         }
-        let shortcuts = column(self.shortcuts.iter().map(|(label, path)| {
-            canopa_ui::action(
-                text(label),
-                enabled.then_some(Message::Navigate(path.clone())),
-                canopa_ui::Action::Quiet,
-                false,
-            )
-            .width(Length::Fill)
-            .into()
-        }))
-        .spacing(4)
-        .width(130);
+        let mut shortcuts = column![chooser_heading("Places", 14),].spacing(5);
+        for (label, path) in &self.shortcuts {
+            let current = self
+                .browser
+                .as_ref()
+                .is_some_and(|browser| browser.path() == path);
+            shortcuts = shortcuts.push(
+                canopa_ui::action(
+                    text(label),
+                    enabled.then_some(Message::Navigate(path.clone())),
+                    if current {
+                        canopa_ui::Action::Normal
+                    } else {
+                        canopa_ui::Action::Quiet
+                    },
+                    false,
+                )
+                .width(Length::Fill),
+            );
+        }
+        let places = container(scrollable(shortcuts).height(Length::Fill))
+            .width(145)
+            .height(Length::Fill)
+            .padding(10)
+            .style(|theme| {
+                container::Style::default()
+                    .background(canopa_ui::colors(theme).surface)
+                    .border(iced::Border::default().rounded(10))
+            });
         let entries = self.entries();
         let empty = entries.is_empty();
         let mut listing = column![].spacing(2);
@@ -927,7 +946,12 @@ impl Picker {
             listing = listing.push(
                 row![
                     select,
-                    action("Open", Message::Activate(entry.path.clone()))
+                    canopa_ui::action(
+                        text("Open").size(13),
+                        enabled.then_some(Message::Activate(entry.path.clone())),
+                        canopa_ui::Action::Quiet,
+                        false
+                    )
                 ]
                 .spacing(4),
             );
@@ -935,22 +959,32 @@ impl Picker {
         if self.loading {
             listing = listing.push(text("Loading…"));
         } else if empty {
-            listing = listing.push(text("No matching files"));
+            listing = listing
+                .push(container(text("No matching files").style(canopa_ui::muted)).padding(12));
         }
         let body = row![
-            shortcuts,
-            scrollable(listing).height(Length::Fill).width(Length::Fill)
+            places,
+            column![
+                container(chooser_heading("Name", 14)).padding([0, 8]),
+                rule::horizontal(1).style(chooser_rule),
+                scrollable(listing).height(Length::Fill).width(Length::Fill),
+            ]
+            .spacing(6)
         ]
         .spacing(12)
         .height(Length::Fill);
         let mut content = column![
-            text(if self.request.app_id.is_empty() {
-                "Choose a local file"
-            } else {
-                &self.request.app_id
-            })
-            .size(14)
-            .style(canopa_ui::muted),
+            column![
+                chooser_heading(&self.request.title, 23),
+                text(if self.request.app_id.is_empty() {
+                    "Choose from your local files and folders"
+                } else {
+                    &self.request.app_id
+                })
+                .size(13)
+                .style(canopa_ui::muted)
+            ]
+            .spacing(3),
             toolbar,
             text_input("Filter names in this folder", &self.search)
                 .id("search")
@@ -1087,18 +1121,35 @@ impl Picker {
             canopa_ui::action(
                 text(self.request.accept_label.replace('_', "")),
                 enabled.then_some(Message::Accept),
-                canopa_ui::Action::Normal,
+                canopa_ui::Action::Primary,
                 false
             )
         ]
         .spacing(10)
         .align_y(iced::Center);
-        container(content.push(footer))
-            .padding(16)
-            .style(canopa_ui::surface)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        container(
+            content
+                .push(rule::horizontal(1).style(chooser_rule))
+                .push(footer),
+        )
+        .padding(16)
+        .style(canopa_ui::surface)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+}
+
+fn chooser_heading(label: &str, size: u32) -> iced::widget::Text<'_> {
+    text(label).size(size)
+}
+
+fn chooser_rule(theme: &Theme) -> rule::Style {
+    rule::Style {
+        color: canopa_ui::colors(theme).border,
+        radius: 0.0.into(),
+        fill_mode: rule::FillMode::Full,
+        snap: true,
     }
 }
 

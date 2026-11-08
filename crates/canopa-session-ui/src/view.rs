@@ -1,6 +1,6 @@
 use crate::{background, secret::Secret, settings::Settings};
 use anyhow::Result;
-use canopa_theme::Rgb;
+use canopa_theme::{ColorRole, Rgb};
 use image::RgbImage;
 
 pub struct Prompt {
@@ -20,6 +20,9 @@ pub struct SessionView {
     user_avatar: Option<std::sync::Arc<image::RgbaImage>>,
     avatar_initials: Option<String>,
     pub controls: Vec<Control>,
+    pub primary_control: Option<usize>,
+    /// Pair controls when the consumer has a dedicated settings surface.
+    pub pair_controls: bool,
     pub username: String,
     pub secret: Secret,
     pub busy: bool,
@@ -50,6 +53,8 @@ impl SessionView {
             user_avatar: None,
             avatar_initials: None,
             controls: Vec::new(),
+            primary_control: None,
+            pair_controls: false,
             username,
             secret: Secret::default(),
             busy: false,
@@ -269,15 +274,22 @@ impl SessionView {
                 );
             }
         }
+        let prompt = self.prompt.as_ref().filter(|_| !self.hide_input);
+        let label = prompt.map(|prompt| wrap(prompt.text.trim_end_matches(':'), 56, 8));
+        let label_height = label.as_ref().map_or(0., |lines| 21. * lines.len() as f32);
         let hints = self.authentication_hints();
         let layout_control = self.can_select_layout.then(|| Control {
             id: crate::input::LAYOUT_CONTROL,
             label: format!("Keyboard: {}   · F6", self.layout),
         });
         let input_offset = if self.hide_input { 52. } else { 0. };
+        let columns = if self.pair_controls { 2 } else { 1 };
+        let control_rows =
+            (self.controls.len() + usize::from(layout_control.is_some())).div_ceil(columns);
         let auth_height = 70. - input_offset
+            + label_height
             + 20. * hints.len().max(1) as f32
-            + 42. * (self.controls.len() + usize::from(layout_control.is_some())) as f32;
+            + 42. * control_rows as f32;
         let items: Vec<_> = content
             .iter()
             .map(|(name, content)| {
@@ -372,14 +384,48 @@ impl SessionView {
                     }
                 }
                 Content::Authentication => {
+                    if let Some(lines) = &label {
+                        let size = 14. * scale;
+                        for (index, line) in lines.iter().enumerate() {
+                            let available = (bounds.width - 12. * scale).max(0.);
+                            self.text(
+                                &mut image,
+                                line,
+                                (
+                                    bounds.x
+                                        + 6. * scale
+                                        + self.text_width(line, size).min(available) / 2.,
+                                    bounds.y + (14. + index as f32 * 21.) * scale,
+                                ),
+                                size,
+                                available,
+                                palette.text,
+                            );
+                        }
+                    }
                     if !self.hide_input {
+                        let field_y = bounds.y + label_height * scale;
+                        let outline = if prompt.is_some() {
+                            settings.appearance.role(ColorRole::Focus)
+                        } else {
+                            palette.border
+                        };
                         rounded_rect(
                             &mut image,
                             bounds.x,
-                            bounds.y,
+                            field_y,
                             bounds.width,
                             52. * scale,
-                            18. * scale,
+                            12. * scale,
+                            outline,
+                        );
+                        rounded_rect(
+                            &mut image,
+                            bounds.x + scale,
+                            field_y + scale,
+                            bounds.width - 2. * scale,
+                            50. * scale,
+                            11. * scale,
                             palette.surface,
                         );
                         let (input, selection, cursor) = self
@@ -403,10 +449,14 @@ impl SessionView {
                         self.text_renderer.borrow_mut().draw(
                             &mut image,
                             &prompt,
-                            (center, bounds.y + 33. * scale),
-                            17. * scale,
+                            (center, field_y + 32. * scale),
+                            16. * scale,
                             bounds.width - 20. * scale,
-                            palette.text,
+                            if self.secret.is_empty() {
+                                palette.muted
+                            } else {
+                                palette.text
+                            },
                             self.prompt
                                 .as_ref()
                                 .filter(|_| !self.secret.is_empty())
@@ -421,32 +471,67 @@ impl SessionView {
                     {
                         let y = bounds.y
                             + (88. - input_offset
+                                + label_height
                                 + 20. * hints.len().saturating_sub(1) as f32
-                                + index as f32 * 42.)
+                                + (index / columns) as f32 * 42.)
                                 * scale;
+                        let gap = 8. * scale;
+                        let width = (bounds.width - gap * (columns - 1) as f32) / columns as f32;
+                        let x = bounds.x + (width + gap) * (index % columns) as f32;
+                        let primary = self.primary_control == Some(control.id) && !self.busy;
+                        let (label, selected) = control
+                            .label
+                            .strip_prefix("› ")
+                            .map_or((control.label.as_str(), false), |label| (label, true));
+                        let (fill, ink) = if primary {
+                            (
+                                palette.accent,
+                                settings.appearance.role(ColorRole::OnAccent),
+                            )
+                        } else if selected {
+                            (
+                                settings.appearance.role(ColorRole::AccentSurface),
+                                palette.text,
+                            )
+                        } else {
+                            (palette.surface, palette.text)
+                        };
                         rounded_rect(
                             &mut image,
-                            bounds.x,
+                            x,
                             y,
-                            bounds.width,
+                            width,
                             34. * scale,
-                            10. * scale,
-                            palette.surface,
+                            9. * scale,
+                            if selected {
+                                settings.appearance.role(ColorRole::Focus)
+                            } else {
+                                palette.border
+                            },
+                        );
+                        rounded_rect(
+                            &mut image,
+                            x + scale,
+                            y + scale,
+                            width - 2. * scale,
+                            32. * scale,
+                            8. * scale,
+                            fill,
                         );
                         self.text(
                             &mut image,
-                            &control.label,
-                            (center, y + 22. * scale),
+                            label,
+                            (x + width / 2., y + 22. * scale),
                             16. * scale,
-                            bounds.width - 16. * scale,
-                            palette.text,
+                            width - 16. * scale,
+                            ink,
                         );
                         hits.push((
                             control.id,
                             crate::layout::Rect {
-                                x: bounds.x,
+                                x,
                                 y,
-                                width: bounds.width,
+                                width,
                                 height: 34. * scale,
                             },
                         ));
@@ -457,7 +542,9 @@ impl SessionView {
                             hint,
                             (
                                 center,
-                                bounds.y + (75. - input_offset + index as f32 * 20.) * scale,
+                                bounds.y
+                                    + (75. - input_offset + label_height + index as f32 * 20.)
+                                        * scale,
                             ),
                             14. * scale,
                             bounds.width,
@@ -477,7 +564,9 @@ impl SessionView {
     }
     fn authentication_hints(&self) -> Vec<String> {
         let mut hints = Vec::new();
-        if let Some(prompt) = &self.prompt {
+        if self.hide_input
+            && let Some(prompt) = &self.prompt
+        {
             hints.extend(wrap(&prompt.text, 56, 8));
         }
         if !self.message.is_empty() {
@@ -490,6 +579,8 @@ impl SessionView {
             hints.push(
                 if self.busy {
                     "Follow the authentication instructions"
+                } else if self.prompt.is_some() && self.controls.is_empty() {
+                    "Press Enter to continue"
                 } else {
                     "Escape cancels the current attempt"
                 }
@@ -547,11 +638,28 @@ fn wrap(text: &str, columns: usize, maximum: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for line in text.lines() {
         let chars: Vec<_> = line.chars().filter(|c| !c.is_control()).collect();
-        for chunk in chars.chunks(columns) {
-            lines.push(chunk.iter().collect());
+        let mut remaining = chars.as_slice();
+        while !remaining.is_empty() {
+            let limit = remaining.len().min(columns);
+            let end = if limit < remaining.len() {
+                remaining[..=limit]
+                    .iter()
+                    .rposition(|c| c.is_whitespace())
+                    .filter(|&position| position > 0)
+                    .unwrap_or(limit)
+            } else {
+                limit
+            };
+            lines.push(remaining[..end].iter().collect());
             if lines.len() == maximum {
                 return lines;
             }
+            remaining = &remaining[end..];
+            let start = remaining
+                .iter()
+                .position(|c| !c.is_whitespace())
+                .unwrap_or(remaining.len());
+            remaining = &remaining[start..];
         }
     }
     if lines.is_empty() {

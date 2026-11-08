@@ -97,6 +97,7 @@ impl Controller {
         };
         let mut ui = SessionView::new(&settings, String::new())?;
         ui.hide_input = true;
+        ui.pair_controls = true;
         ui.action_labels = Some(("Apply wallpaper".into(), "Close".into()));
         let fit = outputs[0].background.fit;
         let mut value = Self {
@@ -130,23 +131,15 @@ impl Controller {
         self.ui.custom.insert(
             "selection".into(),
             format!(
-                "{}  ·  {} / {}",
+                "Wallpaper  ·  {}  ·  {} of {}",
                 filename,
                 self.image + 1,
                 self.images.len()
             ),
         );
         let output = self.output_name().unwrap_or("All monitors").to_owned();
+        self.ui.primary_control = (self.ready && !self.applying).then_some(0);
         self.ui.controls = vec![
-            Control {
-                id: 0,
-                label: if self.applying {
-                    "Applying…"
-                } else {
-                    "Apply wallpaper"
-                }
-                .into(),
-            },
             Control {
                 id: 1,
                 label: "Previous image   · ←".into(),
@@ -166,6 +159,15 @@ impl Controller {
             Control {
                 id: 5,
                 label: "Close   · Escape".into(),
+            },
+            Control {
+                id: 0,
+                label: if self.applying {
+                    "Applying…"
+                } else {
+                    "Apply wallpaper"
+                }
+                .into(),
             },
         ];
         for control in &mut self.ui.controls {
@@ -314,11 +316,11 @@ impl Controller {
             let rendered = image::imageops::resize(
                 &preview.image,
                 (720. * scale) as u32,
-                (280. * scale) as u32,
+                (f32::from(PREVIEW_HEIGHT) * scale) as u32,
                 image::imageops::FilterType::Triangle,
             );
             let left = ((width as f32 - 720. * scale) / 2.).max(0.);
-            let top = 88. * scale;
+            let top = 72. * scale;
             image::imageops::overlay(&mut image, &rendered, left as i64, top as i64);
             for (name, x, y, max) in &preview.labels {
                 self.ui.draw_label(
@@ -334,6 +336,8 @@ impl Controller {
         Ok((image, hits))
     }
 }
+const PREVIEW_HEIGHT: u16 = 500;
+
 pub fn scan(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut budget = 2048usize;
@@ -390,10 +394,10 @@ fn prepare(spec: &Spec, cancelled: &impl Fn() -> bool) -> Result<Preview> {
     };
     let rows = spec.outputs.len().div_ceil(columns);
     let cellw = 720 / columns as u32;
-    let cellh = 280 / rows as u32;
+    let cellh = u32::from(PREVIEW_HEIGHT) / rows as u32;
     let mut image = RgbImage::from_pixel(
         720,
-        280,
+        u32::from(PREVIEW_HEIGHT),
         image::Rgb([spec.color.0, spec.color.1, spec.color.2]),
     );
     let mut labels = Vec::new();

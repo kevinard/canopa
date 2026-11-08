@@ -173,6 +173,7 @@ impl Controller {
     pub fn refresh(&mut self, config: &Config) {
         use crate::power::{Action, Menu};
         self.ui.hide_input = self.power_menu != Menu::Closed;
+        self.ui.primary_control = (!self.ui.hide_input && !self.ui.busy).then_some(3);
         if let Menu::Choose(action) | Menu::Confirm(action) | Menu::Pending(action) =
             self.power_menu
         {
