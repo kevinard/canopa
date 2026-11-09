@@ -352,6 +352,16 @@ impl PanelMenuSession {
         }
     }
 
+    pub(super) fn launcher_scope_query(
+        &mut self,
+        scope: Option<super::launcher::QuickScope>,
+    ) -> Option<String> {
+        let PanelMenuSource::Launcher { session, .. } = &mut self.source else {
+            return None;
+        };
+        session.select_scope(scope)
+    }
+
     pub(super) fn launcher_actions(&mut self, target: Option<super::launcher::Target>) -> bool {
         let target = target.or_else(|| {
             self.focused_index

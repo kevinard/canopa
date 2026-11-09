@@ -292,6 +292,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             "ui",
             "drawer-mode",
             "width",
+            "launcher-width",
             "max-width",
             "height",
             "max-height",
@@ -306,6 +307,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
             "ui",
             "drawer-mode",
             "width",
+            "launcher-width",
             "max-width",
             "height",
             "max-height",
@@ -343,6 +345,11 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         .u32()
         .transpose()?
         .or(defaults.width);
+    let launcher_width = fields::field(panel_children, ctx, "launcher-width")
+        .optional()
+        .help("expected a launcher width in logical pixels")
+        .u32()
+        .transpose()?;
     let max_width = fields::field(panel_children, ctx, "max-width")
         .optional()
         .help("expected a max width in logical pixels")
@@ -376,6 +383,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         presentation,
         drawer_mode,
         width,
+        launcher_width,
         max_width,
         height,
         max_height,

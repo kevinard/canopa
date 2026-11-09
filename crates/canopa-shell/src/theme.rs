@@ -130,8 +130,15 @@ pub fn input<'a, Message: Clone + 'a>(
     placeholder: &str,
     value: &str,
 ) -> iced::widget::TextInput<'a, Message> {
+    input_with_style(placeholder, value, ui(canopa_theme::UiKind::Input))
+}
+
+pub fn input_with_style<'a, Message: Clone + 'a>(
+    placeholder: &str,
+    value: &str,
+    ui: canopa_theme::ResolvedStyle,
+) -> iced::widget::TextInput<'a, Message> {
     let appearance = appearance();
-    let ui = appearance.style(canopa_theme::UiKind::Input);
     iced::widget::text_input(placeholder, value)
         .font(font())
         .size(body_size())
@@ -195,6 +202,25 @@ pub fn menu_metrics_with_gap(gap: Option<canopa_theme::Pixels>) -> MenuMetrics {
         + row.margin.vertical()
         + gap;
     MenuMetrics { row, gap, extent }
+}
+
+pub fn launcher_menu_metrics(mut metrics: MenuMetrics, browsing: bool) -> MenuMetrics {
+    let labels = if browsing {
+        (body_size() + label_size() + 3.0) * 1.12 + 5.0
+    } else {
+        (body_size() + label_size() + 4.0) * 1.14 + 4.0
+    };
+    let padding = if metrics.row.custom_padding {
+        metrics.row.padding.vertical()
+    } else {
+        10.0
+    };
+    metrics.extent = labels.ceil().max(if browsing { 27.0 } else { 32.0 })
+        + padding
+        + metrics.row.margin.vertical()
+        + 2.0 * metrics.row.border_width.px()
+        + metrics.gap;
+    metrics
 }
 
 pub fn card(_: &iced::Theme) -> iced::widget::container::Style {
@@ -265,13 +291,17 @@ pub fn highlighted_frame(
 
 /// Glyph measurement uses the same installed family and shaping as rendered text.
 pub fn text_width(content: &str, size: f32) -> f32 {
+    text_width_in_font(content, size, font())
+}
+
+pub fn text_width_in_font(content: &str, size: f32, font: iced::Font) -> f32 {
     use iced::advanced::text::{self, Paragraph};
     iced::advanced::graphics::text::Paragraph::with_text(text::Text {
         content,
         bounds: iced::Size::new(f32::INFINITY, f32::INFINITY),
         size: iced::Pixels(size),
         line_height: text::LineHeight::default(),
-        font: font(),
+        font,
         align_x: text::Alignment::Default,
         align_y: iced::alignment::Vertical::Top,
         shaping: text::Shaping::Advanced,

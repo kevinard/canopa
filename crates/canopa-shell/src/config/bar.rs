@@ -96,6 +96,7 @@ pub struct PanelConfig {
     pub presentation: PanelPresentation,
     pub drawer_mode: DrawerMode,
     pub width: Option<u32>,
+    pub launcher_width: Option<u32>,
     pub max_width: Option<u32>,
     pub height: Option<u32>,
     pub max_height: Option<u32>,

@@ -968,6 +968,14 @@ impl App {
                     Task::none()
                 }
             }
+            PanelEvent::LauncherSetQuery { session, query } => self.set_launcher_input(
+                session,
+                super::foreground::PanelInteraction::SearchChanged(query),
+            ),
+            PanelEvent::LauncherSelectScope { session, scope } => self.set_launcher_input(
+                session,
+                super::foreground::PanelInteraction::LauncherScope(scope),
+            ),
             PanelEvent::LauncherActions(target) => {
                 let effects = self
                     .foreground
@@ -1460,6 +1468,31 @@ impl App {
         self.modules
             .module_owned_interaction(&target, event, tree.origin_window)
             .map_or_else(Task::none, Task::done)
+    }
+
+    fn set_launcher_input(
+        &mut self,
+        session: u64,
+        interaction: super::foreground::PanelInteraction,
+    ) -> Task<Message> {
+        if self
+            .foreground
+            .launcher()
+            .is_none_or(|active| active.id != session)
+        {
+            return Task::none();
+        }
+        let Some(window) = self.foreground.active_panel_window() else {
+            return Task::none();
+        };
+        let id = panel_search_input_id(window);
+        let effects = self
+            .foreground
+            .handle(super::foreground::ForegroundIntent::Panel(interaction));
+        let mut tasks = self.apply_foreground_effects(effects);
+        tasks.push(iced::widget::operation::focus(id.clone()));
+        tasks.push(iced::widget::operation::move_cursor_to_end(id));
+        Task::batch(tasks)
     }
 
     fn focus_panel_search_input(&mut self, retries: u8) -> Task<Message> {

@@ -21,37 +21,39 @@ pub(crate) fn take_lookup_count() -> usize {
 /// Uses bounded indexed hicolor lookup with SVG support, falling back to the
 /// historical size grid only when hicolor has no index. Results live until restart.
 pub(crate) fn resolve_icon_path(name: &str) -> Option<PathBuf> {
+    resolve_icon_path_at_size(name, 22)
+}
+
+pub(crate) fn resolve_icon_path_at_size(name: &str, size: u16) -> Option<PathBuf> {
     #[cfg(test)]
     LOOKUPS_ON_THREAD.with(|count| count.set(count.get() + 1));
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<PathBuf>>>> = OnceLock::new();
+    type IconPaths = HashMap<(String, u16), Option<PathBuf>>;
+    static CACHE: OnceLock<Mutex<IconPaths>> = OnceLock::new();
 
     if !is_valid_icon_name(name) {
         return None;
     }
 
+    let key = (name.to_owned(), size);
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(path) = cache
         .lock()
         .expect("icon cache poisoned")
-        .get(name)
+        .get(&key)
         .cloned()
     {
         return path;
     }
 
-    let resolved = resolve_icon_path_uncached(name);
+    let resolved = resolve_in_roots(name, size, &canopa_assets::icons::search_roots());
     cache
         .lock()
         .expect("icon cache poisoned")
-        .insert(name.to_string(), resolved.clone());
+        .insert(key, resolved.clone());
     resolved
 }
 
-fn resolve_icon_path_uncached(name: &str) -> Option<PathBuf> {
-    resolve_in_roots(name, &canopa_assets::icons::search_roots())
-}
-
-fn resolve_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathBuf> {
+fn resolve_in_roots(name: &str, size: u16, roots: &[PathBuf]) -> Option<PathBuf> {
     use canopa_assets::icons::{IconFormats, IconLookup, LookupOptions};
 
     IconLookup::new(
@@ -64,7 +66,7 @@ fn resolve_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathBuf> {
         },
         &|| false,
     )
-    .resolve(&[name.to_owned()], 22)
+    .resolve(&[name.to_owned()], size)
 }
 
 #[cfg(test)]
@@ -78,10 +80,13 @@ mod tests {
         std::fs::write(&icon, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
         let roots = [temp.path().to_owned()];
         assert_eq!(
-            super::resolve_in_roots("shell-fixture", &roots),
+            super::resolve_in_roots("shell-fixture", 22, &roots),
             Some(icon.clone())
         );
         std::fs::write(temp.path().join("hicolor/index.theme"), "[Icon Theme]\nDirectories=scalable/apps\n[scalable/apps]\nSize=22\nType=Scalable\nMinSize=16\nMaxSize=128\n").unwrap();
-        assert_eq!(super::resolve_in_roots("shell-fixture", &roots), Some(icon));
+        assert_eq!(
+            super::resolve_in_roots("shell-fixture", 22, &roots),
+            Some(icon)
+        );
     }
 }

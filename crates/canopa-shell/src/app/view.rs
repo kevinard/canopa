@@ -6,6 +6,8 @@ use super::{App, Message};
 use crate::config::Edge;
 use crate::surface::layout::zone_layout;
 
+mod launcher;
+
 impl App {
     pub(crate) fn view(&self, window: iced::window::Id) -> Element<'_, Message> {
         if let Some(perf) = &self.perf {
@@ -94,6 +96,9 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     ) {
         if model.confirmation && model.menu_entries.len() == 2 {
             return render_confirmation(model, text_color);
+        }
+        if model.launcher_session.is_some() {
+            return launcher::view(model, text_color);
         }
         return render_panel_menu_model(model, text_color);
     }
@@ -292,6 +297,16 @@ fn panel_frame<'a>(
         content,
     ]
     .height(height);
+    styled_panel_frame(content, text_color, drawer, ui, height)
+}
+
+fn styled_panel_frame<'a>(
+    content: impl Into<Element<'a, Message>>,
+    text_color: Option<iced::Color>,
+    drawer: bool,
+    ui: canopa_theme::ResolvedStyle,
+    height: Length,
+) -> Element<'a, Message> {
     let frame = container(content)
         .padding(if ui.custom_border {
             ui.border_width.px()
@@ -727,41 +742,10 @@ fn render_panel_menu_model<'a>(
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
-    let launcher_session = model.launcher_session;
-    let is_launcher = launcher_session.is_some();
-    let mut search = crate::theme::input(placeholder, &model.search_query)
+    let search = crate::theme::input(placeholder, &model.search_query)
         .id(model.search_input_id.clone())
-        .on_input(move |query| {
-            Message::Panel(match launcher_session {
-                Some(session) => {
-                    super::messages::PanelEvent::LauncherSearchChanged { session, query }
-                }
-                None => super::messages::PanelEvent::SearchChanged(query),
-            })
-        })
+        .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
         .width(Length::Fill);
-    let search: Element<'_, Message> = if is_launcher {
-        let mut padding = canopa_ui::content_padding(crate::theme::ui(canopa_theme::UiKind::Input));
-        padding.left += 28.0;
-        search = search.padding(padding);
-        iced::widget::stack![
-            search,
-            container(crate::theme::icon(
-                include_bytes!("../../assets/search.svg"),
-                18.0,
-                crate::theme::palette().muted,
-            ))
-            .height(Length::Fill)
-            .align_y(iced::Alignment::Center)
-            .padding(iced::Padding {
-                left: padding.left - 28.0,
-                ..Default::default()
-            }),
-        ]
-        .into()
-    } else {
-        search.into()
-    };
     let back_slot: Element<'_, Message> = if model.can_go_back {
         crate::theme::button(crate::theme::text("‹ Back").size(crate::theme::label_size()))
             .on_press(Message::Panel(super::messages::PanelEvent::Back))
@@ -775,186 +759,22 @@ fn render_panel_menu_model<'a>(
         .align_y(iced::Alignment::Center)
         .spacing(header_spacing);
 
-    let entry_count = model.menu_entries.len();
     let header = container(header).padding(iced::Padding {
-        top: 0.0,
-        bottom: 0.0,
         left: model.ui.padding.left.px(),
         right: model.ui.padding.right.px(),
+        ..Default::default()
     });
-    let mut content = column![header];
-    let searching = !model.search_query.trim().is_empty();
-    // Reserve room for the heading, search, section caption, and wrapped
-    // actions before letting a short list determine the visible panel height.
-    let menu_chrome =
-        crate::theme::panel_header_height() as f32 + 168.0 + model.ui.margin.vertical();
-    let list_fits = entry_count > 0
-        && model.menu_metrics.extent * entry_count as f32 + menu_chrome <= model.max_height;
-    let compact = is_launcher && model.adaptive && (list_fits || searching && entry_count <= 3);
-    let frame_height = if compact {
-        Length::Shrink
-    } else {
-        Length::Fill
-    };
-    if is_launcher && entry_count == 0 {
-        content = content.push(
-            container(
-                column![
-                    crate::theme::icon(
-                        include_bytes!("../../assets/search.svg"),
-                        28.0,
-                        crate::theme::palette().muted,
-                    ),
-                    crate::theme::strong_text(if model.launcher_status.is_empty() {
-                        "No results".to_owned()
-                    } else {
-                        model.launcher_status.clone()
-                    }),
-                ]
-                .spacing(10)
-                .align_x(iced::Alignment::Center),
-            )
-            .padding([28, 24])
-            .center_x(Length::Fill)
-            .height(frame_height),
-        );
-    }
-    let mut commands = column![].spacing(8);
-    if let Some(entry) = model
-        .focused_index
-        .and_then(|position| model.menu_entries.get(position))
-        && let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target
-    {
-        if let Some(primary) = target.result.actions.first() {
-            let mut actions = row![launcher_action(
-                &primary.label,
-                "Enter".into(),
-                Message::Panel(super::messages::PanelEvent::ActivateLauncher(
-                    target.clone(),
-                    0
-                )),
-                canopa_ui::Action::Primary,
-            )]
-            .spacing(6);
-            if target.result.actions.len() > 1 {
-                actions = actions.push(launcher_action(
-                    "Actions",
-                    "Tab".into(),
-                    Message::Panel(super::messages::PanelEvent::LauncherActions(Some(
-                        target.clone(),
-                    ))),
-                    canopa_ui::Action::Normal,
-                ));
-            }
-            commands = commands.push(actions.wrap());
-        }
-        let shortcuts: Vec<_> = target
-            .result
-            .actions
-            .iter()
-            .enumerate()
-            .skip(1)
-            .take(4)
-            .filter(|(_, action)| {
-                !matches!(
-                    action.action,
-                    crate::launcher::Action::TogglePin { .. }
-                        | crate::launcher::Action::EditAlias { .. }
-                )
-            })
-            .map(|(position, action)| {
-                launcher_action(
-                    &action.label,
-                    format!("Ctrl+{}", position + 1),
-                    Message::Panel(super::messages::PanelEvent::ActivateLauncher(
-                        target.clone(),
-                        position,
-                    )),
-                    canopa_ui::Action::Quiet,
-                )
-            })
-            .collect();
-        if !shortcuts.is_empty() {
-            commands = commands.push(row(shortcuts).spacing(6).wrap());
-        }
-    }
-    let title = model.title.clone();
-    let drawer = model.drawer;
-    let ui = model.ui;
-    if is_launcher && entry_count > 0 {
-        let label = if searching { "Results" } else { "Browse" };
-        content = content.push(
-            container(commands)
-                .padding(iced::Padding {
-                    top: 10.0,
-                    left: ui.padding.left.px(),
-                    right: ui.padding.right.px(),
-                    ..Default::default()
-                })
-                .width(Length::Fill),
-        );
-        content = content.push(launcher_section(
-            label,
-            if entry_count == 1 {
-                "1 item".into()
-            } else {
-                format!("{entry_count} items")
-            },
-            model.ui,
-        ));
-    }
-    if !is_launcher || entry_count > 0 {
-        content = content.push(render_menu_scroll(&model, frame_height));
-    }
-    if is_launcher && entry_count > 0 && !model.launcher_status.is_empty() {
-        content = content.push(
-            container(
-                crate::theme::text(model.launcher_status.clone())
-                    .size(crate::theme::label_size())
-                    .style(canopa_ui::muted),
-            )
-            .padding(iced::Padding {
-                top: 8.0,
-                left: ui.padding.left.px() + 2.0,
-                right: ui.padding.right.px() + 2.0,
-                ..Default::default()
-            })
-            .width(Length::Fill),
-        );
-    }
+    let content = column![header, render_menu_scroll(&model, Length::Fill)];
     let frame = panel_frame(
         content.into(),
         text_color,
-        title,
-        drawer,
-        ui,
+        model.title,
+        model.drawer,
+        model.ui,
         false,
-        frame_height,
+        Length::Fill,
     );
-    panel_surface(frame, compact, false)
-}
-
-fn launcher_section<'a>(
-    title: &'static str,
-    count: String,
-    ui: canopa_theme::ResolvedStyle,
-) -> Element<'a, Message> {
-    container(row![
-        crate::theme::strong_text(title)
-            .size(crate::theme::label_size())
-            .style(canopa_ui::muted)
-            .width(Length::Fill),
-        crate::theme::text(count)
-            .size(crate::theme::label_size())
-            .style(canopa_ui::muted),
-    ])
-    .padding(iced::Padding {
-        top: 12.0,
-        bottom: 8.0,
-        left: ui.padding.left.px() + 2.0,
-        right: ui.padding.right.px() + 2.0,
-    })
-    .into()
+    panel_surface(frame, false, false)
 }
 
 fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Element<'a, Message> {
@@ -972,8 +792,16 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
         } else {
             model.ui.padding.bottom.px() / 2.0
         },
-        left: model.ui.padding.left.px(),
-        right: model.ui.padding.right.px(),
+        left: if is_launcher {
+            0.0
+        } else {
+            model.ui.padding.left.px()
+        },
+        right: if is_launcher {
+            launcher::scrollbar_gutter(model, height)
+        } else {
+            model.ui.padding.right.px()
+        },
     });
     let entry_count = model.menu_entries.len();
     let range = super::panel_sizing::menu_render_range(
@@ -1007,7 +835,27 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
         );
     }
 
-    crate::theme::panel_scroll(list)
+    let mut scroll = crate::theme::panel_scroll(list);
+    if is_launcher {
+        use iced::widget::scrollable::{Direction, Scrollbar};
+        let scrollbar = if launcher::scrollbar_gutter(model, height) >= 8.0 {
+            Scrollbar::new().width(8).scroller_width(5).margin(1)
+        } else {
+            Scrollbar::hidden()
+        };
+        scroll = scroll
+            .direction(Direction::Vertical(scrollbar))
+            .style(|theme, status| {
+                use iced::widget::scrollable;
+                let mut style = scrollable::default(theme, status);
+                let palette = canopa_ui::colors(theme);
+                style.vertical_rail.background = Some(palette.muted.scale_alpha(0.10).into());
+                style.vertical_rail.border.radius = 3.0.into();
+                style.vertical_rail.scroller.background = palette.muted.scale_alpha(0.64).into();
+                style
+            });
+    }
+    scroll
         .id(model.menu_scroll_id.clone())
         .on_scroll(|viewport| {
             Message::Panel(super::messages::PanelEvent::MenuScrolled {
@@ -1022,71 +870,42 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
 fn render_menu_row<'a>(model: &PanelRenderModel<'a>, index: usize) -> Element<'a, Message> {
     let metrics = model.menu_metrics;
     let menu_row_gap = metrics.gap;
-    let is_launcher = model.launcher_session.is_some();
     let entry = &model.menu_entries[index];
     let focused = model.focused_index == Some(index);
-    let launcher_target = match &entry.target {
-        super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) => Some(target),
-        _ => None,
-    };
+    if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
+        return launcher::result_row(model, entry, target, focused);
+    }
+
     let mut row_content = row![]
-        .spacing(if is_launcher { 10 } else { 8 })
+        .spacing(8)
         .width(Length::Fill)
         .align_y(iced::Alignment::Center);
-    if let Some(thumbnail) = launcher_target.and_then(|target| target.thumbnail.as_ref()) {
-        row_content = row_content.push(launcher_result_icon(Some(thumbnail), None, &entry.label));
-    } else if model.show_icons {
+    if model.show_icons {
         let icon = entry.icon.as_deref().and_then(|name| model.icons.get(name));
-        row_content = row_content.push(if is_launcher {
-            launcher_result_icon(icon, entry.icon.as_deref(), &entry.label)
-        } else {
-            panel_menu_icon_element(icon)
-        });
+        row_content = row_content.push(panel_menu_icon_element(icon));
     }
-    let label = if focused && is_launcher {
-        crate::theme::strong_text(entry.label.clone())
-    } else {
-        crate::theme::text(entry.label.clone())
-    }
-    .size(crate::theme::body_size())
-    .width(Length::Fill)
-    .wrapping(iced::widget::text::Wrapping::None);
-    let mut labels = column![label].width(Length::Fill).spacing(1);
-    if let Some(target) = launcher_target
-        && !target.result.description.is_empty()
-        && target.result.description != "Application"
-    {
-        labels = labels.push(
-            crate::theme::text(target.result.description.clone())
-                .size(crate::theme::label_size())
-                .style(canopa_ui::muted)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .width(Length::Fill),
-        );
-    }
-    row_content = row_content.push(container(labels).width(Length::Fill).clip(true));
+    row_content = row_content.push(
+        container(
+            crate::theme::text(entry.label.clone())
+                .width(Length::Fill)
+                .wrapping(iced::widget::text::Wrapping::None),
+        )
+        .width(Length::Fill)
+        .clip(true),
+    );
     if entry.is_submenu {
         row_content = row_content.push(crate::theme::text("›"));
     }
-    let activation =
-        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
-            super::messages::PanelEvent::ActivateLauncher(target.clone(), 0)
-        } else {
-            super::messages::PanelEvent::ActivateIndex(index)
-        };
     let keyboard_focus = model.keyboard_focus;
-    let mut row_padding = canopa_ui::content_padding(metrics.row);
-    if is_launcher && !metrics.row.custom_padding {
-        row_padding.top = row_padding.top.min(3.0);
-        row_padding.bottom = row_padding.bottom.min(3.0);
-    }
     let row = iced::widget::button(
         container(row_content)
             .height(Length::Fill)
             .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::Panel(activation))
-    .padding(row_padding)
+    .on_press(Message::Panel(super::messages::PanelEvent::ActivateIndex(
+        index,
+    )))
+    .padding(canopa_ui::content_padding(metrics.row))
     .width(Length::Fill)
     // Rendering, virtual spacers and keyboard reveal must use one pitch,
     // even for long labels or a different font's line metrics.
@@ -1108,94 +927,10 @@ fn render_menu_row<'a>(model: &PanelRenderModel<'a>, index: usize) -> Element<'a
         }
     });
     let row = container(row).padding(canopa_ui::padding(metrics.row.margin));
-    let focus =
-        if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
-            super::messages::PanelEvent::FocusLauncher(target.clone())
-        } else {
-            super::messages::PanelEvent::FocusIndex(index)
-        };
-    crate::surface::pointer_focus::pointer_focus(row, Message::Panel(focus)).into()
-}
-
-fn launcher_action<'a>(
-    label: &str,
-    key: String,
-    on_press: Message,
-    treatment: canopa_ui::Action,
-) -> Element<'a, Message> {
-    crate::theme::action(
-        row![
-            crate::theme::strong_text(label.to_owned()).size(crate::theme::label_size()),
-            launcher_key(key),
-        ]
-        .spacing(8)
-        .align_y(iced::Alignment::Center),
-        Some(on_press),
-        treatment,
-        false,
+    crate::surface::pointer_focus::pointer_focus(
+        row,
+        Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
     )
-    .padding([6, 9])
-    .into()
-}
-
-fn launcher_key<'a>(label: impl iced::widget::text::IntoFragment<'a>) -> Element<'a, Message> {
-    container(crate::theme::text(label).size(crate::theme::label_size()))
-        .padding([2, 5])
-        .style(|theme| {
-            let palette = canopa_ui::colors(theme);
-            container::Style::default()
-                .background(palette.background)
-                .color(palette.muted)
-                .border(iced::Border::default().rounded(5))
-        })
-        .into()
-}
-
-fn launcher_result_icon<'a>(
-    handle: Option<&iced::widget::image::Handle>,
-    name: Option<&str>,
-    label: &str,
-) -> Element<'a, Message> {
-    let icon: Element<'_, Message> = match handle {
-        Some(handle) => iced::widget::image(handle.clone())
-            .width(24)
-            .height(24)
-            .content_fit(iced::ContentFit::Contain)
-            .into(),
-        None => {
-            let fallback = match name {
-                Some("system-file-manager" | "folder") => {
-                    Some(include_bytes!("../../assets/folder.svg").as_slice())
-                }
-                Some("preferences-system" | "preferences-desktop") => {
-                    Some(include_bytes!("../../assets/controls.svg").as_slice())
-                }
-                _ => None,
-            };
-            if let Some(icon) = fallback {
-                crate::theme::icon(icon, 20.0, crate::theme::palette().accent)
-            } else {
-                crate::theme::strong_text(
-                    label
-                        .chars()
-                        .next()
-                        .unwrap_or('?')
-                        .to_uppercase()
-                        .to_string(),
-                )
-                .style(canopa_ui::link)
-                .into()
-            }
-        }
-    };
-    container(icon)
-        .center(32)
-        .style(|theme| {
-            container::Style::default()
-                .background(canopa_ui::colors(theme).raised)
-                .border(iced::Border::default().rounded(8))
-        })
-        .into()
 }
 
 fn panel_menu_icon_element<'a>(

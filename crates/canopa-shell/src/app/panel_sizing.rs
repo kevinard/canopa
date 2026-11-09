@@ -179,8 +179,20 @@ where
     }
     let fill_width = hint.fill_edge_span && input.bar.edge.is_horizontal();
     let fill_height = hint.fill_height || (hint.fill_edge_span && !input.bar.edge.is_horizontal());
+    let launcher_width = input
+        .bar
+        .panel
+        .launcher_width
+        .filter(|_| input.menu.launcher_session.is_some())
+        .map(|width| {
+            input
+                .bar
+                .panel
+                .max_width
+                .map_or(width, |max| width.min(max))
+        });
     let width = resolve_panel_dimension(
-        input.bar.panel.width,
+        launcher_width.or(input.bar.panel.width),
         input.bar.panel.max_width,
         hint.preferred_width,
         DEFAULT_PANEL_FALLBACK_WIDTH,

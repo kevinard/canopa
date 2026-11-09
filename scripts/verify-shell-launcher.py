@@ -129,6 +129,12 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
         clipboard(expected)
 
     open_query("= 12*(8+3)")
+    # Entering and leaving the calculator must preserve the active query field.
+    for query in ["qzxvjqzxv", "= 12*(8+3)"]:
+        session.run(["wtype", "-M", "ctrl", "a", "-m", "ctrl", query])
+        time.sleep(.4)
+        session.run(["wtype", "-M", "ctrl", "a", "c", "-m", "ctrl"])
+        clipboard(query)
     session.run(["grim", str(output / "calculator.png")])
     session.run(["wtype", "-k", "Return"])
     session.wait_for_layers(1)
@@ -567,7 +573,8 @@ modules {{ module "launcher" {{ type "button"; label "Launcher"; icon "L";
     session.wait_for_layers(0)
     desktop.write_json(output / "result.json", {"status": "passed", "scale": scale,
         "checks": ["emoji suggestions and exact multi-codepoint clipboard copy",
-                   "named symbol clipboard copy", "calculator clipboard after close", "length conversion", "temperature conversion",
+                   "named symbol clipboard copy", "editable search across calculator transitions",
+                   "calculator clipboard after close", "length conversion", "temperature conversion",
                    "binary data conversion", "speed conversion", "incompatible units recovery",
                    "percentages", "math functions", "functions with conversion",
                    "file copy path", "file opening", "Open with chooser", "reveal parent",

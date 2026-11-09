@@ -282,6 +282,14 @@ pub enum PanelEvent {
         query: String,
     },
     ActivateLauncher(super::launcher::Target, usize),
+    LauncherSetQuery {
+        session: u64,
+        query: String,
+    },
+    LauncherSelectScope {
+        session: u64,
+        scope: Option<super::launcher::QuickScope>,
+    },
     LauncherActions(Option<super::launcher::Target>),
     FocusLauncher(super::launcher::Target),
     LauncherAction(usize),
@@ -339,6 +347,8 @@ impl PanelEvent {
             PanelEvent::IconsLoaded(_) => "Panel::IconsLoaded",
             PanelEvent::Launcher(_) => "Panel::Launcher",
             PanelEvent::LauncherSearchChanged { .. } => "Panel::LauncherSearchChanged",
+            PanelEvent::LauncherSetQuery { .. } => "Panel::LauncherSetQuery",
+            PanelEvent::LauncherSelectScope { .. } => "Panel::LauncherSelectScope",
             PanelEvent::LauncherActions(..) => "Panel::LauncherActions",
             PanelEvent::ActivateLauncher(..) => "Panel::ActivateLauncher",
             PanelEvent::FocusLauncher(_) => "Panel::FocusLauncher",

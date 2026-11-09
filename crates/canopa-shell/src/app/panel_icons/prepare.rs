@@ -9,8 +9,8 @@ use iced::widget::image::Handle;
 use resvg::{tiny_skia, usvg};
 
 const MAX_FILE_BYTES: usize = 8 * 1024 * 1024;
-// Menu icons occupy 18 logical pixels. Prepare at 4x so fractional/HiDPI outputs
-// need no SVG parsing or raster decoding during layout or drawing.
+// Keep enough source pixels for menu and launcher icons on scaled outputs.
+// All decoding and transparent padding removal stay on the worker.
 const PIXEL_SIZE: u32 = 72;
 
 pub(super) fn from_path(path: &Path) -> Option<Handle> {
@@ -39,7 +39,7 @@ pub(super) fn from_path(path: &Path) -> Option<Handle> {
         &|| false,
     )
     .load(path)?;
-    Some(Handle::from_rgba(image.width, image.height, image.pixels))
+    Some(icon_handle(image.width, image.height, image.pixels))
 }
 
 fn svg(path: &Path) -> Option<Handle> {
@@ -75,5 +75,31 @@ fn svg(path: &Path) -> Option<Handle> {
             [pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()]
         })
         .collect();
-    Some(Handle::from_rgba(width, height, pixels))
+    Some(icon_handle(width, height, pixels))
+}
+
+fn icon_handle(width: u32, height: u32, pixels: Vec<u8>) -> Handle {
+    let (mut left, mut top, mut right, mut bottom) = (width, height, 0, 0);
+    for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+        if pixel[3] == 0 {
+            continue;
+        }
+        let x = index as u32 % width;
+        let y = index as u32 / width;
+        left = left.min(x);
+        top = top.min(y);
+        right = right.max(x + 1);
+        bottom = bottom.max(y + 1);
+    }
+    if right <= left || bottom <= top || (left, top, right, bottom) == (0, 0, width, height) {
+        return Handle::from_rgba(width, height, pixels);
+    }
+
+    let mut cropped = Vec::with_capacity(((right - left) * (bottom - top) * 4) as usize);
+    for y in top..bottom {
+        let start = ((y * width + left) * 4) as usize;
+        let end = ((y * width + right) * 4) as usize;
+        cropped.extend_from_slice(&pixels[start..end]);
+    }
+    Handle::from_rgba(right - left, bottom - top, cropped)
 }

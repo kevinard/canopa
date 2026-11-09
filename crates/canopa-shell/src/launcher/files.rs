@@ -125,6 +125,8 @@ pub(crate) fn build_index(config: &Config, cancel: &Cancellation) -> FileIndex {
     index
 }
 
+pub(crate) const MATCH_LIMIT_STATUS: &str = "Showing the highest-ranked file matches.";
+
 pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation) -> Batch {
     let mut matches = Vec::new();
     if query.is_empty() {
@@ -190,7 +192,7 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
     Batch {
         results,
         status: if more {
-            "More file matches; refine your search".into()
+            MATCH_LIMIT_STATUS.into()
         } else {
             index.status.clone()
         },

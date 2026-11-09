@@ -20,6 +20,43 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuickScope {
+    Apps,
+    Files,
+    Windows,
+    Settings,
+}
+
+impl QuickScope {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Apps => "Apps",
+            Self::Files => "Files",
+            Self::Windows => "Windows",
+            Self::Settings => "Settings",
+        }
+    }
+
+    pub(super) fn prefix(self) -> &'static str {
+        match self {
+            Self::Apps => "apps ",
+            Self::Files => "files ",
+            Self::Windows => "windows ",
+            Self::Settings => "settings ",
+        }
+    }
+
+    fn scope(self) -> Scope {
+        match self {
+            Self::Apps => Scope::Apps,
+            Self::Files => Scope::Files,
+            Self::Windows => Scope::Windows,
+            Self::Settings => Scope::Settings,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub session: u64,
@@ -27,6 +64,8 @@ pub struct Target {
     pub revision: u64,
     pub provider: usize,
     pub result: Arc<ResultItem>,
+    pub(super) display_description: Option<Arc<str>>,
+    pub(super) display_detail: Option<Arc<str>>,
     pub thumbnail: Option<iced::widget::image::Handle>,
 }
 
@@ -118,6 +157,7 @@ pub(super) struct Session {
     apps: Vec<crate::desktop_apps::DesktopApplication>,
     app_results: Vec<PanelMenuEntry>,
     query: String,
+    input_scope: Option<QuickScope>,
     windows: Vec<launcher::windows::Window>,
     history: Arc<launcher::history::Snapshot>,
     history_error: Option<String>,
@@ -129,6 +169,58 @@ pub(super) struct Session {
     batches: BTreeMap<usize, Batch>,
     pub action_running: bool,
     action_error: String,
+}
+
+pub(super) const APPROXIMATE_KEYWORD_MATCH: &str = "Approximate keyword match";
+
+fn application_match_summary(app: &crate::desktop_apps::DesktopApplication, query: &str) -> String {
+    use super::panel_search::{SearchField, SearchText, best_match};
+
+    let name = SearchText {
+        field: SearchField::Label,
+        text: &app.name,
+    };
+    if best_match(&[name], query).is_none() {
+        let keywords = app.keywords.join(" ");
+        let field = SearchText {
+            field: SearchField::Secondary,
+            text: &keywords,
+        };
+        if best_match(&[name, field], query).is_none() {
+            return "Matched app description".into();
+        }
+        let name = app.name.to_ascii_lowercase();
+        let keywords = keywords.to_ascii_lowercase();
+        return if super::panel_search::query_tokens(query)
+            .iter()
+            .all(|token| name.contains(token) || keywords.contains(token))
+        {
+            "Matched app keywords".into()
+        } else {
+            APPROXIMATE_KEYWORD_MATCH.into()
+        };
+    }
+    application_summary(app)
+}
+
+fn application_summary(app: &crate::desktop_apps::DesktopApplication) -> String {
+    let name = app.name.to_lowercase();
+    app.generic_name
+        .iter()
+        .chain(app.comment.iter())
+        .map(|text| text.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|text| {
+            if let Some(prefix) = text
+                .strip_suffix(&app.name)
+                .filter(|prefix| prefix.ends_with(' '))
+            {
+                prefix.trim_end().to_owned()
+            } else {
+                text
+            }
+        })
+        .find(|text| !text.is_empty() && !text.to_lowercase().contains(&name))
+        .unwrap_or_else(|| "Application".into())
 }
 
 impl Session {
@@ -153,6 +245,7 @@ impl Session {
             apps,
             app_results,
             query: String::new(),
+            input_scope: None,
             windows: vec![],
             history: Arc::new(Default::default()),
             history_error: None,
@@ -169,6 +262,12 @@ impl Session {
 
     pub fn search_changed(&mut self, query: &str) {
         self.query = query.into();
+        if !self.in_child()
+            && let Some(scope) = self.input_scope
+            && launcher::scope(query, &self.config).0 != scope.scope()
+        {
+            self.input_scope = None;
+        }
         self.generation = self.generation.wrapping_add(1);
         self.revision = self.revision.wrapping_add(1);
         self.batches.clear();
@@ -351,6 +450,54 @@ impl Session {
     pub fn leave_open_with(&mut self) -> Option<String> {
         self.open_with.take().map(|choice| choice.previous_query)
     }
+    pub(super) fn quick_scopes(&self) -> Vec<QuickScope> {
+        [
+            QuickScope::Apps,
+            QuickScope::Files,
+            QuickScope::Windows,
+            QuickScope::Settings,
+        ]
+        .into_iter()
+        .filter(|scope| launcher::scope(scope.prefix(), &self.config).0 == scope.scope())
+        .collect()
+    }
+
+    pub(super) fn quick_scope_selection(&self) -> (Option<QuickScope>, &str) {
+        let (scope, term) = self.query_scope();
+        let selected = match scope {
+            Scope::Apps => Some(QuickScope::Apps),
+            Scope::Files => Some(QuickScope::Files),
+            Scope::Windows => Some(QuickScope::Windows),
+            Scope::Settings => Some(QuickScope::Settings),
+            _ => None,
+        };
+        (selected, selected.map_or(self.query.as_str(), |_| term))
+    }
+
+    pub(super) fn input_scope(&self) -> Option<QuickScope> {
+        self.input_scope.filter(|_| !self.in_child())
+    }
+
+    pub(super) fn select_scope(&mut self, scope: Option<QuickScope>) -> Option<String> {
+        if self.in_child() || scope.is_some_and(|scope| !self.quick_scopes().contains(&scope)) {
+            return None;
+        }
+        let (_, term) = self.quick_scope_selection();
+        let query = format!("{}{}", scope.map_or("", QuickScope::prefix), term);
+        self.input_scope = scope;
+        Some(query)
+    }
+
+    pub(super) fn filter_placeholder(&self) -> Option<&'static str> {
+        if self.actions_mode.is_some() {
+            Some("Filter actions")
+        } else if self.open_with.is_some() {
+            Some("Filter applications")
+        } else {
+            None
+        }
+    }
+
     pub fn prompt(&self) -> Option<String> {
         if self.naming.is_some() {
             return Some("Snippet name".into());
@@ -433,22 +580,38 @@ impl Session {
             );
         }
         if matches!(scope, Scope::All | Scope::Apps) {
+            let apps = self
+                .open_with
+                .as_ref()
+                .and_then(|choice| choice.apps.as_deref())
+                .unwrap_or(&self.apps);
             native.extend(self.app_results.iter().map(|entry| {
                 let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
                     unreachable!()
                 };
-                let (description, action) = if let Some(choice) = &self.open_with {
-                    (
-                        format!("Open with · {}", choice.path.display()),
-                        Action::OpenWith {
-                            path: choice.path.clone(),
-                            application: id.clone(),
-                        },
-                    )
+                let action = if let Some(choice) = &self.open_with {
+                    Action::OpenWith {
+                        path: choice.path.clone(),
+                        application: id.clone(),
+                    }
                 } else {
-                    ("Application".into(), Action::Application { id: id.clone() })
+                    Action::Application { id: id.clone() }
                 };
-                self.entry(
+                let app = entry.path.first().and_then(|&index| apps.get(index));
+                let display_description =
+                    app.map(|app| Arc::<str>::from(application_match_summary(app, text)));
+                let display_detail = app
+                    .and_then(|app| app.comment.as_deref())
+                    .map(str::trim)
+                    .filter(|comment| {
+                        !comment.is_empty() && display_description.as_deref() != Some(*comment)
+                    })
+                    .map(Arc::<str>::from);
+                let description = self.open_with.as_ref().map_or_else(
+                    || "Application".into(),
+                    |choice| format!("Open with · {}", choice.path.display()),
+                );
+                self.entry_with_description(
                     usize::MAX,
                     ResultItem {
                         id: id.clone(),
@@ -460,6 +623,8 @@ impl Session {
                             action,
                         }],
                     },
+                    display_description,
+                    display_detail,
                 )
             }));
         }
@@ -627,7 +792,17 @@ impl Session {
         entries
     }
 
-    fn entry(&self, provider: usize, mut result: ResultItem) -> PanelMenuEntry {
+    fn entry(&self, provider: usize, result: ResultItem) -> PanelMenuEntry {
+        self.entry_with_description(provider, result, None, None)
+    }
+
+    fn entry_with_description(
+        &self,
+        provider: usize,
+        mut result: ResultItem,
+        display_description: Option<Arc<str>>,
+        display_detail: Option<Arc<str>>,
+    ) -> PanelMenuEntry {
         self.decorate(&mut result);
         PanelMenuEntry {
             label: result.label.clone(),
@@ -639,6 +814,8 @@ impl Session {
                 revision: self.revision,
                 provider,
                 result: Arc::new(result),
+                display_description,
+                display_detail,
                 thumbnail: None,
             }),
             is_submenu: false,
@@ -659,7 +836,7 @@ impl Session {
             return "Type a unique single-word alias, then Enter · empty removes the alias".into();
         }
         if self.actions_mode.is_some() {
-            return "Search actions · Enter to apply · Escape clears, then goes back".into();
+            return String::new();
         }
         if self.query.len() > launcher::MAX_QUERY_BYTES {
             return "Search is limited to 1024 bytes".into();
@@ -688,14 +865,18 @@ impl Session {
         let mut status: Vec<_> = self
             .batches
             .values()
-            .filter(|batch| !batch.status.is_empty())
+            .filter(|batch| {
+                !batch.status.is_empty()
+                    && (scope == Scope::Files
+                        || batch.status != launcher::files::MATCH_LIMIT_STATUS)
+            })
             .map(|batch| batch.status.clone())
             .collect();
         if scope == Scope::Calculator && !text.is_empty() && !self.batches.contains_key(&0) {
             status.push("Calculating…".into());
         }
-        if self.app_results.len() > launcher::RESULT_LIMIT {
-            status.push("More application matches; refine your search".into());
+        if !text.is_empty() && self.app_results.len() > launcher::RESULT_LIMIT {
+            status.push("Showing the highest-ranked app matches.".into());
         }
         if matches!(scope, Scope::All | Scope::Files) && self.index.is_none() {
             status.push("Indexing file names…".into());
@@ -717,9 +898,6 @@ impl Session {
         }
         if status.is_empty() && self.entries().is_empty() {
             status.push("No matches".into());
-        }
-        if status.is_empty() && self.query.is_empty() {
-            status.push("Try files, settings, emoji, or = for a calculation.".into());
         }
         for error in [&self.preferences_error, &self.configuration_error]
             .into_iter()
@@ -1484,6 +1662,27 @@ mod tests {
         menu.apply_launcher(results(&menu, 0, &["updated-calculator"]));
         assert_eq!(menu.snapshot().focused_index, Some(1));
         assert_eq!(menu.snapshot().entries[1].label, "file");
+    }
+
+    #[test]
+    fn clicked_launcher_scope_preserves_the_query_across_child_modes() {
+        let mut session = Session::new(Config::default(), vec![]);
+        session.search_changed("files budget");
+        assert_eq!(session.input_scope(), None);
+
+        let scoped = session.select_scope(Some(QuickScope::Apps)).unwrap();
+        assert_eq!(scoped, "apps budget");
+        session.search_changed(&scoped);
+        assert_eq!(session.input_scope(), Some(QuickScope::Apps));
+
+        session.enter_open_with(std::path::PathBuf::from("/fixture/budget"));
+        session.search_changed("");
+        assert_eq!(session.input_scope(), None);
+        let restored = session.leave_open_with().unwrap();
+        session.search_changed(&restored);
+        assert_eq!(session.input_scope(), Some(QuickScope::Apps));
+        assert_eq!(session.select_scope(None).as_deref(), Some("budget"));
+        assert_eq!(session.input_scope(), None);
     }
 
     #[test]

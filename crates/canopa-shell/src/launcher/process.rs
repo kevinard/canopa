@@ -129,7 +129,7 @@ pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
                 results: vec![ResultItem {
                     id: "value".into(),
                     label: value.clone(),
-                    description: format!("Calculator · {query} · Enter to copy"),
+                    description: format!("Calculator · {query}"),
                     icon: Some("accessories-calculator".into()),
                     actions: vec![NamedAction {
                         label: "Copy result".into(),

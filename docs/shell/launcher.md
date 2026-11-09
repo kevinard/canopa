@@ -3,7 +3,8 @@
 The bundled `Applications` menu searches installed applications, local file and
 folder names, open windows, desktop controls, calculations, and unit conversions. It uses the existing Panel
 placement, size, theme, focus, scrolling, and dismissal settings of its originating
-bar.
+bar. The bundled launcher uses a wider panel. A bar can set `panel.launcher-width`
+in logical pixels to size launcher menus separately.
 
 Open it from the spine or with `canopa-shell --toggle-menu Applications`. For a
 global shortcut, configure Niri to spawn that command. Custom configurations can
@@ -23,10 +24,15 @@ menus, dmenu, and whole-panel providers retain their behavior.
 ## Searching and actions
 
 Type normally to search applications, open windows, controls and file/folder names.
-Use `apps firefox`, `windows notes`, `settings volume`, or `files budget` to narrow
-the source. Window rows show the application and workspace. Enter switches to the
-existing window; a secondary action can launch another instance. Up/Down selects a result; Enter performs
-its first action. The selected result's additional actions appear below the list.
+Choose a scope below the search field to narrow the current query. Choose **All**
+to search across sources again. You can also type a scope directly, as in
+`apps firefox`, `windows notes`, `settings volume`, or `files budget`.
+Window rows show the application and workspace. Enter switches to the existing
+window and a secondary action can launch another instance. Up and Down select a
+result. Enter performs the selected result’s first action. Press Tab to filter the selected result’s
+actions. Click a result to run its primary action. The command bar shows the
+primary action, the action menu, and available shortcuts such as Copy path. A
+single application match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
 
@@ -250,23 +256,26 @@ Date/time is local and requires system time-zone data; zoned formatting also use
 GNU `date` from coreutils. Explicit `date` mode accepts the same examples without
 sending other searches to a remote service. Disable either bundled extension or
 change its keyword in Settings. Saved shortcuts are independent of provider
-querying; manage them with Unpin or Edit alias. Up to eight configured executable extensions and
-16 additional web keywords are supported alongside the two bundled extensions.
+querying. Manage them with **Unpin from Launcher** or **Edit search alias**.
+Up to eight configured executable extensions and 16 additional web keywords are
+supported alongside the two bundled extensions.
 
 ## Search actions, pins and aliases
 
-Select a result and press Tab, or click Search actions. Type an action name such
+Select a result and press Tab, or choose its action menu button. Type an action name such
 as `copy`, `open with`, `pin`, or `alias`, then press Enter. The original result
 remains the action target. Escape clears the action query, then returns to the
 original search. Action selection and alias editing use the existing panel.
 
-Applications, files, URLs, desktop controls and literal launch actions offer Pin
-and Set alias. Pins rise ahead of other matches of comparable quality and appear
-in the empty-query list. Exact/prefix matches still precede weaker matches.
-Set alias opens a small editing mode: type a unique single word such as `work` and
-press Enter. Searching that alias offers the saved target directly. Edit alias
-with an empty value to remove it; Unpin removes only the pin. Clear selection
-history leaves deliberate pins and aliases intact. Calculator/clipboard values
+Applications, files, URLs, desktop controls and literal launch actions offer
+**Pin in Launcher** and **Set search alias**. Pins rise ahead of other
+matches of comparable quality and appear in the empty-query list. Exact/prefix
+matches still precede weaker matches.
+**Set search alias** opens an editor. Type a unique single word such as `work` and
+press Enter. Searching that alias offers the saved target directly. Use **Edit
+search alias** with an empty value to remove it. **Unpin from Launcher**
+removes the pin. Clear selection history leaves deliberate pins and aliases
+intact. Calculator/clipboard values
 and transient window IDs are not saved as shortcuts; a window's application can
 be pinned when known.
 

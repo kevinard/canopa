@@ -58,7 +58,12 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) show_icons: bool,
     pub(super) menu_prompt: Option<String>,
     pub(super) launcher_session: Option<u64>,
+    pub(super) launcher_generation: u64,
     pub(super) launcher_status: String,
+    pub(super) launcher_scopes: Vec<super::launcher::QuickScope>,
+    pub(super) launcher_scope: Option<super::launcher::QuickScope>,
+    pub(super) launcher_input_scope: Option<super::launcher::QuickScope>,
+    pub(super) launcher_filter_placeholder: Option<&'static str>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) keyboard_focus: bool,
@@ -105,8 +110,7 @@ impl App {
     ) -> crate::theme::MenuMetrics {
         let ui = self.panel_ui(tree);
         let mut metrics = crate::theme::menu_metrics_with_gap(ui.custom_gap.then_some(ui.gap));
-        if !metrics.row.custom_padding
-            && let crate::surface::panel::PanelContent::Menu(name) = &tree.content
+        if let crate::surface::panel::PanelContent::Menu(name) = &tree.content
             && self.config.menus.iter().any(|menu| {
                 &menu.name == name
                     && menu.source.as_ref().is_some_and(|source| {
@@ -114,12 +118,13 @@ impl App {
                     })
             })
         {
-            let labels = (crate::theme::body_size() + crate::theme::label_size()) * 1.3 + 1.0;
-            metrics.extent = labels.ceil().max(32.0)
-                + 6.0
-                + metrics.row.margin.vertical()
-                + 2.0 * metrics.row.border_width.px()
-                + metrics.gap;
+            if !ui.custom_gap {
+                metrics.gap = 6.0;
+            }
+            let launcher = self.foreground.launcher();
+            let browsing = launcher
+                .is_some_and(|launcher| !launcher.in_child() && launcher.query().trim().is_empty());
+            metrics = crate::theme::launcher_menu_metrics(metrics, browsing);
         }
         metrics
     }
@@ -329,6 +334,11 @@ impl App {
             }
         };
 
+        let launcher = self.foreground.launcher();
+        let launcher_scope = launcher
+            .filter(|session| !session.in_child())
+            .and_then(|session| session.quick_scope_selection().0);
+
         Some(PanelRenderModel {
             ui,
             menu_metrics: self.panel_menu_metrics(tree),
@@ -357,7 +367,15 @@ impl App {
             show_icons: menu.show_icons,
             menu_prompt: menu.prompt,
             launcher_session: menu.launcher_session,
+            launcher_generation: launcher.map_or(0, |session| session.generation),
             launcher_status: menu.launcher_status,
+            launcher_scopes: launcher
+                .filter(|session| !session.in_child())
+                .map(|session| session.quick_scopes())
+                .unwrap_or_default(),
+            launcher_scope,
+            launcher_input_scope: launcher.and_then(|session| session.input_scope()),
+            launcher_filter_placeholder: launcher.and_then(|session| session.filter_placeholder()),
             search_query: menu.search_query,
             focused_index: menu.focused_index,
             keyboard_focus: menu.keyboard_focus,

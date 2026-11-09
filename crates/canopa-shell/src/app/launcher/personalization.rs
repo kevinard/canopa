@@ -248,9 +248,9 @@ impl Session {
         });
         result.actions.push(NamedAction {
             label: if shortcut.pinned {
-                "Unpin".into()
+                "Unpin from Launcher".into()
             } else {
-                "Pin".into()
+                "Pin in Launcher".into()
             },
             action: Action::TogglePin {
                 shortcut: shortcut.clone(),
@@ -258,9 +258,9 @@ impl Session {
         });
         result.actions.push(NamedAction {
             label: if shortcut.alias.is_empty() {
-                "Set alias…".into()
+                "Set search alias…".into()
             } else {
-                "Edit alias…".into()
+                "Edit search alias…".into()
             },
             action: Action::EditAlias { shortcut },
         });
@@ -349,7 +349,7 @@ mod tests {
         assert!(session.enter_actions(target));
         session.search_changed("pin");
         let rows = session.entries();
-        assert!(rows.iter().any(|r| r.label == "Pin"));
+        assert!(rows.iter().any(|r| r.label == "Pin in Launcher"));
         let target = first(&session);
         assert!(
             matches!(&target.result.actions[0].action,Action::TogglePin{shortcut} if shortcut.target==SavedTarget::Application{id:"editor.desktop".into()})

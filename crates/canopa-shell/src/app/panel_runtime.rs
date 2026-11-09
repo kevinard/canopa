@@ -137,6 +137,7 @@ pub(super) enum PanelRuntimeIntent<'a> {
 
 pub(super) enum PanelInteraction {
     SearchChanged(String),
+    LauncherScope(Option<super::launcher::QuickScope>),
     MenuScrolled { y: f32, viewport_height: f32 },
     FocusIndex(usize),
     RequestSearchFocus,
@@ -231,6 +232,16 @@ impl PanelRuntime {
         match interaction {
             PanelInteraction::SearchChanged(query) => {
                 self.search_changed(query);
+                Vec::new()
+            }
+            PanelInteraction::LauncherScope(scope) => {
+                if let Some(query) = self
+                    .session
+                    .as_mut()
+                    .and_then(|session| session.launcher_scope_query(scope))
+                {
+                    self.search_changed(query);
+                }
                 Vec::new()
             }
             PanelInteraction::MenuScrolled { y, viewport_height } => {
