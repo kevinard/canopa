@@ -161,7 +161,8 @@ async fn launch(
 ) -> anyhow::Result<Bridge> {
     let (parent, child_socket) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
-    let output = AsyncFd::new(parent)?;
+    // SAFETY: the stream owns its socket descriptor until the AsyncFd is dropped.
+    let output = unsafe { AsyncFd::register(parent) }.map_err(std::io::Error::from)?;
     let mut child = tokio::process::Command::new(&process.executable)
         .args(&process.arguments)
         .arg("--input-capture-worker")

@@ -281,7 +281,8 @@ async fn launch(
     bytes.push(b'\n');
     let (parent, child_socket) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
-    let output = AsyncFd::new(parent)?;
+    // SAFETY: the stream owns its socket descriptor until the AsyncFd is dropped.
+    let output = unsafe { AsyncFd::register(parent) }.map_err(std::io::Error::from)?;
     // The pipe lease, rather than PDEATHSIG, permits cleanup after backend death.
     let mut child = tokio::process::Command::new(&process.executable)
         .args(&process.arguments)

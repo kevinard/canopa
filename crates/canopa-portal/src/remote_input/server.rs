@@ -157,7 +157,10 @@ impl Session<'_> {
     }
     async fn serve(&mut self, socket: UnixStream) -> anyhow::Result<()> {
         let context = eis::Context::new(socket)?;
-        let readiness = tokio::io::unix::AsyncFd::new(context.clone())?;
+        // SAFETY: every Context clone shares one Arc-owned socket, kept open by
+        // the clone this AsyncFd holds.
+        let readiness = unsafe { tokio::io::unix::AsyncFd::register(context.clone()) }
+            .map_err(std::io::Error::from)?;
         let mut handshaker = EisHandshaker::new(&context, 1);
         let mut handshake_count = 0;
         let mut sender = false;

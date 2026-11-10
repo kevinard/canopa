@@ -148,7 +148,9 @@ pub fn run() -> Result<()> {
 async fn watch_profiles(paths: Paths) -> Result<()> {
     let client = Client::discover()?;
     let mut heads = watch_heads()?;
-    let mut file = AsyncFd::new(Watcher::new(vec![Target::File(paths.profiles())])?)?;
+    let watcher = Watcher::new(vec![Target::File(paths.profiles())])?;
+    // SAFETY: Watcher owns its inotify descriptor and never replaces it.
+    let mut file = unsafe { AsyncFd::register(watcher) }.map_err(std::io::Error::from)?;
     let mut settle = Book::load(&paths).map_or(Duration::from_millis(600), |book| book.settle);
     let mut observed = None;
     let mut source_text = None;

@@ -271,7 +271,10 @@ impl Worker {
                 use futures_util::StreamExt;
                 use canopa_file::watch::{Watcher,Target};
                 let mut files=Watcher::new(vec![Target::File("/etc/passwd".into()),Target::File("/etc/nsswitch.conf".into()),Target::File("/etc/login.defs".into())])
-                    .ok().and_then(|watcher|tokio::io::unix::AsyncFd::new(watcher).ok());
+                    .ok().and_then(|watcher|{
+                        // SAFETY: Watcher owns its inotify descriptor and never replaces it.
+                        unsafe{tokio::io::unix::AsyncFd::register(watcher)}.ok()
+                    });
                 let mut last=None;
                 loop {
                     let connection=if matches!(source,Source::Nss) {None}else {

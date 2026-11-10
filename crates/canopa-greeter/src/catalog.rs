@@ -28,7 +28,8 @@ impl Worker {
             };
             runtime.block_on(async {
                 let Ok(watcher)=Watcher::new(targets(&config,&[])) else{return;};
-                let Ok(mut watcher)=tokio::io::unix::AsyncFd::new(watcher) else{return;};
+                // SAFETY: Watcher owns its inotify descriptor and never replaces it.
+                let Ok(mut watcher)=(unsafe{tokio::io::unix::AsyncFd::register(watcher)}) else{return;};
                 config.resolve_sessions(config.system_sources);
                 notify(config.sessions.clone(),false);
                 let mut last_revision=0;

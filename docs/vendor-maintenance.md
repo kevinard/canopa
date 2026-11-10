@@ -9,7 +9,6 @@ below were checked directly against the official crates.io sparse index on
 | --- | --- | --- |
 | iced_layershell | 0.19.1 | `5e39311c8c5e652bd493a8f78e68e62b8929d9cf` (`v0.19.1`) |
 | layershellev | 0.19.1 | `5e39311c8c5e652bd493a8f78e68e62b8929d9cf` (`v0.19.1`) |
-| accesskit_unix | 0.24.0 | `ce8164ba92995cfa86005b6259115e08c8244253` (crate VCS metadata) |
 | iced_runtime | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
 | iced_winit | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
 | winit | 0.30.13 | `e9809ef54b18499bb4f2cac945719ecc2a61061b` (crate VCS metadata) |
@@ -26,6 +25,9 @@ reis was checked against its published archive and official registry checksum on
 wire backend differ: read_chunk adds finite reads, a pending-byte ceiling and
 descriptor rejection while existing read behavior remains unchanged.
 Source and dependency-manifest changes are included in the reviewable patches.
+The former accesskit_unix 0.24.0 fork (AT-SPI cache signal structure) was dropped
+on 2026-11-10: upstream #819 ships the same fix in 0.24.1, which the workspace now
+uses from crates.io.
 
 The two layer-shell crate source trees were compared byte for byte with their tag
 subdirectories, excluding Cargo-generated manifests/lockfiles and mapping
@@ -53,7 +55,6 @@ Retained behavior:
 | Surface-owned idle inhibition | The shell's manual idle-inhibitor module needs optional protocol support, idempotent requests and cleanup when bar surfaces retire. | Shell lifecycle tests, retired-window adapter regression and `scripts/verify-idle-inhibitor.py` with a private compositor and idle daemon. |
 | Retired-window cleanup | Compositor output loss may remove a backend unit before Closed is delivered; completed closes must not stay in the adapter retry queue. | The retained vendor adapter regression plus notification surface lifecycle tests. |
 | Renderer redraw and relayout notifications | Asynchronous image completion must refresh idle surfaces; otherwise focused-window titles update while application icons remain blank until an unrelated event. | `scripts/verify-focused-window-icons.py` checks fresh PNG/SVG icons and cached switches on rotated and horizontal bars with a controlled, otherwise idle IPC stream. |
-| AT-SPI cache signal wrapping | AddAccessible and RemoveAccessible require one structure argument; upstream 0.24.0 still sends unwrapped structures. | Actual native bus signature/accessibility tests in both applications. |
 | Transient ordinary Iced windows | Files Quick Look needs a native parent before initial configuration to preserve its requested size. The shared runtime/Winit operation returns an explicit failure when unsupported; layer surfaces decline it. | Workspace all-target compilation, four fork library tests, published-archive provenance and 30 private Niri/Files native checks pass in dark/100% and light/125%, with 22 inspected captures. Full shared-stack regressions remain required (ADR 0019). |
 | Portal application activation handoff | AppChooser must consume incoming activation and produce a fresh token from recent input on its own focused window. | ADR0028; strict Wayland input capture, serial-correlated bounded replies and seven private OpenURI/native checks per theme pass; full shared gate remains required. |
 | User-input-bound ordinary-window focus | Iced GainFocus reached an empty Wayland function; returning from an inspector could focus another Browser. | Native minimized red, wire diagnosis and overdue-reply red; normal return and expiry rejection pass four dark/100% and light/125% cases. The original transfer workflow passes both themes. Full shared regressions remain required (ADR 0021). |
@@ -63,6 +64,10 @@ Retained behavior:
 
 Removed local patches:
 
+- AT-SPI cache signal wrapping (accesskit_unix): upstream 0.24.1 (#819) wraps the
+  AddAccessible/RemoveAccessible payloads. Repeat Notify's signature test, the
+  Shell native accessibility test and an Orca replacement/retirement check on
+  accesskit updates.
 - Popup grab serial tracking and popup dismissal: upstream 0.19.1 supplies them.
   Canopa Shell uses the upstream position constructor with explicit anchor/gravity to
   preserve its calculated top-left placement.
@@ -138,7 +143,10 @@ Existing client FD copies cannot be revoked by closing that cached copy. Private
 UMockdev devices and a controllable backend reproduce the original failures;
 candidate USB and broader companion acceptance are tracked in the portal ledger.
 `scripts/build-xdg-portal-compat.py --archives ARCHIVES --work-dir target/NEW-SOURCES`
-prepares/builds without installing or selecting the frontend. `--prepare-only`
+prepares/builds without installing or selecting the frontend. Arch packaging runs
+it and installs the result at `/usr/lib/canopa/xdg-desktop-portal`; the
+`canopa-portal-frontend` wrapper selects it only inside the dedicated Canopa
+session. `--prepare-only`
 performs source verification; `--reuse` retains the same source/build cache.
 Meson/Ninja and GLib generators must already be available; `--native-file FILE`
 can name explicit build-tool overrides. Canonical source inputs, recipe, tool
@@ -151,7 +159,9 @@ Niri retains its GPL-3.0-or-later licence and Smithay its MIT licence. Both sour
 archive names, URLs and SHA-256 values are recorded. This is the compatibility
 work in [ADR0024](adr/0024-niri-drag-source-lifetime.md). The private companion
 passes strict cancellation, retained-offer and actual Files regressions;
-the Arch recipe now selects that pinned companion at a private system path.
+the Arch recipe selected that pinned companion at a private system path until
+commit 8ede03f moved it to the cumulative `niri-remote-touch` recipe, which
+includes this correction.
 Physical installation and broader acceptance remain open.
 
 `python3 scripts/build-niri-compat.py --archives ARCHIVES --work-dir target/NEW-SOURCES`

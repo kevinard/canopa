@@ -65,10 +65,20 @@ print('true',flush=True)
         .await
         .unwrap()
         .unwrap();
-    control.readable().await.unwrap();
-    let mut descriptors = crate::print::file_target::receive_many(&control.into_std().unwrap(), 1)
-        .unwrap()
+    // Tokio 1.54 marks accepted sockets readable before any data arrives, so
+    // readiness alone does not mean the descriptor is queued. Wait for it with
+    // a bounded blocking read, as the production receiver does.
+    let control = control.into_std().unwrap();
+    control.set_nonblocking(false).unwrap();
+    control
+        .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
+    let mut descriptors =
+        tokio::task::spawn_blocking(move || crate::print::file_target::receive_many(&control, 1))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
     assert_eq!(descriptors.len(), 1);
     let writer = UnixStream::from(descriptors.pop().unwrap());
     (pending, writer, cancel, challenge)

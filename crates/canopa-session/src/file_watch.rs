@@ -74,7 +74,8 @@ impl Observer {
             runtime.block_on(async {
                 let mut current=pending.borrow_and_update().clone();
                 let Ok(watcher)=Watcher::new(current.targets.clone()) else{return;};
-                let Ok(mut watcher)=tokio::io::unix::AsyncFd::new(watcher) else{return;};
+                // SAFETY: Watcher owns its inotify descriptor and never replaces it.
+                let Ok(mut watcher)=(unsafe{tokio::io::unix::AsyncFd::register(watcher)}) else{return;};
                 // One startup reconciliation closes the initial read/watch gap.
                 notify();let mut notified=true;
                 loop {

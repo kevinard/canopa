@@ -561,7 +561,9 @@ impl Presenter for Production {
                     .ok_or_else(|| anyhow::anyhow!("Invalid compositor PID"))?;
                 let fd =
                     rustix::process::pidfd_open(process, rustix::process::PidfdFlags::empty())?;
-                let fd = tokio::io::unix::AsyncFd::new(fd)?;
+                // SAFETY: the OwnedFd keeps its pidfd open until the AsyncFd is dropped.
+                let fd = unsafe { tokio::io::unix::AsyncFd::register(fd) }
+                    .map_err(std::io::Error::from)?;
                 let ended = lifetime.0.clone();
                 let mut ending = ended.subscribe();
                 Some(Monitor(tokio::spawn(async move {

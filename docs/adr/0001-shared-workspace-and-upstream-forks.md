@@ -17,8 +17,9 @@ Shared forks use the latest non-yanked stable releases verified in the official
 registry on 2026-09-26: iced_layershell/layershellev 0.19.1 and accesskit_unix 0.24.0.
 Keep only local behavior still absent upstream. Popup grabs/dismissal and
 compositor-selected output placement now use upstream mechanisms. Output snapshots,
-activation context, retired-window cleanup, and the AT-SPI cache signal correction
-remain local. Archive checksums, upstream commits, file hashes and patches are
+activation context and retired-window cleanup remain local. The AT-SPI cache signal
+correction was local until accesskit_unix 0.24.1 released it upstream (#819); that
+fork was dropped on 2026-11-10. Archive checksums, upstream commits, file hashes and patches are
 recorded together; see ../vendor-maintenance.md.
 
 The root release profile adopts Niribar's thin LTO, one codegen unit and symbol

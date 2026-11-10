@@ -60,7 +60,11 @@ impl Receiver {
         let keymap = text.map(Keymap::new).transpose()?;
         let context = eis::Context::new(socket)?;
         Ok(Self {
-            readable: Arc::new(AsyncFd::new(context.clone())?),
+            // SAFETY: every Context clone shares one Arc-owned socket, kept open
+            // by the clone this AsyncFd holds.
+            readable: Arc::new(
+                unsafe { AsyncFd::register(context.clone()) }.map_err(std::io::Error::from)?,
+            ),
             handshaker: EisHandshaker::new(&context, 1),
             context,
             handshake_count: 0,
