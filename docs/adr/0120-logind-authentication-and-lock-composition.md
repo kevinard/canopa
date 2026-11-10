@@ -15,12 +15,19 @@ listener preserves an active lock. Unlock signals never authorize unlocking.
 The locker reports LockedHint only after ext-session-lock acknowledgement and clears
 it after a successful compositor roundtrip for authenticated unlock. It retries
 logind connections and restores confirmed state on reconnection. The listener also
-observes child readiness and exit. Crashes leave the bus hint set but retire the
-listener's private copy, so a direct recovery locker can report subsequent state.
-Live owners reconnect and restore state; an abandoned crashed lock has no live
-reporter if logind also loses its stored hint. Logind hints remain advisory; the
-compositor is the security boundary. Idle/suspend inhibitors
-remain outside this companion's responsibility.
+observes child readiness and exit. Crashes leave the bus hint set. A managed locker
+that exits unsuccessfully after confirming the lock leaves the compositor locked with
+no prompt, so the listener starts a replacement after 750 ms, at most five times a
+minute; a later Lock request retries once that budget is spent. Lost logind
+connections or subscriptions reconnect inside the listener instead of ending it, and
+the managed locker keeps running. Logind hints remain advisory; the compositor is the
+security boundary. The listener also holds the sleep delay inhibitor
+described in `docs/idle.md`.
+
+Listener and locker start their helpers through `canopa_file::executable::current`,
+which uses the running image after a package upgrade replaces the installed file.
+An invalid lockscreen configuration is reported, and lockers then use the defaults;
+it never prevents locking.
 
 Each authentication attempt runs in a separate child with a private inherited
 socket, bounded framed events and fixed-capacity erased response buffers. PAM's
@@ -29,8 +36,9 @@ are rendered. PAM success without a password supports device-only policies.
 Authentication and account validation both gate unlock. Escape, timeout and worker
 death cancel the whole transaction; process-group termination, parent-death signals
 and generation checks prevent blocked workers or stale results from unlocking.
-The UI does not implement parallel competing PAM policies, device enrollment or
-expired-password changes. Module installation and PAM control flow remain host policy.
+The UI does not implement parallel competing PAM policies or device enrollment.
+Expired-password changes follow ADR 0128. Module installation and PAM control flow
+remain host policy.
 
 Layout configuration assigns ordered content to nine viewport anchors with row or
 column flow, bounded margins/gaps/offsets and output scaling. Authentication must

@@ -626,7 +626,7 @@ impl TrialHandle {
         profile: Option<&str>,
         automatic: bool,
     ) -> Result<Self> {
-        let mut command = Command::new(std::env::current_exe()?);
+        let mut command = Command::new(canopa_file::executable::current()?);
         command.arg("display-guard");
         if let Some(name) = profile {
             command.arg(format!("--profile={name}"));

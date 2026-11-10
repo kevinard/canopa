@@ -143,7 +143,7 @@ fn run() -> Result<()> {
             compositor_bin.as_deref(),
             renderer,
             &compositor_arg,
-            &std::env::current_exe()?,
+            &canopa_file::executable::installed()?,
             &arguments,
         );
         if print_command {

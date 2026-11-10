@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 canopa-session-ui.workspace = true
 canopa-assets.workspace = true
+canopa-file.workspace = true
 canopa-config.workspace = true
 canopa-theme.workspace = true
 anyhow.workspace = true

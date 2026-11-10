@@ -7,7 +7,7 @@ use std::{
     io::{self, Read, Write},
 };
 pub fn definitions(config: &Config) -> Vec<Extension> {
-    let exe = std::env::current_exe()
+    let exe = canopa_file::executable::installed()
         .unwrap_or_else(|_| "canopa-shell".into())
         .to_string_lossy()
         .into_owned();

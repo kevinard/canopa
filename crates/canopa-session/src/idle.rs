@@ -132,7 +132,8 @@ async fn stop(child: &mut Child, group: Option<u32>) {
 }
 
 fn backend(program: &Path, session: &str) -> Result<Command> {
-    let here = std::env::current_exe()?;
+    // Stasis executes this path later, after an upgrade may have replaced it.
+    let here = canopa_file::executable::installed()?;
     let directory = here.parent().context("missing executable directory")?;
     let locker = directory.join("canopa-lock");
     ensure!(locker.is_file(), "install canopa-lock beside canopa-idle");

@@ -179,7 +179,7 @@ pub fn discover(policy: &Policy, cancelled: &AtomicBool) -> Result<Vec<Account>>
     if cancelled.load(Ordering::Acquire) {
         bail!("NSS discovery cancelled");
     }
-    let mut command = Command::new(std::env::current_exe()?);
+    let mut command = Command::new(canopa_file::executable::current()?);
     command.arg("internal-nss-users");
     if let Some(min) = policy.uid_min {
         command.arg("--uid-min").arg(min.to_string());

@@ -350,7 +350,7 @@ async fn offer(
                 .matching(&outputs)?
                 .is_some_and(|(profile, current)| profile.name == name && current == layout)
         {
-            let mut child = tokio::process::Command::new(std::env::current_exe()?)
+            let mut child = tokio::process::Command::new(canopa_file::executable::current()?)
                 .arg(format!("--display-profile={name}"))
                 .spawn()?;
             tokio::spawn(async move {

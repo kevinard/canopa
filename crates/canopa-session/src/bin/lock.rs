@@ -121,7 +121,20 @@ fn run() -> Result<()> {
             Err(error) => return Err(error),
         }
     }
-    let (settings, _) = Settings::load(&request, Component::Lockscreen)?;
+    let preview = matches!(cli.command, Some(Command::Preview { .. }));
+    let settings = match Settings::load(&request, Component::Lockscreen) {
+        Ok((settings, _)) => settings,
+        // A configuration mistake must never turn the Lock action into a no-op,
+        // just as an unavailable wallpaper falls back to the theme background.
+        // Previews keep reporting the error to the person editing the file.
+        Err(error) if !preview => {
+            eprintln!(
+                "canopa-lock: lockscreen configuration is invalid; locking with defaults: {error:#}"
+            );
+            Settings::load(&Request::Defaults, Component::Lockscreen)?.0
+        }
+        Err(error) => return Err(error),
+    };
     if let Some(Command::Preview {
         output,
         width,

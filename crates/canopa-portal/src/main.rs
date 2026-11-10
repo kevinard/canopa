@@ -261,7 +261,7 @@ fn print_recovery(args: Args) -> anyhow::Result<()> {
             store,
             configuration.appearance,
             canopa_portal::process::DialogProcess {
-                executable: std::env::current_exe()?,
+                executable: canopa_file::executable::current()?,
                 arguments,
             },
         )?;
@@ -318,7 +318,7 @@ fn print_dialog(args: Args) -> anyhow::Result<()> {
         };
         let configuration = SharedConfiguration::load(&source)?;
         let process = canopa_portal::process::DialogProcess {
-            executable: std::env::current_exe()?,
+            executable: canopa_file::executable::current()?,
             arguments,
         };
         let approved = canopa_portal::print_ui::run(request, configuration.appearance, process)?;
@@ -850,7 +850,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
         _ => Vec::new(),
     };
     let process = std::sync::Arc::new(ProcessPresenter {
-        executable: std::env::current_exe()?,
+        executable: canopa_file::executable::current()?,
         arguments,
     });
     let requests = Requests::default();

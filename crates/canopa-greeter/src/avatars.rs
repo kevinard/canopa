@@ -147,7 +147,7 @@ fn load(paths: &[PathBuf], cancelled: &dyn Fn() -> bool) -> Thumbnail {
     if paths.is_empty() || cancelled() {
         return None;
     }
-    let mut command = Command::new(std::env::current_exe().ok()?);
+    let mut command = Command::new(canopa_file::executable::current().ok()?);
     command.arg("internal-avatar").arg("--").args(paths);
     let bytes = crate::helper::run(command, cancelled, OUTPUT).ok()?;
     RgbaImage::from_raw(SIDE, SIDE, bytes.to_vec()).map(Arc::new)

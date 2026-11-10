@@ -1,4 +1,6 @@
-//! Descriptor-safe, content-free bounded reads for local assets and configuration.
+//! Descriptor-safe, content-free bounded reads for local assets and configuration,
+//! and upgrade-safe paths for re-executing the running program.
+pub mod executable;
 pub mod private_state;
 pub mod watch;
 use std::io::Read;

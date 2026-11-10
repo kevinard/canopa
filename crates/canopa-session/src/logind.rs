@@ -269,7 +269,7 @@ fn spawn_lock(
     let (parent, child) = std::os::unix::net::UnixStream::pair()?;
     parent.set_nonblocking(true)?;
     let fd = child.as_raw_fd();
-    let mut command = std::process::Command::new(std::env::current_exe()?);
+    let mut command = std::process::Command::new(canopa_file::executable::current()?);
     command
         .env_remove("NOTIFY_SOCKET")
         .arg("--session")
@@ -314,11 +314,45 @@ struct Locker {
     sleep_coordinator: bool,
     preparing_for_sleep: bool,
     waiters: crate::control::Waiters,
+    /// The compositor keeps the session locked after its locker died; the next
+    /// launch restores the authentication prompt.
+    recovering: bool,
+    recoveries: std::collections::VecDeque<std::time::Instant>,
+    recover_at: Option<tokio::time::Instant>,
+}
+/// A locker that dies after the compositor confirmed the lock leaves the
+/// session locked with nothing to unlock it. Restart it after the compositor
+/// has seen the old client disconnect, within a budget that stops a crashing
+/// locker from looping.
+const RECOVERY_DELAY: Duration = Duration::from_millis(750);
+const RECOVERY_WINDOW: Duration = Duration::from_secs(60);
+const RECOVERY_LIMIT: usize = 5;
+enum Listen {
+    Reconnect,
+    Stopped,
 }
 impl Locker {
+    fn new(request: canopa_config::Request, session: String) -> Self {
+        Self {
+            request,
+            session,
+            child: None,
+            ready: None,
+            locked: None,
+            generation: 0,
+            pending: false,
+            sleep_coordinator: false,
+            preparing_for_sleep: false,
+            waiters: Default::default(),
+            recovering: false,
+            recoveries: Default::default(),
+            recover_at: None,
+        }
+    }
     fn launch(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.pending = false;
+        self.recover_at = None;
         match spawn_lock(&self.request, &self.session) {
             Ok((child, ready)) => {
                 self.child = Some(child);
@@ -332,7 +366,9 @@ impl Locker {
         }
     }
     async fn finished(&mut self, target: &Target, success: bool) {
+        let lost = self.lost(success);
         if success {
+            self.recovering = false;
             let _ = target.set_locked(false).await;
         }
         // Unsuccessful locker exit never manufactures an unlocked hint.
@@ -340,7 +376,46 @@ impl Locker {
         self.child = None;
         self.ready = None;
         self.locked = None;
+        if lost {
+            self.schedule_recovery(std::time::Instant::now());
+        }
         if self.pending {
+            self.launch();
+        }
+    }
+    /// Whether this exit leaves the compositor locked without a locker. The
+    /// locker exits successfully only after an authenticated unlock or when the
+    /// compositor itself ended the lock.
+    fn lost(&self, success: bool) -> bool {
+        !success && (self.locked == Some(true) || self.recovering)
+    }
+    fn schedule_recovery(&mut self, now: std::time::Instant) {
+        while self
+            .recoveries
+            .front()
+            .is_some_and(|started| now.duration_since(*started) > RECOVERY_WINDOW)
+        {
+            self.recoveries.pop_front();
+        }
+        if self.recoveries.len() >= RECOVERY_LIMIT {
+            // The compositor still holds the lock. A later Lock request, such as
+            // `loginctl lock-session` from a text console, starts a new locker.
+            self.recovering = false;
+            self.recover_at = None;
+            eprintln!(
+                "locker keeps exiting while the session is locked; not restarting it again. \
+                 Run `loginctl lock-session` from a text console to retry"
+            );
+            return;
+        }
+        self.recoveries.push_back(now);
+        self.recovering = true;
+        self.recover_at = Some(tokio::time::Instant::now() + RECOVERY_DELAY);
+        eprintln!("locker exited while the session was locked; restarting it");
+    }
+    fn recover(&mut self) {
+        self.recover_at = None;
+        if self.child.is_none() {
             self.launch();
         }
     }
@@ -408,82 +483,137 @@ impl Locker {
     }
 }
 pub fn daemon(request: canopa_config::Request, selected: Option<String>) -> Result<()> {
-    crate::settings::Settings::load(&request, canopa_config::Component::Lockscreen)?;
+    // Report a configuration mistake without refusing to listen: each locker
+    // falls back to defaults rather than leaving the session unlockable.
+    if let Err(error) =
+        crate::settings::Settings::load(&request, canopa_config::Component::Lockscreen)
+    {
+        eprintln!(
+            "lockscreen configuration is invalid; locking with defaults until it is fixed: {error:#}"
+        );
+    }
     std::fs::metadata("/etc/pam.d/canopa-lock")
         .context("install canopa-lock PAM service before starting its listener")?;
-    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async move {
-        let session=connect(selected.as_deref()).await?.id;
-        let _guard=daemon_guard(&session)?;
-        let server=crate::control::Server::bind()?;
-        let (sender,mut controls)=mpsc::channel(32);
-        let _server=tokio::spawn(server.serve(sender));
-        let mut locker=Locker {request,session:session.clone(),child:None,ready:None,locked:None,
-            generation:0,pending:false,sleep_coordinator:false,preparing_for_sleep:false,waiters:Default::default()};
-        let mut notified=false;
-        loop {
-            let target=match connect(Some(&session)).await {
-                Ok(target)=>target,
-                Err(error)=>{eprintln!("logind listener reconnecting: {error}");tokio::time::sleep(Duration::from_secs(1)).await;continue;}
-            };
-            let proxy=target.proxy().await?;
-            let mut requests=proxy.receive_signal("Lock").await?;
-            let mut owners=proxy.receive_owner_changed().await?;
-            let manager=manager(&target).await?;
-            let mut sleep=manager.receive_signal("PrepareForSleep").await?;
-            let mut inhibitor=Some(sleep_inhibitor(&manager).await?);
-            locker.preparing_for_sleep=manager.get_property::<bool>("PreparingForSleep").await?;
-            locker.sleep_coordinator=true;
-            if locker.preparing_for_sleep {
-                locker.request(&target,None).await;
-                if locker.locked==Some(true) && !locker.pending {inhibitor.take();}
-            }
-            if !notified {notify_ready()?;notified=true;}
-            locker.reap(&target).await;
-            if let Some(locked)=locker.locked {let _=target.set_locked(locked).await;}
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async move {
+            let session = connect(selected.as_deref()).await?.id;
+            let _guard = daemon_guard(&session)?;
+            let server = crate::control::Server::bind()?;
+            let (sender, mut controls) = mpsc::channel(32);
+            let _server = tokio::spawn(server.serve(sender));
+            let mut locker = Locker::new(request, session.clone());
+            let mut notified = false;
             loop {
-                tokio::select! {
-                    event=sleep.next()=> {
-                        let Some(event)=event else {break;};
-                        let preparing:bool=event.body().deserialize()?;
-                        locker.preparing_for_sleep=preparing;
-                        if preparing {
-                            locker.request(&target,None).await;
-                            if locker.locked==Some(true) && !locker.pending {inhibitor.take();}
-                        } else {
-                            inhibitor.take();
-                            inhibitor=Some(sleep_inhibitor(&manager).await?);
-                        }
-                    },
-                    event=requests.next()=> {
-                        if event.is_none() {break;}
-                        locker.request(&target,None).await;
-                    },
-                    request=controls.recv()=> {
-                        let Some(request)=request else {bail!("locker control stopped");};
-                        locker.request(&target,Some(request)).await;
-                    },
-                    _=owners.next()=>break,
-                    status=async {match locker.child.as_mut() {Some(child)=>child.wait().await,None=>std::future::pending().await}}=> {
-                        locker.finished(&target,status.is_ok_and(|s|s.success())).await;
-                    },
-                    confirmed=async {
-                        use tokio::io::AsyncReadExt;
-                        match locker.ready.as_mut() {Some(ready)=>ready.read_u8().await,None=>std::future::pending().await}
-                    }=> {
-                        locker.ready=None;
-                        if crate::control::failed_readiness(confirmed).is_ok() {
-                            locker.locked=Some(true);
-                            let _=target.set_locked(true).await;
-                            locker.waiters.ready(locker.generation);
-                            if locker.preparing_for_sleep && !locker.pending {inhibitor.take();}
-                        } else {
-                            locker.waiters.finished(locker.generation,false);
-                        }
-                    },
+                // Losing logind or one of its subscriptions must not end the
+                // listener: Lock and PrepareForSleep signals sent while systemd
+                // restarted it would be lost. The managed locker keeps running.
+                match locker.listen(&session, &mut controls, &mut notified).await {
+                    Ok(Listen::Reconnect) => {}
+                    Ok(Listen::Stopped) => bail!("locker control stopped"),
+                    Err(error) => {
+                        eprintln!("logind listener reconnecting: {error:#}");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
                 }
             }
+        })
+}
+impl Locker {
+    async fn listen(
+        &mut self,
+        session: &str,
+        controls: &mut mpsc::Receiver<crate::control::Request>,
+        notified: &mut bool,
+    ) -> Result<Listen> {
+        let target = connect(Some(session)).await?;
+        let proxy = target.proxy().await?;
+        let mut requests = proxy.receive_signal("Lock").await?;
+        let mut owners = proxy.receive_owner_changed().await?;
+        let manager = manager(&target).await?;
+        let mut sleep = manager.receive_signal("PrepareForSleep").await?;
+        let mut inhibitor = Some(sleep_inhibitor(&manager).await?);
+        self.preparing_for_sleep = manager.get_property::<bool>("PreparingForSleep").await?;
+        self.sleep_coordinator = true;
+        if self.preparing_for_sleep {
+            self.request(&target, None).await;
+            if self.locked == Some(true) && !self.pending {
+                inhibitor.take();
+            }
         }
-    })
+        if !*notified {
+            notify_ready()?;
+            *notified = true;
+        }
+        self.reap(&target).await;
+        if let Some(locked) = self.locked {
+            let _ = target.set_locked(locked).await;
+        }
+        loop {
+            tokio::select! {
+                event = sleep.next() => {
+                    let Some(event) = event else { return Ok(Listen::Reconnect) };
+                    let preparing: bool = event.body().deserialize()?;
+                    self.preparing_for_sleep = preparing;
+                    if preparing {
+                        self.request(&target, None).await;
+                        if self.locked == Some(true) && !self.pending {
+                            inhibitor.take();
+                        }
+                    } else {
+                        inhibitor.take();
+                        inhibitor = Some(sleep_inhibitor(&manager).await?);
+                    }
+                },
+                event = requests.next() => {
+                    if event.is_none() {
+                        return Ok(Listen::Reconnect);
+                    }
+                    self.request(&target, None).await;
+                },
+                request = controls.recv() => {
+                    let Some(request) = request else { return Ok(Listen::Stopped) };
+                    self.request(&target, Some(request)).await;
+                },
+                _ = owners.next() => return Ok(Listen::Reconnect),
+                status = async {
+                    match self.child.as_mut() {
+                        Some(child) => child.wait().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.finished(&target, status.is_ok_and(|s| s.success())).await;
+                },
+                _ = async {
+                    match self.recover_at {
+                        Some(at) => tokio::time::sleep_until(at).await,
+                        None => std::future::pending().await,
+                    }
+                } => self.recover(),
+                confirmed = async {
+                    use tokio::io::AsyncReadExt;
+                    match self.ready.as_mut() {
+                        Some(ready) => ready.read_u8().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.ready = None;
+                    if crate::control::failed_readiness(confirmed).is_ok() {
+                        self.locked = Some(true);
+                        self.recovering = false;
+                        let _ = target.set_locked(true).await;
+                        self.waiters.ready(self.generation);
+                        if self.preparing_for_sleep && !self.pending {
+                            inhibitor.take();
+                        }
+                    } else {
+                        self.waiters.finished(self.generation, false);
+                    }
+                },
+            }
+        }
+    }
 }
 
 pub(crate) fn notify_ready() -> Result<()> {
@@ -503,4 +633,49 @@ pub(crate) fn notify_ready() -> Result<()> {
     };
     UnixDatagram::unbound()?.send_to_addr(b"READY=1", &address)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn locker() -> Locker {
+        Locker::new(canopa_config::Request::Defaults, "1".into())
+    }
+
+    #[test]
+    fn only_a_failed_exit_after_confirmed_lock_is_recovered() {
+        let mut locker = locker();
+        // Refused or failed before the compositor confirmed the lock: the
+        // session never locked, so restarting would only repeat the failure.
+        assert!(!locker.lost(false));
+        locker.locked = Some(true);
+        assert!(!locker.lost(true), "authenticated unlock");
+        assert!(locker.lost(false), "crash while locked");
+        // A replacement that dies before confirming is still guarding a lock.
+        locker.locked = None;
+        locker.recovering = true;
+        assert!(locker.lost(false));
+    }
+
+    #[test]
+    fn recovery_is_delayed_and_bounded() {
+        let mut locker = locker();
+        let start = std::time::Instant::now();
+        for attempt in 0..RECOVERY_LIMIT {
+            locker.schedule_recovery(start + Duration::from_secs(attempt as u64));
+            assert!(locker.recovering);
+            assert!(locker.recover_at.is_some());
+            locker.recover_at = None;
+        }
+        locker.schedule_recovery(start + Duration::from_secs(10));
+        assert!(!locker.recovering, "a crashing locker must not loop");
+        assert!(locker.recover_at.is_none());
+        // Old attempts leave the window, so a later crash is recovered again.
+        locker.schedule_recovery(
+            start + RECOVERY_WINDOW + Duration::from_secs(RECOVERY_LIMIT as u64),
+        );
+        assert!(locker.recovering);
+        assert!(locker.recover_at.is_some());
+    }
 }

@@ -283,7 +283,8 @@ impl Worker {
             std::os::unix::net::UnixStream::pair().context("create authentication channel")?;
         let fd = child.as_raw_fd();
         let parent_pid = std::process::id() as libc::pid_t;
-        let executable = std::env::current_exe().context("resolve authentication executable")?;
+        let executable =
+            canopa_file::executable::current().context("resolve authentication executable")?;
         let mut command = std::process::Command::new(&executable);
         command
             .args(["internal-auth", "--fd", &fd.to_string()])

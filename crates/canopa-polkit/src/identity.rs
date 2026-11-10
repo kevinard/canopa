@@ -209,7 +209,8 @@ impl Worker {
                         || state.epoch.load(Ordering::Acquire) != epoch
                 };
                 let identity = (|| {
-                    let mut command = std::process::Command::new(std::env::current_exe().ok()?);
+                    let mut command =
+                        std::process::Command::new(canopa_file::executable::current().ok()?);
                     command.arg("internal-identity").arg(uid.to_string());
                     let bytes =
                         canopa_session_ui::helper::run(command, &cancelled, 300_000).ok()?;

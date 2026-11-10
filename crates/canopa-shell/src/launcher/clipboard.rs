@@ -269,7 +269,8 @@ async fn watch_once(
         Kind::Text => ("text", "--clipboard-frame"),
         Kind::Image => ("image", "--clipboard-image-frame"),
     };
-    let exe = std::env::current_exe().map_err(|_| "Could not start the clipboard reader")?;
+    let exe =
+        canopa_file::executable::installed().map_err(|_| "Could not start the clipboard reader")?;
     let mut child = tokio::process::Command::new("wl-paste")
         .args([
             "--type",

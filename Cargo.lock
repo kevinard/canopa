@@ -1086,6 +1086,7 @@ dependencies = [
  "calloop-wayland-source 0.4.1",
  "canopa-assets",
  "canopa-config",
+ "canopa-file",
  "canopa-session-ui",
  "canopa-theme",
  "cc",
