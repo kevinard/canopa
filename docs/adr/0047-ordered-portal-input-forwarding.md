@@ -3,6 +3,12 @@
 Status: scoped native compatibility candidate; distribution and broader acceptance
 remain open, 2026-10-31.
 
+Update, 2026-11-10: commit 8ede03f packages the patched frontend at
+`/usr/lib/canopa/xdg-desktop-portal` and selects it in the dedicated Canopa
+session through `packaging/system/canopa-portal-frontend`. Statements below
+that the installed frontend is unchanged describe the state when this was
+decided; other sessions still use the distribution frontend.
+
 ## Context
 
 Canopa keeps the standard XDG frontend's caller, sandbox and document policy and

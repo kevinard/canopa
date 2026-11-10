@@ -5,6 +5,12 @@ shared gate stops at disk-full Clippy before Rust tests; broader acceptance rema
 open. All owned validation/native processes are terminal.
 The installed frontend and normal RemoteDesktop advertisement remain unchanged.
 
+Update, 2026-11-10: commit 8ede03f packages the patched frontend at
+`/usr/lib/canopa/xdg-desktop-portal` and selects it in the dedicated Canopa
+session through `packaging/system/canopa-portal-frontend`. Statements below
+that the installed frontend is unchanged describe the state when this was
+decided; other sessions still use the distribution frontend.
+
 The mixed-source backend-SIGKILL test in ADR0054 releases held input but never
 receives public Session.Closed. The standard frontend only observes the backend's
 Closed signal. A killed process cannot send it. A proxy targeting a well-known

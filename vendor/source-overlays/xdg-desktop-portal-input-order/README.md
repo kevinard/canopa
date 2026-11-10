@@ -1,8 +1,11 @@
 # Frontend input forwarding, session lifetime, capture phase and USB ownership
 
 This explicit recipe patches the standard XDG frontend 1.22.1. Canopa's backend
-and consent/controls remain Rust/Iced. The companion is not installed or selected
-by preparing or building it.
+and consent/controls remain Rust/Iced. Preparing or building the companion
+does not install or select it. Arch packaging (commit 8ede03f) installs it at
+`/usr/lib/canopa/xdg-desktop-portal`, and `packaging/system/canopa-portal-frontend`
+selects it only in the dedicated Canopa session; other sessions keep the
+distribution frontend.
 
 The unmodified frontend dispatches authorized methods on independent workers.
 Concurrent legacy input can reach a session out of receive order. A session mutex

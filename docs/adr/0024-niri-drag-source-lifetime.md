@@ -132,3 +132,9 @@ see [ADR0129](0129-supported-session-and-settings.md) and
 strict independent GTK source/receiver cancellation control. This selects a
 compatible distribution candidate; complete matrix, physical touch, DRM/VT and
 package-manager installation/upgrade acceptance remain separate requirements.
+
+Update, 2026-11-10: the package no longer builds this recipe directly. Since
+commit 8ede03f it builds the cumulative `niri-remote-touch` recipe on Niri
+`b22eb842` and Smithay `8a270232`, which carries this drag-source correction
+together with the later desktop, sharing and remote-input layers
+(`scripts/build-niri-screencast.py --overlay niri-remote-touch`).
