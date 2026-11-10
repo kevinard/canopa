@@ -202,6 +202,7 @@ class CheckScripts(unittest.TestCase):
         self.assertIn("scripts/test-check-scripts.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-portal-config.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-fork-sources.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
+        self.assertFalse(any("vendor" in argument for item in commands for argument in item["args"]))
         self.assertIn("scripts/test-remote-touch-core.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-remote-desktop-dispatch.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertEqual(commands[-1]["args"], ["scripts/test-configuration.py"])

@@ -46,7 +46,6 @@ case "$1" in
         bash scripts/test-notify.sh --no-default-features
         ;;
     --workspace)
-        python3 scripts/check-vendor.py
         bash scripts/check-panel-protocol.sh
         python3 scripts/check-contrast.py
         python3 scripts/run-desktop-acceptance.py --list
@@ -58,7 +57,6 @@ case "$1" in
         python3 scripts/test-check-scripts.py
         python3 scripts/test-test-layout.py
         python3 scripts/test-fork-sources.py
-        python3 scripts/test-vendor-source-additions.py
         python3 scripts/test-remote-touch-core.py --output "${CARGO_TARGET_DIR:-target}/remote-touch-core-check.json"
         python3 scripts/test-cups-authentication.py --self-test
         python3 scripts/test-build-guard.py

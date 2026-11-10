@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build the optional IPP backend against a verified matching CUPS client.
 
-This builds one backend, publishes it once by checksum, and installs nothing.
+Its source is the client build's verified kevinard/cups fork tree, so client,
+headers and program always come from one fork commit. This builds one backend,
+publishes it once by checksum, and installs nothing.
 Use a stable --work-dir and --reuse for subsequent checks.
 """
 import argparse
@@ -15,51 +17,46 @@ import subprocess
 import tempfile
 import time
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = "cups-ipp-backend"
 STORE = ROOT / "target/native-test-snapshots/print-backend-by-sha256"
 
 
 def sha(path):
-    return vendor_sources.digest(path.read_bytes())
+    return fork_sources.file_digest(path)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--archives", type=Path, required=True)
     parser.add_argument("--client-build", type=Path, required=True)
     parser.add_argument("--library", type=Path, help="Same client image at a retained checksum path")
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
-    work, archives = args.work_dir.resolve(), args.archives.resolve()
+    work = args.work_dir.resolve()
     if not (work.is_relative_to(ROOT / "target") or work.is_relative_to(Path("/tmp"))):
         parser.error("--work-dir must be under root target/ or /tmp")
     if shutil.disk_usage(ROOT).free < 3_000_000_000:
         raise ValueError("The backend build needs a 3 GB free-space reserve")
-    records = vendor_sources.records(ROOT)
-    record = records[OVERLAY]
-    recipe = vendor_sources.digest(json.dumps(record, sort_keys=True).encode())
     spec = importlib.util.spec_from_file_location("cups_client_builder", ROOT / "scripts/build-cups-authentication.py")
     client_builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(client_builder)
     client_path = args.client_build.resolve()
     client = json.loads(client_path.read_text())
-    client_recipe = vendor_sources.digest(json.dumps(records["cups-authentication"], sort_keys=True).encode())
-    if client.get("status") != "built" or client.get("recipe_sha256") != client_recipe:
-        raise ValueError("The CUPS client must have a successful current canonical build receipt")
-    headers = Path(client["source"]).resolve()
+    if client.get("status") != "built" or client.get("fork") != "cups":
+        raise ValueError("The CUPS client must have a successful fork build receipt")
+    fork_sources.check_origin(client["origin"], "cups")
+    # The backend/receiver sources are part of the same verified fork tree.
+    source = headers = Path(client["source"]).resolve()
     configuration = client.get("configuration_inputs", {})
     expected_configuration = {str(headers / name) for name in ["config.h", "Makedefs", "config.status"]}
     if set(configuration) != expected_configuration:
         raise ValueError("Rebuild the CUPS client to bind its exact configuration")
     library = args.library.resolve() if args.library else Path(client["binary"]).resolve()
-    client_inputs = client_builder.verify_sources(headers, archives, records["cups-authentication"])
-    if vendor_sources.digest(json.dumps(client_inputs, sort_keys=True).encode()) != client["source_inputs_sha256"]:
-        raise ValueError("CUPS client input inventory differs from its build receipt")
+    client_inputs = fork_sources.read_inputs(client_path, client)
+    client_builder.verify_sources(headers, client_inputs)
 
     def check_client():
         if sha(client_path) != client_receipt_digest or sha(library) != client["binary_sha256"]:
@@ -97,22 +94,15 @@ def main():
     receipt = work / "canopa-build.json"
     if args.reuse:
         previous = json.loads(receipt.read_text())
-        if previous["recipe_sha256"] != recipe or previous["client_build_sha256"] != client_receipt_digest:
-            raise ValueError("Existing backend cache belongs to another source/client recipe")
-        errors = vendor_sources.check(ROOT)
-        if errors:
-            raise ValueError("\n".join(errors))
-    else:
-        vendor_sources.prepare(ROOT, archives, work, OVERLAY)
-    source = work / record["sources"]["cups"]["archive_root"]
-    inputs = client_builder.verify_sources(source, archives, record)
-    (work / "source-inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
+        if previous.get("origin") != client["origin"] or previous["client_build_sha256"] != client_receipt_digest:
+            raise ValueError("Existing backend cache belongs to another fork commit or client build")
+    work.mkdir(parents=True, exist_ok=True)
     compiler = Path(shutil.which("gcc") or "gcc").resolve(strict=True)
-    result = dict(status="prepared", overlay=OVERLAY, recipe_sha256=recipe,
-                  source=str(source), source_file_count=len(inputs),
-                  source_inputs_sha256=vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode()),
+    result = dict(status="prepared", fork="cups", origin=client["origin"],
+                  source=str(source), source_file_count=client["source_file_count"],
+                  source_inputs_sha256=client["source_inputs_sha256"],
                   client_build=str(client_path), client_build_sha256=client_receipt_digest,
-                  client_recipe_sha256=client_recipe, library=str(frozen_library), library_sha256=client["binary_sha256"],
+                  library=str(frozen_library), library_sha256=client["binary_sha256"],
                   verified_client_image=str(library), runpath=runpath,
                   configuration_inputs=configuration, compiler=str(compiler), compiler_sha256=sha(compiler),
                   compiler_version=subprocess.check_output([compiler, "--version"], text=True).splitlines()[0],
@@ -170,10 +160,10 @@ def main():
         check_client()
         if sha(frozen_library) != client["binary_sha256"]:
             raise ValueError("Retained CUPS client changed during compilation")
-        if client_builder.verify_sources(source, archives, record) != inputs:
-            raise ValueError("Backend inputs changed during compilation")
-        if client_builder.verify_sources(headers, archives, records["cups-authentication"]) != client_inputs:
-            raise ValueError("CUPS client headers changed during compilation")
+        try:
+            client_builder.verify_sources(headers, client_inputs)
+        except ValueError as error:
+            raise ValueError("CUPS fork sources changed during compilation") from error
         checksum = sha(pending)
         destination = STORE / checksum / "ipp"
         destination.parent.mkdir(parents=True, exist_ok=True)

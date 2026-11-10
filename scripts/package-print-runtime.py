@@ -12,10 +12,11 @@ import stat
 import struct
 import subprocess
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = "cups-authentication"
+FORK = "cups"
+SCHEMA = 2
 LIBRARY = Path("lib/canopa/print/libcups.so.2")
 MANIFEST = Path("share/canopa/print-runtime.json")
 NOTICES = Path("share/licenses/canopa-print-cups")
@@ -67,30 +68,51 @@ def inspect_library(path):
 
 
 def record():
-    value = vendor_sources.records(ROOT)[OVERLAY]
-    for source in value["sources"].values():
-        for asset in vendor_sources.license_assets(source):
-            path = ROOT / asset["path"]
-            regular(path)
-            if digest(path) != asset["sha256"]:
-                raise ValueError("CUPS notice differs from canonical provenance")
-    for patch in value["patches"]:
-        path = ROOT / patch["path"]
+    """The pinned fork; packaged CUPS components must be built from exactly this commit."""
+    return fork_sources.pin(FORK)
+
+
+def origin(pin):
+    """Relocatable source identity recorded in packaged manifests."""
+    return {key: pin[key] for key in fork_sources.ORIGIN_FIELDS}
+
+
+def verified_notices(receipt, pin, inputs):
+    """The original LICENSE/NOTICE texts of the verified build tree."""
+    notices = receipt.get("notices", {})
+    if {name: value.get("sha256") for name, value in notices.items()} != pin["notices"]:
+        raise ValueError("CUPS build notices differ from the pinned fork")
+    source = Path(receipt["source"])
+    paths = {}
+    for name, value in notices.items():
+        path = Path(value["path"])
+        if path != source / name or inputs.get(name) != value["sha256"]:
+            raise ValueError("CUPS notice is not part of the verified source tree")
         regular(path)
-        if digest(path) != patch["sha256"]:
-            raise ValueError("CUPS patch differs from canonical provenance")
-    return value
+        if digest(path) != value["sha256"]:
+            raise ValueError("CUPS notice differs from its build receipt")
+        paths[name] = path
+    return paths
 
 
-def verified_build(receipt_path, recipe):
+def changes(pin, component, modified):
+    return (f"# Canopa modifications to CUPS {pin['version']}\n\n{component}\n\n"
+            f"Built from {pin['repository']} commit {pin['commit']} ({pin['branch']}), "
+            f"based on OpenPrinting CUPS {pin['version']} (commit {pin['base']}). "
+            f"Modified files include {modified}. The complete changes are "
+            f"{pin['repository']}/compare/{pin['base']}...{pin['commit']}, and the "
+            f"source archive is {pin['url']} (SHA-256 {pin['archive_sha256']}).\n\n"
+            "Original LICENSE and NOTICE are retained beside this file.\n")
+
+
+def verified_build(receipt_path, pin):
     receipt_path = receipt_path.resolve(strict=True)
     receipt = json.loads(receipt_path.read_text())
-    expected_recipe = vendor_sources.digest(json.dumps(recipe, sort_keys=True).encode())
-    if (receipt.get("overlay") != OVERLAY or receipt.get("status") != "built"
+    if (receipt.get("fork") != FORK or receipt.get("status") != "built"
             or receipt.get("inputs_unchanged") is not True
-            or receipt.get("recipe_sha256") != expected_recipe
             or receipt.get("built_targets") != ["libcups.so.2"]):
-        raise ValueError("CUPS receipt is incomplete or belongs to another recipe")
+        raise ValueError("CUPS receipt is incomplete or belongs to another build")
+    fork_sources.check_origin(receipt.get("origin", {}), FORK)
     source = Path(receipt["source"])
     library = source / "cups/libcups.so.2"
     if not source.is_absolute() or receipt.get("binary") != str(library):
@@ -98,11 +120,7 @@ def verified_build(receipt_path, recipe):
     regular(library)
     if digest(library) != receipt.get("binary_sha256"):
         raise ValueError("CUPS library differs from its build receipt")
-    inputs = json.loads((receipt_path.parent / "source-inputs.json").read_text())
-    if (len(inputs) != receipt.get("source_file_count")
-            or vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode())
-            != receipt.get("source_inputs_sha256")):
-        raise ValueError("CUPS source inventory differs from its build receipt")
+    inputs = fork_sources.read_inputs(receipt_path, receipt)
     for name, expected in inputs.items():
         relative = Path(name)
         if relative.is_absolute() or ".." in relative.parts:
@@ -111,15 +129,13 @@ def verified_build(receipt_path, recipe):
         regular(path)
         if digest(path) != expected:
             raise ValueError(f"CUPS source differs from its build receipt: {name}")
-    for patch in recipe["patches"]:
-        if any(inputs.get(name) != hashes["patched"] for name, hashes in patch["files"].items()):
-            raise ValueError("CUPS build does not contain the canonical patch")
+    receipt["notice_paths"] = verified_notices(receipt, pin, inputs)
     return library, receipt
 
 
 def stage(bundle, receipt_path):
-    recipe = record()
-    library, receipt = verified_build(receipt_path, recipe)
+    pin = record()
+    library, receipt = verified_build(receipt_path, pin)
     elf = inspect_library(library)
     if any((bundle / path).exists() or (bundle / path).is_symlink()
            for path in [LIBRARY.parent, MANIFEST, NOTICES]):
@@ -127,11 +143,8 @@ def stage(bundle, receipt_path):
     for path in [LIBRARY, MANIFEST, NOTICES / "LICENSE"]:
         check_parents(bundle, bundle / path)
     files = {LIBRARY: library}
-    spec = recipe["sources"]["cups"]
-    for asset in vendor_sources.license_assets(spec):
-        files[NOTICES / Path(asset["path"]).name] = ROOT / asset["path"]
-    for patch in recipe["patches"]:
-        files[NOTICES / Path(patch["path"]).name] = ROOT / patch["path"]
+    for name, path in receipt["notice_paths"].items():
+        files[NOTICES / name] = path
     for relative, source in files.items():
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -139,20 +152,12 @@ def stage(bundle, receipt_path):
         target.chmod(0o644)
     if digest(bundle / LIBRARY) != receipt["binary_sha256"]:
         raise ValueError("CUPS library changed while staging")
-    changes = bundle / NOTICES / "CHANGES.md"
-    changed = sorted({name for patch in recipe["patches"] for name in patch["files"]})
-    changes.write_text("# Canopa modifications to CUPS " + spec["revision"] + "\n\n"
-                       + recipe["description"] + ".\n\n"
-                       + "This is a modified CUPS client, loaded only in Canopa's isolated Print workers. "
-                       "The system scheduler and tools retain their own client library.\n\n"
-                       + "Modified upstream files:\n\n" + "".join(f"- `{name}`\n" for name in changed)
-                       + "\nComplete source patches:\n\n"
-                       + "".join(f"- `{Path(patch['path']).name}`\n" for patch in recipe["patches"])
-                       + "\nOriginal LICENSE and NOTICE are retained beside these patches.\n")
-    changes.chmod(0o644)
-    manifest = dict(schema_version=1, overlay=OVERLAY, recipe_sha256=receipt["recipe_sha256"],
-                    upstream=dict(version=spec["revision"], url=spec["url"],
-                                  archive_sha256=spec["archive_sha256"]),
+    notes = bundle / NOTICES / "CHANGES.md"
+    notes.write_text(changes(pin, "This is a modified CUPS client, loaded only in Canopa's isolated Print "
+                             "workers. The system scheduler and tools retain their own client library.",
+                             "the client authentication, HTTP and custom-media sources under `cups/`"))
+    notes.chmod(0o644)
+    manifest = dict(schema_version=SCHEMA, fork=FORK, upstream=origin(pin),
                     library=dict(path=str(LIBRARY), sha256=digest(bundle / LIBRARY),
                                  bytes=(bundle / LIBRARY).stat().st_size, **elf),
                     build=dict(profile=receipt["profile"], cflags=receipt["cflags"]),
@@ -170,24 +175,17 @@ def check(bundle, required=False):
             raise ValueError("Missing packaged Print runtime")
         print("Release Print runtime: absent; system CUPS fallback.")
         return
-    recipe = record()
+    pin = record()
     regular(bundle / MANIFEST)
     manifest = json.loads((bundle / MANIFEST).read_text())
-    spec = recipe["sources"]["cups"]
-    expected_recipe = vendor_sources.digest(json.dumps(recipe, sort_keys=True).encode())
-    if (manifest.get("schema_version") != 1 or manifest.get("overlay") != OVERLAY
-            or manifest.get("recipe_sha256") != expected_recipe
-            or manifest.get("upstream") != dict(version=spec["revision"], url=spec["url"],
-                                                 archive_sha256=spec["archive_sha256"])):
-        raise ValueError("Packaged CUPS manifest differs from canonical provenance")
+    if (manifest.get("schema_version") != SCHEMA or manifest.get("fork") != FORK
+            or manifest.get("upstream") != origin(pin)):
+        raise ValueError("Packaged CUPS manifest differs from the pinned fork")
     expected_files = {str(LIBRARY), str(NOTICES / "CHANGES.md")}
-    originals = {str(NOTICES / Path(asset["path"]).name): asset["sha256"]
-                 for asset in vendor_sources.license_assets(spec)}
-    originals.update({str(NOTICES / Path(patch["path"]).name): patch["sha256"]
-                      for patch in recipe["patches"]})
+    originals = {str(NOTICES / name): checksum for name, checksum in pin["notices"].items()}
     expected_files.update(originals)
     if set(manifest.get("files", {})) != expected_files:
-        raise ValueError("Incomplete packaged CUPS library, patch or notice inventory")
+        raise ValueError("Incomplete packaged CUPS library or notice inventory")
     for name, expected in manifest["files"].items():
         path = bundle / name
         check_parents(bundle, path)
@@ -199,7 +197,7 @@ def check(bundle, required=False):
                     **inspect_library(library))
     if manifest.get("library") != expected:
         raise ValueError("Packaged CUPS library metadata differs from the actual image")
-    print(f"Release Print runtime: CUPS {spec['revision']}; library, source patch and original notices verified.")
+    print(f"Release Print runtime: CUPS fork {pin['commit'][:12]}; library and original notices verified.")
 
 
 def main():

@@ -10,32 +10,17 @@ import shutil
 import struct
 import subprocess
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = 'cups-ipp-backend'
+FORK = 'cups'
+SCHEMA = 2
 BACKEND = Path('lib/canopa/print/ipp')
 MANIFEST = Path('share/canopa/print-backend.json')
 NOTICES = Path('share/licenses/canopa-print-ipp-backend')
 spec = importlib.util.spec_from_file_location('print_runtime_packager', ROOT / 'scripts/package-print-runtime.py')
 runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
-
-
-def record():
-    value = vendor_sources.records(ROOT)[OVERLAY]
-    for source in value['sources'].values():
-        for asset in vendor_sources.license_assets(source):
-            path = ROOT / asset['path']
-            runtime.regular(path)
-            if runtime.digest(path) != asset['sha256']:
-                raise ValueError('Backend notice differs from canonical provenance')
-    for patch in value['patches']:
-        path = ROOT / patch['path']
-        runtime.regular(path)
-        if runtime.digest(path) != patch['sha256']:
-            raise ValueError('Backend patch differs from canonical provenance')
-    return value
 
 
 def inspect(path, client_sha):
@@ -67,14 +52,14 @@ def client_manifest(bundle):
 
 
 def stage(bundle, receipt_path):
-    recipe = record()
+    pin = runtime.record()
     receipt_path = receipt_path.resolve(strict=True)
     build = json.loads(receipt_path.read_text())
-    expected = vendor_sources.digest(json.dumps(recipe, sort_keys=True).encode())
-    if (build.get('overlay') != OVERLAY or build.get('status') != 'built'
-            or build.get('recipe_sha256') != expected or build.get('inputs_unchanged') is not True
+    if (build.get('fork') != FORK or build.get('status') != 'built'
+            or build.get('inputs_unchanged') is not True
             or build.get('built_targets') != ['ipp'] or build.get('opt_in') is not True):
-        raise ValueError('Backend receipt is incomplete or belongs to another recipe')
+        raise ValueError('Backend receipt is incomplete or belongs to another build')
+    fork_sources.check_origin(build.get('origin', {}), FORK)
     client = client_manifest(bundle)
     client_sha = client['library']['sha256']
     if build.get('library_sha256') != client_sha:
@@ -82,29 +67,17 @@ def stage(bundle, receipt_path):
     client_receipt = Path(build['client_build'])
     if runtime.digest(client_receipt) != build['client_build_sha256']:
         raise ValueError('Backend client receipt changed')
-    _, client_build = runtime.verified_build(client_receipt, runtime.record())
+    # Verifies the complete fork source tree that both programs were compiled from.
+    _, client_build = runtime.verified_build(client_receipt, pin)
     headers = Path(client_build['source'])
     configuration = build.get('configuration_inputs', {})
     if (configuration != client_build.get('configuration_inputs')
             or set(configuration) != {str(headers / name) for name in ['config.h', 'Makedefs', 'config.status']}
             or any(runtime.digest(Path(path)) != digest for path, digest in configuration.items())):
         raise ValueError('Backend client configuration differs from its build')
-    source = Path(build['source'])
-    inputs = json.loads((receipt_path.parent / 'source-inputs.json').read_text())
-    if (len(inputs) != build['source_file_count']
-            or vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode()) != build['source_inputs_sha256']):
-        raise ValueError('Backend source inventory differs from its build')
-    for name, digest in inputs.items():
-        relative = Path(name)
-        if relative.is_absolute() or '..' in relative.parts:
-            raise ValueError('Invalid backend source inventory path')
-        path = source / relative
-        runtime.regular(path)
-        if runtime.digest(path) != digest:
-            raise ValueError('Backend source changed after its build')
-    for patch in recipe['patches']:
-        if any(inputs.get(name) != hashes['patched'] for name, hashes in patch['files'].items()):
-            raise ValueError('Backend build lacks its canonical correction')
+    if (build.get('source') != client_build['source'] or build.get('origin') != client_build['origin']
+            or build.get('source_inputs_sha256') != client_build['source_inputs_sha256']):
+        raise ValueError('Backend was not compiled from the client build source tree')
     binary = Path(build['binary'])
     metadata = inspect(binary, client_sha)
     if runtime.digest(binary) != build['binary_sha256']:
@@ -114,11 +87,8 @@ def stage(bundle, receipt_path):
     for path in [BACKEND, MANIFEST, NOTICES / 'LICENSE']:
         runtime.check_parents(bundle, bundle / path)
     files = {BACKEND: binary}
-    source_spec = recipe['sources']['cups']
-    for asset in vendor_sources.license_assets(source_spec):
-        files[NOTICES / Path(asset['path']).name] = ROOT / asset['path']
-    for patch in recipe['patches']:
-        files[NOTICES / Path(patch['path']).name] = ROOT / patch['path']
+    for name, path in client_build['notice_paths'].items():
+        files[NOTICES / name] = path
     for name, origin in files.items():
         target = bundle / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -127,14 +97,11 @@ def stage(bundle, receipt_path):
     if runtime.digest(bundle / BACKEND) != build['binary_sha256']:
         raise ValueError('Backend changed while staging')
     changes = bundle / NOTICES / 'CHANGES.md'
-    changes.write_text('# Canopa IPP backend modifications\n\n' + recipe['description']
-                       + '.\n\nModified source: `backend/ipp.c`. The complete correction is '
-                       '`resolution.patch`, beside the original LICENSE and NOTICE.\n\n'
-                       'This optional program requires the matching packaged client. Staging it '
-                       'does not configure a CUPS service, backend directory or printer queue.\n')
-    manifest = dict(schema_version=1, overlay=OVERLAY, recipe_sha256=expected,
-                    upstream=dict(version=source_spec['revision'], url=source_spec['url'],
-                                  archive_sha256=source_spec['archive_sha256']),
+    changes.write_text(runtime.changes(
+        pin, 'This optional IPP backend preserves an explicit printer-resolution in the PPD conversion '
+        'path and requires the matching packaged client. Staging it does not configure a CUPS '
+        'service, backend directory or printer queue.', '`backend/ipp.c`'))
+    manifest = dict(schema_version=SCHEMA, fork=FORK, upstream=runtime.origin(pin),
                     client_sha256=client_sha,
                     backend=dict(path=str(BACKEND), sha256=runtime.digest(bundle / BACKEND),
                                  bytes=(bundle / BACKEND).stat().st_size, **metadata),
@@ -149,21 +116,18 @@ def check(bundle, required=False):
             raise ValueError('Missing packaged IPP backend')
         print('Release IPP backend: absent; configured CUPS backend remains authoritative.')
         return
-    recipe = record()
+    pin = runtime.record()
     runtime.regular(bundle / MANIFEST)
     manifest = json.loads((bundle / MANIFEST).read_text())
-    source = recipe['sources']['cups']
-    if (manifest.get('schema_version') != 1 or manifest.get('overlay') != OVERLAY
-            or manifest.get('recipe_sha256') != vendor_sources.digest(json.dumps(recipe, sort_keys=True).encode())
-            or manifest.get('upstream') != dict(version=source['revision'], url=source['url'], archive_sha256=source['archive_sha256'])):
-        raise ValueError('Backend manifest differs from canonical provenance')
+    if (manifest.get('schema_version') != SCHEMA or manifest.get('fork') != FORK
+            or manifest.get('upstream') != runtime.origin(pin)):
+        raise ValueError('Backend manifest differs from the pinned fork')
     client = client_manifest(bundle)
     if manifest.get('client_sha256') != client['library']['sha256']:
         raise ValueError('Packaged backend and client do not match')
-    originals = {str(NOTICES / Path(asset['path']).name): asset['sha256'] for asset in vendor_sources.license_assets(source)}
-    originals.update({str(NOTICES / Path(patch['path']).name): patch['sha256'] for patch in recipe['patches']})
+    originals = {str(NOTICES / name): checksum for name, checksum in pin['notices'].items()}
     if set(manifest.get('files', {})) != {str(BACKEND), str(NOTICES / 'CHANGES.md'), *originals}:
-        raise ValueError('Incomplete backend binary, patch or notice inventory')
+        raise ValueError('Incomplete backend binary or notice inventory')
     for name, digest in manifest['files'].items():
         path = bundle / name
         runtime.check_parents(bundle, path)
@@ -175,7 +139,7 @@ def check(bundle, required=False):
                   **inspect(binary, manifest['client_sha256']))
     if manifest.get('backend') != actual:
         raise ValueError('Backend metadata differs from the actual image')
-    print('Release IPP backend: matching client, source correction and original notices verified.')
+    print('Release IPP backend: matching client, pinned fork source and original notices verified.')
 
 
 def main():

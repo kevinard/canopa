@@ -45,10 +45,11 @@ def main():
         manifest = json.loads((bundle / "share/canopa/print-runtime.json").read_text())
         assert str(base) not in json.dumps(manifest)
         assert str(ROOT) not in json.dumps(manifest)
-        patches = sorted(name for name in manifest["files"] if name.endswith(".patch"))
-        assert "share/licenses/canopa-print-cups/custom-media.patch" in patches
+        pin = json.loads((ROOT / "packaging/forks.json").read_text())["cups"]
+        assert manifest["upstream"]["commit"] == pin["commit"]
+        assert manifest["upstream"]["archive_sha256"] == pin["archive_sha256"]
         changes = (bundle / "share/licenses/canopa-print-cups/CHANGES.md").read_text()
-        assert all(Path(name).name in changes for name in patches)
+        assert pin["repository"] in changes and pin["commit"] in changes and pin["base"] in changes
         checks.append("staged-and-relocatable-inventory")
         invoke(bundle, "--build-receipt", receipt_path, refusal="destination already exists")
         checks.append("existing-runtime-refused")
@@ -66,13 +67,13 @@ def main():
         for name in [manifest["library"]["path"],
                      "share/licenses/canopa-print-cups/LICENSE",
                      "share/licenses/canopa-print-cups/NOTICE",
-                     *patches]:
+                     "share/licenses/canopa-print-cups/CHANGES.md"]:
             path = bundle / name
             original = path.read_bytes()
             path.write_bytes(original + b"changed")
             invoke(bundle, "--check", "--required", refusal="differs from its inventory")
             path.write_bytes(original)
-        checks.append("library-license-notice-patch-tampering-refused")
+        checks.append("library-license-notice-changes-tampering-refused")
 
         notice = bundle / "share/licenses/canopa-print-cups/NOTICE"
         original = notice.read_bytes()
@@ -102,13 +103,17 @@ def main():
         checks.append("directory-symlink-refused-before-writing")
 
         original = json.loads(receipt_path.read_text())
+        inputs = (receipt_path.parent / "source-inputs.json").read_bytes()
         for key, value, message in [
-            ("status", "prepared", "incomplete or belongs to another recipe"),
-            ("recipe_sha256", "0" * 64, "incomplete or belongs to another recipe"),
+            ("status", "prepared", "incomplete or belongs to another build"),
+            ("origin", {**original["origin"], "commit": "0" * 40}, "not the pinned fork commit"),
             ("binary_sha256", "0" * 64, "differs from its build receipt"),
+            ("source_inputs_sha256", "0" * 64, "Source inventory differs"),
         ]:
-            bad = base / (key + ".json")
+            (base / key).mkdir()
+            bad = base / key / "canopa-build.json"
             bad.write_text(json.dumps({**original, key: value}))
+            (base / key / "source-inputs.json").write_bytes(inputs)
             refused = base / (key + "-refused")
             invoke(refused, "--build-receipt", bad, refusal=message)
             assert not refused.exists()

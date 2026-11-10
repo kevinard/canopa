@@ -81,7 +81,7 @@ def run(args):
             path.write_bytes(original + b'changed')
             invoke(bundle, '--check', '--required', refusal='differs from its inventory')
             path.write_bytes(original)
-        checks.append('binary-patch-and-original-notice-tampering-refused')
+        checks.append('binary-changes-and-original-notice-tampering-refused')
         path = bundle / 'share/canopa/print-backend.json'
         original = path.read_bytes()
         path.write_text(json.dumps({**manifest, 'client_sha256': '0' * 64}))

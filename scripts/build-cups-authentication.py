@@ -1,46 +1,35 @@
 #!/usr/bin/env python3
-"""Build the pinned process-private CUPS client library without installing it.
+"""Build the process-private CUPS client library from the pinned kevinard/cups fork.
 
+--archives holds the fork's GitHub archive (checksummed in packaging/forks.json);
+--download fetches it. The fork tree includes the generated configure script.
 Use the same --work-dir and --reuse for subsequent checks. This builds libcups
-only; its private HTTP layout must not be mixed with a system CUPS daemon.
+only and installs nothing; its private HTTP layout must not be mixed with a
+system CUPS daemon. The matching IPP backend and test receiver are compiled
+from this same verified source tree.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import signal
 import subprocess
-import tarfile
 import time
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = "cups-authentication"
+FORK = "cups"
+file_digest = fork_sources.file_digest
 
 
-def file_digest(path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
-def verify_sources(source, archives, record):
-    spec = record["sources"]["cups"]
-    archive = archives / spec["archive"]
-    if file_digest(archive) != spec["archive_sha256"]:
-        raise ValueError("CUPS archive checksum mismatch")
-    prefix = spec["archive_root"] + "/"
-    with tarfile.open(archive) as contents:
-        expected = {member.name.removeprefix(prefix): vendor_sources.digest(contents.extractfile(member).read())
-                    for member in contents if member.isfile() and member.name.startswith(prefix)}
-    for patch in record["patches"]:
-        expected.update({name: hashes["patched"] for name, hashes in patch["files"].items()})
+def verify_sources(source, expected):
+    """Every fork file is unchanged and no undeclared source joined the build."""
     for name, digest in expected.items():
         path = source / name
         if path.is_symlink() or file_digest(path) != digest:
-            raise ValueError(f"Prepared CUPS source differs from its recipe: {name}")
+            raise ValueError(f"Prepared CUPS source differs from the pinned fork: {name}")
     for path in source.rglob("*"):
         name = str(path.relative_to(source))
         if path.suffix in {".c", ".h", ".in", ".m4", ".rs"} and name not in expected and name != "config.h":
@@ -51,6 +40,7 @@ def verify_sources(source, archives, record):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archives", type=Path, required=True)
+    parser.add_argument("--download", action="store_true", help="Download a missing pinned archive")
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--prepare-only", action="store_true")
@@ -62,29 +52,31 @@ def main():
     work, archives = args.work_dir.resolve(), args.archives.resolve()
     if not (work.is_relative_to(ROOT / "target") or work.is_relative_to(Path("/tmp"))):
         parser.error("--work-dir must be under root target/ or /tmp")
-    record = vendor_sources.records(ROOT)[OVERLAY]
-    recipe = vendor_sources.digest(json.dumps(record, sort_keys=True).encode())
+    pin = fork_sources.pin(FORK)
+    record, archive = fork_sources.origin(FORK, archives, fetch=args.download)
     receipt = work / "canopa-build.json"
-    source = work / record["sources"]["cups"]["archive_root"]
+    source = work / record["archive_root"]
     previous = {}
     if args.reuse:
         previous = json.loads(receipt.read_text())
-        if previous["recipe_sha256"] != recipe:
-            raise ValueError("Existing CUPS build belongs to another recipe")
-        errors = vendor_sources.check(ROOT)
-        if errors:
-            raise ValueError("\n".join(errors))
+        if (previous.get("fork") != FORK or previous.get("origin") != record
+                or previous.get("source") != str(source)):
+            raise ValueError("Existing CUPS build belongs to another fork commit or location")
     else:
-        vendor_sources.prepare(ROOT, archives, work, OVERLAY)
-    inputs = verify_sources(source, archives, record)
-    (work / "source-inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
+        if source.exists():
+            raise ValueError(f"{source} already exists; use --reuse or a new --work-dir")
+        fork_sources.extract(archive, work, record["archive_root"])
+    inputs = fork_sources.archive_inventory(archive, record["archive_root"])
+    verify_sources(source, inputs)
+    notices = {name: value for name, value in fork_sources.notices(source, pin["notices"]).items()}
+    inputs_sha256 = fork_sources.write_inputs(work, inputs)
     flags = "-O0 -g0"
     env = dict(os.environ, CFLAGS=flags, CXXFLAGS=flags)
     # The candidate's private ABI is confined to its own future worker process.
     env.pop("LD_LIBRARY_PATH", None)
     baseline = previous.get("baseline_free_bytes", shutil.disk_usage(ROOT).free) if args.reuse else shutil.disk_usage(ROOT).free
-    result = {"overlay": OVERLAY, "recipe_sha256": recipe, "source": str(source),
-              "source_file_count": len(inputs), "source_inputs_sha256": vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode()),
+    result = {"fork": FORK, "origin": record, "source": str(source), "notices": notices,
+              "source_file_count": len(inputs), "source_inputs_sha256": inputs_sha256,
               "profile": "development", "cflags": flags, "jobs": 1, "installed": False,
               "built_targets": ["libcups.so.2"], "baseline_free_bytes": baseline,
               "min_free_bytes": args.min_free_bytes,
@@ -137,7 +129,7 @@ def main():
         result["configuration_inputs"] = {str(path): file_digest(path) for path in configuration}
         save()
         run("library", ["make", "-j1", "libcups.so.2"], source / "cups")
-        verify_sources(source, archives, record)
+        verify_sources(source, inputs)
         if any(file_digest(Path(path)) != digest for path, digest in result["configuration_inputs"].items()):
             raise ValueError("CUPS configuration changed during the build")
         binary = source / "cups/libcups.so.2"
