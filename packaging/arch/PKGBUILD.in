@@ -46,7 +46,9 @@ build() {
 
 package_canopa() {
     pkgdesc='Canopa desktop environment and settings for Niri'
-    license+=('LGPL-2.1-or-later')
+    # Shell and Settings link niri-ipc (GPL-3.0-or-later), so those distributed
+    # binaries are GPL-3.0-or-later; the patched portal frontend is LGPL.
+    license+=('GPL-3.0-or-later' 'LGPL-2.1-or-later')
     depends=("canopa-compositor=$pkgver-$pkgrel" niri bash python systemd dbus
         alsa-lib libpulse libxkbcommon wayland pam polkit gtk4 gstreamer
         gst-plugins-base-libs gst-plugins-good gst-libav at-spi2-core

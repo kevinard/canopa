@@ -83,8 +83,9 @@ patches together. Never update hashes just to suppress an unexpected difference.
 
 The experimental `niri-remote-touch` recipe adds contact ownership, physical
 device bookkeeping and an FD-owned mapped touch transport to the complete
-keyboard companion below. Public portal touch remains unimplemented and
-unadvertised; packaging retains the preceding accepted companion. Its maintained
+keyboard companion below, with the public RemoteDesktop touch implementation of
+ADR0117. The Arch `canopa-compositor` package builds this recipe, so it is the
+compositor every packaged session runs, despite its experimental status. Its maintained
 std-only checks run in the workspace gate. See
 [ADR0117](adr/0117-remote-touch-ownership-and-transport.md) and the recipe README
 for the exact archive delta, transport and native acceptance scope.

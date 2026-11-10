@@ -147,4 +147,7 @@ debug = "full"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
-panic = "abort"
+# Unwind like the tested dev profile. Files, Notify and the portal contain
+# worker panics with catch_unwind and report them instead of losing the
+# process; abort would skip that recovery only in shipped builds.
+panic = "unwind"

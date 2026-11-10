@@ -20,11 +20,16 @@ The combined repository preserves the original source licenses:
   with both texts in their crate directories.
 - Shared workspace tooling and integration documentation: MIT OR Apache-2.0,
   using the texts in `crates/canopa-notify/`.
+- Canopa Shell and Canopa Settings link the GPL-3.0-or-later `niri-ipc` crate.
+  Their source stays under its MIT or MIT OR Apache-2.0 terms, but distributed
+  executables of those two applications are covered by GPL-3.0-or-later as a
+  whole. The Arch `canopa` package declares that license accordingly.
 - Vendored dependencies retain their upstream notices and license texts in each
   `vendor/` directory. See `docs/vendor-maintenance.md` for provenance.
-- The optional Niri source-overlay recipe preserves Niri's GPL-3.0-or-later and
-  Smithay's MIT texts in `vendor/source-overlays/niri-source-cancellation/`.
-  Its companion executable is built separately from the Canopa applications.
+- The Niri source-overlay recipes share Niri's GPL-3.0-or-later and Smithay's MIT
+  texts in `vendor/source-overlays/niri-source-cancellation/`. The Arch
+  `canopa-compositor` package builds the `niri-remote-touch` recipe and is
+  GPL-3.0-or-later. Its executable is built separately from the Canopa applications.
 - The optional private CUPS client preserves the upstream Apache-2.0 license and
   CUPS exceptions in `vendor/source-overlays/cups-authentication/LICENSE` and
   `NOTICE`. Bundles containing this modified client include those original texts,

@@ -21,8 +21,11 @@ activation context, retired-window cleanup, and the AT-SPI cache signal correcti
 remain local. Archive checksums, upstream commits, file hashes and patches are
 recorded together; see ../vendor-maintenance.md.
 
-The root release profile adopts Niribar's thin LTO, one codegen unit, symbol stripping,
-and abort-on-panic policy for both shipped applications. Core-only Notify remains a
+The root release profile adopts Niribar's thin LTO, one codegen unit and symbol
+stripping. Release builds unwind on panic, like the tested dev profile: Files, Notify
+and the portal contain worker panics with `catch_unwind` and report a failed job,
+reader or worker instead of losing the process. The original abort-on-panic policy
+made that recovery unreachable in shipped builds only (2026-11 review). Core-only Notify remains a
 separate package-selected build. Cargo's additive feature unification means a
 combined GUI build also enables the shell's theme detection in the shared renderer;
 Notify-only builds retain their previous disabled default. Validate core and combined
