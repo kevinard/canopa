@@ -106,3 +106,5 @@ selection stays an explicit deployment operation.
 The public RemoteDesktop specification defines the public layer:
 [API](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html)
 and [backend](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.RemoteDesktop.html).
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. Remote touch is now the `canopa/remote-input-touch` branch of [kevinard/niri](https://github.com/kevinard/niri), with a tracking PR in the fork, and is merged into the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/remote-input-touch` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

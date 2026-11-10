@@ -65,3 +65,5 @@ selects a compositor.
 [The capture-owner ledger](../../.scratch/xdg-portals/capture-owner/README.md)
 records exact binaries, red controls, source inputs, startup failures and current
 shared/native results. The entire portal replacement goal remains open.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The pointer stack with creator-owned recording cleanup is now the `canopa/remote-input-pointer` branch of [kevinard/niri](https://github.com/kevinard/niri) (stacked on `canopa/cast-creator-lifetime` and `canopa/pointer-button-ownership`), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/remote-input-pointer` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

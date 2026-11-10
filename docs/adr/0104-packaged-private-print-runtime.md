@@ -51,3 +51,5 @@ previous non-green workspace result remains recorded; tooling/documentation chec
 cover this change. The Ubuntu release workflow is configured but has not run in
 this local validation. Automatic Qt routing stays deferred, and the full
 eighteen-interface goal remains active.
+
+Update, 2026-11-10: the `cups-authentication` overlay recipe was removed with `vendor/`. The packaged client is now the pinned fork of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

@@ -99,3 +99,5 @@ unchanged. Evidence: public-keyboard-dark-03 and public-keyboard-light-02 under
 the phase86 directory. Touch remains declined. The existing development archive
 and live desktop selection are unchanged; full shared workspace acceptance remains
 separate from these scoped native results.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. Keyboard capture is now the `canopa/input-capture-keyboard` branch of [kevinard/niri](https://github.com/kevinard/niri), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/input-capture-keyboard` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

@@ -31,3 +31,5 @@ establish working video.
 
 References: [pinned producer implementation](https://github.com/niri-wm/niri/blob/b22eb842ca9506d4e2ff997b116031cdb3f650f8/src/screencasting/pw_utils.rs),
 [GStreamer consumer transitions](https://github.com/PipeWire/pipewire/blob/1.6.10/src/gst/gstpipewiresrc.c).
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The resume correction is now the `canopa/screencast-resume` branch of [kevinard/niri](https://github.com/kevinard/niri), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/screencast-resume` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

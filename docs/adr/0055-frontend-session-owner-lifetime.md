@@ -76,3 +76,5 @@ the existing incremental root target and the original failure evidence.
 
 API references: [GDBusProxy owner notifications](https://docs.gtk.org/gio/property.DBusProxy.g-name-owner.html)
 and [bounded asynchronous calls](https://docs.gtk.org/gio/method.DBusConnection.call.html).
+
+Update, 2026-11-10: the `xdg-desktop-portal-input-order` overlay recipe was removed with `vendor/`. The session-owner patch is now the `canopa/session-owner-lifetime` branch of [kevinard/xdg-desktop-portal](https://github.com/kevinard/xdg-desktop-portal), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-xdg-portal-compat.py` builds (with the release tarball's Meson subprojects). See ../vendor-maintenance.md#portal-frontend.

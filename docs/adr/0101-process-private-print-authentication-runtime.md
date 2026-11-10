@@ -104,7 +104,7 @@ CUPS Basic/PAM; it does not establish native cupsd Digest/PAM. The namespace dev
 executor remains protocol-only. Prompt/deadline/resource/file-output lifetime,
 broader connection/device/package and physical-printer acceptance remain open.
 
-See [the overlay](../../vendor/source-overlays/cups-authentication/README.md),
+See [the overlay](../vendor-maintenance.md#cups-client-ipp-backend-and-receiver),
 [current integration](../../.scratch/xdg-portals/PHASE62-LIVE.md) and
 [full authenticated printing](../../.scratch/xdg-portals/issues/04-authenticated-printing.md).
 Protocol references: [RFC7616](https://www.rfc-editor.org/rfc/rfc7616.html) and
@@ -116,3 +116,5 @@ the unchanged Rust binary; the preceding receipts retain their historical image
 pins. See [quoted-field acceptance](0103-quoted-printer-authentication-fields.md)
 for current validation, including the non-green workspace result and separately
 passing post-stages.
+
+Update, 2026-11-10: the `cups-authentication` overlay recipe was removed with `vendor/`. Each authentication change is now one of the `canopa/auth-*`, `canopa/digest-*` and `canopa/http-incomplete-headers` topics of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

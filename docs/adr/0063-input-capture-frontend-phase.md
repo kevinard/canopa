@@ -70,3 +70,5 @@ The [InputCapture plan](../../.scratch/xdg-portals/input-capture/PLAN.md) retain
 keyboard/touch, broader capture/failure/physical testing, companion distribution
 and the full eighteen-interface roadmap. The repeated Files failures remain
 unresolved, with their cause unestablished; scoped frontend success does not clear them.
+
+Update, 2026-11-10: the `xdg-desktop-portal-input-order` overlay recipe was removed with `vendor/`. The InputCapture phase patch is now the `canopa/input-capture-enable-keeps-active` and `canopa/input-capture-release-waits-for-signals` branches of [kevinard/xdg-desktop-portal](https://github.com/kevinard/xdg-desktop-portal), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-xdg-portal-compat.py` builds (with the release tarball's Meson subprojects). See ../vendor-maintenance.md#portal-frontend.

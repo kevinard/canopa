@@ -59,3 +59,5 @@ does not establish a green workspace gate. Settings, CLI, configuration and vend
 post-checks pass.
 General driverless controls, further resolutions/units, physical devices and
 deployment remain open. Automatic Qt integration remains deferred.
+
+Update, 2026-11-10: the `cups-authentication` overlay recipe was removed with `vendor/`. The margin correction is now the `canopa/custom-media-bottom-margin` topic of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

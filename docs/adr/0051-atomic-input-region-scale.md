@@ -69,3 +69,5 @@ production legacy pointer transport, and fresh unchecked Iced consent.
 Evidence: [scale ledger](../../.scratch/xdg-portals/ei-scale/README.md),
 [public stream pairing](0050-pointer-notify-and-stream-pairing.md),
 [private worker ownership](0049-capture-bound-pointer-workers.md).
+
+Update, 2026-11-10: the source-overlay recipes were removed with `vendor/`; adopted compositor changes are branches of kevinard/niri, whose pinned `canopa/main` the packaged compositor is built from (`scripts/build-niri.py`). See ../vendor-maintenance.md#niri-compositor.

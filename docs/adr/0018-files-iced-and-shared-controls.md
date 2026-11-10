@@ -44,3 +44,5 @@ Record and verify migration slices against real Niri windows in both themes and
 narrow/wide tiles. Re-run the complete native acceptance matrix for Iced and
 update packaging/runtime dependencies after the replacement is working. The full
 file-manager goal and the outstanding durability/ownership gates remain active.
+
+Update, 2026-11-10: the Iced and winit changes now live in the kevinard/iced and kevinard/winit GitHub forks rather than `vendor/`; see ../vendor-maintenance.md.

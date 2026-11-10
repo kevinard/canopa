@@ -56,3 +56,5 @@ and [the remaining work](../../.scratch/xdg-portals/print/authentication-connect
 Runtime packaging/NOTICE, outer supervision and repeated authenticated resource
 use, driverless/device and Flatpak acceptance remain open. Automatic Qt routing
 stays deferred, and the full eighteen-interface goal remains active.
+
+Update, 2026-11-10: the `cups-authentication` overlay recipe was removed with `vendor/`. The quoted-pair change is now the `canopa/auth-quoted-pairs` topic of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

@@ -76,3 +76,5 @@ FD dispatch/backpressure. They are not yet integrated into the compositor or a p
 The [lease ledger](../../.scratch/xdg-portals/global-shortcuts/LEASE-PLAN.md) and
 [evidence](../../.scratch/xdg-portals/global-shortcuts/evidence.json) retain exact
 pins, failed controls, staged artifacts and outstanding acceptance work.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The forwarded-press-aware source teardown is now the `canopa/keyboard-release-forwarded` branch of [kevinard/niri](https://github.com/kevinard/niri) (its Smithay change is kevinard/smithay `canopa/keyboard-release-forwarded`), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/keyboard-release-forwarded` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

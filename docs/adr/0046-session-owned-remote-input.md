@@ -201,3 +201,5 @@ and acceptance use the private desktop and harmless receivers.
 See [RemoteDesktop evidence](../../.scratch/xdg-portals/REMOTE-DESKTOP.md),
 [fork maintenance](../vendor-maintenance.md), and
 [ScreenCast ownership](0042-screencast-sessions-and-consent.md).
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The keyboard lease service is now the `canopa/remote-input-keyboard` branch of [kevinard/niri](https://github.com/kevinard/niri) (its Smithay change is kevinard/smithay `canopa/keyboard-keymap-id`), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/remote-input-keyboard` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

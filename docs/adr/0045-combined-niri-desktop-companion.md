@@ -56,3 +56,5 @@ preceded successful minimized and complete runs. Causes of these startup failure
 are unproven. Retain all results and keep deadlines unchanged; these observations
 do not establish a fully green matrix or production startup reliability. Exact
 checks and artifacts are in the portal distribution ledger.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The combined companion is now covered by the `canopa/fixes` branch of [kevinard/niri](https://github.com/kevinard/niri) (screencast resume plus the drag-source lifetime topic, with kevinard/smithay `canopa/dnd-source-lifetime`), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/fixes` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

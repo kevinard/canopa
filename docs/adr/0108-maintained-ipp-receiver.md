@@ -61,6 +61,8 @@ compile/loader/native validation. No new Rust feature/profile graph or cache pur
 was used. Older receiver executables are losslessly archived after checksum
 verification; current binaries remain in the shared store.
 
-See [the recipe](../../vendor/source-overlays/cups-ipp-receiver/README.md),
+See [the recipe](../vendor-maintenance.md#cups-client-ipp-backend-and-receiver),
 [evidence](../../.scratch/xdg-portals/print/receiver-maintenance-evidence.json) and
 [continuation checkpoint](../../.scratch/xdg-portals/PHASE71-LIVE.md).
+
+Update, 2026-11-10: the `cups-ipp-receiver` overlay recipe was removed with `vendor/`. The receiver correction is now the `canopa/ippeveprinter-media-range` and `canopa/ippeveprinter-document-formats` topics of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

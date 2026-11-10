@@ -33,3 +33,5 @@ This is a structural consolidation. Notify and Niribar remain separate processes
 with independent restart lifetimes, existing runtime paths and unchanged domain
 ownership. Validation covers both the isolated Notify core profile and combined
 workspace, moved desktop tooling, and release assembly from the new paths.
+
+Update, 2026-11-10: root `vendor/` no longer exists. Shared crate forks are GitHub forks pinned by git `rev` in the root manifest, and the separately built compositor, portal frontend and CUPS components are pinned fork archives in `packaging/forks.json`. See ../vendor-maintenance.md.

@@ -62,3 +62,5 @@ records exact build, source, native and broader-check evidence. The initial
 staged core passed 51 tests; the canonical core adds actual-source checks for
 modifier triggers and bulk retirement. Physical-device, complete layout/lifetime,
 public portal/Iced and distribution acceptance remain open.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The shortcut lease service is now the `canopa/global-shortcuts` branch of [kevinard/niri](https://github.com/kevinard/niri), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/global-shortcuts` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

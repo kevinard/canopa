@@ -60,3 +60,5 @@ Evidence and remaining work: [portal source identity evidence](../../.scratch/xd
 [capture mapping ledger](../../.scratch/xdg-portals/POINTER-MAPPING.md),
 [ScreenCast consent](0042-screencast-sessions-and-consent.md),
 [RemoteDesktop lifetime](0046-session-owned-remote-input.md).
+
+Update, 2026-11-10: the source-overlay recipes were removed with `vendor/`; the compositor changes that were adopted are branches of kevinard/niri, built from its pinned `canopa/main` by `scripts/build-niri.py`. See ../vendor-maintenance.md#niri-compositor.

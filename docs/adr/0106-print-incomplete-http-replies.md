@@ -75,3 +75,5 @@ this change. Print advertisement, broader connection compatibility, driverless
 and physical devices, actual Flatpak, release-workflow execution and deployment
 remain separate. The full eighteen-interface goal stays active; automatic Qt
 integration remains deferred.
+
+Update, 2026-11-10: the `cups-authentication` overlay recipe was removed with `vendor/`. The incomplete-header change is now the `canopa/http-incomplete-headers` topic of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

@@ -70,7 +70,7 @@ that capability work and general multiple-unit portal acceptance remain open.
 Automatic Qt integration stays deferred.
 
 Recipes and operator boundaries are documented in
-[the overlay](../../vendor/source-overlays/cups-ipp-backend/README.md) and
+[the overlay](../vendor-maintenance.md#cups-client-ipp-backend-and-receiver) and
 [runtime packaging](../print-runtime.md). Baselines, native receipts and source-only
 replays are indexed in
 [the backend ledger](../../.scratch/xdg-portals/print/ipp-backend-evidence.json).
@@ -78,3 +78,5 @@ The final shared gate passes strict Clippy and Portal's 439 library/55 integrati
 tests. Its only failing Cargo target retains the same ten Files integration
 failures. Settings, CLI, configuration and vendor post-checks pass; the full
 workspace gate is not green.
+
+Update, 2026-11-10: the `cups-ipp-backend` overlay recipe was removed with `vendor/`. The resolution correction is now the `canopa/ipp-backend-resolution` and `canopa/ipp-backend-capability-guard` topics of [kevinard/cups](https://github.com/kevinard/cups), with a tracking PR in the fork; the client, IPP backend and receiver are all built from its pinned `canopa/main` commit (`packaging/forks.json`). Bundles carry the original LICENSE/NOTICE and a summary naming the fork commit instead of patch files. See ../vendor-maintenance.md#cups-client-ipp-backend-and-receiver.

@@ -98,3 +98,5 @@ Files executable, with source inputs unchanged; the initial prerequisite failure
 is retained. The full workspace gate remains red on the same ten Files tests.
 Pointer continuation has a separate unadopted failing control and liveness probe;
 it adds no advertised capability. The portal ledger retains those scoped results.
+
+Update, 2026-11-10: the `xdg-desktop-portal-input-order` overlay recipe was removed with `vendor/`. Ordered input admission is now the `canopa/remote-desktop-input-order` branch of [kevinard/xdg-desktop-portal](https://github.com/kevinard/xdg-desktop-portal), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-xdg-portal-compat.py` builds (with the release tarball's Meson subprojects). See ../vendor-maintenance.md#portal-frontend.

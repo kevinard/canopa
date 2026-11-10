@@ -83,3 +83,5 @@ records exact source/binary pins, the missing-capability baseline, initial build
 and fixture failures, successful checks and remaining work. The full 18-interface
 goal stays open. Keyboard capture, EI delivery, v2 session ownership/Clipboard
 active-phase integration and truthful Iced consent/controls are required next.
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The pointer capture lease is now the `canopa/input-capture` branch of [kevinard/niri](https://github.com/kevinard/niri), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/input-capture` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

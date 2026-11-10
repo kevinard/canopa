@@ -138,3 +138,5 @@ commit 8ede03f it builds the cumulative `niri-remote-touch` recipe on Niri
 `b22eb842` and Smithay `8a270232`, which carries this drag-source correction
 together with the later desktop, sharing and remote-input layers
 (`scripts/build-niri-screencast.py --overlay niri-remote-touch`).
+
+Update, 2026-11-10: the `vendor/` source-overlay recipes and their verifier were removed. The Smithay drag-source lifetime correction is now the `canopa/dnd-source-lifetime` branch of [kevinard/niri](https://github.com/kevinard/niri) (its Smithay change is kevinard/smithay `canopa/dnd-source-lifetime`), with a tracking PR in the fork, and is part of the pinned `canopa/main` commit that `scripts/build-niri.py` builds for the packaged compositor (`packaging/forks.json`). `--ref canopa/dnd-source-lifetime` rebuilds the topic for comparison. See ../vendor-maintenance.md#niri-compositor.

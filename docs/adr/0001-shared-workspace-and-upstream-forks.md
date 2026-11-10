@@ -27,6 +27,12 @@ forks under `kevinard/`, with one tracking PR per change and the root manifest
 pinning each fork commit by git `rev`. Provenance is now the git history of
 each fork. See ../vendor-maintenance.md.
 
+Update, 2026-11-10 (later): the source-overlay recipes for the separately built
+compositor, portal frontend and CUPS components followed. They are built from
+the kevinard/niri (with kevinard/smithay), kevinard/xdg-desktop-portal and
+kevinard/cups forks, pinned by commit and source-archive SHA-256 in
+`packaging/forks.json`; `vendor/` no longer exists.
+
 The root release profile adopts Niribar's thin LTO, one codegen unit and symbol
 stripping. Release builds unwind on panic, like the tested dev profile: Files, Notify
 and the portal contain worker panics with `catch_unwind` and report a failed job,
