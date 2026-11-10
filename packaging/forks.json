@@ -1,0 +1,74 @@
+{
+  "niri": {
+    "description": "Canopa compositor: Niri with Canopa's drag-source, screencast, remote-input, capture and shortcut-lease changes",
+    "repository": "https://github.com/kevinard/niri",
+    "upstream": "https://github.com/niri-wm/niri",
+    "branch": "canopa/main",
+    "commit": "9389bbaaa37ba91b9c110ebe457a2f6386e69299",
+    "base": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
+    "archive": "niri-9389bbaaa37ba91b9c110ebe457a2f6386e69299.tar.gz",
+    "url": "https://codeload.github.com/kevinard/niri/tar.gz/9389bbaaa37ba91b9c110ebe457a2f6386e69299",
+    "archive_sha256": "1d6cb7383198ccb37b27e9046d120900b5b0d1b71c9eb34fbe57fe5500b5eb28",
+    "archive_root": "niri-9389bbaaa37ba91b9c110ebe457a2f6386e69299",
+    "license": "GPL-3.0-or-later",
+    "notices": {
+      "LICENSE": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"
+    },
+    "cargo_git": {
+      "smithay": {
+        "repository": "https://github.com/kevinard/smithay",
+        "upstream": "https://github.com/Smithay/smithay",
+        "branch": "canopa/main",
+        "commit": "55163887ca3a60620d15daad26c132e721ef587c",
+        "base": "8a270232f1bfc416c781273c98a3f52a812a0bba",
+        "packages": ["smithay", "smithay-drm-extras"],
+        "license": "MIT",
+        "notices": {
+          "LICENSE.txt": "331891ba7afe9ea12e7f9834bdb37db7abd9131183ed85215f6b4109b0303877"
+        }
+      }
+    }
+  },
+  "xdg-desktop-portal": {
+    "description": "Portal frontend: xdg-desktop-portal with ordered RemoteDesktop input, session-owner lifetime, InputCapture phase and USB grant ownership",
+    "repository": "https://github.com/kevinard/xdg-desktop-portal",
+    "upstream": "https://github.com/flatpak/xdg-desktop-portal",
+    "branch": "canopa/main",
+    "commit": "5272cf5b3e0ad62a0f71213f4c87c728bd142720",
+    "base": "1d20fadc304f6601452b5db65ed91197dba77041",
+    "archive": "xdg-desktop-portal-5272cf5b3e0ad62a0f71213f4c87c728bd142720.tar.gz",
+    "url": "https://codeload.github.com/kevinard/xdg-desktop-portal/tar.gz/5272cf5b3e0ad62a0f71213f4c87c728bd142720",
+    "archive_sha256": "4c12e31e8201706365fb0b84df9e4799ce99b228d06832a7db76030d8ac4f0ce",
+    "archive_root": "xdg-desktop-portal-5272cf5b3e0ad62a0f71213f4c87c728bd142720",
+    "license": "LGPL-2.1-or-later",
+    "notices": {
+      "COPYING": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    "subprojects": {
+      "description": "Meson subprojects bundled in the official release of the fork base; a git archive lacks them",
+      "archive": "xdg-desktop-portal-1.22.1.tar.xz",
+      "url": "https://github.com/flatpak/xdg-desktop-portal/releases/download/1.22.1/xdg-desktop-portal-1.22.1.tar.xz",
+      "archive_sha256": "d4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3",
+      "archive_root": "xdg-desktop-portal-1.22.1",
+      "paths": ["subprojects/gvdb", "subprojects/libglnx"]
+    }
+  },
+  "cups": {
+    "description": "Optional private CUPS client, matching IPP backend and test-only IPP receiver",
+    "repository": "https://github.com/kevinard/cups",
+    "upstream": "https://github.com/OpenPrinting/cups",
+    "branch": "canopa/main",
+    "commit": "aed09bb63fd0c78639527bda451cbba9bf276d79",
+    "base": "ef80eeaea51430a055948240eea3f28ef5354edf",
+    "version": "2.4.20",
+    "archive": "cups-aed09bb63fd0c78639527bda451cbba9bf276d79.tar.gz",
+    "url": "https://codeload.github.com/kevinard/cups/tar.gz/aed09bb63fd0c78639527bda451cbba9bf276d79",
+    "archive_sha256": "979871d4c420fd55e3dfd36c61842fa08223e79716bb854674ae8b6f3fb5a60a",
+    "archive_root": "cups-aed09bb63fd0c78639527bda451cbba9bf276d79",
+    "license": "Apache-2.0",
+    "notices": {
+      "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "NOTICE": "977206f041b9a6f47ac00531e1242c0fab7063da71178f8d868b167b70866b6d"
+    }
+  }
+}

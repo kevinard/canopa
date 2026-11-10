@@ -33,14 +33,15 @@ def stage(destination, binaries, compositor=None, component="desktop", frontend=
     def install_companion(receipt, kind, package, executable, provenance):
         if receipt is None:
             raise ValueError(f"the {kind} companion requires a build receipt")
-        binary, metadata = desktop_sharing.verified_build(receipt, kind)
-        sources, recipe = desktop_sharing.source_assets(kind, metadata)
+        binary, metadata, notices = desktop_sharing.verified_build(receipt, kind)
         install(binary, executable, True)
-        for relative, source in sources.items():
+        # Original license texts from the fork sources (and Niri's Smithay fork).
+        for relative, source in notices.items():
             install(source, f"usr/share/licenses/{package}/{relative}")
         target = destination / "usr/share/canopa" / provenance
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps({"source": recipe, "binary_sha256": metadata["sha256"]}, indent=2) + "\n")
+        record = {"source": desktop_sharing.source_record(kind, metadata), "binary_sha256": metadata["sha256"]}
+        target.write_text(json.dumps(record, indent=2) + "\n")
 
     if component == "compositor":
         install_companion(compositor, "niri", "canopa-compositor", "usr/lib/canopa/niri",

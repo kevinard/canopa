@@ -35,15 +35,20 @@ def run(args, result):
         passed('optional-absence-accepted-required-absence-rejected')
 
         original = json.loads(args.niri_build.read_text())
+        inputs = (args.niri_build.parent / 'source-inputs.json').read_bytes()
         for label, edit in [
-                ('old-capture-recipe', lambda r: r.update(overlay='niri-desktop-compat')),
-                ('stale-recipe', lambda r: r.update(recipe_sha256='0' * 64)),
+                ('unpinned-commit', lambda r: r['origin'].update(commit='0' * 40)),
+                ('other-fork', lambda r: r.update(fork='cups')),
                 ('wrong-executable', lambda r: r.update(binary_sha256='0' * 64)),
-                ('changed-source', lambda r: r['inputs']['niri'].update({'Cargo.toml': '0' * 64}))]:
+                ('changed-source', lambda r: r.update(source_inputs_sha256='0' * 64)),
+                ('other-smithay', lambda r: r['cargo_git']['smithay'].update(commit='0' * 40)),
+                ('missing-notice', lambda r: r['notices'].pop('smithay/LICENSE.txt'))]:
             changed = copy.deepcopy(original)
             edit(changed)
-            receipt = root / (label + '.json')
+            (root / label).mkdir()
+            receipt = root / label / 'canopa-build.json'
             receipt.write_text(json.dumps(changed))
+            (root / label / 'source-inputs.json').write_bytes(inputs)
             refused(lambda: package.stage(bundle, receipt, args.frontend_build))
             assert not bundle.exists(), 'Refused build must not create a partial component'
             passed(label + '-refused-before-staging')
@@ -112,21 +117,23 @@ def run(args, result):
         package.check(relocated, required=True)
         passed('self-consistent-but-incomplete-routing-refused')
         result['manifest'] = json.loads(saved_manifest)
-        incomplete = copy.deepcopy(result['manifest']['components'])
-        incomplete['niri']['overlay'] = 'niri-desktop-pointer'
-        refused(lambda: package.assets(incomplete, package.INTERFACES + package.EXTRA_INTERFACES))
-        passed('extra-portals-refuse-a-compositor-without-shortcut-and-capture-leases')
-        if original['overlay'] in package.CAPTURE_SHORTCUT_OVERLAYS:
-            extra = root / 'extra'
-            package.stage(extra, args.niri_build, args.frontend_build, extra_portals=True)
-            package.check(extra, require_extra_portals=True)
-            manifest = json.loads((extra / package.MANIFEST).read_text())
-            assert manifest['interfaces'] == list(package.INTERFACES + package.EXTRA_INTERFACES)
-            fragment = (extra / package.PROFILE / 'portals.conf.fragment').read_text()
-            assert 'default=' not in fragment and 'org.freedesktop.impl.portal.Print=' not in fragment
-            result['extra_manifest'] = manifest
-            passed('all-six-optional-interfaces-and-explicit-routing-verified')
-
+        unpinned = copy.deepcopy(result['manifest']['components'])
+        unpinned['niri']['upstream']['commit'] = '0' * 40
+        refused(lambda: package.assets(unpinned, package.INTERFACES + package.EXTRA_INTERFACES))
+        passed('manifest-refuses-a-compositor-other-than-the-pinned-fork')
+        extra = root / 'extra'
+        package.stage(extra, args.niri_build, args.frontend_build, extra_portals=True)
+        package.check(extra, require_extra_portals=True)
+        manifest = json.loads((extra / package.MANIFEST).read_text())
+        assert manifest['interfaces'] == list(package.INTERFACES + package.EXTRA_INTERFACES)
+        fragment = (extra / package.PROFILE / 'portals.conf.fragment').read_text()
+        assert 'default=' not in fragment and 'org.freedesktop.impl.portal.Print=' not in fragment
+        notices = sorted(str(path.relative_to(extra / package.NOTICES)) for path in (extra / package.NOTICES).rglob('*')
+                         if path.is_file())
+        assert notices == ['frontend/source.json', 'frontend/xdg-desktop-portal/COPYING', 'niri/niri/LICENSE',
+                           'niri/smithay/LICENSE.txt', 'niri/source.json'], notices
+        result['extra_manifest'] = manifest
+        passed('all-six-optional-interfaces-explicit-routing-and-fork-notices-verified')
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

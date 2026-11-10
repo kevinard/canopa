@@ -61,16 +61,23 @@ class SystemInstallTests(unittest.TestCase):
             path.chmod(0o755)
         self.frontend = self.root / 'frontend-build.json'
         self.compositor = self.root / 'niri-build.json'
-        builds = {
-            self.frontend: ('frontend', 'xdg-desktop-portal-input-order'),
-            self.compositor: ('niri', 'niri-remote-touch'),
-        }
+        builds = {self.frontend: 'frontend', self.compositor: 'niri'}
+        notice = self.root / 'LICENSE'
+        notice.write_text('Original fork license\n')
 
         def verify_build(receipt, kind):
-            expected_kind, overlay = builds[receipt]
-            self.assertEqual(kind, expected_kind)
-            _, recipe_hash = install.desktop_sharing.recipe(overlay)
-            return self.bin / 'canopa-shell', dict(overlay=overlay, recipe_sha256=recipe_hash, sha256='a' * 64)
+            self.assertEqual(kind, builds[receipt])
+            pin = install.desktop_sharing.fork_sources.pin(install.desktop_sharing.FORKS[kind])
+            metadata = dict(fork=install.desktop_sharing.FORKS[kind],
+                            upstream={key: pin[key] for key in install.desktop_sharing.fork_sources.ORIGIN_FIELDS},
+                            sha256='a' * 64)
+            if 'cargo_git' in pin:
+                metadata['cargo_git'] = {name: {key: spec[key] for key in ('repository', 'commit', 'packages')}
+                                         for name, spec in pin['cargo_git'].items()}
+            if 'subprojects' in pin:
+                metadata['subprojects'] = {key: value for key, value in pin['subprojects'].items() if key != 'description'}
+            notices = {Path(name): notice for name in install.desktop_sharing.expected_notices(kind)}
+            return self.bin / 'canopa-shell', metadata, notices
 
         verifier = mock.patch.object(install.desktop_sharing, 'verified_build', side_effect=verify_build)
         verifier.start()
@@ -115,6 +122,10 @@ class SystemInstallTests(unittest.TestCase):
             )
         })
         self.assertTrue(os.access(destination / 'usr/lib/canopa/xdg-desktop-portal', os.X_OK))
+        self.assertTrue((destination / 'usr/share/licenses/canopa/xdg-desktop-portal/COPYING').is_file())
+        frontend = json.loads((destination / 'usr/share/canopa/portal-frontend-provenance.json').read_text())
+        self.assertEqual(frontend['source']['upstream']['repository'], 'https://github.com/kevinard/xdg-desktop-portal')
+        self.assertEqual(frontend['source']['subprojects']['paths'], ['subprojects/gvdb', 'subprojects/libglnx'])
         self.assertFalse((destination / 'usr/lib/xdg-desktop-portal').exists())
         self.assertIn('ExecStart=/usr/lib/canopa/portal-frontend',
                       (units / 'xdg-desktop-portal.service.d/50-canopa.conf').read_text())
@@ -154,8 +165,15 @@ class SystemInstallTests(unittest.TestCase):
         self.assertTrue((compositor / 'usr/lib/canopa/niri').is_file())
         self.assertFalse((compositor / 'usr/bin/niri').exists())
         record = json.loads((compositor / 'usr/share/canopa/compositor-provenance.json').read_text())
-        self.assertEqual(record['source']['sources']['niri']['revision'], 'b22eb842ca9506d4e2ff997b116031cdb3f650f8')
+        pin = json.loads((ROOT / 'packaging/forks.json').read_text())['niri']
+        self.assertEqual(record['source']['upstream']['repository'], 'https://github.com/kevinard/niri')
+        self.assertEqual(record['source']['upstream']['commit'], pin['commit'])
+        self.assertEqual(record['source']['upstream']['archive_sha256'], pin['archive_sha256'])
+        self.assertEqual(record['source']['cargo_git']['smithay']['commit'], pin['cargo_git']['smithay']['commit'])
         self.assertEqual(len(record['binary_sha256']), 64)
+        licenses = compositor / 'usr/share/licenses/canopa-compositor'
+        self.assertEqual(sorted(str(path.relative_to(licenses)) for path in licenses.rglob('*') if path.is_file()),
+                         ['niri/LICENSE', 'smithay/LICENSE.txt'])
 
     def test_oo7_package_is_separate_and_preserves_other_portal_choices(self):
         destination = self.root / 'oo7'

@@ -11,7 +11,7 @@ import stat
 import struct
 import subprocess
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path('share/canopa/desktop-sharing.json')
@@ -21,11 +21,8 @@ PROFILE = Path('share/canopa/desktop-sharing')
 DESCRIPTOR = Path('share/xdg-desktop-portal/portals/canopa.portal')
 INTERFACES = ('ScreenCast', 'RemoteDesktop', 'Clipboard')
 EXTRA_INTERFACES = ('InputCapture', 'GlobalShortcuts', 'Usb')
-OVERLAYS = {
-    'niri': ('niri-desktop-pointer', 'niri-input-capture', 'niri-global-shortcuts', 'niri-input-capture-keyboard', 'niri-remote-touch'),
-    'frontend': ('xdg-desktop-portal-input-order',),
-}
-CAPTURE_SHORTCUT_OVERLAYS = ('niri-global-shortcuts', 'niri-input-capture-keyboard', 'niri-remote-touch')
+FORKS = {'niri': 'niri', 'frontend': 'xdg-desktop-portal'}
+SCHEMA = 2
 EXECUTABLES = {'niri': PROGRAMS / 'niri', 'frontend': PROGRAMS / 'xdg-desktop-portal'}
 
 
@@ -39,9 +36,29 @@ def regular(path):
         raise ValueError(f'Expected a regular file: {path}')
 
 
-def recipe(name):
-    record = vendor_sources.records(ROOT)[name]
-    return record, vendor_sources.digest(json.dumps(record, sort_keys=True).encode())
+def expected_notices(kind):
+    """Original license texts each pinned companion must ship, as {relative path: sha256}."""
+    fork = FORKS[kind]
+    pin = fork_sources.pin(fork)
+    notices = {f'{fork}/{name}': checksum for name, checksum in pin['notices'].items()}
+    for name, spec in pin.get('cargo_git', {}).items():
+        notices.update({f'{name}/{file}': checksum for file, checksum in spec['notices'].items()})
+    return notices
+
+
+def source_record(kind, component):
+    """Validate a packaged component's source identity against the current pin."""
+    fork = FORKS[kind]
+    pin = fork_sources.pin(fork)
+    expected = dict(fork=fork, upstream={key: pin[key] for key in fork_sources.ORIGIN_FIELDS})
+    if 'cargo_git' in pin:
+        expected['cargo_git'] = {name: {key: spec[key] for key in ('repository', 'commit', 'packages')}
+                                 for name, spec in pin['cargo_git'].items()}
+    if 'subprojects' in pin:
+        expected['subprojects'] = {key: value for key, value in pin['subprojects'].items() if key != 'description'}
+    if {key: component.get(key) for key in expected} != expected:
+        raise ValueError(f'Packaged {kind} companion is not the pinned fork build')
+    return expected
 
 
 def inspect_program(path):
@@ -64,61 +81,56 @@ def inspect_program(path):
 
 
 def verified_build(path, kind):
+    """Return (executable, metadata, {notice relative path: file}) for a pinned fork build."""
     path = path.resolve(strict=True)
     receipt = json.loads(path.read_text())
-    if receipt.get('overlay') not in OVERLAYS[kind]:
-        raise ValueError(f'Unsupported {kind} companion recipe')
-    record, recipe_hash = recipe(receipt['overlay'])
-    if (receipt.get('status') != 'built' or receipt.get('exit_code') != 0
-            or receipt.get('recipe_sha256') != recipe_hash):
-        raise ValueError(f'{kind} build is incomplete or its recipe is stale')
+    fork = FORKS[kind]
+    if receipt.get('fork') != fork or receipt.get('status') != 'built' or receipt.get('exit_code') != 0:
+        raise ValueError(f'{kind} build is incomplete or belongs to another fork')
+    pin = fork_sources.check_origin(receipt.get('origin', {}), fork)
     binary = Path(receipt['binary'])
     if not binary.is_absolute():
         raise ValueError('Build receipt must name an absolute executable path')
     regular(binary)
     if digest(binary) != receipt.get('binary_sha256'):
         raise ValueError(f'{kind} executable differs from its build receipt')
+    source = Path(receipt['source'])
+    if not source.is_absolute() or source.is_symlink() or not source.is_dir():
+        raise ValueError('Companion source root is unavailable')
+    inputs = fork_sources.read_inputs(path, receipt)
+    ignore = set()
+    if kind == 'frontend':
+        wraplock = source / 'subprojects/.wraplock'
+        if wraplock.exists() and wraplock.stat().st_size == 0 and not wraplock.is_symlink():
+            ignore.add('subprojects/.wraplock')
+    if fork_sources.inventory(source, ignore) != inputs:
+        raise ValueError(f'{fork} sources changed after the companion build')
+    metadata = dict(fork=fork, upstream={key: receipt['origin'][key] for key in fork_sources.ORIGIN_FIELDS})
     if kind == 'niri':
-        inputs = receipt['inputs']
-        sources = {name: Path(root) for name, root in receipt['sources'].items()}
-        binding = receipt['binding']
-        if (binding.get('other_locked_dependencies_unchanged') is not True
-                or digest(sources['niri'] / 'Cargo.lock') != receipt['lock_sha256']
-                or digest(sources['niri'] / 'Cargo.toml') != binding['manifest_prepared_sha256']):
-            raise ValueError('Niri dependency bindings differ from the verified build')
+        metadata['cargo_git'] = {name: {'repository': spec['repository'], 'commit': spec['commit'],
+                                        'packages': spec['packages']} for name, spec in pin['cargo_git'].items()}
+        locked = {package: {'repository': spec['repository'], 'commit': spec['commit'], 'query': 'rev=' + spec['commit']}
+                  for spec in pin['cargo_git'].values() for package in spec['packages']}
+        if receipt.get('cargo_git') != locked or inputs.get('Cargo.lock') != receipt.get('lock_sha256'):
+            raise ValueError('Niri lockfile git sources differ from the pinned forks')
     else:
-        inventory = json.loads((path.parent / 'source-inputs.json').read_text())
-        if (receipt.get('inputs_unchanged') is not True
-                or len(inventory) != receipt['source_file_count']
-                or vendor_sources.digest(json.dumps(inventory, sort_keys=True).encode()) != receipt['source_inputs_sha256']):
-            raise ValueError('Frontend source inventory differs from its build receipt')
-        inputs = {'xdg-desktop-portal': inventory}
-        sources = {'xdg-desktop-portal': Path(receipt['source'])}
-    if set(inputs) != set(record['sources']) or set(sources) != set(inputs):
-        raise ValueError('Companion build has an incomplete source inventory')
-    for name, inventory in inputs.items():
-        source = sources[name]
-        if not source.is_absolute() or source.is_symlink() or not source.is_dir():
-            raise ValueError('Companion source root is unavailable')
-        actual = {}
-        for file in source.rglob('*'):
-            if file.is_symlink():
-                raise ValueError('Companion source contains a symlink')
-            if file.is_file():
-                relative = str(file.relative_to(source))
-                if relative == 'subprojects/.wraplock' and file.stat().st_size == 0:
-                    continue
-                actual[relative] = digest(file)
-        if actual != inventory:
-            raise ValueError(f'{name} sources changed after the companion build')
-    for patch in record['patches']:
-        if any(inputs[patch['source']].get(name) != hashes['patched']
-               for name, hashes in patch['files'].items()):
-            raise ValueError('Companion build does not contain its canonical patches')
-    metadata = dict(overlay=receipt['overlay'], recipe_sha256=recipe_hash,
-                    profile=receipt['profile'], sha256=receipt['binary_sha256'],
-                    **inspect_program(binary))
-    return binary, metadata
+        metadata['subprojects'] = receipt.get('subprojects')
+    source_record(kind, metadata)
+    notices = receipt.get('notices', {})
+    if {name: value.get('sha256') for name, value in notices.items()} != expected_notices(kind):
+        raise ValueError(f'{kind} build notices differ from the pinned forks')
+    files = {}
+    for relative, value in notices.items():
+        notice = Path(value['path'])
+        if relative.startswith(fork + '/') and (notice != source / relative.split('/', 1)[1]
+                                                 or inputs.get(notice.name) != value['sha256']):
+            raise ValueError('Companion notice is not part of its verified source tree')
+        regular(notice)
+        if digest(notice) != value['sha256']:
+            raise ValueError('Companion notice differs from its build receipt')
+        files[Path(relative)] = notice
+    metadata.update(profile=receipt['profile'], sha256=receipt['binary_sha256'], **inspect_program(binary))
+    return binary, metadata, files
 
 
 def descriptor(interfaces=INTERFACES):
@@ -127,32 +139,10 @@ def descriptor(interfaces=INTERFACES):
     return base.replace('Interfaces=', 'Interfaces=' + additions, 1).encode()
 
 
-def source_assets(kind, component):
-    record, recipe_hash = recipe(component['overlay'])
-    if component['overlay'] not in OVERLAYS[kind] or component['recipe_sha256'] != recipe_hash:
-        raise ValueError('Packaged companion recipe differs from canonical provenance')
-    files = {}
-    for source, spec in record['sources'].items():
-        for asset in vendor_sources.license_assets(spec):
-            path = ROOT / asset['path']
-            regular(path)
-            if digest(path) != asset['sha256']:
-                raise ValueError('Companion notice differs from canonical provenance')
-            files[Path(source) / path.name] = path
-    for patch in record['patches']:
-        path = ROOT / patch['path']
-        regular(path)
-        if digest(path) != patch['sha256']:
-            raise ValueError('Companion patch differs from canonical provenance')
-        files[Path('patches') / path.name] = path
-    return files, record
-
-
 def assets(components, interfaces=INTERFACES):
+    """Repository routing files and generated data; notices come from the verified builds."""
     if interfaces not in (INTERFACES, INTERFACES + EXTRA_INTERFACES):
         raise ValueError('Unsupported optional portal selection')
-    if EXTRA_INTERFACES[0] in interfaces and components['niri']['overlay'] not in CAPTURE_SHORTCUT_OVERLAYS:
-        raise ValueError('Extra portals require the Niri GlobalShortcuts/InputCapture recipe')
     files = {}
     fragment = (ROOT / 'packaging/portal/desktop-sharing/portals.conf.fragment').read_bytes()
     if EXTRA_INTERFACES[0] in interfaces:
@@ -162,10 +152,14 @@ def assets(components, interfaces=INTERFACES):
     for name in ('canopa-screencast.lua', '90-canopa-screencast.conf'):
         files[PROFILE / 'wireplumber' / name] = ROOT / 'packaging/portal/desktop-sharing' / name
     for kind, component in components.items():
-        sources, record = source_assets(kind, component)
-        files.update({NOTICES / kind / relative: path for relative, path in sources.items()})
-        generated[NOTICES / kind / 'recipe.json'] = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
+        record = source_record(kind, component)
+        generated[NOTICES / kind / 'source.json'] = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
     return files, generated
+
+
+def notice_inventory(components):
+    return {NOTICES / kind / relative: checksum for kind in components
+            for relative, checksum in expected_notices(kind).items()}
 
 
 def safe_destination(bundle, relative):
@@ -180,10 +174,12 @@ def safe_destination(bundle, relative):
 
 def stage(bundle, niri, frontend, extra_portals=False):
     builds = {kind: verified_build(path, kind) for kind, path in [('niri', niri), ('frontend', frontend)]}
-    components = {kind: metadata for kind, (_, metadata) in builds.items()}
+    components = {kind: metadata for kind, (_, metadata, _) in builds.items()}
     interfaces = INTERFACES + EXTRA_INTERFACES if extra_portals else INTERFACES
     files, generated = assets(components, interfaces)
-    files.update({EXECUTABLES[kind]: binary for kind, (binary, _) in builds.items()})
+    files.update({EXECUTABLES[kind]: binary for kind, (binary, _, _) in builds.items()})
+    for kind, (_, _, notices) in builds.items():
+        files.update({NOTICES / kind / relative: notice for relative, notice in notices.items()})
     for relative in [PROGRAMS, PROFILE, MANIFEST, NOTICES]:
         path = safe_destination(bundle, relative)
         if path.exists():
@@ -203,7 +199,7 @@ def stage(bundle, niri, frontend, extra_portals=False):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         target.chmod(0o644)
-    manifest = dict(schema_version=1, interfaces=list(interfaces), components=components,
+    manifest = dict(schema_version=SCHEMA, interfaces=list(interfaces), components=components,
                     files={str(relative): digest(bundle / relative) for relative in [*files, *generated]})
     (bundle / MANIFEST).parent.mkdir(parents=True, exist_ok=True)
     (bundle / MANIFEST).write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
@@ -220,33 +216,34 @@ def check(bundle, required=False, require_extra_portals=False):
         return
     regular(safe_destination(bundle, MANIFEST))
     manifest = json.loads((bundle / MANIFEST).read_text())
-    if (manifest.get('schema_version') != 1 or manifest.get('interfaces') not in [list(INTERFACES), list(INTERFACES + EXTRA_INTERFACES)]
+    if (manifest.get('schema_version') != SCHEMA or manifest.get('interfaces') not in [list(INTERFACES), list(INTERFACES + EXTRA_INTERFACES)]
             or set(manifest.get('components', {})) != set(EXECUTABLES)):
         raise ValueError('Incomplete desktop-sharing manifest')
     interfaces = tuple(manifest['interfaces'])
     if require_extra_portals and interfaces != INTERFACES + EXTRA_INTERFACES:
         raise ValueError('Missing optional InputCapture/GlobalShortcuts/Usb selection')
     files, generated = assets(manifest['components'], interfaces)
-    expected = {str(p) for p in [*files, *generated, *EXECUTABLES.values()]}
+    notices = notice_inventory(manifest['components'])
+    expected = {str(p) for p in [*files, *generated, *notices, *EXECUTABLES.values()]}
     if set(manifest.get('files', {})) != expected:
         raise ValueError('Incomplete desktop-sharing file inventory')
     for name, checksum in manifest['files'].items():
         path = safe_destination(bundle, Path(name))
         regular(path)
-        if digest(path) != checksum:
+        if digest(path) != checksum or checksum != notices.get(Path(name), checksum):
             raise ValueError(f'Packaged desktop-sharing file changed: {name}')
     for relative, source in files.items():
         if (bundle / relative).read_bytes() != source.read_bytes():
             raise ValueError(f'Packaged companion notice or routing file changed: {relative}')
     for relative, data in generated.items():
         if (bundle / relative).read_bytes() != data:
-            raise ValueError(f'Packaged companion recipe or descriptor changed: {relative}')
+            raise ValueError(f'Packaged companion source record or descriptor changed: {relative}')
     for kind, relative in EXECUTABLES.items():
         metadata = manifest['components'][kind]
         actual = inspect_program(bundle / relative)
         if metadata['sha256'] != digest(bundle / relative) or any(metadata.get(k) != v for k, v in actual.items()):
             raise ValueError('Packaged companion executable metadata changed')
-    print('Release desktop sharing: both companions, routing, source recipes, patches and original notices verified.')
+    print('Release desktop sharing: both pinned fork companions, routing, source records and original notices verified.')
 
 
 def main():

@@ -1,69 +1,35 @@
 #!/usr/bin/env python3
-"""Check the canonical keyboard ownership module without another Cargo graph."""
+"""Check the keyboard ownership modules of the pinned Niri fork without another Cargo graph.
+
+The std-only modules are read from the pinned kevinard/niri archive
+(checksummed in packaging/forks.json), downloaded into --archives when absent.
+"""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 
 sys.dont_write_bytecode = True
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = 'niri-input-capture-keyboard'
-BASE = 'niri-global-shortcuts'
 MODULE = 'src/dbus/input_capture/keyboard.rs'
 MASKS = 'src/dbus/input_capture/masks.rs'
-DELTA = sorted([MODULE, 'src/dbus/input_capture/keys.rs', 'src/dbus/input_capture.rs',
-                'src/dbus/mod.rs', 'src/dbus/global_shortcuts.rs', 'src/input/mod.rs',
-                'src/handlers/virtual_keyboard.rs', MASKS])
-WORK = ROOT / 'target/vendor-tests/input-capture-keyboard'
-
-
-def canonical_source(record, module=MODULE):
-    return vendor_sources.added_file(ROOT, record, module)
-
-
-def inventory(source):
-    return {str(p.relative_to(source)): vendor_sources.digest(p.read_bytes())
-            for p in source.rglob('*') if p.is_file()}
-
-
-def verify_archives(archives, expected):
-    with tempfile.TemporaryDirectory(prefix='canopa-keyboard-source-check-') as directory:
-        base = vendor_sources.prepare(ROOT, archives, Path(directory) / 'base', BASE)
-        candidate = vendor_sources.prepare(ROOT, archives, Path(directory) / 'candidate', OVERLAY)
-        delta = {}
-        counts = {}
-        for name in base:
-            before, after = inventory(base[name]), inventory(candidate[name])
-            delta[name] = sorted(p for p in before.keys() | after.keys()
-                                 if before.get(p) != after.get(p))
-            counts[name] = len(after)
-        if delta != {'niri': DELTA, 'smithay': []}:
-            raise ValueError(f'Unexpected combined-recipe change: {delta}')
-        for module, body in expected.items():
-            if (candidate['niri'] / module).read_bytes() != body:
-                raise ValueError('Materialized ownership source differs from tested input')
-        return {'delta_from_combined_recipe': delta, 'source_file_counts': counts,
-                'archives_and_original_notices': 'verified', 'temporary_sources_removed': True}
+WORK = ROOT / 'target/fork-tests/input-capture-keyboard'
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--archives', type=Path,
-                        help='Also prove the full old/new materialization using cached archives')
+    parser.add_argument('--archives', type=Path, default=ROOT / 'target/fork-archives',
+                        help='Directory holding (or receiving) the pinned Niri fork archive')
     parser.add_argument('--output', type=Path, default=WORK / 'result.json')
     args = parser.parse_args()
-    errors = vendor_sources.check(ROOT)
-    if errors:
-        raise ValueError('\n'.join(errors))
-    record = vendor_sources.records(ROOT)[OVERLAY]
-    bodies = {module: canonical_source(record, module) for module in (MODULE, MASKS)}
-    archive_check = verify_archives(args.archives.resolve(), bodies) if args.archives else None
+    origin, archive = fork_sources.origin('niri', args.archives.resolve(), fetch=True)
+    bodies = {module: fork_sources.archive_member(archive, origin['archive_root'], module)
+              for module in (MODULE, MASKS)}
     WORK.mkdir(parents=True, exist_ok=True)
     for module, body in bodies.items():
         source = WORK / Path(module).name
@@ -78,11 +44,11 @@ def main():
         built = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
     code = built.returncode
     result = {'scope': 'pure compositor ownership core; no runtime keyboard capture claim',
-              'overlay': OVERLAY, 'source_sha256': {module: vendor_sources.digest(body) for module, body in bodies.items()},
-              'recipe_sha256': vendor_sources.digest(json.dumps(record, sort_keys=True).encode()),
+              'fork': origin['repository'], 'commit': origin['commit'], 'archive_sha256': origin['archive_sha256'],
+              'source_sha256': {module: fork_sources.digest(body) for module, body in bodies.items()},
               'compiler': subprocess.check_output(['rustc', '--version'], text=True).strip(),
               'compile_command': command, 'compile_exit_code': code,
-              'archive_check': archive_check, 'new_cargo_graph': False,
+              'new_cargo_graph': False,
               'live_session_changed': False}
     if not code:
         with test_log.open('w') as log:

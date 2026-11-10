@@ -1,98 +1,99 @@
 #!/usr/bin/env python3
-"""Build the pinned frontend input-order companion without installing it.
+"""Build the portal frontend from the pinned kevinard/xdg-desktop-portal fork without installing it.
 
-Run from the Canopa root. Archives and build tools must already be available.
-Use --reuse to continue the same verified source tree and Meson/Ninja cache.
+Run from the Canopa root. --archives must hold the fork's GitHub archive and
+the official release tarball of the fork base (both checksummed in
+packaging/forks.json); --download fetches missing ones. A git archive lacks the
+gvdb and libglnx Meson subprojects, so only those directories are taken from
+the release tarball and Meson never downloads. Build tools must already be
+available. Use --reuse to continue the same verified source tree and
+Meson/Ninja cache.
 """
 import argparse
-import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
-import tarfile
 
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-OVERLAY = "xdg-desktop-portal-input-order"
+FORK = "xdg-desktop-portal"
+# Meson creates an empty lock beside the bundled subprojects.
+IGNORED = frozenset({"subprojects/.wraplock"})
 
 
-def file_digest(path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+def expected_inputs(archive, record, subprojects, subproject_archive):
+    expected = fork_sources.archive_inventory(archive, record["archive_root"])
+    bundled = fork_sources.archive_inventory(subproject_archive, subprojects["archive_root"], subprojects["paths"])
+    if not bundled or set(bundled) & set(expected):
+        raise ValueError("Release subprojects are missing or overlap the fork sources")
+    return {**expected, **bundled}
 
 
-def verify_source(source, archives, record):
-    if source.is_symlink() or not source.is_dir():
-        raise ValueError("Prepared frontend source root must be a real directory")
-    spec = record["sources"]["xdg-desktop-portal"]
-    archive = archives / spec["archive"]
-    if file_digest(archive) != spec["archive_sha256"]:
-        raise ValueError("Frontend archive checksum mismatch")
-    prefix = spec["archive_root"] + "/"
-    with tarfile.open(archive) as contents:
-        expected = {member.name.removeprefix(prefix): vendor_sources.digest(contents.extractfile(member).read())
-                    for member in contents if member.isfile() and member.name.startswith(prefix)}
-    for patch in record["patches"]:
-        for name, hashes in patch["files"].items():
-            expected[name] = hashes["patched"]
-    actual = {}
-    for path in source.rglob("*"):
-        if path.is_symlink():
-            raise ValueError("Unexpected symlink in prepared frontend sources")
-        if path.is_file():
-            name = str(path.relative_to(source))
-            # Meson creates an empty lock beside the bundled subprojects.
-            if name == "subprojects/.wraplock" and path.stat().st_size == 0:
-                continue
-            actual[name] = file_digest(path)
-    if actual != expected:
-        raise ValueError("Prepared frontend source tree differs from its pinned recipe")
-    return expected
+def verify_source(source, expected):
+    wraplock = source / "subprojects/.wraplock"
+    if wraplock.exists() and (wraplock.is_symlink() or wraplock.stat().st_size):
+        raise ValueError("Unexpected Meson wrap lock contents")
+    if fork_sources.inventory(source, IGNORED) != expected:
+        raise ValueError("Prepared frontend source tree differs from the pinned fork and subprojects")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--archives", type=Path, required=True)
+    parser.add_argument("--download", action="store_true", help="Download missing pinned archives")
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--native-file", type=Path, help="Explicit Meson build-tool overrides")
     parser.add_argument("--prepare-only", action="store_true")
-    parser.add_argument("--reuse", action="store_true", help="Reuse this recipe's existing sources and build cache")
+    parser.add_argument("--reuse", action="store_true", help="Reuse this commit's existing sources and build cache")
     parser.add_argument("--release", action="store_true", help="Build the optimized distribution executable")
     args = parser.parse_args()
-    work, archives = args.work_dir.resolve(), args.archives.resolve()
-    roots = {ROOT / "target", Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")).resolve()}
-    if Path("/") in roots:
-        parser.error("the Cargo target root cannot be /")
-    if not (any(work.is_relative_to(root) for root in roots) or work.is_relative_to(Path("/tmp"))):
-        parser.error("--work-dir must be beneath the workspace/configured target or /tmp")
-    record = vendor_sources.records(ROOT)[OVERLAY]
-    recipe = vendor_sources.digest(json.dumps(record, sort_keys=True).encode())
+    try:
+        work = fork_sources.check_work_dir(args.work_dir)
+    except ValueError as error:
+        parser.error(str(error))
+    archives = args.archives.resolve()
+    pin = fork_sources.pin(FORK)
+    record, archive = fork_sources.origin(FORK, archives, fetch=args.download)
+    subprojects = dict(pin["subprojects"])
+    subproject_archive, _ = fork_sources.archive_file(archives, subprojects["archive"], subprojects["url"],
+                                                      subprojects["archive_sha256"], args.download)
+    subprojects.pop("description", None)
+    expected = expected_inputs(archive, record, subprojects, subproject_archive)
     path = work / "canopa-build.json"
-    source = work / record["sources"]["xdg-desktop-portal"]["archive_root"]
+    source = work / record["archive_root"]
+    previous = {}
     if args.reuse:
         previous = json.loads(path.read_text())
-        if previous["recipe_sha256"] != recipe:
-            raise ValueError("Existing build belongs to a different frontend recipe")
-        errors = vendor_sources.check(ROOT)
-        if errors:
-            raise ValueError("\n".join(errors))
+        if (previous.get("fork") != FORK or previous.get("origin") != record
+                or previous.get("subprojects") != subprojects or previous.get("source") != str(source)):
+            raise ValueError("Existing build belongs to a different frontend commit or location")
     else:
-        vendor_sources.prepare(ROOT, archives, work, OVERLAY)
-    inputs = verify_source(source, archives, record)
+        if source.exists():
+            raise ValueError(f"{source} already exists; use --reuse or a new --work-dir")
+        fork_sources.extract(archive, work, record["archive_root"])
+        for name in subprojects["paths"]:
+            if (source / name).exists():
+                raise ValueError(f"The fork already contains {name}")
+        bundled = fork_sources.extract(subproject_archive, work / ".release-subprojects",
+                                       subprojects["archive_root"], subprojects["paths"])
+        for name in subprojects["paths"]:
+            (bundled / name).rename(source / name)
+        for directory in sorted((work / ".release-subprojects").rglob("*"), reverse=True):
+            directory.rmdir()
+        (work / ".release-subprojects").rmdir()
+    fork_sources.notices(source, pin["notices"])
+    verify_source(source, expected)
     build = work / "build"
     native = args.native_file.resolve() if args.native_file else None
-    native_spec = {"path": str(native), "sha256": file_digest(native)} if native else None
+    native_spec = {"path": str(native), "sha256": fork_sources.file_digest(native)} if native else None
     if args.reuse and (build / "meson-private/coredata.dat").exists() and previous.get("native_file") != native_spec:
         raise ValueError("Configured build-tool overrides differ; retain the existing native file")
     profile = "release" if args.release else "debug"
-    receipt = {"overlay": OVERLAY, "recipe_sha256": recipe, "source": str(source),
-               "source_file_count": len(inputs), "source_inputs_sha256": vendor_sources.digest(json.dumps(inputs, sort_keys=True).encode()),
+    receipt = {"fork": FORK, "origin": record, "subprojects": subprojects, "source": str(source),
+               "source_file_count": len(expected), "source_inputs_sha256": fork_sources.write_inputs(work, expected),
                "build": str(build), "profile": profile, "jobs": 1, "installed": False,
-               "native_file": native_spec,
-               "status": "prepared"}
-    (work / "source-inputs.json").write_text(json.dumps(inputs, indent=2) + "\n")
+               "native_file": native_spec, "status": "prepared"}
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     if args.prepare_only:
         print(json.dumps(receipt, indent=2))
@@ -119,14 +120,15 @@ def main():
             receipt["compilers"] = json.loads(subprocess.check_output(["meson", "introspect", "--compilers", str(build)], text=True))
             path.write_text(json.dumps(receipt, indent=2) + "\n")
     try:
-        verify_source(source, archives, record)
+        verify_source(source, expected)
     except ValueError as error:
         receipt.update(status="failed", error=str(error))
         path.write_text(json.dumps(receipt, indent=2) + "\n")
         raise
     binary = build / "src/xdg-desktop-portal"
     receipt.update(status="built", exit_code=0, binary=str(binary),
-                   binary_sha256=file_digest(binary), inputs_unchanged=True)
+                   binary_sha256=fork_sources.file_digest(binary), inputs_unchanged=True,
+                   notices={f"{FORK}/{name}": value for name, value in fork_sources.notices(source, pin["notices"]).items()})
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt, indent=2), flush=True)
 

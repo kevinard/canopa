@@ -1,59 +1,40 @@
 #!/usr/bin/env python3
-"""Test the canonical touch contact registry without another Cargo build graph."""
+"""Test the touch contact registry of the pinned Niri fork without another Cargo build graph.
+
+The two std-only modules are read from the pinned kevinard/niri archive
+(checksummed in packaging/forks.json), downloaded into --archives when absent.
+"""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 
 sys.dont_write_bytecode = True
-import vendor_sources
+import fork_sources
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = 'niri-input-capture-keyboard'
-OVERLAY = 'niri-remote-touch'
 MODULE = 'src/input/remote_touch/contacts.rs'
 WIRE = 'src/dbus/remote_input/touch/wire.rs'
-DELTA = sorted([MODULE, WIRE, 'src/input/remote_touch.rs', 'src/input/mod.rs',
-                'src/dbus/remote_input.rs', 'src/dbus/remote_input/touch.rs'])
-WORK = ROOT / 'target/vendor-tests/remote-touch'
-
-
-def inventory(root):
-    return {str(p.relative_to(root)): vendor_sources.digest(p.read_bytes()) for p in root.rglob('*') if p.is_file()}
+WORK = ROOT / 'target/fork-tests/remote-touch'
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--archives', type=Path, help='Verify complete old/new materializations using cached archives')
+    parser.add_argument('--archives', type=Path, default=ROOT / 'target/fork-archives',
+                        help='Directory holding (or receiving) the pinned Niri fork archive')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     started = time.monotonic()
-    errors = vendor_sources.check(ROOT)
-    if errors:raise ValueError('\n'.join(errors))
-    record = vendor_sources.records(ROOT)[OVERLAY]
-    source = vendor_sources.added_file(ROOT, record, MODULE)
-    wire = vendor_sources.added_file(ROOT, record, WIRE)
-    result = dict(status='running', source_sha256=vendor_sources.digest(source), source_bytes=len(source),
-                  recipe_sha256=vendor_sources.digest(json.dumps(record,sort_keys=True).encode()),
+    origin, archive = fork_sources.origin('niri', args.archives.resolve(), fetch=True)
+    source = fork_sources.archive_member(archive, origin['archive_root'], MODULE)
+    wire = fork_sources.archive_member(archive, origin['archive_root'], WIRE)
+    result = dict(status='running', source_sha256=fork_sources.digest(source), source_bytes=len(source),
+                  fork=origin['repository'], commit=origin['commit'], archive_sha256=origin['archive_sha256'],
                   rustc=subprocess.check_output(['rustc','--version'],text=True).strip(), cargo_build=False,
-                  wire_sha256=vendor_sources.digest(wire), native_touch_verified=False, advertised=False)
-    if args.archives:
-        with tempfile.TemporaryDirectory(prefix='canopa-remote-touch-sources-') as temporary:
-            base = vendor_sources.prepare(ROOT,args.archives.resolve(),Path(temporary)/'base',BASE)
-            candidate = vendor_sources.prepare(ROOT,args.archives.resolve(),Path(temporary)/'candidate',OVERLAY)
-            delta = {};counts = {}
-            for name in base:
-                before,after = inventory(base[name]),inventory(candidate[name])
-                delta[name] = sorted(n for n in before.keys()|after.keys() if before.get(n)!=after.get(n))
-                counts[name] = len(after)
-            assert delta == {'niri':DELTA,'smithay':[]},delta
-            assert (candidate['niri']/MODULE).read_bytes()==source
-            result['archive_materialization'] = dict(delta=delta,file_counts=counts,original_notices_verified=True)
-        result['temporary_sources_removed'] = not Path(temporary).exists()
+                  wire_sha256=fork_sources.digest(wire), native_touch_verified=False, advertised=False)
     WORK.mkdir(parents=True,exist_ok=True)
     for name,body in [('contacts.rs',source),('wire.rs',wire),
                       ('tests.rs',b'pub mod contacts;\npub mod wire;\n')]:

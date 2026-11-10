@@ -57,8 +57,7 @@ case "$1" in
         python3 scripts/test-install-system.py
         python3 scripts/test-check-scripts.py
         python3 scripts/test-test-layout.py
-        python3 scripts/test-niri-source-bindings.py
-        python3 scripts/test-niri-build-reuse.py
+        python3 scripts/test-fork-sources.py
         python3 scripts/test-vendor-source-additions.py
         python3 scripts/test-remote-touch-core.py --output "${CARGO_TARGET_DIR:-target}/remote-touch-core-check.json"
         python3 scripts/test-cups-authentication.py --self-test
