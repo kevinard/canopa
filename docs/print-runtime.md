@@ -5,12 +5,13 @@ It supports the bounded credentials and Digest behavior described in the
 [Print guide](print-portal.md). Print remains opt-in through `--experimental-print`;
 shipping the client does not enable the interface or change the system scheduler.
 
-Build the client with the pinned archive and the
-[source recipe](../vendor/source-overlays/cups-authentication/README.md). Reuse the
-same source/object directory for subsequent builds. Then pass its successful build
-receipt to the ordinary release packager:
+Build the client from the pinned [kevinard/cups fork](vendor-maintenance.md#cups-client-ipp-backend-and-receiver)
+(commit and archive checksum in `packaging/forks.json`; its tracking PRs describe
+each change). Reuse the same source/object directory for subsequent builds with
+`--reuse`. Then pass its successful build receipt to the ordinary release packager:
 
 ```sh
+python3 scripts/build-cups-authentication.py --archives target/fork-archives --download --work-dir target/cups-authentication-compat
 bash scripts/package-release.sh target/release dist --cups-runtime target/cups-authentication-compat/canopa-build.json
 bash scripts/smoke-release.sh dist/canopa-x86_64-unknown-linux-gnu.tar.gz --require-print-runtime
 ```
@@ -26,8 +27,8 @@ The packaged layout is relative to one installation prefix:
 | --- | --- |
 | `bin/xdg-desktop-portal-canopa` | Rust/Iced portal backend |
 | `lib/canopa/print/libcups.so.2` | Private modified CUPS client |
-| `share/canopa/print-runtime.json` | Upstream source, recipe, image and notice hashes; required shared-library sonames |
-| `share/licenses/canopa-print-cups/` | Original upstream `LICENSE` and `NOTICE`, modification summary and complete source patches |
+| `share/canopa/print-runtime.json` | Fork repository, commit and source archive checksum; image and notice hashes; required shared-library sonames |
+| `share/licenses/canopa-print-cups/` | Original upstream `LICENSE` and `NOTICE`, and a modification summary naming the fork commit, its base and the complete change set |
 
 Keep these paths together when moving or installing a bundle. The backend finds
 the library relative to its own executable and freezes a sealed image until exit.
@@ -39,12 +40,13 @@ The client still needs the system libraries listed in `print-runtime.json`,
 including GnuTLS. Those dependencies vary with the build host. They retain their
 distribution notices and are not copied into the archive. The packager checks the
 ELF architecture, soname, capability symbol and absence of embedded search paths
-without loading the library. It verifies the canonical source patches, source
-inventory, build receipt and exact library bytes before staging. The isolated
+without loading the library. It verifies that the build comes from the pinned
+fork commit and archive, its source inventory, build receipt and exact library
+bytes before staging. The isolated
 worker also checks the capability version when it loads the image.
 
-The smoke check verifies the extracted library, manifest, patches and original
-notices. A partial or altered bundle fails that check. Without a bundled client,
+The smoke check verifies the extracted library, manifest, fork identity and
+original notices. A partial or altered bundle fails that check. Without a bundled client,
 the backend uses conservative system-CUPS limits. It refuses an invalid present
 library. The backend does not read the packaging manifest or notices; removing
 those metadata files does not change its runtime selection.
@@ -56,15 +58,16 @@ the stock CUPS PPD conversion drops. It is compiled against the same exact priva
 client and headers. The system daemon and stock filters keep their own libraries.
 
 ```sh
-python3 scripts/build-print-ipp-backend.py --archives ARCHIVES --client-build target/cups-authentication-compat/canopa-build.json --work-dir target/print-ipp-backend-compat/maintained
+python3 scripts/build-print-ipp-backend.py --client-build target/cups-authentication-compat/canopa-build.json --work-dir target/print-ipp-backend-compat/maintained
 bash scripts/package-release.sh BUILD_DIR OUTPUT_DIR --cups-runtime target/cups-authentication-compat/canopa-build.json --cups-ipp-backend target/print-ipp-backend-compat/maintained/canopa-build.json
 bash scripts/smoke-release.sh ARCHIVE --require-print-runtime --require-print-backend
 ```
 
 The program is `lib/canopa/print/ipp`, beside its required matching `libcups.so.2`.
-`share/canopa/print-backend.json` binds the program, client and canonical recipe;
-`share/licenses/canopa-print-ipp-backend/` retains original LICENSE/NOTICE and
-`resolution.patch`. Keep the pair together when relocating. Staging refuses
+It is compiled from the client build's verified fork source tree.
+`share/canopa/print-backend.json` binds the program, client and pinned fork commit;
+`share/licenses/canopa-print-ipp-backend/` retains the original LICENSE/NOTICE and
+a modification summary. Keep the pair together when relocating. Staging refuses
 source/configuration drift, another client or an unverified build. Bundle checks
 refuse partial or altered inventories and symlinked payloads. The release workflow
 includes both components explicitly; ordinary two-argument packaging is unchanged.

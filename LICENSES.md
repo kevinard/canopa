@@ -28,23 +28,30 @@ The combined repository preserves the original source licenses:
   GitHub forks (see `docs/vendor-maintenance.md`).
   `docs/dependency-attributions.md` names each fork crate by its fork URL and
   commit, and packaging collects its license texts like any other dependency.
-- The Niri source-overlay recipes share Niri's GPL-3.0-or-later and Smithay's MIT
-  texts in `vendor/source-overlays/niri-source-cancellation/`. The Arch
-  `canopa-compositor` package builds the `niri-remote-touch` recipe and is
-  GPL-3.0-or-later. Its executable is built separately from the Canopa applications.
-- The optional private CUPS client preserves the upstream Apache-2.0 license and
-  CUPS exceptions in `vendor/source-overlays/cups-authentication/LICENSE` and
-  `NOTICE`. Bundles containing this modified client include those original texts,
-  a modification summary and its complete source patches under
-  `share/licenses/canopa-print-cups/`. Its system dependencies retain their
-  distribution notices.
-- The test-only CUPS IPP receiver overlay references those same original CUPS
-  LICENSE/NOTICE assets. Its source patch is under
-  `vendor/source-overlays/cups-ipp-receiver/`; its builder installs nothing.
-- The optional matching CUPS IPP backend shares those original LICENSE/NOTICE
-  assets. Bundles containing it retain them, a modification summary and complete
-  `resolution.patch` under `share/licenses/canopa-print-ipp-backend/`. Staging the
-  component configures no CUPS service or printer queue.
+- The compositor, portal frontend and optional CUPS components are built from
+  the pinned GitHub forks in `packaging/forks.json`, whose sources keep their
+  upstream licenses. Packaging copies the original texts from those fork
+  sources, checked against the checksums pinned there:
+  - The Arch `canopa-compositor` package is built from kevinard/niri and is
+    GPL-3.0-or-later; it installs Niri's `LICENSE` and the MIT `LICENSE.txt` of
+    kevinard/smithay (taken from Niri's locked Cargo git checkout) under
+    `/usr/share/licenses/canopa-compositor/`, with the other dependency notices
+    beside them. Its executable is built separately from the Canopa applications.
+  - The patched portal frontend from kevinard/xdg-desktop-portal is
+    LGPL-2.1-or-later; the `canopa` package installs its `COPYING` under
+    `/usr/share/licenses/canopa/xdg-desktop-portal/`. Release bundles with the
+    optional desktop-sharing companions carry the Niri, Smithay and portal
+    texts under `share/licenses/canopa-desktop-sharing/`.
+  - The optional private CUPS client from kevinard/cups keeps the upstream
+    Apache-2.0 `LICENSE` and CUPS `NOTICE`. Bundles containing it include those
+    original texts and a `CHANGES.md` naming the fork commit, its upstream base
+    and the complete change set under `share/licenses/canopa-print-cups/`. Its
+    system dependencies retain their distribution notices.
+  - The optional matching CUPS IPP backend, built from the same fork commit,
+    ships the same texts and a `CHANGES.md` under
+    `share/licenses/canopa-print-ipp-backend/`. Staging it configures no CUPS
+    service or printer queue. The test-only IPP receiver is built from that
+    source too and is never installed.
 
 Moving code into the shared workspace does not change its existing license.
 

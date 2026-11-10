@@ -37,7 +37,7 @@ bash scripts/check.sh --files --test transfers --test undo_changed_copy
 bash scripts/check.sh --files --lib operations::fingerprint::receipt_tests
 bash scripts/check.sh --workspace
 bash scripts/check.sh --core
-python3 scripts/check-vendor.py --archives /path/to/verified-archives
+python3 scripts/fork_sources.py fetch niri xdg-desktop-portal cups --archives target/fork-archives
 ```
 
 The default runs the focused Files Copy/fingerprint checks. Select the relevant
@@ -46,6 +46,9 @@ incremental debug compilation and reuse root `target/`; keep features and profil
 consistent between edits. The explicit `--workspace` gate runs all applications,
 test targets and tooling for CI/releases, shared dependencies or broader changes.
 Files-only edits normally need their affected tests rather than that gate.
+The last command downloads and checksum-verifies the pinned fork archives of the
+separately built compositor, portal frontend and CUPS components; see
+[upstream dependency forks](docs/vendor-maintenance.md).
 
 Ordinary integration cases share one executable per crate. The Files script keeps
 the existing `--test transfers` case selectors and translates them into module
@@ -168,8 +171,8 @@ The optional desktop-sharing companions are selected together with
 `--desktop-niri NIRI_BUILD/canopa-build.json --desktop-frontend FRONTEND_BUILD/canopa-build.json`.
 Their package includes the extended descriptor, routing fragment and frontend
 service override described in the [desktop-sharing guide](docs/desktop-sharing.md).
-Append `--extra-portals` to include InputCapture, GlobalShortcuts and Usb with the
-current combined Niri recipe; verify that selection with `--require-extra-portals`
+Append `--extra-portals` to include InputCapture, GlobalShortcuts and Usb, which
+the pinned Niri fork provides; verify that selection with `--require-extra-portals`
 on the archive smoke check.
 
 For subsequent updates of an existing local companion installation, run:

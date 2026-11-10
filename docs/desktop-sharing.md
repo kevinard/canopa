@@ -9,20 +9,21 @@ Desktop sharing needs both maintained companions: Niri supplies capture lifetime
 and input leases; the frontend supplies ordered input and original-owner session
 cleanup. The [Arch packages](installation.md#desktop-portals) include both
 companions and select the Canopa sharing backends in the Canopa session. The
-optional portable release component contains their executables, exact source
-recipes, patches and original notices. It extends `canopa.portal` with only these
+optional portable release component contains their executables, the pinned
+fork sources they were built from and the original notices. It extends `canopa.portal` with only these
 three interfaces. An additional explicit option includes InputCapture,
 GlobalShortcuts and Usb. These interfaces remain experimental. Print retains its
 separate opt-in. The base portable archive ships without the companion component.
 
 ## Build and package
 
-Use existing verified build receipts when available. To prepare the current
-combined Niri recipe and frontend, follow the source builders in the
-[ScreenCast development guide](screencast-portal.md), selecting
-`--overlay niri-remote-touch` for the combined Niri companion. That recipe also retains the Files
-drag-source fixes and the later input facilities. Reuse the same source/build
-directories with `--reuse`; building does not install either program.
+Use existing verified build receipts when available. To build both companions
+from the pinned kevinard/niri and kevinard/xdg-desktop-portal forks, follow the
+source builders in the [ScreenCast development guide](screencast-portal.md) or
+[upstream dependency forks](vendor-maintenance.md#separately-built-programs).
+The pinned Niri commit also retains the Files drag-source fixes and the later
+input facilities. Reuse the same source/build directories with `--reuse`;
+building does not install either program.
 
 Add both receipts when creating an application release:
 
@@ -36,25 +37,25 @@ bash scripts/smoke-release.sh OUTPUT_DIR/canopa-x86_64-unknown-linux-gnu.tar.gz 
 
 Append `--extra-portals` to the package command to also include
 [InputCapture](input-capture-portal.md), [GlobalShortcuts](global-shortcuts-portal.md)
-and [Usb](usb-portal.md). This requires a combined capture/shortcut recipe:
-`niri-remote-touch`, `niri-input-capture-keyboard`, or the preceding pointer-only
-`niri-global-shortcuts`. Use `--require-extra-portals` on the
+and [Usb](usb-portal.md); the pinned Niri fork provides the capture and shortcut
+leases they need. Use `--require-extra-portals` on the
 smoke command to require this six-interface selection. InputCapture advertises the keyboard/pointer classes supported by the selected
 companion; both choices start unchecked. Touch capture remains unavailable.
 
-With `niri-remote-touch`, RemoteDesktop also supports touch control of an approved
+With the pinned Niri fork, RemoteDesktop also supports touch control of an approved
 screen or window through the public Notify methods and EI touchscreen devices.
 Touch has its own unchecked Iced choice (Alt+T) and requires a shared source;
 keyboard or pointer approval does not grant touch. Connecting to EI releases
 legacy contacts and ends Notify input for that session. Source or client loss
 releases its held contacts. RemoteDesktop touch sends input; it does not add
-touch reception to InputCapture. Older companions continue to expose only their
-supported input classes.
+touch reception to InputCapture. Older companions, such as a build of an earlier
+fork topic, continue to expose only their supported input classes.
 
-The packager verifies current source inventories, canonical recipes and patches,
-the built executable checksums, ELF dependencies and original notices. Both
-receipts are required together. It rejects older capture recipes without creator
-cleanup, stale recipes, changed sources, mismatched executables and incomplete
+The packager verifies that both builds come from the pinned fork commits and
+archive checksums in `packaging/forks.json` (and Niri's lockfile from the pinned
+Smithay fork), their current source inventories, the built executable checksums,
+ELF dependencies and original notices. Both receipts are required together. It
+rejects other fork refs, changed sources, mismatched executables and incomplete
 components. `share/canopa/desktop-sharing.json` records the resulting identities
 and required shared-library names. Libraries remain supplied by the distribution;
 this is an x86-64 Linux component, not a self-contained runtime.

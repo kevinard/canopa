@@ -2,8 +2,9 @@
 
 Canopa keeps every patched upstream project in a GitHub fork under
 `kevinard/`, with one tracking PR per change. Nothing is vendored in this
-repository any more, except the overlay recipes for separately built programs
-described below, which are moving to the same forks.
+repository: Rust crates come from the forks through Cargo, and the separately
+built compositor, portal frontend and CUPS components are built from pinned
+fork source archives (see [Separately built programs](#separately-built-programs)).
 
 ## Rust crate forks
 
@@ -80,177 +81,165 @@ Removed local patches:
   the common layershellev source.
 - The second AccessKit and generic panel protocol snapshots: each has one source.
 
-## Pinned source overlays
+## Separately built programs
 
-Run `python3 scripts/check-vendor.py` to verify these recipes against
-`vendor/provenance.json`; add `--archives DIRECTORY` to also verify downloaded
-source archives. The checker performs no downloads.
+`packaging/forks.json` pins three forks whose programs are built outside the
+Canopa Cargo workspace. Each entry records the fork repository, the pinned
+`canopa/main` commit, the upstream base commit, the GitHub source archive
+(`https://codeload.github.com/kevinard/REPO/tar.gz/COMMIT`), its SHA-256 and the
+SHA-256 of each original license text. The Arch recipe downloads the same
+archives with the same checksums; `scripts/test-fork-sources.py` (workspace
+gate) keeps the two in step.
 
-The experimental `niri-remote-touch` recipe adds contact ownership, physical
-device bookkeeping and an FD-owned mapped touch transport to the complete
-keyboard companion below, with the public RemoteDesktop touch implementation of
-ADR0117. The Arch `canopa-compositor` package builds this recipe, so it is the
-compositor every packaged session runs, despite its experimental status. Its maintained
-std-only checks run in the workspace gate. See
-[ADR0117](adr/0117-remote-touch-ownership-and-transport.md) and the recipe README
-for the exact archive delta, transport and native acceptance scope.
+| Fork | Upstream | Base | Builder | Installed as |
+| --- | --- | --- | --- | --- |
+| [kevinard/niri](https://github.com/kevinard/niri), with [kevinard/smithay](https://github.com/kevinard/smithay) from Niri's lockfile | niri-wm/niri, Smithay/smithay | Niri `b22eb842`, Smithay `8a270232` | `scripts/build-niri.py` | `/usr/lib/canopa/niri` (`canopa-compositor`) |
+| [kevinard/xdg-desktop-portal](https://github.com/kevinard/xdg-desktop-portal) | flatpak/xdg-desktop-portal | 1.22.1 (`1d20fadc`) | `scripts/build-xdg-portal-compat.py` | `/usr/lib/canopa/xdg-desktop-portal` (`canopa`) |
+| [kevinard/cups](https://github.com/kevinard/cups) | OpenPrinting/cups | v2.4.20 (`ef80eeae`) | `scripts/build-cups-authentication.py`, `build-print-ipp-backend.py`, `build-print-ipp-receiver.py` | optional release bundle `lib/canopa/print/` |
 
-The experimental `niri-input-capture-keyboard` recipe extends the complete
-combined companion with an eight-file Niri delta and unchanged Smithay. It adds
-private v2 keyboard routing, independent capture XKB, keymap revision handling
-and source/virtual-modifier ownership. Twenty pure checks and nine private
-native groups pass; exact official archive comparisons retain original notices.
-Builds reuse the stable source paths/native incremental cache and recorded
-compiler. The old recipe and delivered companion remain intact. Public receiver
-EI and Iced keyboard integration pass six native groups in each appearance; the
-recipe is accepted by explicit optional packaging, under
-[ADR0111](adr/0111-input-capture-keyboard-ownership.md).
+`python3 scripts/fork_sources.py fetch NAME... --archives DIR` downloads and
+verifies the pinned archives. Every builder:
+- verifies the archive checksum before extracting it into a new `--work-dir`
+  beneath root `target/` (or `/tmp`); `--download` fetches a missing archive;
+- records every source file's SHA-256 in `source-inputs.json` and writes a
+  `canopa-build.json` receipt with the fork origin (repository, branch, commit,
+  base, archive URL and SHA-256), the inventory digest, the build commands and
+  compiler, the binary SHA-256 and the original license texts it found;
+- keeps stable source paths and build caches with `--reuse`, but refuses a
+  different commit, archive or location and any edited, added, deleted or
+  symlinked input;
+- installs and selects nothing.
 
-An external companion can retain a small source patch instead of another full
-checkout. Its canonical patch, licences and pinned archive recipe live in
-`vendor/source-overlays/` and `vendor/provenance.json`; disposable build copies
-belong under `target/` or `/tmp`. This does not add an application-local fork.
-The checker verifies recipe and licence hashes normally; with `--archives` it
-also reproduces the exact patch and checks every changed file and its scope.
+Packaging accepts only receipts of the pinned commit. `scripts/install-system.py`
+installs the license texts from the fork sources under
+`/usr/share/licenses/PACKAGE/` and writes `compositor-provenance.json` or
+`portal-frontend-provenance.json` under `/usr/share/canopa/`: the fork,
+repository, branch, commit, base, archive URL and SHA-256 (with the Smithay
+commit, or the portal's subproject archive) and the binary SHA-256. The release
+bundle packagers record the same origin in their manifests.
 
-The explicit `xdg-desktop-portal-input-order` recipe pins the official frontend
-1.22.1 archive and its LGPL licence. Three files add bounded, receive-ordered
-Notify admission per authorized RemoteDesktop session, with worker-based setup
-and the original handler checks. Concurrent and NoReplyExpected native keyboard
-groups pass in both appearances; memory-error sanitizer checks also pass.
-See [ADR0047](adr/0047-ordered-portal-input-forwarding.md) for scope and open gates.
-The separate two-file session-owner patch pins implementation sessions to their
-original unique owner and revokes them after backend loss or name replacement.
-Revocation rejects further admission immediately; bounded original-owner cleanup
-and a closure worker keep the frontend loop responsive. Pending creates cannot
-revive after name reacquisition or early backend closure. Ten isolated-bus
-scenarios pass in normal and address/undefined builds. See
-[ADR0055](adr/0055-frontend-session-owner-lifetime.md) for native/canonical and
-shared-gate acceptance; the installed frontend remains unchanged.
-The separate one-file InputCapture phase patch preserves Active on repeated
-Enable and waits for implementation signals after Release. It fixes public
-Clipboard denial while actual capture continues after a no-op or rejected stale
-control. The recipe's original archive/license and existing source/build paths
-are retained; the complete 499-file materialization and each old/new recipe are
-verified before a same-cache rebuild. Its native baseline/candidate and broader
-gate results are recorded in the InputCapture ledger.
-The separate one-file USB ownership patch validates the complete backend grant
-against the requested IDs and access modes before recording permissions. Late
-consent after request closure cannot create pending access. Finish rechecks current
-visibility, opens the exact granted mode when it differs from the cache, and keeps
-one sender-owned FD per device so release also works after repeated acquisition.
-Existing client FD copies cannot be revoked by closing that cached copy. Private
-UMockdev devices and a controllable backend reproduce the original failures;
-candidate USB and broader companion acceptance are tracked in the portal ledger.
-`scripts/build-xdg-portal-compat.py --archives ARCHIVES --work-dir target/NEW-SOURCES`
-prepares/builds without installing or selecting the frontend. Arch packaging runs
-it and installs the result at `/usr/lib/canopa/xdg-desktop-portal`; the
-`canopa-portal-frontend` wrapper selects it only inside the dedicated Canopa
-session. `--prepare-only`
-performs source verification; `--reuse` retains the same source/build cache.
-Meson/Ninja and GLib generators must already be available; `--native-file FILE`
-can name explicit build-tool overrides. Canonical source inputs, recipe, tool
-bindings and binary hashes are recorded. The normal debug build uses one job and
-does not download dependencies or run the separately provisioned upstream suite.
+To move a pin:
+1. Merge the change into the fork's `canopa/main` (see the fork workflow above).
+2. Download `https://codeload.github.com/kevinard/REPO/tar.gz/COMMIT`, then
+   update `commit`, `archive`, `url`, `archive_root` and `archive_sha256` in
+   `packaging/forks.json` and the matching `_niri_commit`/`_portal_commit` and
+   `sha256sums` entries in `packaging/arch/PKGBUILD.in`.
+3. For Niri, update `cargo_git.smithay.commit` when the lockfile moves Smithay.
+   Update notice checksums only after reviewing a changed license text.
+4. Run `python3 scripts/test-fork-sources.py`, build with the commands below,
+   and run the acceptance in [Verification after a pin change](#verification-after-a-pin-change).
 
-The `niri-source-cancellation` recipe pins Niri 26.04 and the exact Smithay Git
-revision from its lockfile. Only Smithay's grab/source lifetime code is patched.
-Niri retains its GPL-3.0-or-later licence and Smithay its MIT licence. Both source
-archive names, URLs and SHA-256 values are recorded. This is the compatibility
-work in [ADR0024](adr/0024-niri-drag-source-lifetime.md). The private companion
-passes strict cancellation, retained-offer and actual Files regressions;
-the Arch recipe selected that pinned companion at a private system path until
-commit 8ede03f moved it to the cumulative `niri-remote-touch` recipe, which
-includes this correction.
-Physical installation and broader acceptance remain open.
+### Niri compositor
 
-`python3 scripts/build-niri-compat.py --archives ARCHIVES --work-dir target/NEW-SOURCES`
-prepares a new disposable upstream workspace and builds a companion without
-installing it. `--prepare-only` verifies the patch and records the source bindings
-without compiling. The helper changes only the exact Smithay and
-smithay-drm-extras source bindings in Niri's copied manifest/lockfile; every other
-locked dependency stays unchanged. Cargo compilation remains locked/offline,
-single-job and nonincremental, with outputs under root `target/` or an explicit
-`CARGO_TARGET_DIR`. `--fetch` explicitly fetches locked dependencies first.
-`--release` selects the optimized, stripped distribution executable. `--resume`
-reuses prepared sources only after checking every file against the verified
-archives, canonical patch and independently recomputed source bindings; altered
-or extra files are rejected. The ordinary Canopa Cargo lockfile is
-not rewritten. An explicit `--target-dir` can reuse an existing companion build
-cache after preserving any previous executable.
+```sh
+python3 scripts/build-niri.py --archives ARCHIVES --download --work-dir target/NEW-SOURCES --fetch [--release]
+```
 
-The `niri-screencast-resume` recipe independently pins Niri main
-`b22eb842ca9506d4e2ff997b116031cdb3f650f8`. It resets content/cursor damage history
-on consumer resume so a discarded first static-window frame cannot leave a
-consumer waiting forever. It retains Niri's GPL-3.0-or-later license and original
-dependency lockfile. See [ADR0043](adr/0043-screencast-frame-resume.md).
+Cargo builds Niri's own workspace from its lockfile with
+`--locked --offline -p niri --bin niri --jobs 1`. `--fetch` first runs
+`cargo fetch --locked`, which retrieves Smithay at the kevinard/smithay revision
+recorded in that lockfile. The pinned build refuses a lockfile whose git sources
+are not exactly the pinned Smithay fork. `--release` builds the optimized,
+non-incremental executable with stripped symbols that the Arch
+`canopa-compositor` package installs; the default is an incremental dev build.
+`NIRI_BUILD_COMMIT` is the fork commit, so `niri --version` names it. Outputs go
+to `--target-dir` (default `target/niri-fork`); `--toolchain NAME` selects an
+explicit compiler for a controlled comparison and the receipt records it.
 
-`python3 scripts/build-niri-screencast.py --archives ARCHIVES --work-dir target/NEW-SOURCES`
-verifies/applies this canonical patch and builds the independent upstream
-workspace, using one incremental dev compiler job and root target/ outputs.
-`--prepare-only` records verified sources without building; `--toolchain NAME`
-selects an explicit compiler for a controlled baseline comparison. A build receipt
-records the compiler, source/recipe/lock hashes and binary checksum. Dependencies
-for the original upstream lockfile must already be fetched. Neither companion
-helper installs or selects the user's compositor.
+Niri's GPL-3.0-or-later text comes from the archive and Smithay's MIT text from
+its Cargo git checkout; both are checked against `packaging/forks.json`. The
+Arch package also collects every other dependency notice with
+`scripts/dependency-attributions.py`.
 
-The explicit `niri-desktop-compat` recipe combines that capture pin with the
-source-lifetime correction ported to its original Smithay revision. It reuses the
-Niri resume patch and records a separate six-file Smithay patch/licence; both
-independent earlier recipes remain available. See
-[ADR0045](adr/0045-combined-niri-desktop-companion.md). Select it with
-`--overlay niri-desktop-compat` on the capture builder. The two builders share a
-strict source-binding transform: only smithay/smithay-drm-extras become local
-paths, all other locked dependencies remain unchanged, and invalid source bindings
-are refused before either prepared file is written. Scoped transport, Files and
-ScreenCast acceptance passes on the combined candidate; startup failures remain
-recorded alongside successful reruns. Full matrix/release acceptance and compatible
-distribution provisioning remain open. It is not installed or selected by the
-application archive.
+`--ref REF` builds another fork branch, tag or commit instead of the pin. The ref
+is resolved with `git ls-remote`, its archive is downloaded and its checksum
+recorded, and the receipt is marked unpinned, so packaging refuses it. Use it for
+native comparisons with the earlier companions. Topic branches stack on
+`canopa/fixes` (the base with every bug fix), so each is the closest equivalent
+of a former recipe rather than an identical tree:
 
-The explicit `niri-remote-input` recipe extends that exact combined base with
-compositor-owned keyboard leases and a cached Smithay keymap identity getter.
-It retains the same upstream pins, dependency graph and original licences. Its
-Niri patch explicitly adds four files: null upstream hashes mean absent paths,
-and archive verification rejects an existing file relabelled as an addition.
-Three source-addition/scope tests run in the workspace gate. Select this recipe
-with `--overlay niri-remote-input`; `--prepare-only` verifies/applies all four
-patches and the same two source bindings without compilation or installation.
-The registered recipe passes exact fifteen-file-entry archive materialization.
-Its separately negotiated typed symbol lease resolves keysyms on the compositor
-thread, acknowledges commands and retains shared modifier ownership. Sixteen
-model/wire tests, twelve typed native groups, thirteen existing evdev groups and
-six combined public-frontend/media/EIS groups pass on the typed candidate. Legacy
-Notify wiring passes scoped native acceptance with the frontend companion above;
-pointer/touch and broader acceptance remain. The recipe stays unadvertised and is
-not selected by the application archive. See [ADR0046](adr/0046-session-owned-remote-input.md).
+| Former recipe | Fork ref | ADR |
+| --- | --- | --- |
+| `niri-screencast-resume` | `canopa/screencast-resume` | [0043](adr/0043-screencast-frame-resume.md) |
+| `niri-source-cancellation`, `niri-desktop-compat` | `canopa/dnd-source-lifetime` (Smithay `canopa/dnd-source-lifetime`), `canopa/fixes` | [0024](adr/0024-niri-drag-source-lifetime.md), [0045](adr/0045-combined-niri-desktop-companion.md) |
+| `niri-remote-input` | `canopa/remote-input-keyboard` | [0046](adr/0046-session-owned-remote-input.md) |
+| `niri-desktop-pointer` | `canopa/remote-input-pointer` | [0056](adr/0056-capture-creator-lifetime.md) |
+| `niri-input-capture` | `canopa/input-capture` | [0059](adr/0059-compositor-owned-input-capture.md), [0065](adr/0065-keyboard-source-release-suppression.md) |
+| `niri-global-shortcuts` | `canopa/global-shortcuts` | [0066](adr/0066-compositor-owned-shortcut-leases.md) |
+| `niri-input-capture-keyboard` | `canopa/input-capture-keyboard` | [0111](adr/0111-input-capture-keyboard-ownership.md) |
+| `niri-remote-touch` (packaged) | `canopa/main` (the pin) | [0117](adr/0117-remote-touch-ownership-and-transport.md) |
 
-The explicit `niri-desktop-pointer` recipe combines that base with the prepared
-capture-bound pointer/physical-scale stack and creator-owned recording cleanup.
-Its two patches declare 22 Niri and eight Smithay files against the same original
-archives and licenses. The full materialization matches all 5961 files of the
-compiled candidate, normalizing only two absolute local dependency paths.
-Private lifecycle/media regressions pass; normal advertisement, full matrix and
-compatible distribution acceptance remain pending. See
-[ADR0056](adr/0056-capture-creator-lifetime.md).
+The std-only checks `scripts/test-remote-touch-core.py` (workspace gate) and
+`scripts/test-input-capture-keyboard-core.py` read their pure modules from the
+pinned archive and compile them with `rustc --test`, without another Cargo
+graph. The fork's own tests run in the fork; its PRs record them.
 
-The capture builder's `--reuse` option retains a prepared workspace's source
-paths and incremental Cargo identities. It verifies the recipe, paths and full
-input inventory before reuse, rejecting edited, added or deleted inputs and
-unexpected symlinks. Use `--prepare-only --reuse` to verify without compiling.
-The explicit pointer recipe uses the same `+canopa-pointer-lease` build label as
-the measured candidate; binary hashes and the creator-cleanup property identify
-the exact accepted behavior. Retain baseline/candidate executables through the
-shared checksum-addressed store rather than copying them into each native run.
+### Portal frontend
 
-For full archive verification, the `--archives` directory must contain all the
-published crate archives and pinned source archives named in
-`vendor/provenance.json`. Verification performs no downloads.
+```sh
+python3 scripts/build-xdg-portal-compat.py --archives ARCHIVES --download --work-dir target/NEW-SOURCES [--release]
+```
 
-Run `bash scripts/check.sh --workspace` and `bash scripts/check.sh --core`, followed by the
-isolated desktop fixtures. Compilation alone does not establish popup grabs,
+A git archive of the fork lacks the `gvdb` and `libglnx` Meson subprojects that
+the official release tarball bundles. The builder takes the fork archive and
+adds only `subprojects/gvdb/` and `subprojects/libglnx/` from the release
+tarball of the fork base (`xdg-desktop-portal-1.22.1.tar.xz`, checksummed in the
+same pin), refusing any overlap with fork files. Meson runs with
+`--wrap-mode=nodownload`. Both inputs are checksummed archives and no patch file
+remains in this repository. The cost is that the subprojects follow the base
+release rather than the fork's `.wrap` revisions, so moving the fork to a new
+upstream release also moves `subprojects` to that release's tarball. The
+release tarball of 1.22.1 equals the fork base tree plus those 77 subproject
+files, so the prepared tree is the same 499 files the former recipe produced.
+
+The build uses one Ninja job, disables the upstream test suite and documentation,
+and records the compilers; `--native-file FILE` names explicit build-tool
+overrides. Arch packaging installs the result at
+`/usr/lib/canopa/xdg-desktop-portal`; the `canopa-portal-frontend` wrapper selects
+it only inside the dedicated Canopa session. Its LGPL `COPYING` text comes from
+the fork source. Scope and acceptance of the four changes are in ADR
+[0047](adr/0047-ordered-portal-input-forwarding.md),
+[0055](adr/0055-frontend-session-owner-lifetime.md),
+[0063](adr/0063-input-capture-frontend-phase.md) and the USB portal ledger.
+
+### CUPS client, IPP backend and receiver
+
+```sh
+python3 scripts/build-cups-authentication.py --archives ARCHIVES --download --work-dir target/cups-authentication-compat
+python3 scripts/build-print-ipp-backend.py --client-build target/cups-authentication-compat/canopa-build.json --work-dir target/print-ipp-backend-compat/maintained
+python3 scripts/build-print-ipp-receiver.py --client-build target/cups-authentication-compat/canopa-build.json --work-dir target/print-ipp-receiver
+```
+
+The fork tree contains the generated `configure` script, so the client builds
+from the git archive directly. The release tarball differs from the base tree
+only by `packaging/cups.spec`, an RPM spec that no build step reads. The client
+builder configures once and builds only `libcups.so.2` with one job, `-O0 -g0`
+and a 6 GB free-space reserve (`--min-free-bytes`), binding the exact
+`config.h`, `Makedefs` and `config.status`. The backend and receiver builders
+compile from that same verified source tree, against its headers and client
+image, so all three always come from one fork commit; they publish each program
+once by checksum under `target/native-test-snapshots/` and keep a 3 GB reserve.
+Nothing builds or launches a daemon, filter or service, and the private client
+must never be injected into system CUPS executables.
+
+`scripts/package-print-runtime.py` and `scripts/package-print-backend.py` stage
+the optional client and backend with the original Apache-2.0 `LICENSE` and CUPS
+`NOTICE` from the fork source and a `CHANGES.md` naming the fork commit, its
+base and the compare link. Protocol and packaging checks:
+`scripts/test-cups-authentication.py` (its `--self-test` runs in the workspace
+gate), `scripts/test-print-early-replies.py`, `scripts/test-print-ipp-receiver.py`,
+`scripts/test-print-ipp-backend.py`, `scripts/test-print-runtime-package.py` and
+`scripts/test-print-backend-package.py`. See [the Print runtime guide](print-runtime.md)
+and ADRs [0101](adr/0101-process-private-print-authentication-runtime.md),
+[0108](adr/0108-maintained-ipp-receiver.md) and
+[0110](adr/0110-matching-ipp-backend-resolution.md).
+
+## Verification after a pin change
+
+After changing a fork pin, run `bash scripts/check.sh --workspace` and
+`bash scripts/check.sh --core`, followed by the isolated desktop fixtures. Compilation alone does not establish popup grabs,
 activation, output removal, fractional scaling, physical input regions, or native
-screen-reader behavior. The experimental rotation prototype's vendored renderer
+screen-reader behavior. The experimental rotation prototype's own renderer copy
 remains outside the supported workspace.
 
 After building root debug binaries, run these fixtures sequentially:
@@ -269,141 +258,3 @@ Niri; the second uses disposable Sway outputs to remove and restore every output
 without terminating the compositor. It checks actual rendered frames and Wayland popup
 grabs/dismissal. These are local adapter checks; Orca and physical monitor/device
 acceptance remain separate procedures.
-
-## Experimental input capture companion
-
-The explicit `niri-input-capture` recipe extends the desktop-pointer companion
-with a private compositor-owned pointer capture lease. Its complete Niri patch
-uses the same pinned archives and existing licences. Complete Niri and Smithay
-patches live in this recipe; licence attribution remains shared by reference.
-The old recipe and frozen binary remain
-available as a baseline. Seven geometry tests, eight capture groups and 54
-existing portal/input/media native groups pass on one new hash. This is pointer
-foundation acceptance, not a public InputCapture backend, EI receiver, keyboard/
-touch capture, Iced consent or production distribution. See
-[ADR0059](adr/0059-compositor-owned-input-capture.md) and its linked ledger.
-
-Use `--overlay niri-input-capture` explicitly with the stable prepared source
-paths, recorded `--toolchain nightly` compiler and existing compositor target.
-Verify the compiler identity in the receipt before rebuilding; changing it can
-accumulate another dependency graph. Recipe/source identity checks still refuse
-reuse after an unverified mutation. The recorded checkpoint proves the complete
-5963-file tree against official archives/canonical patches with only the two
-validated stable Smithay bindings. Native runs reference one checksum-addressed
-executable rather than copying it into every evidence directory.
-
-The same combined recipe now contains a forwarded-press-aware keyboard-source
-teardown refinement. Smithay uses its existing seat ledger to update all source
-state while sending ordinary releases only for forwarded presses; changed modifier
-state is still published and no pending release action runs. An initial optional
-filter and Niri caller change passed ordinary bindings but missed accessibility
-grabs. The final delta restores that caller and changes one Smithay source only.
-Exact complete materializations are verified before reusing the pinned nightly
-cache. Native controls and current wider-gate status are in the GlobalShortcuts
-preparation ledger.
-
-The explicit `niri-global-shortcuts` recipe retains that verified Smithay patch
-and adds compositor-owned shortcut leases in Niri. The complete Niri patch stays
-relative to the official archive and the input-capture recipe remains unchanged.
-Thirteen Niri paths add bounded FD admission/control, current-keymap reservation,
-source-aware pressed recipients and ordinary/a11y/config revalidation. Actual
-canonical core tests and private native results are tracked in
-[ADR0066](adr/0066-compositor-owned-shortcut-leases.md) and the compositor ledger.
-This does not advertise a public GlobalShortcuts backend or install a compositor.
-Use the same verified stable source paths, pinned nightly and incremental cache;
-`--overlay niri-global-shortcuts` selects this recipe explicitly.
-
-## Optional CUPS client authentication candidate
-
-The `cups-authentication` overlay pins the official OpenPrinting 2.4.20 release
-archive by its published SHA-256, preserving both LICENSE and NOTICE. The shared
-source verifier checks additional notice assets as well as the primary licence;
-archive materialization also verifies their upstream contents.
-
-Its eight-file candidate corrects Digest qop/default-algorithm and opaque handling,
-applies parsed DigestOptions, and grows bounded client username/credential,
-Base64 and hash buffers without sending truncated values. Its versioned extension
-identifies those semantic fixes. Worker-only runtime selection and typed private
-credential limits are implemented and under acceptance; system fallback keeps
-64-byte usernames/189 combined bytes. Deployment and complete Print acceptance remain
-open; see [the candidate](../vendor/source-overlays/cups-authentication/README.md).
-
-An additional one-file patch preserves a custom range's declared bottom margin
-instead of overwriting its top margin and retaining the 12.7 mm bottom fallback.
-The metadata-only custom-paper checker can assert all four margins with
-`--expected-margins LEFT,BOTTOM,RIGHT,TOP` in hundredths of a millimetre. Existing
-authentication patch files remain unchanged. IPP backend resolution forwarding
-and PDF-only driverless capability reduction are separate open compatibility work.
-
-The same overlay preserves quoted-pair challenge values and emits complete escaped
-Digest fields without escaping the hash inputs. The maintained
-`scripts/test-cups-authentication.py` checks an actual sealed-image Rust worker
-against a private strict HTTP/empty-IPP oracle, with optional loopback TLS. Its
-published-vector and syntax self-test runs in the workspace gate. This is protocol
-acceptance; real scheduler/Iced and device acceptance remain separate.
-
-The same candidate rejects truncated HTTP response headers before authentication
-or reconnect. `scripts/test-print-early-replies.py` checks public CUPS write and
-request results against controlled loopback TLS peers. It uses synthetic bytes
-and a refusing password callback, without a scheduler or document. Complete
-rejections and replies lost before client observation remain distinct outcomes.
-
-`python3 scripts/build-cups-authentication.py --archives ARCHIVES --work-dir target/cups-authentication-compat`
-verifies all source inputs and builds only libcups.so.2 with one compiler job and
-a disk reserve. Use `--prepare-only` to stop before configuration and `--reuse` to
-retain the same sources/object cache. The helper installs nothing and never builds
-or launches a replacement daemon. Its changed private CUPS layout is confined to
-an isolated worker using public opaque APIs; it must not be injected into existing
-system daemons, filters or modules. The integrated selector retains one sealed image, passes it to the metadata
-dialog and CUPS workers, and loads it only inside those workers. Operator selection
-uses CANOPA_PRINT_CUPS_LIBRARY; the optional bundle path is documented in the recipe.
-
-## Owned IPP receiver fixture
-
-The separate `cups-ipp-receiver` overlay uses the same official 2.4.20 archive and
-original LICENSE/NOTICE assets. Its one-file test-only patch corrects inclusive
-custom-media range membership and preserves explicitly configured MIME attributes
-without duplicates. It does not change the client library or install a service.
-See [the receiver recipe](../vendor/source-overlays/cups-ipp-receiver/README.md).
-
-`scripts/build-print-ipp-receiver.py` verifies both complete source inventories and
-requires a current successful client build receipt with the exact configured
-`config.h`, `Makedefs` and `config.status`. The client builder binds those files;
-older receipts reconfigure once, and later reuse refuses configuration drift.
-The receiver links only the matching client image, compiles one C test program,
-retains a 3 GB reserve and publishes its executable once by checksum. No daemon,
-filter, installation or Cargo graph is built. The client builder's optional
-`--min-free-bytes` selects its per-invocation reserve; its default remains 6 GB.
-
-`scripts/test-print-ipp-receiver.py` sends eleven validation/read-only requests
-to a private loopback receiver and discovery bus. It verifies both range limits,
-single-dimension rejection, fidelity, the exact declared PDF formats, strict
-capabilities and no jobs. Public Canopa/Iced and configured-driver delivery remain
-separate checks. Always retain failing baseline evidence and verify actual loaded
-images; never inject the private client into system CUPS executables.
-
-## Optional matching IPP backend
-
-The separate `cups-ipp-backend` overlay pins that same official archive and
-original LICENSE/NOTICE, changing only `backend/ipp.c`. It preserves an explicit
-resolution after PPD conversion with standard typed encoding; absence stays
-absent. It is a separately compiled companion with the exact verified private
-client headers, configuration and image, never the stock backend with another
-library injected. The worker client and system daemon/filter libraries stay
-unchanged.
-
-`scripts/build-print-ipp-backend.py` verifies both complete source inventories,
-compiles five C units in one invocation and retains the receiver builder's
-3 GB reserve, 256 MB growth and 120-second bounds. It publishes once by checksum
-and installs nothing. Its loader selects the matching sibling client in a package
-or the matching checksum store in development. Keep the stable source cache.
-
-`scripts/test-print-ipp-backend.py` checks three DPI values, asymmetric DPCM and
-absence through the backend ABI at an owned loopback receiver. Configured-queue,
-stock-filter and public Iced checks remain separate acceptance layers.
-`scripts/package-print-backend.py` stages a relocatable, optional program beside
-the required matching client and retains source correction and original notices.
-The packaging regression verifies real loading after relocation and can exercise
-the owned receiver. Release staging configures no service or printer queue.
-See [the recipe](../vendor/source-overlays/cups-ipp-backend/README.md) and
-[ADR0110](adr/0110-matching-ipp-backend-resolution.md) for evidence and open gates.

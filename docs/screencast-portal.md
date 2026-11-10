@@ -13,8 +13,9 @@ also pass private native checks, as do all cursor modes for both source types at
 
 Capture requires the compositor's creator-cleanup contract: an independently
 killed worker must retire its recording even when it cannot send Stop. The
-registered `niri-desktop-pointer` source recipe supplies that contract alongside
-capture-bound pointer mappings. The backend and worker reject a provider without
+pinned kevinard/niri fork supplies that contract alongside capture-bound pointer
+mappings (since its `canopa/remote-input-pointer` topic, formerly the
+`niri-desktop-pointer` recipe). The backend and worker reject a provider without
 the verified contract before consent or recording starts. Missing/unknown versions
 are rejected, and the worker independently rechecks before creating its session.
 Scoped production admission/media acceptance passes. Distribution and broader
@@ -123,21 +124,22 @@ owner loss and replacement. It does not establish capture or physical-input
 acceptance. Omit `--normal-backend` and supply `--harness`/`--harness-sha256` to
 retain the isolated unit-fixture mode.
 
-Build the explicit combined source recipe and canonical frontend companion from
-[ADR0056](adr/0056-capture-creator-lifetime.md) and
-[ADR0055](adr/0055-frontend-session-owner-lifetime.md), using stable work directories
+Build the Niri and frontend companions from their pinned forks
+([ADR0056](adr/0056-capture-creator-lifetime.md),
+[ADR0055](adr/0055-frontend-session-owner-lifetime.md)), using stable work directories
 and the same incremental root build caches. These helpers prepare/build without
 installing or selecting either companion:
 
 ```sh
-python3 scripts/build-niri-screencast.py --overlay niri-desktop-pointer \
-  --archives /path/to/archives --work-dir target/niri-pointer-sources
-python3 scripts/build-xdg-portal-compat.py \
-  --archives /path/to/archives --work-dir target/portal-frontend-sources
+python3 scripts/build-niri.py --archives target/fork-archives --download \
+  --work-dir target/niri-fork-sources --fetch
+python3 scripts/build-xdg-portal-compat.py --archives target/fork-archives --download \
+  --work-dir target/portal-frontend-sources
 ```
 
+Add `--ref canopa/TOPIC` to the Niri builder to compare an earlier fork topic.
 For existing prepared sources use the builder's `--reuse` option; `--prepare-only`
-verifies the recipe/inventory without compiling. Read each binary path and checksum
+verifies the fork archive and source inventory without compiling. Read each binary path and checksum
 from its build receipt. Run the following on the already-built Rust portal:
 
 ```sh

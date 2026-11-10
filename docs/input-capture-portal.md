@@ -22,7 +22,7 @@ the real capture phase rather than fabricating an inactive state.
 
 The companion frontend supplies the v2 public interface and legacy create
 translation, ownership tracking and signal-confirmed phase updates. It must be
-selected together with the compatible Niri recipe. See the
+selected together with the pinned Niri fork. See the
 [session decision](adr/0061-input-capture-sessions-and-consent.md),
 [active clipboard decision](adr/0062-input-capture-clipboard-activation.md) and
 [frontend phase decision](adr/0063-input-capture-frontend-phase.md).
@@ -43,7 +43,8 @@ This verifies activation, release, topology changes, clipboard transfer and
 revocation on the selected stack. Physical input, real sandbox clients and wider
 distribution acceptance remain separate from this scoped verification.
 
-The `niri-input-capture-keyboard` companion and normal backend also pass the
+The keyboard-capture Niri companion (fork topic `canopa/input-capture-keyboard`,
+formerly the `niri-input-capture-keyboard` recipe) and normal backend also pass the
 public keyboard check in both appearances. Use the command above with
 `--keyboard` instead of `--clipboard`. It verifies independent keyboard/pointer
 approval, immutable keymap FDs, ordered key/modifier events, held-key cleanup,

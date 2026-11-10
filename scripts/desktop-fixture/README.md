@@ -80,12 +80,13 @@ records both paths, version, SHA-256 and the final unchanged-snapshot check.
 Sway comparison cases still run Sway. `--list` only validates the inventory and
 does not select or execute a compositor.
 
-For the pinned source-cancellation companion, build using
-`scripts/build-niri-compat.py` as described in `docs/vendor-maintenance.md`, then
-take the checksum from its `canopa-build.json` receipt:
+For the source-cancellation fix, build the pinned kevinard/niri fork (or
+`--ref canopa/dnd-source-lifetime`) with `scripts/build-niri.py` as described in
+`docs/vendor-maintenance.md`, then take the checksum from its `canopa-build.json`
+receipt:
 
 ```sh
-python3 scripts/run-desktop-acceptance.py --niri target/niri-compat/debug/niri \
+python3 scripts/run-desktop-acceptance.py --niri target/niri-fork/debug/niri \
   --niri-sha256 RECORDED_SHA256 --case files-dnd-cancel-gtk-receiver \
   --output /tmp/canopa-cancellation-new
 ```
@@ -927,13 +928,13 @@ while retaining the approved physical copy count. The initial fixture assumption
 about these two behaviors remain failed receipts. See
 [public paper evidence](../../.scratch/xdg-portals/print/public-paper-evidence.json).
 
-The maintained test-only receiver source is now registered separately as
-`cups-ipp-receiver` under root vendor provenance. Build it with
-`scripts/build-print-ipp-receiver.py`, a pinned archive and a verified matching
-client build receipt. `print-custom-ipp.conf` declares the owned PDF receiver's
+The maintained test-only receiver comes from the pinned kevinard/cups fork
+(`canopa/ippeveprinter-*` topics). Build it with
+`scripts/build-print-ipp-receiver.py` from a verified matching client build
+receipt. `print-custom-ipp.conf` declares the owned PDF receiver's
 range, margins and duplex capabilities. `scripts/test-print-ipp-receiver.py`
 checks eleven validation/read-only cases without jobs. See
-[the receiver recipe](../../vendor/source-overlays/cups-ipp-receiver/README.md).
+[the CUPS fork builds](../../docs/vendor-maintenance.md#cups-client-ipp-backend-and-receiver).
 
 
 ## Advanced printer controls
@@ -1024,7 +1025,7 @@ uses that receiver and the existing advanced PPD to check actual backend option
 conversion, including no invented resolution for an absent option. It creates no
 system queue or service. The DPCM case invokes the backend ABI directly and is
 separate from configured-queue, Canopa/Iced and physical/raster acceptance.
-See [the matching backend](../../vendor/source-overlays/cups-ipp-backend/README.md).
+See [the matching backend](../../docs/adr/0110-matching-ipp-backend-resolution.md).
 
 ## Real Flatpak Print caller
 

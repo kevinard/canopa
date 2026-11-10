@@ -89,8 +89,8 @@ establish physical printing. See [live printer-job ownership](adr/0100-live-prin
 for the scoped verification and remaining limits.
 
 An optional private CUPS client now supports bounded longer credentials and
-Digest compatibility fixes. For operator testing, build the pinned client described
-in [the runtime recipe](../vendor/source-overlays/cups-authentication/README.md),
+Digest compatibility fixes. For operator testing, build the client from the pinned
+[kevinard/cups fork](vendor-maintenance.md#cups-client-ipp-backend-and-receiver),
 then set `CANOPA_PRINT_CUPS_LIBRARY` to its absolute regular-file path when starting
 the opt-in backend. It freezes a sealed image until exit and loads it only inside
 CUPS workers. A recognized capability permits 127-byte usernames and 1023-byte
@@ -200,8 +200,8 @@ paper, duplex and a saved instance. Prepared stamped PDFs also pass one- and
 two-copy delivery without losing printable marks or page-size precision. The
 earlier preset/A4 failures remain evidence; no system filter patch is installed.
 See [paper submission and PDF appearances](adr/0107-exact-paper-and-print-appearances.md).
-The [maintained receiver](adr/0108-maintained-ipp-receiver.md) uses a pinned
-one-file source overlay and verified matching client configuration, with its
+The [maintained receiver](adr/0108-maintained-ipp-receiver.md) is built from the
+pinned kevinard/cups fork with the verified matching client configuration, with its
 default loader bound to the checksum-retained library. It is an owned test
 fixture and installs no service or queue.
 

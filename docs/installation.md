@@ -12,18 +12,22 @@ The output directory must be new. The script creates a reproducible source archi
 an exact SHA-256 PKGBUILD and `.SRCINFO`, then runs makepkg without installing or
 fetching system dependencies. Install missing build dependencies through pacman
 before retrying makepkg in that directory. Cargo may fetch locked Rust sources.
-The build verifies the pinned Niri, Smithay and XDG portal frontend archives and
-their canonical patches. The guarded build reuses root `target/`, with separate
-caches for the independently locked compositor and the Meson frontend.
-Verified prepared sources remain beneath that target root for reuse.
+makepkg downloads and checksums the pinned kevinard/niri and
+kevinard/xdg-desktop-portal fork archives (and the portal's release tarball for
+its bundled Meson subprojects); Cargo fetches Smithay from the kevinard/smithay
+revision in Niri's lockfile. The guarded build reuses root `target/`, with
+separate caches for the independently locked compositor and the Meson frontend.
+Verified prepared sources remain beneath that target root, one directory per
+fork commit, for reuse.
 
 The build produces these packages.
 
 - `canopa`: applications, Settings, services, session entry, PAM lock policy,
   portal defaults and the private XDG portal frontend.
-- `canopa-compositor`: the pinned compatible Niri executable installed privately
-  at `/usr/lib/canopa/niri`, with Canopa screen sharing and the Files drag
-  lifetime fixes. See [the compositor recipe](adr/0045-combined-niri-desktop-companion.md).
+- `canopa-compositor`: Niri built from the pinned kevinard/niri fork, installed
+  privately at `/usr/lib/canopa/niri`, with Canopa screen sharing, input leases and
+  the Files drag lifetime fixes. See [the fork builds](vendor-maintenance.md#niri-compositor)
+  and [the combined companion decision](adr/0045-combined-niri-desktop-companion.md).
 - `canopa-login`: optional greetd/Cage integration, a dedicated unprivileged
   `canopa-greeter` account and administrator-owned greeter settings/examples.
 - `canopa-oo7`: optional Secret Service setup for greetd logins, with oo7's Secret
