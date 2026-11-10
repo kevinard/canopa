@@ -13,6 +13,8 @@ fn renamed_performance_switch_takes_precedence_over_legacy_environment() {
         command
             .arg("--version")
             .env("RUST_LOG", "canopa_shell::diagnostics=debug")
+            // Colored field names would split the asserted `key=value` text.
+            .env("NO_COLOR", "1")
             .env_remove("CANOPA_SHELL_PERF")
             .env_remove("NIRIBAR_PERF");
         if let Some(value) = current {

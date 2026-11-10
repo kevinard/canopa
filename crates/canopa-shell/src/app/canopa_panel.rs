@@ -29,6 +29,7 @@ pub(super) fn render<'a>(
     render_with_back(snapshot, provider, drawer, ui, false, false, false, 0.0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_with_back<'a>(
     snapshot: &'a CanopaSnapshot,
     provider: &'a str,
