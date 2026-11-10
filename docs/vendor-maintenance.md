@@ -1,48 +1,51 @@
-# Shared upstream dependency forks
+# Upstream dependency forks
 
-Canopa maintains one copy of each patched dependency in root `vendor/`. Workspace
-applications use the root Cargo patches and lockfile. The earlier fork versions
-below were checked directly against the official crates.io sparse index on
-2026-09-26; later archive checks, including reis, are dated separately below.
+Canopa keeps every patched upstream project in a GitHub fork under
+`kevinard/`, with one tracking PR per change. Nothing is vendored in this
+repository any more, except the overlay recipes for separately built programs
+described below, which are moving to the same forks.
 
-| Crate | Release | Upstream revision |
-| --- | --- | --- |
-| iced_layershell | 0.19.1 | `5e39311c8c5e652bd493a8f78e68e62b8929d9cf` (`v0.19.1`) |
-| layershellev | 0.19.1 | `5e39311c8c5e652bd493a8f78e68e62b8929d9cf` (`v0.19.1`) |
-| iced_runtime | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
-| iced_winit | 0.14.0 | `3997291f318a8bc06fa522f5579836fb3feb94df` (crate VCS metadata) |
-| winit | 0.30.13 | `e9809ef54b18499bb4f2cac945719ecc2a61061b` (crate VCS metadata) |
-| uucore | 0.12.0 | `dc1efd89948a9ca4c78c3a4b9a6ac891019a8c69` (crate VCS metadata) |
-| reis | 0.7.1 | `02bc1b52aca10231d380c0cf236d69ec3c56cae4` (crate VCS metadata) |
+## Rust crate forks
 
-The Iced runtime/Winit and native Winit additions were checked against the exact locked published
-archives on 2026-10-18. Iced's MIT notice comes from that upstream revision; Winit retains the Apache
-license in its published archive.
-uucore was checked against its published archive and official sparse-index checksum
-on 2026-10-25; its original MIT notice is retained.
-reis was checked against its published archive and official registry checksum on
-2026-10-30. Its original MIT notice is retained. Only the EIS Context wrapper and
-wire backend differ: read_chunk adds finite reads, a pending-byte ceiling and
-descriptor rejection while existing read behavior remains unchanged.
-Source and dependency-manifest changes are included in the reviewable patches.
-The former accesskit_unix 0.24.0 fork (AT-SPI cache signal structure) was dropped
-on 2026-11-10: upstream #819 ships the same fix in 0.24.1, which the workspace now
-uses from crates.io.
+The root `Cargo.toml` patches these crates from git, pinned by `rev` to the
+fork's `canopa/main` branch; `Cargo.lock` records the exact commits.
 
-The two layer-shell crate source trees were compared byte for byte with their tag
-subdirectories, excluding Cargo-generated manifests/lockfiles and mapping
-`Cargo.toml.orig` to the upstream manifest. Their MIT license is copied from that
-tag. AccessKit's MIT and Apache license texts were retrieved from its recorded
-revision. Published archive SHA-256 values match the official registry checksums.
+| Fork | Upstream | Crates taken from the fork | Base |
+| --- | --- | --- | --- |
+| [kevinard/winit](https://github.com/kevinard/winit) | rust-windowing/winit | winit, dpi | 0.30.13 (`e9809ef5`) |
+| [kevinard/iced](https://github.com/kevinard/iced) | iced-rs/iced | iced and all 12 `iced_*` crates Canopa locks | `0.14` branch at `595af03a` (iced_widget 0.14.2) |
+| [kevinard/exwlshelleventloop](https://github.com/kevinard/exwlshelleventloop) | waycrate/exwlshelleventloop | iced_layershell, iced_layershell_macros, iced_exdevtools, layershellev, waycrate_xkbkeycode | v0.19.1 (`5e39311c`) |
+| [kevinard/reis](https://github.com/kevinard/reis) | ids1024/reis | reis | 0.7.1 (`02bc1b52`) |
+| [kevinard/coreutils](https://github.com/kevinard/coreutils) | uutils/coreutils | uucore, uucore_procs | uucore 0.12.0 (`dc1efd89`) |
 
-[Machine-readable provenance](../vendor/provenance.json) records exact download URLs,
-archive checksums, and upstream/local hashes for every path. [Patches](../vendor/patches/)
-show source changes relative to the published crates. `Cargo.lock` is omitted from
-vendored packages because the root lockfile governs the build; licenses and the
-AccessKit patch explanation are packaging/documentation additions, recorded separately
-in the inventory. No nested source checkout is required to build the local forks.
+Every fork uses the same branches:
+- `canopa/base` is the exact upstream commit.
+- `canopa/<topic>` holds one change, from the base or stacked on the topic it
+  needs. Its PR inside the fork shows exactly that change and stays open until
+  the change is upstreamed or dropped.
+- `canopa/main` is the base with every topic merged. Canopa pins it.
 
-Retained behavior:
+Crates that share a repository must all come from the same fork commit. Taking
+only `iced_winit` from git would build a second, incompatible `iced_core`. When
+Canopa locks a crate from such a repository, add it to the patch list.
+
+To change a fork:
+1. Work on its topic branch, or create a new topic and PR.
+2. Run the fork's own tests (`cargo test` in the fork; the PR records which).
+3. Merge the topic into `canopa/main` with `--no-ff`, and push.
+4. Update the `rev` in `Cargo.toml`, run `cargo update -p <crate>`, and
+   regenerate `docs/dependency-attributions.md`. That inventory names each
+   fork crate by its fork URL and commit.
+
+To upgrade upstream, rebase the topics onto the new upstream commit as a new
+`canopa/base`. Drop topics that upstream now provides, and close their PRs with
+a link to the upstream change. Then rebuild `canopa/main`. Contribution
+conventions are in `.scratch/forks/GITHUB-FORKS.md`, and the reasons for each
+change are in `.scratch/forks/INVENTORY.md`.
+
+## Retained behavior
+
+Each row is one or more tracking PRs in the fork named in the table above.
 
 | Patch | Why it remains | Verification |
 | --- | --- | --- |
@@ -77,14 +80,11 @@ Removed local patches:
   the common layershellev source.
 - The second AccessKit and generic panel protocol snapshots: each has one source.
 
-Run `python3 scripts/check-vendor.py` for offline file and patch integrity. With
-downloaded `NAME-VERSION.crate` files, use `--archives DIRECTORY` to also verify the
-published archive checksums and contents. The checker performs no downloads. For an
-intentional upgrade, inspect old patches against the new upstream source, remove
-upstreamed behavior, update application calls, and regenerate the inventory and
-patches together. Never update hashes just to suppress an unexpected difference.
-
 ## Pinned source overlays
+
+Run `python3 scripts/check-vendor.py` to verify these recipes against
+`vendor/provenance.json`; add `--archives DIRECTORY` to also verify downloaded
+source archives. The checker performs no downloads.
 
 The experimental `niri-remote-touch` recipe adds contact ownership, physical
 device bookkeeping and an FD-owned mapped touch transport to the complete
@@ -269,22 +269,6 @@ Niri; the second uses disposable Sway outputs to remove and restore every output
 without terminating the compositor. It checks actual rendered frames and Wayland popup
 grabs/dismissal. These are local adapter checks; Orca and physical monitor/device
 acceptance remain separate procedures.
-
-`scripts/test-vendor.py` runs library tests from prepared copies because Cargo
-cannot test an excluded dependency's development targets in the root workspace.
-It seeds their lockfile from the root lockfile, gives the upstream Iced
-test dependency the combined application's features, and rejects any active
-registry dependency version absent from the root lockfile. Source files and
-tracked vendor manifests are unchanged by this fixture. Copies live at stable
-paths in `target/vendor-test-sources/`, reuse the root incremental build cache,
-and retain unchanged source mtimes. A per-fixture lock serializes updates and
-tests. Random source paths give Cargo new package identities and accumulate
-duplicate dependency builds; do not use them for these checks.
-
-The vendor test script also compiles the std-only iced_winit event-batch module
-from the same prepared copy and runs its queue-contract regressions. Normal
-workspace compilation covers its integration with the adapter; native acceptance
-covers actual event delivery and view/focus transitions.
 
 ## Experimental input capture companion
 

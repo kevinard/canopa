@@ -22,6 +22,11 @@ correction was local until accesskit_unix 0.24.1 released it upstream (#819); th
 fork was dropped on 2026-11-10. Archive checksums, upstream commits, file hashes and patches are
 recorded together; see ../vendor-maintenance.md.
 
+Update, 2026-11-10: the Rust crate forks moved out of `vendor/` into GitHub
+forks under `kevinard/`, with one tracking PR per change and the root manifest
+pinning each fork commit by git `rev`. Provenance is now the git history of
+each fork. See ../vendor-maintenance.md.
+
 The root release profile adopts Niribar's thin LTO, one codegen unit and symbol
 stripping. Release builds unwind on panic, like the tested dev profile: Files, Notify
 and the portal contain worker panics with `catch_unwind` and report a failed job,

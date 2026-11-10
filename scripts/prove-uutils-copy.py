@@ -29,7 +29,7 @@ name = "canopa-uutils-proof"
 version = "0.0.0"
 edition = "2024"
 [dependencies]
-uucore = {{ path = "{ROOT / 'vendor/uucore'}", default-features = false, features = ["buf-copy", "fs", "signals"] }}
+uucore = {{ git = "https://github.com/kevinard/coreutils", rev = "1e4f136e045306ff99dd7387585f42a336a184b2", default-features = false, features = ["buf-copy", "fs", "signals"] }}
 uu_cp = "=0.12.0"
 '''
         (build / "Cargo.toml").write_text(manifest)

@@ -299,7 +299,6 @@ fetch Git updates.
 cargo +1.95.0 fmt --all -- --check
 cargo +1.95.0 clippy --locked -p canopa-shell --all-targets -- -D warnings
 dbus-run-session -- cargo +1.95.0 test --locked -p canopa-shell --all-targets
-python3 scripts/check-vendor.py
 python3 scripts/check-contrast.py
 python3 scripts/test-update.py
 ```

@@ -71,6 +71,16 @@ def collect_notices(package, destination):
                 files.update(path for path in parent.iterdir() if path.is_file()
                              and path.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE")))
             break
+    if not files and (package["source"] or "").startswith("git+"):
+        # A crate inside a pinned multi-crate fork (Iced, winit's dpi) keeps its
+        # texts at the repository root. Use the nearest notices inside the same
+        # Cargo git checkout, which Cargo marks with `.cargo-ok`.
+        for parent in base.parents:
+            found = {path for path in parent.iterdir() if path.is_file()
+                     and path.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE"))}
+            if found or (parent / ".cargo-ok").exists():
+                files.update(found)
+                break
     target = destination / f"{package['name']}-{package['version']}"
     target.mkdir(parents=True, exist_ok=True)
     for path in sorted(files):
@@ -117,8 +127,15 @@ def main():
                    ". Development-only edges are excluded; source license declarations and original notices are preserved.\n")
     for package in packages:
         name, version = package["name"], package["version"]
-        source = (f"https://crates.io/crates/{name}/{version}" if package["source"]
-                  else package["repository"] or "Workspace source")
+        origin = package["source"] or ""
+        if origin.startswith("git+"):
+            # A pinned Canopa fork: name the exact fork commit, not a release.
+            url, _, commit = origin.removeprefix("git+").partition("#")
+            source = f"{url.split('?')[0]} @ {commit[:12]}"
+        elif origin:
+            source = f"https://crates.io/crates/{name}/{version}"
+        else:
+            source = package["repository"] or "Workspace source"
         license = package["license"] or package["license_file"] or "See source"
         text.append(f"| {name} | {version} | {license} | {source} |")
         if args.notices:

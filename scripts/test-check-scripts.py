@@ -205,7 +205,7 @@ class CheckScripts(unittest.TestCase):
         self.assertIn("scripts/test-niri-build-reuse.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-remote-touch-core.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-remote-desktop-dispatch.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
-        self.assertEqual(commands[-1]["args"], ["scripts/test-vendor.py"])
+        self.assertEqual(commands[-1]["args"], ["scripts/test-configuration.py"])
         self.assertTrue(all(item["incremental"] == "0" for item in commands))
 
     def test_core_gate_stays_available(self):

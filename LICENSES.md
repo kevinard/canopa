@@ -24,8 +24,10 @@ The combined repository preserves the original source licenses:
   Their source stays under its MIT or MIT OR Apache-2.0 terms, but distributed
   executables of those two applications are covered by GPL-3.0-or-later as a
   whole. The Arch `canopa` package declares that license accordingly.
-- Vendored dependencies retain their upstream notices and license texts in each
-  `vendor/` directory. See `docs/vendor-maintenance.md` for provenance.
+- Forked dependencies keep their upstream licenses and notices in their
+  GitHub forks (see `docs/vendor-maintenance.md`).
+  `docs/dependency-attributions.md` names each fork crate by its fork URL and
+  commit, and packaging collects its license texts like any other dependency.
 - The Niri source-overlay recipes share Niri's GPL-3.0-or-later and Smithay's MIT
   texts in `vendor/source-overlays/niri-source-cancellation/`. The Arch
   `canopa-compositor` package builds the `niri-remote-touch` recipe and is

@@ -1,2 +1,0 @@
-# Preserve exact upstream manifests and unified-diff context lines.
-vendor/patches/*.patch -whitespace

@@ -54,8 +54,10 @@ Issues and PRDs are local Markdown files under `.scratch/`; see
 Shell and notification domain docs and ADR histories live in `docs/shell/` and
 `docs/notify/`. See `docs/agents/domain.md` for ownership and terminology.
 
-Shared dependency forks live only in `vendor/`. Read `docs/vendor-maintenance.md`
-before changing them, preserve upstream attribution, and update provenance and
-reviewable patches together. Application crates must not vendor another copy.
+Patched upstream dependencies live in GitHub forks under `kevinard/` and are
+pinned by git `rev` in the root `Cargo.toml`; separately built programs still use
+the overlay recipes in `vendor/source-overlays/`. Read `docs/vendor-maintenance.md`
+before changing them: one tracking PR per change in the fork, preserve upstream
+attribution, and never vendor a copy into the workspace.
 The archived rotation prototype in `experiments/focused-window-rotation/` is
 excluded from the supported workspace and retains its experimental renderer.

@@ -115,7 +115,18 @@ Findings from the split:
 - The output-snapshot change breaks `iced_layershell --features debug`, which
   Canopa does not use.
 
-## After the forks exist (Canopa side, done separately)
+## Canopa switched to the crate forks (2026-11-10)
+
+Root `Cargo.toml` patches winit, iced (13 crates), exwlshelleventloop (5 crates),
+reis and uucore from the forks' `canopa/main` by git `rev`. `vendor/` crate
+copies, `vendor/patches`, the provenance `crates` section and the fork test
+harness (`test-vendor*.py`, `vendor_test_workspace.py`) are removed; fork tests
+run in the forks. The workspace gate shows only the known baseline failures.
+
+Remaining: Niri/Smithay, xdg-desktop-portal and CUPS still build from
+`vendor/source-overlays` recipes. The steps below cover them.
+
+## After the forks exist (Canopa side, remaining for overlays)
 
 Replace `vendor/` paths with `git` + `rev` patches, drop `vendor/patches`,
 `vendor/provenance.json` crate entries and the overlay recipes, point the

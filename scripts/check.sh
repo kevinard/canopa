@@ -61,7 +61,6 @@ case "$1" in
         python3 scripts/test-niri-build-reuse.py
         python3 scripts/test-vendor-source-additions.py
         python3 scripts/test-remote-touch-core.py --output "${CARGO_TARGET_DIR:-target}/remote-touch-core-check.json"
-        python3 scripts/test-vendor-test-workspace.py
         python3 scripts/test-cups-authentication.py --self-test
         python3 scripts/test-build-guard.py
         bash scripts/cargo.sh fmt --all -- --check
@@ -72,6 +71,5 @@ case "$1" in
         python3 scripts/test-remote-desktop-dispatch.py --binary "${CARGO_TARGET_DIR:-target}/debug/xdg-desktop-portal-canopa" --output "${CARGO_TARGET_DIR:-target}/remote-desktop-dispatch-check.json"
         bash scripts/cargo.sh build --locked -p canopa-cli -p canopa-session -p canopa-greeter -p canopa-polkit -p canopa-pinentry -p canopa-settings
         python3 scripts/test-configuration.py
-        python3 scripts/test-vendor.py
         ;;
 esac

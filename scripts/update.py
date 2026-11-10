@@ -63,11 +63,11 @@ def build_cache_state(packages):
 
 def build(jobs, rebuild=False):
     # Full metadata downloads registry sources for other platforms too. Only
-    # workspace manifests and our managed forks are needed for local cleanup.
+    # workspace manifests are needed for local cleanup; forks are pinned git
+    # dependencies, so Cargo rebuilds them whenever their locked commit changes.
     metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--offline",
                               "--format-version=1").stdout)
-    forks = json.loads((ROOT / "vendor/provenance.json").read_text())["crates"]
-    packages = sorted({package["name"] for package in metadata["packages"]} | forks.keys())
+    packages = sorted({package["name"] for package in metadata["packages"]})
     cache = ROOT / "target/.canopa-update-cache.json"
     try:
         previous = json.loads(cache.read_text())

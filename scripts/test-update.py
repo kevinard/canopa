@@ -20,7 +20,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parent
 PROGRAMS = ('canopa-shell', 'canopa-wifi-provider', 'canopa-audio-provider', 'canopa-media-provider', 'canopa-notify', 'canopa-files', 'canopa', 'canopa-wallpaper', 'canopa-lock', 'canopa-idle', 'canopa-greeter', 'canopa-polkit', 'canopa-pinentry', 'canopa-settings')
 SERVICES = ('canopa-shell.service', 'canopa-notify.service')
-LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets', 'accesskit_unix')
+LOCAL_PACKAGES = ('canopa-panel-protocol', 'canopa-config', 'canopa-assets')
 SYSTEMCTL = r'''#!/usr/bin/env python3
 import json
 import os
@@ -102,8 +102,8 @@ const VERSION: &str = "@VERSION@";
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--version") {
-        println!("{} {} {} {} {}", VERSION, canopa_panel_protocol::VERSION,
-            canopa_config::VERSION, canopa_assets::VERSION, accesskit_unix::VERSION);
+        println!("{} {} {} {}", VERSION, canopa_panel_protocol::VERSION,
+            canopa_config::VERSION, canopa_assets::VERSION);
         return;
     }
     if args.get(1).map(String::as_str) == Some("config") {
@@ -186,17 +186,14 @@ class UpdateTests(unittest.TestCase):
         (root / 'Cargo.toml').write_text(
             '[workspace]\nresolver = "2"\nmembers = ["crates/canopa-shell", '
             '"crates/canopa-notify", "crates/canopa-files", "crates/canopa-cli", "crates/canopa-session", "crates/canopa-greeter", "crates/canopa-polkit", "crates/canopa-pinentry", "crates/canopa-settings"]\n'
-            'exclude = ["vendor/accesskit_unix"]\n'
-            '[patch.crates-io]\naccesskit_unix = { path = "vendor/accesskit_unix" }\n')
+            )
         for name in LOCAL_PACKAGES:
             package = root / 'vendor' / name
             (package / 'src').mkdir(parents=True)
             (package / 'Cargo.toml').write_text(
                 f'[package]\nname = "{name}"\nversion = "0.1.0"\nedition = "2021"\n')
             (package / 'src/lib.rs').write_text(f'pub const VERSION: &str = "{version}";\n')
-        (root / 'vendor/provenance.json').write_text(json.dumps({'crates': {'accesskit_unix': {}}}))
-        deps = '\n'.join('accesskit_unix = "0.1.0"' if name == 'accesskit_unix' else
-                         f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
+        deps = '\n'.join(f'{name} = {{ path = "../../vendor/{name}" }}' for name in LOCAL_PACKAGES)
         source = RUST_MAIN.replace('@VERSION@', version)
         for name, binary in [('canopa-shell', 'canopa-shell'), ('canopa-notify', 'canopa-notify'),
                              ('canopa-files', 'canopa-files'),
@@ -254,7 +251,7 @@ class UpdateTests(unittest.TestCase):
     def assert_versions(self, version):
         for name in PROGRAMS:
             result = self.run_command([str(self.bin_dir / name), '--version'])
-            self.assertEqual(result.stdout.strip(), ' '.join([version] * 5))
+            self.assertEqual(result.stdout.strip(), ' '.join([version] * 4))
 
     def backup(self):
         paths = list((self.root / 'state/canopa-backups').iterdir())
@@ -278,7 +275,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual([binary.stat().st_mtime_ns for binary in binaries], modified)
         self.assert_versions('current')
 
-    def test_cached_update_rebuilds_changed_sources_and_vendor_forks(self):
+    def test_cached_update_rebuilds_changed_sources_and_shared_crates(self):
         self.update()
         for source in [*self.repo.glob('crates/**/src/**/*.rs'),
                        *self.repo.glob('vendor/*/src/*.rs')]:
@@ -317,7 +314,7 @@ class UpdateTests(unittest.TestCase):
         self.update()
         result = self.update(True, '--rebuild')
         self.assertIn('Compiling canopa-shell ', result.stderr)
-        self.assertIn('Compiling accesskit_unix ', result.stderr)
+        self.assertIn('Compiling canopa-config ', result.stderr)
         self.assert_versions('current')
         result = self.update()
         self.assertNotIn('Compiling ', result.stderr)
@@ -358,9 +355,9 @@ class UpdateTests(unittest.TestCase):
         self.assert_versions('current')
         self.assertIsNone(process.poll(), 'updating the executable stopped Files')
         running = self.run_command([f'/proc/{process.pid}/exe', '--version'])
-        self.assertEqual(running.stdout.strip(), ' '.join(['old'] * 5))
+        self.assertEqual(running.stdout.strip(), ' '.join(['old'] * 4))
         previous = self.run_command([str(self.backup() / 'bin/canopa-files'), '--version'])
-        self.assertEqual(previous.stdout.strip(), ' '.join(['old'] * 5))
+        self.assertEqual(previous.stdout.strip(), ' '.join(['old'] * 4))
 
     def test_recovers_failed_service_but_leaves_stopped_companion_stopped(self):
         self.state('canopa-notify.service', active='failed')
