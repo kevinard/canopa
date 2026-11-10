@@ -1,6 +1,6 @@
 # Upstream forks on GitHub
 
-Status: ready-for-agent
+Status: done (2026-11-10)
 
 Goal: move every patched upstream out of `vendor/` into a GitHub fork under the
 personal account `kevinard`, with one reviewable PR per change, so Canopa pins
@@ -85,9 +85,9 @@ SSH prompts and hangs in agent shells. Large repositories use
 | iced | `595af03a` (`0.14` branch, iced_widget 0.14.2) | `af379ca0` | #1–#8 |
 | exwlshelleventloop | `5e39311c` (v0.19.1) | `1de59e6d` (#6 pins the iced and winit forks) | #1–#6 |
 | niri | `b22eb842` | `9389bbaa` | #1–#12 (`canopa/fixes` = base + the six fixes; features stack on it) |
-| smithay | `8a270232` | `55163887` (**local only**) | 4 to open |
+| smithay | `8a270232` | `55163887` | pushed; 4 to open |
 | xdg-desktop-portal | `1d20fad` (1.22.1) | `5272cf5` | #1–#11 |
-| cups | `ef80eea` (v2.4.20) | `aed09bb` (**local only**) | 13 to open |
+| cups | `ef80eea` (v2.4.20) | `aed09bb` | pushed; 13 to open |
 
 Every `canopa/main` tree was checked against what Canopa builds today. Known,
 intended differences:
@@ -96,13 +96,11 @@ intended differences:
 - iced W7 kept as its own topic, which bumps futures-channel to 0.3.32;
 - Smithay is bound by git `rev` instead of a local path.
 
-**Blocked:** Smithay and CUPS bases carry older `.github/workflows` files, so
-GitHub rejects pushing them without the token's `workflow` scope. Run
-`gh auth refresh -h github.com -s workflow`, then
-`/home/kevinard/projects/forks/smithay/.git/canopa-pr/push-and-open-prs.sh`
-and `/home/kevinard/projects/forks/cups/.git/canopa-pr/push-and-open-prs.sh`.
-Until then the Niri branches resolve their Smithay revisions only from the
-local clone.
+The Smithay and CUPS branches are now on GitHub (they needed the token's
+`workflow` scope because their bases carry older `.github/workflows` files);
+their tracking PRs still have to be opened with
+`/home/kevinard/projects/forks/smithay/.git/canopa-pr/push-and-open-prs.sh` and
+`/home/kevinard/projects/forks/cups/.git/canopa-pr/push-and-open-prs.sh`.
 
 The global git config sets `push.followTags = true`; push fork branches with
 `--no-follow-tags`.
@@ -123,11 +121,31 @@ copies, `vendor/patches`, the provenance `crates` section and the fork test
 harness (`test-vendor*.py`, `vendor_test_workspace.py`) are removed; fork tests
 run in the forks. The workspace gate shows only the known baseline failures.
 
-Remaining: Niri/Smithay, xdg-desktop-portal and CUPS still build from
-`vendor/source-overlays` recipes. The steps below cover them.
+## Canopa switched to the program forks (2026-11-10)
 
-## After the forks exist (Canopa side, remaining for overlays)
+`vendor/` is gone. `packaging/forks.json` pins kevinard/niri, kevinard/xdg-desktop-portal
+and kevinard/cups by `canopa/main` commit, codeload archive URL and SHA-256, plus
+the license checksums and Niri's locked kevinard/smithay revision:
 
-Replace `vendor/` paths with `git` + `rev` patches, drop `vendor/patches`,
-`vendor/provenance.json` crate entries and the overlay recipes, point the
-PKGBUILD at the fork archives, and update `docs/vendor-maintenance.md`.
+| Fork | Pinned commit | Archive SHA-256 |
+| --- | --- | --- |
+| niri | `9389bbaaa37ba91b9c110ebe457a2f6386e69299` | `1d6cb7383198ccb37b27e9046d120900b5b0d1b71c9eb34fbe57fe5500b5eb28` |
+| xdg-desktop-portal | `5272cf5b3e0ad62a0f71213f4c87c728bd142720` | `4c12e31e8201706365fb0b84df9e4799ce99b228d06832a7db76030d8ac4f0ce` |
+| cups | `aed09bb63fd0c78639527bda451cbba9bf276d79` | `979871d4c420fd55e3dfd36c61842fa08223e79716bb854674ae8b6f3fb5a60a` |
+
+- The PKGBUILD downloads the Niri and portal archives; Cargo fetches Smithay from
+  the rev in Niri's lockfile. `scripts/build-niri.py` replaces
+  `build-niri-screencast.py`, `build-niri-compat.py` and the Smithay path binding;
+  `--ref canopa/<topic>` builds a topic for comparison (unpinned, not packageable).
+- The portal takes `subprojects/gvdb` and `subprojects/libglnx` from the 1.22.1
+  release tarball (checksummed); the prepared tree equals the old recipe's 499 files.
+- CUPS client, backend and receiver build from one fork tree; the git tree has
+  `configure`, and only `packaging/cups.spec` (unused) is release-tarball-only.
+- Packaging accepts only pinned-commit receipts and installs the fork license
+  texts; provenance files record fork URL, commit and archive checksum.
+- `vendor_sources.py`, `check-vendor.py`, `niri_source_bindings.py` and the
+  overlay-materialization tests are deleted; `test-fork-sources.py` replaces them
+  in the gate. The std-only Niri core tests read their modules from the pinned
+  archive.
+
+To move a pin, follow `docs/vendor-maintenance.md` ("To move a pin").
