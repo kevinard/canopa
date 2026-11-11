@@ -15,9 +15,13 @@ The combined repository preserves the original source licenses:
 - Canopa widget data: MIT, preserving extracted Canopa Shell attribution in
   `crates/canopa-widgets/LICENSE`.
 - Canopa launcher contracts, Files, Settings, session tools, session presentation, greeter, polkit agent, pinentry,
-  configuration, appearance, UI, notification client, bounded file intake, portal,
+  configuration, appearance, UI, translations and formatting (`canopa-i18n`),
+  notification client, bounded file intake, portal,
   and CLI: MIT OR Apache-2.0,
-  with both texts in their crate directories.
+  with both texts in their crate directories. The Fluent translation files
+  under each crate's `i18n/` directory are under the same terms as the crate.
+- Locale data compiled into the formatting crates (ICU4X with CLDR data) is
+  Unicode-3.0, as recorded in `docs/dependency-attributions.md`.
 - Shared workspace tooling and integration documentation: MIT OR Apache-2.0,
   using the texts in `crates/canopa-notify/`.
 - Canopa Shell and Canopa Settings link the GPL-3.0-or-later `niri-ipc` crate.

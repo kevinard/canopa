@@ -1,0 +1,25 @@
+[package]
+name = "canopa-i18n"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+i18n-embed = { workspace = true }
+i18n-embed-fl.workspace = true
+rust-embed.workspace = true
+fluent = "0.17"
+fluent-syntax = "0.12"
+fluent-langneg = "0.13"
+chrono.workspace = true
+unic-langid.workspace = true
+icu_datetime = "2.3"
+icu_decimal = "2.3"
+icu_calendar = "2.3"
+icu_locale_core = "2.3"
+icu_time = "2.3"
+fixed_decimal = { version = "0.7", features = ["ryu"] }
+
+[dev-dependencies]
+tempfile.workspace = true

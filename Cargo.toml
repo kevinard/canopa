@@ -18,6 +18,7 @@ members = [
   "crates/canopa-config",
   "crates/canopa-theme",
   "crates/canopa-ui",
+  "crates/canopa-i18n",
   "crates/canopa-notify-client",
   "crates/canopa-panel-protocol",
   "crates/canopa-services",
@@ -41,6 +42,7 @@ canopa-file = { path = "crates/canopa-file" }
 canopa-config = { path = "crates/canopa-config" }
 canopa-theme = { path = "crates/canopa-theme" }
 canopa-ui = { path = "crates/canopa-ui" }
+canopa-i18n = { path = "crates/canopa-i18n" }
 sha2 = "0.10"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 uucore = { version = "=0.12.0", features = ["buf-copy"] }
@@ -113,6 +115,10 @@ url = "2.5"
 base64 = "0.22"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 unicode-segmentation = "1.13"
+i18n-embed = { version = "0.16", features = ["fluent-system"] }
+i18n-embed-fl = "0.10"
+rust-embed = { version = "8.11", features = ["debug-embed"] }
+unic-langid = "0.9"
 
 [patch.crates-io]
 # Canopa forks: each pins `canopa/main` of github.com/kevinard/<repo>, which is
