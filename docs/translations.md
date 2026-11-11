@@ -91,7 +91,8 @@ Rules:
   `integer`, `decimal`, `percent`, `size`, `decimal_size`, `duration`,
   `relative`), never `format!("{:.1}")` or a fixed Chrono pattern.
 - Clocks keep a person's explicit Chrono pattern. Without one they use the
-  locale's time and date styles; Settings' 12/24-hour switch writes a pattern
+  locale's time and date styles; Settings' 24- and 12-hour choices write a
+  pattern and its Automatic choice removes the patterns it recognizes
   ([ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md)).
 - Layouts use `canopa_ui::direction` for rows with leading and trailing
   content, alignment, padding, chevrons, back arrows and directional icons.
