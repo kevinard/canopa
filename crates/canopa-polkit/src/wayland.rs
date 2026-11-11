@@ -154,7 +154,7 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
-        "Canopa Authorization",
+        &fl!("polkit-title"),
         move |request| {
             let _ = a11y_sender.send(request);
         },
@@ -213,7 +213,7 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
 impl App {
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         if let (Some(a), Some(c)) = (&mut self.accessibility, &self.controller) {
-            a.update("Canopa Authorization", &c.ui, &self.settings, self.focused);
+            a.update(&fl!("polkit-title"), &c.ui, &self.settings, self.focused);
         }
         use canopa_session_ui::accessibility::{Operation, select};
         if !self.focused
@@ -314,7 +314,7 @@ impl App {
                             &self.qh,
                         );
                         window.set_app_id("org.canopa.Polkit");
-                        window.set_title("Authentication required");
+                        window.set_title(fl!("polkit-window-title"));
                         window.set_min_size(Some(AUTHORIZATION_DIALOG_SIZE));
                         window.set_max_size(Some(AUTHORIZATION_DIALOG_SIZE));
                         window.commit();
@@ -481,7 +481,7 @@ impl App {
         };
         c.refresh();
         if let Some(a) = &mut self.accessibility {
-            a.update("Canopa Authorization", &c.ui, &self.settings, self.focused);
+            a.update(&fl!("polkit-title"), &c.ui, &self.settings, self.focused);
         }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);

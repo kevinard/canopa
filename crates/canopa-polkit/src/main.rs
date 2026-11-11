@@ -31,6 +31,7 @@ enum Operation {
     },
 }
 fn main() {
+    canopa_i18n::init();
     if let Err(error) = run(Cli::parse()) {
         eprintln!("canopa-polkit: {error:#}");
         std::process::exit(1);

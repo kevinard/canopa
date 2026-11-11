@@ -21,9 +21,18 @@ impl Identity {
     pub fn label(&self) -> String {
         let name: String = self.name.chars().take(24).collect();
         if self.name.is_empty() || self.name == self.username {
-            format!("{} (UID {})", self.username, self.uid)
+            fl!(
+                "polkit-identity",
+                username = self.username.as_str(),
+                uid = self.uid.to_string()
+            )
         } else {
-            format!("{name} · {} (UID {})", self.username, self.uid)
+            fl!(
+                "polkit-identity-named",
+                name = name,
+                username = self.username.as_str(),
+                uid = self.uid.to_string()
+            )
         }
     }
 }

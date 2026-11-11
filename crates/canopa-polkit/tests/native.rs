@@ -105,6 +105,7 @@ fn native_registration_conversations_cancellation_and_owner_filter() {
         );
         wait(&case.join("polkit-ready"));
         let mut child = assert_cmd::Command::new(std::env::current_exe().unwrap());
+        child.env("CANOPA_LANGUAGE", "en");
         child
             .args([
                 "--ignored",

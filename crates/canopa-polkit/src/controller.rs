@@ -38,8 +38,8 @@ impl Controller {
         let mut ui = SessionView::new(settings, String::new())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
-            heading: "Authorize system change".into(),
-            eyebrow: "SYSTEM AUTHORIZATION".into(),
+            heading: fl!("polkit-heading"),
+            eyebrow: fl!("polkit-eyebrow"),
             emblem: Emblem::Shield,
             dialog: true,
             choices: &[(1, Emblem::Cycle)],
@@ -117,7 +117,7 @@ impl Controller {
                     .collect();
                 self.details = None;
                 self.phase = Phase::Waiting;
-                self.notice = "Waiting for authentication…".into();
+                self.notice = fl!("polkit-waiting-for-authentication");
                 self.ui.failed = false;
             }
             Event::Waiting {
@@ -134,7 +134,7 @@ impl Controller {
                 self.phase = Phase::Waiting;
                 self.ui.secret.clear();
                 self.prompt = None;
-                self.notice = "Waiting for authentication…".into();
+                self.notice = fl!("polkit-waiting-for-authentication");
                 self.ui.failed = false;
             }
             Event::Prompt {
@@ -178,7 +178,7 @@ impl Controller {
                 self.prompt = None;
                 self.phase = Phase::Failed;
                 self.retry_after = Instant::now() + Duration::from_secs(2);
-                self.notice = "Authentication failed. Try again.".into();
+                self.notice = fl!("polkit-failed");
                 self.ui.failed = true;
             }
             Event::PolicyPublisher { generation, name }
@@ -217,11 +217,10 @@ impl Controller {
         let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
         panel.disclosure = self.details.is_none().then_some(4);
         panel.heading = if self.details.is_some() {
-            "Request details"
+            fl!("polkit-request-details")
         } else {
-            "Authorize system change"
-        }
-        .into();
+            fl!("polkit-heading")
+        };
         panel.account = None;
         self.ui.custom.clear();
         self.ui.prompt = if self.details.is_none() {
@@ -239,15 +238,21 @@ impl Controller {
                 .as_ref()
                 .filter(|i| Some(i.uid) == self.selected_uid())
                 .map(crate::identity::Identity::label)
-                .or_else(|| self.selected_uid().map(|uid| format!("UID {uid}")))
+                .or_else(|| {
+                    self.selected_uid()
+                        .map(|uid| fl!("polkit-uid", uid = uid.to_string()))
+                })
                 .unwrap_or_default();
-            let process = self
-                .subject_pid
-                .map_or_else(String::new, |pid| format!("Request subject: Process {pid}"));
+            let process = self.subject_pid.map_or_else(String::new, |pid| {
+                fl!("polkit-request-subject", pid = pid.to_string())
+            });
             let publisher = if self.policy_publisher.is_empty() {
                 String::new()
             } else {
-                format!("Policy publisher: {}", self.policy_publisher)
+                fl!(
+                    "polkit-policy-publisher",
+                    publisher = self.policy_publisher.as_str()
+                )
             };
             let full = format!(
                 "{}\n{}\n{}\n{}\n{}\n{}\n{}",
@@ -289,7 +294,7 @@ impl Controller {
                 .insert(format!("message-{index}"), part.join("\n"));
         }
         self.ui.message = if self.details.is_some() {
-            "Details · Page Up/Down: page · Enter: back".into()
+            fl!("polkit-details-hint")
         } else {
             self.notice.clone()
         };
@@ -307,9 +312,9 @@ impl Controller {
             if uid == 0 {
                 "root".into()
             } else if uid == unsafe { libc::getuid() } {
-                "Your account".into()
+                fl!("polkit-your-account")
             } else {
-                format!("User ID {uid}")
+                fl!("polkit-user-id", uid = uid.to_string())
             }
         } else {
             String::new()
@@ -322,9 +327,10 @@ impl Controller {
                 panel.account = Some(label.clone());
             }
             if let Some(pid) = self.subject_pid {
-                self.ui
-                    .custom
-                    .insert("subject-process".into(), format!("Process {pid}"));
+                self.ui.custom.insert(
+                    "subject-process".into(),
+                    fl!("polkit-process", pid = pid.to_string()),
+                );
             }
             if !self.policy_publisher.is_empty() {
                 self.ui
@@ -340,15 +346,15 @@ impl Controller {
             Control::new(
                 2,
                 if self.phase == Phase::Failed {
-                    "Retry"
+                    fl!("polkit-retry")
                 } else if self.phase == Phase::Prompt && self.details.is_none() {
-                    "Authenticate"
+                    fl!("polkit-authenticate")
                 } else {
-                    "Waiting…"
+                    fl!("polkit-waiting")
                 },
             ),
-            Control::new(3, "Cancel"),
-            Control::new(4, "Policy details"),
+            Control::new(3, fl!("polkit-cancel")),
+            Control::new(4, fl!("polkit-policy-details")),
         ];
         if self.uids.len() > 1 && self.details.is_none() {
             self.ui
@@ -356,13 +362,11 @@ impl Controller {
                 .insert(0, Control::new(1, account).with_kind(ControlKind::Identity));
         }
         if let Some(page) = self.details {
+            let (shown, total) = ((page % page_count + 1) as u64, page_count as u64);
             self.ui.controls = vec![
-                Control::new(2, "Back to authentication"),
-                Control::new(
-                    4,
-                    format!("Next page ({}/{page_count})", page % page_count + 1),
-                ),
-                Control::new(3, "Cancel"),
+                Control::new(2, fl!("polkit-back-to-authentication")),
+                Control::new(4, fl!("polkit-next-page", page = shown, count = total)),
+                Control::new(3, fl!("polkit-cancel")),
             ];
         }
     }
@@ -392,12 +396,12 @@ impl Controller {
             Runtime::command(self.generation, self.serial, 3, 0, Some(&secret));
             self.phase = Phase::Waiting;
             self.prompt = None;
-            self.notice = "Authenticating…".into();
+            self.notice = fl!("polkit-authenticating");
         } else if self.phase == Phase::Failed && Instant::now() >= self.retry_after {
             Runtime::command(self.generation, self.serial, 2, self.selected, None);
             self.serial += 1;
             self.phase = Phase::Waiting;
-            self.notice = "Authenticating…".into();
+            self.notice = fl!("polkit-authenticating");
             self.ui.failed = false;
         }
         self.refresh();
@@ -428,7 +432,7 @@ impl Controller {
         self.prompt = None;
         self.details = None;
         self.phase = Phase::Cancelling;
-        self.notice = "Cancelling authentication…".into();
+        self.notice = fl!("polkit-cancelling");
         Runtime::command(self.generation, self.serial, 1, 0, None);
         self.refresh();
     }
@@ -451,7 +455,7 @@ impl Controller {
         c.event(Event::Begin {
             generation: 1,
             action: "org.freedesktop.NetworkManager.settings.modify.system".into(),
-            message: "Change DNS servers".into(),
+            message: fl!("polkit-preview-message"),
             subject_pid: Some(2481),
             uids: vec![unsafe { libc::getuid() }],
             selected: 0,
@@ -459,7 +463,7 @@ impl Controller {
         c.event(Event::Prompt {
             generation: 1,
             serial: 1,
-            text: "Password:".into(),
+            text: fl!("polkit-preview-prompt"),
             echo: false,
         });
         c.event(Event::PolicyPublisher {
@@ -485,6 +489,43 @@ mod tests {
         controller.identity = None;
         controller.refresh();
         controller
+    }
+
+    /// Changes the process-wide selection; restores English even on panic.
+    struct French(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+    impl Drop for French {
+        fn drop(&mut self) {
+            canopa_i18n::select(canopa_i18n::Selection::default());
+        }
+    }
+    fn french() -> French {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
+        let fr: canopa_i18n::LanguageIdentifier = "fr".parse().unwrap();
+        canopa_i18n::select(canopa_i18n::Selection {
+            languages: canopa_i18n::negotiate(std::slice::from_ref(&fr)),
+            time: fr.clone(),
+            numbers: fr,
+            pseudo: false,
+        });
+        French(guard)
+    }
+
+    #[test]
+    fn dialog_labels_are_translated_and_the_account_is_data() {
+        let _french = french();
+        let (settings, _) = crate::config::load(&canopa_config::Request::Defaults).unwrap();
+        let c = Controller::preview(&settings).unwrap();
+        let panel = c.ui.authentication_panel.as_ref().unwrap();
+        assert_eq!(panel.heading, "Autoriser une modification du système");
+        assert_eq!(panel.account.as_deref(), Some("Alex Morgan"));
+        assert_eq!(c.ui.custom["account"], "Compte\u{a0}: Alex Morgan");
+        assert_eq!(c.ui.custom["subject-process"], "Processus 2481");
+        let labels: Vec<_> = c.ui.controls.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["S\u{2019}authentifier", "Annuler", "Détails de la règle"]
+        );
     }
     #[test]
     fn metadata_never_adds_an_identity_or_changes_its_uid() {
