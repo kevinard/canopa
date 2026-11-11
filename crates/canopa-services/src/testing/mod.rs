@@ -65,5 +65,6 @@ impl Drop for TestBus {
     }
 }
 
+pub mod logind;
 pub mod upower;
 pub mod wifi;

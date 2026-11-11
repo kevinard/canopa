@@ -160,19 +160,14 @@ pub(super) fn parse_session(
     node: &KdlNode,
     ctx: &ParseCtx,
 ) -> ConfigResult<crate::session::SessionAction> {
-    let expected = || {
-        Some(format!(
-            "expected one of {}",
-            crate::session::SessionAction::CONFIG_NAMES
-        ))
-    };
+    let expected = || Some(format!("expected one of {}", crate::session::CONFIG_NAMES));
     if node.children().is_some() || node.entries().len() != 1 {
         return Err(ctx.node_err(node, "expected `session \"action\"`", expected()));
     }
     let entry = &node.entries()[0];
     match entry.value().as_string() {
         Some(name) if entry.name().is_none() => {
-            crate::session::SessionAction::from_config_name(name).ok_or_else(|| {
+            crate::session::from_config_name(name).ok_or_else(|| {
                 ctx.entry_err(
                     entry,
                     format!("unknown session action {name:?}"),

@@ -158,7 +158,7 @@ impl App {
             return Task::none();
         }
         self.session.pending = Some(action);
-        tracing::info!(target: "canopa_shell::session", action = action.config_name(), "requesting session action from logind");
+        tracing::info!(target: "canopa_shell::session", action = action.id(), "requesting session action from logind");
         let connection = self.shared.dbus.system.clone();
         Task::perform(
             async move {
@@ -191,9 +191,11 @@ impl App {
                         Task::none()
                     }
                     Err(failure) => {
-                        tracing::warn!(target: "canopa_shell::session", action = action.config_name(), ?failure, "session action failed");
-                        self.notices
-                            .show(NoticeSlot::Session, failure.notice(action));
+                        tracing::warn!(target: "canopa_shell::session", action = action.id(), ?failure, "session action failed");
+                        self.notices.show(
+                            NoticeSlot::Session,
+                            crate::session::notice(&failure, action),
+                        );
                         if let Failure::Blocked(held) = failure {
                             self.session.blockers.insert(action, held);
                         }
