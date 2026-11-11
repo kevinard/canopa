@@ -95,7 +95,9 @@ impl LiveAction for NetworkAction {
     }
 }
 
-const NO_SERVICE: &str = "NetworkManager is not running.";
+fn no_service() -> String {
+    fl!("settings-network-not-running")
+}
 
 struct Agent {
     _registration: secret_agent::Registration,
@@ -129,13 +131,11 @@ impl Default for NetworkService {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     match error {
-        Error::Unavailable => ServiceError::Unavailable(NO_SERVICE.into()),
-        Error::NotAuthorized => {
-            ServiceError::Failed("The system did not allow this change.".into())
-        }
-        Error::Changed => ServiceError::Failed("The connection changed. Try again.".into()),
-        Error::TimedOut => ServiceError::Failed("NetworkManager did not answer in time.".into()),
-        Error::Invalid(message) => ServiceError::Failed(message.into()),
+        Error::Unavailable => ServiceError::Unavailable(no_service()),
+        Error::NotAuthorized => ServiceError::Failed(fl!("settings-error-not-authorized")),
+        Error::Changed => ServiceError::Failed(fl!("settings-network-error-changed")),
+        Error::TimedOut => ServiceError::Failed(fl!("settings-network-error-timed-out")),
+        Error::Invalid(message) => ServiceError::Failed(crate::service_text::invalid(message)),
         Error::Refused(message) => ServiceError::Failed(message),
     }
 }
@@ -157,7 +157,7 @@ impl NetworkService {
             .get_or_try_init(canopa_services::bus::system)
             .await
             .cloned()
-            .map_err(|_| ServiceError::Unavailable("The system bus is not reachable.".into()))
+            .map_err(|_| ServiceError::Unavailable(fl!("settings-error-bus")))
     }
 
     /// Register the agent once, and relay its questions to the page.
@@ -237,14 +237,15 @@ impl NetworkService {
                 .map_err(failure)?;
             return Ok(());
         }
-        let kind = kind.ok_or_else(|| {
-            ServiceError::Failed("Choose the kind of VPN this file is for.".into())
-        })?;
+        let kind =
+            kind.ok_or_else(|| ServiceError::Failed(fl!("settings-network-import-choose-kind")))?;
         if !kind
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
         {
-            return Err(ServiceError::Failed("Unknown VPN kind.".into()));
+            return Err(ServiceError::Failed(fl!(
+                "settings-network-import-unknown-kind"
+            )));
         }
         // The D-Bus API cannot import; nmcli uses the installed plugin to read the file.
         let output = tokio::time::timeout(
@@ -257,8 +258,8 @@ impl NetworkService {
                 .output(),
         )
         .await
-        .map_err(|_| ServiceError::Failed("Importing took too long.".into()))?
-        .map_err(|_| ServiceError::Failed("nmcli is needed to import this VPN file.".into()))?;
+        .map_err(|_| ServiceError::Failed(fl!("settings-network-import-timed-out")))?
+        .map_err(|_| ServiceError::Failed(fl!("settings-network-import-needs-nmcli")))?;
         if !output.status.success() {
             let message = String::from_utf8_lossy(&output.stderr);
             let message = message
@@ -268,9 +269,10 @@ impl NetworkService {
                 .unwrap_or("")
                 .chars()
                 .take(200);
-            return Err(ServiceError::Failed(format!(
-                "The VPN file could not be imported: {}",
-                message.collect::<String>()
+            let message: String = message.collect();
+            return Err(ServiceError::Failed(fl!(
+                "settings-network-import-failed",
+                error = message
             )));
         }
         Ok(())
@@ -283,9 +285,7 @@ impl NetworkService {
                     request.answer(values);
                     Ok(())
                 }
-                None => Err(ServiceError::Failed(
-                    "NetworkManager no longer needs this.".into(),
-                )),
+                None => Err(ServiceError::Failed(fl!("settings-network-question-gone"))),
             };
         }
         if matches!(action, NetworkAction::Cancel) {
@@ -312,9 +312,7 @@ impl NetworkService {
                         .await
                         .map(drop)
                 } else {
-                    return Err(ServiceError::Failed(
-                        "This network needs a password.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-network-needs-password")));
                 }
             }
             NetworkAction::Join {
@@ -379,9 +377,9 @@ impl LiveService for NetworkService {
         let service = self.clone();
         futures_util::stream::once(async move {
             let Ok(system) = service.connection().await else {
-                return futures_util::stream::iter([Err(ServiceError::Unavailable(
-                    "The system bus is not reachable.".into(),
-                ))])
+                return futures_util::stream::iter([Err(ServiceError::Unavailable(fl!(
+                    "settings-error-bus"
+                )))])
                 .boxed();
             };
             let mut questions = service.questions.subscribe();
@@ -404,7 +402,7 @@ impl LiveService for NetworkService {
                                 None
                             }
                             Part::Overview(canopa_services::ServiceState::Unavailable) => {
-                                Some(Err(ServiceError::Unavailable(NO_SERVICE.into())))
+                                Some(Err(ServiceError::Unavailable(no_service())))
                             }
                             Part::Question(value) => {
                                 *question = value;
@@ -426,7 +424,7 @@ impl LiveService for NetworkService {
                 .filter_map(std::future::ready)
                 .take_while(|item| std::future::ready(item.is_ok()))
                 .chain(futures_util::stream::once(async {
-                    Err(ServiceError::Unavailable(NO_SERVICE.into()))
+                    Err(ServiceError::Unavailable(no_service()))
                 }))
                 .boxed()
         })

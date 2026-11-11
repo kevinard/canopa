@@ -288,6 +288,12 @@ settings-invalid-address-method = Méthode d’adressage inconnue.
 settings-invalid-proxy = Écrivez le mandataire sous la forme hôte:port.
 settings-invalid-wayland-login = Une session Wayland est nécessaire.
 settings-invalid-local-login = Une session locale active est nécessaire.
+settings-invalid-keyboard-brightness = La luminosité du clavier dépasse la plage de l’appareil.
+settings-invalid-missing-file = Choisissez un fichier de certificat ou de clé qui existe.
+settings-invalid-tls-files = TLS nécessite votre certificat et votre clé privée.
+settings-invalid-peer-key = La clé publique d’un pair n’est pas une clé WireGuard.
+settings-invalid-address-prefix = Écrivez les adresses avec un préfixe, par exemple 192.168.1.10/24.
+settings-invalid-proxy-url = L’adresse de configuration doit commencer par http://, https:// ou file://.
 
 ## Region & language
 
@@ -371,3 +377,123 @@ settings-clock-custom = { $place } utilise son propre format, { $format }, qui e
 settings-clock-place-shell = Horloge du Shell « { $name } »
 settings-clock-place-lock = Écran de verrouillage
 settings-clock-updated = Format de l’horloge mis à jour.
+
+## Network
+
+settings-cancel = Annuler
+settings-network-not-running = NetworkManager ne fonctionne pas.
+settings-network-error-changed = La connexion a changé. Réessayez.
+settings-network-error-timed-out = NetworkManager n’a pas répondu à temps.
+settings-network-needs-password = Ce réseau nécessite un mot de passe.
+settings-network-question-gone = NetworkManager n’en a plus besoin.
+settings-network-import-choose-kind = Choisissez le type de VPN de ce fichier.
+settings-network-import-unknown-kind = Type de VPN inconnu.
+settings-network-import-timed-out = L’importation a pris trop de temps.
+settings-network-import-needs-nmcli = nmcli est nécessaire pour importer ce fichier VPN.
+settings-network-import-failed = Le fichier VPN n’a pas pu être importé : { $error }
+settings-network-no-agent = Les Paramètres n’ont pas pu proposer leur agent de secrets à NetworkManager ; les connexions qui demandent un mot de passe à chaque fois ne peuvent pas se connecter d’ici.
+settings-network-security = Sécurité
+settings-network-security-open = Ouvert
+settings-network-security-personal = WPA/WPA2 Personnel
+settings-network-security-sae = WPA3 Personnel
+settings-network-security-enterprise = WPA Entreprise
+settings-network-eap = Authentification
+settings-network-eap-tls = TLS (certificat)
+settings-network-phase2 = Authentification interne
+settings-network-identity = Identité (nom d’utilisateur)
+settings-network-anonymous = Identité anonyme (facultatif)
+settings-network-ca = Certificat de l’autorité (vide : certificats du système)
+settings-network-domain = Domaine du serveur (recommandé)
+settings-network-certificate = Votre certificat
+settings-network-private-key = Votre clé privée
+settings-network-key-password = Mot de passe de la clé privée
+settings-network-password = Mot de passe
+settings-network-wifi-password = Mot de passe Wi-Fi
+settings-network-remember = Mémoriser le mot de passe (NetworkManager le conserve)
+settings-network-choose = Choisir…
+settings-network-choose-ca = Choisir le certificat de l’autorité
+settings-network-choose-certificate = Choisir votre certificat
+settings-network-choose-key = Choisir votre clé privée
+settings-network-choose-vpn = Choisir un fichier VPN
+settings-network-name = Nom du réseau
+settings-network-join-named = Rejoindre { $network }
+settings-network-join = Rejoindre
+settings-network-join-hidden = Rejoindre un réseau masqué…
+settings-network-connect = Se connecter
+settings-network-connect-ask = Se connecter…
+settings-network-disconnect = Se déconnecter
+settings-network-connecting = Connexion…
+settings-network-disconnected = Déconnecté
+settings-network-question-title = Identification nécessaire
+settings-network-question = NetworkManager en a besoin pour connecter { $connection }.
+settings-network-question-retry = La réponse précédente pour { $connection } n’a pas été acceptée. Réessayez.
+settings-network-question-hint = Les Paramètres la transmettent à NetworkManager et ne la conservent pas.
+settings-network-no-wifi = Aucun appareil Wi-Fi.
+settings-network-wifi-hardware-off = Un interrupteur matériel ou la touche mode avion a désactivé le Wi-Fi.
+settings-network-none-found = Aucun réseau trouvé pour l’instant.
+settings-network-ap-open = ouvert
+settings-network-ap-secured = sécurisé
+settings-network-ap-enterprise = entreprise
+settings-network-ap-description = { $state ->
+    [connected] Connecté · { $security } · { $strength }
+    [saved] Enregistré · { $security } · { $strength }
+   *[other] { $security } · { $strength }
+}
+settings-network-kind-hotspot = point d’accès
+settings-network-kind-wired = filaire
+settings-network-connection-option = { $name } ({ $kind })
+settings-network-wired = Filaire
+settings-network-wired-connected = Connecté · { $name } · { $addresses }
+settings-network-wired-unplugged = Câble débranché
+settings-network-no-wired = Aucun appareil réseau filaire.
+settings-network-wired-hint = Modifiez les adresses et le DNS d’une connexion filaire dans Paramètres de connexion.
+settings-network-vpn-status = { $connected ->
+    [yes] { $kind } · Connecté
+   *[no] { $kind } · Non connecté
+}
+settings-network-no-vpn = Aucune connexion VPN.
+settings-network-wg-open = Ajouter un tunnel WireGuard…
+settings-network-wg-name = Nom
+settings-network-wg-addresses = Adresses (par exemple 10.0.0.2/24)
+settings-network-wg-dns = Serveurs DNS (facultatif)
+settings-network-wg-peer = Clé publique du pair
+settings-network-wg-endpoint = Point de terminaison du pair (hôte:port)
+settings-network-wg-allowed = IP autorisées (par exemple 0.0.0.0/0)
+settings-network-add = Ajouter
+settings-network-import-title = Importer un fichier VPN
+settings-network-import-file = Fichier (.conf, .ovpn, …)
+settings-network-import-detect = Détecter WireGuard
+settings-network-import = Importer
+settings-network-import-no-plugins = Les fichiers OpenVPN et IPsec nécessitent leur greffon NetworkManager, comme networkmanager-openvpn.
+settings-network-import-plugins = Les fichiers VPN des greffons sont lus par le greffon NetworkManager installé.
+settings-network-hotspot = Point d’accès
+settings-network-hotspot-no-wifi = Un point d’accès nécessite un appareil Wi-Fi.
+settings-network-hotspot-sharing = Partagé sous le nom { $name }
+settings-network-hotspot-stop = Arrêter le point d’accès
+settings-network-hotspot-start = Démarrer le point d’accès
+settings-network-hotspot-password = Mot de passe (8 à 63 caractères)
+settings-network-hotspot-hint = Le Wi-Fi se déconnecte de son réseau tant que le point d’accès fonctionne.
+settings-network-connections = Paramètres de connexion
+settings-network-no-connections = Aucune connexion enregistrée.
+settings-network-choose-connection = Choisissez une connexion enregistrée.
+settings-network-autoconnect = Se connecter automatiquement
+settings-network-metered = Connexion limitée (restreint les téléchargements en arrière-plan)
+settings-network-metered-auto = Automatique
+settings-network-metered-yes = Limitée
+settings-network-metered-no = Non limitée
+settings-network-ip-dhcp = Automatique (DHCP)
+settings-network-ip-auto = Automatique
+settings-network-ip-manual = Manuel
+settings-network-ip-disabled = Désactivé
+settings-network-ip-addresses = Adresses avec préfixe (par exemple 192.168.1.10/24)
+settings-network-ip-gateway = Passerelle
+settings-network-ip-dns = Serveurs DNS (vide : ceux du réseau)
+settings-network-apply = Appliquer
+settings-network-proxy = Mandataire
+settings-network-proxy-none = Aucun mandataire
+settings-network-proxy-auto = Automatique (adresse de configuration)
+settings-network-proxy-manual = Manuel
+settings-network-proxy-server = Serveur mandataire (hôte:port)
+settings-network-proxy-url = Adresse de configuration (PAC)
+settings-network-proxy-hint = Les applications qui interrogent le mandataire du système (PacRunner, libproxy) l’utilisent.
+settings-network-forget = Oublier cette connexion

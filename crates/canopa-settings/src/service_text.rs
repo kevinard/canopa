@@ -54,6 +54,18 @@ pub fn invalid(what: &str) -> String {
         "Write the proxy as host:port." => fl!("settings-invalid-proxy"),
         "A Wayland login is required." => fl!("settings-invalid-wayland-login"),
         "An active local login is required." => fl!("settings-invalid-local-login"),
+        "Keyboard brightness is above the device's range." => {
+            fl!("settings-invalid-keyboard-brightness")
+        }
+        "Choose a certificate or key file that exists." => fl!("settings-invalid-missing-file"),
+        "TLS needs your certificate and private key." => fl!("settings-invalid-tls-files"),
+        "A peer's public key is not a WireGuard key." => fl!("settings-invalid-peer-key"),
+        "Write addresses with a prefix, as in 192.168.1.10/24." => {
+            fl!("settings-invalid-address-prefix")
+        }
+        "The configuration address must start with http://, https:// or file://." => {
+            fl!("settings-invalid-proxy-url")
+        }
         other if other.ends_with('.') => other.to_owned(),
         other => fl!("settings-error-invalid-value", what = other),
     }

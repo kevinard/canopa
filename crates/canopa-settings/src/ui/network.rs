@@ -3,7 +3,7 @@
 //! import), a hotspot, and each saved connection's settings (auto-connect,
 //! metered, IPv4/IPv6 and DNS, proxy). NetworkManager's questions for
 //! secrets appear at the top. Changes apply at once.
-use super::{Message, State, choice, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, focus, live_page::LivePage, pick, settings_group, toggle};
 use crate::{
     live::Event,
     network::{NetworkAction, NetworkService, NetworkState, choose_file},
@@ -15,9 +15,10 @@ use canopa_services::network::{
     },
     profiles::{EapMethod, Enterprise, Peer, Phase2, SecretStorage, WifiSecurity, WireGuard},
 };
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{column, container, row, text, text_input},
+    widget::{column, container, text, text_input},
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -77,12 +78,14 @@ pub(super) enum Pick {
 #[derive(Clone, Debug)]
 pub(super) enum Edit {
     Text(Field, String),
+    /// A choice by its identifier (see the constants below), never its label.
     Choose(Pick, String),
     Answer(String, String),
     Remember(bool),
     Join(Option<AccessPoint>),
     CloseJoin,
     SubmitJoin,
+    /// A saved connection, by its D-Bus path.
     Select(String),
     ApplyIp(&'static str),
     ApplyProxy,
@@ -95,16 +98,13 @@ pub(super) enum Edit {
     FileChosen(Field, Option<PathBuf>),
 }
 
-const SECURITY: [&str; 4] = [
-    "Open",
-    "WPA/WPA2 Personal",
-    "WPA3 Personal",
-    "WPA-Enterprise",
-];
+// Choices are held by these stable identifiers and shown through their
+// translated labels.
+const SECURITY: [&str; 4] = ["open", "personal", "sae", "enterprise"];
 const METHODS: [(&str, EapMethod); 3] = [
-    ("PEAP", EapMethod::Peap),
-    ("TTLS", EapMethod::Ttls),
-    ("TLS (certificate)", EapMethod::Tls),
+    ("peap", EapMethod::Peap),
+    ("ttls", EapMethod::Ttls),
+    ("tls", EapMethod::Tls),
 ];
 const PHASE2: [(&str, Phase2); 5] = [
     ("MSCHAPv2", Phase2::Mschapv2),
@@ -113,22 +113,59 @@ const PHASE2: [(&str, Phase2); 5] = [
     ("MSCHAP", Phase2::Mschap),
     ("CHAP", Phase2::Chap),
 ];
-const IP4: [(&str, &str); 3] = [
-    ("Automatic (DHCP)", "auto"),
-    ("Manual", "manual"),
-    ("Disabled", "disabled"),
-];
-const IP6: [(&str, &str); 3] = [
-    ("Automatic", "auto"),
-    ("Manual", "manual"),
-    ("Disabled", "disabled"),
-];
-const PROXY: [&str; 3] = ["No proxy", "Automatic (configuration URL)", "Manual"];
-const METERED: [(&str, Metered); 3] = [
-    ("Automatic", Metered::Automatic),
-    ("Metered", Metered::Yes),
-    ("Not metered", Metered::No),
-];
+/// NetworkManager's address methods.
+const IP_METHODS: [&str; 3] = ["auto", "manual", "disabled"];
+const PROXY: [&str; 3] = ["none", "auto", "manual"];
+const METERED: [Metered; 3] = [Metered::Automatic, Metered::Yes, Metered::No];
+/// The import choice that detects WireGuard files; plugins use their names.
+const DETECT: &str = "";
+
+fn security_choice(id: &str) -> String {
+    match id {
+        "open" => fl!("settings-network-security-open"),
+        "sae" => fl!("settings-network-security-sae"),
+        "enterprise" => fl!("settings-network-security-enterprise"),
+        _ => fl!("settings-network-security-personal"),
+    }
+}
+
+fn method_label(id: &str) -> String {
+    match id {
+        "peap" => "PEAP".into(),
+        "ttls" => "TTLS".into(),
+        _ => fl!("settings-network-eap-tls"),
+    }
+}
+
+fn ip_label(family: &str, id: &str) -> String {
+    match (family, id) {
+        ("ipv4", "auto") => fl!("settings-network-ip-dhcp"),
+        (_, "auto") => fl!("settings-network-ip-auto"),
+        (_, "manual") => fl!("settings-network-ip-manual"),
+        _ => fl!("settings-network-ip-disabled"),
+    }
+}
+
+fn proxy_label(id: &str) -> String {
+    match id {
+        "auto" => fl!("settings-network-proxy-auto"),
+        "manual" => fl!("settings-network-proxy-manual"),
+        _ => fl!("settings-network-proxy-none"),
+    }
+}
+
+fn metered_label(metered: Metered) -> String {
+    match metered {
+        Metered::Yes => fl!("settings-network-metered-yes"),
+        Metered::No => fl!("settings-network-metered-no"),
+        _ => fl!("settings-network-metered-auto"),
+    }
+}
+
+/// Identifiers with their labels, for [`pick`].
+fn options(ids: &[&str], label: impl Fn(&str) -> String) -> Vec<(String, String)> {
+    ids.iter().map(|id| ((*id).to_owned(), label(id))).collect()
+}
 
 /// The page's unsaved form input. Secrets typed here go to NetworkManager
 /// and are cleared when a form closes.
@@ -183,9 +220,9 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
-fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
-        canopa_ui::accessibility::Node::button(label)
+        canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
             .disabled(message.is_none())
             .on_click(message.clone()),
@@ -203,14 +240,14 @@ fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Eleme
 
 fn secret<'a>(
     id: &str,
-    label: &'a str,
+    label: String,
     value: &str,
     change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
     // The secret itself never enters the accessibility tree: only its length.
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::new(canopa_ui::accessibility::Role::PasswordInput)
-            .label(label)
+            .label(label.clone())
             .value("•".repeat(value.chars().count()))
             .key(format!("network-{id}-field")),
         column![
@@ -219,6 +256,7 @@ fn secret<'a>(
                 .id(format!("network-{id}"))
                 .secure(true)
                 .on_input(change)
+                .align_x(direction::start())
                 .padding(10)
         ]
         .spacing(6)
@@ -230,7 +268,7 @@ fn edit(edit: Edit) -> Message {
     Message::NetworkForm(edit)
 }
 
-fn text_field<'a>(forms: &NetworkForms, field: Field, label: &'a str) -> Element<'a, Message> {
+fn text_field<'a>(forms: &NetworkForms, field: Field, label: String) -> Element<'a, Message> {
     super::field(
         format!("network-{field:?}").to_lowercase(),
         label,
@@ -239,19 +277,19 @@ fn text_field<'a>(forms: &NetworkForms, field: Field, label: &'a str) -> Element
     )
 }
 
-fn security_label(security: Security) -> &'static str {
+fn security_label(security: Security) -> String {
     match security {
-        Security::Open => "open",
-        Security::Personal => "secured",
-        Security::Enterprise => "enterprise",
+        Security::Open => fl!("settings-network-ap-open"),
+        Security::Personal => fl!("settings-network-ap-secured"),
+        Security::Enterprise => fl!("settings-network-ap-enterprise"),
     }
 }
 
 fn kind_label(kind: &ConnectionKind) -> String {
     match kind {
-        ConnectionKind::Wifi { hotspot: true, .. } => "hotspot".into(),
+        ConnectionKind::Wifi { hotspot: true, .. } => fl!("settings-network-kind-hotspot"),
         ConnectionKind::Wifi { .. } => "Wi-Fi".into(),
-        ConnectionKind::Ethernet => "wired".into(),
+        ConnectionKind::Ethernet => fl!("settings-network-kind-wired"),
         ConnectionKind::WireGuard => "WireGuard".into(),
         ConnectionKind::Vpn(service) => service.rsplit('.').next().unwrap_or("VPN").to_owned(),
         ConnectionKind::Other(kind) => kind.clone(),
@@ -259,7 +297,11 @@ fn kind_label(kind: &ConnectionKind) -> String {
 }
 
 fn connection_label(connection: &Connection) -> String {
-    format!("{} ({})", connection.id, kind_label(&connection.kind))
+    fl!(
+        "settings-network-connection-option",
+        name = connection.id.as_str(),
+        kind = kind_label(&connection.kind)
+    )
 }
 
 impl State {
@@ -326,11 +368,11 @@ impl State {
                     SecretStorage::Ask
                 };
                 let security = match forms.security.as_str() {
-                    "Open" => WifiSecurity::Open,
-                    "WPA-Enterprise" => WifiSecurity::Enterprise(Enterprise {
+                    "open" => WifiSecurity::Open,
+                    "enterprise" => WifiSecurity::Enterprise(Enterprise {
                         method: METHODS
                             .iter()
-                            .find(|(label, _)| *label == forms.method)
+                            .find(|(id, _)| *id == forms.method)
                             .map(|(_, method)| *method),
                         phase2: PHASE2
                             .iter()
@@ -348,7 +390,7 @@ impl State {
                     }),
                     other => WifiSecurity::Personal {
                         password: forms.get(Field::Password).into(),
-                        sae: other == "WPA3 Personal",
+                        sae: other == "sae",
                         storage,
                     },
                 };
@@ -365,26 +407,22 @@ impl State {
                     device,
                 });
             }
-            Edit::Select(label) => {
-                let Some(connection) = current.as_ref().and_then(|state| {
-                    state
-                        .overview
-                        .connections
-                        .iter()
-                        .find(|connection| connection_label(connection) == label)
-                        .cloned()
-                }) else {
+            Edit::Select(path) => {
+                let Some(connection) = current
+                    .as_ref()
+                    .and_then(|state| state.overview.connection(&path).cloned())
+                else {
                     return Task::none();
                 };
-                let method = |options: &[(&str, &str)], method: &str| {
-                    options
+                let method = |method: &str| {
+                    IP_METHODS
                         .iter()
-                        .find(|(_, id)| *id == method || (*id == "disabled" && method == "ignore"))
-                        .map_or(options[0].0, |(label, _)| label)
+                        .find(|id| **id == method || (**id == "disabled" && method == "ignore"))
+                        .map_or(IP_METHODS[0], |id| id)
                         .to_owned()
                 };
-                forms.ip4 = method(&IP4, &connection.ipv4.method);
-                forms.ip6 = method(&IP6, &connection.ipv6.method);
+                forms.ip4 = method(&connection.ipv4.method);
+                forms.ip6 = method(&connection.ipv6.method);
                 for (address, gateway, dns, ip) in [
                     (
                         Field::Ip4Address,
@@ -417,23 +455,21 @@ impl State {
                     return Task::none();
                 };
                 let forms = &self.network_forms;
-                let (options, choice, fields) = if family == "ipv4" {
+                let (choice, fields) = if family == "ipv4" {
                     (
-                        &IP4[..],
                         &forms.ip4,
                         [Field::Ip4Address, Field::Ip4Gateway, Field::Ip4Dns],
                     )
                 } else {
                     (
-                        &IP6[..],
                         &forms.ip6,
                         [Field::Ip6Address, Field::Ip6Gateway, Field::Ip6Dns],
                     )
                 };
-                let method = options
+                let method = IP_METHODS
                     .iter()
-                    .find(|(label, _)| label == choice)
-                    .map_or("auto", |(_, id)| id);
+                    .find(|id| *id == choice)
+                    .map_or("auto", |id| id);
                 let config = IpConfig {
                     method: method.into(),
                     addresses: list(forms.get(fields[0])),
@@ -449,8 +485,8 @@ impl State {
                 let forms = &self.network_forms;
                 let value = forms.get(Field::Proxy).trim().to_owned();
                 let proxy = match forms.proxy.as_str() {
-                    "Manual" => Proxy::Manual { server: value },
-                    "Automatic (configuration URL)" => Proxy::Automatic { url: value },
+                    "manual" => Proxy::Manual { server: value },
+                    "auto" => Proxy::Automatic { url: value },
                     _ => Proxy::None,
                 };
                 return send(NetworkAction::Change(target, Change::Proxy(proxy)));
@@ -484,8 +520,7 @@ impl State {
                     return Task::none();
                 };
                 let kind = match forms.import_kind.as_str() {
-                    "" | "Detect WireGuard" => None,
-                    "WireGuard" => Some("wireguard".to_owned()),
+                    DETECT => None,
                     plugin => Some(plugin.to_owned()),
                 };
                 return send(NetworkAction::Import(file, kind));
@@ -508,13 +543,13 @@ impl State {
             }
             Edit::ChooseFile(field) => {
                 let title = match field {
-                    Field::Ca => "Choose the CA certificate",
-                    Field::ClientCertificate => "Choose your certificate",
-                    Field::PrivateKey => "Choose your private key",
-                    _ => "Choose a VPN file",
+                    Field::Ca => fl!("settings-network-choose-ca"),
+                    Field::ClientCertificate => fl!("settings-network-choose-certificate"),
+                    Field::PrivateKey => fl!("settings-network-choose-key"),
+                    _ => fl!("settings-network-choose-vpn"),
                 };
                 return Task::perform(
-                    async move { choose_file(title).await.ok().flatten() },
+                    async move { choose_file(&title).await.ok().flatten() },
                     move |file| edit(Edit::FileChosen(field, file)),
                 );
             }
@@ -537,14 +572,14 @@ impl State {
         let question = state.question.as_ref()?;
         let forms = &self.network_forms;
         let mut body = column![text(if question.retry {
-            format!(
-                "The previous answer for {} was not accepted. Try again.",
-                question.connection
+            fl!(
+                "settings-network-question-retry",
+                connection = question.connection.as_str()
             )
         } else {
-            format!(
-                "NetworkManager needs this to connect {}.",
-                question.connection
+            fl!(
+                "settings-network-question",
+                connection = question.connection.as_str()
             )
         })]
         .spacing(10);
@@ -552,32 +587,31 @@ impl State {
             let key = field.key.clone();
             body = body.push(secret(
                 &format!("answer-{}", field.key),
-                &field.label,
+                // NetworkManager's own label for the secret.
+                field.label.clone(),
                 forms.answers.get(&field.key).map_or("", String::as_str),
                 move |value| edit(Edit::Answer(key.clone(), value)),
             ));
         }
         body = body
             .push(
-                row![
+                direction::row([
                     row_button(
                         "network-answer".into(),
-                        "Connect",
-                        Some(edit(Edit::SubmitAnswer))
+                        fl!("settings-network-connect"),
+                        Some(edit(Edit::SubmitAnswer)),
                     ),
                     row_button(
                         "network-answer-cancel".into(),
-                        "Cancel",
-                        Some(apply(NetworkAction::Cancel))
+                        fl!("settings-cancel"),
+                        Some(apply(NetworkAction::Cancel)),
                     ),
-                ]
+                ])
                 .spacing(10),
             )
-            .push(muted(
-                "Settings passes this to NetworkManager and does not keep it.",
-            ))
+            .push(muted(fl!("settings-network-question-hint")))
             .push(self.network.control_status("secret", message));
-        Some(settings_group("Sign-in needed", body))
+        Some(settings_group(fl!("settings-network-question-title"), body))
     }
 
     fn join_form(&self) -> Option<Element<'_, Message>> {
@@ -585,16 +619,19 @@ impl State {
         let forms = &self.network_forms;
         let mut body = column![].spacing(10);
         if join.is_none() {
-            body = body.push(text_field(forms, Field::Ssid, "Network name"));
+            body = body.push(text_field(forms, Field::Ssid, fl!("settings-network-name")));
         } else {
-            body = body.push(text(format!("Join {}", forms.get(Field::Ssid))));
+            body = body.push(text(fl!(
+                "settings-network-join-named",
+                network = forms.get(Field::Ssid)
+            )));
         }
         body = body.push(
             column![
-                text("Security"),
-                choice(
+                text(fl!("settings-network-security")),
+                pick(
                     "network-security",
-                    SECURITY.iter().map(|s| s.to_string()).collect(),
+                    options(&SECURITY, security_choice),
                     Some(forms.security.clone()),
                     |value| edit(Edit::Choose(Pick::Security, value)),
                 )
@@ -606,28 +643,29 @@ impl State {
                 edit(Edit::Text(Field::Password, value))
             })
         };
-        let file = |field: Field, label: &'static str| -> Element<'_, Message> {
-            row![
+        let file = |field: Field, label: String| -> Element<'_, Message> {
+            direction::row([
                 text_field(forms, field, label),
                 row_button(
                     format!("network-choose-{field:?}").to_lowercase(),
-                    "Choose…",
+                    fl!("settings-network-choose"),
                     Some(edit(Edit::ChooseFile(field))),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::End)
             .into()
         };
         match forms.security.as_str() {
-            "Open" => {}
-            "WPA-Enterprise" => {
+            "open" => {}
+            "enterprise" => {
+                let methods: Vec<&str> = METHODS.iter().map(|(id, _)| *id).collect();
                 body = body.push(
                     column![
-                        text("Authentication"),
-                        choice(
+                        text(fl!("settings-network-eap")),
+                        pick(
                             "network-eap",
-                            METHODS.iter().map(|(label, _)| label.to_string()).collect(),
+                            options(&methods, method_label),
                             Some(forms.method.clone()),
                             |value| edit(Edit::Choose(Pick::Method, value)),
                         )
@@ -638,10 +676,14 @@ impl State {
                 if !tls {
                     body = body.push(
                         column![
-                            text("Inner authentication"),
-                            choice(
+                            text(fl!("settings-network-phase2")),
+                            pick(
                                 "network-phase2",
-                                PHASE2.iter().map(|(label, _)| label.to_string()).collect(),
+                                // Protocol names, the same in every language.
+                                PHASE2
+                                    .iter()
+                                    .map(|(name, _)| ((*name).to_owned(), (*name).to_owned()))
+                                    .collect(),
                                 Some(forms.phase2.clone()),
                                 |value| edit(Edit::Choose(Pick::Phase2, value)),
                             )
@@ -650,55 +692,63 @@ impl State {
                     );
                 }
                 body = body
-                    .push(text_field(forms, Field::Identity, "Identity (user name)"))
+                    .push(text_field(
+                        forms,
+                        Field::Identity,
+                        fl!("settings-network-identity"),
+                    ))
                     .push(text_field(
                         forms,
                         Field::Anonymous,
-                        "Anonymous identity (optional)",
+                        fl!("settings-network-anonymous"),
                     ))
-                    .push(file(
-                        Field::Ca,
-                        "CA certificate (empty: system certificates)",
-                    ))
+                    .push(file(Field::Ca, fl!("settings-network-ca")))
                     .push(text_field(
                         forms,
                         Field::Domain,
-                        "Server domain (recommended)",
+                        fl!("settings-network-domain"),
                     ));
                 if tls {
                     body = body
-                        .push(file(Field::ClientCertificate, "Your certificate"))
-                        .push(file(Field::PrivateKey, "Your private key"))
+                        .push(file(
+                            Field::ClientCertificate,
+                            fl!("settings-network-certificate"),
+                        ))
+                        .push(file(Field::PrivateKey, fl!("settings-network-private-key")))
                         .push(secret(
                             "key-password",
-                            "Private key password",
+                            fl!("settings-network-key-password"),
                             forms.get(Field::KeyPassword),
                             |value| edit(Edit::Text(Field::KeyPassword, value)),
                         ));
                 } else {
-                    body = body.push(password("Password"));
+                    body = body.push(password(fl!("settings-network-password")));
                 }
             }
-            _ => body = body.push(password("Wi-Fi password")),
+            _ => body = body.push(password(fl!("settings-network-wifi-password"))),
         }
-        if forms.security != "Open" {
+        if forms.security != "open" {
             body = body.push(toggle(
                 "network-remember",
-                "Remember the password (NetworkManager stores it)",
+                fl!("settings-network-remember"),
                 forms.remember,
                 edit(Edit::Remember(!forms.remember)),
             ));
         }
         body = body
             .push(
-                row![
-                    row_button("network-join".into(), "Join", Some(edit(Edit::SubmitJoin))),
+                direction::row([
+                    row_button(
+                        "network-join".into(),
+                        fl!("settings-network-join"),
+                        Some(edit(Edit::SubmitJoin)),
+                    ),
                     row_button(
                         "network-join-cancel".into(),
-                        "Cancel",
-                        Some(edit(Edit::CloseJoin))
+                        fl!("settings-cancel"),
+                        Some(edit(Edit::CloseJoin)),
                     ),
-                ]
+                ])
                 .spacing(10),
             )
             .push(self.network.control_status("wifi-join", message));
@@ -719,7 +769,7 @@ impl State {
             .iter()
             .any(|device| device.kind == DeviceKind::Wifi)
         {
-            return settings_group("Wi-Fi", muted("No Wi-Fi device."));
+            return settings_group("Wi-Fi", muted(fl!("settings-network-no-wifi")));
         }
         let enabled = match page.live.pending("wifi-enabled") {
             Some(NetworkAction::WifiEnabled(value)) => *value,
@@ -736,9 +786,7 @@ impl State {
         ]
         .spacing(10);
         if !overview.wireless_hardware_enabled {
-            body = body.push(muted(
-                "A hardware switch or airplane-mode key turned Wi-Fi off.",
-            ));
+            body = body.push(muted(fl!("settings-network-wifi-hardware-off")));
         }
         if let Some(form) = self.join_form() {
             body = body.push(form);
@@ -747,30 +795,43 @@ impl State {
             for ap in overview.access_points.iter().take(16) {
                 let saved = overview.saved_for(ap);
                 let active = saved.and_then(|connection| connection.active.clone());
-                let mut description = format!("{} · {}%", security_label(ap.security), ap.strength);
-                if active.is_some() {
-                    description = format!("Connected · {description}");
-                } else if saved.is_some() {
-                    description = format!("Saved · {description}");
-                }
+                let description = fl!(
+                    "settings-network-ap-description",
+                    state = if active.is_some() {
+                        "connected"
+                    } else if saved.is_some() {
+                        "saved"
+                    } else {
+                        "other"
+                    },
+                    security = security_label(ap.security),
+                    strength = canopa_i18n::format::percent(f64::from(ap.strength))
+                );
                 let control = format!("wifi-{}", ap.name());
                 let action = match (&active, saved, ap.security) {
-                    (Some((path, _)), ..) => {
-                        ("Disconnect", apply(NetworkAction::Deactivate(path.clone())))
-                    }
-                    (None, Some(_), _) | (None, None, Security::Open) => {
-                        ("Connect", apply(NetworkAction::Connect(ap.clone())))
-                    }
-                    (None, None, _) => ("Connect…", edit(Edit::Join(Some(ap.clone())))),
+                    (Some((path, _)), ..) => (
+                        fl!("settings-network-disconnect"),
+                        apply(NetworkAction::Deactivate(path.clone())),
+                    ),
+                    (None, Some(_), _) | (None, None, Security::Open) => (
+                        fl!("settings-network-connect"),
+                        apply(NetworkAction::Connect(ap.clone())),
+                    ),
+                    (None, None, _) => (
+                        fl!("settings-network-connect-ask"),
+                        edit(Edit::Join(Some(ap.clone()))),
+                    ),
                 };
                 body = body.push(
                     column![
-                        row![
+                        direction::row([
                             column![text(ap.name()), muted(description)]
                                 .spacing(2)
-                                .width(Length::Fill),
-                            row_button(format!("network-{control}"), action.0, Some(action.1),),
-                        ]
+                                .align_x(direction::start())
+                                .width(Length::Fill)
+                                .into(),
+                            row_button(format!("network-{control}"), action.0, Some(action.1)),
+                        ])
                         .spacing(10)
                         .align_y(Alignment::Center),
                         page.control_status(&control, message),
@@ -779,11 +840,11 @@ impl State {
                 );
             }
             if overview.access_points.is_empty() {
-                body = body.push(muted("No networks found yet."));
+                body = body.push(muted(fl!("settings-network-none-found")));
             }
             body = body.push(row_button(
                 "network-hidden".into(),
-                "Join a hidden network…",
+                fl!("settings-network-join-hidden"),
                 Some(edit(Edit::Join(None))),
             ));
         }
@@ -808,21 +869,23 @@ impl State {
                         .and_then(|path| state.overview.connection(path))
                         .map(|connection| connection.id.clone())
                         .unwrap_or_default();
-                    format!("Connected · {name} · {}", device.addresses.join(", "))
+                    fl!(
+                        "settings-network-wired-connected",
+                        name = name,
+                        addresses = device.addresses.join(", ")
+                    )
                 }
-                (false, 20) => "Cable unplugged".into(),
-                (false, 40..=90) => "Connecting…".into(),
-                _ => "Disconnected".into(),
+                (false, 20) => fl!("settings-network-wired-unplugged"),
+                (false, 40..=90) => fl!("settings-network-connecting"),
+                _ => fl!("settings-network-disconnected"),
             };
             body = body.push(column![text(&device.interface), muted(status)].spacing(2));
         }
         if !any {
-            body = body.push(muted("No wired network device."));
+            body = body.push(muted(fl!("settings-network-no-wired")));
         }
-        body = body.push(muted(
-            "Change a wired connection's addresses and DNS under Connection settings.",
-        ));
-        settings_group("Wired", body)
+        body = body.push(muted(fl!("settings-network-wired-hint")));
+        settings_group(fl!("settings-network-wired"), body)
     }
 
     fn vpn_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
@@ -839,13 +902,14 @@ impl State {
             let target = Target::from(*connection);
             let control = format!("connection-{}", connection.uuid);
             let (label, action) = match &connection.active {
-                Some((path, _)) => ("Disconnect", NetworkAction::Deactivate(path.clone())),
-                None => ("Connect", NetworkAction::Activate(target.clone())),
-            };
-            let status = if connection.active.is_some() {
-                "Connected"
-            } else {
-                "Not connected"
+                Some((path, _)) => (
+                    fl!("settings-network-disconnect"),
+                    NetworkAction::Deactivate(path.clone()),
+                ),
+                None => (
+                    fl!("settings-network-connect"),
+                    NetworkAction::Activate(target.clone()),
+                ),
             };
             let active_control = connection
                 .active
@@ -853,19 +917,29 @@ impl State {
                 .map(|(path, _)| format!("active-{path}"));
             body = body.push(
                 column![
-                    row![
+                    direction::row([
                         column![
                             text(&connection.id),
-                            muted(format!("{} · {status}", kind_label(&connection.kind)))
+                            muted(fl!(
+                                "settings-network-vpn-status",
+                                kind = kind_label(&connection.kind),
+                                connected = if connection.active.is_some() {
+                                    "yes"
+                                } else {
+                                    "no"
+                                }
+                            ))
                         ]
                         .spacing(2)
-                        .width(Length::Fill),
+                        .align_x(direction::start())
+                        .width(Length::Fill)
+                        .into(),
                         row_button(
                             format!("network-vpn-{}", connection.uuid),
                             label,
-                            Some(apply(action))
+                            Some(apply(action)),
                         ),
-                    ]
+                    ])
                     .spacing(10)
                     .align_y(Alignment::Center),
                     page.control_status(&control, message),
@@ -875,44 +949,44 @@ impl State {
             );
         }
         if vpns.is_empty() {
-            body = body.push(muted("No VPN connections."));
+            body = body.push(muted(fl!("settings-network-no-vpn")));
         }
         if forms.wireguard {
             body = body.push(
                 container(
                     column![
-                        text_field(forms, Field::WgName, "Name"),
+                        text_field(forms, Field::WgName, fl!("settings-network-wg-name")),
                         secret(
                             "wg-private",
-                            "Your private key",
+                            fl!("settings-network-private-key"),
                             forms.get(Field::WgPrivate),
                             |value| { edit(Edit::Text(Field::WgPrivate, value)) }
                         ),
                         text_field(
                             forms,
                             Field::WgAddress,
-                            "Addresses (for example 10.0.0.2/24)"
+                            fl!("settings-network-wg-addresses")
                         ),
-                        text_field(forms, Field::WgDns, "DNS servers (optional)"),
-                        text_field(forms, Field::WgPeer, "Peer public key"),
-                        text_field(forms, Field::WgEndpoint, "Peer endpoint (host:port)"),
+                        text_field(forms, Field::WgDns, fl!("settings-network-wg-dns")),
+                        text_field(forms, Field::WgPeer, fl!("settings-network-wg-peer")),
                         text_field(
                             forms,
-                            Field::WgAllowed,
-                            "Allowed IPs (for example 0.0.0.0/0)"
+                            Field::WgEndpoint,
+                            fl!("settings-network-wg-endpoint")
                         ),
-                        row![
+                        text_field(forms, Field::WgAllowed, fl!("settings-network-wg-allowed")),
+                        direction::row([
                             row_button(
                                 "network-wg-add".into(),
-                                "Add",
-                                Some(edit(Edit::SubmitWireGuard))
+                                fl!("settings-network-add"),
+                                Some(edit(Edit::SubmitWireGuard)),
                             ),
                             row_button(
                                 "network-wg-cancel".into(),
-                                "Cancel",
-                                Some(edit(Edit::WireGuard(false)))
+                                fl!("settings-cancel"),
+                                Some(edit(Edit::WireGuard(false))),
                             ),
-                        ]
+                        ])
                         .spacing(10),
                     ]
                     .spacing(10),
@@ -924,50 +998,60 @@ impl State {
         } else {
             body = body.push(row_button(
                 "network-wg-open".into(),
-                "Add a WireGuard tunnel…",
+                fl!("settings-network-wg-open"),
                 Some(edit(Edit::WireGuard(true))),
             ));
         }
-        let mut kinds = vec!["Detect WireGuard".to_owned(), "WireGuard".to_owned()];
+        // Detection, WireGuard, then the plugins by their own names.
+        let mut kinds = vec![
+            (DETECT.to_owned(), fl!("settings-network-import-detect")),
+            ("wireguard".to_owned(), "WireGuard".to_owned()),
+        ];
         kinds.extend(
             state
                 .overview
                 .vpn_plugins
                 .iter()
-                .map(|plugin| plugin.name.clone()),
+                .map(|plugin| (plugin.name.clone(), plugin.name.clone())),
         );
-        let selected = if forms.import_kind.is_empty() {
-            kinds[0].clone()
-        } else {
-            forms.import_kind.clone()
-        };
         body = body
-            .push(text("Import a VPN file"))
+            .push(text(fl!("settings-network-import-title")))
             .push(
-                row![
-                    text_field(forms, Field::ImportPath, "File (.conf, .ovpn, …)"),
+                direction::row([
+                    text_field(
+                        forms,
+                        Field::ImportPath,
+                        fl!("settings-network-import-file"),
+                    ),
                     row_button(
                         "network-import-choose".into(),
-                        "Choose…",
+                        fl!("settings-network-choose"),
                         Some(edit(Edit::ChooseFile(Field::ImportPath))),
                     ),
-                ]
+                ])
                 .spacing(10)
                 .align_y(Alignment::End),
             )
             .push(
-                row![
-                    choice("network-import-kind", kinds, Some(selected), |value| {
-                        edit(Edit::Choose(Pick::ImportKind, value))
-                    }),
-                    row_button("network-import".into(), "Import", Some(edit(Edit::SubmitImport))),
-                ]
+                direction::row([
+                    pick(
+                        "network-import-kind",
+                        kinds,
+                        Some(forms.import_kind.clone()),
+                        |value| edit(Edit::Choose(Pick::ImportKind, value)),
+                    ),
+                    row_button(
+                        "network-import".into(),
+                        fl!("settings-network-import"),
+                        Some(edit(Edit::SubmitImport)),
+                    ),
+                ])
                 .spacing(10),
             )
             .push(muted(if state.overview.vpn_plugins.is_empty() {
-                "OpenVPN and IPsec files need their NetworkManager plugin, such as networkmanager-openvpn."
+                fl!("settings-network-import-no-plugins")
             } else {
-                "Plugin VPN files are read by the installed NetworkManager plugin."
+                fl!("settings-network-import-plugins")
             }))
             .push(page.control_status("vpn-add", message));
         settings_group("VPN", body)
@@ -985,7 +1069,7 @@ impl State {
             .iter()
             .any(|device| device.kind == DeviceKind::Wifi)
         {
-            muted("A hotspot needs a Wi-Fi device.")
+            muted(fl!("settings-network-hotspot-no-wifi"))
         } else if let Some(hotspot) = active {
             let path = hotspot
                 .active
@@ -993,10 +1077,13 @@ impl State {
                 .map(|(path, _)| path.clone())
                 .unwrap_or_default();
             column![
-                text(format!("Sharing as {}", hotspot.id)),
+                text(fl!(
+                    "settings-network-hotspot-sharing",
+                    name = hotspot.id.as_str()
+                )),
                 row_button(
                     "network-hotspot-stop".into(),
-                    "Stop the hotspot",
+                    fl!("settings-network-hotspot-stop"),
                     Some(apply(NetworkAction::Deactivate(path.clone()))),
                 ),
                 self.network
@@ -1006,84 +1093,79 @@ impl State {
             .into()
         } else {
             column![
-                text_field(forms, Field::HotspotSsid, "Network name"),
+                text_field(forms, Field::HotspotSsid, fl!("settings-network-name")),
                 secret(
                     "hotspot-password",
-                    "Password (8 to 63 characters)",
+                    fl!("settings-network-hotspot-password"),
                     forms.get(Field::HotspotPassword),
                     |value| { edit(Edit::Text(Field::HotspotPassword, value)) }
                 ),
                 row_button(
                     "network-hotspot".into(),
-                    "Start the hotspot",
+                    fl!("settings-network-hotspot-start"),
                     Some(edit(Edit::StartHotspot))
                 ),
-                muted("Wi-Fi disconnects from its network while the hotspot runs."),
+                muted(fl!("settings-network-hotspot-hint")),
                 self.network.control_status("hotspot", message),
             ]
             .spacing(10)
             .into()
         };
-        settings_group("Hotspot", body)
+        settings_group(fl!("settings-network-hotspot"), body)
     }
 
     fn connection_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
         let page = &self.network;
         let forms = &self.network_forms;
-        let labels: Vec<String> = state
+        let connections: Vec<(String, String)> = state
             .overview
             .connections
             .iter()
-            .map(connection_label)
+            .map(|connection| (connection.path.clone(), connection_label(connection)))
             .collect();
-        if labels.is_empty() {
-            return settings_group("Connection settings", muted("No saved connections."));
+        if connections.is_empty() {
+            return settings_group(
+                fl!("settings-network-connections"),
+                muted(fl!("settings-network-no-connections")),
+            );
         }
         let selected = forms
             .selected
             .as_deref()
             .and_then(|path| state.overview.connection(path));
-        let mut body = column![choice(
+        let mut body = column![pick(
             "network-connection",
-            labels,
-            selected.map(connection_label),
-            |value| edit(Edit::Select(value)),
+            connections,
+            selected.map(|connection| connection.path.clone()),
+            |path| edit(Edit::Select(path)),
         )]
         .spacing(10);
         let Some(connection) = selected else {
             return settings_group(
-                "Connection settings",
-                body.push(muted("Choose a saved connection.")),
+                fl!("settings-network-connections"),
+                body.push(muted(fl!("settings-network-choose-connection"))),
             );
         };
         let target = Target::from(connection);
         let key = |kind: &str| format!("change-{}-{kind}", connection.uuid);
-        let metered = METERED
-            .iter()
-            .find(|(_, value)| *value == connection.metered)
-            .map(|(label, _)| label.to_string());
         let ip = |family: &'static str,
-                  title: &'a str,
-                  options: &[(&str, &str)],
+                  title: &'static str,
                   current: &str,
                   fields: [Field; 3]|
          -> Element<'a, Message> {
-            let manual = options
-                .iter()
-                .find(|(label, _)| *label == current)
-                .is_some_and(|(_, id)| *id == "manual");
-            let pick = if family == "ipv4" {
+            let manual = current == "manual";
+            let choose = if family == "ipv4" {
                 Pick::Ip4
             } else {
                 Pick::Ip6
             };
             let mut group = column![
                 text(title),
-                choice(
+                pick(
                     format!("network-{family}-method"),
-                    options.iter().map(|(label, _)| label.to_string()).collect(),
+                    options(&IP_METHODS, |id| ip_label(family, id)),
                     Some(current.to_owned()),
-                    move |value| edit(Edit::Choose(pick, value)),
+                    move |value| edit(Edit::Choose(choose, value)),
                 ),
             ]
             .spacing(8);
@@ -1092,19 +1174,19 @@ impl State {
                     .push(text_field(
                         forms,
                         fields[0],
-                        "Addresses with prefix (for example 192.168.1.10/24)",
+                        fl!("settings-network-ip-addresses"),
                     ))
-                    .push(text_field(forms, fields[1], "Gateway"));
+                    .push(text_field(
+                        forms,
+                        fields[1],
+                        fl!("settings-network-ip-gateway"),
+                    ));
             }
             group
-                .push(text_field(
-                    forms,
-                    fields[2],
-                    "DNS servers (empty: from the network)",
-                ))
+                .push(text_field(forms, fields[2], fl!("settings-network-ip-dns")))
                 .push(row_button(
                     format!("network-{family}-apply"),
-                    "Apply",
+                    fl!("settings-network-apply"),
                     Some(edit(Edit::ApplyIp(family))),
                 ))
                 .push(page.control_status(&key(family), message))
@@ -1113,7 +1195,7 @@ impl State {
         body = body
             .push(toggle(
                 "network-autoconnect",
-                "Connect automatically",
+                fl!("settings-network-autoconnect"),
                 connection.autoconnect,
                 apply(NetworkAction::Change(
                     target.clone(),
@@ -1123,18 +1205,17 @@ impl State {
             .push(page.control_status(&key("autoconnect"), message))
             .push(
                 column![
-                    text("Metered connection (limits background downloads)"),
-                    choice(
+                    text(fl!("settings-network-metered")),
+                    pick(
                         "network-metered",
-                        METERED.iter().map(|(label, _)| label.to_string()).collect(),
-                        metered,
+                        METERED
+                            .iter()
+                            .map(|metered| (*metered, metered_label(*metered)))
+                            .collect(),
+                        Some(connection.metered),
                         {
                             let target = target.clone();
-                            move |value| {
-                                let metered = METERED
-                                    .iter()
-                                    .find(|(label, _)| *label == value)
-                                    .map_or(Metered::Automatic, |(_, metered)| *metered);
+                            move |metered| {
                                 apply(NetworkAction::Change(
                                     target.clone(),
                                     Change::Metered(metered),
@@ -1151,34 +1232,40 @@ impl State {
                 .push(ip(
                     "ipv4",
                     "IPv4",
-                    &IP4,
                     &forms.ip4,
                     [Field::Ip4Address, Field::Ip4Gateway, Field::Ip4Dns],
                 ))
                 .push(ip(
                     "ipv6",
                     "IPv6",
-                    &IP6,
                     &forms.ip6,
                     [Field::Ip6Address, Field::Ip6Gateway, Field::Ip6Dns],
                 ));
         }
         let mut proxy = column![
-            text("Proxy"),
-            choice(
+            text(fl!("settings-network-proxy")),
+            pick(
                 "network-proxy",
-                PROXY.iter().map(|s| s.to_string()).collect(),
+                options(&PROXY, proxy_label),
                 Some(forms.proxy.clone()),
                 |value| { edit(Edit::Choose(Pick::Proxy, value)) }
             ),
         ]
         .spacing(8);
         match forms.proxy.as_str() {
-            "Manual" => {
-                proxy = proxy.push(text_field(forms, Field::Proxy, "Proxy server (host:port)"))
+            "manual" => {
+                proxy = proxy.push(text_field(
+                    forms,
+                    Field::Proxy,
+                    fl!("settings-network-proxy-server"),
+                ))
             }
-            "Automatic (configuration URL)" => {
-                proxy = proxy.push(text_field(forms, Field::Proxy, "Configuration URL (PAC)"))
+            "auto" => {
+                proxy = proxy.push(text_field(
+                    forms,
+                    Field::Proxy,
+                    fl!("settings-network-proxy-url"),
+                ))
             }
             _ => {}
         }
@@ -1187,21 +1274,19 @@ impl State {
                 proxy
                     .push(row_button(
                         "network-proxy-apply".into(),
-                        "Apply",
+                        fl!("settings-network-apply"),
                         Some(edit(Edit::ApplyProxy)),
                     ))
-                    .push(muted(
-                        "Applications that ask the system proxy (PacRunner, libproxy) use this.",
-                    ))
+                    .push(muted(fl!("settings-network-proxy-hint")))
                     .push(page.control_status(&key("proxy"), message)),
             )
             .push(row_button(
                 "network-forget".into(),
-                "Forget this connection",
+                fl!("settings-network-forget"),
                 Some(apply(NetworkAction::Forget(target))),
             ))
             .push(page.control_status(&format!("connection-{}", connection.uuid), message));
-        settings_group("Connection settings", body)
+        settings_group(fl!("settings-network-connections"), body)
     }
 
     pub(super) fn network_view(&self) -> Element<'_, Message> {
@@ -1211,9 +1296,7 @@ impl State {
                 body = body.push(question);
             }
             if !state.agent {
-                body = body.push(muted(
-                    "Settings could not offer NetworkManager its secret agent; connections that ask for a password each time cannot connect from here.",
-                ));
+                body = body.push(muted(fl!("settings-network-no-agent")));
             }
             body.push(self.wifi_section(state))
                 .push(self.wired_section(state))

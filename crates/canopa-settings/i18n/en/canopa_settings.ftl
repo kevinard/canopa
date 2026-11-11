@@ -312,6 +312,12 @@ settings-invalid-address-method = Unknown address method.
 settings-invalid-proxy = Write the proxy as host:port.
 settings-invalid-wayland-login = A Wayland login is required.
 settings-invalid-local-login = An active local login is required.
+settings-invalid-keyboard-brightness = Keyboard brightness is above the device’s range.
+settings-invalid-missing-file = Choose a certificate or key file that exists.
+settings-invalid-tls-files = TLS needs your certificate and private key.
+settings-invalid-peer-key = A peer’s public key is not a WireGuard key.
+settings-invalid-address-prefix = Write addresses with a prefix, as in 192.168.1.10/24.
+settings-invalid-proxy-url = The configuration address must start with http://, https:// or file://.
 
 ## Region & language
 
@@ -410,3 +416,135 @@ settings-clock-custom = { $place } uses its own format, { $format }, which is ke
 settings-clock-place-shell = Shell clock “{ $name }”
 settings-clock-place-lock = Lock screen
 settings-clock-updated = Clock format updated.
+
+## Network
+
+settings-cancel = Cancel
+settings-network-not-running = NetworkManager is not running.
+settings-network-error-changed = The connection changed. Try again.
+settings-network-error-timed-out = NetworkManager did not answer in time.
+settings-network-needs-password = This network needs a password.
+settings-network-question-gone = NetworkManager no longer needs this.
+settings-network-import-choose-kind = Choose the kind of VPN this file is for.
+settings-network-import-unknown-kind = Unknown VPN kind.
+settings-network-import-timed-out = Importing took too long.
+settings-network-import-needs-nmcli = nmcli is needed to import this VPN file.
+# $error is nmcli's own message.
+settings-network-import-failed = The VPN file could not be imported: { $error }
+settings-network-no-agent = Settings could not offer NetworkManager its secret agent; connections that ask for a password each time cannot connect from here.
+# Wi-Fi security, as chosen when joining a network.
+settings-network-security = Security
+settings-network-security-open = Open
+settings-network-security-personal = WPA/WPA2 Personal
+settings-network-security-sae = WPA3 Personal
+settings-network-security-enterprise = WPA-Enterprise
+settings-network-eap = Authentication
+settings-network-eap-tls = TLS (certificate)
+settings-network-phase2 = Inner authentication
+settings-network-identity = Identity (user name)
+settings-network-anonymous = Anonymous identity (optional)
+settings-network-ca = CA certificate (empty: system certificates)
+settings-network-domain = Server domain (recommended)
+settings-network-certificate = Your certificate
+settings-network-private-key = Your private key
+settings-network-key-password = Private key password
+settings-network-password = Password
+settings-network-wifi-password = Wi-Fi password
+settings-network-remember = Remember the password (NetworkManager stores it)
+settings-network-choose = Choose…
+# Titles of the file chooser.
+settings-network-choose-ca = Choose the CA certificate
+settings-network-choose-certificate = Choose your certificate
+settings-network-choose-key = Choose your private key
+settings-network-choose-vpn = Choose a VPN file
+settings-network-name = Network name
+# $network is a Wi-Fi network name.
+settings-network-join-named = Join { $network }
+settings-network-join = Join
+settings-network-join-hidden = Join a hidden network…
+settings-network-connect = Connect
+# Connect after asking for a password.
+settings-network-connect-ask = Connect…
+settings-network-disconnect = Disconnect
+settings-network-connecting = Connecting…
+settings-network-disconnected = Disconnected
+settings-network-question-title = Sign-in needed
+# $connection is a connection name.
+settings-network-question = NetworkManager needs this to connect { $connection }.
+settings-network-question-retry = The previous answer for { $connection } was not accepted. Try again.
+settings-network-question-hint = Settings passes this to NetworkManager and does not keep it.
+settings-network-no-wifi = No Wi-Fi device.
+settings-network-wifi-hardware-off = A hardware switch or airplane-mode key turned Wi-Fi off.
+settings-network-none-found = No networks found yet.
+# A network's security, shown in its description.
+settings-network-ap-open = open
+settings-network-ap-secured = secured
+settings-network-ap-enterprise = enterprise
+# A nearby network. $security is settings-network-ap-*, $strength a formatted percentage.
+settings-network-ap-description = { $state ->
+    [connected] Connected · { $security } · { $strength }
+    [saved] Saved · { $security } · { $strength }
+   *[other] { $security } · { $strength }
+}
+settings-network-kind-hotspot = hotspot
+settings-network-kind-wired = wired
+# A saved connection in a list. $kind is Wi-Fi, wired, WireGuard and so on.
+settings-network-connection-option = { $name } ({ $kind })
+settings-network-wired = Wired
+# $name is the connection, $addresses its IP addresses.
+settings-network-wired-connected = Connected · { $name } · { $addresses }
+settings-network-wired-unplugged = Cable unplugged
+settings-network-no-wired = No wired network device.
+settings-network-wired-hint = Change a wired connection’s addresses and DNS under Connection settings.
+# $connected is yes or no.
+settings-network-vpn-status = { $connected ->
+    [yes] { $kind } · Connected
+   *[no] { $kind } · Not connected
+}
+settings-network-no-vpn = No VPN connections.
+settings-network-wg-open = Add a WireGuard tunnel…
+settings-network-wg-name = Name
+settings-network-wg-addresses = Addresses (for example 10.0.0.2/24)
+settings-network-wg-dns = DNS servers (optional)
+settings-network-wg-peer = Peer public key
+settings-network-wg-endpoint = Peer endpoint (host:port)
+settings-network-wg-allowed = Allowed IPs (for example 0.0.0.0/0)
+settings-network-add = Add
+settings-network-import-title = Import a VPN file
+settings-network-import-file = File (.conf, .ovpn, …)
+settings-network-import-detect = Detect WireGuard
+settings-network-import = Import
+settings-network-import-no-plugins = OpenVPN and IPsec files need their NetworkManager plugin, such as networkmanager-openvpn.
+settings-network-import-plugins = Plugin VPN files are read by the installed NetworkManager plugin.
+settings-network-hotspot = Hotspot
+settings-network-hotspot-no-wifi = A hotspot needs a Wi-Fi device.
+# $name is the hotspot's network name.
+settings-network-hotspot-sharing = Sharing as { $name }
+settings-network-hotspot-stop = Stop the hotspot
+settings-network-hotspot-start = Start the hotspot
+settings-network-hotspot-password = Password (8 to 63 characters)
+settings-network-hotspot-hint = Wi-Fi disconnects from its network while the hotspot runs.
+settings-network-connections = Connection settings
+settings-network-no-connections = No saved connections.
+settings-network-choose-connection = Choose a saved connection.
+settings-network-autoconnect = Connect automatically
+settings-network-metered = Metered connection (limits background downloads)
+settings-network-metered-auto = Automatic
+settings-network-metered-yes = Metered
+settings-network-metered-no = Not metered
+settings-network-ip-dhcp = Automatic (DHCP)
+settings-network-ip-auto = Automatic
+settings-network-ip-manual = Manual
+settings-network-ip-disabled = Disabled
+settings-network-ip-addresses = Addresses with prefix (for example 192.168.1.10/24)
+settings-network-ip-gateway = Gateway
+settings-network-ip-dns = DNS servers (empty: from the network)
+settings-network-apply = Apply
+settings-network-proxy = Proxy
+settings-network-proxy-none = No proxy
+settings-network-proxy-auto = Automatic (configuration URL)
+settings-network-proxy-manual = Manual
+settings-network-proxy-server = Proxy server (host:port)
+settings-network-proxy-url = Configuration URL (PAC)
+settings-network-proxy-hint = Applications that ask the system proxy (PacRunner, libproxy) use this.
+settings-network-forget = Forget this connection
