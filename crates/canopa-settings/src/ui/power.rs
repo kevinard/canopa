@@ -121,6 +121,7 @@ impl State {
                 for name in &profiles.supported {
                     buttons =
                         buttons.push(self.action(
+                            format!("power-profile-{name}"),
                             profile_label(name),
                             (active != *name).then(|| {
                                 message(Event::Apply(PowerAction::Profile((*name).into())))
@@ -271,11 +272,13 @@ impl State {
                 text(format!("Idle daemon: running. {}", self.idle_status)),
                 row![
                     self.action(
+                        "settings-button-pause-idle-actions",
                         "Pause idle actions",
                         (!self.busy).then_some(Message::IdleAction("pause")),
                         false
                     ),
                     self.action(
+                        "settings-button-resume",
                         "Resume",
                         (!self.busy).then_some(Message::IdleAction("resume")),
                         false
@@ -283,8 +286,14 @@ impl State {
                 ]
                 .spacing(12),
                 row![
-                    super::field("Stasis profile", &self.profile, Message::Profile),
+                    super::field(
+                        "settings-field-stasis-profile",
+                        "Stasis profile",
+                        &self.profile,
+                        Message::Profile
+                    ),
                     self.action(
+                        "settings-button-use-profile",
                         "Use profile",
                         (!self.busy && !self.profile.trim().is_empty())
                             .then_some(Message::UseProfile),

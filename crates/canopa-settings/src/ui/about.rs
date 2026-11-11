@@ -1,6 +1,6 @@
 //! The About page: the device name (changed through hostnamed and polkit),
 //! the hardware and the software.
-use super::{Message, State, field_id, live_page::LivePage, settings_group};
+use super::{Message, State, field, live_page::LivePage, settings_group};
 use crate::{
     about::{AboutAction, AboutService, AboutState, binary_size, decimal_size},
     live::Event,
@@ -68,10 +68,11 @@ impl State {
                     .is_some_and(|name| !name.trim().is_empty() && name.trim() != current);
                 column![
                     row![
-                        field_id("about-name", "Device name", typed, |value| {
+                        field("about-name", "Device name", typed, |value| {
                             Message::AboutForm(Edit::Name(value))
                         }),
                         self.action(
+                            "settings-button-rename",
                             "Rename",
                             changed.then_some(Message::AboutForm(Edit::Rename)),
                             changed,

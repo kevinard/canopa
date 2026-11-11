@@ -2,7 +2,7 @@
 //! administrators, the other accounts (type, password at next login,
 //! removal) and adding one. AccountsService and polkit decide what each
 //! person may change; your own password goes to `passwd` (ADR 0143).
-use super::{Message, State, field_id, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, focus, live_page::LivePage, settings_group, toggle};
 use crate::{
     live::{Event, LiveAction},
     users::{UsersAction, UsersService, UsersState, check_picture, suggested_name, wipe},
@@ -34,13 +34,20 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 
 /// A button with a focus id of its own, for rows with repeated labels.
 fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
-    focus::control(
-        id,
-        message.clone(),
-        None,
-        None,
-        false,
-        canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false).padding([6, 12]),
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::button(label)
+            .key(id.clone())
+            .disabled(message.is_none())
+            .on_click(message.clone()),
+        focus::control(
+            id,
+            message.clone(),
+            None,
+            None,
+            false,
+            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
+                .padding([6, 12]),
+        ),
     )
 }
 
@@ -50,17 +57,23 @@ fn secret<'a>(
     value: &str,
     change: fn(String) -> Edit,
 ) -> Element<'a, Message> {
-    column![
-        text(label),
-        text_input("", value)
-            .id(id)
-            .secure(true)
-            .on_input(move |value| edit(change(value)))
-            .padding(10)
-    ]
-    .spacing(6)
-    .width(Length::Fill)
-    .into()
+    // The secret itself never enters the accessibility tree: only its length.
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::new(canopa_ui::accessibility::Role::PasswordInput)
+            .label(label)
+            .value("•".repeat(value.chars().count()))
+            .key(format!("{id}-field")),
+        column![
+            text(label),
+            text_input("", value)
+                .id(id)
+                .secure(true)
+                .on_input(move |value| edit(change(value)))
+                .padding(10)
+        ]
+        .spacing(6)
+        .width(Length::Fill),
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -231,7 +244,7 @@ impl State {
             .is_some_and(|name| name.trim() != user.real_name);
         column![
             row![
-                field_id(
+                field(
                     format!("users-{uid}-name"),
                     "Full name",
                     typed,
@@ -482,10 +495,10 @@ impl State {
         }
         let valid = valid_user_name(forms.add_name.trim());
         column![
-            field_id("users-add-full-name", "Full name", &forms.add_full_name, |value| {
+            field("users-add-full-name", "Full name", &forms.add_full_name, |value| {
                 edit(Edit::AddFullName(value))
             }),
-            field_id("users-add-name", "User name", &forms.add_name, |value| {
+            field("users-add-name", "User name", &forms.add_name, |value| {
                 edit(Edit::AddName(value))
             }),
             muted(if valid || forms.add_name.is_empty() {

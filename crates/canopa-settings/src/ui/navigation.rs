@@ -1,6 +1,7 @@
 //! The sidebar: registry groups, a search field and keyboard page movement.
 use super::{Message, State, focus, heading};
 use crate::registry::{self, Entry};
+use canopa_ui::accessibility::{Node, semantic};
 use iced::{
     Element, Length,
     widget::{column, container, scrollable, text, text_input},
@@ -31,6 +32,15 @@ impl State {
             }
         } else {
             let found = registry::search(&self.search);
+            list = list.push(semantic(
+                Node::status(match found.len() {
+                    0 => "No matching settings".to_owned(),
+                    1 => "1 matching page".to_owned(),
+                    n => format!("{n} matching pages"),
+                })
+                .key("settings-search-status"),
+                iced::widget::space().height(0),
+            ));
             if found.is_empty() {
                 list = list.push(
                     container(
@@ -45,32 +55,47 @@ impl State {
                 list = list.push(self.page_link(entry, &found, enabled));
             }
         }
-        container(
-            column![
+        semantic(
+            Node::navigation("Settings pages").key("settings-navigation"),
+            container(
                 column![
-                    text("Canopa").size(13).style(canopa_ui::muted),
-                    heading("Settings", 24)
+                    column![
+                        text("Canopa").size(13).style(canopa_ui::muted),
+                        heading("Settings", 24)
+                    ]
+                    .spacing(3)
+                    .padding([8, 8]),
+                    semantic(
+                        Node::search_input("Search settings", &self.search)
+                            .key("settings-search-field")
+                            .placeholder("Search settings")
+                            .shortcut("Control+F")
+                            .controls("settings-pages")
+                            .on_text(Message::Search),
+                        text_input("Search settings", &self.search)
+                            .id(SEARCH)
+                            .on_input(Message::Search)
+                            .on_submit(Message::SearchSubmit)
+                            .padding(8)
+                    ),
+                    semantic(
+                        Node::list("Pages").key("settings-pages"),
+                        canopa_ui::scroll_speed(
+                            scrollable(list)
+                                .id("settings-navigation-scroll")
+                                .height(Length::Fill)
+                        )
+                    ),
                 ]
-                .spacing(3)
-                .padding([8, 8]),
-                text_input("Search settings", &self.search)
-                    .id(SEARCH)
-                    .on_input(Message::Search)
-                    .on_submit(Message::SearchSubmit)
-                    .padding(8),
-                canopa_ui::scroll_speed(
-                    scrollable(list)
-                        .id("settings-navigation-scroll")
-                        .height(Length::Fill)
-                ),
-            ]
-            .spacing(14),
+                .spacing(14),
+            )
+            .width(220)
+            .height(Length::Fill)
+            .padding(14)
+            .style(|theme| {
+                container::Style::default().background(canopa_ui::colors(theme).surface)
+            }),
         )
-        .width(220)
-        .height(Length::Fill)
-        .padding(14)
-        .style(|theme| container::Style::default().background(canopa_ui::colors(theme).surface))
-        .into()
     }
 
     /// A sidebar link. Up and Down move through `siblings`, the list shown.
@@ -88,25 +113,32 @@ impl State {
         let neighbour =
             |offset: usize| enabled.then(|| Message::Page(siblings[(index + offset) % len].page));
         let open = enabled.then_some(Message::Page(entry.page));
-        focus::control(
-            link_id(entry),
-            open.clone(),
-            // Down (and Left) move to the next page, Up (and Right) to the previous one.
-            neighbour(1),
-            neighbour(len - 1),
-            self.busy,
-            canopa_ui::action(
-                text(entry.title),
-                open,
-                if entry.page == self.page {
-                    canopa_ui::Action::Normal
-                } else {
-                    canopa_ui::Action::Quiet
-                },
-                false,
-            )
-            .width(Length::Fill)
-            .padding([8, 12]),
+        semantic(
+            Node::option(entry.title, entry.page == self.page)
+                .key(link_id(entry))
+                .position(index + 1, len)
+                .disabled(!enabled)
+                .on_click(open.clone()),
+            focus::control(
+                link_id(entry),
+                open.clone(),
+                // Down (and Left) move to the next page, Up (and Right) to the previous one.
+                neighbour(1),
+                neighbour(len - 1),
+                self.busy,
+                canopa_ui::action(
+                    text(entry.title),
+                    open,
+                    if entry.page == self.page {
+                        canopa_ui::Action::Normal
+                    } else {
+                        canopa_ui::Action::Quiet
+                    },
+                    false,
+                )
+                .width(Length::Fill)
+                .padding([8, 12]),
+            ),
         )
     }
 }

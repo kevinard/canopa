@@ -79,6 +79,7 @@ impl State {
                     muted("In use")
                 } else {
                     self.action(
+                        "settings-button-use-this-device",
                         "Use this device",
                         Some(message(Event::Apply(SoundAction::Default(id.clone())))),
                         false,
@@ -92,10 +93,15 @@ impl State {
                 0.0..=100.,
                 f64::from(volume),
                 5.,
-                |value| message(Event::Apply(SoundAction::Volume(
-                    id.clone(),
-                    value.round() as u8
-                ))),
+                {
+                    let id = id.clone();
+                    move |value| {
+                        message(Event::Apply(SoundAction::Volume(
+                            id.clone(),
+                            value.round() as u8,
+                        )))
+                    }
+                },
             ),
             page.control_status(&key("volume"), message),
             toggle(
@@ -123,11 +129,14 @@ impl State {
                     -100.0..=100.,
                     f64::from(balance),
                     10.,
-                    |value| {
-                        message(Event::Apply(SoundAction::Balance(
-                            id.clone(),
-                            value.round() as i8,
-                        )))
+                    {
+                        let id = id.clone();
+                        move |value| {
+                            message(Event::Apply(SoundAction::Balance(
+                                id.clone(),
+                                value.round() as i8,
+                            )))
+                        }
                     },
                 ))
                 .push(page.control_status(&key("balance"), message));
@@ -190,11 +199,14 @@ impl State {
                         0.0..=100.,
                         f64::from(volume),
                         5.,
-                        |value| {
-                            message(Event::Apply(SoundAction::StreamVolume(
-                                id.clone(),
-                                value.round() as u8,
-                            )))
+                        {
+                            let id = id.clone();
+                            move |value| {
+                                message(Event::Apply(SoundAction::StreamVolume(
+                                    id.clone(),
+                                    value.round() as u8,
+                                )))
+                            }
                         },
                     ))
                     .push(page.control_status(&key("volume"), message));

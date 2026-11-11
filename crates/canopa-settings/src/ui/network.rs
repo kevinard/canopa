@@ -3,7 +3,7 @@
 //! import), a hotspot, and each saved connection's settings (auto-connect,
 //! metered, IPv4/IPv6 and DNS, proxy). NetworkManager's questions for
 //! secrets appear at the top. Changes apply at once.
-use super::{Message, State, choice, field_id, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, choice, focus, live_page::LivePage, settings_group, toggle};
 use crate::{
     live::Event,
     network::{NetworkAction, NetworkService, NetworkState, choose_file},
@@ -184,13 +184,20 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 
 /// A button with a focus id of its own, for rows with repeated labels.
 fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
-    focus::control(
-        id,
-        message.clone(),
-        None,
-        None,
-        false,
-        canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false).padding([6, 12]),
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::button(label)
+            .key(id.clone())
+            .disabled(message.is_none())
+            .on_click(message.clone()),
+        focus::control(
+            id,
+            message.clone(),
+            None,
+            None,
+            false,
+            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
+                .padding([6, 12]),
+        ),
     )
 }
 
@@ -200,17 +207,23 @@ fn secret<'a>(
     value: &str,
     change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
-    column![
-        text(label),
-        text_input("", value)
-            .id(format!("network-{id}"))
-            .secure(true)
-            .on_input(change)
-            .padding(10)
-    ]
-    .spacing(6)
-    .width(Length::Fill)
-    .into()
+    // The secret itself never enters the accessibility tree: only its length.
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::new(canopa_ui::accessibility::Role::PasswordInput)
+            .label(label)
+            .value("•".repeat(value.chars().count()))
+            .key(format!("network-{id}-field")),
+        column![
+            text(label),
+            text_input("", value)
+                .id(format!("network-{id}"))
+                .secure(true)
+                .on_input(change)
+                .padding(10)
+        ]
+        .spacing(6)
+        .width(Length::Fill),
+    )
 }
 
 fn edit(edit: Edit) -> Message {
@@ -218,7 +231,7 @@ fn edit(edit: Edit) -> Message {
 }
 
 fn text_field<'a>(forms: &NetworkForms, field: Field, label: &'a str) -> Element<'a, Message> {
-    field_id(
+    super::field(
         format!("network-{field:?}").to_lowercase(),
         label,
         forms.get(field),

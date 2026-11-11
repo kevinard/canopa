@@ -83,6 +83,7 @@ impl State {
                         .style(canopa_ui::muted),
                     row![
                         self.action(
+                            "settings-button-toggle-service",
                             if service.running() {
                                 "Stop the service"
                             } else {
@@ -92,6 +93,7 @@ impl State {
                             false,
                         ),
                         self.action(
+                            "settings-button-refuse-the-next-change",
                             "Refuse the next change",
                             Some(Message::Simulate(Simulate::RefuseNext)),
                             false,

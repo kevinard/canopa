@@ -3,6 +3,7 @@
 //! the loading, unavailable and per-control states with the shared controls.
 use super::{Message, button, focus, settings_group};
 use crate::live::{ControlStatus, Effect, Event, Live, LiveService, ServiceError, Status};
+use canopa_ui::accessibility::{Node, semantic};
 use futures_util::{StreamExt, stream::BoxStream};
 use iced::{
     Alignment, Element, Length, Subscription, Task,
@@ -120,18 +121,30 @@ impl<S: LiveService> LivePage<S> {
         ready: impl FnOnce(&'a S::State) -> Element<'a, Message>,
     ) -> Element<'a, Message> {
         match self.live.status() {
-            Status::Loading => text(format!("Connecting to {}…", self.service.name()))
-                .style(canopa_ui::muted)
-                .into(),
+            Status::Loading => {
+                let connecting = format!("Connecting to {}…", self.service.name());
+                semantic(
+                    Node::status(connecting.clone())
+                        .key("settings-live-loading")
+                        .busy(true),
+                    text(connecting).style(canopa_ui::muted),
+                )
+            }
             Status::Unavailable(reason) => settings_group(
                 "Service not available",
                 column![
-                    text(format!(
-                        "{} is not installed or not running. {reason}",
-                        self.service.name()
-                    ))
-                    .style(canopa_ui::muted),
+                    {
+                        let message = format!(
+                            "{} is not installed or not running. {reason}",
+                            self.service.name()
+                        );
+                        semantic(
+                            Node::status(message.clone()).key("settings-live-unavailable"),
+                            text(message).style(canopa_ui::muted),
+                        )
+                    },
                     button(
+                        "settings-button-try-again",
                         "Try again",
                         Some(map(Event::Reload)),
                         canopa_ui::Action::Normal,
@@ -152,11 +165,24 @@ impl<S: LiveService> LivePage<S> {
         control: &str,
         map: fn(Event<S>) -> Message,
     ) -> Element<'_, Message> {
+        let status = format!("settings-live-{control}-status");
         let content: Element<'_, Message> = match self.live.control(control) {
-            ControlStatus::Idle => return container(text("")).height(Length::Fixed(1.)).into(),
-            ControlStatus::Applying => text("Applying…").size(13).style(canopa_ui::muted).into(),
+            ControlStatus::Idle => {
+                // An empty live region: the next state is announced when it appears.
+                return semantic(
+                    Node::status("").key(status),
+                    container(text("")).height(Length::Fixed(1.)),
+                );
+            }
+            ControlStatus::Applying => semantic(
+                Node::status("Applying…").key(status).busy(true),
+                text("Applying…").size(13).style(canopa_ui::muted),
+            ),
             ControlStatus::Failed(error) => row![
-                text(error.to_owned()).size(13).width(Length::Fill),
+                semantic(
+                    Node::alert(error.to_owned()).key(status),
+                    text(error.to_owned()).size(13).width(Length::Fill)
+                ),
                 control_button(
                     format!("settings-live-{control}-retry"),
                     "Retry",
@@ -185,13 +211,18 @@ fn control_button<'a>(
     message: Message,
     treatment: canopa_ui::Action,
 ) -> Element<'a, Message> {
-    focus::control(
-        id,
-        Some(message.clone()),
-        None,
-        None,
-        false,
-        canopa_ui::action(text(label), Some(message), treatment, false).padding([6, 12]),
+    semantic(
+        Node::button(label)
+            .key(id.clone())
+            .on_click(Some(message.clone())),
+        focus::control(
+            id,
+            Some(message.clone()),
+            None,
+            None,
+            false,
+            canopa_ui::action(text(label), Some(message), treatment, false).padding([6, 12]),
+        ),
     )
 }
 

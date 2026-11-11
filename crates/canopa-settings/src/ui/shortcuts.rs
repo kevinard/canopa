@@ -1,4 +1,4 @@
-use super::{Element, Message, State, column, field_id, settings_group, text};
+use super::{Element, Message, State, column, field, settings_group, text};
 
 impl State {
     pub(super) fn shortcuts_view(&self) -> Element<'_, Message> {
@@ -14,7 +14,7 @@ impl State {
         };
         let mut content = column![
             text("Edit the keyboard shortcuts shipped with Canopa. Use Niri key names such as Mod+Shift+Space. Mod is normally Super. Leave a shortcut empty to turn it off. Shortcuts you have not changed follow Canopa updates."),
-            field_id(
+            field(
                 "settings-shortcut-search",
                 "Search shortcuts",
                 &self.shortcut_query,
@@ -29,6 +29,7 @@ impl State {
         let editable = self.paths.active() && !self.busy;
         if editable {
             content = content.push(self.action(
+                "settings-button-reset-to-defaults",
                 "Reset to defaults",
                 Some(Message::ResetShortcuts),
                 false,
@@ -48,7 +49,7 @@ impl State {
             }
             found = true;
             content = content.push(if editable || self.busy {
-                field_id(
+                field(
                     format!("settings-shortcut-{index}"),
                     &shortcut.label,
                     &shortcut.key,

@@ -33,6 +33,7 @@ use crate::{
     storage::{Snapshot, companion},
 };
 use anyhow::{Context, Result, ensure};
+use canopa_ui::accessibility::{self, Node, semantic};
 use iced::{
     Alignment, Element, Font, Length, Subscription, Task, Theme,
     font::Weight,
@@ -160,7 +161,15 @@ enum Message {
     LiveExample(crate::live::Event<crate::live::fake::Service>),
     #[cfg(debug_assertions)]
     Simulate(live_example::Simulate),
+    Accessibility(accessibility::Event<Message>),
 }
+impl accessibility::Message for Message {
+    fn accessibility(event: accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
+}
+/// The accessibility root's key; it names the window among AT-SPI windows.
+const ACCESSIBILITY_ROOT: &str = "settings";
 struct State {
     paths: Paths,
     launcher: crate::launcher::Model,
@@ -217,6 +226,8 @@ struct State {
     #[cfg(debug_assertions)]
     live_example: live_example::Example,
     activations: Option<Activations>,
+    /// The AT-SPI bridge, created by the running window only.
+    accessibility: Option<accessibility::Bridge<Message>>,
 }
 fn task<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
@@ -235,11 +246,13 @@ fn task<T: Send + 'static>(
 impl State {
     fn action<'a>(
         &self,
+        key: impl Into<String>,
         label: &'a str,
         message: Option<Message>,
         active: bool,
     ) -> Element<'a, Message> {
         button(
+            key,
             label,
             message,
             if active {
@@ -329,6 +342,7 @@ impl State {
             #[cfg(debug_assertions)]
             live_example: live_page::LivePage::new(Default::default()),
             activations: None,
+            accessibility: None,
         };
         (
             state,
@@ -343,7 +357,26 @@ impl State {
             ]),
         )
     }
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return match &mut self.accessibility {
+                Some(bridge) => bridge.update(event),
+                None => Task::none(),
+            };
+        }
+        let task = self.apply(message);
+        match &mut self.accessibility {
+            Some(bridge) => {
+                bridge.set_scale(
+                    f64::from(self.personal.value.values.appearance.text_scale()) / 100.0,
+                );
+                Task::batch([task, bridge.refresh()])
+            }
+            None => task,
+        }
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if (self.busy || self.trial.is_some())
             && matches!(
                 &message,
@@ -1230,6 +1263,9 @@ impl State {
         if let Some(source) = &self.activations {
             subscriptions.push(Subscription::run_with(source.clone(), activations));
         }
+        if let Some(bridge) = &self.accessibility {
+            subscriptions.push(bridge.subscription());
+        }
         #[cfg(debug_assertions)]
         if self.page == Page::LiveExample {
             subscriptions.push(self.live_example.subscription(live_example::message));
@@ -1240,13 +1276,17 @@ impl State {
         let navigation = self.navigation();
         let entry = self.page.entry();
         let title = column![
-            heading(entry.title, 28),
+            semantic(
+                Node::heading(entry.title, 1).key("settings-page-title"),
+                heading(entry.title, 28)
+            ),
             text(entry.description).size(14).style(canopa_ui::muted)
         ]
         .spacing(5);
         // Keep this child present so asynchronous notices do not replace the
         // page's widget tree and discard keyboard focus or typed drafts.
-        let mut body = column![
+        let mut body = column![semantic(
+            Node::status(&self.notice).key("settings-notice"),
             container(text(&self.notice).size(14))
                 .padding(if self.notice.is_empty() { 0 } else { 12 })
                 .height(if self.notice.is_empty() {
@@ -1256,10 +1296,11 @@ impl State {
                     Length::Shrink
                 })
                 .style(canopa_ui::surface)
-        ]
+        )]
         .spacing(16);
         if self.trial.is_some() {
-            body = body.push(
+            body = body.push(semantic(
+                Node::alert_dialog("Keep these display settings?").key("settings-trial"),
                 container(
                     column![
                         text(format!(
@@ -1269,8 +1310,18 @@ impl State {
                         .size(20),
                         text("Ctrl+Enter keeps changes. Escape reverts."),
                         row![
-                            self.action("Revert", Some(Message::Decision(false)), false),
-                            self.action("Keep changes", Some(Message::Decision(true)), true)
+                            self.action(
+                                "settings-button-revert",
+                                "Revert",
+                                Some(Message::Decision(false)),
+                                false
+                            ),
+                            self.action(
+                                "settings-button-keep-changes",
+                                "Keep changes",
+                                Some(Message::Decision(true)),
+                                true
+                            )
                         ]
                         .spacing(12)
                     ]
@@ -1278,7 +1329,7 @@ impl State {
                 )
                 .padding(16)
                 .style(canopa_ui::surface),
-            );
+            ));
         }
         if matches!(self.page, Page::Displays | Page::Input) && !self.paths.active() {
             body = body.push(settings_group(
@@ -1313,10 +1364,17 @@ impl State {
         let content = column![
             container(title).padding([19, 20]).width(Length::Fill),
             rule::horizontal(1).style(settings_rule),
-            canopa_ui::scroll_speed(
-                scrollable(container(body.max_width(800).padding([14, 20])).width(Length::Fill))
+            semantic(
+                Node::new(accessibility::Role::Main)
+                    .label(entry.title)
+                    .key("settings-page"),
+                canopa_ui::scroll_speed(
+                    scrollable(
+                        container(body.max_width(800).padding([14, 20])).width(Length::Fill)
+                    )
                     .id("settings-page-scroll")
                     .height(Length::Fill)
+                )
             ),
         ]
         .width(Length::Fill);
@@ -1327,7 +1385,7 @@ impl State {
                 .push(footer),
             None => content,
         };
-        focus::group(
+        let window = focus::group(
             row![navigation, rule::vertical(1).style(settings_rule), content],
             self.trial.as_ref().map(|_| Message::Decision(false)),
             format!(
@@ -1344,11 +1402,15 @@ impl State {
                 }
             ),
             if self.trial.is_some() {
-                "settings-button-Revert".into()
+                "settings-button-revert".into()
             } else {
                 navigation::link_id(entry)
             },
             self.busy,
+        );
+        semantic(
+            Node::window(ACCESSIBILITY_ROOT, "Canopa Settings").busy(self.busy),
+            window,
         )
     }
     /// Whether the selected file-backed page can save its draft now.
@@ -1366,15 +1428,18 @@ impl State {
         let Kind::File { apply, .. } = self.page.kind() else {
             return None;
         };
-        Some(
+        Some(semantic(
+            Node::toolbar("Page actions").key("settings-footer"),
             row![
                 space().width(Length::Fill),
                 self.action(
+                    "settings-reload-page",
                     RELOAD_PAGE,
                     (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
                     false
                 ),
                 button(
+                    "settings-apply",
                     if self.busy {
                         "Applying…"
                     } else if apply == Apply::Trial {
@@ -1390,14 +1455,14 @@ impl State {
             ]
             .align_y(Alignment::Center)
             .spacing(12)
-            .padding([10, 20])
-            .into(),
-        )
+            .padding([10, 20]),
+        ))
     }
     fn displays(&self) -> Element<'_, Message> {
         let mut body = column![
             text("Choose a mode, scale and position for each connected display."),
             self.action(
+                "settings-button-reload-displays",
                 if self.refreshing {
                     "Refreshing…"
                 } else {
@@ -1462,13 +1527,13 @@ impl State {
                     move |v| Message::Scale(index, v)
                 ),
                 row![
-                    field_id(
+                    field(
                         format!("display-x-{}", monitor.name),
                         "Horizontal position",
                         &self.positions[index].0,
                         move |v| Message::Position(index, true, v)
                     ),
-                    field_id(
+                    field(
                         format!("display-y-{}", monitor.name),
                         "Vertical position",
                         &self.positions[index].1,
@@ -1494,16 +1559,19 @@ impl State {
     fn input_view(&self) -> Element<'_, Message> {
         let keyboard = column![
             field(
+                "settings-field-layouts-in-switch-order-for-example-us-fr",
                 "Layouts, in switch order (for example us,fr)",
                 &self.input.value.layouts,
                 |v| Message::InputText(0, v)
             ),
             field(
+                "settings-field-variants-optional-in-the-same-order",
                 "Variants (optional, in the same order)",
                 &self.input.value.variants,
                 |v| Message::InputText(1, v)
             ),
             field(
+                "settings-field-xkb-options-for-example-grp-alt-shift-toggle",
                 "XKB options (for example grp:alt_shift_toggle)",
                 &self.input.value.options,
                 |v| Message::InputText(2, v)
@@ -1608,7 +1676,7 @@ impl State {
                     self.personal.value.values.appearance.color_scheme != canopa_theme::ColorScheme::Light
                 )
             ),
-            container(field("Accent color (optional, #RRGGBB)", &self.personal.value.accent, |v| {
+            container(field("settings-field-accent-color-optional-rrggbb", "Accent color (optional, #RRGGBB)", &self.personal.value.accent, |v| {
                 Message::PersonalText(0, v)
             })).max_width(300),
             text(format!("Text size · {}%", self.personal.value.values.text_scale)),
@@ -1625,25 +1693,31 @@ impl State {
                 self.personal.value.values.reduced_motion,
                 Message::ReducedMotion(!self.personal.value.values.reduced_motion)
             ),
-            self.action("Choose wallpaper…", Some(Message::Wallpaper), true),
+            self.action("settings-button-choose-wallpaper", "Choose wallpaper…", Some(Message::Wallpaper), true),
             text("Preview and save wallpaper for each monitor. The default image folder is ~/Pictures/Wallpapers.")
                 .size(14).style(canopa_ui::muted),
         ].spacing(12);
         let lockscreen = column![
             field(
+                "settings-field-clock-format",
                 "Clock format",
                 &self.personal.value.values.lock.clock_format,
                 |v| { Message::PersonalText(1, v) }
             ),
             field(
+                "settings-field-date-format",
                 "Date format",
                 &self.personal.value.values.lock.date_format,
                 |v| { Message::PersonalText(2, v) }
             ),
-            field("Font family", &self.personal.value.values.lock.font, |v| {
-                Message::PersonalText(3, v)
-            }),
             field(
+                "settings-field-font-family",
+                "Font family",
+                &self.personal.value.values.lock.font,
+                |v| { Message::PersonalText(3, v) }
+            ),
+            field(
+                "settings-field-avatar-image-optional-absolute-path",
                 "Avatar image (optional absolute path)",
                 &self
                     .personal
@@ -1668,6 +1742,7 @@ impl State {
                 Message::Dim
             ),
             self.action(
+                "settings-button-edit-lock-screen-widgets",
                 "Edit lock screen widgets…",
                 Some(Message::OpenLockWidgetEditor),
                 false
@@ -1676,6 +1751,7 @@ impl State {
         .spacing(12);
         let motion = if let Some(reduced) = self.compositor_motion {
             self.action(
+                "settings-button-compositor-motion",
                 if reduced {
                     "Use Niri animation settings"
                 } else {
@@ -1697,29 +1773,25 @@ impl State {
         .into()
     }
 }
+/// A labelled text field. `key` is its focus and accessibility identity.
 fn field<'a>(
+    key: impl Into<String>,
     label: &'a str,
     value: &str,
-    change: impl Fn(String) -> Message + 'a,
+    change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
 ) -> Element<'a, Message> {
-    field_id(format!("settings-field-{label}"), label, value, change)
-}
-fn field_id<'a>(
-    id: impl Into<String>,
-    label: &'a str,
-    value: &str,
-    change: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
-    column![
-        text(label),
-        text_input("", value)
-            .id(id.into())
-            .on_input(change)
-            .padding(10)
-    ]
-    .spacing(6)
-    .width(Length::Fill)
-    .into()
+    let key = key.into();
+    semantic(
+        Node::text_input(label, value)
+            .key(format!("{key}-field"))
+            .on_text(change.clone()),
+        column![
+            text(label),
+            text_input("", value).id(key).on_input(change).padding(10)
+        ]
+        .spacing(6)
+        .width(Length::Fill),
+    )
 }
 fn heading(label: &str, size: u32) -> iced::widget::Text<'_> {
     text(label).size(size).font(Font {
@@ -1732,11 +1804,19 @@ fn settings_group<'a>(
     label: &'a str,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    container(column![heading(label, 18), content.into()].spacing(12))
+    semantic(
+        Node::group(label),
+        container(
+            column![
+                semantic(Node::heading(label, 2), heading(label, 18)),
+                content.into()
+            ]
+            .spacing(12),
+        )
         .padding(16)
         .width(Length::Fill)
-        .style(canopa_ui::surface)
-        .into()
+        .style(canopa_ui::surface),
+    )
 }
 
 fn settings_rule(theme: &Theme) -> rule::Style {
@@ -1748,26 +1828,32 @@ fn settings_rule(theme: &Theme) -> rule::Style {
     }
 }
 
+/// A push button. `key` is a stable focus and accessibility identity that
+/// never depends on the (translatable) label.
 fn button<'a>(
+    key: impl Into<String>,
     label: &'a str,
     message: Option<Message>,
     treatment: canopa_ui::Action,
     width: Length,
     preserve_disabled: bool,
 ) -> Element<'a, Message> {
-    focus::control(
-        if matches!(label, "Applying…" | "Test display changes" | "Save changes") {
-            "settings-apply".to_owned()
-        } else {
-            format!("settings-button-{label}")
-        },
-        message.clone(),
-        None,
-        None,
-        preserve_disabled,
-        canopa_ui::action(text(label), message, treatment, false)
-            .width(width)
-            .padding([8, 12]),
+    let key = key.into();
+    semantic(
+        Node::button(label)
+            .key(key.clone())
+            .disabled(message.is_none())
+            .on_click(message.clone()),
+        focus::control(
+            key,
+            message.clone(),
+            None,
+            None,
+            preserve_disabled,
+            canopa_ui::action(text(label), message, treatment, false)
+                .width(width)
+                .padding([8, 12]),
+        ),
     )
 }
 fn toggle<'a>(
@@ -1776,41 +1862,80 @@ fn toggle<'a>(
     value: bool,
     message: Message,
 ) -> Element<'a, Message> {
-    focus::control(
-        id,
-        Some(message.clone()),
-        None,
-        None,
-        false,
-        checkbox(value)
-            .label(label.into())
-            .on_toggle(move |_| message.clone()),
+    let id = id.into();
+    let label = label.into();
+    semantic(
+        Node::check_box(label.clone(), value)
+            .key(id.clone())
+            .on_click(Some(message.clone())),
+        focus::control(
+            id,
+            Some(message.clone()),
+            None,
+            None,
+            false,
+            checkbox(value)
+                .label(label)
+                .on_toggle(move |_| message.clone()),
+        ),
     )
 }
+/// A slider, named by the text drawn before it. Left and Right step it.
 fn adjust<'a>(
     id: impl Into<String>,
     range: std::ops::RangeInclusive<f64>,
     value: f64,
     step: f64,
-    change: impl Fn(f64) -> Message + 'a,
+    change: impl Fn(f64) -> Message + Clone + Send + Sync + 'static,
 ) -> Element<'a, Message> {
+    let id = id.into();
     let left = change((value - step).max(*range.start()));
     let right = change((value + step).min(*range.end()));
-    focus::control(
-        id,
-        None,
-        Some(left),
-        Some(right),
-        false,
-        slider(range, value, change).step(step),
+    let bounds = range.clone();
+    let set = change.clone();
+    semantic(
+        Node::new(accessibility::Role::Slider)
+            .key(id.clone())
+            .range(accessibility::Range {
+                value,
+                min: *range.start(),
+                max: *range.end(),
+                step: Some(step),
+            })
+            .on_increment(Some(right.clone()))
+            .on_decrement(Some(left.clone()))
+            .on_set_value(move |requested| match requested {
+                accessibility::Value::Number(number) if bounds.contains(&number) => {
+                    Some(set(number))
+                }
+                accessibility::Value::Text(text) => text
+                    .trim()
+                    .trim_end_matches('%')
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|number| bounds.contains(number))
+                    .map(&set),
+                _ => None,
+            }),
+        focus::control(
+            id,
+            None,
+            Some(left),
+            Some(right),
+            false,
+            slider(range, value, change).step(step),
+        ),
     )
 }
+/// A pick list, named by the text drawn before it. Enter and Right choose
+/// the next option, Left the previous one.
 fn choice<'a>(
     id: impl Into<String>,
     options: Vec<String>,
     selected: Option<String>,
     change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
+    let id = id.into();
     let index = selected
         .as_ref()
         .and_then(|v| options.iter().position(|o| o == v))
@@ -1829,13 +1954,34 @@ fn choice<'a>(
             (index + 1) % options.len()
         })
         .map(|v| change(v.clone()));
-    focus::control(
-        id,
-        right.clone(),
-        left,
-        right,
-        false,
-        pick_list(options, selected, change),
+    // An assistive technology may name any listed option.
+    let messages: Vec<(String, Message)> = options
+        .iter()
+        .map(|option| (option.clone(), change(option.clone())))
+        .collect();
+    semantic(
+        Node::new(accessibility::Role::ComboBox)
+            .key(id.clone())
+            .value(selected.clone().unwrap_or_default())
+            .description(format!("{} of {}", index + 1, options.len()))
+            .on_click(right.clone())
+            .on_increment(right.clone())
+            .on_decrement(left.clone())
+            .on_set_value(move |requested| match requested {
+                accessibility::Value::Text(text) => messages
+                    .iter()
+                    .find(|(option, _)| *option == text)
+                    .map(|(_, message)| message.clone()),
+                accessibility::Value::Number(_) => None,
+            }),
+        focus::control(
+            id,
+            right.clone(),
+            left,
+            right,
+            false,
+            pick_list(options, selected, change),
+        ),
     )
 }
 fn mode_label(mode: &niri_ipc::Mode) -> String {
@@ -2009,6 +2155,11 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
         move || {
             let (mut state, task) = State::boot();
             state.activations = activations.clone();
+            let mut bridge = accessibility::Bridge::new("canopa-settings");
+            bridge.open(ACCESSIBILITY_ROOT, "Canopa Settings", None);
+            // A new ordinary window normally has focus; compositor events correct it.
+            bridge.set_window_focused(ACCESSIBILITY_ROOT, true);
+            state.accessibility = Some(bridge);
             let page = request.page.unwrap_or(Page::Displays);
             state
                 .display_profiles
@@ -2040,12 +2191,14 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
     .map_err(anyhow::Error::msg)
 }
 
+#[cfg(all(test, debug_assertions))]
+mod accessibility_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::widget_layouts::Editor as Widgets;
 
-    fn fresh() -> (tempfile::TempDir, State) {
+    pub(super) fn fresh() -> (tempfile::TempDir, State) {
         let root = tempfile::tempdir().unwrap();
         let paths = Paths {
             directory: root.path().join("canopa"),

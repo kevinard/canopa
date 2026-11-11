@@ -165,6 +165,7 @@ impl State {
                     fact("Your layouts", layouts.layouts.clone()),
                     row![
                         self.action(
+                            "settings-button-use-my-layouts-for-the-login-screen-and-console",
                             "Use my layouts for the login screen and console",
                             (!same && !layouts.layouts.trim().is_empty()).then(|| {
                                 message(Event::Apply(RegionAction::SystemKeyboard {
@@ -176,6 +177,7 @@ impl State {
                             false,
                         ),
                         self.action(
+                            "settings-button-change-my-layouts",
                             "Change my layouts…",
                             Some(Message::Page(Page::Input)),
                             false

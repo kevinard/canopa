@@ -20,7 +20,7 @@ canopa-config.workspace = true
 canopa-file.workspace = true
 canopa-theme.workspace = true
 canopa-session-ui.workspace = true
-canopa-ui = { workspace = true, optional = true }
+canopa-ui = { workspace = true, optional = true, features = ["accessibility"] }
 clap.workspace = true
 futures-util.workspace = true
 iced = { workspace = true, optional = true, features = ["tokio", "tiny-skia"] }
@@ -39,6 +39,7 @@ zbus.workspace = true
 [dev-dependencies]
 assert_cmd.workspace = true
 canopa-services = { workspace = true, features = ["audio", "test-support"] }
+canopa-ui = { workspace = true, features = ["accessibility-testing"] }
 
 [[test]]
 name = "integration"

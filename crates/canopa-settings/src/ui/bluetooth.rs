@@ -2,7 +2,7 @@
 //! (connect, disconnect, trust, forget, battery) and nearby devices to pair.
 //! Pairing questions (confirm a code, enter a PIN or passkey, type a code on
 //! the device) appear at the top. Changes apply at once.
-use super::{Message, State, field_id, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, focus, live_page::LivePage, settings_group, toggle};
 use crate::{
     bluetooth::{BluetoothAction, BluetoothService, BluetoothState, Pairing, kind_label},
     live::{Event, LiveAction},
@@ -29,13 +29,20 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 
 /// A button with a focus id of its own, for rows with repeated labels.
 fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
-    focus::control(
-        id,
-        message.clone(),
-        None,
-        None,
-        false,
-        canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false).padding([6, 12]),
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::button(label)
+            .key(id.clone())
+            .disabled(message.is_none())
+            .on_click(message.clone()),
+        focus::control(
+            id,
+            message.clone(),
+            None,
+            None,
+            false,
+            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
+                .padding([6, 12]),
+        ),
     )
 }
 
@@ -120,7 +127,7 @@ impl State {
                     .map(|_| Message::BluetoothForm(Edit::Submit));
                 column![
                     text(format!("{name} asks for a {}.", label.to_lowercase())),
-                    field_id(
+                    field(
                         "bluetooth-pairing-entry",
                         label,
                         &self.bluetooth_entry,

@@ -1,4 +1,4 @@
-use super::{Message, State, choice, field_id, task, toggle};
+use super::{Message, State, choice, field, task, toggle};
 use crate::{
     session::Paths,
     storage::Snapshot,
@@ -283,13 +283,20 @@ impl State {
         };
         let mut content = column![
             row![
-                self.action("Bar layout", Some(message(Action::Lock(false))), !view.lock),
                 self.action(
+                    "settings-button-bar-layout",
+                    "Bar layout",
+                    Some(message(Action::Lock(false))),
+                    !view.lock
+                ),
+                self.action(
+                    "settings-button-lock-screen-layout",
                     "Lock screen layout",
                     Some(message(Action::Lock(true))),
                     view.lock
                 ),
                 self.action(
+                    "settings-button-refresh-monitors",
                     "Refresh monitors",
                     (!self.refreshing).then_some(Message::BackendChanged),
                     false
@@ -401,7 +408,7 @@ impl State {
                     content = content.push(text("Choose at least one monitor before saving."));
                 }
             }
-            content = content.push(field_id(
+            content = content.push(field(
                 "widgets-copy-name",
                 "Name for a copy of this bar",
                 &view.title,
@@ -410,11 +417,13 @@ impl State {
             content = content.push(
                 row![
                     self.action(
+                        "settings-button-duplicate-bar",
                         "Duplicate bar",
                         (!view.title.trim().is_empty()).then_some(message(Action::Duplicate)),
                         false
                     ),
                     self.action(
+                        "settings-button-remove-bar",
                         "Remove bar",
                         (editor.bars.len() > 1).then_some(message(Action::RemoveBar)),
                         false
@@ -517,6 +526,7 @@ impl State {
                     .spacing(4)
                     .width(Length::Fill),
                     self.action(
+                        "settings-button-earlier",
                         "Earlier",
                         adjacent(&siblings, name, -1)
                             .is_some()
@@ -524,6 +534,7 @@ impl State {
                         false
                     ),
                     self.action(
+                        "settings-button-later",
                         "Later",
                         adjacent(&siblings, name, 1)
                             .is_some()
@@ -531,6 +542,7 @@ impl State {
                         false
                     ),
                     self.action(
+                        "settings-button-remove-widget",
                         "Remove widget",
                         (name != "authentication").then_some(message(Action::Remove)),
                         false
@@ -663,22 +675,30 @@ impl State {
             let active = view.selected() == Some(placement.name.as_str());
             let label = preview_label(&placement.name, view.lock);
             let content = container(
-                text(label)
+                text(label.clone())
                     .size((12. * scale * placement.scale).max(8.))
                     .wrapping(iced::widget::text::Wrapping::None),
             )
             .center_x(Length::Fill)
             .center_y(Length::Fill);
+            let select = message(Action::Select(placement.name.clone()));
             let button = canopa_ui::action(
                 content,
-                Some(message(Action::Select(placement.name))),
+                Some(select.clone()),
                 canopa_ui::Action::Normal,
                 active,
             )
             .padding(0)
             .width(bounds.width)
             .height(bounds.height);
-            preview = preview.push(positioned(bounds.x, bounds.y, button.into()));
+            let button = canopa_ui::accessibility::semantic(
+                canopa_ui::accessibility::Node::button(label.clone())
+                    .key(format!("widget-preview-{}", placement.name))
+                    .toggled(active)
+                    .on_click(Some(select)),
+                button,
+            );
+            preview = preview.push(positioned(bounds.x, bounds.y, button));
         }
         preview.width(width).height(height).into()
     }

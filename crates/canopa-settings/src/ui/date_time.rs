@@ -2,7 +2,7 @@
 //! when GeoClue is installed), network time, the date and time when network
 //! time is off, and the 12/24-hour clock for Canopa. timedated asks polkit
 //! for each system change.
-use super::{Message, State, field_id, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, live_page::LivePage, settings_group, toggle};
 use crate::{
     clock_format::{ClockFormats, HourCycle},
     date_time::{DateTimeAction, DateTimeService, DateTimeState, local_usec, now_label},
@@ -171,6 +171,7 @@ impl State {
             body = body.push(
                 row![
                     self.action(
+                        "settings-button-use-my-location",
                         "Use my location",
                         Some(apply(DateTimeAction::Locate)),
                         false
@@ -181,7 +182,7 @@ impl State {
                 .align_y(Alignment::Center),
             );
         }
-        body = body.push(field_id(
+        body = body.push(field(
             "date-time-zone-search",
             "Find a time zone (city or region)",
             &forms.zone_query,
@@ -199,6 +200,7 @@ impl State {
                         muted("In use")
                     } else {
                         super::button(
+                            "settings-button-use",
                             "Use",
                             Some(apply(DateTimeAction::Timezone(zone.clone()))),
                             canopa_ui::Action::Normal,
@@ -248,16 +250,21 @@ impl State {
             body = body
                 .push(
                     row![
-                        field_id("date-time-date", "Date (YYYY-MM-DD)", &forms.date, |v| {
+                        field("date-time-date", "Date (YYYY-MM-DD)", &forms.date, |v| {
                             edit(Edit::Date(v))
                         }),
-                        field_id("date-time-time", "Time (HH:MM)", &forms.time, |v| {
+                        field("date-time-time", "Time (HH:MM)", &forms.time, |v| {
                             edit(Edit::Time(v))
                         }),
                     ]
                     .spacing(12),
                 )
-                .push(self.action("Set date and time", Some(edit(Edit::SetTime)), false))
+                .push(self.action(
+                    "settings-button-set-date-and-time",
+                    "Set date and time",
+                    Some(edit(Edit::SetTime)),
+                    false,
+                ))
                 .push(page.control_status("time", message));
         }
         if state.clock.local_rtc {
@@ -279,12 +286,14 @@ impl State {
                 let mut body = column![
                     row![
                         self.action(
+                            "settings-button-24-hour-14-30",
                             "24-hour (14:30)",
                             (cycle != Some(HourCycle::H24))
                                 .then(|| edit(Edit::HourCycle(HourCycle::H24))),
                             cycle == Some(HourCycle::H24),
                         ),
                         self.action(
+                            "settings-button-12-hour-2-30-pm",
                             "12-hour (2:30 PM)",
                             (cycle != Some(HourCycle::H12))
                                 .then(|| edit(Edit::HourCycle(HourCycle::H12))),

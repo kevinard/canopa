@@ -1,7 +1,7 @@
 //! The Default applications page: the web browser, mail, calendar, music,
 //! video, photos, text editor, file manager and terminal, and any other file
 //! type found by name or extension. Each choice is saved at once.
-use super::{Message, State, choice, field_id, live_page::LivePage, settings_group};
+use super::{Message, State, choice, field, live_page::LivePage, settings_group};
 use crate::{
     default_apps::{CATEGORIES, Choice, DefaultAction, DefaultApps, DefaultAppsService},
     live::{Event, LiveAction},
@@ -115,7 +115,7 @@ impl State {
             .push(muted(
                 "Programs that run in a terminal open in this one, through xdg-terminal-exec. Without a choice, the first installed terminal is used.",
             ));
-        let mut others = column![field_id(
+        let mut others = column![field(
             "default-apps-search",
             "File type or extension",
             &self.default_apps_query,

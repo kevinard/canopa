@@ -1,4 +1,4 @@
-use super::{Message, State, choice, field_id, task};
+use super::{Message, State, choice, field, task};
 use crate::{
     display::{Monitor, TrialHandle},
     profiles::{Book, Switching},
@@ -160,6 +160,7 @@ impl State {
             ));
         } else {
             content = content.push(self.action(
+                "settings-button-reload-display-profiles",
                 "Reload display profiles",
                 enabled.then(|| message(Action::Load)),
                 false,
@@ -187,6 +188,7 @@ impl State {
                         ))
                         .push(
                             self.action(
+                                "settings-button-save-switching-policy",
                                 "Save switching policy",
                                 (enabled && book.switching != editor.switching)
                                     .then(|| message(Action::SaveSwitching)),
@@ -202,6 +204,7 @@ impl State {
                         .push(
                             row![
                                 self.action(
+                                    "settings-button-test-saved-profile",
                                     "Test saved profile",
                                     (enabled
                                         && !self.refreshing
@@ -210,6 +213,7 @@ impl State {
                                     false
                                 ),
                                 self.action(
+                                    "settings-button-delete-selected-profile",
                                     "Delete selected profile",
                                     (enabled && selected.is_some())
                                         .then(|| message(Action::Delete)),
@@ -218,7 +222,7 @@ impl State {
                             ]
                             .spacing(8),
                         )
-                        .push(field_id(
+                        .push(field(
                             "display-profile-name",
                             "New profile name",
                             &editor.title,
@@ -226,6 +230,7 @@ impl State {
                         ))
                         .push(
                             self.action(
+                                "settings-button-save-layout-as-profile",
                                 "Save layout as profile",
                                 (enabled
                                     && !self.refreshing

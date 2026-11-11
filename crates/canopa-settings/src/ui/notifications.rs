@@ -2,7 +2,7 @@
 //! what breaks through), automatic banner suppression, and each
 //! application's delivery, sound and lock-screen rule. Canopa Notify owns all
 //! of it; changes apply at once.
-use super::{Message, State, choice, field_id, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, choice, field, live_page::LivePage, settings_group, toggle};
 use crate::{
     live::{Event, LiveAction},
     notifications::{NotificationAction, NotificationService, app_identity, local_time},
@@ -165,6 +165,7 @@ impl State {
             muted(description),
             row![
                 self.action(
+                    "settings-button-for-1-hour",
                     "For 1 hour",
                     Some(apply(NotificationAction::DoNotDisturb(
                         DoNotDisturbRequest::For { minutes: 60 }
@@ -172,6 +173,7 @@ impl State {
                     false,
                 ),
                 self.action(
+                    "settings-button-for-3-hours",
                     "For 3 hours",
                     Some(apply(NotificationAction::DoNotDisturb(
                         DoNotDisturbRequest::For { minutes: 180 }
@@ -179,6 +181,7 @@ impl State {
                     false,
                 ),
                 self.action(
+                    "settings-button-until-tomorrow-morning",
                     "Until tomorrow morning",
                     Some(apply(NotificationAction::DoNotDisturb(
                         DoNotDisturbRequest::UntilTomorrow
@@ -307,6 +310,7 @@ impl State {
             }
             PreferenceSource::User => {
                 body = body.push(self.action(
+                    "settings-button-use-the-settings-from-config-kdl",
                     "Use the settings from config.kdl",
                     Some(apply(NotificationAction::Preferences(None))),
                     false,
@@ -417,6 +421,7 @@ impl State {
                 .spacing(2)
                 .width(Length::Fill),
                 self.action(
+                    "settings-button-reset",
                     "Reset",
                     (delivery.is_some() || user != AppPreferences::default())
                         .then(|| set(None, AppPreferences::default())),
@@ -519,7 +524,7 @@ impl State {
         for entry in &state.apps {
             body = body.push(self.app_rules(state, &entry.app_identity, name(&entry.app_identity)));
         }
-        body = body.push(field_id(
+        body = body.push(field(
             "notifications-search",
             "Find an application",
             &self.notification_query,

@@ -26,13 +26,20 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 }
 
 fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
-    focus::control(
-        id,
-        message.clone(),
-        None,
-        None,
-        false,
-        canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false).padding([6, 12]),
+    canopa_ui::accessibility::semantic(
+        canopa_ui::accessibility::Node::button(label)
+            .key(id.clone())
+            .disabled(message.is_none())
+            .on_click(message.clone()),
+        focus::control(
+            id,
+            message.clone(),
+            None,
+            None,
+            false,
+            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
+                .padding([6, 12]),
+        ),
     )
 }
 

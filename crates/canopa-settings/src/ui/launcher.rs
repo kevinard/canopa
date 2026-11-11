@@ -35,7 +35,7 @@ impl State {
                     Message::LauncherEnabled(id, !enabled)
                 ),
                 text(&ext.description),
-                field_id(
+                field(
                     format!("extension-keyword-{}", ext.id),
                     "Keyword",
                     keyword,
@@ -51,23 +51,24 @@ impl State {
             }
             body = body.push(container(card).padding(12).style(canopa_ui::surface));
         }
-        body=body.push(text("Web searches").size(20)).push(text("Only pasted URLs and explicit search keywords offer browser actions. A request starts when you select the result.")).push(field_id("launcher-search-template","Default search URL · include {query}",&model.draft.web_template,Message::LauncherTemplate));
+        body=body.push(text("Web searches").size(20)).push(text("Only pasted URLs and explicit search keywords offer browser actions. A request starts when you select the result.")).push(field("launcher-search-template","Default search URL · include {query}",&model.draft.web_template,Message::LauncherTemplate));
         for (i, search) in model.draft.searches.iter().enumerate() {
             body = body.push(
                 column![
-                    field_id(
+                    field(
                         format!("search-keyword-{i}"),
                         "Search keyword",
                         &search.keyword,
                         move |value| Message::LauncherSearch(i, false, value)
                     ),
-                    field_id(
+                    field(
                         format!("search-template-{i}"),
                         "Search URL · include {query}",
                         &search.template,
                         move |value| Message::LauncherSearch(i, true, value)
                     ),
                     self.action(
+                        "settings-button-remove-search-shortcut",
                         "Remove search shortcut",
                         Some(Message::LauncherRemoveSearch(i)),
                         false
@@ -77,6 +78,7 @@ impl State {
             );
         }
         body = body.push(self.action(
+            "settings-button-add-search-shortcut",
             "Add search shortcut",
             (model.draft.searches.len() < 16).then_some(Message::LauncherAddSearch),
             false,
@@ -119,13 +121,14 @@ impl State {
                     editor.images,
                     Message::ClipboardImages(!editor.images),
                 ))
-                .push(field_id(
+                .push(field(
                     "launcher-clipboard-limit",
                     "Maximum recent entries (1–64)",
                     &editor.limit,
                     Message::ClipboardLimit,
                 ))
                 .push(self.action(
+                    "settings-button-save-clipboard-settings",
                     "Save clipboard settings",
                     (!self.busy && self.trial.is_none()).then_some(Message::ClipboardSave),
                     true,
