@@ -1,4 +1,5 @@
 //! Iced consent surface. Only an explicit grant action produces a grant.
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::{
     access::{AccessRequest, Grant},
     worker::run as worker,
@@ -43,7 +44,7 @@ pub fn run(
                 .parent_window
                 .strip_prefix("wayland:")
                 .unwrap_or_default();
-            let (_, opening) = window::open_dialog(parent.to_owned(), request.modal, settings);
+            let (window, opening) = window::open_dialog(parent.to_owned(), request.modal, settings);
             let name = request
                 .icon
                 .clone()
@@ -62,6 +63,8 @@ pub fn run(
                     theme: theme.clone(),
                     icon: None,
                     output: output.clone(),
+                    window,
+                    accessibility: Some(a11y::Accessibility::new("canopa-access", WINDOW_KEY)),
                 },
                 Task::batch([opening.map(|_| Message::Opened), load]),
             )
@@ -69,13 +72,7 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|app: &Dialog, _| {
-        if app.request.title.is_empty() {
-            "Permission — Canopa".into()
-        } else {
-            format!("{} — Canopa", app.request.title)
-        }
-    })
+    .title(|app: &Dialog, _| app.window_title())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -84,11 +81,16 @@ pub fn run(
     Ok(result.lock().expect("access result").take())
 }
 
+/// The AT-SPI window of the consent dialog.
+const WINDOW_KEY: &str = "access";
+
 struct Dialog {
     request: AccessRequest,
     theme: Theme,
     icon: Option<image::Handle>,
     output: Arc<Mutex<Option<Grant>>>,
+    window: window::Id,
+    accessibility: Option<a11y::Accessibility<Message>>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,10 +101,25 @@ enum Message {
     Grant,
     Deny,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
 }
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
+}
+
 impl Dialog {
+    fn window_title(&self) -> String {
+        if self.request.title.is_empty() {
+            "Permission — Canopa".into()
+        } else {
+            format!("{} — Canopa", self.request.title)
+        }
+    }
     fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(|event, status, _| {
+        let input = iced::event::listen_with(|event, status, _| {
             let escape = matches!(
                 &event,
                 Event::Keyboard(keyboard::Event::KeyPressed {
@@ -111,13 +128,38 @@ impl Dialog {
                 })
             );
             (escape || status == iced::event::Status::Ignored).then_some(Message::Event(event))
-        })
+        });
+        match &self.accessibility {
+            Some(state) => Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
     }
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+    fn exit(&mut self) -> Task<Message> {
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Opened => {}
+            Message::Opened => {
+                let title = self.window_title();
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(&title, window);
+                }
+            }
+            Message::Accessibility(_) => {}
             Message::Icon(icon) => self.icon = icon,
-            Message::Deny => return iced::exit(),
+            Message::Deny => return self.exit(),
             Message::Grant => {
                 *self.output.lock().expect("access result") = Some(Grant {
                     choices: self
@@ -127,7 +169,7 @@ impl Dialog {
                         .map(|(id, _, _, value)| (id.clone(), value.clone()))
                         .collect(),
                 });
-                return iced::exit();
+                return self.exit();
             }
             Message::Choice(index, value) => {
                 if let Some((_, _, options, selected)) = self.request.choices.get_mut(index)
@@ -141,20 +183,23 @@ impl Dialog {
             | Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Named(keyboard::key::Named::Escape),
                 ..
-            })) => return self.update(Message::Deny),
+            })) => return self.apply(Message::Deny),
             Message::Event(_) => {}
         }
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let title = text(&self.request.title).size(22);
+        let title = semantic(
+            Node::heading(&self.request.title, 1),
+            text(&self.request.title).size(22),
+        );
         let heading: Element<'_, Message> = if let Some(icon) = &self.icon {
             row![image(icon.clone()).width(40).height(40), title]
                 .spacing(12)
                 .align_y(iced::Center)
                 .into()
         } else {
-            title.into()
+            title
         };
         let mut content = column![heading].spacing(14).width(Length::Fill);
         if !self.request.app_id.is_empty() {
@@ -166,63 +211,107 @@ impl Dialog {
         if !self.request.body.is_empty() {
             content = content.push(text(&self.request.body));
         }
-        for (index, (_, label, options, value)) in self.request.choices.iter().enumerate() {
+        for (index, (id, label, options, value)) in self.request.choices.iter().enumerate() {
+            let key = format!("access-choice-{}", id.escape_default());
             if options.is_empty() {
-                content = content.push(
-                    checkbox(value == "true")
+                let checked = value == "true";
+                content = content.push(a11y::check_box(
+                    key,
+                    label,
+                    checked,
+                    Some(Message::Choice(index, (!checked).to_string())),
+                    checkbox(checked)
                         .style(canopa_ui::checkbox_style)
                         .label(label)
                         .on_toggle(move |checked| Message::Choice(index, checked.to_string())),
-                );
+                ));
             } else {
                 let items: Vec<_> = options
                     .iter()
                     .enumerate()
                     .map(|(i, (_, label))| Item(i, label.clone()))
                     .collect();
-                let selected = options
+                let current = options.iter().position(|(id, _)| id == value);
+                let selected = current.map(|i| items[i].clone());
+                let messages = options
                     .iter()
-                    .position(|(id, _)| id == value)
-                    .map(|i| items[i].clone());
+                    .map(|(option, label)| (label.clone(), Message::Choice(index, option.clone())))
+                    .collect();
                 content = content.push(
                     column![
                         text(label),
-                        pick_list(items, selected, move |item| Message::Choice(
-                            index,
-                            options[item.0].0.clone()
-                        ))
+                        a11y::combo_box(
+                            key,
+                            label,
+                            messages,
+                            current,
+                            pick_list(items, selected, move |item| Message::Choice(
+                                index,
+                                options[item.0].0.clone()
+                            ))
+                        )
                     ]
                     .spacing(6),
                 );
             }
         }
         let actions = row![
-            canopa_ui::action(
-                text(&self.request.deny_label),
+            a11y::button(
+                "access-deny",
+                &self.request.deny_label,
                 Some(Message::Deny),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill),
-            canopa_ui::action(
-                text(&self.request.grant_label),
+                canopa_ui::action(
+                    text(&self.request.deny_label),
+                    Some(Message::Deny),
+                    canopa_ui::Action::Normal,
+                    false
+                )
+                .width(Length::Fill)
+            ),
+            a11y::button(
+                "access-grant",
+                &self.request.grant_label,
                 Some(Message::Grant),
-                canopa_ui::Action::Normal,
-                false
+                canopa_ui::action(
+                    text(&self.request.grant_label),
+                    Some(Message::Grant),
+                    canopa_ui::Action::Normal,
+                    false
+                )
+                .width(Length::Fill)
             )
-            .width(Length::Fill)
         ]
         .spacing(12)
         .align_y(iced::Center);
-        container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        // A consent question: an alert dialog, described by what it asks.
+        let description = [&self.request.subtitle, &self.request.body]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let dialog_title = if self.request.title.is_empty() {
+            "Permission"
+        } else {
+            &self.request.title
+        };
+        a11y::dialog_window(
+            WINDOW_KEY,
+            self.window_title(),
+            Node::alert_dialog(dialog_title)
+                .key("access-dialog")
+                .description(description),
+            container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
+                .padding(20)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(canopa_ui::surface),
+        )
     }
 }
 
+#[cfg(all(test, feature = "accessibility-testing"))]
+mod accessibility_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +331,8 @@ mod tests {
             theme: canopa_ui::theme(Default::default()),
             icon: None,
             output: Arc::default(),
+            window: window::Id::unique(),
+            accessibility: None,
         };
         let _ = dialog.update(Message::Event(Event::Keyboard(
             keyboard::Event::KeyPressed {
