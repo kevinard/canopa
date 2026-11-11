@@ -164,6 +164,11 @@ Canopa light/dark theme and accent.
 
 ### W5. Internationalization
 
+Status 2026-11-11: framework, lint, ICU4X formatting, RTL mirroring and a
+French translation (machine-assisted, needs review) are in place for every
+component ([ADR 0145](../../docs/adr/0145-fluent-translations-and-icu-formatting.md)).
+An RTL translation and the input-method work remain open.
+
 - Framework: Project Fluent through `i18n-embed` and `i18n-embed-fl`. These are
   Rust-native, check message IDs at compile time, and are already used by
   COSMIC. Weblate supports Fluent for community translation.
