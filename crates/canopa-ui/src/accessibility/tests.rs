@@ -81,6 +81,16 @@ fn view<'a>(extra: bool, status: &'a str) -> View<'a> {
             Node::check_box("Wrap", true).key("wrap"),
             text("Wrap"),
         ))
+        .push(text("Speed"))
+        .push(semantic(
+            Node::new(Role::Slider).key("speed").range(Range {
+                value: 1.0,
+                min: 0.0,
+                max: 2.0,
+                step: None,
+            }),
+            text(""),
+        ))
         .push(semantic(Node::status(status).key("status"), text("hidden")));
     semantic(Node::window("main", "Example window"), scrollable(content))
 }
@@ -137,6 +147,10 @@ fn collected_view_becomes_a_named_tree_with_relations_and_states() {
     assert_eq!(level.numeric_value(), Some(40.0));
     assert_eq!(level.numeric_value_step(), Some(5.0));
     assert_eq!(node(&built, &ids, "wrap").toggled(), Some(Toggled::True));
+    // An unnamed slider takes the text drawn before it as name and label.
+    let speed = node(&built, &ids, "speed");
+    assert_eq!(speed.label(), Some("Speed"));
+    assert_eq!(speed.labelled_by().len(), 1);
     let status = node(&built, &ids, "status");
     assert_eq!(status.live(), Some(Live::Polite));
     assert_eq!(status.label(), Some("Ready"));

@@ -30,7 +30,7 @@ pub enum Event<M> {
     Activated,
     Deactivated,
     /// A default action, increment, value change… as the user's input would send it.
-    Action(M),
+    Action(Box<M>),
     /// Move keyboard focus to this widget.
     Focus(Id),
     /// Input that may move focus or change what is shown.
@@ -102,11 +102,11 @@ impl<M: Clone + Send + 'static> ActionHandler for Handler<M> {
         };
         let actions = &bound.actions;
         let event = match request.action {
-            Action::Click => actions.click.clone().map(Event::Action),
-            Action::Increment => actions.increment.clone().map(Event::Action),
-            Action::Decrement => actions.decrement.clone().map(Event::Action),
-            Action::Expand => actions.expand.clone().map(Event::Action),
-            Action::Collapse => actions.collapse.clone().map(Event::Action),
+            Action::Click => actions.click.clone().map(|m| Event::Action(Box::new(m))),
+            Action::Increment => actions.increment.clone().map(|m| Event::Action(Box::new(m))),
+            Action::Decrement => actions.decrement.clone().map(|m| Event::Action(Box::new(m))),
+            Action::Expand => actions.expand.clone().map(|m| Event::Action(Box::new(m))),
+            Action::Collapse => actions.collapse.clone().map(|m| Event::Action(Box::new(m))),
             Action::Focus => bound.focus.clone().map(Event::Focus),
             Action::SetValue => {
                 let value = match request.data {
@@ -119,7 +119,7 @@ impl<M: Clone + Send + 'static> ActionHandler for Handler<M> {
                 value
                     .zip(actions.set_value.clone())
                     .and_then(|(value, set)| set(value))
-                    .map(Event::Action)
+                    .map(|m| Event::Action(Box::new(m)))
             }
             _ => None,
         };
@@ -317,7 +317,7 @@ impl<M: Message> Bridge<M> {
         match event {
             Event::Activated | Event::Changed => self.refresh(),
             Event::Deactivated => Task::none(),
-            Event::Action(message) => Task::done(message),
+            Event::Action(message) => Task::done(*message),
             Event::Focus(id) => {
                 let focus = iced::advanced::widget::operate(
                     iced::advanced::widget::operation::focusable::focus(id),

@@ -130,13 +130,134 @@ impl Accessible {
             .await
             .unwrap()
     }
-    /// The AT-SPI role name, such as "push button" or "list item".
+    /// The AT-SPI role name for [`Self::role`], such as "push button".
     pub async fn role_name(&self) -> String {
-        self.proxy("org.a11y.atspi.Accessible")
+        const NAMES: &[&str] = &[
+            "invalid",
+            "accelerator label",
+            "alert",
+            "animation",
+            "arrow",
+            "calendar",
+            "canvas",
+            "check box",
+            "check menu item",
+            "color chooser",
+            "column header",
+            "combo box",
+            "date editor",
+            "desktop icon",
+            "desktop frame",
+            "dial",
+            "dialog",
+            "directory pane",
+            "drawing area",
+            "file chooser",
+            "filler",
+            "focus traversable",
+            "font chooser",
+            "frame",
+            "glass pane",
+            "html container",
+            "icon",
+            "image",
+            "internal frame",
+            "label",
+            "layered pane",
+            "list",
+            "list item",
+            "menu",
+            "menu bar",
+            "menu item",
+            "option pane",
+            "page tab",
+            "page tab list",
+            "panel",
+            "password text",
+            "popup menu",
+            "progress bar",
+            "push button",
+            "radio button",
+            "radio menu item",
+            "root pane",
+            "row header",
+            "scroll bar",
+            "scroll pane",
+            "separator",
+            "slider",
+            "spin button",
+            "split pane",
+            "status bar",
+            "table",
+            "table cell",
+            "table column header",
+            "table row header",
+            "tearoff menu item",
+            "terminal",
+            "text",
+            "toggle button",
+            "tool bar",
+            "tool tip",
+            "tree",
+            "tree table",
+            "unknown",
+            "viewport",
+            "window",
+            "extended",
+            "header",
+            "footer",
+            "paragraph",
+            "ruler",
+            "application",
+            "autocomplete",
+            "editbar",
+            "embedded",
+            "entry",
+            "chart",
+            "caption",
+            "document frame",
+            "heading",
+            "page",
+            "section",
+            "redundant object",
+            "form",
+            "link",
+            "input method window",
+            "table row",
+            "tree item",
+            "document spreadsheet",
+            "document presentation",
+            "document text",
+            "document web",
+            "document email",
+            "comment",
+            "list box",
+            "grouping",
+            "image map",
+            "notification",
+            "info bar",
+            "level bar",
+            "title bar",
+            "block quote",
+            "audio",
+            "video",
+            "definition",
+            "article",
+            "landmark",
+        ];
+        let Ok(role) = self
+            .proxy("org.a11y.atspi.Accessible")
             .await
-            .call("GetRoleName", &())
+            .call::<_, _, u32>("GetRole", &())
             .await
-            .unwrap()
+        else {
+            return String::new();
+        };
+        NAMES
+            .get(role as usize)
+            .copied()
+            .unwrap_or("other")
+            .to_owned()
     }
     /// Whether `state` (an `Atspi.StateType` number) is set.
     pub async fn has_state(&self, state: u32) -> bool {
@@ -273,6 +394,58 @@ pub async fn named(connection: &zbus::Connection, name: &str) -> Accessible {
     })
     .await
     .unwrap_or_else(|_| panic!("AT-SPI never exposed {name}"))
+}
+
+/// Search for an object with both `name` and the AT-SPI `role` name.
+pub async fn find_role(
+    connection: &zbus::Connection,
+    name: &str,
+    role: &str,
+) -> Option<Accessible> {
+    let mut pending = vec![Accessible {
+        connection: connection.clone(),
+        bus: "org.a11y.atspi.Registry".into(),
+        path: OwnedObjectPath::try_from("/org/a11y/atspi/accessible/root").unwrap(),
+    }];
+    for _ in 0..4096 {
+        let accessible = pending.pop()?;
+        if accessible.name().await == name && accessible.role_name().await == role {
+            return Some(accessible);
+        }
+        pending.extend(accessible.children().await);
+    }
+    None
+}
+
+/// Wait up to five seconds for an object with `name` and `role`.
+pub async fn named_role(connection: &zbus::Connection, name: &str, role: &str) -> Accessible {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(found) = find_role(connection, name, role).await {
+                return found;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("AT-SPI never exposed {role} {name}"))
+}
+
+/// Print the tree below `root`, for writing assertions.
+pub async fn dump(root: &Accessible) {
+    let mut pending = vec![(0, root.clone())];
+    while let Some((depth, accessible)) = pending.pop() {
+        eprintln!(
+            "{:indent$}{} [{}]",
+            "",
+            accessible.name().await,
+            accessible.role_name().await,
+            indent = depth * 2
+        );
+        let mut children = accessible.children().await;
+        children.reverse();
+        pending.extend(children.into_iter().map(|child| (depth + 1, child)));
+    }
 }
 
 /// Wait until no object is named `name`.

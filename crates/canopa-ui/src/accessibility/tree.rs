@@ -71,6 +71,23 @@ struct Pending<'a, M> {
     children: Vec<String>,
     texts: Vec<(String, String, Rectangle)>,
     name: Option<String>,
+    /// The label drawn just before an unnamed control, as in `row![text, slider]`.
+    inferred: Option<String>,
+}
+
+/// Roles that need a name but do not draw one inside themselves.
+fn named_by_preceding_text(role: Role) -> bool {
+    matches!(
+        role,
+        Role::Slider
+            | Role::ComboBox
+            | Role::TextInput
+            | Role::SearchInput
+            | Role::PasswordInput
+            | Role::SpinButton
+            | Role::Switch
+            | Role::ProgressIndicator
+    )
 }
 
 /// Build the window whose root node has `root`; `None` if it is not displayed.
@@ -140,9 +157,38 @@ pub(crate) fn build<M: Clone>(
             children,
             texts,
             name,
+            inferred: None,
         });
         // Preserve reading order: push children in reverse.
         stack.extend(child_nodes.into_iter().rev());
+    }
+    // Name unnamed controls after the text drawn just before them.
+    let index_of: HashMap<String, usize> = pending
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (item.key.clone(), index))
+        .collect();
+    let mut inferred = Vec::new();
+    for item in &pending {
+        let mut previous: Option<(&String, &String)> = None;
+        for child in &item.children {
+            if let Some((key, text, _)) = item.texts.iter().find(|(key, _, _)| key == child) {
+                previous = Some((key, text));
+            } else if let Some(&index) = index_of.get(child) {
+                let control = &pending[index];
+                if control.name.is_none()
+                    && named_by_preceding_text(control.source.node.role)
+                    && let Some((key, text)) = previous
+                {
+                    inferred.push((index, text.trim().to_owned(), key.clone()));
+                }
+                previous = None;
+            }
+        }
+    }
+    for (index, name, key) in inferred {
+        pending[index].name = Some(name);
+        pending[index].inferred = Some(key);
     }
     // Allocate IDs for every key, retiring those no longer shown.
     let mut next = HashMap::new();
@@ -247,18 +293,18 @@ pub(crate) fn build<M: Clone>(
         if let Some(shortcut) = &source.shortcut {
             node.set_keyboard_shortcut(shortcut.clone());
         }
-        for (keys, set) in [
-            (
-                &source.labelled_by,
-                accesskit::Node::set_labelled_by as fn(&mut accesskit::Node, Vec<NodeId>),
-            ),
-            (&source.described_by, accesskit::Node::set_described_by),
-            (&source.controls, accesskit::Node::set_controls),
-        ] {
-            let targets = resolve(keys);
-            if !targets.is_empty() {
-                set(&mut node, targets);
-            }
+        let mut labelled_by = resolve(&source.labelled_by);
+        labelled_by.extend(item.inferred.as_ref().and_then(|key| id_of.get(key)));
+        if !labelled_by.is_empty() {
+            node.set_labelled_by(labelled_by);
+        }
+        let described_by = resolve(&source.described_by);
+        if !described_by.is_empty() {
+            node.set_described_by(described_by);
+        }
+        let controls = resolve(&source.controls);
+        if !controls.is_empty() {
+            node.set_controls(controls);
         }
         if let Some(target) = source
             .active_descendant
