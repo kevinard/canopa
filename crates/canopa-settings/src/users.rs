@@ -19,7 +19,9 @@ use std::{
     time::Duration,
 };
 
-const NOT_RUNNING: &str = "AccountsService is not running.";
+fn not_running() -> String {
+    fl!("settings-users-not-running")
+}
 
 /// The rules a picture follows, the same as the login screen's (2 MiB, at
 /// most 2048 pixels a side, PNG or JPEG).
@@ -75,13 +77,11 @@ impl LiveAction for UsersAction {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     match error {
-        Error::Unavailable => ServiceError::Unavailable(NOT_RUNNING.into()),
-        Error::NotAuthorized => {
-            ServiceError::Failed("The system did not allow this change.".into())
-        }
-        Error::TimedOut => ServiceError::Failed("AccountsService did not answer in time.".into()),
-        Error::Changed => ServiceError::Failed("The account changed. Try again.".into()),
-        Error::Invalid(what) => ServiceError::Failed(format!("That is not a valid {what}.")),
+        Error::Unavailable => ServiceError::Unavailable(not_running()),
+        Error::NotAuthorized => ServiceError::Failed(fl!("settings-error-not-authorized")),
+        Error::TimedOut => ServiceError::Failed(fl!("settings-users-timed-out")),
+        Error::Changed => ServiceError::Failed(fl!("settings-users-changed")),
+        Error::Invalid(what) => ServiceError::Failed(crate::service_text::invalid(what)),
         Error::Refused(message) => ServiceError::Failed(message),
     }
 }
@@ -107,22 +107,26 @@ pub fn suggested_name(full_name: &str) -> String {
 /// Check a picture against [`MAX_PICTURE_BYTES`] and [`MAX_PICTURE_SIDE`]
 /// from its header, without decoding it.
 pub fn check_picture(path: &Path) -> Result<(), String> {
-    let meta = std::fs::metadata(path).map_err(|_| "The picture cannot be read.".to_owned())?;
+    let meta = std::fs::metadata(path).map_err(|_| fl!("settings-users-picture-unreadable"))?;
     if !meta.is_file() {
-        return Err("Choose an image file.".into());
+        return Err(fl!("settings-users-picture-not-file"));
     }
     if meta.len() > MAX_PICTURE_BYTES {
-        return Err("Choose a picture smaller than 2 MB.".into());
+        return Err(fl!(
+            "settings-users-picture-too-large",
+            size = canopa_i18n::format::size(MAX_PICTURE_BYTES)
+        ));
     }
     let mut header = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(64 * 1024).read_to_end(&mut header))
-        .map_err(|_| "The picture cannot be read.".to_owned())?;
+        .map_err(|_| fl!("settings-users-picture-unreadable"))?;
     let (width, height) =
-        image_size(&header).ok_or_else(|| "Choose a PNG or JPEG picture.".to_owned())?;
+        image_size(&header).ok_or_else(|| fl!("settings-users-picture-format"))?;
     if width == 0 || height == 0 || width > MAX_PICTURE_SIDE || height > MAX_PICTURE_SIDE {
-        return Err(format!(
-            "Choose a picture at most {MAX_PICTURE_SIDE} pixels wide and high."
+        return Err(fl!(
+            "settings-users-picture-too-big",
+            pixels = MAX_PICTURE_SIDE.to_string()
         ));
     }
     Ok(())
@@ -189,15 +193,18 @@ pub async fn change_own_password(
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|_| "passwd is not installed.".to_owned())?;
-        let mut stdin = child.stdin.take().ok_or("passwd did not start.")?;
+            .map_err(|_| fl!("settings-users-passwd-missing"))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| fl!("settings-users-passwd-failed"))?;
         // passwd may stop reading early; its answer explains why.
         let _ = stdin.write_all(input.as_bytes()).await;
         drop(stdin);
         let output = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output())
             .await
-            .map_err(|_| "Changing the password took too long.".to_owned())?
-            .map_err(|_| "passwd stopped unexpectedly.".to_owned())?;
+            .map_err(|_| fl!("settings-users-passwd-timed-out"))?
+            .map_err(|_| fl!("settings-users-passwd-failed"))?;
         if output.status.success() {
             return Ok(());
         }
@@ -226,19 +233,19 @@ pub fn password_refusal(output: &str) -> String {
             .filter(|c| !c.is_control())
             .take(160)
             .collect();
-        format!("The new password is too weak: {reason}.")
+        // passwd runs in the C locale: its reason is English.
+        fl!("settings-users-password-weak", reason = reason)
     } else if lower.contains("do not match") || lower.contains("don't match") {
-        "The new passwords do not match.".into()
+        fl!("settings-users-password-mismatch")
     } else if lower.contains("authentication token manipulation error")
         || lower.contains("authentication failure")
         || lower.contains("current password")
     {
-        "The current password is not correct.".into()
+        fl!("settings-users-password-wrong")
     } else if lower.contains("too soon") || lower.contains("wait longer") {
-        "The password was changed recently; the system asks to wait before changing it again."
-            .into()
+        fl!("settings-users-password-too-soon")
     } else {
-        "The password could not be changed.".into()
+        fl!("settings-users-password-failed")
     }
 }
 
@@ -273,7 +280,7 @@ impl UsersService {
             .get_or_try_init(canopa_services::bus::system)
             .await
             .cloned()
-            .map_err(|_| ServiceError::Unavailable("The system bus is not reachable.".into()))
+            .map_err(|_| ServiceError::Unavailable(fl!("settings-error-bus")))
     }
 
     async fn read(&self) -> Result<UsersState, ServiceError> {
@@ -293,7 +300,7 @@ impl UsersService {
             .accounts
             .user(uid)
             .map(|user| user.path.to_string())
-            .ok_or_else(|| ServiceError::Failed("The account no longer exists.".into()))
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-users-gone")))
     }
 
     async fn run(&self, action: UsersAction) -> Result<(), ServiceError> {
@@ -313,9 +320,9 @@ impl UsersService {
                         .iter()
                         .any(|user| user.uid != uid && user.administrator);
                     if !others {
-                        return Err(ServiceError::Failed(
-                            "Another account must be an administrator first.".into(),
-                        ));
+                        return Err(ServiceError::Failed(fl!(
+                            "settings-users-last-administrator"
+                        )));
                     }
                 }
                 accounts::set_administrator(&system, &self.path(uid).await?, administrator).await
@@ -328,9 +335,7 @@ impl UsersService {
             }
             UsersAction::PasswordAtLogin(uid) => {
                 if uid == self.me {
-                    return Err(ServiceError::Failed(
-                        "Change your own password with your current one.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-users-own-password")));
                 }
                 accounts::set_password_mode(
                     &system,
@@ -353,9 +358,7 @@ impl UsersService {
             }
             UsersAction::Delete { uid, remove_files } => {
                 if uid == self.me {
-                    return Err(ServiceError::Failed(
-                        "You cannot remove the account you are using.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-users-remove-self")));
                 }
                 accounts::delete_user(&system, uid, remove_files).await
             }
@@ -388,7 +391,7 @@ impl LiveService for UsersService {
             accounts::watch(system, Some(me))
                 .map(move |state| match state {
                     ServiceState::Available(accounts) => Ok(UsersState { accounts, me }),
-                    ServiceState::Unavailable => Err(ServiceError::Unavailable(NOT_RUNNING.into())),
+                    ServiceState::Unavailable => Err(ServiceError::Unavailable(not_running())),
                 })
                 .boxed()
         })

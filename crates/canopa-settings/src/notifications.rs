@@ -17,9 +17,12 @@ use canopa_notify_client::{
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use std::{path::PathBuf, time::Duration};
 
-const NOT_RUNNING: &str = "Canopa Notify is not running.";
-const TOO_OLD: &str =
-    "The running Canopa Notify has no preferences control yet; restart it after updating Canopa.";
+fn not_running() -> String {
+    fl!("settings-notifications-not-running")
+}
+fn too_old() -> String {
+    fl!("settings-notifications-too-old")
+}
 /// How often the page re-reads rules nobody announces.
 const REREAD: Duration = Duration::from_secs(10);
 
@@ -57,13 +60,11 @@ pub fn app_identity(desktop_id: &str) -> String {
 
 fn failure(error: RequestError) -> ServiceError {
     match error {
-        RequestError::Unavailable => ServiceError::Unavailable(NOT_RUNNING.into()),
+        RequestError::Unavailable => ServiceError::Unavailable(not_running()),
         RequestError::Refused(reason) => {
-            ServiceError::Failed(format!("Canopa Notify refused the change: {reason}"))
+            ServiceError::Failed(fl!("settings-notifications-refused", reason = reason))
         }
-        RequestError::Invalid => {
-            ServiceError::Failed("Canopa Notify sent a reply Settings does not understand.".into())
-        }
+        RequestError::Invalid => ServiceError::Failed(fl!("settings-notifications-bad-reply")),
     }
 }
 
@@ -86,7 +87,7 @@ impl NotificationService {
         match &self.socket {
             Some(socket) => Ok(socket.clone()),
             None => canopa_notify_client::default_socket()
-                .map_err(|_| ServiceError::Unavailable(NOT_RUNNING.into())),
+                .map_err(|_| ServiceError::Unavailable(not_running())),
         }
     }
 
@@ -96,7 +97,7 @@ impl NotificationService {
             .map_err(|error| match error {
                 // An older Notify answers, without the preferences control.
                 RequestError::Refused(reason) if reason.contains("unsupported") => {
-                    ServiceError::Unavailable(TOO_OLD.into())
+                    ServiceError::Unavailable(too_old())
                 }
                 other => failure(other),
             })
@@ -109,9 +110,7 @@ impl NotificationService {
                 if let Some(schedule) = preferences.as_ref().and_then(|p| p.schedule.as_ref())
                     && schedule.days.as_ref().is_some_and(Vec::is_empty)
                 {
-                    return Err(ServiceError::Failed(
-                        "Choose at least one day for the schedule.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-dnd-no-days")));
                 }
                 Command::SetDoNotDisturbPreferences { preferences }
             }
@@ -155,7 +154,7 @@ impl LiveService for NotificationService {
 
     fn updates(&self) -> BoxStream<'static, Result<NotificationPreferences, ServiceError>> {
         let service = self.clone();
-        let gone = || Err(ServiceError::Unavailable(NOT_RUNNING.into()));
+        let gone = || Err(ServiceError::Unavailable(not_running()));
         futures_util::stream::unfold(
             Some((Phase::Connect, None::<NotificationPreferences>)),
             move |current| {
@@ -455,7 +454,7 @@ mod tests {
         notify.stop();
         assert!(matches!(
             next(&mut updates).await,
-            Err(ServiceError::Unavailable(message)) if message == NOT_RUNNING
+            Err(ServiceError::Unavailable(message)) if message == not_running()
         ));
         assert!(matches!(
             service.snapshot().await,
@@ -483,7 +482,7 @@ mod tests {
         let service = NotificationService::with_socket(socket);
         assert!(matches!(
             service.snapshot().await,
-            Err(ServiceError::Unavailable(message)) if message == TOO_OLD
+            Err(ServiceError::Unavailable(message)) if message == too_old()
         ));
     }
 

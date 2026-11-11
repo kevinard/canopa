@@ -649,3 +649,132 @@ settings-idle-stages-hint = Each stage waits after the previous one: lock, displ
 settings-idle-ac = On AC power
 settings-idle-battery = On battery
 settings-idle-custom-hint = Custom commands, profiles and inhibition rules stay in your existing idle policy.
+
+## Users
+
+settings-users-not-running = AccountsService is not running.
+settings-users-timed-out = AccountsService did not answer in time.
+settings-users-changed = The account changed. Try again.
+settings-users-gone = The account no longer exists.
+settings-users-last-administrator = Another account must be an administrator first.
+settings-users-own-password = Change your own password with your current one.
+settings-users-remove-self = You cannot remove the account you are using.
+settings-users-yours = Your account
+settings-users-others = Other users
+settings-users-unknown-me = AccountsService does not know your account.
+settings-users-no-others = No other accounts.
+settings-users-others-hint = Changing other accounts asks for an administrator’s password.
+# $name is the user name; $administrator is yes or no.
+settings-users-me = { $administrator ->
+    [yes] { $name } · Administrator
+   *[no] { $name } · Standard account
+}
+settings-users-full-name = Full name
+settings-users-user-name = User name
+settings-users-save-name = Save name
+settings-users-picture-none = Picture: none, initials are shown
+# $file is a path.
+settings-users-picture = Picture: { $file }
+settings-users-choose-picture = Choose a picture
+settings-users-choose-picture-button = Choose picture…
+settings-users-remove-picture = Remove
+settings-users-picture-hint = A PNG or JPEG picture up to 2 MB and 2048 pixels a side, as the login screen shows.
+settings-users-picture-unreadable = The picture cannot be read.
+settings-users-picture-not-file = Choose an image file.
+# $size is a formatted size.
+settings-users-picture-too-large = Choose a picture smaller than { $size }.
+settings-users-picture-format = Choose a PNG or JPEG picture.
+settings-users-picture-too-big = Choose a picture at most { $pixels } pixels wide and high.
+settings-users-administrator = Administrator
+settings-users-administrator-toggle = Administrator: can install software and change system settings
+settings-users-password-current = Current password
+settings-users-password-new = New password
+settings-users-password-confirm = New password again
+settings-users-password-change = Change password
+settings-users-password-changing = Changing…
+settings-users-password-changed = Your password was changed.
+settings-users-password-hint = The system checks your current password and its password rules, as passwd does in a terminal.
+settings-users-password-mismatch = The new passwords do not match.
+# $reason is passwd's English explanation.
+settings-users-password-weak = The new password is too weak: { $reason }.
+settings-users-password-wrong = The current password is not correct.
+settings-users-password-too-soon = The password was changed recently; the system asks to wait before changing it again.
+settings-users-password-failed = The password could not be changed.
+settings-users-passwd-missing = passwd is not installed.
+settings-users-passwd-failed = passwd stopped unexpectedly.
+settings-users-passwd-timed-out = Changing the password took too long.
+settings-users-remove = Remove…
+settings-users-password-at-login = Chooses a new password at the next login
+settings-users-password-none = No password
+settings-users-locked = Account locked
+settings-users-password-set = Has a password
+settings-users-ask-new-password = Ask for a new password at next login
+# $name is the person's name, $home their home folder.
+settings-users-remove-question = Remove { $name }? Their files in { $home } can be kept or deleted.
+settings-users-remove-question-no-home = Remove { $name }? Their files in their home folder can be kept or deleted.
+settings-users-remove-keep = Remove, keep files
+settings-users-remove-delete = Remove and delete files
+settings-users-add-open = Add a user…
+settings-users-name-rules = Lowercase letters, digits, - and _. The home folder is /home/<user name>.
+settings-users-name-invalid = Start with a lowercase letter; use lowercase letters, digits, - and _ (at most 32).
+settings-users-add-hint = They choose their password the first time they log in.
+settings-users-add = Add
+
+## Notifications
+
+settings-notifications-not-running = Canopa Notify is not running.
+settings-notifications-too-old = The running Canopa Notify has no preferences control yet; restart it after updating Canopa.
+# $reason is Canopa Notify's explanation.
+settings-notifications-refused = Canopa Notify refused the change: { $reason }
+settings-notifications-bad-reply = Canopa Notify sent a reply Settings does not understand.
+settings-dnd = Do not disturb
+# $time is a time of day, possibly with settings-notifications-tomorrow.
+settings-dnd-off-until = Off. Turns on at { $time }.
+settings-dnd-off = Off. Notifications show banners and play sounds.
+settings-dnd-on-manual = On until you turn it off.
+settings-dnd-on-schedule = On by the schedule until { $time }.
+settings-dnd-on-until = On until { $time }.
+settings-dnd-on = On.
+settings-notifications-tomorrow = tomorrow { $time }
+settings-notifications-later = later
+settings-dnd-for-hours = { $hours ->
+    [one] For { $hours } hour
+   *[other] For { $hours } hours
+}
+settings-dnd-until-tomorrow = Until tomorrow morning
+settings-dnd-schedule = Turn on automatically every day
+# "From 22:00 to 07:00", with time choices between.
+settings-dnd-from = From
+settings-dnd-to = to
+settings-dnd-ends-next-morning = The quiet time ends the next morning.
+settings-dnd-ends-same-day = The quiet time ends the same day.
+settings-dnd-no-days = Choose at least one day for the schedule.
+settings-dnd-break-through = While Do not disturb is on, still show
+settings-dnd-alarms = Alarms
+settings-dnd-calls = Incoming calls
+settings-dnd-from-config = These come from config.kdl. Changing them here overrides that file.
+settings-dnd-use-config = Use the settings from config.kdl
+settings-suppression = Hide banners automatically
+settings-suppression-fullscreen = While an application is fullscreen
+settings-suppression-sharing = While sharing or recording the screen (content is hidden)
+settings-suppression-now-sharing = Banners are hidden now because the screen is being shared.
+settings-suppression-now-fullscreen = Banners are hidden now because an application is fullscreen.
+settings-suppression-none = Notifications still reach the Notification Center.
+settings-notifications-apps = Applications
+settings-notifications-apps-hint = Lock-screen visibility applies to urgent notifications, the only ones the lock screen shows.
+settings-notifications-no-rules = No application has its own rules yet. Find one below to set them.
+settings-notifications-search = Find an application
+settings-notifications-reading-apps = Reading installed applications…
+settings-notifications-no-match = No other installed application matches.
+settings-notifications-reset = Reset
+settings-notifications-delivery = Notifications
+settings-notifications-delivery-default = Default
+settings-notifications-delivery-banners = Show banners
+settings-notifications-delivery-center = Notification Center only
+settings-notifications-delivery-mute = Mute
+settings-notifications-sounds = Play sounds
+settings-notifications-lock = On the lock screen
+settings-notifications-lock-hide = Hide
+settings-notifications-lock-name = Name only
+settings-notifications-lock-content = Show content
+settings-notifications-configured = config.kdl also sets rules for this application.

@@ -8,9 +8,10 @@ use crate::{
     users::{UsersAction, UsersService, UsersState, check_picture, suggested_name, wipe},
 };
 use canopa_services::accounts::{PasswordMode, User, valid_user_name};
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{column, row, text, text_input},
+    widget::{column, text, text_input},
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -33,9 +34,9 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
-fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
-        canopa_ui::accessibility::Node::button(label)
+        canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
             .disabled(message.is_none())
             .on_click(message.clone()),
@@ -53,14 +54,14 @@ fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Eleme
 
 fn secret<'a>(
     id: &'static str,
-    label: &'a str,
+    label: String,
     value: &str,
     change: fn(String) -> Edit,
 ) -> Element<'a, Message> {
     // The secret itself never enters the accessibility tree: only its length.
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::new(canopa_ui::accessibility::Role::PasswordInput)
-            .label(label)
+            .label(label.clone())
             .value("•".repeat(value.chars().count()))
             .key(format!("{id}-field")),
         column![
@@ -69,6 +70,7 @@ fn secret<'a>(
                 .id(id)
                 .secure(true)
                 .on_input(move |value| edit(change(value)))
+                .align_x(direction::start())
                 .padding(10)
         ]
         .spacing(6)
@@ -141,8 +143,9 @@ impl State {
                 }
             }
             Edit::ChoosePicture(uid) => {
+                let title = fl!("settings-users-choose-picture");
                 return Task::perform(
-                    crate::network::choose_file("Choose a picture"),
+                    async move { crate::network::choose_file(&title).await },
                     move |file| edit(Edit::PictureChosen(uid, file.ok().flatten())),
                 );
             }
@@ -164,7 +167,7 @@ impl State {
             Edit::Confirm(value) => forms.confirm = value,
             Edit::ChangePassword if !forms.changing => {
                 if forms.new != forms.confirm {
-                    forms.password_result = Some(Err("The new passwords do not match.".into()));
+                    forms.password_result = Some(Err(fl!("settings-users-password-mismatch")));
                     return Task::none();
                 }
                 forms.changing = true;
@@ -243,19 +246,19 @@ impl State {
             .get(&uid)
             .is_some_and(|name| name.trim() != user.real_name);
         column![
-            row![
+            direction::row([
                 field(
                     format!("users-{uid}-name"),
-                    "Full name",
+                    fl!("settings-users-full-name"),
                     typed,
-                    move |value| { edit(Edit::Name(uid, value)) }
+                    move |value| edit(Edit::Name(uid, value)),
                 ),
                 row_button(
                     format!("users-{uid}-save-name"),
-                    "Save name",
+                    fl!("settings-users-save-name"),
                     changed.then(|| edit(Edit::SaveName(uid))),
                 ),
-            ]
+            ])
             .spacing(12)
             .align_y(Alignment::End),
             self.users.control_status(
@@ -270,28 +273,30 @@ impl State {
     fn picture_row<'a>(&'a self, user: &'a User) -> Element<'a, Message> {
         let uid = user.uid;
         column![
-            row![
+            direction::row([
                 text(if user.icon_file.is_empty() {
-                    "Picture: none, initials are shown".to_owned()
+                    fl!("settings-users-picture-none")
                 } else {
-                    format!("Picture: {}", user.icon_file)
+                    fl!("settings-users-picture", file = user.icon_file.as_str())
                 })
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .align_x(direction::text_start())
+                .into(),
                 row_button(
                     format!("users-{uid}-picture"),
-                    "Choose picture…",
+                    fl!("settings-users-choose-picture-button"),
                     Some(edit(Edit::ChoosePicture(uid))),
                 ),
                 row_button(
                     format!("users-{uid}-picture-remove"),
-                    "Remove",
+                    fl!("settings-users-remove-picture"),
                     (!user.icon_file.is_empty())
                         .then(|| apply(UsersAction::Picture(uid, String::new()))),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
-            muted("A PNG or JPEG picture up to 2 MB and 2048 pixels a side, as the login screen shows."),
+            muted(fl!("settings-users-picture-hint")),
             self.users
                 .control_status(&UsersAction::Picture(uid, String::new()).control(), message),
         ]
@@ -309,7 +314,7 @@ impl State {
         column![
             toggle(
                 format!("users-{uid}-administrator"),
-                "Administrator: can install software and change system settings",
+                fl!("settings-users-administrator-toggle"),
                 administrator,
                 apply(UsersAction::Administrator(uid, !administrator)),
             ),
@@ -328,50 +333,49 @@ impl State {
         let mut password = column![
             secret(
                 "users-password-current",
-                "Current password",
+                fl!("settings-users-password-current"),
                 &forms.current,
                 Edit::Current
             ),
-            row![
-                secret("users-password-new", "New password", &forms.new, Edit::New),
+            direction::row([
+                secret(
+                    "users-password-new",
+                    fl!("settings-users-password-new"),
+                    &forms.new,
+                    Edit::New,
+                ),
                 secret(
                     "users-password-confirm",
-                    "New password again",
+                    fl!("settings-users-password-confirm"),
                     &forms.confirm,
-                    Edit::Confirm
+                    Edit::Confirm,
                 ),
-            ]
+            ])
             .spacing(12),
             row_button(
                 "users-password-change".into(),
                 if forms.changing {
-                    "Changing…"
+                    fl!("settings-users-password-changing")
                 } else {
-                    "Change password"
+                    fl!("settings-users-password-change")
                 },
                 ready.then(|| edit(Edit::ChangePassword)),
             ),
         ]
         .spacing(10);
         match &forms.password_result {
-            Some(Ok(())) => password = password.push(muted("Your password was changed.")),
+            Some(Ok(())) => password = password.push(muted(fl!("settings-users-password-changed"))),
             Some(Err(error)) => password = password.push(text(error.clone()).size(14)),
             None => {}
         }
-        password = password.push(muted(
-            "The system checks your current password and its password rules, as passwd does in a terminal.",
-        ));
+        password = password.push(muted(fl!("settings-users-password-hint")));
         settings_group(
-            "Your account",
+            fl!("settings-users-yours"),
             column![
-                text(format!(
-                    "{} · {}",
-                    me.name,
-                    if me.administrator {
-                        "Administrator"
-                    } else {
-                        "Standard account"
-                    }
+                text(fl!(
+                    "settings-users-me",
+                    name = me.name.as_str(),
+                    administrator = if me.administrator { "yes" } else { "no" }
                 )),
                 self.name_editor(me),
                 self.picture_row(me),
@@ -384,19 +388,21 @@ impl State {
     fn other_account<'a>(&'a self, user: &'a User) -> Element<'a, Message> {
         let uid = user.uid;
         let mut card = column![
-            row![
+            direction::row([
                 column![
                     text(user.display_name().to_owned()),
                     muted(user.name.clone())
                 ]
                 .spacing(2)
-                .width(Length::Fill),
+                .align_x(direction::start())
+                .width(Length::Fill)
+                .into(),
                 row_button(
                     format!("users-{uid}-remove"),
-                    "Remove…",
+                    fl!("settings-users-remove"),
                     Some(edit(Edit::Remove(Some(uid)))),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
             self.administrator_toggle(user),
@@ -406,21 +412,23 @@ impl State {
         let password = UsersAction::PasswordAtLogin(uid).control();
         card = card.push(
             column![
-                row![
+                direction::row([
                     text(match user.password_mode {
-                        PasswordMode::SetAtLogin => "Chooses a new password at the next login",
-                        PasswordMode::None => "No password",
-                        PasswordMode::Regular if user.locked => "Account locked",
-                        PasswordMode::Regular => "Has a password",
+                        PasswordMode::SetAtLogin => fl!("settings-users-password-at-login"),
+                        PasswordMode::None => fl!("settings-users-password-none"),
+                        PasswordMode::Regular if user.locked => fl!("settings-users-locked"),
+                        PasswordMode::Regular => fl!("settings-users-password-set"),
                     })
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .align_x(direction::text_start())
+                    .into(),
                     row_button(
                         format!("users-{uid}-password"),
-                        "Ask for a new password at next login",
+                        fl!("settings-users-ask-new-password"),
                         (user.password_mode != PasswordMode::SetAtLogin)
                             .then(|| apply(UsersAction::PasswordAtLogin(uid))),
                     ),
-                ]
+                ])
                 .spacing(10)
                 .align_y(Alignment::Center),
                 self.users.control_status(&password, message),
@@ -431,32 +439,35 @@ impl State {
         if self.users_forms.removing == Some(uid) {
             card = card.push(
                 column![
-                    text(format!(
-                        "Remove {}? Their files in {} can be kept or deleted.",
-                        user.display_name(),
-                        if user.home.is_empty() {
-                            "their home folder"
-                        } else {
-                            &user.home
-                        }
-                    )),
-                    row![
+                    text(if user.home.is_empty() {
+                        fl!(
+                            "settings-users-remove-question-no-home",
+                            name = user.display_name()
+                        )
+                    } else {
+                        fl!(
+                            "settings-users-remove-question",
+                            name = user.display_name(),
+                            home = user.home.as_str()
+                        )
+                    }),
+                    direction::row([
                         row_button(
                             format!("users-{uid}-remove-keep"),
-                            "Remove, keep files",
+                            fl!("settings-users-remove-keep"),
                             Some(edit(Edit::RemoveConfirmed(uid, false))),
                         ),
                         row_button(
                             format!("users-{uid}-remove-delete"),
-                            "Remove and delete files",
+                            fl!("settings-users-remove-delete"),
                             Some(edit(Edit::RemoveConfirmed(uid, true))),
                         ),
                         row_button(
                             format!("users-{uid}-remove-cancel"),
-                            "Cancel",
+                            fl!("settings-cancel"),
                             Some(edit(Edit::Remove(None))),
                         ),
-                    ]
+                    ])
                     .spacing(10),
                 ]
                 .spacing(8),
@@ -485,7 +496,7 @@ impl State {
             return column![
                 row_button(
                     "users-add".into(),
-                    "Add a user…",
+                    fl!("settings-users-add-open"),
                     Some(edit(Edit::Adding(true)))
                 ),
                 self.users.control_status("create", message),
@@ -495,28 +506,42 @@ impl State {
         }
         let valid = valid_user_name(forms.add_name.trim());
         column![
-            field("users-add-full-name", "Full name", &forms.add_full_name, |value| {
-                edit(Edit::AddFullName(value))
-            }),
-            field("users-add-name", "User name", &forms.add_name, |value| {
-                edit(Edit::AddName(value))
-            }),
+            field(
+                "users-add-full-name",
+                fl!("settings-users-full-name"),
+                &forms.add_full_name,
+                |value| { edit(Edit::AddFullName(value)) }
+            ),
+            field(
+                "users-add-name",
+                fl!("settings-users-user-name"),
+                &forms.add_name,
+                |value| { edit(Edit::AddName(value)) }
+            ),
             muted(if valid || forms.add_name.is_empty() {
-                "Lowercase letters, digits, - and _. The home folder is /home/<user name>."
+                fl!("settings-users-name-rules")
             } else {
-                "Start with a lowercase letter; use lowercase letters, digits, - and _ (at most 32)."
+                fl!("settings-users-name-invalid")
             }),
             toggle(
                 "users-add-administrator",
-                "Administrator",
+                fl!("settings-users-administrator"),
                 forms.add_administrator,
                 edit(Edit::AddAdministrator(!forms.add_administrator)),
             ),
-            muted("They choose their password the first time they log in."),
-            row![
-                row_button("users-add-submit".into(), "Add", valid.then(|| edit(Edit::AddSubmit))),
-                row_button("users-add-cancel".into(), "Cancel", Some(edit(Edit::Adding(false)))),
-            ]
+            muted(fl!("settings-users-add-hint")),
+            direction::row([
+                row_button(
+                    "users-add-submit".into(),
+                    fl!("settings-users-add"),
+                    valid.then(|| edit(Edit::AddSubmit)),
+                ),
+                row_button(
+                    "users-add-cancel".into(),
+                    fl!("settings-cancel"),
+                    Some(edit(Edit::Adding(false))),
+                ),
+            ])
             .spacing(10),
         ]
         .spacing(10)
@@ -529,8 +554,8 @@ impl State {
             Some(me) => body = body.push(self.my_account(me)),
             None => {
                 body = body.push(settings_group(
-                    "Your account",
-                    muted("AccountsService does not know your account."),
+                    fl!("settings-users-yours"),
+                    muted(fl!("settings-users-unknown-me")),
                 ))
             }
         }
@@ -547,15 +572,14 @@ impl State {
             others = others.push(self.other_account(user));
         }
         if !any {
-            others = others.push(muted("No other accounts."));
+            others = others.push(muted(fl!("settings-users-no-others")));
         }
         others = others.push(self.add_account());
         if !administrator {
-            others = others.push(muted(
-                "Changing other accounts asks for an administrator's password.",
-            ));
+            others = others.push(muted(fl!("settings-users-others-hint")));
         }
-        body.push(settings_group("Other users", others)).into()
+        body.push(settings_group(fl!("settings-users-others"), others))
+            .into()
     }
 
     pub(super) fn users_view(&self) -> Element<'_, Message> {

@@ -2,7 +2,7 @@
 //! what breaks through), automatic banner suppression, and each
 //! application's delivery, sound and lock-screen rule. Canopa Notify owns all
 //! of it; changes apply at once.
-use super::{Message, State, choice, field, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, live_page::LivePage, pick, settings_group, toggle};
 use crate::{
     live::{Event, LiveAction},
     notifications::{NotificationAction, NotificationService, app_identity, local_time},
@@ -14,9 +14,10 @@ use canopa_notify_client::{
         NotificationPreferences, PreferenceSource, Schedule, WEEKDAYS,
     },
 };
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type NotificationsPage = LivePage<NotificationService>;
@@ -33,18 +34,53 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
     text(label).size(14).style(canopa_ui::muted).into()
 }
 
-const DAY_LABELS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const DELIVERY: [(&str, Option<Delivery>); 4] = [
-    ("Default", None),
-    ("Show banners", Some(Delivery::Allow)),
-    ("Notification Center only", Some(Delivery::Silence)),
-    ("Mute", Some(Delivery::Drop)),
-];
-const LOCK_SCREEN: [(&str, LockScreen); 3] = [
-    ("Hide", LockScreen::Hidden),
-    ("Name only", LockScreen::NameOnly),
-    ("Show content", LockScreen::Content),
-];
+/// A weekday of the schedule (`mon` … `sun`) in the selected language.
+fn day_label(day: &str) -> String {
+    match day.parse() {
+        Ok(day) => canopa_i18n::format::weekday(day, canopa_i18n::format::Length::Medium),
+        Err(_) => day.to_owned(),
+    }
+}
+
+fn delivery_options() -> Vec<(Option<Delivery>, String)> {
+    vec![
+        (None, fl!("settings-notifications-delivery-default")),
+        (
+            Some(Delivery::Allow),
+            fl!("settings-notifications-delivery-banners"),
+        ),
+        (
+            Some(Delivery::Silence),
+            fl!("settings-notifications-delivery-center"),
+        ),
+        (
+            Some(Delivery::Drop),
+            fl!("settings-notifications-delivery-mute"),
+        ),
+    ]
+}
+
+fn lock_screen_options() -> Vec<(LockScreen, String)> {
+    vec![
+        (LockScreen::Hidden, fl!("settings-notifications-lock-hide")),
+        (
+            LockScreen::NameOnly,
+            fl!("settings-notifications-lock-name"),
+        ),
+        (
+            LockScreen::Content,
+            fl!("settings-notifications-lock-content"),
+        ),
+    ]
+}
+
+/// A schedule time (`HH:MM`) as the formats locale writes it.
+fn time_label(time: &str) -> String {
+    match format!("{time}:00").parse() {
+        Ok(time) => canopa_i18n::format::time(time),
+        Err(_) => time.to_owned(),
+    }
+}
 /// Installed applications shown for a search, at most.
 const MATCHES: usize = 12;
 
@@ -91,9 +127,9 @@ fn times(current: Option<&str>) -> Vec<String> {
 
 fn when(millis: i64) -> String {
     match local_time(millis) {
-        Some((clock, true)) => clock,
-        Some((clock, false)) => format!("tomorrow {clock}"),
-        None => "later".into(),
+        Some((clock, true)) => time_label(&clock),
+        Some((clock, false)) => fl!("settings-notifications-tomorrow", time = time_label(&clock)),
+        None => fl!("settings-notifications-later"),
     }
 }
 
@@ -140,21 +176,21 @@ impl State {
         };
         let description = match (status.active, status.reason, status.until) {
             (false, ..) => match status.next_change {
-                Some(next) => format!("Off. Turns on at {}.", when(next)),
-                None => "Off. Notifications show banners and play sounds.".into(),
+                Some(next) => fl!("settings-dnd-off-until", time = when(next)),
+                None => fl!("settings-dnd-off"),
             },
-            (true, Some(DoNotDisturbReason::Manual), _) => "On until you turn it off.".into(),
+            (true, Some(DoNotDisturbReason::Manual), _) => fl!("settings-dnd-on-manual"),
             (true, Some(DoNotDisturbReason::Schedule), Some(until)) => {
-                format!("On by the schedule until {}.", when(until))
+                fl!("settings-dnd-on-schedule", time = when(until))
             }
-            (true, _, Some(until)) => format!("On until {}.", when(until)),
-            (true, ..) => "On.".into(),
+            (true, _, Some(until)) => fl!("settings-dnd-on-until", time = when(until)),
+            (true, ..) => fl!("settings-dnd-on"),
         };
         let preferences = self.dnd_preferences(state);
         let mut body = column![
             toggle(
                 "notifications-dnd",
-                "Do not disturb",
+                fl!("settings-dnd"),
                 active,
                 apply(NotificationAction::DoNotDisturb(if active {
                     DoNotDisturbRequest::Off
@@ -163,32 +199,32 @@ impl State {
                 })),
             ),
             muted(description),
-            row![
+            direction::row([
                 self.action(
                     "settings-button-for-1-hour",
-                    "For 1 hour",
+                    fl!("settings-dnd-for-hours", hours = 1),
                     Some(apply(NotificationAction::DoNotDisturb(
-                        DoNotDisturbRequest::For { minutes: 60 }
+                        DoNotDisturbRequest::For { minutes: 60 },
                     ))),
                     false,
                 ),
                 self.action(
                     "settings-button-for-3-hours",
-                    "For 3 hours",
+                    fl!("settings-dnd-for-hours", hours = 3),
                     Some(apply(NotificationAction::DoNotDisturb(
-                        DoNotDisturbRequest::For { minutes: 180 }
+                        DoNotDisturbRequest::For { minutes: 180 },
                     ))),
                     false,
                 ),
                 self.action(
                     "settings-button-until-tomorrow-morning",
-                    "Until tomorrow morning",
+                    fl!("settings-dnd-until-tomorrow"),
                     Some(apply(NotificationAction::DoNotDisturb(
-                        DoNotDisturbRequest::UntilTomorrow
+                        DoNotDisturbRequest::UntilTomorrow,
                     ))),
                     false,
                 ),
-            ]
+            ])
             .spacing(10),
             page.control_status("dnd", message),
         ]
@@ -198,7 +234,7 @@ impl State {
         let scheduled = preferences.schedule.is_some();
         body = body.push(toggle(
             "notifications-schedule",
-            "Turn on automatically every day",
+            fl!("settings-dnd-schedule"),
             scheduled,
             self.set_dnd(state, |preferences| {
                 preferences.schedule = if scheduled {
@@ -215,9 +251,18 @@ impl State {
         if let Some(schedule) = &preferences.schedule {
             let start = schedule.start.clone();
             let end = schedule.end.clone();
-            let from = choice(
+            let labelled = |current: &str| -> Vec<(String, String)> {
+                times(Some(current))
+                    .into_iter()
+                    .map(|time| {
+                        let label = time_label(&time);
+                        (time, label)
+                    })
+                    .collect()
+            };
+            let from = pick(
                 "notifications-schedule-from",
-                times(Some(&start)),
+                labelled(&start),
                 Some(start.clone()),
                 move |time| {
                     self.set_dnd(state, |preferences| {
@@ -227,9 +272,9 @@ impl State {
                     })
                 },
             );
-            let to = choice(
+            let to = pick(
                 "notifications-schedule-to",
-                times(Some(&end)),
+                labelled(&end),
                 Some(end.clone()),
                 move |time| {
                     self.set_dnd(state, |preferences| {
@@ -239,15 +284,15 @@ impl State {
                     })
                 },
             );
-            let mut days = row![].spacing(8);
-            for (index, day) in WEEKDAYS.iter().enumerate() {
+            let mut days = Vec::new();
+            for day in &WEEKDAYS {
                 let selected = schedule
                     .days
                     .as_ref()
                     .is_none_or(|days| days.iter().any(|d| d == day));
-                days = days.push(toggle(
+                days.push(toggle(
                     format!("notifications-day-{day}"),
-                    DAY_LABELS[index],
+                    day_label(day),
                     selected,
                     self.set_dnd(state, |preferences| {
                         if let Some(schedule) = &mut preferences.schedule {
@@ -268,14 +313,19 @@ impl State {
             }
             body = body.push(
                 column![
-                    row![text("From"), from, text("to"), to]
-                        .spacing(10)
-                        .align_y(Alignment::Center),
-                    days,
+                    direction::row([
+                        text(fl!("settings-dnd-from")).into(),
+                        from,
+                        text(fl!("settings-dnd-to")).into(),
+                        to,
+                    ])
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    direction::row(days).spacing(8),
                     muted(if schedule.end <= schedule.start {
-                        "The quiet time ends the next morning."
+                        fl!("settings-dnd-ends-next-morning")
                     } else {
-                        "The quiet time ends the same day."
+                        fl!("settings-dnd-ends-same-day")
                     }),
                 ]
                 .spacing(8),
@@ -284,10 +334,10 @@ impl State {
         let alarms = preferences.break_through.alarms;
         let calls = preferences.break_through.calls;
         body = body
-            .push(text("While Do not disturb is on, still show"))
+            .push(text(fl!("settings-dnd-break-through")))
             .push(toggle(
                 "notifications-alarms",
-                "Alarms",
+                fl!("settings-dnd-alarms"),
                 alarms,
                 self.set_dnd(state, |preferences| {
                     preferences.break_through.alarms = !alarms;
@@ -295,7 +345,7 @@ impl State {
             ))
             .push(toggle(
                 "notifications-calls",
-                "Incoming calls",
+                fl!("settings-dnd-calls"),
                 calls,
                 self.set_dnd(state, |preferences| {
                     preferences.break_through.calls = !calls;
@@ -304,21 +354,19 @@ impl State {
             .push(page.control_status("dnd-preferences", message));
         match state.do_not_disturb_source {
             PreferenceSource::Configuration => {
-                body = body.push(muted(
-                    "These come from config.kdl. Changing them here overrides that file.",
-                ));
+                body = body.push(muted(fl!("settings-dnd-from-config")));
             }
             PreferenceSource::User => {
                 body = body.push(self.action(
                     "settings-button-use-the-settings-from-config-kdl",
-                    "Use the settings from config.kdl",
+                    fl!("settings-dnd-use-config"),
                     Some(apply(NotificationAction::Preferences(None))),
                     false,
                 ));
             }
             PreferenceSource::Default => {}
         }
-        settings_group("Do not disturb", body)
+        settings_group(fl!("settings-dnd"), body)
     }
 
     fn suppression_section<'a>(
@@ -331,20 +379,16 @@ impl State {
             preferences.suppress_screen_sharing,
         );
         let now = match state.suppression {
-            Some(Suppression::ScreenSharing) => {
-                "Banners are hidden now because the screen is being shared."
-            }
-            Some(Suppression::Fullscreen) => {
-                "Banners are hidden now because an application is fullscreen."
-            }
-            None => "Notifications still reach the Notification Center.",
+            Some(Suppression::ScreenSharing) => fl!("settings-suppression-now-sharing"),
+            Some(Suppression::Fullscreen) => fl!("settings-suppression-now-fullscreen"),
+            None => fl!("settings-suppression-none"),
         };
         settings_group(
-            "Hide banners automatically",
+            fl!("settings-suppression"),
             column![
                 toggle(
                     "notifications-fullscreen",
-                    "While an application is fullscreen",
+                    fl!("settings-suppression-fullscreen"),
                     fullscreen,
                     self.set_dnd(state, |preferences| {
                         preferences.suppress_fullscreen = !fullscreen;
@@ -352,7 +396,7 @@ impl State {
                 ),
                 toggle(
                     "notifications-sharing",
-                    "While sharing or recording the screen (content is hidden)",
+                    fl!("settings-suppression-sharing"),
                     sharing,
                     self.set_dnd(state, |preferences| {
                         preferences.suppress_screen_sharing = !sharing;
@@ -404,55 +448,43 @@ impl State {
             })
         };
         let key = identity.to_lowercase();
-        let delivery_label = DELIVERY
-            .iter()
-            .find(|(_, value)| *value == delivery)
-            .map(|(label, _)| (*label).to_owned());
-        let lock_label = LOCK_SCREEN
-            .iter()
-            .find(|(_, value)| *value == lock_screen)
-            .map(|(label, _)| (*label).to_owned());
         let mut card = column![
-            row![
+            direction::row([
                 column![
                     text(name.unwrap_or(identity).to_owned()),
                     muted(identity.to_owned())
                 ]
                 .spacing(2)
-                .width(Length::Fill),
+                .align_x(direction::start())
+                .width(Length::Fill)
+                .into(),
                 self.action(
                     "settings-button-reset",
-                    "Reset",
+                    fl!("settings-notifications-reset"),
                     (delivery.is_some() || user != AppPreferences::default())
                         .then(|| set(None, AppPreferences::default())),
                     false,
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
-            row![
-                text("Notifications").width(Length::Fixed(160.)),
-                choice(
+            direction::row([
+                text(fl!("settings-notifications-delivery"))
+                    .width(Length::Fixed(160.))
+                    .align_x(direction::text_start())
+                    .into(),
+                pick(
                     format!("notifications-app-{key}-delivery"),
-                    DELIVERY
-                        .iter()
-                        .map(|(label, _)| (*label).to_owned())
-                        .collect(),
-                    delivery_label,
-                    move |label| {
-                        let delivery = DELIVERY
-                            .iter()
-                            .find(|(name, _)| *name == label)
-                            .and_then(|(_, value)| *value);
-                        set(delivery, user)
-                    },
+                    delivery_options(),
+                    Some(delivery),
+                    move |delivery| set(delivery, user),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
             toggle(
                 format!("notifications-app-{key}-sound"),
-                "Play sounds",
+                fl!("settings-notifications-sounds"),
                 sound,
                 set(
                     delivery,
@@ -462,36 +494,32 @@ impl State {
                     }
                 ),
             ),
-            row![
-                text("On the lock screen").width(Length::Fixed(160.)),
-                choice(
+            direction::row([
+                text(fl!("settings-notifications-lock"))
+                    .width(Length::Fixed(160.))
+                    .align_x(direction::text_start())
+                    .into(),
+                pick(
                     format!("notifications-app-{key}-lock"),
-                    LOCK_SCREEN
-                        .iter()
-                        .map(|(label, _)| (*label).to_owned())
-                        .collect(),
-                    lock_label,
-                    move |label| {
-                        let lock_screen = LOCK_SCREEN
-                            .iter()
-                            .find(|(name, _)| *name == label)
-                            .map(|(_, value)| *value);
+                    lock_screen_options(),
+                    Some(lock_screen),
+                    move |lock_screen| {
                         set(
                             delivery,
                             AppPreferences {
-                                lock_screen,
+                                lock_screen: Some(lock_screen),
                                 ..user
                             },
                         )
                     },
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
         ]
         .spacing(8);
         if entry.is_some_and(|entry| entry.configured != AppPreferences::default()) {
-            card = card.push(muted("config.kdl also sets rules for this application."));
+            card = card.push(muted(fl!("settings-notifications-configured")));
         }
         card = card.push(page.control_status(&control, message));
         iced::widget::container(card)
@@ -512,21 +540,16 @@ impl State {
                 .find(|app| app.identity == identity)
                 .map(|app| app.name.as_str())
         };
-        let mut body = column![muted(
-            "Lock-screen visibility applies to urgent notifications, the only ones the lock screen shows."
-        )]
-        .spacing(12);
+        let mut body = column![muted(fl!("settings-notifications-apps-hint"))].spacing(12);
         if state.apps.is_empty() {
-            body = body.push(muted(
-                "No application has its own rules yet. Find one below to set them.",
-            ));
+            body = body.push(muted(fl!("settings-notifications-no-rules")));
         }
         for entry in &state.apps {
             body = body.push(self.app_rules(state, &entry.app_identity, name(&entry.app_identity)));
         }
         body = body.push(field(
             "notifications-search",
-            "Find an application",
+            fl!("settings-notifications-search"),
             &self.notification_query,
             |value| Message::NotificationsForm(Edit::Search(value)),
         ));
@@ -543,16 +566,16 @@ impl State {
                 .collect();
             if matches.is_empty() {
                 body = body.push(muted(if self.notification_apps.is_none() {
-                    "Reading installed applications…"
+                    fl!("settings-notifications-reading-apps")
                 } else {
-                    "No other installed application matches."
+                    fl!("settings-notifications-no-match")
                 }));
             }
             for app in matches {
                 body = body.push(self.app_rules(state, &app.identity, Some(&app.name)));
             }
         }
-        settings_group("Applications", body)
+        settings_group(fl!("settings-notifications-apps"), body)
     }
 
     pub(super) fn notifications_view(&self) -> Element<'_, Message> {
