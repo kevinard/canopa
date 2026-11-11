@@ -64,6 +64,7 @@ The supported system installation has a dedicated session.
 - [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Shared AccessKit layer, high contrast and the Accessibility page](docs/adr/0144-shared-accesskit-layer.md)
+- [Fluent translations, ICU4X formatting and right-to-left layouts](docs/adr/0145-fluent-translations-and-icu-formatting.md); [adding strings and languages, reviewing French](docs/translations.md)
 - [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
 - [Theme configuration reference](docs/theme-customization.md)
 - [Canopa visual direction and first shell slice](docs/adr/0014-canopa-visual-direction.md)
