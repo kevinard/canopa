@@ -1321,3 +1321,8 @@ files-report-trashed = { $count } moved to Trash
 files-report-deleted = { $count } deleted permanently
 files-report-need-review = { $count } need review
 files-report-not-started = { $count } not started
+
+## Preview errors
+
+files-preview-regular-only = only regular files can be previewed
+files-preview-too-large = file exceeds the preview budget

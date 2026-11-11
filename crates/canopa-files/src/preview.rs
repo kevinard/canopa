@@ -314,7 +314,7 @@ fn open_regular(path: &Path) -> io::Result<fs::File> {
     if !metadata.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "only regular files can be previewed",
+            fl!("files-preview-regular-only"),
         ));
     }
     Ok(file)
@@ -328,7 +328,7 @@ fn read_opened(
 ) -> io::Result<Vec<u8>> {
     let metadata = file.metadata()?;
     if !prefix && metadata.len() > maximum as u64 {
-        return Err(io::Error::other("file exceeds the preview budget"));
+        return Err(io::Error::other(fl!("files-preview-too-large")));
     }
     let mut bytes = Vec::new();
     let mut buffer = [0; 32 * 1024];
@@ -348,7 +348,7 @@ fn read_opened(
         bytes.extend_from_slice(&buffer[..count]);
     }
     if !prefix && bytes.len() > maximum {
-        return Err(io::Error::other("file exceeds the preview budget"));
+        return Err(io::Error::other(fl!("files-preview-too-large")));
     }
     Ok(bytes)
 }

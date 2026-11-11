@@ -1299,3 +1299,8 @@ files-report-not-started = { $count ->
     [one] { $count } non démarré
    *[other] { $count } non démarrés
 }
+
+## Preview errors
+
+files-preview-regular-only = seuls les fichiers ordinaires peuvent être prévisualisés
+files-preview-too-large = le fichier dépasse la taille maximale de l’aperçu
