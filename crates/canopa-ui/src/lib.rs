@@ -1,11 +1,11 @@
 //! Shared Iced visual treatment and, with the `accessibility` feature, AT-SPI
 //! trees. Callers retain events, focus, identity and action validation.
+#[macro_use]
+mod i18n;
 #[cfg(feature = "accessibility")]
 pub mod accessibility;
 mod customization;
 pub mod direction;
-#[macro_use]
-mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod panel;

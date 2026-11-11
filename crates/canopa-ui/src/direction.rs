@@ -5,7 +5,6 @@
 //! leading and trailing content, and pick chevrons and directional icons
 //! through these helpers, which follow the selected language's direction
 //! (`canopa_i18n::direction`; the pseudo-locale is right to left).
-use crate::i18n::fl;
 pub use canopa_i18n::Direction;
 use iced::{
     Element, Padding,
