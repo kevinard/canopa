@@ -315,6 +315,15 @@ impl MimeApps {
         &self.applications
     }
 
+    /// Installed applications that menus show (not `NoDisplay=true`), for an
+    /// "Other application" list.
+    pub fn menu_applications(&self) -> Vec<&DesktopApplication> {
+        self.applications
+            .iter()
+            .filter(|app| !self.no_display.contains(&app.id))
+            .collect()
+    }
+
     pub fn application(&self, id: &str) -> Option<&DesktopApplication> {
         self.index.get(id).map(|&index| &self.applications[index])
     }
@@ -730,6 +739,8 @@ mod tests {
             "[Added Associations]\nimage/png=gimp.desktop;missing.desktop;\n",
         );
         let apps = MimeApps::load_from(paths, &env());
+        assert!(!ids(apps.menu_applications()).contains(&"hidden.desktop"));
+        assert!(apps.application("hidden.desktop").is_some());
         assert_eq!(
             ids(apps.associations("image/png")),
             [
