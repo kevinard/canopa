@@ -11,7 +11,10 @@ Canopa Pinentry presents GnuPG PIN/passphrase and confirmation dialogs.
 Canopa Polkit presents action authorization while native polkit owns policy and credentials. `canopa-widgets`
 shares passive data without transferring shell actions or application lifetimes.
 Canopa Settings presents desktop preferences while their existing owners retain
-policy and lifetime. The supported system installation has a dedicated session.
+policy and lifetime. `canopa-services` holds the Iced-free clients for
+NetworkManager, BlueZ, audio, UPower, power profiles, logind and MPRIS that the
+Shell, its providers and Settings share; the services keep state and policy.
+The supported system installation has a dedicated session.
 
 - [Supported session and Settings ownership](docs/adr/0129-supported-session-and-settings.md)
 - [Arch system installation](docs/installation.md)
@@ -54,6 +57,7 @@ policy and lifetime. The supported system installation has a dedicated session.
 - [Launcher file actions and Settings pages](docs/adr/0130-launcher-file-actions-and-settings-pages.md)
 - [Unified launcher and search providers](docs/shell/adr/0023-unified-launcher-providers.md)
 - [Shell session actions through logind](docs/shell/adr/0024-session-actions-through-logind.md)
+- [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
 - [Theme configuration reference](docs/theme-customization.md)

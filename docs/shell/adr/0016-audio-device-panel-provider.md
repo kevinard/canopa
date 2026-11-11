@@ -40,3 +40,6 @@ IDs are always renewed, so preserving focus never makes an old event valid.
 The slider follow-up replaces volume buttons with an absolute control using the
 shared optional rich-item slider ([Canopa ADR 0012](../../adr/0012-rich-panel-sliders.md)).
 The initial button choice above records the first milestone, not the current UI.
+
+The shared libpulse connection code now lives in `canopa_services::audio`
+([ADR 0137](../../adr/0137-shared-system-service-clients.md)); the behaviour above is unchanged.
