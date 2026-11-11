@@ -48,7 +48,7 @@ impl Snapshot {
         let mut content = PanelContent::new(fl!("shell-power-title"));
         content.error = error.map(str::to_owned);
         let light = if let Some(light) = &self.light {
-            let mut row = item("display", &fl!("shell-power-built-in-display"));
+            let mut row = item("display", fl!("shell-power-built-in-display"));
             row.slider = Some(PanelSlider {
                 key: "brightness".into(),
                 label: fl!("shell-osd-brightness"),
@@ -61,9 +61,9 @@ impl Snapshot {
             });
             row
         } else {
-            item("display", &fl!("shell-power-brightness-unavailable"))
+            item("display", fl!("shell-power-brightness-unavailable"))
         };
-        let mut profiles = item("profiles", &fl!("shell-power-profile"));
+        let mut profiles = item("profiles", fl!("shell-power-profile"));
         if let Some(state) = &self.profiles {
             profiles.body = Some(fl!(
                 "shell-power-profile-active",

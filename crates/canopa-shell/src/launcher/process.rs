@@ -67,7 +67,7 @@ pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
         Err(error) => {
             return Batch {
                 status: if explicit && !query.is_empty() {
-                    error.into()
+                    error
                 } else {
                     String::new()
                 },

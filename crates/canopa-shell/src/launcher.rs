@@ -205,7 +205,8 @@ impl Keyword {
 /// left out: they are matched first.
 fn translated_keywords() -> Vec<(String, Keyword)> {
     use std::sync::Mutex;
-    static CACHE: Mutex<Option<(u64, Vec<(String, Keyword)>)>> = Mutex::new(None);
+    type Keywords = Vec<(String, Keyword)>;
+    static CACHE: Mutex<Option<(u64, Keywords)>> = Mutex::new(None);
     let generation = canopa_i18n::generation();
     let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
     if let Some((cached, keywords)) = cache.as_ref()

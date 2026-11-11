@@ -34,7 +34,7 @@ fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -
         };
         content
             .sections
-            .push(section("status", "", vec![item("unavailable", &message)]));
+            .push(section("status", "", vec![item("unavailable", message)]));
     }
     for adapter in &snapshot.adapters {
         let active_scan = scanning.contains(&adapter.path);
