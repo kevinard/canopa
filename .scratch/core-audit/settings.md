@@ -86,8 +86,8 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | | Shortcuts editor | partial | S | `shortcuts.rs`, `ui/shortcuts.rs:45-51` | Only the shipped set. Typed key names, no key capture, can't add custom bindings. See upgrade risk below |
 | | Compose / Caps behaviour | rough | S (XKB options text) | `ui.rs:1092-1096` | Only with knowledge of XKB option names |
 | Mouse & touchpad | Speed, natural scroll, tap, disable while typing, left-handed | works | S | `ui.rs:1118-1169`, `input.rs:3-16` | Settings apply to all devices. No scroll speed, click method, accel profile or middle-click emulation. Per-device rules only in KDL |
-| Notifications | Do not disturb | works | Sh (`notifications` provider) + CLI | `canopa-shell/src/launcher/controls.rs:28-34`, `canopa-notify/README.md:73` | Not in Settings. No schedule |
-| | Per-app rules / sounds | missing (KDL only) | K | `docs/configuration.md:25` (`rule … outcome="silenced"`) | Must edit KDL |
+| Notifications | Do not disturb | works | Sh (`notifications` provider) + CLI | `canopa-shell/src/launcher/controls.rs:28-34`, `canopa-notify/README.md:73` | Not in Settings. No schedule **Fixed in f82cffa:** Settings Notifications page: on, for a while, until tomorrow, daily schedule with days, alarms/calls break-through, fullscreen and sharing suppression (Notify ADR 0055 control API). |
+| | Per-app rules / sounds | missing (KDL only) | K | `docs/configuration.md:25` (`rule … outcome="silenced"`) | Must edit KDL **Fixed in f82cffa:** per-app delivery (banners, Center only, mute), sound and lock-screen visibility for apps with rules and any installed app found by name. |
 | Default apps | mimeapps.list | missing | CLI | `docs/files.md:146` (`xdg-mime default …`). `canopa-apps` has no `MimeType` field (`canopa-apps/src/lib.rs:7-16`) | Can't choose browser, mail or terminal. `Mod+Return` is hard-wired to `foot` (`defaults.kdl:13`) |
 | | Autostart | missing | – (Background portal owns modern autostart, `canopa-portal/src/background/service.rs:1`) | none | No list or toggle of login apps |
 | Date & time | Time zone, NTP, 12/24 h | missing | K (clock format strings) | none | |
