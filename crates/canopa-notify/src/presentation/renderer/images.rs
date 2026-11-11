@@ -5,6 +5,7 @@ use super::{
 };
 use canopa_assets::{
     DecoderAllocation, FileAccess, Formats, Raster, RasterBatch, RasterBudget, RasterPolicy,
+    icons::IconSource, svg,
 };
 use std::path::Path;
 use std::sync::{
@@ -73,7 +74,9 @@ fn has_local_files(presentation: &BannerPresentation) -> bool {
             .any(|visual| {
                 matches!(
                     visual,
-                    BannerVisual::LocalPath { .. } | BannerVisual::IconNames { .. }
+                    BannerVisual::LocalPath { .. }
+                        | BannerVisual::IconNames { .. }
+                        | BannerVisual::DesktopEntry { .. }
                 )
             })
             || banner
@@ -96,7 +99,8 @@ fn prepare_pixels(
             max_dimension: 4096,
             max_pixels: 4 * 1024 * 1024,
             decoder_allocation: DecoderAllocation::DecoderOnly(64 * 1024 * 1024),
-            formats: Formats::StaticPngJpeg,
+            // PNG/JPEG by content, whatever the name; SVG is detected separately.
+            formats: Formats::SniffedPngJpeg,
             file_access: FileAccess::Follow,
             apply_orientation: true,
             thumbnail: None,
@@ -109,23 +113,39 @@ fn prepare_pixels(
         cancelled,
     );
     let icon_cancelled = || !allow_files || cancelled();
+    // Fresh per frame: files are observed at preparation, never cached across frames.
+    let theme = if allow_files {
+        presentation.icon_settings.effective_theme()
+    } else {
+        presentation.icon_settings.theme.clone()
+    };
+    let scale = presentation.icon_settings.scale;
     let mut icons = super::icons::IconLookup::new(
         icon_roots,
         super::icons::LookupOptions {
-            theme: &presentation.icon_settings.theme,
-            scale: presentation.icon_settings.scale,
-            formats: super::icons::IconFormats::PngJpeg,
+            theme: &theme,
+            scale,
+            formats: super::icons::IconFormats::PngSvgXpm,
             allow_unindexed_hicolor: false,
         },
         &icon_cancelled,
     );
+    let canopa_theme::Rgb(r, g, b) = presentation.appearance.palette().text;
+    let mut sources = Sources {
+        icons: &mut icons,
+        budget: &mut budget,
+        allow_files,
+        scale,
+        foreground: [r, g, b],
+    };
     for banner in &mut presentation.banners {
         if cancelled() {
             return None;
         }
-        banner.app_icon = banner.app_icon.take().and_then(|visual| {
-            resolve(visual, &mut icons, super::APP_ICON_VISUAL_SIZE, &mut budget)
-        });
+        banner.app_icon = banner
+            .app_icon
+            .take()
+            .and_then(|visual| sources.resolve(visual, super::APP_ICON_VISUAL_SIZE));
         let image_size = if banner.app_icon.is_some() {
             super::NOTIFICATION_IMAGE_VISUAL_SIZE
         } else {
@@ -134,12 +154,12 @@ fn prepare_pixels(
         banner.image = banner
             .image
             .take()
-            .and_then(|visual| resolve(visual, &mut icons, image_size, &mut budget));
+            .and_then(|visual| sources.resolve(visual, image_size));
         for action in &mut banner.actions {
             action.icon = action
                 .icon
                 .take()
-                .and_then(|visual| resolve(visual, &mut icons, 16, &mut budget));
+                .and_then(|visual| sources.resolve(visual, 16));
         }
         let mut segments = Vec::new();
         for (segment_index, segment) in banner.body_content.segments.iter().enumerate() {
@@ -159,7 +179,9 @@ fn prepare_pixels(
                 }
                 NotificationBodySegment::Image { image } => {
                     let NotificationBodyImageSource::LocalPath { path } = &image.source;
-                    if let Some(visual) = budget.load(Path::new(path)).map(prepared_visual) {
+                    // Body images stay PNG/JPEG rasters with an image extension.
+                    if let Some(visual) = sources.budget.load(Path::new(path)).map(prepared_visual)
+                    {
                         segments.push(BannerBodySegment::image(visual));
                     } else if let Some(alt) = &image.alt {
                         push_banner_body_text_segment(
@@ -176,25 +198,79 @@ fn prepare_pixels(
     (!cancelled()).then_some(presentation)
 }
 
-fn resolve(
-    visual: BannerVisual,
-    icons: &mut super::icons::IconLookup<'_>,
-    size: u16,
-    budget: &mut RasterBatch<'_>,
-) -> Option<BannerVisual> {
-    match &visual {
-        BannerVisual::IconNames { names } => {
-            let path = icons.resolve(names, size)?;
-            budget.load(&path).map(prepared_visual)
+/// One frame's icon lookup and raster budget, shared by every visual role.
+struct Sources<'s, 'a> {
+    icons: &'s mut super::icons::IconLookup<'a>,
+    budget: &'s mut RasterBatch<'a>,
+    allow_files: bool,
+    scale: u16,
+    foreground: [u8; 3],
+}
+
+impl Sources<'_, '_> {
+    fn resolve(&mut self, visual: BannerVisual, size: u16) -> Option<BannerVisual> {
+        match &visual {
+            BannerVisual::IconNames { names } => {
+                // Sender icon names may be specific: try their generic forms too.
+                self.icons.set_generic_fallback(true);
+                let path = self.icons.resolve(names, size)?;
+                self.load(&path, size).map(prepared_visual)
+            }
+            BannerVisual::DesktopEntry { ids } => {
+                self.desktop_entry(ids, size).map(prepared_visual)
+            }
+            BannerVisual::LocalPath { path } => {
+                self.load(Path::new(path), size).map(prepared_visual)
+            }
+            BannerVisual::Rgba {
+                width,
+                height,
+                pixels,
+            } => self
+                .budget
+                .admit_rgba(*width, *height, pixels.len())
+                .then_some(visual),
         }
-        BannerVisual::LocalPath { path } => budget.load(Path::new(path)).map(prepared_visual),
-        BannerVisual::Rgba {
-            width,
-            height,
-            pixels,
-        } => budget
-            .admit_rgba(*width, *height, pixels.len())
-            .then_some(visual),
+    }
+
+    /// The application's installed `Icon=`, then its identities as icon names.
+    fn desktop_entry(&mut self, ids: &[String], size: u16) -> Option<Raster> {
+        if !self.allow_files {
+            return None;
+        }
+        self.icons.set_generic_fallback(false);
+        for id in ids.iter().take(2) {
+            let Some(source) = canopa_apps::desktop_entry_icon(id)
+                .as_deref()
+                .and_then(IconSource::parse)
+            else {
+                continue;
+            };
+            let path = match source {
+                IconSource::Path(path) => Some(path),
+                IconSource::Name(name) => self.icons.resolve(&[name], size),
+            };
+            if let Some(raster) = path.and_then(|path| self.load(&path, size)) {
+                return Some(raster);
+            }
+        }
+        let path = self.icons.resolve(ids, size)?;
+        self.load(&path, size)
+    }
+
+    fn load(&mut self, path: &Path, size: u16) -> Option<Raster> {
+        // Rasterize vectors at twice the nominal size, or the source scale if larger.
+        let side = u32::from(size) * u32::from(self.scale.max(2));
+        self.budget.load_image_or_svg(
+            path,
+            &svg::Policy {
+                max_encoded_bytes: 1024 * 1024,
+                max_dimension: 4096,
+                max_pixels: 4 * 1024 * 1024,
+                output_side: side.min(1024),
+                foreground: self.foreground,
+            },
+        )
     }
 }
 

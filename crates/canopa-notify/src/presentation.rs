@@ -1,5 +1,4 @@
 use crate::InternalNotificationId;
-use crate::domain::has_static_raster_extension;
 use crate::{
     BannerLifecycleChange, DeliveryOutcome, NotificationAction, NotificationBodyContent,
     NotificationBodyImageSource, NotificationBodySegment, NotificationBodyStyle,
@@ -179,10 +178,14 @@ impl BannerPresentation {
 }
 
 /// Static icon selection. Scale selects a source asset; it does not scale the UI.
+/// Without an explicitly configured theme, icons follow the desktop selection
+/// (GTK `gtk-icon-theme-name`, see `canopa_file::icon_theme`), then `theme`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerIconSettings {
     pub theme: String,
     pub scale: u16,
+    #[serde(default)]
+    pub follow_desktop: bool,
 }
 
 impl Default for BannerIconSettings {
@@ -190,11 +193,30 @@ impl Default for BannerIconSettings {
         Self {
             theme: "hicolor".into(),
             scale: 1,
+            follow_desktop: true,
         }
     }
 }
 
 impl BannerIconSettings {
+    /// The theme to search first: the configured one, or the current desktop theme.
+    pub fn effective_theme(&self) -> String {
+        if self.follow_desktop
+            && let Some(theme) = canopa_file::icon_theme::desktop_theme()
+        {
+            return theme;
+        }
+        self.theme.clone()
+    }
+
+    /// Follow the desktop theme with an explicit source scale.
+    pub fn desktop(scale: u16) -> anyhow::Result<Self> {
+        Ok(Self {
+            follow_desktop: true,
+            ..Self::new("hicolor".into(), scale)?
+        })
+    }
+
     pub fn new(theme: String, scale: u16) -> anyhow::Result<Self> {
         anyhow::ensure!(
             !theme.is_empty()
@@ -210,7 +232,11 @@ impl BannerIconSettings {
             (1..=8).contains(&scale),
             "icon scale must be between 1 and 8"
         );
-        Ok(Self { theme, scale })
+        Ok(Self {
+            theme,
+            scale,
+            follow_desktop: false,
+        })
     }
 }
 
@@ -352,9 +378,14 @@ pub struct BannerAction {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum BannerVisual {
-    /// Unresolved local theme references, in preference order (at most two).
+    /// Unresolved local theme references, in preference order (at most eight).
     IconNames {
         names: Vec<String>,
+    },
+    /// An unresolved application identity without a sender icon: the matching
+    /// desktop entry's `Icon=` when installed, else the identities as icon names.
+    DesktopEntry {
+        ids: Vec<String>,
     },
     Rgba {
         width: u32,
@@ -547,8 +578,8 @@ fn banner_app_icon_visual(
 ) -> Option<BannerVisual> {
     match app_icon {
         Some(reference) => BannerVisual::from_reference(reference),
-        None => Some(BannerVisual::IconNames {
-            names: app_identity_icon_name_candidates(app_identity),
+        None => Some(BannerVisual::DesktopEntry {
+            ids: app_identity_icon_name_candidates(app_identity),
         }),
     }
 }
@@ -578,8 +609,10 @@ fn banner_action_from_notification_action(action: &NotificationAction) -> Banner
     }
 }
 
+/// Any absolute path: the renderer admits PNG, JPEG and SVG by content, so
+/// extensionless temporary files (Chromium, Electron) are kept.
 fn supported_local_image_path(path: &str) -> bool {
-    Path::new(path).is_absolute() && has_static_raster_extension(path)
+    Path::new(path).is_absolute()
 }
 
 #[derive(Clone)]

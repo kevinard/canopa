@@ -264,9 +264,16 @@ async fn icon_metadata_and_candidate_work_limits_are_shared_by_the_frame() {
     theme(&root, "Birch", &index);
     icon_file(&root, "Birch/d0/action.png", [99, 0, 0, 255]);
     icon_file(&root, "body.png", [22, 0, 0, 255]);
-    let roots = std::iter::once(root.clone())
+    let roots: Vec<_> = std::iter::once(root.clone())
         .chain((1..32).map(|i| temp.path().join(format!("root{i}"))))
         .collect();
+    // Lookup visits only declared directories that exist: create all of them
+    // under every root so one name's search exceeds the frame's check budget.
+    for root in &roots {
+        for i in 0..1024 {
+            std::fs::create_dir_all(root.join(format!("Birch/d{i}"))).unwrap();
+        }
+    }
     let (daemon, receiver) = fixture_daemon(temp.path(), roots, "Birch", 1).await;
     daemon
         .receive_notification(NotificationInput {
@@ -702,5 +709,57 @@ async fn renderer_resolves_selected_icon_theme_before_parent_or_undeclared_direc
             height: 1,
             pixels: vec![11, 22, 33, 255],
         })
+    );
+}
+
+#[tokio::test]
+async fn extensionless_images_svg_theme_icons_and_generic_names_render_by_content() {
+    let _fixture = images::IMAGE_FIXTURE.lock().await;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("icons");
+    theme(
+        &root,
+        "hicolor",
+        "[Icon Theme]\nName=Fixture\nComment=Fixture\nDirectories=scalable/apps\n[scalable/apps]\nSize=34\nType=Scalable\nMinSize=8\nMaxSize=512\n",
+    );
+    std::fs::create_dir_all(root.join("hicolor/scalable/apps")).unwrap();
+    std::fs::write(
+        root.join("hicolor/scalable/apps/org.example.Vector.svg"),
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#0b1621"/></svg>"##,
+    )
+    .unwrap();
+    icon_file(&root, "hicolor/scalable/apps/dialog.png", [7, 8, 9, 255]);
+    // Chromium and Electron write notification images to extensionless files.
+    let chromium = temp.path().join(".org.chromium.Chromium.XXXXXX");
+    icon_file(
+        temp.path(),
+        ".org.chromium.Chromium.XXXXXX",
+        [44, 55, 66, 255],
+    );
+    let (daemon, receiver) = fixture_daemon(temp.path(), vec![root], "hicolor", 1).await;
+    daemon
+        .receive_notification(NotificationInput {
+            image_reference: NotificationVisualReference::local_path(chromium.to_string_lossy()),
+            actions: vec![
+                NotificationAction::new("open", "Open").with_icon(
+                    NotificationVisualReference::icon_name("dialog-information").unwrap(),
+                ),
+            ],
+            ..named_notification("org.example.Vector")
+        })
+        .await
+        .unwrap();
+    let mut stream = Box::pin(banner_updates(receiver));
+    let banner = next_banner(&mut stream).await;
+    let Some(BannerVisual::Rgba { width, pixels, .. }) = &banner.app_icon else {
+        panic!("SVG theme icon was not rasterized: {:?}", banner.app_icon);
+    };
+    assert_eq!(*width, u32::from(APP_ICON_VISUAL_SIZE) * 2);
+    assert_eq!(&pixels[..4], &[0x0b, 0x16, 0x21, 255]);
+    assert_eq!(banner.image, rgba([44, 55, 66, 255]));
+    assert_eq!(
+        banner.actions[0].icon,
+        rgba([7, 8, 9, 255]),
+        "dialog-information falls back to the generic dialog icon"
     );
 }

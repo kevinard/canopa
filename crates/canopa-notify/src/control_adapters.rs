@@ -554,17 +554,76 @@ fn panel_app_icon(
         Some(NotificationVisualReference::LocalPath(path)) => {
             PanelIcon::LocalPath { path: path.clone() }
         }
+        None if let Some(icon) = desktop_entry_panel_icon(identity, settings) => icon,
         reference => PanelIcon::Theme {
             names: match reference {
                 Some(NotificationVisualReference::IconName(name)) => vec![name.clone()],
                 Some(NotificationVisualReference::IconNames(names)) => names.clone(),
                 _ => canopa_notify::app_identity_icon_name_candidates(identity),
             },
-            theme: settings.theme.clone(),
+            theme: settings.effective_theme(),
             scale: settings.scale,
         },
     };
     icon.validate().is_ok().then_some(icon)
+}
+
+/// The installed desktop entry's `Icon=` for an identity without a sender icon:
+/// an absolute path, or a themed name tried before the identity names.
+fn desktop_entry_panel_icon(
+    identity: &str,
+    settings: &canopa_notify::BannerIconSettings,
+) -> Option<PanelIcon> {
+    let candidates = canopa_notify::app_identity_icon_name_candidates(identity);
+    let icon = candidates
+        .iter()
+        .find_map(|id| cached_desktop_entry_icon(id))?;
+    if icon.starts_with('/') {
+        return Some(PanelIcon::LocalPath { path: icon });
+    }
+    if icon.contains('/') {
+        return None;
+    }
+    // As GIO does for desktop entries, drop a legacy image extension.
+    let name = [".png", ".svg", ".xpm"]
+        .iter()
+        .find_map(|extension| icon.strip_suffix(extension))
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&icon)
+        .to_owned();
+    let mut names = vec![name];
+    for id in candidates {
+        if !names.contains(&id) && names.len() < 8 {
+            names.push(id);
+        }
+    }
+    Some(PanelIcon::Theme {
+        names,
+        theme: settings.effective_theme(),
+        scale: settings.scale,
+    })
+}
+
+/// Desktop entries are read in the provider process, at most once per minute per id.
+fn cached_desktop_entry_icon(id: &str) -> Option<String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+    type Entries = HashMap<String, (Instant, Option<String>)>;
+    static CACHE: OnceLock<Mutex<Entries>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some((read, icon)) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(id)
+        && read.elapsed() < Duration::from_secs(60)
+    {
+        return icon.clone();
+    }
+    let icon = canopa_apps::desktop_entry_icon(id);
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= 256 {
+        cache.clear();
+    }
+    cache.insert(id.to_owned(), (Instant::now(), icon.clone()));
+    icon
 }
 
 fn panel_center_action(

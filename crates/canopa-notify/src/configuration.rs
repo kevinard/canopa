@@ -297,10 +297,10 @@ fn parse_icons(node: &KdlNode) -> anyhow::Result<BannerIconSettings> {
             _ => anyhow::bail!("icons accepts only theme and scale properties"),
         }
     }
-    BannerIconSettings::new(
-        theme.unwrap_or_else(|| "hicolor".into()),
-        scale.unwrap_or(1),
-    )
+    match theme {
+        Some(theme) => BannerIconSettings::new(theme, scale.unwrap_or(1)),
+        None => BannerIconSettings::desktop(scale.unwrap_or(1)),
+    }
 }
 
 #[derive(Default)]

@@ -2291,7 +2291,9 @@ fn banner_visual_handle(visual: &BannerVisual) -> iced::widget::image::Handle {
         } => iced::widget::image::Handle::from_rgba(*width, *height, pixels.clone()),
         // Renderer inputs are prepared pixels. Never reopen a sender path here,
         // even if an internal caller accidentally bypasses preparation.
-        BannerVisual::LocalPath { .. } | BannerVisual::IconNames { .. } => {
+        BannerVisual::LocalPath { .. }
+        | BannerVisual::IconNames { .. }
+        | BannerVisual::DesktopEntry { .. } => {
             iced::widget::image::Handle::from_rgba(1, 1, vec![0; 4])
         }
     }
