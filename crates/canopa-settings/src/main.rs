@@ -51,6 +51,8 @@ enum Operation {
     },
     /// Print connected monitor information as JSON.
     Outputs,
+    /// Print the visible pages as JSON, in sidebar order, for launchers.
+    Pages,
     /// Apply a JSON input-settings document in the current Canopa session.
     ApplyInput {
         #[arg(long)]
@@ -65,6 +67,23 @@ enum Operation {
     },
     #[command(hide = true)]
     WatchDisplayProfiles,
+}
+/// `{"pages":[{"id","title","description","icon","keywords"}]}`, the same
+/// registry entries the sidebar, search and D-Bus `Pages` use.
+fn pages_json() -> serde_json::Value {
+    let pages: Vec<_> = registry::navigation()
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
+                "id": entry.id,
+                "title": entry.title,
+                "description": entry.description,
+                "icon": entry.icon,
+                "keywords": entry.keywords,
+            })
+        })
+        .collect();
+    serde_json::json!({ "pages": pages })
 }
 fn main() {
     if let Err(error) = run() {
@@ -116,6 +135,7 @@ fn run() -> Result<()> {
                 .unwrap_or_else(Paths::discover)?;
             canopa_settings::niri::validate(&paths.niri())?;
         }
+        Some(Operation::Pages) => println!("{}", pages_json()),
         Some(Operation::Outputs) => println!(
             "{}",
             serde_json::to_string(&canopa_settings::niri::Client::discover()?.outputs()?)?
@@ -192,5 +212,20 @@ mod tests {
             Some(Operation::Outputs)
         ));
         assert!(parse(&["check", "power"]).is_err());
+        assert!(matches!(
+            parse(&["pages"]).unwrap().command,
+            Some(Operation::Pages)
+        ));
+    }
+
+    #[test]
+    fn pages_list_the_visible_registry_in_sidebar_order() {
+        let json = pages_json();
+        let pages = json["pages"].as_array().unwrap();
+        let ids: Vec<_> = pages.iter().map(|page| page["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, registry::ids().collect::<Vec<_>>());
+        let displays = pages.iter().find(|page| page["id"] == "displays").unwrap();
+        assert_eq!(displays["title"], Page::Displays.title());
+        assert!(displays["keywords"].as_array().is_some_and(|k| !k.is_empty()));
     }
 }
