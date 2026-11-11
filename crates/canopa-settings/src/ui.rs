@@ -1,4 +1,5 @@
 //! Ordinary settings window with shared controls and bounded background work.
+mod about;
 mod bluetooth;
 mod date_time;
 mod default_apps;
@@ -133,6 +134,8 @@ enum Message {
     DefaultAppsSearch(String),
     DateTime(crate::live::Event<crate::date_time::DateTimeService>),
     DateTimeForm(date_time::Edit),
+    About(crate::live::Event<crate::about::AboutService>),
+    AboutForm(about::Edit),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -187,6 +190,9 @@ struct State {
     default_apps_query: String,
     date_time: date_time::DateTimePage,
     date_time_forms: date_time::DateTimeForms,
+    about: about::AboutPage,
+    /// The device name being typed; `None` shows the current one.
+    about_name: Option<String>,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -292,6 +298,8 @@ impl State {
             default_apps_query: String::new(),
             date_time: live_page::LivePage::new(Default::default()),
             date_time_forms: Default::default(),
+            about: live_page::LivePage::new(Default::default()),
+            about_name: None,
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -728,7 +736,8 @@ impl State {
                     | Page::Bluetooth
                     | Page::Notifications
                     | Page::DefaultApps
-                    | Page::DateTime => self.busy = false,
+                    | Page::DateTime
+                    | Page::About => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -868,6 +877,8 @@ impl State {
             }
             Message::DateTime(event) => return self.date_time.update(event, date_time::message),
             Message::DateTimeForm(edit) => return self.date_time_edit(edit),
+            Message::About(event) => return self.about.update(event, about::message),
+            Message::AboutForm(edit) => return self.about_edit(edit),
             Message::DefaultAppsSearch(query) => {
                 self.default_apps_query = query.chars().take(100).collect();
             }
@@ -1105,6 +1116,11 @@ impl State {
             Page::DefaultApps => self
                 .default_apps
                 .update(crate::live::Event::Reload, default_apps::message),
+            Page::About => {
+                self.about_name = None;
+                self.about
+                    .update(crate::live::Event::Reload, about::message)
+            }
             Page::DateTime => {
                 self.date_time_opened();
                 self.date_time
@@ -1139,6 +1155,9 @@ impl State {
         }
         if self.page == Page::DefaultApps {
             subscriptions.push(self.default_apps.subscription(Message::DefaultApps));
+        }
+        if self.page == Page::About {
+            subscriptions.push(self.about.subscription(Message::About));
         }
         if self.page == Page::DateTime {
             subscriptions.push(self.date_time.subscription(Message::DateTime));
@@ -1220,6 +1239,7 @@ impl State {
             Page::Notifications => self.notifications_view(),
             Page::DefaultApps => self.default_apps_view(),
             Page::DateTime => self.date_time_view(),
+            Page::About => self.about_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

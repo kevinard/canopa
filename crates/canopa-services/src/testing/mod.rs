@@ -69,6 +69,7 @@ impl Drop for TestBus {
 pub mod audio;
 pub mod bluez;
 pub mod geoclue;
+pub mod hostname;
 pub mod logind;
 pub mod mpris;
 pub mod network;

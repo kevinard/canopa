@@ -12,7 +12,7 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Date & time, Notifications and Default
+Network, Bluetooth, Sound, Date & time, About, Notifications and Default
 applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
 systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
@@ -178,6 +178,15 @@ for permission through the polkit agent.
   applied at once to `config.kdl`. A clock with a pattern of your own (for
   example `%a %H:%M`) keeps it; see
   [ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md).
+
+## About
+
+The About page shows the device name, the hardware (model, processor, memory,
+graphics, disk capacity, firmware) and the software (operating system, kernel,
+Canopa version). **Rename** sets the device name through systemd-hostnamed and
+asks for permission through the polkit agent; the network host name is
+derived from it (for example `kevins-laptop`). Without hostnamed the page still
+describes the computer from `/etc/os-release`, `/proc` and `/sys`.
 
 ## Notifications
 

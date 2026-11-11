@@ -24,7 +24,6 @@ use crate::{
     Error,
     bus::{DEADLINE, StateStream, call_interactive},
 };
-use futures_util::StreamExt;
 use std::time::Duration;
 
 pub const SERVICE: &str = "org.freedesktop.timedate1";
@@ -53,13 +52,7 @@ async fn proxy(connection: &zbus::Connection) -> Result<zbus::Proxy<'static>, Er
 
 /// Read the clock settings, starting timedated if needed.
 pub async fn read(connection: &zbus::Connection) -> Result<Clock, Error> {
-    let properties = zbus::fdo::PropertiesProxy::builder(connection)
-        .destination(SERVICE)?
-        .path(PATH)?
-        .build()
-        .await?;
-    let interface = zbus::names::InterfaceName::try_from(INTERFACE).map_err(zbus::Error::from)?;
-    let all = tokio::time::timeout(DEADLINE, properties.get_all(interface)).await??;
+    let all = crate::bus::properties(connection, SERVICE, PATH, INTERFACE).await?;
     let flag = |name: &str| {
         all.get(name)
             .and_then(|value| bool::try_from(value).ok())
@@ -80,55 +73,8 @@ pub async fn read(connection: &zbus::Connection) -> Result<Clock, Error> {
 
 /// The clock settings on each change, and every few seconds.
 pub fn watch(connection: zbus::Connection) -> StateStream<Clock> {
-    crate::bus::recovering(move |tx| {
-        let connection = connection.clone();
-        tokio::spawn(async move {
-            let result = async {
-                let rule = zbus::MatchRule::builder()
-                    .msg_type(zbus::message::Type::Signal)
-                    .sender(SERVICE)?
-                    .path(PATH)?
-                    .interface("org.freedesktop.DBus.Properties")?
-                    .member("PropertiesChanged")?
-                    .build();
-                let mut signals =
-                    zbus::MessageStream::for_match_rule(rule, &connection, Some(16)).await?;
-                // When timedated exits (idle or stopped), read again at once:
-                // that starts it again, or reports that it is gone.
-                let dbus = zbus::fdo::DBusProxy::new(&connection).await?;
-                let mut owners = dbus
-                    .receive_name_owner_changed_with_args(&[(0, SERVICE)])
-                    .await?;
-                let mut last = None;
-                loop {
-                    let clock = read(&connection).await?;
-                    if last.as_ref() != Some(&clock) {
-                        if tx.send(Ok(clock.clone())).is_err() {
-                            return Ok(());
-                        }
-                        last = Some(clock);
-                    }
-                    tokio::select! {
-                        _ = tx.closed() => return Ok(()),
-                        _ = tokio::time::sleep(REREAD) => {}
-                        signal = signals.next() => {
-                            if signal.is_none() {
-                                return Err(Error::Unavailable);
-                            }
-                        }
-                        owner = owners.next() => {
-                            if owner.is_none() {
-                                return Err(Error::Unavailable);
-                            }
-                        }
-                    }
-                }
-            }
-            .await;
-            if result.is_err() {
-                let _ = tx.send(Err(()));
-            }
-        });
+    crate::bus::watch_on_demand(connection, SERVICE, PATH, REREAD, |connection| async move {
+        read(&connection).await
     })
 }
 
@@ -181,6 +127,7 @@ mod tests {
         ServiceState,
         testing::{TestBus, timedate::FakeTimedate},
     };
+    use futures_util::StreamExt;
 
     #[tokio::test]
     async fn reads_follows_and_changes_the_clock() {

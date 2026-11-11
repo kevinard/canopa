@@ -16,6 +16,7 @@
 //! | [`logind`] | systemd-logind | [`logind::Capabilities`], [`logind::InhibitorLock`] | [`logind::watch_capabilities`] | [`logind::request`], [`logind::inhibit`], [`logind::Session::set_brightness`] |
 //! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level`, `set_perceptual` |
 //! | [`timedate`] | systemd-timedated | [`timedate::Clock`] | [`timedate::watch`] | time zone, network time, system clock (polkit) |
+//! | [`hostname`] | systemd-hostnamed | [`hostname::Host`] (names, hardware, OS) | [`hostname::watch`] | [`hostname::rename`] (polkit) |
 //! | [`geoclue`] | GeoClue | [`geoclue::Place`] | – | [`geoclue::locate`] (once, city accuracy) |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
@@ -34,6 +35,7 @@ pub mod bluetooth;
 pub mod bus;
 mod error;
 pub mod geoclue;
+pub mod hostname;
 pub mod logind;
 pub mod mpris;
 pub mod network;

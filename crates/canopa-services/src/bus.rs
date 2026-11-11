@@ -193,6 +193,94 @@ where
     })
 }
 
+/// All properties of `interface` on `service`'s object at `path`, read
+/// through the well-known name, which starts an activatable service.
+pub async fn properties(
+    conn: &zbus::Connection,
+    service: &str,
+    path: &str,
+    interface: &str,
+) -> Result<std::collections::HashMap<String, zbus::zvariant::OwnedValue>, Error> {
+    let properties = zbus::fdo::PropertiesProxy::builder(conn)
+        .destination(service.to_owned())?
+        .path(path.to_owned())?
+        .build()
+        .await?;
+    let interface =
+        zbus::names::InterfaceName::try_from(interface.to_owned()).map_err(zbus::Error::from)?;
+    Ok(tokio::time::timeout(DEADLINE, properties.get_all(interface)).await??)
+}
+
+/// Observation of a service that systemd starts on demand and that exits
+/// when idle (timedated, hostnamed, localed): an absent owner is not an
+/// outage. The worker follows `PropertiesChanged` at `path` from the
+/// well-known name, and re-reads when the owner changes and every `every`.
+/// It reports unavailability only when `read` fails.
+pub fn watch_on_demand<T, Read, Fut>(
+    conn: zbus::Connection,
+    service: &'static str,
+    path: &'static str,
+    every: Duration,
+    read: Read,
+) -> StateStream<T>
+where
+    T: PartialEq + Clone + Send + 'static,
+    Read: Fn(zbus::Connection) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Result<T, Error>> + Send + 'static,
+{
+    recovering(move |tx| {
+        let conn = conn.clone();
+        let read = read.clone();
+        tokio::spawn(async move {
+            let result = async {
+                let rule = zbus::MatchRule::builder()
+                    .msg_type(zbus::message::Type::Signal)
+                    .sender(service)?
+                    .path(path)?
+                    .interface("org.freedesktop.DBus.Properties")?
+                    .member("PropertiesChanged")?
+                    .build();
+                let mut signals =
+                    zbus::MessageStream::for_match_rule(rule, &conn, Some(16)).await?;
+                // When the service exits, read again at once: that starts it
+                // again, or reports that it is gone.
+                let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
+                let mut owners = dbus
+                    .receive_name_owner_changed_with_args(&[(0, service)])
+                    .await?;
+                let mut last = None;
+                loop {
+                    let reading = tokio::time::timeout(DEADLINE * 2, read(conn.clone())).await??;
+                    if last.as_ref() != Some(&reading) {
+                        if tx.send(Ok(reading.clone())).is_err() {
+                            return Ok::<(), Error>(());
+                        }
+                        last = Some(reading);
+                    }
+                    tokio::select! {
+                        _ = tx.closed() => return Ok(()),
+                        _ = tokio::time::sleep(every) => {}
+                        signal = signals.next() => {
+                            if signal.is_none() {
+                                return Err(Error::Unavailable);
+                            }
+                        }
+                        owner = owners.next() => {
+                            if owner.is_none() {
+                                return Err(Error::Unavailable);
+                            }
+                        }
+                    }
+                }
+            }
+            .await;
+            if result.is_err() {
+                let _ = tx.send(Err(()));
+            }
+        });
+    })
+}
+
 /// How long a privileged call may wait, including a polkit password prompt.
 pub const AUTHORIZATION_DEADLINE: Duration = Duration::from_secs(300);
 

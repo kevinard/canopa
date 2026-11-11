@@ -21,6 +21,7 @@ pub enum Page {
     Launcher,
     Shortcuts,
     Widgets,
+    About,
     /// The live-page pattern on a fake service; debug builds only.
     #[cfg(debug_assertions)]
     LiveExample,
@@ -474,6 +475,37 @@ pub static PAGES: &[Entry] = &[
         },
         hidden: false,
     },
+    Entry {
+        page: Page::About,
+        id: "about",
+        title: "About",
+        description: "This computer's name, hardware and software.",
+        icon: "help-about",
+        group: Group::System,
+        keywords: &[
+            "system",
+            "information",
+            "device name",
+            "hostname",
+            "computer name",
+            "version",
+            "operating system",
+            "kernel",
+            "hardware",
+            "model",
+            "processor",
+            "cpu",
+            "memory",
+            "ram",
+            "graphics",
+            "gpu",
+            "disk",
+            "storage",
+            "firmware",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
     #[cfg(debug_assertions)]
     Entry {
         page: Page::LiveExample,
@@ -659,6 +691,7 @@ mod tests {
             "notifications",
             "default-apps",
             "date-time",
+            "about",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -679,6 +712,7 @@ mod tests {
                 Page::Personal,
                 Page::Power,
                 Page::DateTime,
+                Page::About,
                 Page::Notifications,
                 Page::DefaultApps,
                 Page::Launcher,
@@ -718,6 +752,7 @@ mod tests {
         assert_eq!(pages("do not disturb"), [Page::Notifications]);
         assert_eq!(pages("browser"), [Page::DefaultApps]);
         assert_eq!(pages("timezone"), [Page::DateTime]);
+        assert_eq!(pages("hostname"), [Page::About]);
         assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
