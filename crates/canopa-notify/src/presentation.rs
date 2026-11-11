@@ -620,6 +620,11 @@ impl PresentationCoordinator {
         }
     }
 
+    /// Headless Mode never displays banners, so no display-based timeout starts.
+    pub(crate) fn presents_banners(&self) -> bool {
+        self.enabled
+    }
+
     pub(crate) fn set_appearance(&self, appearance: canopa_theme::Appearance) {
         *self.appearance.lock().unwrap() = appearance;
     }
@@ -696,6 +701,13 @@ impl NotificationBannerState {
 
     pub(crate) fn overflow_count(&self) -> usize {
         self.overflow.len()
+    }
+
+    pub(crate) fn overflow_revisions(&self) -> Vec<(InternalNotificationId, i64)> {
+        self.overflow
+            .values()
+            .map(|thread| (thread.id, thread.revision))
+            .collect()
     }
 
     pub fn banner_presentation(&self) -> BannerPresentation {

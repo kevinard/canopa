@@ -404,10 +404,10 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - An eligible replacement notification may create a **Notification Banner** even when the previous revision did not.
 - A dropped replacement notification does not update **Notification History**.
 - A replacement notification that revises a **Notification Thread** cancels the prior revision's pending **Notification Timeout** before the replacement revision is considered for **Notification Banner** visibility.
-- A replacement revision receives a fresh **Notification Timeout** only if it becomes visible in a **Notification Banner**.
+- A replacement revision receives a fresh **Notification Timeout** when it becomes visible in a **Notification Banner**, is silenced, or overflows.
 - A new **Dropped Notification** receives a valid nonzero sender-visible ID and is immediately closed from the **Sender Notification Lifecycle** perspective with freedesktop reason `4`; its internal ephemeral ID is never a **Notification Thread** ID.
 - A dropped replacement does not close the **Sender Notification Lifecycle** of the existing **Active Notification**; a later `CloseNotification` for its sender-visible ID still closes that original thread normally.
-- A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner**.
+- A **Silenced Notification** may remain an **Active Notification** without a visible **Notification Banner** until its **Notification Timeout** elapses.
 - A **Transient Notification** may produce a **Notification Banner**, **Notification Sound**, **Notification Action**, and **Notification Timeout**, but its content and lifecycle are never written to persisted **Notification History**.
 - The **Notification Center** includes live **Transient Notifications** as explicitly runtime-only items; termination or restart removes them without archiving their content.
 - A **Notification Thread**'s initial request fixes whether it is transient or retained. Replacement `transient` hints cannot weaken a retained thread or promote a transient thread into persisted history.
@@ -430,7 +430,8 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Moving an **Active Notification** to dismissed, expired, closed, or stale explicitly cancels any pending **Notification Timeout** expiration for that **Notification Thread**.
 - A finite **Notification Timeout** begins when the current notification revision first becomes visible in a **Notification Banner**, not when its request is accepted.
 - A **Notification Timeout** that has begun continues to its original deadline if the banner is later displaced by a critical notification.
-- Overflow notifications, **Silenced Notifications**, requests accepted under **Do Not Disturb**, and **Headless Mode** requests do not begin a **Notification Timeout** and deliberately remain active until user or sender action.
+- **Silenced Notifications** and requests accepted under **Do Not Disturb** begin their **Notification Timeout** when accepted; overflow notifications begin it when they overflow (ADR 0054). **Headless Mode** requests never begin one and remain active until user or sender action.
+- When the live-thread limit is full, the oldest non-critical **Active Notification** expires to admit a new one. When pending attention is over budget, the oldest inactive non-critical content that **Requires Attention** is archived as read. Critical content is never retired to make room (ADR 0054).
 - A positive sender timeout uses its requested duration after banner display; a zero sender timeout never expires; a server-default timeout resolves through the configured urgency default after banner display.
 - An elapsed **Notification Timeout** makes the thread an **Expired Notification** and completes its **Sender Notification Lifecycle** with freedesktop reason `1`.
 - Critical **Active Notifications** do not expire automatically by default.

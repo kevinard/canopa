@@ -542,12 +542,14 @@ async fn pending_display_records_stay_bounded_by_live_admission_and_replacement(
         transient: true,
         ..notification(NotificationTimeout::Milliseconds(60_000))
     };
-    let first = daemon.receive_notification(input.clone()).await.unwrap();
     for _ in 1..1024 {
         daemon.receive_notification(input.clone()).await.unwrap();
     }
+    let first = daemon.receive_notification(input.clone()).await.unwrap();
     assert_eq!(timeout_records(&daemon).await, 1024);
-    assert!(daemon.receive_notification(input.clone()).await.is_err());
+    // A full live set retires its oldest thread, and that thread's record with it.
+    daemon.receive_notification(input.clone()).await.unwrap();
+    assert_eq!(timeout_records(&daemon).await, 1024);
     for _ in 0..64 {
         daemon
             .receive_notification(NotificationInput {
@@ -578,7 +580,9 @@ async fn pending_display_records_stay_bounded_by_live_admission_and_replacement(
         })
         .await
         .unwrap();
-    assert_eq!(timeout_records(&daemon).await, 1023);
+    // A silenced revision replaces the displayed one's record with its own; its
+    // timeout begins at acceptance, except in Headless Mode, which expires nothing.
+    assert_eq!(timeout_records(&daemon).await, 1024);
     daemon.clear_active_notifications().await.unwrap();
     assert_eq!(timeout_records(&daemon).await, 0);
 }

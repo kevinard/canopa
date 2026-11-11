@@ -193,14 +193,32 @@ async fn wire_input_limits_reject_before_normalization_without_consuming_ids_or_
 #[tokio::test]
 async fn live_resource_exhaustion_returns_limits_exceeded_without_consuming_wire_ids() {
     let fixture = ServerFixture::new("LiveResourceLimits", NotificationSenderIds::new()).await;
-    fixture.daemon.set_do_not_disturb(true).await.unwrap();
-    assert_eq!(fixture.notify(0, "Original").await.unwrap(), 1);
+    // Only an all-critical live set refuses; anything else retires its oldest.
+    let original: u32 = fixture
+        .proxy
+        .call(
+            "Notify",
+            &(
+                "Test",
+                0u32,
+                "",
+                "Original",
+                "",
+                Vec::<String>::new(),
+                HashMap::from([("urgency".to_string(), OwnedValue::from(2u8))]),
+                0i32,
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(original, 1);
     for _ in 1..1024 {
         fixture
             .daemon
             .receive_notification(canopa_notify::NotificationInput {
                 summary: "Transient".into(),
                 transient: true,
+                urgency: canopa_notify::Urgency::Critical,
                 expire_timeout: canopa_notify::NotificationTimeout::Never,
                 ..Default::default()
             })
@@ -224,9 +242,15 @@ async fn live_resource_exhaustion_returns_limits_exceeded_without_consuming_wire
     assert_eq!(fixture.notify(0, "Retry automatic").await.unwrap(), 2);
     fixture.close(2).await;
     assert_eq!(fixture.notify(9, "Retry caller token").await.unwrap(), 9);
-    assert_dbus_error(
-        fixture.notify(0, "Full again").await,
-        "org.freedesktop.DBus.Error.LimitsExceeded",
+    // Full again, but token 9 is not critical: it is retired instead of refusing.
+    assert_eq!(fixture.notify(0, "Retires the oldest").await.unwrap(), 3);
+    assert!(
+        fixture
+            .proxy
+            .call::<_, _, ()>("CloseNotification", &(9u32,))
+            .await
+            .is_err(),
+        "the retired token is no longer live"
     );
 }
 

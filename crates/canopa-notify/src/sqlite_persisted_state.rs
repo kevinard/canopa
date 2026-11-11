@@ -837,17 +837,58 @@ impl SqlitePersistedState {
     }
 }
 
-// Pending content is never evicted to make room. Refuse new work atomically when
-// count or logical stored UTF-8 reaches the fixed budget; recovery remains possible.
-async fn check_attention_budget(connection: &mut SqliteConnection) -> anyhow::Result<()> {
-    let (count, bytes): (i64, i64) = sqlx::query_as(
+const PENDING_COUNT_LIMIT: i64 = 4096;
+const PENDING_BYTES_LIMIT: i64 = 64 * 1024 * 1024;
+
+async fn attention_usage(connection: &mut SqliteConnection) -> anyhow::Result<(i64, i64)> {
+    Ok(sqlx::query_as(
         "SELECT COUNT(*), COALESCE(SUM(retained_bytes), 0) FROM notification_threads WHERE requires_attention = 1")
-        .fetch_one(connection).await?;
-    if count > 4096 {
+        .fetch_one(connection).await?)
+}
+
+// Pending attention is bounded by count and logical stored UTF-8. Over either
+// budget, the oldest inactive non-critical pending rows are archived (their
+// attention is acknowledged) until the new write fits; ordinary archive pruning
+// then applies to them. Active and critical rows are never archived this way, so
+// only a budget filled by them refuses the write, atomically.
+async fn enforce_attention_budget(connection: &mut SqliteConnection) -> anyhow::Result<()> {
+    let (count, bytes) = attention_usage(&mut *connection).await?;
+    let count_excess = count - PENDING_COUNT_LIMIT;
+    let bytes_excess = bytes - PENDING_BYTES_LIMIT;
+    if count_excess <= 0 && bytes_excess <= 0 {
+        return Ok(());
+    }
+    let archived = sqlx::query(
+        r#"
+        UPDATE notification_threads SET requires_attention = 0
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id, retained_bytes,
+                    ROW_NUMBER() OVER oldest AS position,
+                    SUM(retained_bytes) OVER oldest AS freed
+                FROM notification_threads
+                WHERE requires_attention = 1 AND status != 'active' AND urgency != 'critical'
+                WINDOW oldest AS (ORDER BY updated_at ASC, id ASC ROWS UNBOUNDED PRECEDING)
+            )
+            WHERE position - 1 < ?1 OR freed - retained_bytes < ?2
+        )
+        "#,
+    )
+    .bind(count_excess.max(0))
+    .bind(bytes_excess.max(0))
+    .execute(&mut *connection)
+    .await?
+    .rows_affected();
+    let (count, bytes) = attention_usage(&mut *connection).await?;
+    if count > PENDING_COUNT_LIMIT {
         return Err(crate::NotificationLimitExceeded("retained count").into());
     }
-    if bytes > 64 * 1024 * 1024 {
+    if bytes > PENDING_BYTES_LIMIT {
         return Err(crate::NotificationLimitExceeded("retained text").into());
+    }
+    if archived > 0 {
+        // Content-free: the count says how much unread history was retired.
+        eprintln!("level=warn component=history event=pending_limit_archived count={archived}");
     }
     Ok(())
 }
@@ -881,7 +922,7 @@ impl NotificationHistory for SqlitePersistedState {
             .await?;
         let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
         if thread.status == NotificationStatus::Active && thread.requires_attention {
-            check_attention_budget(&mut transaction).await?;
+            enforce_attention_budget(&mut transaction).await?;
         }
         self.prune_history_in(&mut transaction).await?;
         transaction.commit().await?;
@@ -943,7 +984,7 @@ impl NotificationHistory for SqlitePersistedState {
 
         let thread = NotificationThreadRecord::from_row(&row)?.into_thread()?;
         if thread.status == NotificationStatus::Active && thread.requires_attention {
-            check_attention_budget(&mut transaction).await?;
+            enforce_attention_budget(&mut transaction).await?;
         }
         self.prune_history_in(&mut transaction).await?;
         transaction.commit().await?;

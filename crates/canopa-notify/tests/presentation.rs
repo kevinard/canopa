@@ -610,7 +610,7 @@ async fn non_headless_daemon_presents_visible_banner_content() {
 }
 
 #[tokio::test]
-async fn transient_banner_overflow_keeps_every_center_action_without_starting_a_timeout() {
+async fn transient_banner_overflow_keeps_every_center_action_until_its_timeout() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::graphical(
         temp.path().join("history.db"),
@@ -631,7 +631,8 @@ async fn transient_banner_overflow_keeps_every_center_action_without_starting_a_
     let receipt = daemon
         .receive_notification(NotificationInput {
             transient: true,
-            expire_timeout: NotificationTimeout::Milliseconds(20),
+            // Overflow starts this timeout; it is long enough to use the Center.
+            expire_timeout: NotificationTimeout::Milliseconds(60_000),
             actions: ["one", "two", "three", "four"]
                 .into_iter()
                 .map(|key| NotificationAction::new(key, format!("Long action label: {key}")))
@@ -1648,7 +1649,7 @@ async fn old_timeout_does_not_expire_replacement_revision() {
 }
 
 #[tokio::test]
-async fn overflowed_replacement_cancels_displayed_revisions_timeout_without_starting_another() {
+async fn overflowed_replacement_replaces_the_displayed_revisions_timeout_with_its_own() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::graphical(
         temp.path().join("history.db"),
@@ -1688,12 +1689,11 @@ async fn overflowed_replacement_cancels_displayed_revisions_timeout_without_star
         .await
         .unwrap();
 
-    let thread = assert_active_without_sender_close_after(
-        &daemon,
-        original.notification_id,
-        Duration::from_millis(60),
-    )
-    .await;
+    // The displayed revision's timeout is cancelled; the overflowed replacement
+    // expires through its own timeout, which began when it overflowed.
+    let thread =
+        assert_expires_unread_within(&daemon, original.notification_id, Duration::from_secs(2))
+            .await;
     assert_eq!(thread.revision, 2);
     assert_eq!(
         thread.accepted_notification.summary,
@@ -1786,7 +1786,7 @@ async fn policy_change_does_not_reclassify_or_cancel_existing_timeout() {
 }
 
 #[tokio::test]
-async fn do_not_disturb_notification_with_finite_timeout_remains_active() {
+async fn do_not_disturb_notification_expires_after_its_timeout_and_stays_unread() {
     let temp = tempfile::tempdir().unwrap();
     let presenter = RecordingPresenter::default();
     let daemon = Daemon::open(DaemonOptions::graphical(
@@ -1810,16 +1810,11 @@ async fn do_not_disturb_notification_with_finite_timeout_remains_active() {
         receipt.notification_id
     ));
 
-    assert_active_without_sender_close_after(
-        &daemon,
-        receipt.notification_id,
-        Duration::from_millis(30),
-    )
-    .await;
+    assert_expires_unread_within(&daemon, receipt.notification_id, Duration::from_secs(2)).await;
 }
 
 #[tokio::test]
-async fn user_silenced_notification_with_finite_timeout_remains_active() {
+async fn user_silenced_notification_expires_after_its_timeout_and_stays_unread() {
     let temp = tempfile::tempdir().unwrap();
     let daemon = Daemon::open(DaemonOptions::graphical(
         temp.path().join("history.db"),
@@ -1841,12 +1836,7 @@ async fn user_silenced_notification_with_finite_timeout_remains_active() {
         .unwrap();
     assert_eq!(receipt.delivery_outcome, DeliveryOutcome::Silenced);
 
-    assert_active_without_sender_close_after(
-        &daemon,
-        receipt.notification_id,
-        Duration::from_millis(30),
-    )
-    .await;
+    assert_expires_unread_within(&daemon, receipt.notification_id, Duration::from_secs(2)).await;
 }
 
 #[tokio::test]
@@ -2202,7 +2192,7 @@ async fn critical_notifications_displace_normal_banners_when_slots_are_full() {
 }
 
 #[tokio::test]
-async fn fourth_normal_notification_behind_critical_banners_does_not_start_timeout() {
+async fn fourth_normal_notification_behind_critical_banners_expires_from_overflow() {
     let temp = tempfile::tempdir().unwrap();
     let presenter = RecordingPresenter::default();
     let daemon = Daemon::open(DaemonOptions::graphical(
@@ -2249,12 +2239,48 @@ async fn fourth_normal_notification_behind_critical_banners_does_not_start_timeo
         overflowed.notification_id
     ));
 
-    assert_active_without_sender_close_after(
-        &daemon,
-        overflowed.notification_id,
-        Duration::from_millis(30),
-    )
-    .await;
+    // Not promoted when a slot frees, so its timeout began when it overflowed.
+    assert_expires_unread_within(&daemon, overflowed.notification_id, Duration::from_secs(2)).await;
+    for id in critical_ids.into_iter().skip(1) {
+        assert_active_without_sender_close_after(&daemon, id, Duration::ZERO).await;
+    }
+}
+
+/// Non-displayed notifications expire the way their displayed counterparts do,
+/// and retained content stays unread in the Center.
+async fn assert_expires_unread_within(
+    daemon: &Daemon,
+    notification_id: canopa_notify::InternalNotificationId,
+    limit: Duration,
+) -> NotificationThread {
+    let thread = tokio::time::timeout(limit, async {
+        loop {
+            let thread = daemon
+                .snapshot()
+                .await
+                .unwrap()
+                .history
+                .into_iter()
+                .find(|thread| thread.id == notification_id)
+                .unwrap();
+            if thread.status.as_str() != "active" {
+                return thread;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("a non-displayed notification never expired");
+    assert_eq!(thread.status.as_str(), "expired");
+    assert!(thread.requires_attention, "expiry must not acknowledge");
+    assert!(daemon.sender_events().await.iter().any(|event| matches!(
+        event,
+        SenderEvent::NotificationClosed {
+            notification_id: closed_id,
+            reason: canopa_notify::SenderCloseReason::Expired,
+        } if *closed_id == notification_id
+    )));
+    thread
 }
 
 async fn assert_active_without_sender_close_after(

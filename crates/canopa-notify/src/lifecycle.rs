@@ -193,6 +193,20 @@ impl LifecycleEffects {
         })
     }
 
+    /// Active revisions committed as silenced; their timeouts cannot wait for display.
+    pub(crate) fn silenced_revisions(
+        &self,
+    ) -> impl Iterator<Item = (InternalNotificationId, i64)> + '_ {
+        self.effects.iter().filter_map(|effect| match effect {
+            LifecycleEffect::ThreadSilenced(thread)
+                if thread.status == NotificationStatus::Active =>
+            {
+                Some((thread.id, thread.revision))
+            }
+            _ => None,
+        })
+    }
+
     pub fn timeout_changes(&self) -> impl Iterator<Item = NotificationTimeoutChange> + '_ {
         self.effects.iter().filter_map(|effect| match effect {
             LifecycleEffect::NotificationTimeoutStartsOnDisplay {
@@ -918,8 +932,10 @@ where
             );
         }
 
+        // Silenced revisions register too: the runtime starts them at acceptance
+        // because they never get a banner.
         if thread.status != NotificationStatus::Active
-            || thread.delivery_outcome != DeliveryOutcome::Shown
+            || thread.delivery_outcome == DeliveryOutcome::Dropped
         {
             return;
         }

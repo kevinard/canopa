@@ -5,16 +5,27 @@ use canopa_notify::{Daemon, DaemonOptions};
 use notifications::notification;
 
 #[tokio::test]
-async fn retained_count_budget_preserves_pending_content_and_exempts_transient_notifications() {
-    use canopa_notify::{
-        ControlCommand, ControlReply, NotificationCenterAction, NotificationInput, NotifyControl,
-    };
+async fn retained_count_budget_archives_the_oldest_non_critical_pending_history() {
+    use canopa_notify::{NotificationInput, Urgency};
     let temp = tempfile::tempdir().unwrap();
-    let daemon =
-        Daemon::open(DaemonOptions::headless(temp.path().join("history.db")).with_history_limit(0))
-            .await
-            .unwrap();
-    for index in 0..4096 {
+    let daemon = Daemon::open(DaemonOptions::headless(temp.path().join("history.db")))
+        .await
+        .unwrap();
+    // Expired-but-unread history fills the pending budget. The oldest item is
+    // critical and must survive the flood.
+    let alarm = daemon
+        .receive_notification(NotificationInput {
+            urgency: Urgency::Critical,
+            ..notification("Alarm", "Oldest critical")
+        })
+        .await
+        .unwrap();
+    daemon
+        .expire_notification(alarm.notification_id)
+        .await
+        .unwrap();
+    let mut pending = Vec::new();
+    for index in 1..4096 {
         let receipt = daemon
             .receive_notification(notification("Mail", format!("Pending {index}")))
             .await
@@ -23,18 +34,46 @@ async fn retained_count_budget_preserves_pending_content_and_exempts_transient_n
             .expire_notification(receipt.notification_id)
             .await
             .unwrap();
+        pending.push(receipt.notification_id);
     }
-    let error = daemon
-        .receive_notification(notification("Mail", "One too many"))
-        .await
-        .unwrap_err();
+    let pending_count = |history: &[canopa_notify::NotificationThread]| {
+        history
+            .iter()
+            .filter(|thread| thread.requires_attention)
+            .count()
+    };
     assert_eq!(
-        error
-            .downcast_ref::<canopa_notify::NotificationLimitExceeded>()
-            .unwrap()
-            .to_string(),
-        "notification retained count limit exceeded"
+        pending_count(&daemon.snapshot().await.unwrap().history),
+        4096
     );
+
+    // Past the limit, new notifications are still accepted.
+    for index in 0..3 {
+        daemon
+            .receive_notification(notification("Mail", format!("Flood {index}")))
+            .await
+            .expect("a full pending budget must not refuse new notifications");
+    }
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(pending_count(&snapshot.history), 4096);
+    let thread = |id| {
+        snapshot
+            .history
+            .iter()
+            .find(|thread| thread.id == id)
+            .unwrap()
+    };
+    assert!(thread(alarm.notification_id).requires_attention);
+    for (index, id) in pending.iter().enumerate() {
+        // The three oldest non-critical items became read archive history.
+        assert_eq!(thread(*id).requires_attention, index >= 3, "item {index}");
+        assert_eq!(
+            thread(*id).status,
+            canopa_notify::NotificationStatus::Expired
+        );
+    }
+
+    // Transient notifications never count against the pending budget.
     let transient = daemon
         .receive_notification(NotificationInput {
             transient: true,
@@ -46,13 +85,49 @@ async fn retained_count_budget_preserves_pending_content_and_exempts_transient_n
         .close_notification(transient.notification_id)
         .await
         .unwrap();
-    let snapshot = daemon.snapshot().await.unwrap();
-    assert_eq!(snapshot.history.len(), 4096);
-    assert!(
-        snapshot
-            .history
-            .iter()
-            .all(|thread| thread.requires_attention)
+    assert_eq!(
+        pending_count(&daemon.snapshot().await.unwrap().history),
+        4096
+    );
+}
+
+#[tokio::test]
+async fn retained_count_budget_refuses_only_when_critical_history_fills_it() {
+    use canopa_notify::{ControlCommand, ControlReply, NotificationCenterAction, NotifyControl};
+    let temp = tempfile::tempdir().unwrap();
+    let daemon =
+        Daemon::open(DaemonOptions::headless(temp.path().join("history.db")).with_history_limit(0))
+            .await
+            .unwrap();
+    for index in 0..4096 {
+        let receipt = daemon
+            .receive_notification(canopa_notify::NotificationInput {
+                urgency: canopa_notify::Urgency::Critical,
+                ..notification("Alarm", format!("Critical {index}"))
+            })
+            .await
+            .unwrap();
+        daemon
+            .expire_notification(receipt.notification_id)
+            .await
+            .unwrap();
+    }
+    let before = daemon.snapshot().await.unwrap();
+    let error = daemon
+        .receive_notification(notification("Mail", "One too many"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error
+            .downcast_ref::<canopa_notify::NotificationLimitExceeded>()
+            .unwrap()
+            .to_string(),
+        "notification retained count limit exceeded"
+    );
+    assert_eq!(
+        daemon.snapshot().await.unwrap(),
+        before,
+        "refusal is atomic"
     );
     let control = NotifyControl::new(daemon.clone());
     let ControlReply::NotificationCenterBatch(batch) = control
@@ -199,10 +274,8 @@ async fn migration_preserves_archive_and_recovers_only_old_active_attention() {
 }
 
 #[tokio::test]
-async fn retained_byte_budget_rejects_atomically_and_acknowledgement_releases_capacity() {
-    use canopa_notify::{
-        ControlCommand, ControlReply, NotificationCenterAction, NotificationInput, NotifyControl,
-    };
+async fn retained_byte_budget_archives_oldest_pending_content_instead_of_refusing() {
+    use canopa_notify::NotificationInput;
     let temp = tempfile::tempdir().unwrap();
     let daemon =
         Daemon::open(DaemonOptions::headless(temp.path().join("history.db")).with_history_limit(0))
@@ -216,68 +289,46 @@ async fn retained_byte_budget_rejects_atomically_and_acknowledgement_releases_ca
         body: "x".repeat(65_536),
         ..notification("Mail", "Large")
     };
-    let mut rejected = false;
-    let mut pending = 1;
+    let mut expired = Vec::new();
     for _ in 0..400 {
-        match daemon.receive_notification(large.clone()).await {
-            Ok(receipt) => {
-                daemon
-                    .expire_notification(receipt.notification_id)
-                    .await
-                    .unwrap();
-                pending += 1;
-            }
-            Err(error) => {
-                assert!(
-                    error
-                        .downcast_ref::<canopa_notify::NotificationLimitExceeded>()
-                        .is_some()
-                );
-                rejected = true;
-                break;
-            }
-        }
+        let receipt = daemon
+            .receive_notification(large.clone())
+            .await
+            .expect("a full byte budget must not refuse new notifications");
+        daemon
+            .expire_notification(receipt.notification_id)
+            .await
+            .unwrap();
+        expired.push(receipt.notification_id);
     }
+    let snapshot = daemon.snapshot().await.unwrap();
+    // With no read archive, archived pending rows are pruned at once.
     assert!(
-        rejected,
+        snapshot.history.len() < 401,
         "pending content must have a byte budget independent of live resources"
     );
-    assert_eq!(daemon.snapshot().await.unwrap().history.len(), pending);
+    assert!(
+        snapshot
+            .history
+            .iter()
+            .all(|thread| thread.requires_attention)
+    );
+    let mut kept: Vec<_> = snapshot
+        .history
+        .iter()
+        .filter(|thread| thread.id != keeper.notification_id)
+        .map(|thread| thread.id)
+        .collect();
+    kept.sort_unstable();
+    let mut newest = expired[expired.len() - kept.len()..].to_vec();
+    newest.sort_unstable();
+    assert_eq!(kept, newest, "only the oldest pending content is archived");
+
+    // Active content is never archived; an active replacement still fits.
     let replacement = NotificationInput {
         replaces_id: Some(keeper.notification_id),
         ..large
     };
-    assert!(
-        daemon
-            .receive_notification(replacement.clone())
-            .await
-            .is_err()
-    );
-    let current = daemon.snapshot().await.unwrap().active;
-    assert_eq!(current[0].accepted_notification.summary, "Keeper");
-    assert_eq!(current[0].revision, 1);
-    let control = NotifyControl::new(daemon.clone());
-    let ControlReply::NotificationCenterProjection(center) = control
-        .execute(ControlCommand::NotificationCenterProjection)
-        .await
-        .unwrap()
-    else {
-        panic!("expected Center");
-    };
-    let expired = center
-        .groups
-        .into_iter()
-        .flat_map(|group| group.items)
-        .find(|item| item.notification_id != keeper.notification_id)
-        .unwrap();
-    control
-        .execute(ControlCommand::InteractWithNotificationCenter {
-            activation_token: None,
-            target: expired.target,
-            action: NotificationCenterAction::Acknowledge,
-        })
-        .await
-        .unwrap();
     assert_eq!(
         daemon
             .receive_notification(replacement)
@@ -286,7 +337,10 @@ async fn retained_byte_budget_rejects_atomically_and_acknowledgement_releases_ca
             .notification_id,
         keeper.notification_id
     );
-    assert_eq!(daemon.snapshot().await.unwrap().history.len(), pending - 1);
+    let current = daemon.snapshot().await.unwrap().active;
+    assert_eq!(current[0].accepted_notification.summary, "Large");
+    assert_eq!(current[0].revision, 2);
+    assert!(current[0].requires_attention);
 }
 
 #[tokio::test]

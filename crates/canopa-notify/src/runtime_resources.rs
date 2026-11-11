@@ -4,7 +4,7 @@
 //! Admission is read-only: a failed lifecycle write needs no reservation rollback.
 use crate::domain::{
     AcceptedNotification, DeliveryOutcome, NotificationBodyImageSource, NotificationBodySegment,
-    NotificationImageData, NotificationVisualReference,
+    NotificationImageData, NotificationVisualReference, Urgency,
 };
 use crate::lifecycle::{LifecycleEffect, LifecycleEffects};
 use crate::{InternalNotificationId, NotificationLimitExceeded};
@@ -18,6 +18,9 @@ struct Entry {
     revision: i64,
     text_bytes: usize,
     image: Option<NotificationImageData>,
+    urgency: Urgency,
+    /// Admission order of the current revision; the lowest is the oldest.
+    sequence: u64,
 }
 
 impl Entry {
@@ -31,33 +34,57 @@ pub(crate) struct RuntimeResources {
     live: HashMap<InternalNotificationId, Entry>,
     text_bytes: usize,
     image_bytes: usize,
+    next_sequence: u64,
 }
 
 impl RuntimeResources {
+    /// Returns the live thread that must be retired first when the live count is
+    /// full: the oldest non-critical revision. The text and image budgets are
+    /// checked as if it were already gone, so an admission that would still fail
+    /// retires nothing. With only critical threads live, the count is refused.
     pub(crate) fn admit(
         &self,
         notification: &AcceptedNotification,
         outcome: DeliveryOutcome,
         image: Option<&NotificationImageData>,
-    ) -> Result<(), NotificationLimitExceeded> {
+    ) -> Result<Option<InternalNotificationId>, NotificationLimitExceeded> {
         if outcome == DeliveryOutcome::Dropped {
-            return Ok(());
+            return Ok(None);
         }
         let previous = notification.replaces_id.and_then(|id| self.live.get(&id));
-        if previous.is_none() && self.live.len() >= LIVE_NOTIFICATION_LIMIT {
-            return Err(NotificationLimitExceeded("live count"));
-        }
-        let text_bytes = self.text_bytes - previous.map_or(0, |entry| entry.text_bytes);
+        let evicted = if previous.is_none() && self.live.len() >= LIVE_NOTIFICATION_LIMIT {
+            Some(
+                self.oldest_non_critical()
+                    .ok_or(NotificationLimitExceeded("live count"))?,
+            )
+        } else {
+            None
+        };
+        let freed = previous
+            .into_iter()
+            .chain(evicted.map(|(_, entry)| entry))
+            .collect::<Vec<_>>();
+        let text_bytes =
+            self.text_bytes - freed.iter().map(|entry| entry.text_bytes).sum::<usize>();
         if accepted_text_bytes(notification) > LIVE_TEXT_LIMIT - text_bytes {
             return Err(NotificationLimitExceeded("live text"));
         }
         if outcome == DeliveryOutcome::Shown {
-            let image_bytes = self.image_bytes - previous.map_or(0, Entry::image_bytes);
+            let image_bytes =
+                self.image_bytes - freed.iter().map(|entry| entry.image_bytes()).sum::<usize>();
             if image.map_or(0, |image| image.data.len()) > LIVE_IMAGE_LIMIT - image_bytes {
                 return Err(NotificationLimitExceeded("live image"));
             }
         }
-        Ok(())
+        Ok(evicted.map(|(id, _)| id))
+    }
+
+    fn oldest_non_critical(&self) -> Option<(InternalNotificationId, &Entry)> {
+        self.live
+            .iter()
+            .filter(|(_, entry)| entry.urgency != Urgency::Critical)
+            .min_by_key(|(_, entry)| entry.sequence)
+            .map(|(id, entry)| (*id, entry))
     }
 
     pub(crate) fn record_receipt(
@@ -79,12 +106,15 @@ impl RuntimeResources {
                     None
                 };
                 self.image_bytes += image.as_ref().map_or(0, |image| image.data.len());
+                self.next_sequence += 1;
                 self.live.insert(
                     thread.id,
                     Entry {
                         revision: thread.revision,
                         text_bytes,
                         image,
+                        urgency: thread.accepted_notification.urgency,
+                        sequence: self.next_sequence,
                     },
                 );
                 break;

@@ -24,7 +24,9 @@ Pending rows stay discoverable until acknowledgement or explicit removal. Admiss
 must bound pending count and serialized bytes separately from live notification
 resources; exceeding that budget rejects the new receipt atomically, preserving
 previously accepted content and replacements. No existing pending item is silently
-evicted to admit another.
+evicted to admit another. [ADR 0054](0054-bounded-retention-of-undisplayed-and-pending-notifications.md)
+supersedes this: over budget, the oldest inactive non-critical pending items are
+archived, and only active or critical pending content refuses the receipt.
 
 Schema migration treats existing active rows as requiring attention and preserves
 existing inactive rows as archive. The earlier version promised historical storage,

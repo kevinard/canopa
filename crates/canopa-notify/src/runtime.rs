@@ -198,11 +198,19 @@ impl NotificationRuntime {
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy();
         let decision = policy.decide(&notification);
-        self.resources.lock().unwrap().admit(
+        let evicted = self.resources.lock().unwrap().admit(
             &notification,
             decision.outcome,
             image_data.as_ref(),
         )?;
+        if let Some(evicted) = evicted {
+            // A full live set retires its oldest non-critical thread the way its
+            // timeout would, instead of refusing every application. Retained
+            // content keeps its attention state in the Center.
+            let effects = self.lifecycle.expire(evicted).await?;
+            self.apply_lifecycle_effects(&effects, None, None).await?;
+            eprintln!("level=warn component=runtime event=live_limit_retired_oldest");
+        }
         self.record_decision(decision.log.clone());
         let sound_app_identity = notification.app_identity.clone();
         let sound_summary = notification.summary.clone();
@@ -984,6 +992,12 @@ impl NotificationRuntime {
             .lock()
             .unwrap()
             .apply(effects.timeout_changes());
+        if self.presentation.presents_banners() {
+            // Silenced revisions never get a banner, so their timeout begins at
+            // acceptance instead of display. Headless Mode displays nothing and
+            // therefore expires nothing, silenced or not.
+            self.start_timeouts_for_presented_revisions(effects.silenced_revisions());
+        }
         {
             let mut banner_state = self.banner_state.lock().unwrap();
             banner_state.apply_changes(effects.banner_changes());
@@ -1069,6 +1083,12 @@ impl NotificationRuntime {
     }
 
     fn sync_presentation(&self) -> anyhow::Result<()> {
+        if self.presentation.presents_banners() {
+            // Overflowed revisions are not promoted when a slot frees, so they
+            // would never be displayed. Their timeout begins when they overflow.
+            let overflow = self.banner_state.lock().unwrap().overflow_revisions();
+            self.start_timeouts_for_presented_revisions(overflow);
+        }
         let (presentation, visible_revisions) = self.banner_presentation_with_visible_revisions();
         let presented_timeout_revisions: Vec<_> =
             self.timeouts.lock().unwrap().pending_in(&visible_revisions);

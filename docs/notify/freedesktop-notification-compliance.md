@@ -104,11 +104,11 @@ These checks run after D-Bus deserialization. Nested unknown hint values, provid
 
 | Live resource | Limit |
 | --- | --- |
-| Retained and transient notification threads, including silenced/DND threads | 1,024 |
+| Retained and transient notification threads, including silenced/DND threads; the oldest non-critical one expires when full | 1,024 |
 | Accepted text, including duplicated identity/body representations, visuals, body-image references/alternatives and actions | 16 MiB |
 | Retained raw-image payloads, including padding/trailing bytes | 64 MiB |
 
-Admission follows the pure delivery-policy decision under the mutation coordinator, before lifecycle writes or receipt registration. Exhaustion returns `LimitsExceeded` without consuming an ID, emitting sender events, evicting existing notifications or altering a rejected replacement. A live replacement gets credit for its previous footprint. Policy/no-op drops need no live capacity; dropped replacements preserve the original footprint. DND/silenced threads consume count/text capacity, but their images are not retained.
+Admission follows the pure delivery-policy decision under the mutation coordinator, before lifecycle writes or receipt registration. Under [ADR 0054](adr/0054-bounded-retention-of-undisplayed-and-pending-notifications.md), a full live count first expires the oldest non-critical live thread (reason 1), checking the text and image budgets as if it were gone. Only an all-critical live set, or the text or image budget, returns `LimitsExceeded`, without consuming an ID, emitting sender events or altering a rejected replacement. A live replacement gets credit for its previous footprint. Policy/no-op drops need no live capacity; dropped replacements preserve the original footprint. DND/silenced threads consume count/text capacity, but their images are not retained.
 
 Only committed lifecycle effects change accounting. Failed storage writes leave it untouched; committed closure, dismissal, expiry and staleness release capacity. Restart-loaded history is stale before the new runtime begins and consumes no live capacity. These are logical resource limits, not a total RSS guarantee: client projections, transport deserialization and provider streams remain separate work; banner decoding and sound have their own policies below. Aggregate image exhaustion rejects the request; it does not silently remove a valid image. No capability, D-Bus signature or schema changes.
 
@@ -182,9 +182,9 @@ An encountered `.disabled` marker stops all lookup and application-default fallb
 [ADR 0028](adr/0028-notification-timeouts-begin-with-banner-display.md) defines the implemented behavior.
 
 - Positive and server-default expiration values begin counting only when the current **Notification Thread** revision first becomes visible in a **Notification Banner**. A zero value never expires.
-- Overflow notifications, **Silenced Notifications**, requests accepted under **Do Not Disturb**, and **Headless Mode** requests that never display a banner remain active without automatic expiration. This deliberately permits a finite **Sender Notification Lifecycle** to remain open until user or sender action.
+- **Silenced Notifications** and requests accepted under **Do Not Disturb** begin their timeout at acceptance, and overflow notifications when they overflow, so they expire like displayed ones ([ADR 0054](adr/0054-bounded-retention-of-undisplayed-and-pending-notifications.md)). **Headless Mode** requests never display a banner and remain active without automatic expiration.
 - Once a **Notification Banner** has displayed, its deadline continues if a critical notification displaces it. Notify does not later promote an overflow notification merely because a banner slot opens.
-- A replacement that revises a **Notification Thread** cancels the prior revision's timeout and begins a fresh timeout only if the replacement revision becomes visible. A dropped replacement preserves the existing thread and timeout.
+- A replacement that revises a **Notification Thread** cancels the prior revision's timeout and begins a fresh timeout when the replacement revision becomes visible, is silenced, or overflows. A dropped replacement preserves the existing thread and timeout.
 - When a displayed notification reaches its deadline, Notify invalidates the active sender ID and emits `NotificationClosed` with reason `1` while retaining an **Expired Notification** in **Notification History**.
 
 [ADR 0033](adr/0033-timeout-registration-without-tombstones.md) replaces permanent cancellation tombstones with one registration per pending or scheduled live revision. Only ordered committed lifecycle effects create registrations. Display callbacks can start a matching pending registration once; they cannot recreate one after cancellation or completion. Scheduling and cancellation share one lock. This preserves stale-revision safety while bounding retained timer records by the 1,024 live-thread admission limit. Completed churn returns the record count to zero, including DND, transient and never-expiring notifications.
@@ -199,7 +199,7 @@ The [window-lifetime follow-up](../../.scratch/notify/freedesktop-completion-rev
 
 [ADR 0041](adr/0041-runtime-only-transient-center-actions.md) supersedes the initial transient-center exclusion without changing the [transient hint's persistence bypass](https://specifications.freedesktop.org/notification/1.3/hints.html). Live transient threads join retained Center items in one date-ordered reading list, with all named actions and default item activation. Retention metadata remains available through the diagnostic Control API; cards use the simplified presentation from [ADR 0052](adr/0052-center-reading-and-settings-views.md). Creation/ID ordering is deterministic and replacement preserves the item identity. Category controls include categories present in live transient items. This is a derived live view, not durable transient history or a claim of the `persistence` capability.
 
-Transient items disappear on dismissal, nonresident action, sender closure, acknowledged-display expiry or restart; resident actions keep them live. Each active item advertises a provider-owned `Open notification` control when a default action exists, otherwise `Dismiss notification`; inactive history has no sender actions; pending retained items offer Mark as read and safe body links remain available. Center opening does not count as banner display, and hidden/DND/overflow items keep their existing timeout policy. History deletion leaves live items alone; clear-active includes transient threads. The retained-history snapshot and legacy active diagnostics remain retained-only; the typed Notification Center projection and provider stream carry live transient content.
+Transient items disappear on dismissal, nonresident action, sender closure, acknowledged-display expiry or restart; resident actions keep them live. Each active item advertises a provider-owned `Open notification` control when a default action exists, otherwise `Dismiss notification`; inactive history has no sender actions; pending retained items offer Mark as read and safe body links remain available. Center opening does not count as banner display; DND/silenced items time out from acceptance and overflow items from overflow (ADR 0054). History deletion leaves live items alone; clear-active includes transient threads. The retained-history snapshot and legacy active diagnostics remain retained-only; the typed Notification Center projection and provider stream carry live transient content.
 
 Evidence: `notification_center_exposes_all_transient_actions_without_retaining_history`, `center_subscription_tracks_transient_replacement_policy_and_cleanup`, and `transient_center_order_survives_other_app_runtime_churn` in `tests/control_api.rs`; the two transient-center/overflow tests in `tests/presentation.rs`; the real provider/private-D-Bus round trip in `tests/transient_center.rs`; and the strengthened two-process `tests/dbus_restart.rs`. These checks do not exercise actual compositor hit regions, layout or assistive technology. Banners expose all accepted named controls in wrapping rows. Oversized cards scroll; the compatible Center provides deliberate keyboard access and bounded pagination without retaining transient content.
 
@@ -287,8 +287,10 @@ Canopa Notify currently advertises no Canopa-specific capabilities and decodes n
 ## Retained attention, body links and accessibility
 
 Pending retained content is independent of sender lifecycle. Admission caps it at
-4,096 notifications and 64 MiB of logical serialized text; exceeding either limit
-rejects the receipt atomically. Archive pruning never evicts pending content.
+4,096 notifications and 64 MiB of logical serialized text. Exceeding either limit
+archives the oldest inactive non-critical pending items as read (ADR 0054); only
+active or critical pending content that fills the budget rejects the receipt
+atomically. Age/count archive pruning never removes pending content.
 Transient notifications bypass durable history. DND and silence preserve pending
 attention; explicit drops do not create history. Resident sender actions acknowledge
 without closing. Following a body link does not acknowledge, close or invoke a
