@@ -17,9 +17,9 @@ mod file_operation_rows;
 mod file_operations;
 mod focus;
 mod folder_views;
-mod folder_watch_ui;
 #[cfg(test)]
 mod folder_watch_tests;
+mod folder_watch_ui;
 mod icons_ui;
 mod jobs_ui;
 mod listing_ui;
