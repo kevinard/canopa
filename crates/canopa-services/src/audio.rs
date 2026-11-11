@@ -45,9 +45,12 @@ mod defaults;
 mod devices;
 mod volume;
 pub use defaults::{DefaultChange, DefaultDevice, Defaults, change_default, watch_defaults};
+mod meter;
 pub use devices::{
-    AudioControl, AudioDevice, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation, monitor,
+    AudioCard, AudioControl, AudioDevice, AudioDeviceId, AudioSnapshot, AudioStream, AudioStreamId,
+    CardProfile, DeviceKind, DeviceOperation, StreamKind, StreamOperation, mixer, monitor,
 };
+pub use meter::level_meter;
 
 /// Why an audio read or command failed. The messages are plain sentences
 /// that panels show as they are.

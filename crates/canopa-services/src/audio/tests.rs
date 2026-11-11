@@ -559,3 +559,156 @@ async fn audio_slider_sets_exact_output_and_input_levels_without_unmuting() {
         }
     }
 }
+
+#[tokio::test]
+async fn the_mixer_lists_and_controls_applications_balance_and_cards() {
+    let server = AudioServer::new().await;
+    server
+        .pactl(&["load-module", "module-null-sink", "sink_name=speakers"])
+        .await;
+    server.set_default_sink("speakers").await;
+    let mut player = server.command("pacat");
+    player
+        .args([
+            "--playback",
+            "--device=speakers",
+            "--client-name=Music Player",
+            "--stream-name=A song",
+        ])
+        .stdin(std::fs::File::open("/dev/zero").unwrap())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut player = player.spawn().unwrap();
+    let (audio, mut state) = mixer(Some(server.server.clone()));
+    let snapshot = devices_matching(&mut state, |s| {
+        s.devices.len() == 1 && s.streams.iter().any(|s| s.application == "Music Player")
+    })
+    .await;
+    let stream = snapshot
+        .streams
+        .iter()
+        .find(|s| s.application == "Music Player")
+        .unwrap()
+        .clone();
+    assert_eq!(stream.id.kind, StreamKind::Playback);
+    assert_eq!(stream.title, "A song");
+    assert!(stream.volume_writable);
+    // Without a session manager, the private server does not link streams.
+    assert!(
+        stream
+            .device
+            .is_none_or(|device| device == snapshot.devices[0].id.index)
+    );
+    audio
+        .apply_stream(
+            stream.id.clone(),
+            StreamOperation::SetVolume { percent: 40 },
+        )
+        .await
+        .unwrap();
+    audio
+        .apply_stream(stream.id.clone(), StreamOperation::SetMuted(true))
+        .await
+        .unwrap();
+    devices_matching(&mut state, |s| {
+        s.streams
+            .iter()
+            .any(|s| s.id == stream.id && s.muted && (s.volume - 40.0).abs() < 0.5)
+    })
+    .await;
+
+    // Balance keeps the loudest channel and lowers the other side.
+    let speakers = snapshot.devices[0].clone();
+    assert_eq!(speakers.balance, Some(0));
+    audio
+        .apply(
+            speakers.id.clone(),
+            DeviceOperation::SetBalance { balance: 50 },
+        )
+        .await
+        .unwrap();
+    let balanced = devices_matching(&mut state, |s| {
+        s.devices[0].balance.is_some_and(|b| (b - 50).abs() <= 1)
+    })
+    .await;
+    assert!((balanced.devices[0].max_volume_percent() - speakers.max_volume_percent()).abs() < 1.0);
+    assert!(matches!(
+        audio
+            .apply(
+                speakers.id.clone(),
+                DeviceOperation::SetBalance { balance: 101 }
+            )
+            .await,
+        Err(AudioError::InvalidChannels)
+    ));
+
+    // The hardware-free server has no cards; a stale card is refused.
+    assert!(balanced.cards.is_empty());
+    let card = AudioCard {
+        index: 7,
+        name: "alsa_card.gone".into(),
+        description: "Gone".into(),
+        profiles: Vec::new(),
+        active: None,
+        server_cookie: speakers.id.server_cookie,
+        session: speakers.id.session,
+    };
+    assert_eq!(
+        audio.set_profile(&card, "off").await,
+        Err(AudioError::DeviceGone)
+    );
+
+    // A finished stream disappears and cannot be changed any more.
+    player.kill().unwrap();
+    player.wait().unwrap();
+    devices_matching(&mut state, |s| s.streams.iter().all(|s| s.id != stream.id)).await;
+    assert_eq!(
+        audio
+            .apply_stream(stream.id.clone(), StreamOperation::SetMuted(false))
+            .await,
+        Err(AudioError::DeviceGone)
+    );
+}
+
+#[tokio::test]
+async fn the_level_meter_reports_peaks_hides_itself_and_stops_when_dropped() {
+    let server = AudioServer::new().await;
+    server
+        .pactl(&["load-module", "module-null-sink", "sink_name=speakers"])
+        .await;
+    let (_audio, mut state) = mixer(Some(server.server.clone()));
+    let mut meter = level_meter(Some(server.server.clone()), Some("speakers.monitor".into()));
+    // The meter records while its receiver lives. The hardware-free server
+    // has no session manager to link it, so it reports no peaks here.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while server
+            .pactl(&["list", "short", "source-outputs"])
+            .await
+            .is_empty()
+        {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the meter opens a recording stream");
+    assert!(
+        meter
+            .borrow_and_update()
+            .is_none_or(|peak| (0.0..=1.0).contains(&peak))
+    );
+    // The meter's own recording stream is not listed as an application.
+    let snapshot = devices_matching(&mut state, |s| !s.devices.is_empty()).await;
+    assert!(snapshot.streams.is_empty(), "{:?}", snapshot.streams);
+    drop(meter);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let outputs = server.pactl(&["list", "short", "source-outputs"]).await;
+            if outputs.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the meter's stream closes after the receiver is dropped");
+}

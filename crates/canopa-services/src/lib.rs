@@ -9,7 +9,7 @@
 //! | --- | --- | --- | --- | --- |
 //! | [`network`] | NetworkManager, systemd-networkd, iwd | [`network::NetworkStatus`], [`network::wifi::WifiSnapshot`] | [`network::status::watch`], `RuntimeBackend::changes` | Wi-Fi scan and connect |
 //! | [`bluetooth`] | BlueZ | [`bluetooth::Snapshot`] | [`bluetooth::watch`] | power, discovery, connect, [`bluetooth::pair`] |
-//! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot`, `audio::Defaults` | `audio::monitor`, `audio::watch_defaults` | volume, mute, default device, `audio::change_default` |
+//! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot` (with streams and cards from `audio::mixer`), `audio::Defaults` | `audio::monitor`, `audio::mixer`, `audio::watch_defaults`, `audio::level_meter` | volume, mute, balance, default device, stream volume and mute, card profiles, `audio::change_default` |
 //! | [`upower`] | UPower | [`upower::DisplayDevice`], [`upower::PowerSupply`] (batteries, health, lid) | [`upower::watch`], [`upower::watch_power_supply`] | – |
 //! | [`power_profiles`] | power-profiles-daemon | [`power_profiles::PowerProfiles`] | [`power_profiles::watch`] | [`power_profiles::PowerProfiles::set`] |
 //! | [`power_switches`] | logind's lid switch | [`power_switches::LidAction`] | – | [`power_switches::handle_lid`] |
