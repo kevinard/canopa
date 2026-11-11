@@ -1,5 +1,6 @@
 //! Settings is a frontend; compositor, wallpaper and idle policy keep their owners.
 pub use registry::Page;
+pub mod bluetooth;
 pub mod display;
 pub mod file_page;
 pub mod input;

@@ -11,6 +11,7 @@ pub enum Page {
     Displays,
     Input,
     Network,
+    Bluetooth,
     Sound,
     Personal,
     Power,
@@ -206,6 +207,36 @@ pub static PAGES: &[Entry] = &[
             "metered",
             "proxy",
             "airplane",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
+        page: Page::Bluetooth,
+        id: "bluetooth",
+        title: "Bluetooth",
+        description: "Pair and connect headphones, keyboards, mice and other wireless devices.",
+        icon: "preferences-system-bluetooth",
+        group: Group::Devices,
+        keywords: &[
+            "wireless",
+            "pair",
+            "pairing",
+            "headphones",
+            "headset",
+            "earbuds",
+            "speaker",
+            "keyboard",
+            "mouse",
+            "controller",
+            "gamepad",
+            "phone",
+            "battery",
+            "discoverable",
+            "visible",
+            "trust",
+            "forget",
+            "pin",
         ],
         kind: Kind::Live,
         hidden: false,
@@ -541,6 +572,7 @@ mod tests {
             "widgets",
             "network",
             "sound",
+            "bluetooth",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -556,6 +588,7 @@ mod tests {
                 Page::Displays,
                 Page::Input,
                 Page::Network,
+                Page::Bluetooth,
                 Page::Sound,
                 Page::Personal,
                 Page::Power,
@@ -592,6 +625,8 @@ mod tests {
         assert_eq!(pages("wireguard"), [Page::Network]);
         assert_eq!(pages("wi-fi")[0], Page::Network);
         assert_eq!(pages("lid"), [Page::Power]);
+        assert_eq!(pages("pair")[0], Page::Bluetooth);
+        assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
         // A title match ranks above keyword matches on other pages.
         let keyboard = pages("keyboard");

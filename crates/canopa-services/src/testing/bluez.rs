@@ -1,5 +1,5 @@
 //! A fake BlueZ with one adapter and one device that pairs after the agent
-//! confirms passkey 42.
+//! confirms passkey 42, reports an 80 % battery and can be forgotten.
 use super::TestBus;
 use crate::bluetooth::{AGENT_PATH, SERVICE};
 use std::sync::{
@@ -19,6 +19,10 @@ pub struct BluezState {
     pub paired: AtomicBool,
     pub connected: AtomicBool,
     pub trusted: AtomicBool,
+    pub blocked: AtomicBool,
+    pub discoverable: AtomicBool,
+    /// The device was removed through `Adapter1.RemoveDevice`.
+    pub removed: AtomicBool,
     /// The unique name that registered the pairing agent.
     pub agent_owner: Mutex<Option<String>>,
 }
@@ -26,6 +30,7 @@ pub struct BluezState {
 struct Manager(Arc<BluezState>);
 struct Adapter(Arc<BluezState>);
 struct Device(Arc<BluezState>);
+struct Battery;
 
 #[zbus::interface(name = "org.bluez.AgentManager1")]
 impl Manager {
@@ -51,6 +56,21 @@ impl Adapter {
     fn stop_discovery(&self) {
         self.0.scanning.store(false, SeqCst);
     }
+    async fn remove_device(
+        &self,
+        device: OwnedObjectPath,
+        #[zbus(object_server)] server: &zbus::ObjectServer,
+    ) -> fdo::Result<()> {
+        if device.as_str() != DEVICE_PATH || self.0.removed.load(SeqCst) {
+            return Err(fdo::Error::Failed("org.bluez.Error.DoesNotExist".into()));
+        }
+        self.0.removed.store(true, SeqCst);
+        self.0.paired.store(false, SeqCst);
+        self.0.connected.store(false, SeqCst);
+        server.remove::<Device, _>(DEVICE_PATH).await?;
+        server.remove::<Battery, _>(DEVICE_PATH).await?;
+        Ok(())
+    }
     #[zbus(property)]
     fn powered(&self) -> bool {
         self.0.powered.load(SeqCst)
@@ -60,8 +80,32 @@ impl Adapter {
         self.0.powered.store(powered, SeqCst);
     }
     #[zbus(property)]
+    fn discoverable(&self) -> bool {
+        self.0.discoverable.load(SeqCst)
+    }
+    #[zbus(property)]
+    fn set_discoverable(&self, discoverable: bool) {
+        self.0.discoverable.store(discoverable, SeqCst);
+    }
+    #[zbus(property)]
+    fn discovering(&self) -> bool {
+        self.0.scanning.load(SeqCst)
+    }
+    #[zbus(property)]
+    fn address(&self) -> &str {
+        "AA:BB:CC:DD:EE:FF"
+    }
+    #[zbus(property)]
     fn alias(&self) -> &str {
         "Test adapter"
+    }
+}
+
+#[zbus::interface(name = "org.bluez.Battery1")]
+impl Battery {
+    #[zbus(property)]
+    fn percentage(&self) -> u8 {
+        80
     }
 }
 
@@ -121,6 +165,18 @@ impl Device {
     fn set_trusted(&self, trusted: bool) {
         self.0.trusted.store(trusted, SeqCst);
     }
+    #[zbus(property)]
+    fn blocked(&self) -> bool {
+        self.0.blocked.load(SeqCst)
+    }
+    #[zbus(property)]
+    fn set_blocked(&self, blocked: bool) {
+        self.0.blocked.store(blocked, SeqCst);
+    }
+    #[zbus(property)]
+    fn icon(&self) -> &str {
+        "audio-headphones"
+    }
 }
 
 /// BlueZ on a private bus, with an object manager at `/`.
@@ -143,6 +199,8 @@ impl FakeBluez {
             .serve_at(ADAPTER_PATH, Adapter(state.clone()))
             .unwrap()
             .serve_at(DEVICE_PATH, Device(state.clone()))
+            .unwrap()
+            .serve_at(DEVICE_PATH, Battery)
             .unwrap()
             .name(SERVICE)
             .unwrap()

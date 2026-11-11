@@ -97,3 +97,61 @@ fn replies_follow_bluez_formats() {
     );
     assert_eq!(Question::Authorize.accepts(""), Some(String::new()));
 }
+
+#[tokio::test]
+async fn devices_report_kind_battery_and_can_be_trusted_and_forgotten() {
+    let bus = TestBus::new();
+    let bluez = FakeBluez::serve(&bus, true).await;
+    let client = bus.connect().await;
+    let snapshot = Snapshot::query(&client).await.unwrap();
+    let owner = snapshot.owner.clone().unwrap();
+    let adapter = &snapshot.adapters[0];
+    assert_eq!(adapter.address, "AA:BB:CC:DD:EE:FF");
+    assert!(!adapter.discoverable && !adapter.discovering);
+    let device = &snapshot.devices[0];
+    assert_eq!(device.address, "00:11:22:33:44:55");
+    assert_eq!(device.kind, DeviceKind::Headphones);
+    assert_eq!(device.kind.icon(), "audio-headphones");
+    assert_eq!(device.battery, Some(80));
+    assert!(!device.trusted && !device.blocked);
+
+    set_discoverable(&client, &owner, ADAPTER_PATH, true)
+        .await
+        .unwrap();
+    set_trusted(&client, &owner, DEVICE_PATH, true)
+        .await
+        .unwrap();
+    set_blocked(&client, &owner, DEVICE_PATH, true)
+        .await
+        .unwrap();
+    start_discovery(&client, &owner, ADAPTER_PATH)
+        .await
+        .unwrap();
+    let snapshot = Snapshot::query(&client).await.unwrap();
+    assert!(snapshot.adapters[0].discoverable && snapshot.adapters[0].discovering);
+    assert!(snapshot.devices[0].trusted && snapshot.devices[0].blocked);
+
+    remove_device(&client, &owner, ADAPTER_PATH, DEVICE_PATH)
+        .await
+        .unwrap();
+    assert!(bluez.state.removed.load(SeqCst));
+    assert!(Snapshot::query(&client).await.unwrap().devices.is_empty());
+    // A device that is gone is refused, not an outage.
+    assert!(matches!(
+        remove_device(&client, &owner, ADAPTER_PATH, DEVICE_PATH).await,
+        Err(Error::Refused(_))
+    ));
+}
+
+#[test]
+fn icon_names_map_to_kinds() {
+    assert_eq!(DeviceKind::from_icon("audio-headset"), DeviceKind::Headset);
+    assert_eq!(DeviceKind::from_icon("input-mouse"), DeviceKind::Mouse);
+    assert_eq!(DeviceKind::from_icon("input-gaming"), DeviceKind::Gamepad);
+    assert_eq!(DeviceKind::from_icon("phone"), DeviceKind::Phone);
+    assert_eq!(DeviceKind::from_icon(""), DeviceKind::Other);
+    assert_eq!(
+        DeviceKind::from_icon("audio-x-unknown"),
+        DeviceKind::Speaker
+    );
+}

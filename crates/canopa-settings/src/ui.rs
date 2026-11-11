@@ -1,4 +1,5 @@
 //! Ordinary settings window with shared controls and bounded background work.
+mod bluetooth;
 mod focus;
 mod launcher;
 #[cfg(debug_assertions)]
@@ -121,6 +122,8 @@ enum Message {
     Power(crate::live::Event<crate::power::PowerService>),
     Sound(crate::live::Event<crate::sound::SoundService>),
     Network(crate::live::Event<crate::network::NetworkService>),
+    Bluetooth(crate::live::Event<crate::bluetooth::BluetoothService>),
+    BluetoothForm(bluetooth::Edit),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -164,6 +167,9 @@ struct State {
     sound: sound::SoundPage,
     network: network::NetworkPage,
     network_forms: network::NetworkForms,
+    bluetooth: bluetooth::BluetoothPage,
+    /// The PIN or passkey being typed for a pairing question.
+    bluetooth_entry: String,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -260,6 +266,8 @@ impl State {
             sound: live_page::LivePage::new(Default::default()),
             network: live_page::LivePage::new(Default::default()),
             network_forms: Default::default(),
+            bluetooth: live_page::LivePage::new(Default::default()),
+            bluetooth_entry: String::new(),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -683,7 +691,7 @@ impl State {
                 match self.page {
                     #[cfg(debug_assertions)]
                     Page::LiveExample => self.busy = false,
-                    Page::Sound | Page::Network => self.busy = false,
+                    Page::Sound | Page::Network | Page::Bluetooth => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -812,6 +820,8 @@ impl State {
             Message::Sound(event) => return self.sound.update(event, sound::message),
             Message::Network(event) => return self.network.update(event, network::message),
             Message::NetworkForm(edit) => return self.network_edit(edit),
+            Message::Bluetooth(event) => return self.bluetooth.update(event, bluetooth::message),
+            Message::BluetoothForm(edit) => return self.bluetooth_edit(edit),
             Message::Level(level) if self.page == Page::Sound => self.input_level = level,
             Message::AlertSounds(enabled) if !self.busy && self.trial.is_none() => {
                 self.busy = true;
@@ -1037,6 +1047,9 @@ impl State {
             Page::Network => self
                 .network
                 .update(crate::live::Event::Reload, network::message),
+            Page::Bluetooth => self
+                .bluetooth
+                .update(crate::live::Event::Reload, bluetooth::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -1057,6 +1070,9 @@ impl State {
         }
         if self.page == Page::Network {
             subscriptions.push(self.network.subscription(Message::Network));
+        }
+        if self.page == Page::Bluetooth {
+            subscriptions.push(self.bluetooth.subscription(Message::Bluetooth));
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1127,6 +1143,7 @@ impl State {
             Page::Input => self.input_view(),
             Page::Sound => self.sound_view(),
             Page::Network => self.network_view(),
+            Page::Bluetooth => self.bluetooth_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

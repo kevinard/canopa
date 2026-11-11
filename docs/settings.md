@@ -9,15 +9,13 @@ The sidebar groups pages under Devices, Appearance, System and Desktop. Type in
 `touchpad`, `wallpaper` or `suspend`; Enter opens the best match. Ctrl+F moves to
 the search field. Tab/Shift+Tab navigate controls. On a sidebar page, Up and Down
 move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
-from anywhere. Ctrl+1 through Ctrl+9 open the pages in sidebar order (currently
-Ctrl+1 Displays, Ctrl+2 Keyboard & pointer, Ctrl+3 Network, Ctrl+4 Sound,
-Ctrl+5 Personalization, Ctrl+6 Power, Ctrl+7 Launcher, Ctrl+8 Shortcuts and
-Ctrl+9 Widgets), and Ctrl+S saves the selected page.
+from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
+order, and Ctrl+S saves the selected page.
 
-Network and Sound are live pages: each change applies at once, without Save,
-and shows its own progress or error with Retry. When NetworkManager or the
-audio server is not running, the page says so and reconnects by itself when
-it returns.
+Network, Bluetooth and Sound are live pages: each change applies at once,
+without Save, and shows its own progress or error with Retry. When the service
+behind a page (NetworkManager, BlueZ, the audio server) is not running, the
+page says so and reconnects by itself when it returns.
 
 Only one Settings window runs at a time. Opening Settings again, from the
 launcher, a notification or the command line, brings the existing window
@@ -132,6 +130,24 @@ top of the page while Settings is open. Settings passes the answer to
 NetworkManager and keeps nothing; see
 [ADR 0139](adr/0139-network-secrets-through-a-settings-agent.md). Changes that
 need permission ask through the polkit agent.
+
+## Bluetooth
+
+The Bluetooth page follows BlueZ. Each adapter has its switch and **Visible to
+nearby devices**, which lets phones and computers find this one (BlueZ hides it
+again after its discoverable timeout). While the page is open, Settings searches
+for nearby devices; leaving the page stops the search.
+
+**My devices** lists paired devices with their kind, connection state and, when
+the device reports it, its battery level: **Connect** or **Disconnect**,
+**Allow it to connect without asking** (BlueZ's trust), and **Forget**, which
+removes the pairing. **Nearby devices** lists devices in pairing mode; **Pair**
+pairs, trusts and connects one. When the device asks, the question appears at
+the top: confirm that both show the same six-digit code, type a PIN or passkey
+shown by the device, or type the code Settings shows on the device's keyboard.
+**Cancel** stops the attempt. Settings answers only BlueZ's questions about
+the device you chose, through its own agent for that attempt. A headset's audio
+profile is chosen on the Sound page.
 
 ## Sound
 

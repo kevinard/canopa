@@ -40,6 +40,7 @@ use zbus::{
 pub const SERVICE: &str = "org.bluez";
 pub const ADAPTER: &str = "org.bluez.Adapter1";
 pub const DEVICE: &str = "org.bluez.Device1";
+pub const BATTERY: &str = "org.bluez.Battery1";
 /// Where [`pair`] exports its agent on its private connection.
 pub const AGENT_PATH: &str = "/org/canopa/BluetoothAgent";
 const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
@@ -78,6 +79,74 @@ pub struct Adapter {
     pub powered: bool,
     /// The alias without control characters, or the object path.
     pub label: String,
+    /// The adapter's Bluetooth address, when BlueZ reports one.
+    pub address: String,
+    /// Visible to other devices searching nearby.
+    pub discoverable: bool,
+    /// Some client is searching for devices on this adapter.
+    pub discovering: bool,
+}
+
+/// What kind of device BlueZ says this is, from its freedesktop `Icon` name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum DeviceKind {
+    Headphones,
+    Headset,
+    Speaker,
+    Keyboard,
+    Mouse,
+    Gamepad,
+    Tablet,
+    Phone,
+    Computer,
+    Camera,
+    Printer,
+    Network,
+    #[default]
+    Other,
+}
+
+impl DeviceKind {
+    /// The kind for a BlueZ `Icon` property (`audio-headset`, `input-mouse`…).
+    pub fn from_icon(icon: &str) -> Self {
+        match icon {
+            "audio-headphones" => Self::Headphones,
+            "audio-headset" => Self::Headset,
+            "audio-card" | "audio-speakers" => Self::Speaker,
+            "input-keyboard" => Self::Keyboard,
+            "input-mouse" => Self::Mouse,
+            "input-gaming" => Self::Gamepad,
+            "input-tablet" => Self::Tablet,
+            "phone" => Self::Phone,
+            "computer" => Self::Computer,
+            "camera-photo" | "camera-video" | "camera-web" => Self::Camera,
+            "printer" => Self::Printer,
+            "network-wireless" | "modem" => Self::Network,
+            "multimedia-player" => Self::Speaker,
+            _ if icon.starts_with("audio-") => Self::Speaker,
+            _ if icon.starts_with("input-") => Self::Keyboard,
+            _ => Self::Other,
+        }
+    }
+
+    /// A freedesktop icon name for this kind.
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Headphones => "audio-headphones",
+            Self::Headset => "audio-headset",
+            Self::Speaker => "audio-speakers",
+            Self::Keyboard => "input-keyboard",
+            Self::Mouse => "input-mouse",
+            Self::Gamepad => "input-gaming",
+            Self::Tablet => "input-tablet",
+            Self::Phone => "phone",
+            Self::Computer => "computer",
+            Self::Camera => "camera-photo",
+            Self::Printer => "printer",
+            Self::Network => "network-wireless",
+            Self::Other => "bluetooth",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +157,17 @@ pub struct Device {
     pub label: String,
     pub paired: bool,
     pub connected: bool,
+    /// The device's Bluetooth address.
+    pub address: String,
+    /// Connections from this device are accepted without asking.
+    pub trusted: bool,
+    /// Connections from this device are refused.
+    pub blocked: bool,
+    /// From the BlueZ `Icon` property.
+    pub kind: DeviceKind,
+    /// The battery level in percent, when the device reports one
+    /// (`org.bluez.Battery1`).
+    pub battery: Option<u8>,
 }
 
 /// Adapters by path, and the devices of powered adapters, connected first,
@@ -117,11 +197,19 @@ impl Snapshot {
         let mut adapters = Vec::new();
         let mut devices = Vec::new();
         for (path, interfaces) in objects {
-            for (interface, properties) in interfaces {
+            let battery = interfaces
+                .get(BATTERY)
+                .and_then(|properties| properties.get("Percentage"))
+                .and_then(|value| u8::try_from(value).ok())
+                .map(|percent| percent.min(100));
+            for (interface, properties) in &interfaces {
                 match interface.as_str() {
                     ADAPTER => adapters.push(Adapter {
-                        label: display_name(&properties, path.as_str()),
-                        powered: flag(&properties, "Powered"),
+                        label: display_name(properties, path.as_str()),
+                        powered: flag(properties, "Powered"),
+                        address: string(properties, "Address").unwrap_or_default(),
+                        discoverable: flag(properties, "Discoverable"),
+                        discovering: flag(properties, "Discovering"),
                         path: path.clone(),
                     }),
                     DEVICE => {
@@ -131,14 +219,25 @@ impl Snapshot {
                         else {
                             continue;
                         };
-                        let fallback = string(&properties, "Address")
-                            .unwrap_or_else(|| "Unnamed device".into());
+                        let address = string(properties, "Address").unwrap_or_default();
+                        let fallback = if address.is_empty() {
+                            "Unnamed device".to_owned()
+                        } else {
+                            address.clone()
+                        };
                         devices.push(Device {
-                            label: display_name(&properties, &fallback),
+                            label: display_name(properties, &fallback),
                             adapter,
                             path: path.clone(),
-                            paired: flag(&properties, "Paired"),
-                            connected: flag(&properties, "Connected"),
+                            paired: flag(properties, "Paired"),
+                            connected: flag(properties, "Connected"),
+                            address,
+                            trusted: flag(properties, "Trusted"),
+                            blocked: flag(properties, "Blocked"),
+                            kind: DeviceKind::from_icon(
+                                &string(properties, "Icon").unwrap_or_default(),
+                            ),
+                            battery,
                         });
                     }
                     _ => {}
@@ -212,6 +311,63 @@ pub async fn set_powered(
     proxy(connection, owner, adapter, ADAPTER)
         .await?
         .set_property("Powered", powered)
+        .await?;
+    Ok(())
+}
+
+/// Make an adapter visible to devices searching nearby, or hide it. BlueZ
+/// hides it again after the adapter's `DiscoverableTimeout`.
+pub async fn set_discoverable(
+    connection: &Connection,
+    owner: &OwnedUniqueName,
+    adapter: &str,
+    discoverable: bool,
+) -> Result<(), Error> {
+    proxy(connection, owner, adapter, ADAPTER)
+        .await?
+        .set_property("Discoverable", discoverable)
+        .await?;
+    Ok(())
+}
+
+/// Forget a device: BlueZ removes its pairing and its object.
+pub async fn remove_device(
+    connection: &Connection,
+    owner: &OwnedUniqueName,
+    adapter: &str,
+    device: &str,
+) -> Result<(), Error> {
+    let device = Path::try_from(device).map_err(|_| Error::Invalid("device path"))?;
+    Ok(proxy(connection, owner, adapter, ADAPTER)
+        .await?
+        .call::<_, _, ()>("RemoveDevice", &(device,))
+        .await?)
+}
+
+/// Accept this device's connections without asking, or stop doing so.
+pub async fn set_trusted(
+    connection: &Connection,
+    owner: &OwnedUniqueName,
+    device: &str,
+    trusted: bool,
+) -> Result<(), Error> {
+    proxy(connection, owner, device, DEVICE)
+        .await?
+        .set_property("Trusted", trusted)
+        .await?;
+    Ok(())
+}
+
+/// Refuse this device's connections, or allow them again.
+pub async fn set_blocked(
+    connection: &Connection,
+    owner: &OwnedUniqueName,
+    device: &str,
+    blocked: bool,
+) -> Result<(), Error> {
+    proxy(connection, owner, device, DEVICE)
+        .await?
+        .set_property("Blocked", blocked)
         .await?;
     Ok(())
 }
