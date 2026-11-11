@@ -339,6 +339,7 @@ mod tests {
             instance: [2; 16],
             requires_attention: 9,
             do_not_disturb: true,
+            ..Default::default()
         };
         for reading in [Some(summary), None, Some(summary)] {
             let _ = app.handle_module_runtime_event(
@@ -366,6 +367,7 @@ mod tests {
             instance: [1; 16],
             requires_attention: 42,
             do_not_disturb: true,
+            ..Default::default()
         };
         runtime.handle_notifications_event(Some(first));
         assert!(matches!(
@@ -376,6 +378,7 @@ mod tests {
             instance: [2; 16],
             requires_attention: 1,
             do_not_disturb: false,
+            ..Default::default()
         };
         assert_eq!(
             runtime.handle_notifications_event(Some(new)),

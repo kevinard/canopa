@@ -23,6 +23,7 @@ mod notification_receipt;
 mod packaging;
 mod panel_provider;
 mod policy;
+mod preferences;
 mod presentation;
 mod provider_resources;
 mod renderer_startup;

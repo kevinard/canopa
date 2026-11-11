@@ -302,3 +302,58 @@ async fn open_graphical_daemon(sound: RecordingSoundPresenter) -> GraphicalDaemo
         daemon,
     }
 }
+
+#[tokio::test]
+async fn app_sound_preference_mutes_only_that_application_and_persists() {
+    let sound = RecordingSoundPresenter::available();
+    let temp = tempfile::tempdir().unwrap();
+    let database = temp.path().join("history.db");
+    let open = |sound: RecordingSoundPresenter| {
+        Daemon::open(
+            DaemonOptions::graphical(database.clone(), NoopBannerPresenter)
+                .with_sound_presenter(sound),
+        )
+    };
+    let daemon = open(sound.clone()).await.unwrap();
+    daemon
+        .set_app_preferences(
+            "Chat",
+            canopa_notify::AppPreferences {
+                sound: Some(false),
+                lock_screen: None,
+            },
+        )
+        .await
+        .unwrap();
+    let muted = daemon
+        .receive_notification(notification("Chat", "Quiet"))
+        .await
+        .unwrap();
+    assert_eq!(
+        muted.delivery_outcome,
+        DeliveryOutcome::Shown,
+        "banner still shown"
+    );
+    daemon
+        .receive_notification(notification("Mail", "Loud"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sound
+            .playback()
+            .iter()
+            .map(|p| p.app_identity.as_str())
+            .collect::<Vec<_>>(),
+        ["Mail"]
+    );
+    daemon.shutdown().await.unwrap();
+    drop(daemon);
+
+    let restarted_sound = RecordingSoundPresenter::available();
+    let restarted = open(restarted_sound.clone()).await.unwrap();
+    restarted
+        .receive_notification(notification("Chat", "Still quiet"))
+        .await
+        .unwrap();
+    assert!(restarted_sound.playback().is_empty());
+}

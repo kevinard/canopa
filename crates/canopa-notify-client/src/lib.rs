@@ -6,16 +6,83 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 pub const SUMMARY_REQUEST: &str = "summary-subscribe-v1\n";
 pub const MAX_SUMMARY_BYTES: usize = 512;
+/// Read-only lock-screen feed for the session locker. See [`LockScreenSnapshot`].
+pub const LOCK_SCREEN_REQUEST: &str = "lock-screen-subscribe-v1\n";
+pub const MAX_LOCK_SCREEN_BYTES: usize = 4096;
+/// At most this many entries cross the lock-screen feed.
+pub const MAX_LOCK_SCREEN_ENTRIES: usize = 4;
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(900);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Summary {
     /// Changes on every daemon start. This snapshot never authorizes item actions.
     pub instance: [u8; 16],
     pub requires_attention: u64,
+    /// Effective Do Not Disturb, including timers and schedules.
     pub do_not_disturb: bool,
+    /// Why Do Not Disturb is active; absent when it is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub do_not_disturb_reason: Option<DoNotDisturbReason>,
+    /// Unix milliseconds when the current Do Not Disturb ends by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub do_not_disturb_until: Option<i64>,
+    /// Automatic banner suppression currently in effect, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppression: Option<Suppression>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DoNotDisturbReason {
+    /// Turned on until turned off.
+    Manual,
+    /// Turned on for a duration or until a time.
+    Timer,
+    /// Inside the daily schedule.
+    Schedule,
+}
+
+/// Automatic suppression. Screen sharing takes precedence over fullscreen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Suppression {
+    /// An application is fullscreen on the focused output.
+    Fullscreen,
+    /// An output or window is being shared or recorded; content is hidden.
+    ScreenSharing,
+}
+
+/// The lock-screen feed's complete current state. Notify applies the lock-screen
+/// policy before anything crosses this interface: entries carry display text
+/// only, never actions, targets, bodies or IDs, and hidden content never leaves
+/// Notify. The locker renders it read-only.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockScreenSnapshot {
+    pub entries: Vec<LockScreenEntry>,
+    /// Matching notifications beyond the bounded entries.
+    #[serde(default)]
+    pub more: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LockScreenEntry {
+    /// Application display name.
+    pub app: String,
+    /// The summary when the app's rule allows content, otherwise a generic line.
+    pub text: String,
+    #[serde(default)]
+    pub critical: bool,
+}
+
+impl LockScreenEntry {
+    /// "App — text", bounded to one display line.
+    pub fn line(&self) -> String {
+        format!("{} — {}", self.app, self.text)
+    }
 }
 
 /// The session socket used by the daemon, bar and built-in Center. Explicit
@@ -61,28 +128,72 @@ impl SummarySubscription {
     pub async fn next(&mut self) -> anyhow::Result<Option<Summary>> {
         // An idle stream has no deadline. Once a frame begins, a partial frame
         // cannot keep stale availability displayed indefinitely.
-        let mut first = [0];
-        if self.reader.read(&mut first).await? == 0 {
+        let Some(bytes) = read_frame(&mut self.reader, MAX_SUMMARY_BYTES).await? else {
             return Ok(None);
-        }
-        anyhow::ensure!(first[0] != b'\n', "empty notification summary frame");
-        let mut bytes = Vec::with_capacity(MAX_SUMMARY_BYTES + 1);
-        bytes.push(first[0]);
-        tokio::time::timeout(
-            FRAME_TIMEOUT,
-            (&mut self.reader)
-                .take(MAX_SUMMARY_BYTES as u64)
-                .read_until(b'\n', &mut bytes),
-        )
-        .await??;
-        anyhow::ensure!(
-            bytes.len() <= MAX_SUMMARY_BYTES && bytes.last() == Some(&b'\n'),
-            "invalid notification summary frame"
-        );
+        };
         serde_json::from_slice(&bytes)
             .map(Some)
             .map_err(|_| anyhow::anyhow!("invalid notification summary"))
     }
+}
+
+/// Read-only lock-screen subscription with the same framing and reconnect
+/// contract as [`SummarySubscription`].
+pub struct LockScreenSubscription {
+    reader: BufReader<tokio::net::UnixStream>,
+}
+
+impl LockScreenSubscription {
+    pub async fn connect(socket: &Path) -> anyhow::Result<(Self, LockScreenSnapshot)> {
+        tokio::time::timeout(CONNECT_TIMEOUT, async {
+            let mut stream = tokio::net::UnixStream::connect(socket).await?;
+            stream.write_all(LOCK_SCREEN_REQUEST.as_bytes()).await?;
+            let mut subscription = Self {
+                reader: BufReader::new(stream),
+            };
+            let snapshot = subscription.next().await?.ok_or_else(|| {
+                anyhow::anyhow!("lock-screen notifications ended before their snapshot")
+            })?;
+            Ok((subscription, snapshot))
+        })
+        .await?
+    }
+
+    pub async fn next(&mut self) -> anyhow::Result<Option<LockScreenSnapshot>> {
+        let Some(bytes) = read_frame(&mut self.reader, MAX_LOCK_SCREEN_BYTES).await? else {
+            return Ok(None);
+        };
+        let snapshot: LockScreenSnapshot = serde_json::from_slice(&bytes)
+            .map_err(|_| anyhow::anyhow!("invalid lock-screen notifications"))?;
+        anyhow::ensure!(
+            snapshot.entries.len() <= MAX_LOCK_SCREEN_ENTRIES,
+            "too many lock-screen notifications"
+        );
+        Ok(Some(snapshot))
+    }
+}
+
+async fn read_frame(
+    reader: &mut BufReader<tokio::net::UnixStream>,
+    maximum: usize,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let mut first = [0];
+    if reader.read(&mut first).await? == 0 {
+        return Ok(None);
+    }
+    anyhow::ensure!(first[0] != b'\n', "empty notification frame");
+    let mut bytes = Vec::with_capacity(maximum + 1);
+    bytes.push(first[0]);
+    tokio::time::timeout(
+        FRAME_TIMEOUT,
+        reader.take(maximum as u64).read_until(b'\n', &mut bytes),
+    )
+    .await??;
+    anyhow::ensure!(
+        bytes.len() <= maximum && bytes.last() == Some(&b'\n'),
+        "invalid notification frame"
+    );
+    Ok(Some(bytes))
 }
 
 #[cfg(test)]
@@ -108,6 +219,9 @@ mod tests {
             instance: [9; 16],
             requires_attention: 42,
             do_not_disturb: true,
+            do_not_disturb_reason: Some(DoNotDisturbReason::Timer),
+            do_not_disturb_until: Some(1_700_000_000_000),
+            suppression: Some(Suppression::ScreenSharing),
         };
         let peer = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();

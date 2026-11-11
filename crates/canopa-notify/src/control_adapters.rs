@@ -87,6 +87,14 @@ impl CtlRequest {
                             ControlReply::DoNotDisturb(_)
                         )
                         | (
+                            ControlCommand::RequestDoNotDisturb { .. },
+                            ControlReply::DoNotDisturbStatus(_)
+                        )
+                        | (
+                            ControlCommand::NotificationPreferences,
+                            ControlReply::NotificationPreferences(_)
+                        )
+                        | (
                             ControlCommand::ActiveNotifications,
                             ControlReply::ActiveNotifications(_)
                         )
@@ -111,6 +119,8 @@ impl CtlRequest {
                                 | ControlCommand::ReloadConfigurationSource { .. }
                                 | ControlCommand::SetAppPermission { .. }
                                 | ControlCommand::SetCategoryPermission { .. }
+                                | ControlCommand::SetDoNotDisturbPreferences { .. }
+                                | ControlCommand::SetAppPreferences { .. }
                                 | ControlCommand::ClearActiveNotifications
                                 | ControlCommand::DeleteNotificationHistory
                                 | ControlCommand::InvokeNotificationAction { .. }
@@ -125,6 +135,10 @@ impl CtlRequest {
                         Ok(if enabled { "on\n" } else { "off\n" }.into())
                     }
                     ControlReply::CommandApplied => Ok("ok\n".into()),
+                    ControlReply::DoNotDisturbStatus(status) => Ok(dnd_status_text(&status)),
+                    ControlReply::NotificationPreferences(preferences) => {
+                        Ok(serde_json::to_string_pretty(&preferences)? + "\n")
+                    }
                     ControlReply::ClearPartiallyApplied { dismissed } => anyhow::bail!(
                         "clear stopped after {dismissed} committed dismissals; remaining notifications were not cleared"
                     ),
@@ -136,6 +150,27 @@ impl CtlRequest {
             }
             _ => Err(invalid_control_reply()),
         }
+    }
+}
+
+/// `off`, `on`, `on until 21:00` or `on (schedule) until 07:00`, in local time.
+pub(crate) fn dnd_status_text(status: &canopa_notify::DoNotDisturbStatus) -> String {
+    if !status.active {
+        return "off\n".into();
+    }
+    let reason = match status.reason {
+        Some(canopa_notify::DoNotDisturbReason::Schedule) => " (schedule)",
+        _ => "",
+    };
+    match status
+        .until
+        .and_then(chrono::DateTime::from_timestamp_millis)
+    {
+        Some(until) => format!(
+            "on{reason} until {}\n",
+            until.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M")
+        ),
+        None => format!("on{reason}\n"),
     }
 }
 

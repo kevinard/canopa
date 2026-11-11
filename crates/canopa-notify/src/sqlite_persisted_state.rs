@@ -746,6 +746,57 @@ impl SqlitePersistedState {
         Ok(value.as_deref() == Some("true"))
     }
 
+    /// Daemon-owned JSON settings (ADR 0055). Absent keys read as None.
+    pub(crate) async fn metadata_json<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> anyhow::Result<Option<T>> {
+        let value: Option<String> =
+            sqlx::query_scalar("SELECT value FROM daemon_metadata WHERE key = ?1")
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await?;
+        value
+            .map(|value| {
+                serde_json::from_str(&value)
+                    .map_err(|_| anyhow::anyhow!("invalid stored notification setting {key}"))
+            })
+            .transpose()
+    }
+
+    /// Write or remove several settings in one transaction.
+    pub(crate) async fn set_metadata(
+        &self,
+        values: &[(&str, Option<String>)],
+    ) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        for (key, value) in values {
+            match value {
+                Some(value) => {
+                    sqlx::query(
+                        r#"
+                        INSERT INTO daemon_metadata (key, value)
+                        VALUES (?1, ?2)
+                        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                        "#,
+                    )
+                    .bind(key)
+                    .bind(value)
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+                None => {
+                    sqlx::query("DELETE FROM daemon_metadata WHERE key = ?1")
+                        .bind(key)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub(crate) async fn upsert_user_rule(&self, rule: &UserRule) -> anyhow::Result<()> {
         rule.validate()?;
         sqlx::query(

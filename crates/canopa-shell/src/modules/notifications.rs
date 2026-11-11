@@ -7,7 +7,37 @@ use crate::modules::data_source::{
     ModuleDataSourceIdentity, ModuleDataSourceMapper, ModuleDataSourceState, ModuleInstanceOutcome,
 };
 use crate::modules::{Module, ModuleId, ModuleKind, ModuleState};
-use canopa_notify_client::{Summary, SummarySubscription};
+use canopa_notify_client::{DoNotDisturbReason, Summary, SummarySubscription, Suppression};
+
+/// "Until 08:00", "Scheduled until 07:00" or "Until turned off", in local time.
+fn dnd_detail(summary: &Summary) -> Option<String> {
+    if !summary.do_not_disturb {
+        return None;
+    }
+    let until = summary
+        .do_not_disturb_until
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|until| {
+            let until = until.with_timezone(&chrono::Local);
+            if until.date_naive() == chrono::Local::now().date_naive() {
+                until.format("%H:%M").to_string()
+            } else {
+                until.format("%a %H:%M").to_string()
+            }
+        });
+    Some(match (summary.do_not_disturb_reason, until) {
+        (Some(DoNotDisturbReason::Schedule), Some(until)) => format!("Scheduled until {until}"),
+        (_, Some(until)) => format!("Until {until}"),
+        _ => "Until turned off".to_owned(),
+    })
+}
+
+fn suppression_detail(summary: &Summary) -> Option<&'static str> {
+    match summary.suppression? {
+        Suppression::Fullscreen => Some("Fullscreen: banners are saved quietly"),
+        Suppression::ScreenSharing => Some("Screen sharing: banners are hidden"),
+    }
+}
 
 pub(super) struct NotificationsModule {
     pub(super) id: ModuleId,
@@ -76,9 +106,15 @@ impl Presentation {
                 },
                 dnd: summary.do_not_disturb,
                 help: format!(
-                    "{} require attention · DND {} · Click to open · Right-click to toggle DND",
+                    "{} require attention · DND {}{}{} · Click to open · Right-click to toggle DND",
                     summary.requires_attention,
-                    if summary.do_not_disturb { "on" } else { "off" }
+                    if summary.do_not_disturb { "on" } else { "off" },
+                    dnd_detail(&summary)
+                        .map(|detail| format!(" ({})", detail.to_lowercase()))
+                        .unwrap_or_default(),
+                    suppression_detail(&summary)
+                        .map(|detail| format!(" · {detail}"))
+                        .unwrap_or_default(),
                 ),
             },
             None => Self {
@@ -181,12 +217,10 @@ impl ModuleRender for NotificationsModule {
         let summary = summary(state);
         let description = summary.map_or_else(
             || "Notifications unavailable".to_owned(),
-            |s| {
-                if s.do_not_disturb {
-                    "Banners are paused".to_owned()
-                } else {
-                    "Banners are allowed".to_owned()
-                }
+            |s| match (dnd_detail(&s), suppression_detail(&s)) {
+                (Some(detail), _) => format!("Banners are paused · {detail}"),
+                (None, Some(suppression)) => suppression.to_owned(),
+                (None, None) => "Banners are allowed".to_owned(),
             },
         );
         Some(super::view::panel_control(
@@ -270,12 +304,50 @@ mod tests {
             instance: [1; 16],
             requires_attention: 12,
             do_not_disturb: true,
+            ..Default::default()
         });
         assert_eq!(module.label(&state), "12 · DND");
         assert!(
             Presentation::for_state(&state)
                 .help
-                .contains("12 require attention")
+                .contains("12 require attention · DND on (until turned off)")
+        );
+    }
+
+    #[test]
+    fn timer_schedule_and_suppression_details_are_described() {
+        let until = chrono::Local::now() + chrono::Duration::minutes(5);
+        let timer = Summary {
+            do_not_disturb: true,
+            do_not_disturb_reason: Some(DoNotDisturbReason::Timer),
+            do_not_disturb_until: Some(until.timestamp_millis()),
+            ..Default::default()
+        };
+        let clock = until.format("%H:%M").to_string();
+        let expected = if until.date_naive() == chrono::Local::now().date_naive() {
+            format!("Until {clock}")
+        } else {
+            format!("Until {}", until.format("%a %H:%M"))
+        };
+        assert_eq!(dnd_detail(&timer).unwrap(), expected);
+        let schedule = Summary {
+            do_not_disturb_reason: Some(DoNotDisturbReason::Schedule),
+            ..timer
+        };
+        assert!(
+            dnd_detail(&schedule)
+                .unwrap()
+                .starts_with("Scheduled until ")
+        );
+        let sharing = Summary {
+            suppression: Some(Suppression::ScreenSharing),
+            ..Default::default()
+        };
+        assert_eq!(dnd_detail(&sharing), None);
+        assert!(
+            Presentation::for_state(&ModuleState::Notifications(sharing))
+                .help
+                .contains("Screen sharing: banners are hidden")
         );
     }
 }

@@ -1,3 +1,6 @@
+use crate::preferences::{
+    DoNotDisturbStatus, DoNotDisturbTimer, PreferenceLayers, SuppressionState, evaluate,
+};
 use crate::{AcceptedNotification, DeliveryOutcome, Urgency, UserRule};
 use serde::{Deserialize, Serialize};
 
@@ -70,9 +73,11 @@ impl From<UserRule> for DeliveryPolicyRule {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoadedDeliveryPolicyState {
-    do_not_disturb: bool,
+    dnd_timer: DoNotDisturbTimer,
     user_rules: Vec<DeliveryPolicyRule>,
     config_rules: Vec<DeliveryPolicyRule>,
+    preferences: PreferenceLayers,
+    suppression: SuppressionState,
 }
 
 impl LoadedDeliveryPolicyState {
@@ -80,17 +85,58 @@ impl LoadedDeliveryPolicyState {
         LoadedDeliveryPolicyStateBuilder::default()
     }
 
-    pub(crate) fn do_not_disturb(&self) -> bool {
-        self.do_not_disturb
+    pub(crate) fn do_not_disturb_status<Tz: chrono::TimeZone>(
+        &self,
+        now: &chrono::DateTime<Tz>,
+    ) -> DoNotDisturbStatus {
+        evaluate(
+            &self.dnd_timer,
+            self.preferences.dnd().schedule.as_ref(),
+            now,
+        )
+    }
+
+    pub(crate) fn dnd_timer(&self) -> DoNotDisturbTimer {
+        self.dnd_timer
+    }
+
+    pub(crate) fn preferences(&self) -> &PreferenceLayers {
+        &self.preferences
+    }
+
+    pub(crate) fn suppression(&self) -> SuppressionState {
+        self.suppression
+    }
+
+    /// The automatic suppression in effect, honouring the preferences.
+    pub(crate) fn active_suppression(&self) -> Option<crate::Suppression> {
+        let preferences = self.preferences.dnd();
+        if self.suppression.screen_sharing && preferences.suppress_screen_sharing {
+            Some(crate::Suppression::ScreenSharing)
+        } else if self.suppression.fullscreen && preferences.suppress_fullscreen {
+            Some(crate::Suppression::Fullscreen)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn with_dnd_timer(mut self, timer: DoNotDisturbTimer) -> Self {
+        self.dnd_timer = timer;
+        self
+    }
+
+    pub(crate) fn with_preferences(mut self, preferences: PreferenceLayers) -> Self {
+        self.preferences = preferences;
+        self
+    }
+
+    pub(crate) fn with_suppression(mut self, suppression: SuppressionState) -> Self {
+        self.suppression = suppression;
+        self
     }
 
     pub(crate) fn user_rules(&self) -> &[DeliveryPolicyRule] {
         &self.user_rules
-    }
-
-    pub(crate) fn with_do_not_disturb(mut self, enabled: bool) -> Self {
-        self.do_not_disturb = enabled;
-        self
     }
 
     pub(crate) fn with_user_rule(mut self, rule: DeliveryPolicyRule) -> Self {
@@ -144,6 +190,8 @@ pub struct LoadedDeliveryPolicyStateBuilder {
     do_not_disturb: bool,
     user_rules: Vec<DeliveryPolicyRule>,
     config_rules: Vec<DeliveryPolicyRule>,
+    preferences: PreferenceLayers,
+    suppression: SuppressionState,
 }
 
 impl LoadedDeliveryPolicyStateBuilder {
@@ -178,11 +226,30 @@ impl LoadedDeliveryPolicyStateBuilder {
         self
     }
 
+    /// UI-managed Do Not Disturb preferences (schedule, break-through, suppression).
+    pub fn do_not_disturb_preferences(
+        mut self,
+        preferences: crate::DoNotDisturbPreferences,
+    ) -> Self {
+        self.preferences.user_dnd = Some(preferences);
+        self
+    }
+
+    pub fn suppression(mut self, suppression: SuppressionState) -> Self {
+        self.suppression = suppression;
+        self
+    }
+
     pub fn build(self) -> LoadedDeliveryPolicyState {
         LoadedDeliveryPolicyState {
-            do_not_disturb: self.do_not_disturb,
+            dnd_timer: DoNotDisturbTimer {
+                manual: self.do_not_disturb,
+                ..Default::default()
+            },
             user_rules: self.user_rules,
             config_rules: self.config_rules,
+            preferences: self.preferences,
+            suppression: self.suppression,
         }
     }
 }
@@ -198,6 +265,17 @@ impl DeliveryPolicy {
     }
 
     pub fn decide(&self, notification: &AcceptedNotification) -> DeliveryDecision {
+        self.decide_at(notification, &chrono::Local::now())
+    }
+
+    /// Decide at an explicit instant: explicit drop rules first, then Do Not
+    /// Disturb and automatic suppression (critical and break-through categories
+    /// pass), then user, configuration and default rules.
+    pub fn decide_at<Tz: chrono::TimeZone>(
+        &self,
+        notification: &AcceptedNotification,
+        now: &chrono::DateTime<Tz>,
+    ) -> DeliveryDecision {
         let user_rule = self.match_user_rule(notification);
         if let Some(rule) = user_rule.filter(|rule| rule.outcome == DeliveryOutcome::Dropped) {
             return DeliveryDecision::from_rule(
@@ -207,13 +285,39 @@ impl DeliveryPolicy {
             );
         }
 
-        if self.state.do_not_disturb && notification.urgency != Urgency::Critical {
-            return DeliveryDecision::new(
-                notification,
-                DeliveryOutcome::Silenced,
-                Some("do-not-disturb".to_string()),
-                DeliveryDecisionReason::DoNotDisturb,
-            );
+        let preferences = self.state.preferences.dnd();
+        let breaks_through = notification.urgency == Urgency::Critical
+            || preferences
+                .break_through
+                .matches(notification.category.as_deref());
+        if !breaks_through {
+            if self.state.do_not_disturb_status(now).active {
+                return DeliveryDecision::new(
+                    notification,
+                    DeliveryOutcome::Silenced,
+                    Some("do-not-disturb".to_string()),
+                    DeliveryDecisionReason::DoNotDisturb,
+                );
+            }
+            match self.state.active_suppression() {
+                Some(crate::Suppression::ScreenSharing) => {
+                    return DeliveryDecision::new(
+                        notification,
+                        DeliveryOutcome::Silenced,
+                        Some("screen-sharing".to_string()),
+                        DeliveryDecisionReason::ScreenSharing,
+                    );
+                }
+                Some(crate::Suppression::Fullscreen) => {
+                    return DeliveryDecision::new(
+                        notification,
+                        DeliveryOutcome::Silenced,
+                        Some("fullscreen".to_string()),
+                        DeliveryDecisionReason::Fullscreen,
+                    );
+                }
+                None => {}
+            }
         }
 
         if let Some(rule) = user_rule {
@@ -324,4 +428,10 @@ pub enum DeliveryDecisionReason {
     DoNotDisturb,
     ConfigRule,
     DefaultAllow,
+    /// An application was fullscreen on the focused output.
+    Fullscreen,
+    /// The screen was being shared or recorded.
+    ScreenSharing,
+    /// A portal `tray` display hint asked for Center-only delivery.
+    DisplayHint,
 }

@@ -86,6 +86,13 @@ impl LoadedNotificationConfiguration {
         self.active.sound_settings()
     }
 
+    pub(crate) fn configured_preferences(&self) -> crate::runtime::ConfiguredPreferences {
+        crate::runtime::ConfiguredPreferences {
+            do_not_disturb: self.active.do_not_disturb,
+            apps: self.active.apps.clone(),
+        }
+    }
+
     pub(crate) fn appearance(&self) -> canopa_theme::Appearance {
         self.appearance.clone()
     }
@@ -115,6 +122,8 @@ impl LoadedNotificationConfiguration {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct NotificationConfiguration {
     rules: Vec<NotificationConfigurationRule>,
+    do_not_disturb: Option<crate::DoNotDisturbPreferences>,
+    apps: std::collections::BTreeMap<String, crate::AppPreferences>,
     sound: NotificationSoundSettings,
     icons: BannerIconSettings,
     banner_ui: canopa_theme::UiStyle,
@@ -131,6 +140,8 @@ impl NotificationConfiguration {
         let mut sound = None;
         let mut icons = None;
         let mut banner_ui = None;
+        let mut do_not_disturb = None;
+        let mut apps = std::collections::BTreeMap::new();
 
         for node in doc.nodes() {
             anyhow::ensure!(
@@ -139,6 +150,21 @@ impl NotificationConfiguration {
             );
             match node.name().value() {
                 "rule" => rules.push(parse_rule(node, rules.len() + 1)?),
+                "do-not-disturb" => {
+                    anyhow::ensure!(do_not_disturb.is_none(), "duplicate do-not-disturb blocks");
+                    do_not_disturb = Some(parse_do_not_disturb(node)?);
+                }
+                "app" => {
+                    let (identity, preferences) = parse_app(node)?;
+                    anyhow::ensure!(
+                        apps.len() < crate::MAX_APP_PREFERENCES,
+                        "too many app nodes"
+                    );
+                    anyhow::ensure!(
+                        apps.insert(identity.clone(), preferences).is_none(),
+                        "duplicate app node {identity:?}"
+                    );
+                }
                 "sound" => {
                     if sound.is_some() {
                         anyhow::bail!("Notification Configuration has duplicate sound nodes");
@@ -171,7 +197,7 @@ impl NotificationConfiguration {
                 }
                 _ => {
                     anyhow::bail!(
-                        "invalid Notification Configuration node: expected rule, sound, icons or banners"
+                        "invalid Notification Configuration node: expected rule, app, do-not-disturb, sound, icons or banners"
                     );
                 }
             }
@@ -179,6 +205,8 @@ impl NotificationConfiguration {
 
         Ok(Self {
             rules,
+            do_not_disturb,
+            apps,
             sound: sound.unwrap_or_default(),
             icons: icons.unwrap_or_default(),
             banner_ui: banner_ui.unwrap_or_default(),
@@ -262,6 +290,118 @@ fn parse_rule(node: &KdlNode, rule_number: usize) -> anyhow::Result<Notification
         outcome,
         reference,
     })
+}
+
+fn bool_property(entry: &KdlEntry, owner: &str) -> anyhow::Result<bool> {
+    entry
+        .value()
+        .as_bool()
+        .ok_or_else(|| anyhow::anyhow!("{owner} properties must be booleans"))
+}
+
+/// `do-not-disturb { schedule from="22:00" to="07:00" days="mon tue";
+/// break-through alarms=#true calls=#true; suppress fullscreen=#true screen-sharing=#true }`
+fn parse_do_not_disturb(node: &KdlNode) -> anyhow::Result<crate::DoNotDisturbPreferences> {
+    anyhow::ensure!(
+        node.entries().is_empty(),
+        "do-not-disturb takes only child nodes"
+    );
+    let mut preferences = crate::DoNotDisturbPreferences::default();
+    let mut seen = std::collections::HashSet::new();
+    for child in node.children().map(|c| c.nodes()).unwrap_or_default() {
+        let name = child.name().value();
+        anyhow::ensure!(
+            child.children().is_none() && seen.insert(name.to_owned()),
+            "invalid or duplicate do-not-disturb {name}"
+        );
+        match name {
+            "schedule" => {
+                let mut start = None;
+                let mut end = None;
+                let mut days = crate::Weekdays::ALL;
+                for entry in child.entries() {
+                    let value = entry.value().as_string();
+                    match (entry.name().map(|n| n.value()), value) {
+                        (Some("from"), Some(value)) => start = crate::ClockTime::parse(value),
+                        (Some("to"), Some(value)) => end = crate::ClockTime::parse(value),
+                        (Some("days"), Some(value)) => {
+                            days = crate::Weekdays::parse(value.split_whitespace())
+                                .context("schedule days must name mon..sun")?
+                        }
+                        _ => anyhow::bail!("schedule accepts from=, to= and days= strings"),
+                    }
+                }
+                preferences.schedule = Some(crate::DoNotDisturbSchedule {
+                    start: start.context("schedule from must be HH:MM")?,
+                    end: end.context("schedule to must be HH:MM")?,
+                    days,
+                });
+            }
+            "break-through" => {
+                for entry in child.entries() {
+                    match entry.name().map(|n| n.value()) {
+                        Some("alarms") => {
+                            preferences.break_through.alarms =
+                                bool_property(entry, "break-through")?
+                        }
+                        Some("calls") => {
+                            preferences.break_through.calls = bool_property(entry, "break-through")?
+                        }
+                        _ => anyhow::bail!("break-through accepts alarms and calls"),
+                    }
+                }
+            }
+            "suppress" => {
+                for entry in child.entries() {
+                    match entry.name().map(|n| n.value()) {
+                        Some("fullscreen") => {
+                            preferences.suppress_fullscreen = bool_property(entry, "suppress")?
+                        }
+                        Some("screen-sharing") => {
+                            preferences.suppress_screen_sharing = bool_property(entry, "suppress")?
+                        }
+                        _ => anyhow::bail!("suppress accepts fullscreen and screen-sharing"),
+                    }
+                }
+            }
+            _ => anyhow::bail!("do-not-disturb accepts schedule, break-through and suppress"),
+        }
+    }
+    Ok(preferences)
+}
+
+/// `app "org.example.App" sound=#false lock-screen="content"`
+fn parse_app(node: &KdlNode) -> anyhow::Result<(String, crate::AppPreferences)> {
+    anyhow::ensure!(node.children().is_none(), "app must not have child nodes");
+    let mut identity = None;
+    let mut preferences = crate::AppPreferences::default();
+    for entry in node.entries() {
+        match entry.name().map(|n| n.value()) {
+            None => {
+                let value = entry
+                    .value()
+                    .as_string()
+                    .context("app identity must be a string")?;
+                anyhow::ensure!(
+                    identity.is_none() && !value.trim().is_empty() && value.len() <= 512,
+                    "app needs one non-empty identity"
+                );
+                identity = Some(value.to_owned());
+            }
+            Some("sound") => preferences.sound = Some(bool_property(entry, "app")?),
+            Some("lock-screen") => {
+                preferences.lock_screen = Some(
+                    entry
+                        .value()
+                        .as_string()
+                        .and_then(crate::LockScreenVisibility::parse)
+                        .context("app lock-screen must be hidden, name-only or content")?,
+                )
+            }
+            Some(_) => anyhow::bail!("app accepts sound and lock-screen"),
+        }
+    }
+    Ok((identity.context("app needs an identity")?, preferences))
 }
 
 fn parse_sound(node: &KdlNode) -> anyhow::Result<NotificationSoundSettings> {
@@ -557,6 +697,55 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(category_error.contains("invalid category"));
+    }
+
+    #[test]
+    fn parses_do_not_disturb_and_app_preferences() {
+        let configuration = NotificationConfiguration::parse(
+            r#"
+            do-not-disturb {
+                schedule from="22:00" to="7:30" days="mon tue"
+                break-through alarms=#true
+                suppress fullscreen=#false
+            }
+            app "org.gnome.Fractal" sound=#false lock-screen="content"
+            app "Mail" lock-screen="hidden"
+            "#,
+        )
+        .unwrap();
+        let dnd = configuration.do_not_disturb.unwrap();
+        let schedule = dnd.schedule.unwrap();
+        assert_eq!(
+            (schedule.start.to_string(), schedule.end.to_string()),
+            ("22:00".into(), "07:30".into())
+        );
+        assert!(schedule.days.contains(chrono::Weekday::Tue));
+        assert!(!schedule.days.contains(chrono::Weekday::Wed));
+        assert!(dnd.break_through.alarms && !dnd.break_through.calls);
+        assert!(!dnd.suppress_fullscreen && dnd.suppress_screen_sharing);
+        assert_eq!(configuration.apps["org.gnome.Fractal"].sound, Some(false));
+        assert_eq!(
+            configuration.apps["Mail"].lock_screen,
+            Some(crate::LockScreenVisibility::Hidden)
+        );
+        for invalid in [
+            r#"do-not-disturb { schedule from="25:00" to="07:00"; }"#,
+            r#"do-not-disturb { schedule from="22:00"; }"#,
+            r#"do-not-disturb { schedule from="22:00" to="07:00" days="noday"; }"#,
+            r#"do-not-disturb { break-through pagers=#true; }"#,
+            r#"do-not-disturb { suppress fullscreen="yes"; }"#,
+            r#"do-not-disturb { }
+               do-not-disturb { }"#,
+            r#"app "Mail" lock-screen="maybe""#,
+            r#"app sound=#false"#,
+            r#"app "Mail" sound=#true
+               app "Mail" sound=#false"#,
+        ] {
+            assert!(
+                NotificationConfiguration::parse(invalid).is_err(),
+                "{invalid}"
+            );
+        }
     }
 
     #[test]

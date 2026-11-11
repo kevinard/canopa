@@ -17,6 +17,7 @@ use canopa_file as local_file;
 mod notification_id;
 mod notification_link;
 mod notification_server_intake;
+mod preferences;
 mod presentation;
 mod runtime;
 mod runtime_resources;
@@ -31,10 +32,11 @@ pub use activation::{ActivationTokenFuture, ActivationTokenProvider, NoopActivat
 pub use center::{NotificationCenterReader, NotificationCenterRow};
 pub use configuration::{ConfigurationStatus, check_configuration, check_configuration_document};
 pub use control::{
-    AppPermissionControl, CategoryPermissionControl, ControlCommand, ControlReply, ControlStatus,
-    NotificationCenterAction, NotificationCenterBatch, NotificationCenterCursor,
-    NotificationCenterGroup, NotificationCenterItem, NotificationCenterProjection,
-    NotificationCenterTarget, NotifyControl,
+    AppPermissionControl, AppPreferencesEntry, CategoryPermissionControl, ControlCommand,
+    ControlReply, ControlStatus, NotificationCenterAction, NotificationCenterBatch,
+    NotificationCenterCursor, NotificationCenterGroup, NotificationCenterItem,
+    NotificationCenterProjection, NotificationCenterTarget, NotificationPreferences, NotifyControl,
+    PreferenceSource,
 };
 pub use delivery_policy::{
     DeliveryDecision, DeliveryDecisionLog, DeliveryDecisionReason, DeliveryPolicy,
@@ -64,6 +66,11 @@ pub use link_opening::{
 pub use notification_id::InternalNotificationId;
 pub use notification_link::NotificationLink;
 pub use notification_server_intake::NotificationServerRequest;
+pub use preferences::{
+    AppPreferences, BreakThrough, ClockTime, DoNotDisturbPreferences, DoNotDisturbReason,
+    DoNotDisturbRequest, DoNotDisturbSchedule, DoNotDisturbStatus, LockScreenVisibility,
+    MAX_APP_PREFERENCES, Suppression, SuppressionState, Weekdays,
+};
 #[cfg(feature = "gui")]
 pub use presentation::IcedLayerShellBannerPresenter;
 pub use presentation::{
@@ -184,7 +191,7 @@ impl DaemonOptions {
 
 #[derive(Clone)]
 pub struct Daemon {
-    runtime: NotificationRuntime,
+    pub(crate) runtime: NotificationRuntime,
     configuration: Arc<Mutex<LoadedNotificationConfiguration>>,
     configuration_reloads: Arc<tokio::sync::Mutex<()>>,
 }
@@ -228,6 +235,7 @@ impl Daemon {
             options.sound_presenter,
             options.link_opener,
             configuration.delivery_policy_rules(),
+            configuration.configured_preferences(),
         )
         .await?;
         runtime.set_icon_settings(configuration.icon_settings());
@@ -417,6 +425,44 @@ impl Daemon {
         self.runtime.do_not_disturb().await
     }
 
+    /// Apply a Do Not Disturb request: on, off, toggle, a duration or an end time.
+    pub async fn request_do_not_disturb(
+        &self,
+        request: DoNotDisturbRequest,
+    ) -> anyhow::Result<DoNotDisturbStatus> {
+        self.runtime.request_do_not_disturb(request).await
+    }
+
+    pub fn do_not_disturb_status(&self) -> DoNotDisturbStatus {
+        self.runtime.do_not_disturb_status()
+    }
+
+    /// Replace the UI-managed Do Not Disturb preferences; None returns to configuration.
+    pub async fn set_do_not_disturb_preferences(
+        &self,
+        preferences: Option<DoNotDisturbPreferences>,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .set_do_not_disturb_preferences(preferences)
+            .await
+    }
+
+    /// Replace one application's UI-managed sound and lock-screen preferences.
+    pub async fn set_app_preferences(
+        &self,
+        app_identity: impl Into<String>,
+        preferences: AppPreferences,
+    ) -> anyhow::Result<()> {
+        self.runtime
+            .set_app_preferences(app_identity.into(), preferences)
+            .await
+    }
+
+    /// Feed compositor fullscreen/screencast state. Service mode uses Niri IPC.
+    pub fn set_suppression(&self, suppression: SuppressionState) {
+        self.runtime.set_suppression(suppression);
+    }
+
     pub async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
         self.runtime.upsert_user_rule(rule).await
     }
@@ -491,6 +537,7 @@ impl Daemon {
                     candidate.sound_settings(),
                     candidate.icon_settings(),
                     candidate.appearance(),
+                    candidate.configured_preferences(),
                 )
                 .await
                 .map_err(|_| {

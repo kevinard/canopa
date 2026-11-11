@@ -17,6 +17,10 @@ use crate::domain::{
 use crate::lifecycle::{
     LifecycleDelivery, LifecycleEffects, NotificationHistory, NotificationLifecycle,
 };
+use crate::preferences::{
+    AppPreferences, DoNotDisturbPreferences, DoNotDisturbRequest, DoNotDisturbStatus,
+    DoNotDisturbTimer, MAX_APP_PREFERENCES, PreferenceLayers, SuppressionState,
+};
 use crate::presentation::{
     BannerInteraction, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
     BannerTarget, BannerView, NotificationBannerState, PresentationCoordinator,
@@ -32,6 +36,16 @@ use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, broadcast, watch};
 
 const ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_millis(100);
+const DND_TIMER_KEY: &str = "do_not_disturb_timer";
+const DND_PREFERENCES_KEY: &str = "do_not_disturb_preferences";
+const APP_PREFERENCES_KEY: &str = "app_preferences";
+
+/// Configuration-authored preference layer (ADR 0055).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ConfiguredPreferences {
+    pub(crate) do_not_disturb: Option<DoNotDisturbPreferences>,
+    pub(crate) apps: std::collections::BTreeMap<String, AppPreferences>,
+}
 const DIAGNOSTIC_RECORD_LIMIT: usize = 256;
 
 fn record_recent<T>(records: &Mutex<VecDeque<T>>, value: T) {
@@ -68,8 +82,10 @@ pub(crate) struct NotificationRuntime {
     // Commit and effect order share one coordinator. External token acquisition is outside it.
     commands: Arc<AsyncMutex<()>>,
     state_version: Arc<AtomicU64>,
-    state_changes: watch::Sender<u64>,
+    state_changes: Arc<watch::Sender<u64>>,
     center_instance: [u8; 16],
+    /// Wakes the Do Not Disturb clock after policy changes.
+    dnd_wake: Arc<tokio::sync::Notify>,
 }
 
 impl NotificationRuntime {
@@ -86,6 +102,7 @@ impl NotificationRuntime {
         sound_presenter: Arc<dyn SoundPresenter>,
         link_opener: Arc<dyn crate::NotificationLinkOpener>,
         configuration_rules: Vec<DeliveryPolicyRule>,
+        configured: ConfiguredPreferences,
     ) -> anyhow::Result<Self> {
         // External center events can outlive this runtime and its transient ID allocator.
         let mut center_instance = [0u8; 16];
@@ -113,6 +130,32 @@ impl NotificationRuntime {
                     .map(DeliveryPolicyRule::from),
             )
             .build();
+        let mut timer: DoNotDisturbTimer = storage
+            .metadata_json(DND_TIMER_KEY)
+            .await
+            .unwrap_or_default()
+            .unwrap_or_default();
+        timer.manual = storage.do_not_disturb().await?;
+        let mut user_apps: std::collections::BTreeMap<String, AppPreferences> = storage
+            .metadata_json(APP_PREFERENCES_KEY)
+            .await
+            .unwrap_or_default()
+            .unwrap_or_default();
+        while user_apps.len() > MAX_APP_PREFERENCES {
+            user_apps.pop_last();
+        }
+        let loaded_policy_state =
+            loaded_policy_state
+                .with_dnd_timer(timer)
+                .with_preferences(PreferenceLayers {
+                    config_dnd: configured.do_not_disturb,
+                    user_dnd: storage
+                        .metadata_json(DND_PREFERENCES_KEY)
+                        .await
+                        .unwrap_or_default(),
+                    config_apps: configured.apps,
+                    user_apps,
+                });
         let (state_changes, _state_change_receiver) = watch::channel(0);
         let (sender_event_changes, _sender_event_receiver) = broadcast::channel(128);
         let activation_token_capable = activation_token_provider.available();
@@ -141,9 +184,49 @@ impl NotificationRuntime {
             loaded_policy_state: Arc::new(Mutex::new(loaded_policy_state)),
             commands: Arc::new(AsyncMutex::new(())),
             state_version: Arc::new(AtomicU64::new(0)),
-            state_changes,
+            state_changes: Arc::new(state_changes),
             center_instance,
-        })
+            dnd_wake: Arc::new(tokio::sync::Notify::new()),
+        }
+        .with_dnd_clock())
+    }
+
+    /// Publish a state change when a timer or scheduled window begins or ends,
+    /// so the bar and Center follow without polling. Holds no strong runtime state.
+    fn with_dnd_clock(self) -> Self {
+        let state = Arc::downgrade(&self.loaded_policy_state);
+        let changes = Arc::downgrade(&self.state_changes);
+        let version = Arc::downgrade(&self.state_version);
+        let wake = self.dnd_wake.clone();
+        let stopping = self.stopping.clone();
+        tokio::spawn(async move {
+            while let Some(next) = state.upgrade().map(|state| {
+                state
+                    .lock()
+                    .unwrap()
+                    .do_not_disturb_status(&chrono::Local::now())
+                    .next_change
+            }) {
+                let delay = next
+                    .map(|next| (next - crate::clock::now_millis()).clamp(0, 3_600_000))
+                    .unwrap_or(3_600_000);
+                let elapsed = tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(delay as u64 + 20)) => true,
+                    _ = wake.notified() => false,
+                };
+                if stopping.load(Ordering::SeqCst) {
+                    break;
+                }
+                if elapsed
+                    && next.is_some_and(|next| next <= crate::clock::now_millis())
+                    && let (Some(changes), Some(version)) = (changes.upgrade(), version.upgrade())
+                {
+                    let value = version.fetch_add(1, Ordering::Relaxed) + 1;
+                    let _ = changes.send(value);
+                }
+            }
+        });
+        self
     }
 
     async fn begin_mutation(&self) -> anyhow::Result<tokio::sync::OwnedMutexGuard<()>> {
@@ -229,13 +312,20 @@ impl NotificationRuntime {
             .lock()
             .unwrap()
             .record_receipt(&effects, image_data);
-        let sound = (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress)
-            .then_some(NotificationSoundPlayback {
-                notification_id: receipt.notification_id,
-                app_identity: sound_app_identity,
-                summary: sound_summary,
-                requested_sound: sound_request.sound,
-            });
+        let app_sound = self
+            .loaded_policy_state
+            .lock()
+            .unwrap()
+            .preferences()
+            .sound_enabled(&sound_app_identity);
+        let sound =
+            (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress && app_sound)
+                .then_some(NotificationSoundPlayback {
+                    notification_id: receipt.notification_id,
+                    app_identity: sound_app_identity,
+                    summary: sound_summary,
+                    requested_sound: sound_request.sound,
+                });
         self.apply_lifecycle_effects(&effects, None, sound).await?;
         Ok(receipt)
     }
@@ -673,6 +763,7 @@ impl NotificationRuntime {
             // Wait for the current commitment before rejecting queued and future mutations.
             let _command = self.commands.lock().await;
             self.stopping.store(true, Ordering::SeqCst);
+            self.stopping_dnd_clock();
             self.timeouts.lock().unwrap().cancel_all();
             self.sound_presenter.stop_all_sounds();
         }
@@ -695,6 +786,11 @@ impl NotificationRuntime {
         presentation?;
         publication?;
         Ok(())
+    }
+
+    fn stopping_dnd_clock(&self) {
+        // The mutation coordinator sets `stopping`; wake the clock to observe it.
+        self.dnd_wake.notify_one();
     }
 
     pub(crate) async fn clear_active_notifications(&self) -> anyhow::Result<()> {
@@ -725,19 +821,155 @@ impl NotificationRuntime {
         &self,
         enabled: Option<bool>,
     ) -> anyhow::Result<bool> {
+        let request = match enabled {
+            Some(true) => DoNotDisturbRequest::On,
+            Some(false) => DoNotDisturbRequest::Off,
+            None => DoNotDisturbRequest::Toggle,
+        };
+        Ok(self.request_do_not_disturb(request).await?.active)
+    }
+
+    pub(crate) async fn request_do_not_disturb(
+        &self,
+        request: DoNotDisturbRequest,
+    ) -> anyhow::Result<DoNotDisturbStatus> {
         self.mutate(move |runtime| async move {
-            let enabled = enabled
-                .unwrap_or_else(|| !runtime.loaded_policy_state.lock().unwrap().do_not_disturb());
-            runtime.storage.set_do_not_disturb(enabled).await?;
-            runtime.replace_loaded_policy_state(|state| state.with_do_not_disturb(enabled));
+            let now = chrono::Local::now();
+            let (timer, schedule) = {
+                let state = runtime.loaded_policy_state.lock().unwrap();
+                (state.dnd_timer(), state.preferences().dnd().schedule)
+            };
+            let timer = request.apply(timer, schedule.as_ref(), &now)?;
+            runtime
+                .storage
+                .set_metadata(&[(
+                    DND_TIMER_KEY,
+                    (timer.until.is_some() || timer.schedule_paused_until.is_some())
+                        .then(|| serde_json::to_string(&timer))
+                        .transpose()?,
+                )])
+                .await?;
+            runtime.storage.set_do_not_disturb(timer.manual).await?;
+            runtime.replace_loaded_policy_state(|state| state.with_dnd_timer(timer));
+            runtime.dnd_wake.notify_one();
             runtime.notify_state_changed();
-            Ok(enabled)
+            Ok(runtime.do_not_disturb_status())
         })
         .await
     }
 
+    pub(crate) fn do_not_disturb_status(&self) -> DoNotDisturbStatus {
+        self.loaded_policy_state
+            .lock()
+            .unwrap()
+            .do_not_disturb_status(&chrono::Local::now())
+    }
+
     pub(crate) async fn do_not_disturb(&self) -> anyhow::Result<bool> {
-        Ok(self.loaded_policy_state.lock().unwrap().do_not_disturb())
+        Ok(self.do_not_disturb_status().active)
+    }
+
+    /// Replace the UI-managed Do Not Disturb preferences; None returns to configuration.
+    pub(crate) async fn set_do_not_disturb_preferences(
+        &self,
+        preferences: Option<DoNotDisturbPreferences>,
+    ) -> anyhow::Result<()> {
+        self.mutate(move |runtime| async move {
+            runtime
+                .storage
+                .set_metadata(&[(
+                    DND_PREFERENCES_KEY,
+                    preferences.map(|p| serde_json::to_string(&p)).transpose()?,
+                )])
+                .await?;
+            runtime.replace_loaded_policy_state(|state| {
+                let mut layers = state.preferences().clone();
+                layers.user_dnd = preferences;
+                state.with_preferences(layers)
+            });
+            runtime.dnd_wake.notify_one();
+            let _ = runtime.sync_presentation();
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
+    }
+
+    /// Replace one application's UI-managed preferences; empty removes them.
+    pub(crate) async fn set_app_preferences(
+        &self,
+        app_identity: String,
+        preferences: AppPreferences,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !app_identity.trim().is_empty() && app_identity.len() <= 512,
+            "invalid App Identity"
+        );
+        self.mutate(move |runtime| async move {
+            let mut layers = runtime
+                .loaded_policy_state
+                .lock()
+                .unwrap()
+                .preferences()
+                .clone();
+            if preferences.is_empty() {
+                layers.user_apps.remove(&app_identity);
+            } else {
+                anyhow::ensure!(
+                    layers.user_apps.contains_key(&app_identity)
+                        || layers.user_apps.len() < MAX_APP_PREFERENCES,
+                    "too many application preferences"
+                );
+                layers.user_apps.insert(app_identity, preferences);
+            }
+            runtime
+                .storage
+                .set_metadata(&[(
+                    APP_PREFERENCES_KEY,
+                    (!layers.user_apps.is_empty())
+                        .then(|| serde_json::to_string(&layers.user_apps))
+                        .transpose()?,
+                )])
+                .await?;
+            runtime.replace_loaded_policy_state(|state| state.with_preferences(layers));
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
+    }
+
+    pub(crate) fn preference_layers(&self) -> PreferenceLayers {
+        self.loaded_policy_state
+            .lock()
+            .unwrap()
+            .preferences()
+            .clone()
+    }
+
+    /// Compositor-reported fullscreen and screencast state (Niri IPC).
+    pub(crate) fn set_suppression(&self, suppression: SuppressionState) {
+        let changed = {
+            let mut state = self.loaded_policy_state.lock().unwrap();
+            let changed = state.suppression() != suppression;
+            *state = state.clone().with_suppression(suppression);
+            changed
+        };
+        if changed {
+            // Visible banners are redacted at presentation time while sharing.
+            let _ = self.sync_presentation();
+            self.notify_state_changed();
+        }
+    }
+
+    pub(crate) fn suppression_inputs(&self) -> SuppressionState {
+        self.loaded_policy_state.lock().unwrap().suppression()
+    }
+
+    pub(crate) fn active_suppression(&self) -> Option<crate::Suppression> {
+        self.loaded_policy_state
+            .lock()
+            .unwrap()
+            .active_suppression()
     }
 
     pub(crate) async fn upsert_user_rule(&self, rule: UserRule) -> anyhow::Result<()> {
@@ -818,6 +1050,7 @@ impl NotificationRuntime {
         sound_settings: NotificationSoundSettings,
         icon_settings: crate::BannerIconSettings,
         appearance: canopa_theme::Appearance,
+        configured: ConfiguredPreferences,
     ) -> anyhow::Result<()> {
         self.mutate(move |runtime| async move {
             if !runtime.headless {
@@ -829,7 +1062,13 @@ impl NotificationRuntime {
                     runtime.sound_presenter.stop_all_sounds();
                 }
             }
-            runtime.replace_loaded_policy_state(|state| state.with_config_rules(rules));
+            runtime.replace_loaded_policy_state(|state| {
+                let mut layers = state.preferences().clone();
+                layers.config_dnd = configured.do_not_disturb;
+                layers.config_apps = configured.apps;
+                state.with_config_rules(rules).with_preferences(layers)
+            });
+            runtime.dnd_wake.notify_one();
             runtime.set_icon_settings(icon_settings);
             runtime.set_appearance(appearance);
             // A renderer outage is presentation status, not rejection of a valid local snapshot.
@@ -906,10 +1145,14 @@ impl NotificationRuntime {
         // Read the count and policy under the same coordinator as commits. The
         // indexed aggregate never decodes content; transient items require no attention.
         let _read = self.begin_mutation().await?;
+        let status = self.do_not_disturb_status();
         Ok(canopa_notify_client::Summary {
             instance: self.center_instance,
             requires_attention: self.storage.requires_attention_count().await?,
-            do_not_disturb: self.loaded_policy_state.lock().unwrap().do_not_disturb(),
+            do_not_disturb: status.active,
+            do_not_disturb_reason: status.reason,
+            do_not_disturb_until: status.until,
+            suppression: self.active_suppression(),
         })
     }
 

@@ -46,6 +46,48 @@ impl NotifyControl {
             ControlCommand::ChangeDoNotDisturb { enabled } => Ok(ControlReply::DoNotDisturb(
                 self.daemon.change_do_not_disturb(enabled).await?,
             )),
+            ControlCommand::RequestDoNotDisturb { request } => {
+                Ok(ControlReply::DoNotDisturbStatus(
+                    self.daemon.request_do_not_disturb(request).await?,
+                ))
+            }
+            ControlCommand::NotificationPreferences => Ok(ControlReply::NotificationPreferences(
+                Box::new(self.notification_preferences().await?),
+            )),
+            ControlCommand::SetDoNotDisturbPreferences { preferences } => {
+                if let Some(schedule) = preferences.and_then(|p| p.schedule) {
+                    anyhow::ensure!(!schedule.days.is_empty_set(), "schedule needs a day");
+                }
+                self.daemon
+                    .set_do_not_disturb_preferences(preferences)
+                    .await?;
+                Ok(ControlReply::CommandApplied)
+            }
+            ControlCommand::SetAppPreferences {
+                app_identity,
+                delivery,
+                preferences,
+            } => {
+                anyhow::ensure!(
+                    !app_identity.trim().is_empty() && app_identity.len() <= 512,
+                    "invalid App Identity"
+                );
+                match delivery {
+                    Some(permission) => {
+                        self.daemon
+                            .upsert_user_rule(UserRule::for_app(
+                                app_identity.clone(),
+                                permission.delivery_outcome(),
+                            ))
+                            .await?
+                    }
+                    None => self.daemon.remove_user_rule(&app_identity, None).await?,
+                }
+                self.daemon
+                    .set_app_preferences(app_identity, preferences)
+                    .await?;
+                Ok(ControlReply::CommandApplied)
+            }
             ControlCommand::ReloadConfiguration { path } => {
                 if let Some(path) = path {
                     self.daemon.reload_configuration_file(&path).await?;
@@ -171,6 +213,61 @@ impl NotifyControl {
         self.daemon.subscribe_notification_state()
     }
 
+    async fn notification_preferences(&self) -> anyhow::Result<NotificationPreferences> {
+        let layers = self.daemon.runtime.preference_layers();
+        let rules = self.daemon.user_rules().await?;
+        let app_rule = |app: &str| {
+            rules
+                .iter()
+                .find(|rule| {
+                    rule.app_identity == app && rule.category.is_none() && rule.urgency.is_none()
+                })
+                .map(|rule| AppPermissionControl::from_delivery_outcome(rule.outcome))
+        };
+        let mut identities: Vec<String> = layers.app_identities().cloned().collect();
+        identities.extend(
+            rules
+                .iter()
+                .filter(|rule| rule.category.is_none() && rule.urgency.is_none())
+                .map(|rule| rule.app_identity.clone()),
+        );
+        identities.sort();
+        identities.dedup();
+        let apps = identities
+            .into_iter()
+            .map(|app_identity| AppPreferencesEntry {
+                delivery: app_rule(&app_identity),
+                configured: layers
+                    .config_apps
+                    .get(&app_identity)
+                    .copied()
+                    .unwrap_or_default(),
+                user: layers
+                    .user_apps
+                    .get(&app_identity)
+                    .copied()
+                    .unwrap_or_default(),
+                sound: layers.sound_enabled(&app_identity),
+                lock_screen: layers.lock_screen(&app_identity),
+                app_identity,
+            })
+            .collect();
+        Ok(NotificationPreferences {
+            do_not_disturb: self.daemon.do_not_disturb_status(),
+            do_not_disturb_preferences: layers.dnd(),
+            do_not_disturb_source: if layers.user_dnd.is_some() {
+                PreferenceSource::User
+            } else if layers.config_dnd.is_some() {
+                PreferenceSource::Configuration
+            } else {
+                PreferenceSource::Default
+            },
+            suppression_inputs: self.daemon.runtime.suppression_inputs(),
+            suppression: self.daemon.runtime.active_suppression(),
+            apps,
+        })
+    }
+
     async fn notification_center_projection(&self) -> anyhow::Result<NotificationCenterProjection> {
         self.daemon.notification_center_projection().await
     }
@@ -186,6 +283,25 @@ pub enum ControlCommand {
     },
     ReloadConfigurationSource {
         source: canopa_config::Request,
+    },
+    /// Settings/bar entry point: on, off, toggle, for N minutes, until a time.
+    RequestDoNotDisturb {
+        request: crate::DoNotDisturbRequest,
+    },
+    /// Effective Do Not Disturb, suppression and per-application preferences.
+    NotificationPreferences,
+    /// Replace the UI-managed schedule/break-through/suppression; null returns to configuration.
+    SetDoNotDisturbPreferences {
+        preferences: Option<crate::DoNotDisturbPreferences>,
+    },
+    /// Replace one application's UI-managed delivery, sound and lock-screen values.
+    /// A null `delivery` removes the app-wide user rule; empty `preferences` clear overrides.
+    SetAppPreferences {
+        app_identity: String,
+        #[serde(default)]
+        delivery: Option<AppPermissionControl>,
+        #[serde(default)]
+        preferences: crate::AppPreferences,
     },
     ReloadConfiguration {
         path: Option<std::path::PathBuf>,
@@ -260,6 +376,8 @@ pub enum NotificationCenterAction {
 pub enum ControlReply {
     Status(Box<ControlStatus>),
     DoNotDisturb(bool),
+    DoNotDisturbStatus(crate::DoNotDisturbStatus),
+    NotificationPreferences(Box<NotificationPreferences>),
     ActiveNotifications(Vec<NotificationThread>),
     ActiveNotificationCount(u64),
     NotificationCenterProjection(NotificationCenterProjection),
@@ -287,6 +405,41 @@ pub struct ControlStatus {
     /// replacement retires them. No notification content is exposed here.
     #[serde(default)]
     pub timeout_failed: usize,
+}
+
+/// Reply to `notification-preferences`, for Settings' Notifications page.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationPreferences {
+    pub do_not_disturb: crate::DoNotDisturbStatus,
+    /// Effective schedule, break-through and suppression preferences.
+    pub do_not_disturb_preferences: crate::DoNotDisturbPreferences,
+    pub do_not_disturb_source: PreferenceSource,
+    /// Raw compositor inputs, independent of the suppression preferences.
+    pub suppression_inputs: crate::SuppressionState,
+    /// The suppression currently in effect.
+    pub suppression: Option<crate::Suppression>,
+    /// Applications with configured or UI-managed preferences or an app-wide rule.
+    pub apps: Vec<AppPreferencesEntry>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PreferenceSource {
+    Default,
+    Configuration,
+    User,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppPreferencesEntry {
+    pub app_identity: String,
+    /// The UI-managed app-wide rule: allow (banners), silence (Center only) or drop (mute).
+    pub delivery: Option<AppPermissionControl>,
+    pub configured: crate::AppPreferences,
+    pub user: crate::AppPreferences,
+    /// Effective values after layering and defaults.
+    pub sound: bool,
+    pub lock_screen: crate::LockScreenVisibility,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -397,7 +550,7 @@ impl AppPermissionControl {
         &APP_PERMISSION_CONTROL_OPTIONS
     }
 
-    fn delivery_outcome(self) -> DeliveryOutcome {
+    pub(crate) fn delivery_outcome(self) -> DeliveryOutcome {
         match self {
             Self::Allow => DeliveryOutcome::Shown,
             Self::Silence => DeliveryOutcome::Silenced,

@@ -84,9 +84,46 @@ enum CtlCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Do Not Disturb: status, on, off, toggle or tomorrow (until 08:00).
     Dnd {
         #[arg(value_enum, default_value = "status")]
         state: DndCommand,
+        /// With `on`: end after this many minutes.
+        #[arg(long = "for", value_name = "MINUTES", conflicts_with = "until")]
+        minutes: Option<u32>,
+        /// With `on`: end at local HH:MM (the next occurrence).
+        #[arg(long, value_name = "HH:MM")]
+        until: Option<String>,
+    },
+    /// Daily Do Not Disturb schedule: `FROM TO [--days "mon tue"]`, or `--clear`.
+    DndSchedule {
+        from: Option<String>,
+        to: Option<String>,
+        #[arg(long)]
+        days: Option<String>,
+        /// Alarms (`alarm.*`) break through Do Not Disturb.
+        #[arg(long)]
+        alarms: bool,
+        /// Incoming calls (`call.incoming`) break through Do Not Disturb.
+        #[arg(long)]
+        calls: bool,
+        /// Return to the configuration's Do Not Disturb preferences.
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        clear: bool,
+    },
+    /// Print Do Not Disturb and per-application preferences as JSON.
+    Preferences,
+    /// Set one application's delivery, sound and lock-screen preferences.
+    App {
+        app_identity: String,
+        /// allow (banners), silence (Center only) or drop (mute); omit to clear.
+        #[arg(long)]
+        delivery: Option<String>,
+        #[arg(long)]
+        sound: Option<bool>,
+        /// hidden, name-only or content
+        #[arg(long)]
+        lock_screen: Option<String>,
     },
     Reload {
         path: Option<PathBuf>,
@@ -104,6 +141,7 @@ enum DndCommand {
     On,
     Off,
     Toggle,
+    Tomorrow,
 }
 
 #[derive(Parser)]
@@ -384,6 +422,126 @@ fn ensure_wayland_session() -> anyhow::Result<()> {
     anyhow::bail!("service mode requires the gui Cargo feature; use --headless with this build")
 }
 
+fn next_local_time(value: &str) -> anyhow::Result<i64> {
+    use chrono::TimeZone;
+    let time =
+        canopa_notify::ClockTime::parse(value).ok_or_else(|| anyhow::anyhow!("expected HH:MM"))?;
+    let now = chrono::Local::now();
+    for offset in 0..3 {
+        let date = now.date_naive() + chrono::Days::new(offset);
+        let naive = date
+            .and_hms_opt(time.hour(), time.minute(), 0)
+            .expect("valid time");
+        if let Some(candidate) = chrono::Local.from_local_datetime(&naive).earliest()
+            && candidate > now
+        {
+            return Ok(candidate.timestamp_millis());
+        }
+    }
+    anyhow::bail!("could not resolve {value} in local time")
+}
+
+fn ctl_command_request(command: &CtlCommand) -> anyhow::Result<control_adapters::CtlRequest> {
+    use canopa_notify::{ControlCommand, DoNotDisturbRequest};
+    Ok(control_adapters::CtlRequest::Command(match command {
+        CtlCommand::Dnd {
+            state,
+            minutes,
+            until,
+        } => {
+            anyhow::ensure!(
+                matches!(state, DndCommand::On) || (minutes.is_none() && until.is_none()),
+                "--for and --until apply to `dnd on`"
+            );
+            let request = match (state, minutes, until) {
+                (DndCommand::On, Some(minutes), _) => {
+                    DoNotDisturbRequest::For { minutes: *minutes }
+                }
+                (DndCommand::On, None, Some(until)) => DoNotDisturbRequest::Until {
+                    until: next_local_time(until)?,
+                },
+                (DndCommand::Tomorrow, ..) => DoNotDisturbRequest::UntilTomorrow,
+                // Plain status/on/off/toggle keep their original wire command and output.
+                _ => return Ok(control_request_for_ctl(command)),
+            };
+            ControlCommand::RequestDoNotDisturb { request }
+        }
+        CtlCommand::DndSchedule {
+            from,
+            to,
+            days,
+            alarms,
+            calls,
+            clear,
+        } => ControlCommand::SetDoNotDisturbPreferences {
+            preferences: if *clear {
+                None
+            } else {
+                let parse = |value: &Option<String>, name: &str| {
+                    value
+                        .as_deref()
+                        .map(|value| {
+                            canopa_notify::ClockTime::parse(value)
+                                .ok_or_else(|| anyhow::anyhow!("{name} must be HH:MM"))
+                        })
+                        .transpose()
+                };
+                let schedule = match (parse(from, "FROM")?, parse(to, "TO")?) {
+                    (Some(start), Some(end)) => Some(canopa_notify::DoNotDisturbSchedule {
+                        start,
+                        end,
+                        days: match days {
+                            Some(days) => {
+                                canopa_notify::Weekdays::parse(days.split_whitespace())
+                                    .ok_or_else(|| anyhow::anyhow!("--days names mon..sun"))?
+                            }
+                            None => canopa_notify::Weekdays::ALL,
+                        },
+                    }),
+                    (None, None) => None,
+                    _ => anyhow::bail!("a schedule needs FROM and TO"),
+                };
+                Some(canopa_notify::DoNotDisturbPreferences {
+                    schedule,
+                    break_through: canopa_notify::BreakThrough {
+                        alarms: *alarms,
+                        calls: *calls,
+                    },
+                    ..Default::default()
+                })
+            },
+        },
+        CtlCommand::Preferences => ControlCommand::NotificationPreferences,
+        CtlCommand::App {
+            app_identity,
+            delivery,
+            sound,
+            lock_screen,
+        } => ControlCommand::SetAppPreferences {
+            app_identity: app_identity.clone(),
+            delivery: delivery
+                .as_deref()
+                .map(|value| {
+                    serde_json::from_value(serde_json::Value::String(value.into()))
+                        .map_err(|_| anyhow::anyhow!("--delivery is allow, silence or drop"))
+                })
+                .transpose()?,
+            preferences: canopa_notify::AppPreferences {
+                sound: *sound,
+                lock_screen: lock_screen
+                    .as_deref()
+                    .map(|value| {
+                        canopa_notify::LockScreenVisibility::parse(value).ok_or_else(|| {
+                            anyhow::anyhow!("--lock-screen is hidden, name-only or content")
+                        })
+                    })
+                    .transpose()?,
+            },
+        },
+        _ => return Ok(control_request_for_ctl(command)),
+    }))
+}
+
 async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
     if let CtlCommand::Reload { path: Some(path) } = &mut args.command {
         *path = std::path::absolute(&*path)?;
@@ -391,11 +549,8 @@ async fn run_ctl(mut args: CtlArgs) -> anyhow::Result<()> {
     if let CtlCommand::ReloadCanopa { path } = &mut args.command {
         *path = std::path::absolute(&*path)?;
     }
-    control_adapters::run_ctl(
-        &resolve_socket(args.socket)?,
-        control_request_for_ctl(&args.command),
-    )
-    .await
+    let request = ctl_command_request(&args.command)?;
+    control_adapters::run_ctl(&resolve_socket(args.socket)?, request).await
 }
 
 fn run_panel_provider(args: PanelProviderArgs) -> anyhow::Result<()> {
@@ -410,7 +565,7 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
         }
         CtlCommand::Active { json: true } => control_adapters::CtlRequest::ActiveJson,
         CtlCommand::Active { json: false } => control_adapters::CtlRequest::ActiveCount,
-        CtlCommand::Dnd { state } => control_adapters::CtlRequest::Command(match state {
+        CtlCommand::Dnd { state, .. } => control_adapters::CtlRequest::Command(match state {
             DndCommand::Status => canopa_notify::ControlCommand::DoNotDisturb,
             DndCommand::On => canopa_notify::ControlCommand::ChangeDoNotDisturb {
                 enabled: Some(true),
@@ -421,7 +576,15 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
             DndCommand::Toggle => {
                 canopa_notify::ControlCommand::ChangeDoNotDisturb { enabled: None }
             }
+            DndCommand::Tomorrow => canopa_notify::ControlCommand::RequestDoNotDisturb {
+                request: canopa_notify::DoNotDisturbRequest::UntilTomorrow,
+            },
         }),
+        CtlCommand::DndSchedule { .. } | CtlCommand::Preferences | CtlCommand::App { .. } => {
+            control_adapters::CtlRequest::Command(
+                canopa_notify::ControlCommand::NotificationPreferences,
+            )
+        }
         CtlCommand::Reload { path } => control_adapters::CtlRequest::Command(
             canopa_notify::ControlCommand::ReloadConfiguration { path: path.clone() },
         ),
