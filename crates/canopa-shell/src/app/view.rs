@@ -28,7 +28,7 @@ impl App {
 
         // Tray menus use compositor-managed popup grabs for outside dismissal.
         if let Some(model) = self.popup_render_model(window) {
-            let root = window_node(Surface::Menu, window, "Tray menu");
+            let root = window_node(Surface::Menu, window, fl!("shell-tray-menu"));
             if let Some(session) = self
                 .foreground
                 .menu_session(window)
@@ -83,9 +83,9 @@ impl App {
             .map(|surface| surface.output_name.as_str())
             .unwrap_or_default();
         let title = if output.is_empty() {
-            "Canopa bar".to_owned()
+            fl!("shell-bar-name")
         } else {
-            format!("Canopa bar on {output}")
+            fl!("shell-bar-name-on-output", output = output)
         };
         let bar = semantic(
             window_node(Surface::Bar, window, title),
@@ -701,12 +701,13 @@ fn render_external_selectable_list<'a>(
             })
         }
     };
+    let search_label = fl!("shell-search");
     let search = semantic(
-        Node::search_input("Search", search_query)
+        Node::search_input(search_label.clone(), search_query)
             .key(format!("{list_key}-search"))
             .controls(list_key.clone())
             .on_text(search_change),
-        crate::theme::input("Search", search_query)
+        crate::theme::input(&search_label, search_query)
             .on_input(move |query| {
                 Message::ExternalPanel(super::messages::ExternalPanelEvent::ListSearchChanged {
                     provider_name: provider_for_search.clone(),
@@ -768,11 +769,15 @@ fn render_external_selectable_list<'a>(
                 let submitted_value = value.clone();
                 let row_content = column![
                     crate::theme::text(value),
-                    crate::theme::text("Use custom value").size(crate::theme::label_size())
+                    crate::theme::text(fl!("shell-list-use-custom-value"))
+                        .size(crate::theme::label_size())
                 ]
                 .spacing(2);
                 let row = external_selectable_row(row_content, crate::theme::palette().accent);
-                let custom_label = format!("Use custom value {submitted_value}");
+                let custom_label = fl!(
+                    "shell-list-use-custom-value-named",
+                    value = submitted_value.clone()
+                );
                 let submit = Message::ExternalPanel(
                     super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
                         provider_name: provider,
@@ -890,7 +895,8 @@ fn render_panel_menu_model<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
-    let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
+    let search_label = fl!("shell-search");
+    let placeholder = model.menu_prompt.as_deref().unwrap_or(&search_label);
     let search = semantic(
         Node::search_input(placeholder, model.search_query.clone())
             .key("menu-search")
@@ -904,18 +910,21 @@ fn render_panel_menu_model<'a>(
     );
     let back_slot: Element<'_, Message> = if model.can_go_back {
         semantic(
-            Node::button("Back")
+            Node::button(fl!("shell-back"))
                 .key("menu-back")
                 .on_click(Some(Message::Panel(super::messages::PanelEvent::Back))),
-            crate::theme::button(crate::theme::text("‹ Back").size(crate::theme::label_size()))
-                .on_press(Message::Panel(super::messages::PanelEvent::Back))
-                .height(38),
+            crate::theme::button(
+                crate::theme::text(canopa_ui::direction::back_label())
+                    .size(crate::theme::label_size()),
+            )
+            .on_press(Message::Panel(super::messages::PanelEvent::Back))
+            .height(38),
         )
     } else {
         Space::new().width(0).height(38).into()
     };
     let header_spacing = if model.can_go_back { 8 } else { 0 };
-    let header = row![search, back_slot]
+    let header = canopa_ui::direction::row([search, back_slot])
         .align_y(iced::Alignment::Center)
         .spacing(header_spacing);
 
@@ -1061,26 +1070,30 @@ fn render_menu_row<'a>(model: &PanelRenderModel<'a>, index: usize) -> Element<'a
         node = node.expanded(false);
     }
 
-    let mut row_content = row![]
-        .spacing(8)
-        .width(Length::Fill)
-        .align_y(iced::Alignment::Center);
+    // Icon, label and submenu chevron in reading order (mirrored for RTL).
+    let mut cells: Vec<Element<'_, Message>> = Vec::new();
     if model.show_icons {
         let icon = entry.icon.as_deref().and_then(|name| model.icons.get(name));
-        row_content = row_content.push(panel_menu_icon_element(icon));
+        cells.push(panel_menu_icon_element(icon));
     }
-    row_content = row_content.push(
+    cells.push(
         container(
             crate::theme::text(entry.label.clone())
                 .width(Length::Fill)
+                .align_x(canopa_ui::direction::text_start())
                 .wrapping(iced::widget::text::Wrapping::None),
         )
         .width(Length::Fill)
-        .clip(true),
+        .clip(true)
+        .into(),
     );
     if entry.is_submenu {
-        row_content = row_content.push(crate::theme::text("›"));
+        cells.push(crate::theme::text(canopa_ui::direction::forward_chevron()).into());
     }
+    let row_content = canopa_ui::direction::row(cells)
+        .spacing(8)
+        .width(Length::Fill)
+        .align_y(iced::Alignment::Center);
     let keyboard_focus = model.keyboard_focus;
     let row = iced::widget::button(
         container(row_content)
@@ -1176,15 +1189,16 @@ fn render_searchable_sni_popup_model<'a>(
             }
             _ => None,
         });
+    let search_label = fl!("shell-search");
     let search = semantic(
-        Node::search_input("Search", session.search_query())
+        Node::search_input(search_label.clone(), session.search_query())
             .key("tray-menu-search")
             .controls("tray-menu")
             .active_descendant(selected)
             .on_text(move |query| {
                 Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
             }),
-        crate::theme::input("Search", session.search_query())
+        crate::theme::input(&search_label, session.search_query())
             .on_input(move |query| {
                 Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
             })
@@ -1279,9 +1293,9 @@ fn render_bar_model<'a>(
         .collect();
     let label_size = if show_workspace_label {
         let available = frame.width - padding.left - padding.right;
-        [10.0, 9.0]
-            .into_iter()
-            .find(|size| available >= crate::theme::text_width("Workspace", *size))
+        [10.0, 9.0].into_iter().find(|size| {
+            available >= crate::theme::text_width(&fl!("shell-workspace-label"), *size)
+        })
     } else {
         None
     };
@@ -1289,7 +1303,7 @@ fn render_bar_model<'a>(
         center.insert(
             0,
             container(
-                crate::theme::strong_text("Workspace")
+                crate::theme::strong_text(fl!("shell-workspace-label"))
                     .size(label_size)
                     .style(canopa_ui::muted),
             )
@@ -1401,9 +1415,9 @@ fn config_alert<'a>(
     } else {
         container(badge).center_x(Length::Fill)
     };
-    let node = Node::button("Configuration error")
+    let node = Node::button(fl!("shell-config-alert"))
         .key("bar-config-alert")
-        .description("The Shell configuration was rejected")
+        .description(fl!("shell-config-alert-description"))
         .on_click(primary.clone().map(Message::Notice));
     let mut area = mouse_area(badge).interaction(iced::mouse::Interaction::Pointer);
     if let Some(action) = primary {

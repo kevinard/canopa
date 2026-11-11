@@ -120,15 +120,11 @@ impl ConfigNotice {
 
     pub(crate) fn notice(&self, fallback: Fallback) -> Notice {
         let consequence = match fallback {
-            Fallback::EmbeddedDefaults => {
-                "Canopa Shell started with its built-in layout. Fix the file and save it to apply your configuration."
-            }
-            Fallback::PreviousConfiguration => {
-                "Canopa Shell kept the last working configuration. Fix the file and save it to apply your changes."
-            }
+            Fallback::EmbeddedDefaults => fl!("shell-config-notice-defaults"),
+            Fallback::PreviousConfiguration => fl!("shell-config-notice-previous"),
         };
         Notice {
-            summary: "Shell configuration error".into(),
+            summary: fl!("shell-config-notice-summary"),
             body: format!("{}\n{}\n{consequence}", self.location(), self.message),
             persistent: true,
             actions: self.actions(),

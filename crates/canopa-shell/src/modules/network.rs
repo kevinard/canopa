@@ -93,27 +93,27 @@ impl NetworkModule {
     }
 
     /// The Quick settings card's title: what carries the connection.
-    fn card_title(state: &NetworkState) -> &'static str {
+    fn card_title(state: &NetworkState) -> String {
         match state.kind {
-            Some(NetworkKind::Wireless) => "Wi-Fi",
-            Some(NetworkKind::Wired) => "Wired",
-            Some(NetworkKind::Vpn) => "VPN",
-            Some(NetworkKind::Other) | None => "Network",
+            Some(NetworkKind::Wireless) => fl!("shell-network-wifi"),
+            Some(NetworkKind::Wired) => fl!("shell-network-wired"),
+            Some(NetworkKind::Vpn) => fl!("shell-network-vpn"),
+            Some(NetworkKind::Other) | None => fl!("shell-network-network"),
         }
     }
 
     fn default_label(state: &NetworkState) -> String {
-        state.label.clone().unwrap_or_else(|| {
-            match &state.connectivity {
-                NetworkConnectivity::Full => "online",
-                NetworkConnectivity::Limited => "limited",
-                NetworkConnectivity::None => "offline",
-                NetworkConnectivity::Unknown => "unknown",
-                NetworkConnectivity::Connected => "connected",
-                NetworkConnectivity::Portal => "sign-in required",
-            }
-            .to_owned()
-        })
+        state
+            .label
+            .clone()
+            .unwrap_or_else(|| match &state.connectivity {
+                NetworkConnectivity::Full => fl!("shell-network-online"),
+                NetworkConnectivity::Limited => fl!("shell-network-limited"),
+                NetworkConnectivity::None => fl!("shell-network-offline"),
+                NetworkConnectivity::Unknown => fl!("shell-network-unknown"),
+                NetworkConnectivity::Connected => fl!("shell-network-connected"),
+                NetworkConnectivity::Portal => fl!("shell-network-portal"),
+            })
     }
 
     fn styled_segments_with_default(
@@ -249,11 +249,18 @@ impl crate::modules::render::ModuleRender for NetworkModule {
             crate::modules::ModuleState::Network(network) => {
                 let mut description = Self::default_label(network);
                 if !network.vpn.is_empty() {
-                    description = format!("{description} · VPN: {}", network.vpn.join(", "));
+                    description = fl!(
+                        "shell-network-with-vpn",
+                        description = description,
+                        vpn = network.vpn.join(", ")
+                    );
                 }
                 (Self::card_title(network), description)
             }
-            _ => ("Network", "Network status unavailable".to_owned()),
+            _ => (
+                fl!("shell-network-network"),
+                fl!("shell-network-status-unavailable"),
+            ),
         };
         Some(crate::modules::view::panel_control(
             include_bytes!("../../assets/wifi.svg"),

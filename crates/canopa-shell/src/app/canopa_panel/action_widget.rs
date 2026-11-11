@@ -24,7 +24,8 @@ pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, 
         provider,
         // Preserve all sender-controlled context without consuming the panel.
         container(crate::theme::panel_scroll(
-            crate::theme::text(format!("Selected: {label}")).width(Length::Fill),
+            crate::theme::text(fl!("shell-provider-selected", label = label.to_string()))
+                .width(Length::Fill),
         ))
         .width(Length::Fill)
         .max_height(54)

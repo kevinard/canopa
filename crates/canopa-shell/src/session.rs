@@ -20,40 +20,33 @@ pub(crate) fn from_config_name(name: &str) -> Option<SessionAction> {
     SessionAction::from_id(name)
 }
 
-/// The verb in "Couldn't …" and "You are not allowed to … now".
-pub(crate) fn verb(action: SessionAction) -> &'static str {
+/// The Fluent selector value naming `action` in session messages.
+fn action_id(action: SessionAction) -> &'static str {
     match action {
         SessionAction::Suspend => "suspend",
         SessionAction::Hibernate => "hibernate",
-        SessionAction::Reboot => "restart",
-        SessionAction::PowerOff => "power off",
+        SessionAction::Reboot => "reboot",
+        SessionAction::PowerOff => "power-off",
     }
 }
 
 /// The notice reporting a failed request.
 pub(crate) fn notice(failure: &Failure, action: SessionAction) -> Notice {
+    let action = action_id(action);
     let body = match failure {
-        Failure::Unavailable => {
-            "The login manager (systemd-logind) is not available on the system bus.".into()
-        }
-        Failure::NotAuthorized => format!(
-            "You are not allowed to {} now, or authentication was cancelled.",
-            verb(action)
+        Failure::Unavailable => fl!("shell-session-logind-unavailable"),
+        Failure::NotAuthorized => fl!("shell-session-not-authorized", action = action),
+        Failure::Blocked(inhibitors) => fl!(
+            "shell-session-blocked",
+            blockers = blockers_sentence(inhibitors),
+            count = inhibitors.len()
         ),
-        Failure::Blocked(inhibitors) => format!(
-            "Blocked by {}. Finish or close {}, then try again.",
-            blockers_sentence(inhibitors),
-            if inhibitors.len() == 1 {
-                "that application"
-            } else {
-                "those applications"
-            }
-        ),
+        // logind's own explanation.
         Failure::Refused(message) => message.clone(),
-        Failure::TimedOut => "The login manager did not answer in time.".into(),
+        Failure::TimedOut => fl!("shell-session-timed-out"),
     };
     Notice {
-        summary: format!("Couldn't {}", verb(action)),
+        summary: fl!("shell-session-failed", action = action),
         body,
         persistent: false,
         actions: Vec::new(),
@@ -68,7 +61,8 @@ pub(crate) fn blockers_sentence(inhibitors: &[Inhibitor]) -> String {
         .map(Inhibitor::describe)
         .collect();
     if inhibitors.len() > BLOCKER_LIMIT {
-        parts.push(format!("{} more", inhibitors.len() - BLOCKER_LIMIT));
+        let more = (inhibitors.len() - BLOCKER_LIMIT) as u64;
+        parts.push(fl!("shell-session-more-blockers", count = more));
     }
     parts.join("; ")
 }

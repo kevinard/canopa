@@ -112,7 +112,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         style: &crate::config::Style,
         context: crate::modules::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        use iced::widget::{container, row};
+        use iced::widget::container;
         let mut style = *style;
         if context.footer
             && style.color.is_none()
@@ -124,10 +124,13 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         }
         let content = self.render_panel_with_style(state, &style);
         let content = if context.opens_provider {
-            row![
-                container(content).width(iced::Length::Fill),
-                crate::theme::text("›").size(22).style(canopa_ui::muted)
-            ]
+            canopa_ui::direction::row([
+                container(content).width(iced::Length::Fill).into(),
+                crate::theme::text(canopa_ui::direction::forward_chevron())
+                    .size(22)
+                    .style(canopa_ui::muted)
+                    .into(),
+            ])
             .spacing(8)
             .align_y(iced::Alignment::Center)
             .into()

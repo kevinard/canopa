@@ -19,7 +19,7 @@ use canopa_shell::{
 use iced::{
     Alignment, Element, Length, Task,
     futures::{StreamExt, stream},
-    widget::{Space, column, container, progress_bar, row},
+    widget::{Space, column, container, progress_bar},
     window::Id,
 };
 use iced_layershell::reexport::{
@@ -233,7 +233,7 @@ fn indicator_view(indicator: &Indicator, opacity: f32) -> Element<'static, Messa
             device: Some(device),
             ..
         } => device.clone(),
-        _ => indicator.channel().title().to_owned(),
+        _ => indicator.channel().title(),
     };
     let bar: Element<'static, Message> = match indicator.fill() {
         Some(fill) => {
@@ -256,19 +256,23 @@ fn indicator_view(indicator: &Indicator, opacity: f32) -> Element<'static, Messa
         crate::theme::text(title)
             .size(crate::theme::label_size())
             .color(foreground)
+            .width(Length::Fill)
+            .align_x(canopa_ui::direction::text_start())
             .wrapping(iced::widget::text::Wrapping::None),
         bar,
     ]
     .spacing(8)
     .width(Length::Fill);
-    let content = row![
+    // Icon, title and value in reading order (mirrored for RTL).
+    let content = canopa_ui::direction::row([
         crate::theme::icon(icon(indicator), 24.0, foreground),
-        label,
+        label.into(),
         crate::theme::strong_text(indicator.value())
             .color(foreground)
             .width(Length::Fixed(88.0))
-            .align_x(iced::alignment::Horizontal::Right),
-    ]
+            .align_x(canopa_ui::direction::text_end())
+            .into(),
+    ])
     .spacing(14)
     .align_y(Alignment::Center);
     let mut style = canopa_ui::frame(&appearance, ui);
@@ -419,7 +423,7 @@ mod announce {
 
     pub(super) fn tree(text: &str) -> TreeUpdate {
         let mut root = Node::new(Role::Window);
-        root.set_label("On-screen display");
+        root.set_label(fl!("shell-osd-name"));
         root.set_children(vec![STATUS]);
         let mut status = Node::new(Role::Status);
         status.set_label(text);

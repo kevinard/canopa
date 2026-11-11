@@ -129,7 +129,12 @@ impl PanelAccessibility {
     fn new(window: iced::window::Id) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::channel(64);
         let published = Arc::new(Mutex::new(Published {
-            tree: tree("Notifications", Vec::new(), Vec::new(), ROOT),
+            tree: tree(
+                &fl!("shell-panel-notifications"),
+                Vec::new(),
+                Vec::new(),
+                ROOT,
+            ),
             actions: BTreeMap::new(),
             provider: String::new(),
             sliders: BTreeMap::new(),
@@ -273,12 +278,18 @@ impl PanelAccessibility {
                                         ));
                                         pending.clear();
                                     }
-                                    item_children.push(builder.group(
-                                        &key,
-                                        image.alt.as_deref().unwrap_or("Image"),
-                                        Role::Image,
-                                        Vec::new(),
-                                    ));
+                                    item_children.push(
+                                        builder.group(
+                                            &key,
+                                            image
+                                                .alt
+                                                .clone()
+                                                .unwrap_or_else(|| fl!("shell-a11y-image"))
+                                                .as_str(),
+                                            Role::Image,
+                                            Vec::new(),
+                                        ),
+                                    );
                                 }
                             }
                         }

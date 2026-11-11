@@ -161,12 +161,12 @@ pub enum Channel {
 }
 
 impl Channel {
-    pub fn title(self) -> &'static str {
+    pub fn title(self) -> String {
         match self {
-            Self::Volume => "Volume",
-            Self::Microphone => "Microphone",
-            Self::Brightness => "Brightness",
-            Self::KeyboardBacklight => "Keyboard brightness",
+            Self::Volume => fl!("shell-osd-volume"),
+            Self::Microphone => fl!("shell-osd-microphone"),
+            Self::Brightness => fl!("shell-osd-brightness"),
+            Self::KeyboardBacklight => fl!("shell-osd-keyboard-brightness"),
         }
     }
 }
@@ -214,14 +214,14 @@ impl Indicator {
                 channel: Channel::Volume | Channel::Microphone,
                 muted: true,
                 ..
-            } => "Muted".into(),
+            } => fl!("shell-osd-muted"),
             Self::Level {
                 channel: Channel::KeyboardBacklight,
                 muted: true,
                 ..
-            } => "Off".into(),
-            Self::Level { percent, .. } => format!("{percent}%"),
-            Self::Unavailable(_) => "Unavailable".into(),
+            } => fl!("shell-osd-off"),
+            Self::Level { percent, .. } => canopa_i18n::format::percent(f64::from(*percent)),
+            Self::Unavailable(_) => fl!("shell-osd-unavailable"),
         }
     }
 
@@ -230,16 +230,26 @@ impl Indicator {
     pub fn announcement(&self) -> String {
         let channel = self.channel().title();
         let value = match self {
-            Self::Unavailable(_) => "unavailable".to_owned(),
-            Self::Level { muted: true, .. } => self.value().to_lowercase(),
+            Self::Unavailable(_) => fl!("shell-osd-announce-unavailable"),
+            Self::Level {
+                channel: Channel::KeyboardBacklight,
+                muted: true,
+                ..
+            } => fl!("shell-osd-announce-off"),
+            Self::Level { muted: true, .. } => fl!("shell-osd-announce-muted"),
             Self::Level { .. } => self.value(),
         };
         match self {
             Self::Level {
                 device: Some(device),
                 ..
-            } => format!("{channel} {value}, {device}"),
-            _ => format!("{channel} {value}"),
+            } => fl!(
+                "shell-osd-announcement-device",
+                channel = channel,
+                value = value,
+                device = device.clone()
+            ),
+            _ => fl!("shell-osd-announcement", channel = channel, value = value),
         }
     }
 

@@ -271,7 +271,10 @@ impl App {
         if held.is_empty() {
             return prompt;
         }
-        let blocked = format!("Blocked by {}.", crate::session::blockers_sentence(&held));
+        let blocked = fl!(
+            "shell-session-blocked-by",
+            blockers = crate::session::blockers_sentence(&held)
+        );
         Some(match prompt {
             Some(prompt) => format!("{prompt}\n{blocked}"),
             None => blocked,

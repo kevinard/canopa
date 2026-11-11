@@ -42,10 +42,10 @@ impl NoticeAction {
         }
     }
 
-    fn label(&self) -> &'static str {
+    fn label(&self) -> String {
         match self {
-            Self::OpenFile(_) => "Open file",
-            Self::OpenSettings(_) => "Open Settings",
+            Self::OpenFile(_) => fl!("shell-notice-open-file"),
+            Self::OpenSettings(_) => fl!("shell-notice-open-settings"),
         }
     }
 
@@ -371,12 +371,12 @@ async fn notify(
     } else {
         notice.body.clone()
     };
-    let mut actions = Vec::new();
+    let mut actions: Vec<String> = Vec::new();
     if let Some(first) = notice.actions.first() {
-        actions.extend(["default", first.label()]);
+        actions.extend(["default".to_owned(), first.label()]);
     }
     for action in &notice.actions {
-        actions.extend([action.key(), action.label()]);
+        actions.extend([action.key().to_owned(), action.label()]);
     }
     let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
     hints.insert("urgency", Value::U8(if notice.persistent { 2 } else { 1 }));

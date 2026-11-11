@@ -119,3 +119,136 @@ shell-idle-stasis-help = Stasis: { $state } · Profile: { $profile } · Manual h
        *[off] off
     } · Click to toggle manual hold
 shell-idle-stasis-help-unavailable = Stasis unavailable · Start canopa-idle and install its backend
+
+## Network, sound and media cards
+
+shell-network-wifi = Wi-Fi
+shell-network-wired = Wired
+shell-network-vpn = VPN
+shell-network-network = Network
+# Connectivity, shown as the network {label} when no connection name is known.
+shell-network-online = online
+shell-network-limited = limited
+shell-network-offline = offline
+shell-network-unknown = unknown
+shell-network-connected = connected
+shell-network-portal = sign-in required
+# $vpn lists the active VPN names.
+shell-network-with-vpn = { $description } · VPN: { $vpn }
+shell-network-status-unavailable = Network status unavailable
+shell-volume-sound = Sound
+shell-volume-muted = Output muted
+shell-volume-devices = Speakers and microphones
+shell-volume-unavailable = Audio status unavailable
+shell-volume-level = Output level
+# $level is a formatted percentage.
+shell-volume-level-value = Output level, { $level }
+shell-volume-decrease = Decrease volume
+shell-volume-increase = Increase volume
+shell-media-title = Media
+# Default tooltips: keep the variables; they become {value} and {state}.
+shell-tooltip-battery = { $value }% { $state }
+shell-tooltip-volume = { $value }%
+
+## Bar and panel chrome
+
+shell-back = Back
+shell-close = Close
+shell-search = Search
+# Accessible window names.
+shell-bar-name = Canopa bar
+shell-bar-name-on-output = Canopa bar on { $output }
+shell-tray-menu = Tray menu
+# Caption above the workspace buttons on wide bars.
+shell-workspace-label = Workspace
+shell-config-alert = Configuration error
+shell-config-alert-description = The Shell configuration was rejected
+shell-list-use-custom-value = Use custom value
+# $value is the text the person typed.
+shell-list-use-custom-value-named = Use custom value { $value }
+shell-provider-failed = Provider failed
+shell-provider-value-too-long = Value is too long. Shorten it and try again.
+# A provider's selected entry; $label is its text.
+shell-provider-selected = Selected: { $label }
+
+## Bar accessibility (names read by screen readers)
+
+shell-a11y-clock = Clock
+shell-a11y-battery = Battery
+shell-a11y-battery-full = fully charged
+shell-a11y-battery-not-charging = not charging
+shell-a11y-battery-charging = charging
+shell-a11y-battery-discharging = discharging
+shell-a11y-battery-critical = critical
+shell-a11y-battery-low = low
+shell-a11y-network = Network
+shell-a11y-volume = Volume
+shell-a11y-volume-muted = muted
+shell-a11y-notifications = Notifications
+shell-a11y-unavailable = unavailable
+shell-a11y-attention = { $count ->
+        [0] none need attention
+        [one] { $count } needs attention
+       *[other] { $count } need attention
+    }
+shell-a11y-dnd-on = Do Not Disturb on
+# $label is the workspace's configured label or number.
+shell-a11y-workspace = Workspace { $label }
+shell-a11y-workspace-focused = focused
+shell-a11y-workspace-active = active
+shell-a11y-workspace-urgent = urgent
+shell-a11y-tray-item = Tray item
+shell-a11y-tray = Tray
+shell-a11y-image = Image
+
+## Notices
+
+shell-notice-open-file = Open file
+shell-notice-open-settings = Open Settings
+shell-config-notice-summary = Shell configuration error
+shell-config-notice-defaults = Canopa Shell started with its built-in layout. Fix the file and save it to apply your configuration.
+shell-config-notice-previous = Canopa Shell kept the last working configuration. Fix the file and save it to apply your changes.
+
+## Session actions (suspend, hibernate, reboot, power off)
+
+# $action is suspend, hibernate, reboot or power-off.
+shell-session-failed = { $action ->
+        [suspend] Couldn't suspend
+        [hibernate] Couldn't hibernate
+        [reboot] Couldn't restart
+       *[power-off] Couldn't power off
+    }
+shell-session-not-authorized = { $action ->
+        [suspend] You are not allowed to suspend now, or authentication was cancelled.
+        [hibernate] You are not allowed to hibernate now, or authentication was cancelled.
+        [reboot] You are not allowed to restart now, or authentication was cancelled.
+       *[power-off] You are not allowed to power off now, or authentication was cancelled.
+    }
+shell-session-logind-unavailable = The login manager (systemd-logind) is not available on the system bus.
+# $blockers lists the applications ("Firefox: Downloading files; Steam"); $count is how many.
+shell-session-blocked = { $count ->
+        [one] Blocked by { $blockers }. Finish or close that application, then try again.
+       *[other] Blocked by { $blockers }. Finish or close those applications, then try again.
+    }
+# Shown under a confirmation's prompt.
+shell-session-blocked-by = Blocked by { $blockers }.
+shell-session-timed-out = The login manager did not answer in time.
+# The last entry of a long list of blocking applications.
+shell-session-more-blockers = { $count } more
+
+## On-screen display
+
+shell-osd-name = On-screen display
+shell-osd-volume = Volume
+shell-osd-microphone = Microphone
+shell-osd-brightness = Brightness
+shell-osd-keyboard-brightness = Keyboard brightness
+shell-osd-muted = Muted
+shell-osd-off = Off
+shell-osd-unavailable = Unavailable
+# Screen reader announcements: "Volume 45%, Speakers".
+shell-osd-announce-muted = muted
+shell-osd-announce-off = off
+shell-osd-announce-unavailable = unavailable
+shell-osd-announcement = { $channel } { $value }
+shell-osd-announcement-device = { $channel } { $value }, { $device }

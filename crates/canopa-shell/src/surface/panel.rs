@@ -73,7 +73,7 @@ impl ExternalPanelContent {
             provider_name,
             ExternalPanelDocument::Elements {
                 elements: vec![ExternalPanelElement::Status {
-                    title: "Provider failed".into(),
+                    title: fl!("shell-provider-failed"),
                     message: message.into(),
                     severity: ExternalPanelSeverity::Error,
                 }],
@@ -219,17 +219,18 @@ pub fn panel_header_with_back<'a>(
     back: bool,
 ) -> iced::Element<'a, crate::app::Message> {
     use canopa_ui::accessibility::{Node, semantic};
-    use iced::widget::row;
 
     let panel = |event| Some(crate::app::Message::Panel(event));
-    let mut header = row![];
+    // Back, heading and Close in reading order (mirrored for RTL).
+    let mut cells: Vec<iced::Element<'a, crate::app::Message>> = Vec::new();
     if back {
-        header = header.push(semantic(
-            Node::button("Back")
+        cells.push(semantic(
+            Node::button(fl!("shell-back"))
                 .key("panel-back")
                 .on_click(panel(crate::app::messages::PanelEvent::Back)),
             crate::theme::action(
-                crate::theme::text("‹ Back").size(crate::theme::label_size()),
+                crate::theme::text(canopa_ui::direction::back_label())
+                    .size(crate::theme::label_size()),
                 panel(crate::app::messages::PanelEvent::Back),
                 canopa_ui::Action::Normal,
                 false,
@@ -237,26 +238,27 @@ pub fn panel_header_with_back<'a>(
             .height((crate::theme::panel_header_height() - 24) as f32),
         ));
     }
-    header
-        .push(semantic(
-            Node::heading(title.clone(), 1).key("panel-title"),
-            crate::theme::strong_text(title)
-                .size(crate::theme::title_size())
-                .width(iced::Length::Fill),
-        ))
-        .push(semantic(
-            Node::button("Close")
-                .key("panel-close")
-                .shortcut("Escape")
-                .on_click(panel(crate::app::messages::PanelEvent::Close)),
-            crate::theme::action(
-                crate::theme::text("Close").size(crate::theme::label_size()),
-                panel(crate::app::messages::PanelEvent::Close),
-                canopa_ui::Action::Normal,
-                false,
-            )
-            .height((crate::theme::panel_header_height() - 24) as f32),
-        ))
+    cells.push(semantic(
+        Node::heading(title.clone(), 1).key("panel-title"),
+        crate::theme::strong_text(title)
+            .size(crate::theme::title_size())
+            .width(iced::Length::Fill)
+            .align_x(canopa_ui::direction::text_start()),
+    ));
+    cells.push(semantic(
+        Node::button(fl!("shell-close"))
+            .key("panel-close")
+            .shortcut("Escape")
+            .on_click(panel(crate::app::messages::PanelEvent::Close)),
+        crate::theme::action(
+            crate::theme::text(fl!("shell-close")).size(crate::theme::label_size()),
+            panel(crate::app::messages::PanelEvent::Close),
+            canopa_ui::Action::Normal,
+            false,
+        )
+        .height((crate::theme::panel_header_height() - 24) as f32),
+    ));
+    canopa_ui::direction::row(cells)
         .spacing(canopa_ui::metrics::GAP)
         .align_y(iced::Alignment::Center)
         .into()

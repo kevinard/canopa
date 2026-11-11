@@ -19,15 +19,39 @@ fn template(raw: &str, allowed: &[&str]) -> FormatTemplate {
     FormatTemplate::from_styled(segs)
 }
 
+/// A translated default: the message's text with its placeables left as
+/// `{name}` placeholders, so a language can place the percent sign
+/// (`45 %` in French). Falls back to `english` if the translation is not a
+/// valid template.
+fn translated(text: String, english: &str, allowed: &[&str]) -> FormatTemplate {
+    let text: String = text
+        .chars()
+        .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+        .collect();
+    match TextTemplate::parse(&text, allowed, "tooltip-default") {
+        Ok(parsed) => FormatTemplate::from_styled(vec![StyledSegment::new(parsed)]),
+        Err(_) => template(english, allowed),
+    }
+}
+
 pub fn battery_default() -> Option<FormatTemplate> {
-    Some(template(
+    Some(translated(
+        fl!(
+            "shell-tooltip-battery",
+            value = "{value}",
+            state = "{state}"
+        ),
         "{value}% {state}",
         &["icon", "value", "percent", "state"],
     ))
 }
 
 pub fn volume_default() -> Option<FormatTemplate> {
-    Some(template("{value}%", &["icon", "value", "percent", "state"]))
+    Some(translated(
+        fl!("shell-tooltip-volume", value = "{value}"),
+        "{value}%",
+        &["icon", "value", "percent", "state"],
+    ))
 }
 
 pub fn clock_default() -> Option<FormatTemplate> {

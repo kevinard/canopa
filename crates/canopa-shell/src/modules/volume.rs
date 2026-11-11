@@ -272,13 +272,13 @@ impl crate::modules::render::ModuleRender for VolumeModule {
             None
         };
         let description = match volume {
-            Some(volume) if volume.muted => "Output muted",
-            Some(_) => "Speakers and microphones",
-            None => "Audio status unavailable",
+            Some(volume) if volume.muted => fl!("shell-volume-muted"),
+            Some(_) => fl!("shell-volume-devices"),
+            None => fl!("shell-volume-unavailable"),
         };
         let heading = crate::modules::view::panel_control(
             include_bytes!("../../assets/sound.svg"),
-            "Sound",
+            fl!("shell-volume-sound"),
             description,
             super::view::PanelControlEnd::Navigate,
             crate::modules::render::PanelModuleContext {
@@ -305,8 +305,11 @@ impl crate::modules::render::ModuleRender for VolumeModule {
             .height(44)
             .padding(0)
         };
-        let level = volume.map_or_else(|| "—".to_owned(), |v| format!("{:.0}%", v.volume));
-        let group = Node::group(format!("Output level, {level}"))
+        let level = volume.map_or_else(
+            || "—".to_owned(),
+            |v| canopa_i18n::format::percent(v.volume.round()),
+        );
+        let group = Node::group(fl!("shell-volume-level-value", level = level.clone()))
             .key(format!("{}/level", context.key))
             .hide_text();
         Some(
@@ -314,17 +317,19 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                 heading,
                 semantic(
                     group,
-                    row![
+                    canopa_ui::direction::row([
                         iced::widget::container(
-                            crate::theme::text("Output level")
+                            crate::theme::text(fl!("shell-volume-level"))
                                 .size(crate::theme::label_size())
                                 .style(canopa_ui::muted)
+                                .align_x(canopa_ui::direction::text_start())
                         )
                         .padding([0, 6])
-                        .width(iced::Length::Fill),
+                        .width(iced::Length::Fill)
+                        .into(),
                         row![
                             semantic(
-                                Node::button("Decrease volume")
+                                Node::button(fl!("shell-volume-decrease"))
                                     .key(format!("{}/decrease", context.key))
                                     .disabled(volume.is_none())
                                     .on_click(volume.and(context.scroll_down.clone())),
@@ -333,7 +338,7 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                             iced::widget::container(crate::theme::strong_text(level).size(16))
                                 .center_x(58),
                             semantic(
-                                Node::button("Increase volume")
+                                Node::button(fl!("shell-volume-increase"))
                                     .key(format!("{}/increase", context.key))
                                     .disabled(volume.is_none())
                                     .on_click(volume.and(context.scroll_up.clone())),
@@ -341,8 +346,9 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                             ),
                         ]
                         .spacing(4)
-                        .align_y(iced::Alignment::Center),
-                    ]
+                        .align_y(iced::Alignment::Center)
+                        .into(),
+                    ])
                     .spacing(12)
                     .align_y(iced::Alignment::Center)
                 ),

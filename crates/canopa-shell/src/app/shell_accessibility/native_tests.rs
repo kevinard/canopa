@@ -282,9 +282,10 @@ async fn native_bar_module_follows_bar_focus_and_activates_like_a_click() {
     let month = today.format("%B %Y").to_string();
     testing::named_role(&connection, &month, "heading").await;
     testing::named_role(&connection, &month, "table").await;
+    // The cell reads as the locale's full date (US English in tests).
     let cell = testing::named(
         &connection,
-        &format!("Today, {}", today.format("%A %-d %B %Y")),
+        &format!("Today, {}", today.format("%A, %B %-d, %Y")),
     )
     .await;
     assert!(cell.has_state(atspi::STATE_SELECTED).await);

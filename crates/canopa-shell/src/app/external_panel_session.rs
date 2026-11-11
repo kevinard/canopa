@@ -73,7 +73,9 @@ impl ActiveExternalPanelSession {
             .is_none_or(|handle| handle.input_fits(event));
         self.content.set_input_error(
             id,
-            (!fits).then_some("Value is too long. Shorten it and try again."),
+            (!fits)
+                .then(|| fl!("shell-provider-value-too-long"))
+                .as_deref(),
         );
         fits
     }

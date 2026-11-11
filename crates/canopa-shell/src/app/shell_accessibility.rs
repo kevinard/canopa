@@ -207,6 +207,14 @@ fn value<'a>(values: &'a [(&'static str, String)], key: &str) -> Option<&'a str>
         .filter(|value| !value.is_empty())
 }
 
+/// A module's `{percent}` value read as a percentage.
+fn percent(value: &str) -> String {
+    value
+        .parse::<f64>()
+        .map(canopa_i18n::format::percent)
+        .unwrap_or_else(|_| format!("{value}%"))
+}
+
 /// Name a bar module and state its value from the values its format uses.
 pub(super) fn module_summary(
     kind: ModuleKind,
@@ -217,7 +225,7 @@ pub(super) fn module_summary(
     let mut summary = ModuleSummary::default();
     let (name, parts): (String, Vec<String>) = match kind {
         ModuleKind::Clock => (
-            "Clock".into(),
+            fl!("shell-a11y-clock"),
             [get("time"), get("date")]
                 .into_iter()
                 .flatten()
@@ -225,50 +233,55 @@ pub(super) fn module_summary(
                 .collect(),
         ),
         ModuleKind::Battery => {
-            let mut parts: Vec<String> = get("percent")
-                .map(|p| format!("{p}%"))
-                .into_iter()
-                .collect();
+            let mut parts: Vec<String> = get("percent").map(percent).into_iter().collect();
             match get("state") {
                 Some("normal" | "unknown") | None => {}
-                Some("full") => parts.push("fully charged".into()),
-                Some("pending-charge") => parts.push("not charging".into()),
+                Some("full") => parts.push(fl!("shell-a11y-battery-full")),
+                Some("pending-charge") => parts.push(fl!("shell-a11y-battery-not-charging")),
+                Some("charging") => parts.push(fl!("shell-a11y-battery-charging")),
+                Some("pending-discharge") => parts.push(fl!("shell-a11y-battery-discharging")),
+                Some("critical") => parts.push(fl!("shell-a11y-battery-critical")),
+                Some("low") => parts.push(fl!("shell-a11y-battery-low")),
+                // A state the person named in their configuration.
                 Some(state) => parts.push(state.replace('-', " ")),
             }
-            ("Battery".into(), parts)
+            (fl!("shell-a11y-battery"), parts)
         }
         ModuleKind::Network => (
-            "Network".into(),
+            fl!("shell-a11y-network"),
             get("label").map(str::to_owned).into_iter().collect(),
         ),
         ModuleKind::Volume => (
-            "Volume".into(),
+            fl!("shell-a11y-volume"),
             if get("state") == Some("muted") {
-                vec!["muted".into()]
+                vec![fl!("shell-a11y-volume-muted")]
             } else {
-                get("percent")
-                    .map(|p| format!("{p}%"))
-                    .into_iter()
-                    .collect()
+                get("percent").map(percent).into_iter().collect()
             },
         ),
         ModuleKind::Notifications => {
             summary.description = get("label").map(str::to_owned);
             let parts = match get("state") {
-                Some("unavailable") | None => vec!["unavailable".into()],
+                Some("unavailable") | None => vec![fl!("shell-a11y-unavailable")],
                 Some(state) => {
-                    let mut parts = vec![match get("value") {
-                        Some("0") | None => "none need attention".to_owned(),
-                        Some("1") => "1 needs attention".to_owned(),
-                        Some(count) => format!("{count} need attention"),
-                    }];
+                    // The value is the formatted count; its digits give the plural.
+                    let count: u64 = get("value")
+                        .map(|value| {
+                            value
+                                .chars()
+                                .filter(char::is_ascii_digit)
+                                .collect::<String>()
+                        })
+                        .and_then(|digits| digits.parse().ok())
+                        .unwrap_or(0);
+                    let mut parts = vec![fl!("shell-a11y-attention", count = count)];
                     if state == "dnd" {
-                        parts.push("Do Not Disturb on".into());
+                        parts.push(fl!("shell-a11y-dnd-on"));
                     }
                     parts
                 }
             };
-            ("Notifications".into(), parts)
+            (fl!("shell-a11y-notifications"), parts)
         }
         ModuleKind::IdleInhibitor => {
             summary.description = get("label").map(str::to_owned);
@@ -284,10 +297,10 @@ pub(super) fn module_summary(
                 Some(state) => vec![state.to_owned()],
                 None => Vec::new(),
             };
-            ("Keep awake".into(), parts)
+            (fl!("shell-idle-keep-awake"), parts)
         }
         ModuleKind::Media => (
-            "Media".into(),
+            fl!("shell-media-title"),
             [get("label"), get("state")]
                 .into_iter()
                 .flatten()
@@ -295,7 +308,7 @@ pub(super) fn module_summary(
                 .collect(),
         ),
         ModuleKind::FocusedWindow => (
-            "Focused window".into(),
+            fl!("shell-panel-focused-window"),
             get("title")
                 .or(get("app-id"))
                 .map(str::to_owned)
@@ -319,15 +332,15 @@ pub(super) fn module_summary(
                 .collect();
             let focused = get("state") == Some("focused");
             if focused {
-                parts.push("focused".into());
+                parts.push(fl!("shell-a11y-workspace-focused"));
             } else if get("state") == Some("active") {
-                parts.push("active".into());
+                parts.push(fl!("shell-a11y-workspace-active"));
             }
             if get("urgent").is_some() {
-                parts.push("urgent".into());
+                parts.push(fl!("shell-a11y-workspace-urgent"));
             }
             summary.selected = Some(focused);
-            (format!("Workspace {label}"), parts)
+            (fl!("shell-a11y-workspace", label = label), parts)
         }
         ModuleKind::TrayIcon => {
             let title = get("title");
@@ -337,13 +350,13 @@ pub(super) fn module_summary(
                     .or(get("description"))
                     .or(get("icon-name"))
                     .or(get("service"))
-                    .unwrap_or("Tray item")
-                    .to_owned(),
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| fl!("shell-a11y-tray-item")),
                 Vec::new(),
             )
         }
-        ModuleKind::Workspaces => ("Workspaces".into(), Vec::new()),
-        ModuleKind::Tray => ("Tray".into(), Vec::new()),
+        ModuleKind::Workspaces => (fl!("shell-panel-workspaces"), Vec::new()),
+        ModuleKind::Tray => (fl!("shell-a11y-tray"), Vec::new()),
     };
     summary.label = std::iter::once(name)
         .chain(parts)
