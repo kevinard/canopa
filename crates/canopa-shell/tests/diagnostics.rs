@@ -12,6 +12,7 @@ fn renamed_performance_switch_takes_precedence_over_legacy_environment() {
         let mut command = Command::new(env!("CARGO_BIN_EXE_canopa-shell"));
         command
             .arg("--version")
+            .env("CANOPA_LANGUAGE", "en")
             .env("RUST_LOG", "canopa_shell::diagnostics=debug")
             // Colored field names would split the asserted `key=value` text.
             .env("NO_COLOR", "1")

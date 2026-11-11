@@ -46,6 +46,7 @@ fn provider_side_code_uses_shared_protocol_and_content_model() {
 async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol() {
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_canopa-wifi-provider"))
         .env("CANOPA_WIFI_PROVIDER_BACKEND", "none")
+        .env("CANOPA_LANGUAGE", "en")
         .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -117,6 +118,7 @@ async fn audio_and_media_close_without_waiting_for_stdin_eof() {
         env!("CARGO_BIN_EXE_canopa-media-provider"),
     ] {
         let mut child = tokio::process::Command::new(binary)
+            .env("CANOPA_LANGUAGE", "en")
             .env(
                 "PULSE_SERVER",
                 format!("unix:{}/no-audio", directory.path().display()),
@@ -174,6 +176,7 @@ async fn assert_wifi_provider_v5_closes(current: Option<&str>, legacy: Option<&s
     command
         .args(["--protocol", "canopa-v5"])
         .env_remove("CANOPA_WIFI_PROVIDER_BACKEND")
+        .env("CANOPA_LANGUAGE", "en")
         .env_remove("NIRIBAR_WIFI_PROVIDER_BACKEND")
         .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())

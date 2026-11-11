@@ -9,6 +9,7 @@ use std::{
 fn cli(args: &[&str], runtime: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_canopa-shell"))
         .args(args)
+        .env("CANOPA_LANGUAGE", "en")
         .env("XDG_RUNTIME_DIR", runtime)
         .env("XDG_STATE_HOME", runtime.join("state"))
         .env_remove("WAYLAND_DISPLAY")

@@ -6,6 +6,7 @@ use std::{
 fn check(args: &[&str], config_home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_canopa-shell"))
         .arg("--check-config")
+        .env("CANOPA_LANGUAGE", "en")
         .args(args)
         .env("XDG_CONFIG_HOME", config_home)
         .env_remove("WAYLAND_DISPLAY")

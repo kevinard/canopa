@@ -7,6 +7,7 @@ use std::{
 fn lock(root: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_canopa-shell"))
         .arg("lock")
+        .env("CANOPA_LANGUAGE", "en")
         .env("PATH", root)
         .env("HOME", root)
         .env("XDG_STATE_HOME", root.join("state"))

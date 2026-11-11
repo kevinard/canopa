@@ -175,6 +175,7 @@ impl Provider {
     fn launch(bus: &TestBus, mode: &str) -> Self {
         let mut process = Command::new(env!("CARGO_BIN_EXE_canopa-shell"))
             .args(["--hardware-panel", mode])
+            .env("CANOPA_LANGUAGE", "en")
             .env("DBUS_SYSTEM_BUS_ADDRESS", &bus.address)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
