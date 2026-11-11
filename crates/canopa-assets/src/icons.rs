@@ -143,6 +143,11 @@ impl<'a> IconLookup<'a> {
         self
     }
 
+    /// Per-request form of [`Self::with_generic_fallback`] for mixed batches.
+    pub fn set_generic_fallback(&mut self, enabled: bool) {
+        self.generic_fallback = enabled;
+    }
+
     fn with_metadata(mut self, metadata: HashMap<String, Arc<Theme>>) -> Self {
         self.metadata = metadata;
         self
@@ -169,15 +174,13 @@ impl<'a> IconLookup<'a> {
     }
 
     fn resolve_names(&mut self, names: &[String], size: u16) -> LookupResult<Option<PathBuf>> {
-        let mut chain = Vec::new();
-        self.chain(self.options.theme, &mut chain)?;
-        if !chain.iter().any(|theme| theme == "hicolor") {
-            chain.push("hicolor".to_owned());
+        let mut visited = Vec::new();
+        if let Some(path) = self.search(self.options.theme, names, size, &mut visited)? {
+            return Ok(Some(path));
         }
-        for theme in &chain {
-            if let Some(path) = self.in_theme(theme, names, size)? {
-                return Ok(Some(path));
-            }
+        // The required fallback comes after the complete explicit parent tree.
+        if let Some(path) = self.search("hicolor", names, size, &mut visited)? {
+            return Ok(Some(path));
         }
         for name in names {
             for root in self.roots {
@@ -192,27 +195,38 @@ impl<'a> IconLookup<'a> {
         Ok(None)
     }
 
-    /// The selected theme and its inherited themes, depth-first, without hicolor:
-    /// the required fallback comes after the complete explicit parent tree.
-    fn chain(&mut self, theme: &str, chain: &mut Vec<String>) -> LookupResult<()> {
+    /// Depth-first over a theme and its parents (hicolor excluded), stopping at
+    /// the first theme holding any candidate. Parents load only when needed.
+    fn search(
+        &mut self,
+        theme: &str,
+        names: &[String],
+        size: u16,
+        visited: &mut Vec<String>,
+    ) -> LookupResult<Option<PathBuf>> {
         self.check()?;
-        if chain.iter().any(|seen| seen == theme) {
-            return Ok(());
+        if visited.iter().any(|seen| seen == theme) {
+            return Ok(None);
         }
-        if chain.len() >= MAX_THEMES {
+        if visited.len() >= MAX_THEMES {
             return Err(());
         }
-        chain.push(theme.to_owned());
+        visited.push(theme.to_owned());
+        if let Some(path) = self.in_theme(theme, names, size)? {
+            return Ok(Some(path));
+        }
         if theme == "hicolor" {
-            return Ok(());
+            return Ok(None);
         }
         let metadata = self.theme(theme)?;
         for parent in &metadata.parents {
-            if parent != "hicolor" {
-                self.chain(parent, chain)?;
+            if parent != "hicolor"
+                && let Some(path) = self.search(parent, names, size, visited)?
+            {
+                return Ok(Some(path));
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     fn in_theme(
