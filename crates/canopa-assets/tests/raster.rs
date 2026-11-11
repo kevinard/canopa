@@ -259,3 +259,84 @@ fn svg_output_is_bounded_and_external_images_are_not_resolved() {
     let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='65' height='1'/>";
     assert!(canopa_assets::svg::rasterize(svg, policy()).is_none());
 }
+
+#[test]
+fn sniffed_formats_accept_extensionless_png_and_jpeg_but_not_other_content() {
+    let temp = tempfile::tempdir().unwrap();
+    let extensionless = temp.path().join("chromium-notification-XXXXXX");
+    png(&extensionless, 2, 2);
+    let gif = temp.path().join("other");
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]))
+        .save_with_format(&gif, image::ImageFormat::Gif)
+        .unwrap();
+    let mut sniffed = RasterBatch::new(
+        RasterPolicy {
+            formats: Formats::SniffedPngJpeg,
+            ..policy()
+        },
+        budget(),
+        &|| false,
+    );
+    assert!(sniffed.load(&extensionless).is_some());
+    assert!(sniffed.load(&gif).is_none());
+    assert!(
+        RasterBatch::new(policy(), budget(), &|| false)
+            .load(&extensionless)
+            .is_none()
+    );
+}
+
+#[cfg(feature = "svg")]
+#[test]
+fn svg_content_is_detected_without_trusting_the_file_name() {
+    use canopa_assets::svg;
+    let temp = tempfile::tempdir().unwrap();
+    let disguised = temp.path().join("icon.png");
+    std::fs::write(
+        &disguised,
+        "\u{feff}<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"><rect width=\"4\" height=\"4\" fill=\"currentColor\"/></svg>",
+    )
+    .unwrap();
+    let raster_named_svg = temp.path().join("raster.svg");
+    png(&raster_named_svg, 3, 3);
+    let policy = svg::Policy {
+        max_encoded_bytes: 4096,
+        max_dimension: 64,
+        max_pixels: 64 * 64,
+        output_side: 8,
+        foreground: [200, 100, 50],
+    };
+    let mut batch = RasterBatch::new(
+        RasterPolicy {
+            formats: Formats::SniffedPngJpeg,
+            ..self::policy()
+        },
+        budget(),
+        &|| false,
+    );
+    let vector = batch.load_image_or_svg(&disguised, &policy).unwrap();
+    assert_eq!((vector.width, vector.height), (8, 8));
+    assert_eq!(&vector.pixels[..4], &[200, 100, 50, 255]);
+    let raster = batch.load_image_or_svg(&raster_named_svg, &policy).unwrap();
+    assert_eq!((raster.width, raster.height), (3, 3));
+    assert!(!svg::is_svg(b"\x1f\x8b compressed"));
+    assert!(svg::is_svg(b"<!-- c --><svg/>"));
+    assert!(!svg::is_svg(b"<?xml version=\"1.0\"?><html/>"));
+}
+
+#[test]
+fn recolor_and_trim_keep_coverage() {
+    let mut raster = canopa_assets::Raster {
+        width: 3,
+        height: 2,
+        pixels: vec![
+            0, 0, 0, 0, 9, 9, 9, 255, 0, 0, 0, 0, //
+            0, 0, 0, 0, 9, 9, 9, 128, 0, 0, 0, 0,
+        ],
+    };
+    raster.recolor([10, 20, 30, 255]);
+    assert_eq!(&raster.pixels[4..8], &[10, 20, 30, 255]);
+    let trimmed = raster.trimmed();
+    assert_eq!((trimmed.width, trimmed.height), (1, 2));
+    assert_eq!(trimmed.pixels, [10, 20, 30, 255, 10, 20, 30, 128]);
+}

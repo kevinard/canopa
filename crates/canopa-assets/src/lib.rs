@@ -18,6 +18,8 @@ pub mod svg;
 pub enum Formats {
     /// Require a PNG/JPEG filename and PNG/JPEG content, including through symlinks.
     StaticPngJpeg,
+    /// Require PNG/JPEG content, whatever the filename (extensionless temp files).
+    SniffedPngJpeg,
     /// Accept the raster codecs enabled in the consumer's compiled image graph.
     EnabledRasterCodecs,
 }
@@ -72,11 +74,52 @@ pub struct RasterBudget {
 }
 
 /// Owned pixels remain unchanged when the source file is edited or removed.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Raster {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+}
+
+impl Raster {
+    /// Paint every pixel `color`, keeping its coverage: symbolic icon recoloring.
+    pub fn recolor(&mut self, color: [u8; 4]) {
+        for pixel in self.pixels.chunks_exact_mut(4) {
+            pixel[..3].copy_from_slice(&color[..3]);
+            pixel[3] = ((u16::from(pixel[3]) * u16::from(color[3])) / 255) as u8;
+        }
+    }
+
+    /// Remove fully transparent margins; an empty or unpadded raster is unchanged.
+    pub fn trimmed(self) -> Self {
+        let (width, height) = (self.width, self.height);
+        let (mut left, mut top, mut right, mut bottom) = (width, height, 0, 0);
+        for (index, pixel) in self.pixels.chunks_exact(4).enumerate() {
+            if pixel[3] == 0 {
+                continue;
+            }
+            let x = index as u32 % width;
+            let y = index as u32 / width;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + 1);
+            bottom = bottom.max(y + 1);
+        }
+        if right <= left || bottom <= top || (left, top, right, bottom) == (0, 0, width, height) {
+            return self;
+        }
+        let mut pixels = Vec::with_capacity(((right - left) * (bottom - top) * 4) as usize);
+        for y in top..bottom {
+            let start = ((y * width + left) * 4) as usize;
+            let end = ((y * width + right) * 4) as usize;
+            pixels.extend_from_slice(&self.pixels[start..end]);
+        }
+        Self {
+            width: right - left,
+            height: bottom - top,
+            pixels,
+        }
+    }
 }
 
 /// A bounded preparation batch with no cache, queue, executor or background tasks.
@@ -103,6 +146,24 @@ impl<'a> RasterBatch<'a> {
     /// including an overflow probe. Missing, invalid and over-budget files return None.
     /// Cancellation is cooperative between stages; an active codec is not preempted.
     pub fn load(&mut self, path: &Path) -> Option<Raster> {
+        let bytes = self.read(path)?;
+        self.decode_inner(bytes)
+    }
+
+    /// Like [`Self::load`], but SVG content (detected from the bytes, never the
+    /// name) is rasterized with `svg` and charged to the same pixel budget.
+    #[cfg(feature = "svg")]
+    pub fn load_image_or_svg(&mut self, path: &Path, svg: &svg::Policy) -> Option<Raster> {
+        let bytes = self.read(path)?;
+        if !svg::is_svg(&bytes) {
+            return self.decode_inner(bytes);
+        }
+        let raster = svg::rasterize(&bytes, svg.clone())?;
+        self.admit_rgba(raster.width, raster.height, raster.pixels.len())
+            .then_some(raster)
+    }
+
+    fn read(&mut self, path: &Path) -> Option<Vec<u8>> {
         if (self.cancelled)() {
             return None;
         }
@@ -136,7 +197,7 @@ impl<'a> RasterBatch<'a> {
         if (self.cancelled)() {
             return None;
         }
-        self.decode_inner(bytes)
+        Some(bytes)
     }
 
     /// Decode an already-owned payload with the same format, allocation and pixel
@@ -159,8 +220,10 @@ impl<'a> RasterBatch<'a> {
         let mut reader = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .ok()?;
-        if matches!(self.policy.formats, Formats::StaticPngJpeg)
-            && !matches!(reader.format(), Some(ImageFormat::Png | ImageFormat::Jpeg))
+        if matches!(
+            self.policy.formats,
+            Formats::StaticPngJpeg | Formats::SniffedPngJpeg
+        ) && !matches!(reader.format(), Some(ImageFormat::Png | ImageFormat::Jpeg))
         {
             return None;
         }

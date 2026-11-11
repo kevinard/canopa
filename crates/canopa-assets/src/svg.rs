@@ -2,6 +2,7 @@
 use crate::Raster;
 use resvg::{tiny_skia, usvg};
 
+#[derive(Clone)]
 pub struct Policy {
     pub max_encoded_bytes: usize,
     pub max_dimension: u32,
@@ -25,7 +26,9 @@ pub fn rasterize(bytes: &[u8], policy: Policy) -> Option<Raster> {
         style_sheet: Some(format!("svg {{ color: #{r:02x}{g:02x}{b:02x}; }}")),
         ..Default::default()
     };
-    let tree = usvg::Tree::from_str(std::str::from_utf8(bytes).ok()?, &options).ok()?;
+    let source = std::str::from_utf8(bytes).ok()?;
+    let source = source.strip_prefix('\u{feff}').unwrap_or(source);
+    let tree = usvg::Tree::from_str(source, &options).ok()?;
     let size = tree.size();
     if size.width() > policy.max_dimension as f32
         || size.height() > policy.max_dimension as f32
@@ -57,4 +60,21 @@ pub fn rasterize(bytes: &[u8], policy: Policy) -> Option<Raster> {
             })
             .collect(),
     })
+}
+
+/// SVG by content: optional BOM and whitespace, then an `<svg` root, or an XML
+/// declaration, comment or doctype followed by `<svg` within the first 4 KiB.
+/// Compressed SVG (svgz) is not SVG here.
+pub fn is_svg(bytes: &[u8]) -> bool {
+    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
+    let start = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let head = &bytes[start..bytes.len().min(start + 4096)];
+    if head.starts_with(b"<svg") {
+        return true;
+    }
+    (head.starts_with(b"<?xml") || head.starts_with(b"<!--") || head.starts_with(b"<!DOCTYPE"))
+        && head.windows(4).any(|window| window == b"<svg")
 }
