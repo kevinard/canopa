@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
+pub mod preferences;
+
 pub const SUMMARY_REQUEST: &str = "summary-subscribe-v1\n";
 pub const MAX_SUMMARY_BYTES: usize = 512;
 /// Read-only lock-screen feed for the session locker. See [`LockScreenSnapshot`].

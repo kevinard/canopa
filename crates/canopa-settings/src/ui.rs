@@ -7,6 +7,7 @@ mod live_example;
 mod live_page;
 mod navigation;
 mod network;
+mod notifications;
 mod power;
 mod profiles;
 mod shortcuts;
@@ -124,6 +125,8 @@ enum Message {
     Network(crate::live::Event<crate::network::NetworkService>),
     Bluetooth(crate::live::Event<crate::bluetooth::BluetoothService>),
     BluetoothForm(bluetooth::Edit),
+    Notifications(crate::live::Event<crate::notifications::NotificationService>),
+    NotificationsForm(notifications::Edit),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -170,6 +173,10 @@ struct State {
     bluetooth: bluetooth::BluetoothPage,
     /// The PIN or passkey being typed for a pairing question.
     bluetooth_entry: String,
+    notifications: notifications::NotificationsPage,
+    /// Installed applications, read when the Notifications page opens.
+    notification_apps: Option<Vec<notifications::App>>,
+    notification_query: String,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -268,6 +275,9 @@ impl State {
             network_forms: Default::default(),
             bluetooth: live_page::LivePage::new(Default::default()),
             bluetooth_entry: String::new(),
+            notifications: live_page::LivePage::new(Default::default()),
+            notification_apps: None,
+            notification_query: String::new(),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -455,6 +465,11 @@ impl State {
                 }
                 if page == Page::Widgets && self.widget_layouts.editor.is_none() {
                     return widget_layouts::View::load(&self.paths);
+                }
+                if page == Page::Notifications && self.notification_apps.is_none() {
+                    return task(notifications::installed, |apps| {
+                        Message::NotificationsForm(notifications::Edit::Installed(apps))
+                    });
                 }
                 if page == Page::Shortcuts && self.shortcuts.is_none() {
                     let paths = self.paths.clone();
@@ -691,7 +706,9 @@ impl State {
                 match self.page {
                     #[cfg(debug_assertions)]
                     Page::LiveExample => self.busy = false,
-                    Page::Sound | Page::Network | Page::Bluetooth => self.busy = false,
+                    Page::Sound | Page::Network | Page::Bluetooth | Page::Notifications => {
+                        self.busy = false
+                    }
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -822,6 +839,10 @@ impl State {
             Message::NetworkForm(edit) => return self.network_edit(edit),
             Message::Bluetooth(event) => return self.bluetooth.update(event, bluetooth::message),
             Message::BluetoothForm(edit) => return self.bluetooth_edit(edit),
+            Message::Notifications(event) => {
+                return self.notifications.update(event, notifications::message);
+            }
+            Message::NotificationsForm(edit) => return self.notifications_edit(edit),
             Message::Level(level) if self.page == Page::Sound => self.input_level = level,
             Message::AlertSounds(enabled) if !self.busy && self.trial.is_none() => {
                 self.busy = true;
@@ -1050,6 +1071,9 @@ impl State {
             Page::Bluetooth => self
                 .bluetooth
                 .update(crate::live::Event::Reload, bluetooth::message),
+            Page::Notifications => self
+                .notifications
+                .update(crate::live::Event::Reload, notifications::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -1073,6 +1097,9 @@ impl State {
         }
         if self.page == Page::Bluetooth {
             subscriptions.push(self.bluetooth.subscription(Message::Bluetooth));
+        }
+        if self.page == Page::Notifications {
+            subscriptions.push(self.notifications.subscription(Message::Notifications));
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1144,6 +1171,7 @@ impl State {
             Page::Sound => self.sound_view(),
             Page::Network => self.network_view(),
             Page::Bluetooth => self.bluetooth_view(),
+            Page::Notifications => self.notifications_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

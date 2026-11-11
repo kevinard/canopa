@@ -15,6 +15,7 @@ pub enum Page {
     Sound,
     Personal,
     Power,
+    Notifications,
     Launcher,
     Shortcuts,
     Widgets,
@@ -337,6 +338,33 @@ pub static PAGES: &[Entry] = &[
         hidden: false,
     },
     Entry {
+        page: Page::Notifications,
+        id: "notifications",
+        title: "Notifications",
+        description: "Do not disturb, its schedule, and each application's notifications.",
+        icon: "preferences-system-notifications",
+        group: Group::Desktop,
+        keywords: &[
+            "do not disturb",
+            "dnd",
+            "quiet",
+            "focus",
+            "schedule",
+            "banners",
+            "alerts",
+            "alarms",
+            "calls",
+            "fullscreen",
+            "screen sharing",
+            "lock screen",
+            "mute",
+            "sound",
+            "applications",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
         page: Page::Launcher,
         id: "launcher",
         title: "Launcher",
@@ -573,6 +601,7 @@ mod tests {
             "network",
             "sound",
             "bluetooth",
+            "notifications",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -592,6 +621,7 @@ mod tests {
                 Page::Sound,
                 Page::Personal,
                 Page::Power,
+                Page::Notifications,
                 Page::Launcher,
                 Page::Shortcuts,
                 Page::Widgets,
@@ -626,6 +656,7 @@ mod tests {
         assert_eq!(pages("wi-fi")[0], Page::Network);
         assert_eq!(pages("lid"), [Page::Power]);
         assert_eq!(pages("pair")[0], Page::Bluetooth);
+        assert_eq!(pages("do not disturb"), [Page::Notifications]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
         // A title match ranks above keyword matches on other pages.

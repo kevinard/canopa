@@ -12,10 +12,11 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth and Sound are live pages: each change applies at once,
-without Save, and shows its own progress or error with Retry. When the service
-behind a page (NetworkManager, BlueZ, the audio server) is not running, the
-page says so and reconnects by itself when it returns.
+Network, Bluetooth, Sound and Notifications are live pages: each change
+applies at once, without Save, and shows its own progress or error with Retry.
+When the service behind a page (NetworkManager, BlueZ, the audio server,
+Canopa Notify) is not running, the page says so and reconnects by itself when
+it returns.
 
 Only one Settings window runs at a time. Opening Settings again, from the
 launcher, a notification or the command line, brings the existing window
@@ -161,6 +162,30 @@ analog output, or a Bluetooth headset's high-fidelity playback (A2DP) or
 headset mode with its microphone (HFP). **Play notification sounds** turns
 Canopa Notify's sounds on or off in `config.kdl` at once; unsaved
 Personalization and Widgets edits are kept.
+
+## Notifications
+
+The Notifications page asks Canopa Notify through its
+[preferences control API](notify/settings-control-api.md); Notify keeps the
+preferences and applies them.
+
+- **Do not disturb** turns it on until you turn it off, **For 1 hour**,
+  **For 3 hours** or **Until tomorrow morning** (08:00). Turning it off during
+  the scheduled time skips the rest of that window.
+- **Turn on automatically every day** sets a schedule, with its start and end
+  time and its days. An end before the start ends the next morning.
+- **Alarms** and **Incoming calls** still show while Do not disturb is on.
+- **Hide banners automatically** while an application is fullscreen, and while
+  the screen is shared or recorded (banner content is hidden then).
+- **Applications**: each application with its own rules, and any installed
+  application you find by name, has **Notifications** (the default, banners,
+  the Notification Center only, or mute), **Play sounds**, and what the lock
+  screen shows of its urgent notifications. **Reset** returns to the defaults
+  and `config.kdl`.
+
+Settings made here override the `notifications` section of `config.kdl`; when
+the Do not disturb settings come from Settings, **Use the settings from
+config.kdl** returns to the file.
 
 ## Keyboard and pointer
 
