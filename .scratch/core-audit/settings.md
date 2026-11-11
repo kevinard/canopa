@@ -69,7 +69,7 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | | VPN | missing | – | none | Needs `nmcli`/`nm-connection-editor` **Fixed in 77f2b41:** connect/disconnect, WireGuard create and `.conf` import, plugin VPN import through `nmcli connection import`. |
 | | Hotspot | missing | – | none | **Fixed in 77f2b41.** |
 | | Proxy | missing | – | none | **Fixed in 77f2b41** (connection proxy: none, PAC URL, or manual through a PAC script; metered flag too). |
-| Bluetooth | Devices | partial | Sh | `canopa-shell/src/hardware_panel/bluetooth.rs` (raw zbus, agent `:358`, power `:629`, connect/disconnect `:668-671`) | Can power, scan, pair and connect. No forget/remove, battery, rename or audio profile |
+| Bluetooth | Devices | partial | Sh | `canopa-shell/src/hardware_panel/bluetooth.rs` (raw zbus, agent `:358`, power `:629`, connect/disconnect `:668-671`) | Can power, scan, pair and connect. No forget/remove, battery, rename or audio profile **Fixed in c8d9e06:** Settings Bluetooth page: adapter power and visibility, search while shown, paired and nearby lists with kind and battery, pair with code confirmation or PIN/passkey entry, connect, disconnect, trust, forget (audio profile on the Sound page; rename still open). |
 | Sound | Output/input device | partial | Sh | `canopa-shell/src/audio/devices.rs:55-60` (libpulse) | Can set default, volume and mute per device **Fixed in 1e58759:** also in Settings Sound, with balance. |
 | | Per-app volume | missing | – | no sink-input handling | **Fixed in 43b9907 and 1e58759.** |
 | | Card profiles | missing | – | none | Can't switch HDMI/analog or A2DP/HFP **Fixed in 43b9907 and 1e58759.** |
