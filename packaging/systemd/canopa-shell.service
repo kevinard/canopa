@@ -2,6 +2,10 @@
 Description=Canopa desktop shell
 After=graphical-session-pre.target niri.service
 Before=graphical-session.target
+# Stop retrying a crash loop after five failures a minute, as canopa-idle does,
+# so the journal shows the cause instead of an endless restart cycle.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 PartOf=graphical-session.target canopa-session.target
 
 [Service]
