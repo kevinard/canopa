@@ -16,6 +16,7 @@ pub mod niri;
 pub mod notifications;
 pub mod power;
 pub mod preferences;
+pub mod privacy;
 pub mod profile_watch;
 pub mod profiles;
 pub mod region;

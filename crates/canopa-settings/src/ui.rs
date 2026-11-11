@@ -12,6 +12,7 @@ mod navigation;
 mod network;
 mod notifications;
 mod power;
+mod privacy;
 mod profiles;
 mod region;
 mod shortcuts;
@@ -141,6 +142,7 @@ enum Message {
     Region(crate::live::Event<crate::region::RegionService>),
     Users(crate::live::Event<crate::users::UsersService>),
     UsersForm(users::Edit),
+    Privacy(crate::live::Event<crate::privacy::PrivacyService>),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -201,6 +203,7 @@ struct State {
     region: region::RegionPage,
     users: users::UsersPage,
     users_forms: users::UsersForms,
+    privacy: privacy::PrivacyPage,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -311,6 +314,7 @@ impl State {
             region: live_page::LivePage::new(Default::default()),
             users: live_page::LivePage::new(Default::default()),
             users_forms: Default::default(),
+            privacy: live_page::LivePage::new(Default::default()),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -754,7 +758,8 @@ impl State {
                     | Page::DateTime
                     | Page::About
                     | Page::Region
-                    | Page::Users => self.busy = false,
+                    | Page::Users
+                    | Page::Privacy => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -899,6 +904,7 @@ impl State {
             Message::Region(event) => return self.region.update(event, region::message),
             Message::Users(event) => return self.users.update(event, users::message),
             Message::UsersForm(edit) => return self.users_edit(edit),
+            Message::Privacy(event) => return self.privacy.update(event, privacy::message),
             Message::DefaultAppsSearch(query) => {
                 self.default_apps_query = query.chars().take(100).collect();
             }
@@ -1139,6 +1145,9 @@ impl State {
             Page::Region => self
                 .region
                 .update(crate::live::Event::Reload, region::message),
+            Page::Privacy => self
+                .privacy
+                .update(crate::live::Event::Reload, privacy::message),
             Page::Users => {
                 self.users_forms.clear_secrets();
                 self.users
@@ -1192,6 +1201,9 @@ impl State {
         }
         if self.page == Page::Users {
             subscriptions.push(self.users.subscription(Message::Users));
+        }
+        if self.page == Page::Privacy {
+            subscriptions.push(self.privacy.subscription(Message::Privacy));
         }
         if self.page == Page::DateTime {
             subscriptions.push(self.date_time.subscription(Message::DateTime));
@@ -1276,6 +1288,7 @@ impl State {
             Page::About => self.about_view(),
             Page::Region => self.region_view(),
             Page::Users => self.users_view(),
+            Page::Privacy => self.privacy_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

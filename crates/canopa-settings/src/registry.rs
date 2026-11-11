@@ -24,6 +24,7 @@ pub enum Page {
     About,
     Region,
     Users,
+    Privacy,
     /// The live-page pattern on a fake service; debug builds only.
     #[cfg(debug_assertions)]
     LiveExample,
@@ -416,6 +417,33 @@ pub static PAGES: &[Entry] = &[
         hidden: false,
     },
     Entry {
+        page: Page::Privacy,
+        id: "privacy",
+        title: "Privacy",
+        description: "Review what applications may use, and what starts when you log in.",
+        icon: "preferences-system-privacy",
+        group: Group::System,
+        keywords: &[
+            "permissions",
+            "location",
+            "camera",
+            "microphone",
+            "screenshot",
+            "screen sharing",
+            "screencast",
+            "remote desktop",
+            "background",
+            "autostart",
+            "startup",
+            "login items",
+            "portal",
+            "flatpak",
+            "revoke",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
         page: Page::Notifications,
         id: "notifications",
         title: "Notifications",
@@ -744,6 +772,7 @@ mod tests {
             "about",
             "region",
             "users",
+            "privacy",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -766,6 +795,7 @@ mod tests {
                 Page::DateTime,
                 Page::Region,
                 Page::Users,
+                Page::Privacy,
                 Page::About,
                 Page::Notifications,
                 Page::DefaultApps,
@@ -798,7 +828,7 @@ mod tests {
         assert_eq!(pages("dark"), [Page::Personal]);
         assert_eq!(pages("suspend"), [Page::Power]);
         assert_eq!(pages("clipboard"), [Page::Launcher]);
-        assert_eq!(pages("microphone"), [Page::Sound]);
+        assert_eq!(pages("microphone"), [Page::Sound, Page::Privacy]);
         assert_eq!(pages("wireguard"), [Page::Network]);
         assert_eq!(pages("wi-fi")[0], Page::Network);
         assert_eq!(pages("lid"), [Page::Power]);
@@ -809,6 +839,8 @@ mod tests {
         assert_eq!(pages("hostname"), [Page::About]);
         assert_eq!(pages("language")[0], Page::Region);
         assert_eq!(pages("password")[0], Page::Users);
+        assert_eq!(pages("camera"), [Page::Privacy]);
+        assert_eq!(pages("autostart"), [Page::Privacy]);
         assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);

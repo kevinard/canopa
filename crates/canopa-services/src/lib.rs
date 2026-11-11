@@ -19,6 +19,7 @@
 //! | [`hostname`] | systemd-hostnamed | [`hostname::Host`] (names, hardware, OS) | [`hostname::watch`] | [`hostname::rename`] (polkit) |
 //! | [`locale`] | systemd-localed | [`locale::SystemLocale`] (locale, X11 and console keyboard) | [`locale::watch`] | [`locale::set_locale`], [`locale::set_x11_keyboard`] (polkit) |
 //! | [`accounts`] | AccountsService | [`accounts::Accounts`] ([`accounts::User`]: name, type, language, picture, automatic login) | [`accounts::watch`] | add, remove, rename, account type, language, formats, picture, automatic login, password at next login (polkit) |
+//! | [`permission_store`] | the portal permission store (session bus) | [`permission_store::Permissions`] per entry | [`permission_store::changes`] | set, revoke, delete |
 //! | [`geoclue`] | GeoClue | [`geoclue::Place`] | – | [`geoclue::locate`] (once, city accuracy) |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
@@ -43,6 +44,7 @@ pub mod locale;
 pub mod logind;
 pub mod mpris;
 pub mod network;
+pub mod permission_store;
 pub mod power_profiles;
 pub mod power_switches;
 #[cfg(any(test, feature = "test-support"))]

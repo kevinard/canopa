@@ -12,8 +12,8 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Date & time, Region & language, Users, About,
-Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
+Network, Bluetooth, Sound, Date & time, Region & language, Users, Privacy,
+About, Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
 systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
 it returns.
@@ -216,6 +216,21 @@ ask for an administrator's password through the polkit agent.
 Settings never handles password hashes; see
 [ADR 0143](adr/0143-password-changes-without-hashes.md). Automatic login is not
 offered, because the Canopa login screen does not use it.
+
+## Privacy
+
+**Application permissions** lists what sandboxed applications were allowed or
+denied through the desktop portal, as xdg-desktop-portal recorded it in the
+permission store: location, camera, microphone, speakers, screenshots, running
+in the background, notifications, and screen-sharing or remote-desktop restore
+grants. **Allow** and **Deny** change a yes/no answer; **Forget** removes it so
+the application asks again. Canopa's own screen-sharing and remote-desktop
+dialogs ask every time and keep no history.
+
+**Start at login** lists the autostart entries in `~/.config/autostart` and
+the system folders. Turning one off sets `Hidden=true` in your entry, or
+writes a user entry that hides a system one; turning a system entry back on
+removes that override.
 
 ## About
 

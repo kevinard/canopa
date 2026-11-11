@@ -17,13 +17,34 @@ use std::{
 pub struct TestBus {
     child: Child,
     pub address: String,
+    _config: tempfile::TempDir,
 }
+
+/// A session-like bus without service directories: nothing installed on the
+/// computer (xdg-permission-store, for example) is started on it.
+const CONFIG: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"#;
 
 impl TestBus {
     /// Start a private bus. Requires `dbus-daemon`.
     pub fn new() -> Self {
+        let config = tempfile::tempdir().expect("a temporary folder");
+        let file = config.path().join("bus.conf");
+        std::fs::write(&file, CONFIG).expect("a bus configuration");
         let mut child = Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--print-address=1"])
+            .arg(format!("--config-file={}", file.display()))
+            .args(["--nofork", "--print-address=1"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -40,6 +61,7 @@ impl TestBus {
         Self {
             child,
             address: address.trim().into(),
+            _config: config,
         }
     }
 
@@ -75,6 +97,7 @@ pub mod locale;
 pub mod logind;
 pub mod mpris;
 pub mod network;
+pub mod permission_store;
 pub mod power_profiles;
 pub mod timedate;
 pub mod upower;
