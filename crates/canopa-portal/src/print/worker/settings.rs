@@ -12,12 +12,12 @@ pub enum Field {
 }
 impl Field {
     pub const ALL: [Self; 4] = [Self::Source, Self::Type, Self::Quality, Self::Resolution];
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Source => "Paper source",
-            Self::Type => "Paper type",
-            Self::Quality => "Print quality",
-            Self::Resolution => "Resolution",
+            Self::Source => fl!("portal-print-paper-source"),
+            Self::Type => fl!("portal-print-paper-type"),
+            Self::Quality => fl!("portal-print-quality"),
+            Self::Resolution => fl!("portal-print-resolution"),
         }
     }
     pub(super) fn ipp(self) -> &'static CStr {

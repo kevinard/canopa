@@ -9,6 +9,10 @@ use iced::{
     widget::{checkbox, column, container, pick_list, row, scrollable, text, text_input},
 };
 
+/// A length in millimetres, with up to two decimals.
+fn millimetres(value: f64) -> String {
+    canopa_i18n::format::decimal(value, 2, false)
+}
 fn choice<T>(value: T, label: impl Into<String>) -> Choice<T> {
     Choice {
         value,
@@ -16,7 +20,7 @@ fn choice<T>(value: T, label: impl Into<String>) -> Choice<T> {
     }
 }
 fn select<'a, T: Clone + PartialEq + 'a>(
-    label: &'a str,
+    label: String,
     options: Vec<Choice<T>>,
     value: &T,
     edit: impl Fn(Choice<T>) -> Edit + 'static,
@@ -34,14 +38,14 @@ fn select<'a, T: Clone + PartialEq + 'a>(
     .into()
 }
 fn field<'a>(
-    label: &'a str,
+    label: String,
     value: &'a str,
     id: &'static str,
     edit: impl Fn(String) -> Edit + 'static,
 ) -> Element<'a, Message> {
     column![
-        text(label).size(14),
-        text_input(label, value)
+        text(label.clone()).size(14),
+        text_input(&label, value)
             .id(id)
             .on_input(move |value| Message::Edit(edit(value)))
     ]
@@ -61,9 +65,9 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
         Screen::Preparing(_) => {
             return container(
                 column![
-                    text("Preparing destination picker…"),
+                    text(fl!("portal-print-preparing-picker")),
                     canopa_ui::action(
-                        text("Back"),
+                        text(canopa_ui::direction::back_label()),
                         Some(Message::Back),
                         canopa_ui::Action::Normal,
                         false
@@ -98,54 +102,52 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
         })
         .collect::<Vec<_>>();
     if !dialog.request.formats().is_empty() {
-        choices.push(choice(DestinationChoice::File, "Print to file"));
+        choices.push(choice(DestinationChoice::File, fl!("portal-print-to-file")));
     }
     let selected = choices
         .iter()
         .find(|choice| Some(&choice.value) == dialog.target.as_ref())
         .cloned();
     let destination = pick_list(choices, selected, Message::Destination)
-        .placeholder("Choose a destination")
+        .placeholder(fl!("portal-print-choose-destination"))
         .width(Length::Fill);
     let mut content = column![
-        text("Print").size(24),
+        text(fl!("portal-print-title")).size(24),
         text(if request.context.title.is_empty() {
-            "Document"
+            fl!("portal-print-document")
         } else {
-            &request.context.title
+            request.context.title.clone()
         })
         .size(18),
         text(if request.context.app_id.is_empty() {
-            "Requested by an application"
+            fl!("portal-requested-by-application")
         } else {
-            &request.context.app_id
+            request.context.app_id.clone()
         })
         .style(canopa_ui::muted),
-        text("Destination").size(14),
-        row![
-            destination,
+        text(fl!("portal-print-destination")).size(14),
+        canopa_ui::direction::row([
+            destination.into(),
             canopa_ui::action(
-                text("Refresh"),
+                text(fl!("portal-print-refresh")),
                 Some(Message::Refresh),
                 canopa_ui::Action::Normal,
-                false
+                false,
             )
-        ]
+            .into(),
+        ])
         .spacing(8)
         .align_y(iced::Center)
     ]
     .spacing(12)
     .width(Length::Fill);
-    if let Some(notice) = dialog.notice {
+    if let Some(notice) = dialog.notice.clone() {
         content = content.push(text(notice).size(14).style(canopa_ui::muted));
     }
     if dialog.loading {
-        content = content.push(text("Loading printer information…").style(canopa_ui::muted));
+        content = content.push(text(fl!("portal-print-loading")).style(canopa_ui::muted));
     } else if dialog.printers.is_empty() && dialog.target.is_none() && dialog.error.is_none() {
-        content = content.push(
-            text("No printers are available. Configure a printer, then refresh.")
-                .style(canopa_ui::muted),
-        );
+        content = content.push(text(fl!("portal-print-no-printers")).style(canopa_ui::muted));
     }
     if let Some(DestinationChoice::Printer(destination)) = &dialog.target
         && let Some(printer) = dialog
@@ -157,45 +159,53 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             content = content.push(text(&printer.location).style(canopa_ui::muted));
         }
         let state = match (printer.accepting, printer.state) {
-            (false, _) => "This printer is not accepting jobs.",
-            (_, PrinterState::Stopped) => {
-                "This printer is stopped. Submitted jobs may wait in its queue."
-            }
-            (_, PrinterState::Processing) => "This printer is busy. Submitted jobs will be queued.",
-            _ => "Print jobs are sent to this printer’s queue.",
+            (false, _) => fl!("portal-print-not-accepting"),
+            (_, PrinterState::Stopped) => fl!("portal-print-stopped"),
+            (_, PrinterState::Processing) => fl!("portal-print-busy"),
+            _ => fl!("portal-print-idle"),
         };
         content = content.push(text(state).size(14).style(canopa_ui::muted));
     }
     if !dialog.loading {
         if let Some(caps) = &dialog.capabilities {
-            let mut media = vec![choice(None, "Printer default")];
+            let mut media = vec![choice(None, fl!("portal-print-printer-default"))];
             media.extend(caps.media.iter().map(|media| {
                 choice(
                     Some(media.id.clone()),
-                    format!("{} — {} × {} mm", media.id, media.width_mm, media.height_mm),
+                    fl!(
+                        "portal-print-media",
+                        name = media.id.as_str(),
+                        width = millimetres(media.width_mm),
+                        height = millimetres(media.height_mm)
+                    ),
                 )
             }));
-            let mut sides = vec![choice(None, "Printer default")];
+            let mut sides = vec![choice(None, fl!("portal-print-printer-default"))];
             sides.extend(caps.sides.iter().map(|value| {
                 choice(
                     Some(*value),
                     match value {
-                        Sides::OneSided => "One-sided",
-                        Sides::LongEdge => "Two-sided, long edge",
-                        Sides::ShortEdge => "Two-sided, short edge",
+                        Sides::OneSided => fl!("portal-print-one-sided"),
+                        Sides::LongEdge => fl!("portal-print-two-sided-long"),
+                        Sides::ShortEdge => fl!("portal-print-two-sided-short"),
                     },
                 )
             }));
-            let mut colors = vec![choice(None, "Printer default")];
-            colors.extend(
-                caps.colors
-                    .iter()
-                    .map(|value| choice(Some(*value), if *value { "Color" } else { "Monochrome" })),
-            );
+            let mut colors = vec![choice(None, fl!("portal-print-printer-default"))];
+            colors.extend(caps.colors.iter().map(|value| {
+                choice(
+                    Some(*value),
+                    if *value {
+                        fl!("portal-print-color")
+                    } else {
+                        fl!("portal-print-monochrome")
+                    },
+                )
+            }));
             if caps.custom_media {
                 content = content.push(
                     checkbox(draft.custom)
-                        .label("Custom paper size")
+                        .label(fl!("portal-print-custom-paper"))
                         .on_toggle(|value| Message::Edit(Edit::Custom(value)))
                         .style(canopa_ui::checkbox_style),
                 );
@@ -205,13 +215,13 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                     .push(
                         row![
                             field(
-                                "Width (mm)",
+                                fl!("portal-print-width"),
                                 &draft.custom_dimensions[0],
                                 "print-custom-width",
                                 |value| Edit::CustomDimension(0, value)
                             ),
                             field(
-                                "Height (mm)",
+                                fl!("portal-print-height"),
                                 &draft.custom_dimensions[1],
                                 "print-custom-height",
                                 |value| Edit::CustomDimension(1, value)
@@ -220,7 +230,7 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                         .spacing(12),
                     )
                     .push(canopa_ui::action(
-                        text("Check paper size"),
+                        text(fl!("portal-print-check-paper")),
                         dialog.custom_size().map(|_| Message::CheckCustomMedia),
                         canopa_ui::Action::Normal,
                         false,
@@ -229,33 +239,55 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                     && dialog.checked.is_some()
                 {
                     content = content.push(
-                        text(format!(
-                            "Paper confirmed. Margins (mm): top {}, bottom {}, left {}, right {}.",
-                            media.top_mm, media.bottom_mm, media.left_mm, media.right_mm
+                        text(fl!(
+                            "portal-print-paper-confirmed",
+                            top = millimetres(media.top_mm),
+                            bottom = millimetres(media.bottom_mm),
+                            left = millimetres(media.left_mm),
+                            right = millimetres(media.right_mm)
                         ))
                         .size(13)
                         .style(canopa_ui::muted),
                     );
                 } else {
-                    content = content.push(text("Enter millimetres with up to two decimal places, then check this size with the printer.").size(13).style(canopa_ui::muted));
+                    content = content.push(
+                        text(fl!("portal-print-custom-paper-hint"))
+                            .size(13)
+                            .style(canopa_ui::muted),
+                    );
                 }
                 if let Some(error) = &dialog.error {
                     content = content.push(text(error).size(14));
                 }
             } else {
-                content = content.push(select("Paper", media, &draft.device.media, Edit::Media));
+                content = content.push(select(
+                    fl!("portal-print-paper"),
+                    media,
+                    &draft.device.media,
+                    Edit::Media,
+                ));
             }
             content = content.push(
                 row![
-                    select("Sides", sides, &draft.device.sides, Edit::Sides),
-                    select("Color", colors, &draft.device.color, Edit::Color)
+                    select(
+                        fl!("portal-print-sides"),
+                        sides,
+                        &draft.device.sides,
+                        Edit::Sides
+                    ),
+                    select(
+                        fl!("portal-print-color"),
+                        colors,
+                        &draft.device.color,
+                        Edit::Color
+                    )
                 ]
                 .spacing(12),
             );
             for field in crate::print::worker::SettingField::ALL {
                 let control = caps.controls.get(field);
                 if !control.choices.is_empty() {
-                    let mut choices = vec![choice(None, "Printer default")];
+                    let mut choices = vec![choice(None, fl!("portal-print-printer-default"))];
                     choices.extend(
                         control
                             .choices
@@ -272,7 +304,7 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             }
             if !draft.custom && dialog.checked.is_none() {
                 content = content.push(canopa_ui::action(
-                    text("Check printer settings"),
+                    text(fl!("portal-print-check-settings")),
                     Some(Message::CheckCustomMedia),
                     canopa_ui::Action::Normal,
                     false,
@@ -285,15 +317,16 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             }
             if let Some((minimum, maximum)) = caps.copies {
                 content = content.push(
-                    text(format!("Printer supports {minimum}–{maximum} copies."))
-                        .size(13)
-                        .style(canopa_ui::muted),
+                    text(fl!(
+                        "portal-print-copies-range",
+                        minimum = minimum,
+                        maximum = maximum
+                    ))
+                    .size(13)
+                    .style(canopa_ui::muted),
                 );
             } else {
-                content = content.push(
-                    text("The printer did not report a supported copy count. Refresh to retry.")
-                        .size(13),
-                );
+                content = content.push(text(fl!("portal-print-copies-unknown")).size(13));
             }
         }
         if dialog.target == Some(DestinationChoice::File) {
@@ -304,28 +337,39 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                 .map(|format| choice(format, format.name().to_uppercase()))
                 .collect();
             if let Some(format) = draft.format {
-                content = content.push(select("File format", formats, &format, Edit::Format));
+                content = content.push(select(
+                    fl!("portal-print-file-format"),
+                    formats,
+                    &format,
+                    Edit::Format,
+                ));
             }
             content = content.push(
-                row![
-                    text(draft.path.as_deref().map(path_label).unwrap_or_else(|| {
-                        "Choose where to save the printed document.".into()
-                    }))
-                    .width(Length::Fill),
+                canopa_ui::direction::row([
+                    text(
+                        draft
+                            .path
+                            .as_deref()
+                            .map(path_label)
+                            .unwrap_or_else(|| fl!("portal-print-choose-file-hint")),
+                    )
+                    .width(Length::Fill)
+                    .into(),
                     canopa_ui::action(
-                        text("Choose file…"),
+                        text(fl!("portal-print-choose-file")),
                         Some(Message::ChooseFile),
                         canopa_ui::Action::Normal,
-                        false
+                        false,
                     )
-                ]
+                    .into(),
+                ])
                 .spacing(12)
                 .align_y(iced::Center),
             );
             let papers = vec![
                 choice((2100, 2970), "A4"),
-                choice((2159, 2794), "Letter"),
-                choice((2159, 3556), "Legal"),
+                choice((2159, 2794), fl!("portal-print-paper-letter")),
+                choice((2159, 3556), fl!("portal-print-paper-legal")),
                 choice((1480, 2100), "A5"),
             ];
             let paper = draft.geometry[0]
@@ -343,9 +387,9 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                 });
             content = content.push(
                 column![
-                    text("Paper").size(14),
+                    text(fl!("portal-print-paper")).size(14),
                     pick_list(papers, paper, |choice| Message::Edit(Edit::Paper(choice)))
-                        .placeholder("Custom size")
+                        .placeholder(fl!("portal-print-custom-size"))
                         .width(Length::Fill)
                 ]
                 .spacing(4),
@@ -353,22 +397,31 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             content = content
                 .push(
                     row![
-                        field("Width (mm)", &draft.geometry[0], "print-width", |v| {
-                            Edit::Geometry(0, v)
-                        }),
-                        field("Height (mm)", &draft.geometry[1], "print-height", |v| {
-                            Edit::Geometry(1, v)
-                        })
+                        field(
+                            fl!("portal-print-width"),
+                            &draft.geometry[0],
+                            "print-width",
+                            |v| Edit::Geometry(0, v)
+                        ),
+                        field(
+                            fl!("portal-print-height"),
+                            &draft.geometry[1],
+                            "print-height",
+                            |v| Edit::Geometry(1, v)
+                        )
                     ]
                     .spacing(12),
                 )
                 .push(
                     row![
-                        field("Top margin (mm)", &draft.geometry[2], "print-top", |v| {
-                            Edit::Geometry(2, v)
-                        }),
                         field(
-                            "Bottom margin (mm)",
+                            fl!("portal-print-margin-top"),
+                            &draft.geometry[2],
+                            "print-top",
+                            |v| Edit::Geometry(2, v)
+                        ),
+                        field(
+                            fl!("portal-print-margin-bottom"),
                             &draft.geometry[3],
                             "print-bottom",
                             |v| Edit::Geometry(3, v)
@@ -378,11 +431,14 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                 )
                 .push(
                     row![
-                        field("Left margin (mm)", &draft.geometry[4], "print-left", |v| {
-                            Edit::Geometry(4, v)
-                        }),
                         field(
-                            "Right margin (mm)",
+                            fl!("portal-print-margin-left"),
+                            &draft.geometry[4],
+                            "print-left",
+                            |v| Edit::Geometry(4, v)
+                        ),
+                        field(
+                            fl!("portal-print-margin-right"),
                             &draft.geometry[5],
                             "print-right",
                             |v| Edit::Geometry(5, v)
@@ -393,19 +449,24 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
         }
         if dialog.target.is_some() {
             let mut pages = vec![
-                choice(Pages::All, "All pages"),
-                choice(Pages::Ranges, "Page ranges"),
+                choice(Pages::All, fl!("portal-print-all-pages")),
+                choice(Pages::Ranges, fl!("portal-print-page-ranges")),
             ];
             if request.page_choices.current {
-                pages.push(choice(Pages::Current, "Current page"));
+                pages.push(choice(Pages::Current, fl!("portal-print-current-page")));
             }
             if request.page_choices.selection {
-                pages.push(choice(Pages::Selection, "Selection"));
+                pages.push(choice(Pages::Selection, fl!("portal-print-selection")));
             }
-            content = content.push(select("Pages", pages, &draft.layout.pages, Edit::Pages));
+            content = content.push(select(
+                fl!("portal-print-pages"),
+                pages,
+                &draft.layout.pages,
+                Edit::Pages,
+            ));
             if draft.layout.pages == Pages::Ranges {
                 content = content.push(field(
-                    "Page ranges (for example 1-3, 5)",
+                    fl!("portal-print-page-ranges-field"),
                     &draft.ranges,
                     "print-ranges",
                     Edit::Ranges,
@@ -414,31 +475,47 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             content = content
                 .push(
                     row![
-                        field("Copies", &draft.copies, "print-copies", Edit::Copies),
-                        field("Scale (%)", &draft.scale, "print-scale", Edit::Scale)
+                        field(
+                            fl!("portal-print-copies"),
+                            &draft.copies,
+                            "print-copies",
+                            Edit::Copies
+                        ),
+                        field(
+                            fl!("portal-print-scale"),
+                            &draft.scale,
+                            "print-scale",
+                            Edit::Scale
+                        )
                     ]
                     .spacing(12),
                 )
                 .push(
                     row![
                         checkbox(draft.layout.collate)
-                            .label("Collate copies")
+                            .label(fl!("portal-print-collate"))
                             .on_toggle(|value| Message::Edit(Edit::Collate(value)))
                             .style(canopa_ui::checkbox_style),
                         checkbox(draft.layout.reverse)
-                            .label("Reverse order")
+                            .label(fl!("portal-print-reverse"))
                             .on_toggle(|value| Message::Edit(Edit::Reverse(value)))
                             .style(canopa_ui::checkbox_style)
                     ]
                     .spacing(20),
                 )
                 .push(select(
-                    "Orientation",
+                    fl!("portal-print-orientation"),
                     vec![
-                        choice(Orientation::Portrait, "Portrait"),
-                        choice(Orientation::Landscape, "Landscape"),
-                        choice(Orientation::ReversePortrait, "Reverse portrait"),
-                        choice(Orientation::ReverseLandscape, "Reverse landscape"),
+                        choice(Orientation::Portrait, fl!("portal-print-portrait")),
+                        choice(Orientation::Landscape, fl!("portal-print-landscape")),
+                        choice(
+                            Orientation::ReversePortrait,
+                            fl!("portal-print-reverse-portrait"),
+                        ),
+                        choice(
+                            Orientation::ReverseLandscape,
+                            fl!("portal-print-reverse-landscape"),
+                        ),
                     ],
                     &draft.layout.orientation,
                     Edit::Orientation,
@@ -446,19 +523,22 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                 .push(
                     row![
                         select(
-                            "Page set",
+                            fl!("portal-print-page-set"),
                             vec![
-                                choice("all".to_owned(), "All"),
-                                choice("even".into(), "Even pages"),
-                                choice("odd".into(), "Odd pages")
+                                choice("all".to_owned(), fl!("portal-print-page-set-all")),
+                                choice("even".into(), fl!("portal-print-even-pages")),
+                                choice("odd".into(), fl!("portal-print-odd-pages"))
                             ],
                             &draft.layout.page_set,
                             Edit::PageSet
                         ),
                         select(
-                            "Pages per sheet",
+                            fl!("portal-print-pages-per-sheet"),
                             (1..=16)
-                                .map(|value| choice(value, value.to_string()))
+                                .map(|value| choice(
+                                    value,
+                                    canopa_i18n::format::integer(value.into())
+                                ))
                                 .collect(),
                             &draft.layout.number_up,
                             Edit::NumberUp
@@ -467,19 +547,17 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
                     .spacing(12),
                 )
                 .push(select(
-                    "Page arrangement",
+                    fl!("portal-print-arrangement"),
                     [
-                        ("lrtb", "Left to right, top to bottom"),
-                        ("lrbt", "Left to right, bottom to top"),
-                        ("rltb", "Right to left, top to bottom"),
-                        ("rlbt", "Right to left, bottom to top"),
-                        ("tblr", "Top to bottom, left to right"),
-                        ("tbrl", "Top to bottom, right to left"),
-                        ("btlr", "Bottom to top, left to right"),
-                        ("btrl", "Bottom to top, right to left"),
+                        "lrtb", "lrbt", "rltb", "rlbt", "tblr", "tbrl", "btlr", "btrl",
                     ]
                     .into_iter()
-                    .map(|(value, label)| choice(value.to_owned(), label))
+                    .map(|value| {
+                        choice(
+                            value.to_owned(),
+                            fl!("portal-print-arrangement-order", order = value),
+                        )
+                    })
                     .collect(),
                     &draft.layout.number_up_layout,
                     Edit::NumberLayout,
@@ -500,29 +578,30 @@ pub(super) fn view(dialog: &Dialog) -> Element<'_, Message> {
             )
             .is_err()
     {
-        content = content
-            .push(text("Check the copies, scale, page ranges and paper dimensions.").size(14));
+        content = content.push(text(fl!("portal-print-check-values")).size(14));
     }
     let label = if matches!(dialog.request.purpose, Purpose::Prepare) {
-        &request.accept_label
+        request.accept_label.clone()
     } else {
-        "Print"
+        fl!("portal-print-accept")
     };
-    let actions = row![
+    let actions = canopa_ui::direction::row([
         canopa_ui::action(
-            text("Cancel"),
+            text(fl!("portal-cancel")),
             Some(Message::Cancel),
             canopa_ui::Action::Normal,
-            false
-        ),
-        iced::widget::Space::new().width(Length::Fill),
+            false,
+        )
+        .into(),
+        iced::widget::Space::new().width(Length::Fill).into(),
         canopa_ui::action(
             text(label),
             dialog.grant().map(|_| Message::Approve(dialog.generation)),
             canopa_ui::Action::Normal,
-            true
+            true,
         )
-    ]
+        .into(),
+    ])
     .spacing(10);
     let content = container(content)
         .width(Length::Fill)

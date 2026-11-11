@@ -209,11 +209,12 @@ pub fn run(
         Dialog::view,
     )
     .title(|app: &Dialog, _| {
-        if matches!(app.screen, Screen::Main) {
-            "Print — Canopa".to_owned()
+        let title = if matches!(app.screen, Screen::Main) {
+            fl!("portal-print-title")
         } else {
-            "Save printed document — Canopa".to_owned()
-        }
+            fl!("portal-print-save-title")
+        };
+        fl!("portal-window-title", title = title)
     })
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
@@ -289,7 +290,7 @@ struct Dialog {
     completed: bool,
     error: Option<String>,
     initial: bool,
-    notice: Option<&'static str>,
+    notice: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -420,8 +421,7 @@ impl Dialog {
                                 .any(|format| format.name() == value)
                         })
                 {
-                    self.notice =
-                        Some("The previous file format is unavailable. Review the output format.");
+                    self.notice = Some(fl!("portal-print-format-unavailable"));
                 }
                 self.initial = false;
                 self.running = None;
@@ -624,8 +624,7 @@ impl Dialog {
                             return self.select(DestinationChoice::File);
                         }
                         if missing {
-                            self.notice =
-                                Some("The previous printer is unavailable. Choose a destination.");
+                            self.notice = Some(fl!("portal-print-printer-unavailable"));
                             return Task::none();
                         }
                         if let Some(destination) = selected {
@@ -644,9 +643,7 @@ impl Dialog {
                             if let Some(selection) = &caps.preferences {
                                 self.draft.restore(selection);
                                 if selection.unavailable {
-                                    self.notice = Some(
-                                        "Some application print preferences are unavailable. Review the current printer settings.",
-                                    );
+                                    self.notice = Some(fl!("portal-print-preferences-unavailable"));
                                 }
                             }
                             self.initial = false;
@@ -674,18 +671,15 @@ impl Dialog {
                             self.checked = Some(options);
                             self.error = None;
                         } else {
-                            self.error = Some("Printer settings changed. Check them again.".into());
+                            self.error = Some(fl!("portal-print-settings-changed"));
                         }
                     }
-                    Ok(_) => {
-                        self.error =
-                            Some("Printer information changed. Refresh the printer list.".into())
-                    }
+                    Ok(_) => self.error = Some(fl!("portal-print-information-changed")),
                     Err(_) => {
                         self.error = Some(if self.capabilities.is_some() {
-                            "Couldn’t confirm these printer settings together. Change the paper or device options, then check again.".into()
+                            fl!("portal-print-settings-unconfirmed")
                         } else {
-                            "Couldn’t load printer information. Retry or save to a file.".into()
+                            fl!("portal-print-information-failed")
                         })
                     }
                 }
@@ -766,18 +760,21 @@ impl Dialog {
                     Mode::Save,
                     self.request.prepare.context.app_id.clone(),
                     String::new(),
-                    "Save printed document".into(),
+                    fl!("portal-print-save-title"),
                     Default::default(),
                 )
                 .expect("local print file picker");
-                request.accept_label = "Select destination".into();
+                request.accept_label = fl!("portal-print-select-destination");
                 request.current_name = Some(format!(
                     "{}.{}",
                     draft::file_stem(&self.request.prepare.context.title),
                     format.name()
                 ));
                 let filter = (
-                    format!("{} document", format.name().to_uppercase()),
+                    fl!(
+                        "portal-print-format-filter",
+                        format = format.name().to_uppercase()
+                    ),
                     vec![(0, format!("*.{}", format.name()))],
                 );
                 request.filters = vec![filter.clone()];
@@ -790,7 +787,7 @@ impl Dialog {
                             result.and_then(|value| {
                                 value
                                     .map(Box::new)
-                                    .map_err(|_| "Couldn’t open the destination picker.".into())
+                                    .map_err(|_| fl!("portal-print-picker-failed"))
                             }),
                         )
                     },

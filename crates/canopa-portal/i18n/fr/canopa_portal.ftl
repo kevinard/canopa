@@ -263,3 +263,97 @@ portal-background-allow-once = Autoriser une fois
 portal-background-allow = Autoriser
 portal-background-notification-title = { $name } s’exécute en arrière-plan
 portal-background-notification-body = Autoriser { $app } à continuer de s’exécuter sans fenêtre ouverte ? Choisissez « Autoriser une fois » pour son exécution en cours uniquement.
+
+portal-requested-by-application = Demandé par une application
+
+## Print
+
+portal-print-title = Imprimer
+portal-print-save-title = Enregistrer le document imprimé
+portal-print-document = Document
+portal-print-accept = Imprimer
+portal-print-preparing-picker = Préparation du sélecteur de destination…
+portal-print-to-file = Imprimer dans un fichier
+portal-print-choose-destination = Choisissez une destination
+portal-print-destination = Destination
+portal-print-refresh = Actualiser
+portal-print-loading = Chargement des informations de l’imprimante…
+portal-print-no-printers = Aucune imprimante n’est disponible. Configurez une imprimante, puis actualisez.
+portal-print-not-accepting = Cette imprimante n’accepte pas de travaux.
+portal-print-stopped = Cette imprimante est arrêtée. Les travaux envoyés peuvent attendre dans sa file.
+portal-print-busy = Cette imprimante est occupée. Les travaux envoyés seront mis en file d’attente.
+portal-print-idle = Les travaux d’impression sont envoyés dans la file de cette imprimante.
+portal-print-printer-default = Valeur par défaut de l’imprimante
+portal-print-media = { $name } — { $width } × { $height } mm
+portal-print-one-sided = Recto
+portal-print-two-sided-long = Recto verso, bord long
+portal-print-two-sided-short = Recto verso, bord court
+portal-print-color = Couleur
+portal-print-monochrome = Monochrome
+portal-print-custom-paper = Format de papier personnalisé
+portal-print-width = Largeur (mm)
+portal-print-height = Hauteur (mm)
+portal-print-check-paper = Vérifier le format de papier
+portal-print-paper-confirmed = Papier confirmé. Marges (mm) : haut { $top }, bas { $bottom }, gauche { $left }, droite { $right }.
+portal-print-custom-paper-hint = Saisissez des millimètres avec deux décimales au plus, puis vérifiez ce format avec l’imprimante.
+portal-print-paper = Papier
+portal-print-sides = Faces
+portal-print-check-settings = Vérifier les paramètres de l’imprimante
+portal-print-copies-range = L’imprimante accepte de { $minimum } à { $maximum } copies.
+portal-print-copies-unknown = L’imprimante n’a pas indiqué de nombre de copies pris en charge. Actualisez pour réessayer.
+portal-print-file-format = Format de fichier
+portal-print-choose-file-hint = Choisissez où enregistrer le document imprimé.
+portal-print-choose-file = Choisir un fichier…
+portal-print-paper-letter = Lettre US
+portal-print-paper-legal = Légal US
+portal-print-custom-size = Format personnalisé
+portal-print-margin-top = Marge haute (mm)
+portal-print-margin-bottom = Marge basse (mm)
+portal-print-margin-left = Marge gauche (mm)
+portal-print-margin-right = Marge droite (mm)
+portal-print-all-pages = Toutes les pages
+portal-print-page-ranges = Plages de pages
+portal-print-current-page = Page courante
+portal-print-selection = Sélection
+portal-print-pages = Pages
+portal-print-page-ranges-field = Plages de pages (par exemple 1-3, 5)
+portal-print-copies = Copies
+portal-print-scale = Échelle (%)
+portal-print-collate = Assembler les copies
+portal-print-reverse = Ordre inversé
+portal-print-orientation = Orientation
+portal-print-portrait = Portrait
+portal-print-landscape = Paysage
+portal-print-reverse-portrait = Portrait inversé
+portal-print-reverse-landscape = Paysage inversé
+portal-print-page-set = Pages à imprimer
+portal-print-page-set-all = Toutes
+portal-print-even-pages = Pages paires
+portal-print-odd-pages = Pages impaires
+portal-print-pages-per-sheet = Pages par feuille
+portal-print-arrangement = Disposition des pages
+portal-print-arrangement-order = { $order ->
+    [lrbt] De gauche à droite, de bas en haut
+    [rltb] De droite à gauche, de haut en bas
+    [rlbt] De droite à gauche, de bas en haut
+    [tblr] De haut en bas, de gauche à droite
+    [tbrl] De haut en bas, de droite à gauche
+    [btlr] De bas en haut, de gauche à droite
+    [btrl] De bas en haut, de droite à gauche
+   *[lrtb] De gauche à droite, de haut en bas
+}
+portal-print-check-values = Vérifiez les copies, l’échelle, les plages de pages et les dimensions du papier.
+portal-print-format-unavailable = Le format de fichier précédent n’est pas disponible. Vérifiez le format de sortie.
+portal-print-printer-unavailable = L’imprimante précédente n’est pas disponible. Choisissez une destination.
+portal-print-preferences-unavailable = Certaines préférences d’impression de l’application ne sont pas disponibles. Vérifiez les paramètres actuels de l’imprimante.
+portal-print-settings-changed = Les paramètres de l’imprimante ont changé. Vérifiez-les à nouveau.
+portal-print-information-changed = Les informations de l’imprimante ont changé. Actualisez la liste des imprimantes.
+portal-print-settings-unconfirmed = Impossible de confirmer ces paramètres d’imprimante ensemble. Modifiez le papier ou les options du périphérique, puis vérifiez à nouveau.
+portal-print-information-failed = Impossible de charger les informations de l’imprimante. Réessayez ou enregistrez dans un fichier.
+portal-print-select-destination = Choisir la destination
+portal-print-format-filter = Document { $format }
+portal-print-picker-failed = Impossible d’ouvrir le sélecteur de destination.
+portal-print-paper-source = Source du papier
+portal-print-paper-type = Type de papier
+portal-print-quality = Qualité d’impression
+portal-print-resolution = Résolution

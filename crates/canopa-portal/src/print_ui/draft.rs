@@ -256,7 +256,7 @@ pub(super) fn file_stem(title: &str) -> String {
         .collect();
     let value = value.trim().trim_matches('.');
     if value.is_empty() {
-        "Document".into()
+        fl!("portal-print-document")
     } else {
         value.into()
     }

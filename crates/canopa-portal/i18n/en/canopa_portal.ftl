@@ -301,3 +301,111 @@ portal-background-allow = Allow
 portal-background-notification-title = { $name } is running in the background
 # Notification body; $app is the app's ID.
 portal-background-notification-body = Allow { $app } to keep running without open windows? Choose Allow once for its current run only.
+
+# Who asked, when the requesting app has no ID.
+portal-requested-by-application = Requested by an application
+
+## Print
+
+portal-print-title = Print
+portal-print-save-title = Save printed document
+# Default name of a document without a title, also used as a file name.
+portal-print-document = Document
+# The confirming button when the app gives no label.
+portal-print-accept = Print
+portal-print-preparing-picker = Preparing destination picker…
+# Destination that saves to a file instead of a printer.
+portal-print-to-file = Print to file
+portal-print-choose-destination = Choose a destination
+portal-print-destination = Destination
+portal-print-refresh = Refresh
+portal-print-loading = Loading printer information…
+portal-print-no-printers = No printers are available. Configure a printer, then refresh.
+portal-print-not-accepting = This printer is not accepting jobs.
+portal-print-stopped = This printer is stopped. Submitted jobs may wait in its queue.
+portal-print-busy = This printer is busy. Submitted jobs will be queued.
+portal-print-idle = Print jobs are sent to this printer’s queue.
+portal-print-printer-default = Printer default
+# A paper size offered by the printer: $name is its IPP name (such as
+# iso_a4_210x297mm), $width and $height are in millimetres.
+portal-print-media = { $name } — { $width } × { $height } mm
+portal-print-one-sided = One-sided
+portal-print-two-sided-long = Two-sided, long edge
+portal-print-two-sided-short = Two-sided, short edge
+portal-print-color = Color
+portal-print-monochrome = Monochrome
+portal-print-custom-paper = Custom paper size
+portal-print-width = Width (mm)
+portal-print-height = Height (mm)
+portal-print-check-paper = Check paper size
+# Margins in millimetres the printer reported for a custom paper size.
+portal-print-paper-confirmed = Paper confirmed. Margins (mm): top { $top }, bottom { $bottom }, left { $left }, right { $right }.
+portal-print-custom-paper-hint = Enter millimetres with up to two decimal places, then check this size with the printer.
+portal-print-paper = Paper
+portal-print-sides = Sides
+portal-print-check-settings = Check printer settings
+portal-print-copies-range = Printer supports { $minimum }–{ $maximum } copies.
+portal-print-copies-unknown = The printer did not report a supported copy count. Refresh to retry.
+portal-print-file-format = File format
+portal-print-choose-file-hint = Choose where to save the printed document.
+portal-print-choose-file = Choose file…
+# US paper sizes.
+portal-print-paper-letter = Letter
+portal-print-paper-legal = Legal
+# Placeholder of the paper list when the dimensions match no listed size.
+portal-print-custom-size = Custom size
+portal-print-margin-top = Top margin (mm)
+portal-print-margin-bottom = Bottom margin (mm)
+portal-print-margin-left = Left margin (mm)
+portal-print-margin-right = Right margin (mm)
+portal-print-all-pages = All pages
+portal-print-page-ranges = Page ranges
+portal-print-current-page = Current page
+portal-print-selection = Selection
+portal-print-pages = Pages
+portal-print-page-ranges-field = Page ranges (for example 1-3, 5)
+portal-print-copies = Copies
+portal-print-scale = Scale (%)
+portal-print-collate = Collate copies
+portal-print-reverse = Reverse order
+portal-print-orientation = Orientation
+portal-print-portrait = Portrait
+portal-print-landscape = Landscape
+portal-print-reverse-portrait = Reverse portrait
+portal-print-reverse-landscape = Reverse landscape
+# Which pages of the document are printed.
+portal-print-page-set = Page set
+portal-print-page-set-all = All
+portal-print-even-pages = Even pages
+portal-print-odd-pages = Odd pages
+portal-print-pages-per-sheet = Pages per sheet
+# Order of pages on a sheet with several pages per sheet.
+portal-print-arrangement = Page arrangement
+portal-print-arrangement-order = { $order ->
+    [lrbt] Left to right, bottom to top
+    [rltb] Right to left, top to bottom
+    [rlbt] Right to left, bottom to top
+    [tblr] Top to bottom, left to right
+    [tbrl] Top to bottom, right to left
+    [btlr] Bottom to top, left to right
+    [btrl] Bottom to top, right to left
+   *[lrtb] Left to right, top to bottom
+}
+portal-print-check-values = Check the copies, scale, page ranges and paper dimensions.
+portal-print-format-unavailable = The previous file format is unavailable. Review the output format.
+portal-print-printer-unavailable = The previous printer is unavailable. Choose a destination.
+portal-print-preferences-unavailable = Some application print preferences are unavailable. Review the current printer settings.
+portal-print-settings-changed = Printer settings changed. Check them again.
+portal-print-information-changed = Printer information changed. Refresh the printer list.
+portal-print-settings-unconfirmed = Couldn’t confirm these printer settings together. Change the paper or device options, then check again.
+portal-print-information-failed = Couldn’t load printer information. Retry or save to a file.
+# Accept button of the file picker opened from the print dialog.
+portal-print-select-destination = Select destination
+# File type filter; $format is the format's name in capitals, such as PDF.
+portal-print-format-filter = { $format } document
+portal-print-picker-failed = Couldn’t open the destination picker.
+# Printer settings.
+portal-print-paper-source = Paper source
+portal-print-paper-type = Paper type
+portal-print-quality = Print quality
+portal-print-resolution = Resolution
