@@ -12,6 +12,9 @@ pub mod wifi_provider;
 
 pub mod audio_provider;
 
+pub mod device_keys;
+pub mod osd;
+
 pub mod media;
 pub mod media_provider;
 
