@@ -77,11 +77,11 @@ pub(crate) async fn read(
                 !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control),
                 "Invalid capture output name"
             );
-            let model = label(output.get("model"), "Display");
+            let model = label(output.get("model"), &fl!("portal-screencast-display"));
             items.push(Item {
                 source: Source::Monitor(name.clone().into()),
                 title: name.clone(),
-                subtitle: format!("Display · {model}"),
+                subtitle: fl!("portal-screencast-display-subtitle", model = model),
             });
         }
     }
@@ -104,8 +104,14 @@ pub(crate) async fn read(
             }
             items.push(Item {
                 source: Source::Window(id),
-                title: label(window.get("title"), "Untitled window"),
-                subtitle: label(window.get("app_id"), "Application window"),
+                title: label(
+                    window.get("title"),
+                    &fl!("portal-screencast-untitled-window"),
+                ),
+                subtitle: label(
+                    window.get("app_id"),
+                    &fl!("portal-screencast-application-window"),
+                ),
             });
         }
     }

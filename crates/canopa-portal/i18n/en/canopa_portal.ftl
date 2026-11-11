@@ -122,3 +122,164 @@ portal-access-title = Permission
 # Default buttons when the requesting app gives no labels.
 portal-access-deny = Deny
 portal-access-allow = Allow
+
+# Who asked, when the requesting app has no ID.
+portal-requesting-app = The requesting app
+# $requester is the requesting app's ID.
+portal-requested-by = Requested by { $requester }
+# Image dimensions; $width and $height are numbers of pixels.
+portal-pixel-size = { $width } × { $height } pixels
+portal-share = Share
+
+## Screenshot
+
+portal-screenshot-window = Screenshot
+portal-screenshot-color-window = Choose a color
+portal-screenshot-title = Share a screenshot
+portal-screenshot-color-title = Choose a color
+portal-screenshot-screen-hint = All displays will be shared.
+portal-screenshot-window-hint = Only this window will be shared.
+portal-screenshot-area-hint = Drag to select an area. Use arrows and Space for keyboard selection.
+portal-screenshot-color-hint = Click a pixel, then use the color. Arrow keys adjust it; Shift moves ten pixels.
+# Mode buttons.
+portal-screenshot-mode-screen = Screen
+portal-screenshot-mode-area = Area
+portal-screenshot-mode-window = Window (Alt+W)
+# The picked pixel: $color is its hexadecimal value (#RRGGBB), $x and $y its
+# coordinates and $display the display's name.
+portal-screenshot-pixel = { $color }  ·  { $x }, { $y }  ·  { $display }
+portal-screenshot-next-display = Next display
+portal-screenshot-too-large = Choose a smaller area; this image exceeds the size limit.
+portal-screenshot-select-area = Select an area to share.
+portal-screenshot-use-color = Use color
+
+# Name of a display that has none; $number counts displays from 1.
+portal-display-numbered = Display { $number }
+
+# Who asked, when the requesting app has no ID.
+portal-an-application = An application
+
+## Screen sharing and remote desktop consent
+
+# Dialog title; $kind says what is asked.
+portal-screencast-title = { $kind ->
+    [screenshot] Choose a screenshot window
+    [clipboard] Allow clipboard sharing
+    [desktop] Allow desktop sharing
+    [keyboard] Allow keyboard control
+    [pointer] Allow pointer control
+    [control] Allow desktop control
+    [share-control] Share and allow control
+   *[screen] Share your screen
+}
+# The confirming button; $action says what it does.
+portal-screencast-action = { $action ->
+    [capture-window] Capture window
+    [share-clipboard] Share clipboard
+    [allow-sharing] Allow sharing
+    [share-screen-clipboard] Share screen and clipboard
+    [share-control] Share and allow control
+    [allow-control] Allow control
+   *[share] Share
+}
+# Keyboard hint for the confirming button, in the status line.
+portal-screencast-shortcut = { $action ->
+    [capture-window] Ctrl+Enter to capture the window
+    [share-clipboard] Ctrl+Enter to share the clipboard
+    [allow-sharing] Ctrl+Enter to allow sharing
+    [share-screen-clipboard] Ctrl+Enter to share the screen and clipboard
+    [share-control] Ctrl+Enter to share and allow control
+    [allow-control] Ctrl+Enter to allow control
+   *[share] Ctrl+Enter to share
+}
+portal-screencast-keyboard = Allow keyboard control of your desktop
+portal-screencast-keyboard-hint = Type and use keyboard shortcuts.
+portal-screencast-pointer = Allow pointer control of your desktop
+portal-screencast-pointer-hint = Move the pointer, click, drag and scroll.
+portal-screencast-touch = Allow touch control (Alt+T)
+portal-screencast-touch-hint = Touch and swipe within the screen or window you share.
+portal-screencast-clipboard = Share clipboard contents (Alt+C)
+portal-screencast-clipboard-hint = Read and replace copied text, images and other data.
+portal-screencast-choose-display = Choose a display to share.
+portal-screencast-choose-displays = Choose the displays to share.
+portal-screencast-choose-window = Choose a window to share.
+portal-screencast-choose-windows = Choose the windows to share.
+portal-screencast-choose-source = Choose a display or window to share.
+portal-screencast-choose-sources = Choose the displays or windows to share.
+portal-screencast-search = Search displays and windows
+# Status line parts, joined with " · ".
+portal-screencast-desktop-unavailable = Desktop unavailable. Retrying…
+portal-screencast-sources-unavailable = Sources unavailable. Retrying…
+portal-screencast-clipboard-allowed = Clipboard sharing allowed
+portal-screencast-clipboard-undecided = Choose whether to share your clipboard
+portal-screencast-keyboard-allowed = Keyboard control allowed
+portal-screencast-pointer-allowed = Pointer control allowed
+portal-screencast-keyboard-pointer-allowed = Keyboard and pointer control allowed
+portal-screencast-control-undecided = Choose whether to allow control
+# $count displays or windows are selected.
+portal-screencast-selected = { $count } selected
+# $count are selected, out of at most $max.
+portal-screencast-selected-of = { $count } selected · up to { $max }
+
+# Offered capture sources.
+portal-screencast-display = Display
+# Subtitle of a display; $model is its model name.
+portal-screencast-display-subtitle = Display · { $model }
+portal-screencast-untitled-window = Untitled window
+portal-screencast-application-window = Application window
+
+## Sharing controls, shown while a screen, the input or the clipboard is shared
+
+portal-sharing-title = { $kind ->
+    [input-capture] Input capture
+    [clipboard-sharing] Clipboard sharing
+    [desktop-sharing] Desktop sharing
+    [remote-control] Remote control
+   *[screen-sharing] Screen sharing
+}
+portal-sharing-heading = { $kind ->
+    [input-capture-is-allowed] Input capture is allowed
+    [clipboard-sharing-is-active] Clipboard sharing is active
+    [desktop-sharing-is-active] Desktop sharing is active
+    [keyboard-control-is-active] Keyboard control is active
+    [pointer-control-is-active] Pointer control is active
+    [keyboard-and-pointer-control-are-active] Keyboard and pointer control are active
+    [sharing-and-control-are-active] Sharing and control are active
+   *[screen-sharing-is-active] Screen sharing is active
+}
+portal-sharing-stop = { $kind ->
+    [stop-input-and-clipboard-sharing] Stop input and clipboard sharing
+    [stop-input-capture] Stop input capture
+    [stop-all-sharing] Stop all sharing
+    [stop-control] Stop control
+    [stop-sharing-and-control] Stop sharing and control
+   *[stop-sharing] Stop sharing
+}
+portal-sharing-hint = { $kind ->
+    [capture-clipboard] Ctrl+Alt+Esc pauses input and clipboard sharing. Stop or close ends both.
+    [capture] Ctrl+Alt+Esc pauses capture. Stop or close ends this session.
+    [clipboard] Esc or closing this window stops clipboard sharing
+    [all] Esc or closing this window stops all sharing
+    [control] Esc or closing this window stops control
+    [sharing-control] Esc or closing this window stops sharing and control
+   *[sharing] Esc or closing this window stops sharing
+}
+# What is controlled and where.
+portal-sharing-control = { $kind ->
+    [keyboard-input-screen-edges] Keyboard input · Screen edges
+    [pointer-input-screen-edges] Pointer input · Screen edges
+    [keyboard-and-pointer-input-screen-edges] Keyboard and pointer input · Screen edges
+    [keyboard-control-desktop] Keyboard control · Desktop
+    [pointer-control-desktop] Pointer control · Desktop
+    [touch-control-shared-screen-or-window] Touch control · Shared screen or window
+    [keyboard-and-touch-control] Keyboard and touch control
+    [pointer-and-touch-control] Pointer and touch control
+    [keyboard-pointer-and-touch-control] Keyboard, pointer and touch control
+   *[keyboard-and-pointer-control-desktop] Keyboard and pointer control · Desktop
+}
+portal-sharing-clipboard-capture = Clipboard · Only while input is captured
+portal-sharing-clipboard = Clipboard · Read and replace copied content
+# $requester is the app's ID.
+portal-sharing-input-to = Input may be sent to { $requester }
+portal-sharing-control-to = Control granted to { $requester }
+portal-sharing-with = Sharing with { $requester }

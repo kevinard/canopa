@@ -89,107 +89,122 @@ impl Input {
         );
         Ok(())
     }
-    fn title(&self) -> &'static str {
+    fn title_kind(&self) -> &'static str {
         if self.capture_input {
-            return "Input capture";
+            return "input-capture";
         }
         if self.clipboard {
             return if self.devices == 0 && self.sources.is_empty() {
-                "Clipboard sharing"
+                "clipboard-sharing"
             } else {
-                "Desktop sharing"
+                "desktop-sharing"
             };
         }
         if self.devices == 0 {
-            "Screen sharing"
+            "screen-sharing"
         } else {
-            "Remote control"
+            "remote-control"
         }
     }
-    fn heading(&self) -> &'static str {
+    fn heading_kind(&self) -> &'static str {
         if self.capture_input {
-            return "Input capture is allowed";
+            return "input-capture-is-allowed";
         }
         if self.clipboard {
             return if self.devices == 0 && self.sources.is_empty() {
-                "Clipboard sharing is active"
+                "clipboard-sharing-is-active"
             } else {
-                "Desktop sharing is active"
+                "desktop-sharing-is-active"
             };
         }
         if self.devices == 0 {
-            "Screen sharing is active"
+            "screen-sharing-is-active"
         } else if self.sources.is_empty() {
             match self.devices {
-                1 => "Keyboard control is active",
-                2 => "Pointer control is active",
-                _ => "Keyboard and pointer control are active",
+                1 => "keyboard-control-is-active",
+                2 => "pointer-control-is-active",
+                _ => "keyboard-and-pointer-control-are-active",
             }
         } else {
-            "Sharing and control are active"
+            "sharing-and-control-are-active"
         }
     }
-    fn stop_label(&self) -> &'static str {
+    fn stop_label_kind(&self) -> &'static str {
         if self.capture_input {
             if self.clipboard {
-                return "Stop input and clipboard sharing";
+                return "stop-input-and-clipboard-sharing";
             }
-            return "Stop input capture";
+            return "stop-input-capture";
         }
         if self.clipboard {
             return if self.devices == 0 && self.sources.is_empty() {
-                "Stop sharing"
+                "stop-sharing"
             } else {
-                "Stop all sharing"
+                "stop-all-sharing"
             };
         }
         if self.devices == 0 {
-            "Stop sharing"
+            "stop-sharing"
         } else if self.sources.is_empty() {
-            "Stop control"
+            "stop-control"
         } else {
-            "Stop sharing and control"
+            "stop-sharing-and-control"
         }
     }
-    fn hint(&self) -> &'static str {
+    fn hint_kind(&self) -> &'static str {
         if self.capture_input {
             if self.clipboard {
-                return "Ctrl+Alt+Esc pauses input and clipboard sharing. Stop or close ends both.";
+                return "capture-clipboard";
             }
-            return "Ctrl+Alt+Esc pauses capture. Stop or close ends this session.";
+            return "capture";
         }
         if self.clipboard {
             return if self.devices == 0 && self.sources.is_empty() {
-                "Esc or closing this window stops clipboard sharing"
+                "clipboard"
             } else {
-                "Esc or closing this window stops all sharing"
+                "all"
             };
         }
         if self.devices == 0 {
-            "Esc or closing this window stops sharing"
+            "sharing"
         } else if self.sources.is_empty() {
-            "Esc or closing this window stops control"
+            "control"
         } else {
-            "Esc or closing this window stops sharing and control"
+            "sharing-control"
         }
     }
-    fn control_label(&self) -> &'static str {
+    fn control_label_kind(&self) -> &'static str {
         if self.capture_input {
             return match self.devices {
-                1 => "Keyboard input · Screen edges",
-                2 => "Pointer input · Screen edges",
-                _ => "Keyboard and pointer input · Screen edges",
+                1 => "keyboard-input-screen-edges",
+                2 => "pointer-input-screen-edges",
+                _ => "keyboard-and-pointer-input-screen-edges",
             };
         }
         match self.devices {
-            1 => "Keyboard control · Desktop",
-            2 => "Pointer control · Desktop",
-            4 => "Touch control · Shared screen or window",
-            5 => "Keyboard and touch control",
-            6 => "Pointer and touch control",
-            7 => "Keyboard, pointer and touch control",
-            _ => "Keyboard and pointer control · Desktop",
+            1 => "keyboard-control-desktop",
+            2 => "pointer-control-desktop",
+            4 => "touch-control-shared-screen-or-window",
+            5 => "keyboard-and-touch-control",
+            6 => "pointer-and-touch-control",
+            7 => "keyboard-pointer-and-touch-control",
+            _ => "keyboard-and-pointer-control-desktop",
         }
+    }
+    fn title(&self) -> String {
+        fl!("portal-sharing-title", kind = self.title_kind())
+    }
+    fn heading(&self) -> String {
+        fl!("portal-sharing-heading", kind = self.heading_kind())
+    }
+    fn stop_label(&self) -> String {
+        fl!("portal-sharing-stop", kind = self.stop_label_kind())
+    }
+    fn hint(&self) -> String {
+        fl!("portal-sharing-hint", kind = self.hint_kind())
+    }
+    fn control_label(&self) -> String {
+        fl!("portal-sharing-control", kind = self.control_label_kind())
     }
 }
 

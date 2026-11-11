@@ -5,7 +5,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, row, scrollable, text, text_input},
+    widget::{column, container, scrollable, text, text_input},
     window,
 };
 use std::{
@@ -151,7 +151,7 @@ fn run_inner(
         Dialog::update,
         Dialog::view,
     )
-    .title(|app: &Dialog, _| format!("{} — Canopa", app.title()))
+    .title(|app: &Dialog, _| fl!("portal-window-title", title = app.title()))
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -220,59 +220,62 @@ impl Dialog {
                     && (self.input.multiple || self.selected.len() == 1)
             }
     }
-    fn title(&self) -> &'static str {
-        if self.screenshot {
-            return "Choose a screenshot window";
-        }
-        if self.requested_clipboard && self.input.types == 0 {
-            return if self.requested_devices == 0 {
-                "Allow clipboard sharing"
+    fn title(&self) -> String {
+        let title = if self.screenshot {
+            "screenshot"
+        } else if self.requested_clipboard && self.input.types == 0 {
+            if self.requested_devices == 0 {
+                "clipboard"
             } else {
-                "Allow desktop sharing"
-            };
-        }
-        if self.requested_devices != 0 {
+                "desktop"
+            }
+        } else if self.requested_devices != 0 {
             if self.input.types == 0 {
                 match self.requested_devices {
-                    1 => "Allow keyboard control",
-                    2 => "Allow pointer control",
-                    _ => "Allow desktop control",
+                    1 => "keyboard",
+                    2 => "pointer",
+                    _ => "control",
                 }
             } else {
-                "Share and allow control"
+                "share-control"
             }
         } else {
-            "Share your screen"
-        }
+            "screen"
+        };
+        fl!("portal-screencast-title", kind = title)
     }
-    fn action(&self) -> &'static str {
+    /// The confirming action, as a language-independent key.
+    fn action_kind(&self) -> &'static str {
         if self.screenshot {
-            return "Capture window";
+            return "capture-window";
         }
         if self.requested_clipboard && self.input.types == 0 && self.requested_devices == 0 {
-            return "Share clipboard";
+            return "share-clipboard";
         }
         if self.clipboard && self.requested_clipboard {
             return if self.input.types == 0 {
                 if self.devices() == 0 {
-                    "Share clipboard"
+                    "share-clipboard"
                 } else {
-                    "Allow sharing"
+                    "allow-sharing"
                 }
             } else if self.devices() == 0 {
-                "Share screen and clipboard"
+                "share-screen-clipboard"
             } else {
-                "Share and allow control"
+                "share-control"
             };
         }
         if self.input.types == 0 && self.requested_devices != 0 {
-            return "Allow control";
+            return "allow-control";
         }
         if self.devices() != 0 {
-            "Share and allow control"
+            "share-control"
         } else {
-            "Share"
+            "share"
         }
+    }
+    fn action(&self) -> String {
+        fl!("portal-screencast-action", action = self.action_kind())
     }
     fn reconcile(&mut self) {
         let allowed: HashSet<_> = self
@@ -476,9 +479,9 @@ impl Dialog {
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let requester: String = self.input.app_id.chars().take(120).collect();
         let requester = if requester.is_empty() {
-            "An application"
+            fl!("portal-an-application")
         } else {
-            &requester
+            requester
         };
         let mut choices = column![].spacing(6);
         for index in self.visible() {
@@ -492,8 +495,8 @@ impl Dialog {
             };
             choices = choices.push(
                 canopa_ui::action(
-                    row![
-                        text(marker).size(18),
+                    canopa_ui::direction::row([
+                        text(marker).size(18).into(),
                         column![
                             text(&item.title)
                                 .size(16)
@@ -509,7 +512,8 @@ impl Dialog {
                         ]
                         .spacing(3)
                         .width(Length::Fill)
-                    ]
+                        .into(),
+                    ])
                     .spacing(10)
                     .width(Length::Fill),
                     Some(Message::Toggle(index)),
@@ -522,7 +526,7 @@ impl Dialog {
         }
         let mut body = column![
             text(self.title()).size(22),
-            text(format!("Requested by {requester}"))
+            text(fl!("portal-requested-by", requester = requester))
                 .size(14)
                 .height(20)
                 .wrapping(iced::widget::text::Wrapping::None)
@@ -532,17 +536,18 @@ impl Dialog {
         if self.requested_devices & 1 != 0 {
             body = body.push(
                 canopa_ui::action(
-                    row![
-                        text(if self.keyboard { "☑" } else { "☐" }).size(18),
+                    canopa_ui::direction::row([
+                        text(if self.keyboard { "☑" } else { "☐" }).size(18).into(),
                         column![
-                            text("Allow keyboard control of your desktop").size(14),
-                            text("Type and use keyboard shortcuts.")
+                            text(fl!("portal-screencast-keyboard")).size(14),
+                            text(fl!("portal-screencast-keyboard-hint"))
                                 .size(12)
                                 .style(canopa_ui::muted),
                         ]
                         .spacing(4)
-                        .width(Length::Fill),
-                    ]
+                        .width(Length::Fill)
+                        .into(),
+                    ])
                     .spacing(10)
                     .width(Length::Fill),
                     Some(Message::Keyboard(!self.keyboard)),
@@ -555,17 +560,18 @@ impl Dialog {
         if self.requested_devices & 2 != 0 {
             body = body.push(
                 canopa_ui::action(
-                    row![
-                        text(if self.pointer { "☑" } else { "☐" }).size(18),
+                    canopa_ui::direction::row([
+                        text(if self.pointer { "☑" } else { "☐" }).size(18).into(),
                         column![
-                            text("Allow pointer control of your desktop").size(14),
-                            text("Move the pointer, click, drag and scroll.")
+                            text(fl!("portal-screencast-pointer")).size(14),
+                            text(fl!("portal-screencast-pointer-hint"))
                                 .size(12)
                                 .style(canopa_ui::muted),
                         ]
                         .spacing(4)
-                        .width(Length::Fill),
-                    ]
+                        .width(Length::Fill)
+                        .into(),
+                    ])
                     .spacing(10)
                     .width(Length::Fill),
                     Some(Message::Pointer(!self.pointer)),
@@ -578,17 +584,18 @@ impl Dialog {
         if self.requested_devices & 4 != 0 {
             body = body.push(
                 canopa_ui::action(
-                    row![
-                        text(if self.touch { "☑" } else { "☐" }).size(18),
+                    canopa_ui::direction::row([
+                        text(if self.touch { "☑" } else { "☐" }).size(18).into(),
                         column![
-                            text("Allow touch control (Alt+T)").size(14),
-                            text("Touch and swipe within the screen or window you share.")
+                            text(fl!("portal-screencast-touch")).size(14),
+                            text(fl!("portal-screencast-touch-hint"))
                                 .size(12)
                                 .style(canopa_ui::muted)
                         ]
                         .spacing(4)
                         .width(Length::Fill)
-                    ]
+                        .into(),
+                    ])
                     .spacing(10)
                     .width(Length::Fill),
                     Some(Message::Touch(!self.touch)),
@@ -601,17 +608,18 @@ impl Dialog {
         if self.requested_clipboard {
             body = body.push(
                 canopa_ui::action(
-                    row![
-                        text(if self.clipboard { "☑" } else { "☐" }).size(18),
+                    canopa_ui::direction::row([
+                        text(if self.clipboard { "☑" } else { "☐" }).size(18).into(),
                         column![
-                            text("Share clipboard contents (Alt+C)").size(14),
-                            text("Read and replace copied text, images and other data.")
+                            text(fl!("portal-screencast-clipboard")).size(14),
+                            text(fl!("portal-screencast-clipboard-hint"))
                                 .size(12)
                                 .style(canopa_ui::muted)
                         ]
                         .spacing(4)
-                        .width(Length::Fill),
-                    ]
+                        .width(Length::Fill)
+                        .into(),
+                    ])
                     .spacing(10)
                     .width(Length::Fill),
                     Some(Message::Clipboard(!self.clipboard)),
@@ -625,17 +633,18 @@ impl Dialog {
             body = body
                 .push(
                     text(match (self.input.types, self.input.multiple) {
-                        (1, false) => "Choose a display to share.",
-                        (1, true) => "Choose the displays to share.",
-                        (2, false) => "Choose a window to share.",
-                        (2, true) => "Choose the windows to share.",
-                        (_, false) => "Choose a display or window to share.",
-                        (_, true) => "Choose the displays or windows to share.",
+                        (1, false) => fl!("portal-screencast-choose-display"),
+                        (1, true) => fl!("portal-screencast-choose-displays"),
+                        (2, false) => fl!("portal-screencast-choose-window"),
+                        (2, true) => fl!("portal-screencast-choose-windows"),
+                        (_, false) => fl!("portal-screencast-choose-source"),
+                        (_, true) => fl!("portal-screencast-choose-sources"),
                     })
                     .size(13),
                 )
                 .push(
-                    text_input("Search displays and windows", &self.query).on_input(Message::Query),
+                    text_input(&fl!("portal-screencast-search"), &self.query)
+                        .on_input(Message::Query),
                 )
                 .push(
                     scrollable(choices)
@@ -645,44 +654,39 @@ impl Dialog {
         } else {
             body = body.push(iced::widget::Space::new().height(Length::Fill));
         }
-        let mut status = if !self.available {
+        let mut status = vec![if !self.available {
             if self.input.types == 0 {
-                "Desktop unavailable. Retrying…"
+                fl!("portal-screencast-desktop-unavailable")
             } else {
-                "Sources unavailable. Retrying…"
+                fl!("portal-screencast-sources-unavailable")
             }
-            .to_owned()
         } else if self.input.types == 0 && self.requested_clipboard && self.requested_devices == 0 {
             if self.clipboard {
-                "Clipboard sharing allowed"
+                fl!("portal-screencast-clipboard-allowed")
             } else {
-                "Choose whether to share your clipboard"
+                fl!("portal-screencast-clipboard-undecided")
             }
-            .to_owned()
         } else if self.input.types == 0 {
             match self.devices() {
-                1 => "Keyboard control allowed",
-                2 => "Pointer control allowed",
-                3 => "Keyboard and pointer control allowed",
-                _ => "Choose whether to allow control",
+                1 => fl!("portal-screencast-keyboard-allowed"),
+                2 => fl!("portal-screencast-pointer-allowed"),
+                3 => fl!("portal-screencast-keyboard-pointer-allowed"),
+                _ => fl!("portal-screencast-control-undecided"),
             }
-            .to_owned()
-        } else {
-            format!(
-                "{} selected{}",
-                self.selected.len(),
-                if self.input.multiple {
-                    " · up to 16"
-                } else {
-                    ""
-                }
+        } else if self.input.multiple {
+            fl!(
+                "portal-screencast-selected-of",
+                count = self.selected.len(),
+                max = 16
             )
-        };
+        } else {
+            fl!("portal-screencast-selected", count = self.selected.len())
+        }];
         if self.input.types != 0 {
             match self.devices() {
-                1 => status.push_str(" · Keyboard control allowed"),
-                2 => status.push_str(" · Pointer control allowed"),
-                3 => status.push_str(" · Keyboard and pointer control allowed"),
+                1 => status.push(fl!("portal-screencast-keyboard-allowed")),
+                2 => status.push(fl!("portal-screencast-pointer-allowed")),
+                3 => status.push(fl!("portal-screencast-keyboard-pointer-allowed")),
                 _ => {}
             }
         }
@@ -690,33 +694,36 @@ impl Dialog {
             && self.requested_clipboard
             && !(self.input.types == 0 && self.requested_devices == 0)
         {
-            status.push_str(" · Clipboard sharing allowed");
+            status.push(fl!("portal-screencast-clipboard-allowed"));
         }
         if self.valid() {
-            status.push_str(&format!(
-                " · Ctrl+Enter to {}",
-                self.action().to_lowercase()
+            status.push(fl!(
+                "portal-screencast-shortcut",
+                action = self.action_kind()
             ));
         }
+        let status = status.join(" · ");
         body = body
             .push(text(status).size(13).style(canopa_ui::muted))
             .push(
-                row![
+                canopa_ui::direction::row([
                     canopa_ui::action(
-                        text("Cancel"),
+                        text(fl!("portal-cancel")),
                         Some(Message::Cancel),
                         canopa_ui::Action::Normal,
-                        false
+                        false,
                     )
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .into(),
                     canopa_ui::action(
                         text(self.action()),
                         self.valid().then_some(Message::Share),
                         canopa_ui::Action::Normal,
-                        false
+                        false,
                     )
-                    .width(Length::Fill),
-                ]
+                    .width(Length::Fill)
+                    .into(),
+                ])
                 .spacing(12),
             );
         container(body)

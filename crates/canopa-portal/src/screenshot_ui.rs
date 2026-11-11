@@ -75,12 +75,12 @@ pub fn run(
         Dialog::view,
     )
     .title(|app: &Dialog, _| {
-        if app.mode == Kind::Color {
-            "Choose a color — Canopa"
+        let title = if app.mode == Kind::Color {
+            fl!("portal-screenshot-color-window")
         } else {
-            "Screenshot — Canopa"
-        }
-        .to_owned()
+            fl!("portal-screenshot-window")
+        };
+        fl!("portal-window-title", title = title)
     })
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
@@ -300,7 +300,7 @@ impl Dialog {
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let requester = if self.input.app_id.is_empty() {
-            "The requesting app".into()
+            fl!("portal-requesting-app")
         } else {
             let short: String = self.input.app_id.chars().take(120).collect();
             if short.len() < self.input.app_id.len() {
@@ -310,33 +310,31 @@ impl Dialog {
             }
         };
         let title = if self.mode == Kind::Color {
-            "Choose a color"
+            fl!("portal-screenshot-color-title")
         } else {
-            "Share a screenshot"
+            fl!("portal-screenshot-title")
         };
         let instruction = match self.mode {
-            Kind::Screen => "All displays will be shared.",
-            Kind::Window | Kind::ActiveWindow => "Only this window will be shared.",
-            Kind::Area => "Drag to select an area. Use arrows and Space for keyboard selection.",
-            Kind::Color => {
-                "Click a pixel, then use the color. Arrow keys adjust it; Shift moves ten pixels."
-            }
+            Kind::Screen => fl!("portal-screenshot-screen-hint"),
+            Kind::Window | Kind::ActiveWindow => fl!("portal-screenshot-window-hint"),
+            Kind::Area => fl!("portal-screenshot-area-hint"),
+            Kind::Color => fl!("portal-screenshot-color-hint"),
         };
         let mut top = column![
             text(title).size(22),
-            text(format!("Requested by {requester}")).style(canopa_ui::muted)
+            text(fl!("portal-requested-by", requester = requester)).style(canopa_ui::muted)
         ]
         .spacing(8);
         if self.input.allow_area {
             let mut modes = row![
                 canopa_ui::action(
-                    text("Screen"),
+                    text(fl!("portal-screenshot-mode-screen")),
                     Some(Message::Mode(Kind::Screen)),
                     canopa_ui::Action::Normal,
                     self.mode == Kind::Screen
                 ),
                 canopa_ui::action(
-                    text("Area"),
+                    text(fl!("portal-screenshot-mode-area")),
                     Some(Message::Mode(Kind::Area)),
                     canopa_ui::Action::Normal,
                     self.mode == Kind::Area
@@ -345,7 +343,7 @@ impl Dialog {
             .spacing(8);
             if self.input.allow_window {
                 modes = modes.push(canopa_ui::action(
-                    text("Window (Alt+W)"),
+                    text(fl!("portal-screenshot-mode-window")),
                     Some(Message::ChooseWindow),
                     canopa_ui::Action::Normal,
                     false,
@@ -367,36 +365,46 @@ impl Dialog {
                 let color = iced::Color::from_rgb8(rgba[0], rgba[1], rgba[2]);
                 let swatch = container(Space::new().width(28).height(28))
                     .style(move |_| container::Style::default().background(color));
-                let mut line = row![
-                    swatch,
-                    text(format!(
-                        "#{:02X}{:02X}{:02X}  ·  {}, {}  ·  {}",
-                        rgba[0], rgba[1], rgba[2], x, y, self.input.source.frames[frame].name
+                let mut line: Vec<Element<'_, Message>> = vec![
+                    swatch.into(),
+                    text(fl!(
+                        "portal-screenshot-pixel",
+                        color = format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2]),
+                        x = x.to_string(),
+                        y = y.to_string(),
+                        display = self.input.source.frames[frame].name.as_str()
                     ))
                     .size(14)
-                ]
-                .spacing(10);
+                    .into(),
+                ];
                 if self.input.source.frames.len() > 1 {
-                    line = line.push(canopa_ui::action(
-                        text("Next display"),
-                        Some(Message::NextDisplay),
-                        canopa_ui::Action::Normal,
-                        false,
-                    ));
+                    line.push(
+                        canopa_ui::action(
+                            text(fl!("portal-screenshot-next-display")),
+                            Some(Message::NextDisplay),
+                            canopa_ui::Action::Normal,
+                            false,
+                        )
+                        .into(),
+                    );
                 }
-                line.into()
+                canopa_ui::direction::row(line).spacing(10).into()
             }
             Some(Selection::Image(rect)) => {
                 let rect = rect.unwrap_or(self.canvas.full());
                 text(if self.valid() {
-                    format!("{} × {} pixels", rect.width, rect.height)
+                    fl!(
+                        "portal-pixel-size",
+                        width = rect.width.to_string(),
+                        height = rect.height.to_string()
+                    )
                 } else {
-                    "Choose a smaller area; this image exceeds the size limit.".into()
+                    fl!("portal-screenshot-too-large")
                 })
                 .style(canopa_ui::muted)
                 .into()
             }
-            None | Some(Selection::ChooseWindow) => text("Select an area to share.")
+            None | Some(Selection::ChooseWindow) => text(fl!("portal-screenshot-select-area"))
                 .style(canopa_ui::muted)
                 .into(),
         };
@@ -410,26 +418,28 @@ impl Dialog {
             mode: self.mode,
             accent: self.theme.extended_palette().primary.base.color,
         };
-        let actions = row![
+        let actions = canopa_ui::direction::row([
             canopa_ui::action(
-                text("Cancel"),
+                text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
-                false
+                false,
             )
-            .width(Length::Fill),
+            .width(Length::Fill)
+            .into(),
             canopa_ui::action(
                 text(if self.mode == Kind::Color {
-                    "Use color"
+                    fl!("portal-screenshot-use-color")
                 } else {
-                    "Share"
+                    fl!("portal-share")
                 }),
                 self.valid().then_some(Message::Apply),
                 canopa_ui::Action::Normal,
-                false
+                false,
             )
             .width(Length::Fill)
-        ]
+            .into(),
+        ])
         .spacing(12);
         container(column![top, Element::new(scene), status, actions].spacing(14))
             .padding(20)

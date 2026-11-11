@@ -63,7 +63,7 @@ pub(super) fn run(
         Controls::update,
         Controls::view,
     )
-    .title(|app: &Controls, _| format!("{} — Canopa", app.input.title()))
+    .title(|app: &Controls, _| fl!("portal-window-title", title = app.input.title()))
     .theme(|app: &Controls, _| app.theme.clone())
     .subscription(Controls::subscription)
     .default_font(font)
@@ -119,9 +119,9 @@ impl Controls {
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let requester = if self.input.requester.is_empty() {
-            "An application"
+            fl!("portal-an-application")
         } else {
-            &self.input.requester
+            self.input.requester.clone()
         };
         let sources = self
             .input
@@ -139,9 +139,9 @@ impl Controls {
         let sources = if self.input.clipboard {
             sources.push(
                 text(if self.input.capture_input {
-                    "Clipboard · Only while input is captured"
+                    fl!("portal-sharing-clipboard-capture")
                 } else {
-                    "Clipboard · Read and replace copied content"
+                    fl!("portal-sharing-clipboard")
                 })
                 .size(14),
             )
@@ -157,11 +157,11 @@ impl Controls {
             column![
                 text(self.input.heading()).size(22),
                 text(if self.input.capture_input {
-                    format!("Input may be sent to {requester}")
+                    fl!("portal-sharing-input-to", requester = requester)
                 } else if self.input.devices != 0 && !self.input.clipboard {
-                    format!("Control granted to {requester}")
+                    fl!("portal-sharing-control-to", requester = requester)
                 } else {
-                    format!("Sharing with {requester}")
+                    fl!("portal-sharing-with", requester = requester)
                 })
                 .size(14)
                 .width(Length::Fill)

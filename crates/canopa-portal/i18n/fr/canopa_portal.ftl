@@ -101,3 +101,152 @@ portal-app-chooser-open = Ouvrir
 portal-access-title = Autorisation
 portal-access-deny = Refuser
 portal-access-allow = Autoriser
+
+portal-requesting-app = L’application demandeuse
+portal-requested-by = Demandé par { $requester }
+portal-pixel-size = { $width } × { $height } pixels
+portal-share = Partager
+
+## Screenshot
+
+portal-screenshot-window = Capture d’écran
+portal-screenshot-color-window = Choisir une couleur
+portal-screenshot-title = Partager une capture d’écran
+portal-screenshot-color-title = Choisir une couleur
+portal-screenshot-screen-hint = Tous les écrans seront partagés.
+portal-screenshot-window-hint = Seule cette fenêtre sera partagée.
+portal-screenshot-area-hint = Faites glisser pour sélectionner une zone. Utilisez les flèches et Espace pour sélectionner au clavier.
+portal-screenshot-color-hint = Cliquez sur un pixel, puis utilisez la couleur. Les flèches l’ajustent ; Maj le déplace de dix pixels.
+portal-screenshot-mode-screen = Écran
+portal-screenshot-mode-area = Zone
+portal-screenshot-mode-window = Fenêtre (Alt+W)
+portal-screenshot-pixel = { $color }  ·  { $x }, { $y }  ·  { $display }
+portal-screenshot-next-display = Écran suivant
+portal-screenshot-too-large = Choisissez une zone plus petite ; cette image dépasse la taille maximale.
+portal-screenshot-select-area = Sélectionnez une zone à partager.
+portal-screenshot-use-color = Utiliser la couleur
+
+portal-display-numbered = Écran { $number }
+
+portal-an-application = Une application
+
+## Screen sharing and remote desktop consent
+
+portal-screencast-title = { $kind ->
+    [screenshot] Choisir une fenêtre à capturer
+    [clipboard] Autoriser le partage du presse-papiers
+    [desktop] Autoriser le partage du bureau
+    [keyboard] Autoriser le contrôle au clavier
+    [pointer] Autoriser le contrôle du pointeur
+    [control] Autoriser le contrôle du bureau
+    [share-control] Partager et autoriser le contrôle
+   *[screen] Partager votre écran
+}
+portal-screencast-action = { $action ->
+    [capture-window] Capturer la fenêtre
+    [share-clipboard] Partager le presse-papiers
+    [allow-sharing] Autoriser le partage
+    [share-screen-clipboard] Partager l’écran et le presse-papiers
+    [share-control] Partager et autoriser le contrôle
+    [allow-control] Autoriser le contrôle
+   *[share] Partager
+}
+portal-screencast-shortcut = { $action ->
+    [capture-window] Ctrl+Entrée pour capturer la fenêtre
+    [share-clipboard] Ctrl+Entrée pour partager le presse-papiers
+    [allow-sharing] Ctrl+Entrée pour autoriser le partage
+    [share-screen-clipboard] Ctrl+Entrée pour partager l’écran et le presse-papiers
+    [share-control] Ctrl+Entrée pour partager et autoriser le contrôle
+    [allow-control] Ctrl+Entrée pour autoriser le contrôle
+   *[share] Ctrl+Entrée pour partager
+}
+portal-screencast-keyboard = Autoriser le contrôle de votre bureau au clavier
+portal-screencast-keyboard-hint = Saisir du texte et utiliser des raccourcis clavier.
+portal-screencast-pointer = Autoriser le contrôle du pointeur sur votre bureau
+portal-screencast-pointer-hint = Déplacer le pointeur, cliquer, glisser et faire défiler.
+portal-screencast-touch = Autoriser le contrôle tactile (Alt+T)
+portal-screencast-touch-hint = Toucher et balayer dans l’écran ou la fenêtre que vous partagez.
+portal-screencast-clipboard = Partager le contenu du presse-papiers (Alt+C)
+portal-screencast-clipboard-hint = Lire et remplacer le texte, les images et les autres données copiés.
+portal-screencast-choose-display = Choisissez un écran à partager.
+portal-screencast-choose-displays = Choisissez les écrans à partager.
+portal-screencast-choose-window = Choisissez une fenêtre à partager.
+portal-screencast-choose-windows = Choisissez les fenêtres à partager.
+portal-screencast-choose-source = Choisissez un écran ou une fenêtre à partager.
+portal-screencast-choose-sources = Choisissez les écrans ou fenêtres à partager.
+portal-screencast-search = Rechercher des écrans et des fenêtres
+portal-screencast-desktop-unavailable = Bureau indisponible. Nouvelle tentative…
+portal-screencast-sources-unavailable = Sources indisponibles. Nouvelle tentative…
+portal-screencast-clipboard-allowed = Partage du presse-papiers autorisé
+portal-screencast-clipboard-undecided = Choisissez si vous partagez votre presse-papiers
+portal-screencast-keyboard-allowed = Contrôle au clavier autorisé
+portal-screencast-pointer-allowed = Contrôle du pointeur autorisé
+portal-screencast-keyboard-pointer-allowed = Contrôle au clavier et du pointeur autorisé
+portal-screencast-control-undecided = Choisissez si vous autorisez le contrôle
+portal-screencast-selected = { $count ->
+    [one] { $count } sélectionné
+   *[other] { $count } sélectionnés
+}
+portal-screencast-selected-of = { $count ->
+    [one] { $count } sélectionné · { $max } au maximum
+   *[other] { $count } sélectionnés · { $max } au maximum
+}
+
+portal-screencast-display = Écran
+portal-screencast-display-subtitle = Écran · { $model }
+portal-screencast-untitled-window = Fenêtre sans titre
+portal-screencast-application-window = Fenêtre d’application
+
+## Sharing controls, shown while a screen, the input or the clipboard is shared
+
+portal-sharing-title = { $kind ->
+    [input-capture] Capture des entrées
+    [clipboard-sharing] Partage du presse-papiers
+    [desktop-sharing] Partage du bureau
+    [remote-control] Contrôle à distance
+   *[screen-sharing] Partage d’écran
+}
+portal-sharing-heading = { $kind ->
+    [input-capture-is-allowed] La capture des entrées est autorisée
+    [clipboard-sharing-is-active] Le partage du presse-papiers est actif
+    [desktop-sharing-is-active] Le partage du bureau est actif
+    [keyboard-control-is-active] Le contrôle au clavier est actif
+    [pointer-control-is-active] Le contrôle du pointeur est actif
+    [keyboard-and-pointer-control-are-active] Le contrôle au clavier et du pointeur est actif
+    [sharing-and-control-are-active] Le partage et le contrôle sont actifs
+   *[screen-sharing-is-active] Le partage d’écran est actif
+}
+portal-sharing-stop = { $kind ->
+    [stop-input-and-clipboard-sharing] Arrêter le partage des entrées et du presse-papiers
+    [stop-input-capture] Arrêter la capture des entrées
+    [stop-all-sharing] Arrêter tous les partages
+    [stop-control] Arrêter le contrôle
+    [stop-sharing-and-control] Arrêter le partage et le contrôle
+   *[stop-sharing] Arrêter le partage
+}
+portal-sharing-hint = { $kind ->
+    [capture-clipboard] Ctrl+Alt+Échap suspend le partage des entrées et du presse-papiers. Arrêter ou fermer met fin aux deux.
+    [capture] Ctrl+Alt+Échap suspend la capture. Arrêter ou fermer met fin à cette session.
+    [clipboard] Échap ou la fermeture de cette fenêtre arrête le partage du presse-papiers
+    [all] Échap ou la fermeture de cette fenêtre arrête tous les partages
+    [control] Échap ou la fermeture de cette fenêtre arrête le contrôle
+    [sharing-control] Échap ou la fermeture de cette fenêtre arrête le partage et le contrôle
+   *[sharing] Échap ou la fermeture de cette fenêtre arrête le partage
+}
+portal-sharing-control = { $kind ->
+    [keyboard-input-screen-edges] Saisie au clavier · Bords de l’écran
+    [pointer-input-screen-edges] Pointeur · Bords de l’écran
+    [keyboard-and-pointer-input-screen-edges] Clavier et pointeur · Bords de l’écran
+    [keyboard-control-desktop] Contrôle au clavier · Bureau
+    [pointer-control-desktop] Contrôle du pointeur · Bureau
+    [touch-control-shared-screen-or-window] Contrôle tactile · Écran ou fenêtre partagés
+    [keyboard-and-touch-control] Contrôle au clavier et tactile
+    [pointer-and-touch-control] Contrôle du pointeur et tactile
+    [keyboard-pointer-and-touch-control] Contrôle au clavier, du pointeur et tactile
+   *[keyboard-and-pointer-control-desktop] Contrôle au clavier et du pointeur · Bureau
+}
+portal-sharing-clipboard-capture = Presse-papiers · Uniquement pendant la capture des entrées
+portal-sharing-clipboard = Presse-papiers · Lire et remplacer le contenu copié
+portal-sharing-input-to = Les entrées peuvent être envoyées à { $requester }
+portal-sharing-control-to = Contrôle accordé à { $requester }
+portal-sharing-with = Partage avec { $requester }

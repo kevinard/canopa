@@ -314,7 +314,10 @@ pub(super) fn capture(
             .transform
             .ok_or_else(|| anyhow::anyhow!("Screenshot output transform unavailable"))?;
         let name = if output.name.is_empty() {
-            format!("Display {}", frames.len() + 1)
+            fl!(
+                "portal-display-numbered",
+                number = frames.len().saturating_add(1)
+            )
         } else {
             output.name.clone()
         };
