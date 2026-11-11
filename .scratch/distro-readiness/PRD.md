@@ -125,6 +125,13 @@ on a laptop with Wi-Fi, wired, VPN, Bluetooth audio and a printer.
 
 ### W4. Applications
 
+**Decision 2026-11-11: out of scope.** Users choose their own applications; Canopa
+ships no default app set. Current focus is the core experience: Shell, launcher,
+Settings, Files and Notify. The table below is kept only as reference for users
+and for the portal theme bridges (contrast and reduced motion through the
+Settings portal), which still matter so that any app a user picks follows
+Canopa's appearance.
+
 Canopa keeps building the shell, Files, Settings, launcher, notifications,
 lock, greeter and agents. For everything else it adopts existing apps, Rust
 first:
@@ -251,6 +258,12 @@ settings and lock or unlock using Orca only.
 - Robustness budget: `#![forbid(unsafe_code)]` in crates without FFI; crash
   reporting through systemd-coredump with a "report a problem" path from Notify.
 
+## Current focus (2026-11-11)
+
+The core experience first: Shell, launcher, Settings, Files and Notify. Fork
+upstreaming (W2) is paused. W1 foundation items that every component ships
+through stay in scope.
+
 ## Milestones
 
 | Milestone | Contents | Indicative scope |
@@ -264,10 +277,8 @@ settings and lock or unlock using Orca only.
 
 1. Base distribution: an Arch-based spin, which matches today's packaging, or a
    different base? This decides package format, installer and update stack.
-2. Third-party app family: COSMIC apps (Rust, Iced-like, own theme), GNOME Rust
-   apps (GTK4/libadwaita, follow portal theming), or a mix? It drives W4 and
-   the theme bridges.
-3. Flatpak-first applications with a minimal base, or traditional packages?
+2. ~~Third-party app family~~ and 3. ~~Flatpak-first or traditional packages~~:
+   resolved 2026-11-11. Users choose their apps; no default set (see W4).
 4. When does the repository become public, and under which governance?
 5. Print in the first distro release: Canopa's opt-in backend, or GTK's?
 

@@ -1,0 +1,164 @@
+# Files core-experience audit
+
+Status: needs-triage
+
+Audited 2026-11-11 against `main` at `20e1bf5`. Read-only: no code changed, desktop not run.
+Paths are relative to `crates/canopa-files/src/` unless they start with `crates/`, `docs/`,
+`packaging/` or `.scratch/`.
+
+## Summary
+
+- The local core is real and unusually well-engineered for safety. It has columns, list and icon views, tabs, windows, filename search, Quick Look (image, PDF, text, audio, video), crash-safe Copy/Move/Rename/Trash with Undo across windows, conflict questions (Replace, Keep both, Skip, Merge, apply to all), and GIO devices with passwords. Clipboard interop with GNOME and KDE also works.
+- It is not yet a default file manager. The gaps a user hits on day one: folders never refresh when other apps change them, there is no Open With, no Empty Trash or Delete permanently, no thumbnails, MIME types are guessed from the extension, there are no network locations or MTP, and transfer progress has no total, percentage or ETA.
+- Copy throughput on a real disk is the largest structural risk. The recorded release build took 16.9 s for 100 small files and 18.1 s for 128 MiB on ext4. The per-file durability barriers are the likely cause.
+- The PRD W9 gaps are confirmed: network, thumbnails, content search, ACL/xattr and archives are all missing. The W9 "timing failures" item is stale: in this audit the full library and the four named failing targets passed (details below).
+- Platform: there is no AccessKit tree and no translation framework (all strings are hard-coded English). Theming, configuration and keyboard use are good.
+- Code health: the boundaries between the core, `operations/` and `iced_desktop/` are clear. But 51% of the crate is the crash-durable operations engine (57.8k lines, about 160 ADRs). There are also 10k lines of uncompiled GTK code. The focused dev loop is fast (1–2 min).
+
+## Feature table
+
+| Area | Item | Status | Evidence | What a user notices |
+| --- | --- | --- | --- | --- |
+| Browsing | List / icons / columns | works | `preferences.rs:13-18`; columns adapt to width `iced_desktop/mod.rs:262-277`; virtualized rows `iced_desktop/listing_ui.rs:1-2,62` | Columns are the default; Ctrl+1/2/3 switch views; per-folder view memory. |
+| Browsing | Sorting | rough | `browse.rs:165-186`: name sort is lowercase string order, not natural; "Kind" is the file extension | `IMG_10` sorts before `IMG_2`; Kind shows "JPG file", not "JPEG image". |
+| Browsing | Hidden files | works | `interface.rs` `ShowHidden` Ctrl+H; `browse.rs:61-65,140-153` | Works; `.hidden` files are not honoured. |
+| Browsing | Breadcrumbs / path entry | works | `iced_desktop/toolbar.rs:204-344`; `~`, relative paths and `file://` accepted in `iced_desktop/mod.rs:2053-2100` | No autocompletion; `smb://` and `sftp://` are rejected with "only local file locations are supported" (`iced_desktop/mod.rs:2063`). |
+| Browsing | Tabs | works | `interface.rs` NewTab/CloseTab/NextTab; `iced_desktop/mod.rs:1131-1152` | No "Open in new tab" for a folder, and no middle-click. |
+| Browsing | Split view | missing (by design) | PRD defers it to tiling (`.scratch/file-manager/PRD.md` "Windows and tabs") | The user tiles two windows instead. |
+| Browsing | Sidebar places / bookmarks | works | `interface.rs:94-160,169`; Ctrl+D bookmarks | Music and Videos are not default places; "Recovery" appears as a place; GTK bookmarks (`~/.config/gtk-3.0/bookmarks`) are not shared. |
+| Browsing | Sidebar devices | works | `iced_desktop/devices_ui.rs:324-403` | Mount and eject from the sidebar. |
+| Browsing | Sidebar trash | works | `PlaceKind::Trash`; `iced_desktop/trash_ui.rs` | Opens a separate Trash window. |
+| Browsing | Recent | missing | no `recently-used.xbel` reader anywhere | No Recent place. |
+| Browsing | Live folder updates | **broken** | No watcher in the Iced UI. Refresh happens only after Files' own operations (`iced_desktop/file_operations.rs:832-924`) or F5. `canopa_file::watch` (inotify) exists but is unused by Files. | A download finishing or a file saved by an editor does not appear until F5. |
+| Search | In-folder filter | works | `search.rs:15-18` `CurrentFolder`; type-ahead `iced_desktop/mod.rs:1674-1678` | Ctrl+F filters the current folder. |
+| Search | Recursive filename search | works | `search.rs:58-140`: BFS, cancellable, 50k result budget | Case-insensitive substring only; no accent folding, globs, or type/date filters. |
+| Search | Content search | missing | `search.rs:1` "filename-only"; PRD W9 sends it to the launcher | Not available. |
+| File ops | Copy / move / paste | works | `operations/transfer.rs`; clipboard `file_clipboard.rs:10-12` | Works; crash-safe; Ctrl/Shift drag modifiers. |
+| File ops | Rename | works | `operations/rename.rs`; F2; `iced_desktop/actions_ui.rs:168-170` | Single item only. |
+| File ops | Batch rename | missing | no implementation; Rename is offered only when `paths.len() == 1` (`iced_desktop/actions_ui.rs:168`) | Selecting 20 photos offers no Rename. |
+| File ops | New folder | works | `operations.rs:62-66` `CreateFolder` | No New document / templates. |
+| File ops | Trash + restore | works | freedesktop `.trashinfo` (`operations/trash.rs:555`); per-volume `.Trash-UID` (`operations/trash.rs:205-229`); restore and restore-to (`iced_desktop/trash_ui.rs:446-458`) | Interoperates with other desktops' trash. Single selection in the Trash window. |
+| File ops | Empty Trash / Delete permanently | **missing** | Trash window offers only Restore, Restore to and Copy to clipboard (`iced_desktop/trash_ui.rs:446-462`); no permanent delete command (`interface.rs:23-63`) | Trash grows forever; no Shift+Delete; a file on a volume where `.Trash-UID` cannot be created cannot be deleted from Files at all (`operations/trash.rs:205-229`, no fallback). |
+| File ops | Undo | works | `operations/undo.rs`; label `operations.rs:683`; Trash undo `tests/trash.rs:8,55` | Ctrl+Z undoes copy, move, rename, trash and new folder across windows. No Redo. |
+| File ops | Progress | rough | `TransferProgress` has no totals (`operation_jobs/transfer.rs:60-65`); UI prints "N items completed · B bytes" (`iced_desktop/operation_details.rs:166-175`) | Raw byte count only: no bar, percentage, speed or ETA. |
+| File ops | Cancellation | works | `lib.rs:47-60`; `iced_desktop/jobs_ui.rs:336,629` | Cancel keeps the completed part and Undo applies to it. |
+| File ops | Conflicts | works | `operations/transfer.rs:131-135,163,1203-1290` | Replace, Keep both, Skip and Merge, with apply to all. |
+| File ops | Slow / removable media | partial | Unplug pauses work (`storage.rs`); no free-space preflight (no `statvfs` anywhere); no FAT32 4 GiB or illegal-name preflight | A 6 GB copy to a nearly full or FAT32 stick fails part-way. Throughput: see Risks. |
+| File ops | Very large directories | partial | The full snapshot is read before display (`browse.rs:96-139`); rows are virtualized; `visible_entries()` is rebuilt at 12 call sites per update (`browse.rs:320-334`) | Expect a delay before a 100k-entry folder appears; needs a hands-on check. |
+| File ops | Metadata preservation | partial | `operations/copy_backend.rs:21-33` keeps only `mode & 0o777` and atime/mtime | ACLs, xattrs (SELinux labels, `user.*` tags), setuid/setgid/sticky bits and ownership are dropped on Copy and on cross-filesystem Move. |
+| Open | Default app | partial | Spawns `gio open PATH` (`iced_desktop/mod.rs:1367-1381`) with no activation token | Opening works; no startup notification or focus token. |
+| Open | Open With / chooser | **missing** | context menu `iced_desktop/actions_ui.rs:146-192` has no Open With; `org.freedesktop.impl.portal.AppChooser` exists in `crates/canopa-portal` but Files does not use it | No way to open a PNG in GIMP instead of the viewer, or to change the default. |
+| Open | Executables / scripts | missing | no exec-bit handling; everything goes through `gio open` | Double-clicking a script opens it in an editor (or fails); no Run prompt. |
+| Open | `.desktop` files | missing | same | Launchers on disk are opened as text. |
+| Previews | Thumbnails | **missing** | `iced_desktop/file_icon.rs:1` "never thumbnails"; 8 extension-mapped symbolic icons (`file_icon.rs:26-48`) | The icon view of Pictures shows identical image glyphs. |
+| Previews | Icons / MIME | rough | extension table `iced_desktop/file_icon.rs:33-46`; no shared-mime-info lookup | Audio, video and source files all get the generic document icon. |
+| Previews | Quick Look | works | `preview.rs:92-200`: PDF via `pdftoppm`, images, text with syntax highlighting, GStreamer audio/video | Images are limited to PNG, JPEG, GIF and WebP (workspace `Cargo.toml:81-84`); AVIF, HEIC, TIFF and SVG show as text or an error. PDF needs optional `poppler`. No office documents. |
+| Properties | Permissions / ownership | partial | read-only model `file_properties.rs:1-61`; UI `iced_desktop/properties_ui.rs:340-385` | Shows mode, owner and group, but cannot change them. |
+| Properties | Reachability | **broken** | `show_properties` is called only from the FileManager1 D-Bus path (`iced_desktop/activation_ui.rs:87`); no menu item or command | A user cannot open Properties from inside Files. |
+| Properties | Size calculation | missing | size shown only for regular files (`iced_desktop/properties_ui.rs:351-353`) | No folder size or item count. |
+| Devices | Mount / unmount / eject / power off | works | `local_volumes/helper_commands.rs:251-295`; `local_volumes/catalog.rs:170-186` | Works through a GIO helper process. |
+| Devices | Encrypted volumes | works (unverified natively) | `ask-password` with password fields (`local_volumes/interaction.rs:29`, `local_volumes/command_wire.rs:75-89`); device dialog `iced_desktop/device_question.rs:384-391,459` | A LUKS passphrase prompt should appear; needs hands-on confirmation. |
+| Devices | Busy-device processes | works | `show-processes` handled (`local_volumes/interaction.rs:44-54`) | |
+| Devices | Phones (MTP / PTP) | missing | volumes need a local path (`local_volumes/catalog.rs:113-119`); `gvfs` and `gvfs-mtp` are not package dependencies (`packaging/arch/PKGBUILD.in:59-72`) | Phones do not appear, or appear only through FUSE if gvfs happens to be installed. |
+| Network | SMB / SFTP / WebDAV | **missing** | `class == "network"` filtered (`local_volumes/catalog.rs:113`); non-file URIs refused (`iced_desktop/mod.rs:2063`); PRD scopes them later | No Connect to Server, no network browsing. |
+| Other | Archives | missing | no extract or compress anywhere; no default custom actions ship | The PRD expects users to write their own extract action. |
+| Other | Drag and drop with other apps | works (native acceptance pending distribution) | `text/uri-list` source and target (`iced_desktop/drag_ui.rs:191-333,702`); Niri fix `docs/adr/0024-niri-drag-source-lifetime.md` | Works per ADR0095 on the patched compositor. |
+| Other | Clipboard interop | works | GNOME, `uri-list` and KDE cut types (`file_clipboard.rs:10-12,76-110`; `file_clipboard/wayland/worker.rs:196`) | No `text/plain`, so pasting copied files into a terminal or chat inserts nothing. |
+| Other | FileManager1 (Show in folder) | works | `packaging/file-manager/org.freedesktop.FileManager1.service`; `presentation.rs:91` | Other apps' "Show in folder" opens Files. |
+| Other | File chooser portal | rough | `crates/canopa-portal/src/chooser_ui.rs` | Plain list of name buttons (`chooser_ui.rs:925-957`), not virtualized. Places are only Home, Documents, Downloads, Pictures and Filesystem (`:117-128`). No bookmarks, devices, recent, sort, size/date columns, icons or preview. |
+| Platform | Configuration | works | KDL `files` block, preferences editor `iced_desktop/preferences_editor.rs`, live reload ADR0019 | Toolbar, shortcuts and places are configurable. |
+| Platform | Theming | works | `canopa_theme` / `canopa_ui` throughout; live appearance reload | |
+| Platform | AccessKit | missing | no `accesskit` dependency in `crates/canopa-files/Cargo.toml` (only Shell, Notify, session-ui); PRD W6 | Orca sees nothing in Files. |
+| Platform | Keyboard-only | works | rebindable commands `interface.rs:23-63`; focus rings `iced_desktop/focus.rs`; Menu / Shift+F10 `iced_desktop/mod.rs:1610` | Good keyboard coverage. |
+| Platform | Translatability | missing | hard-coded English strings (e.g. `interface.rs:23-63`, `iced_desktop/actions_ui.rs:147-192`); no gettext or fluent | Cannot be localised. |
+| Platform | Startup / memory | rough (unmeasured in release) | Debug only: 5.4 s first, about 1.1 s warm, 61 MiB RSS before GUI, 190 MiB after the window closes (`.scratch/file-manager/RESIDENT-WIP.md:53-56`) | No release or cold-cache numbers; resident mode keeps about 190 MiB. |
+
+## Ranked gaps
+
+1. **Live folder updates.** Impact: very high; this is the most visible correctness bug in daily use. Approach: per open folder or column, use an inotify watch (reuse `canopa_file::watch`, already in the workspace) or `gio::FileMonitor` in the existing GIO helper. Debounce for about 200 ms, re-read off-thread, and merge into `Browser` while keeping selection and scroll (the `Navigation::Refresh` path already does this). Size: **M**.
+2. **Trash management: Empty Trash, Delete permanently and a fallback.** Impact: very high, because the disk fills with no exit from inside Files. Approach: add permanent-delete as a non-undoable `operation_jobs::Request` with a confirmation. Add Empty Trash for each `TrashLocation`, removing `files/` and `info/` and updating `directorysizes`. Add Shift+Delete. When a volume trash cannot be created, offer "Delete permanently". Allow multi-select in the Trash window. Size: **S–M**.
+3. **Open With, executables and `.desktop` files.** Impact: high. Approach: resolve handlers with `gio::AppInfo::all_for_type` and `default_for_type` in the existing GIO helper (Files already runs GIO there). Show an "Open With" submenu and an "Other application…" list, and set the default through `set_as_default_for_type`. Launch with `launch_uris` plus an xdg-activation token. For executables, show a Run / Open prompt; for `.desktop` files, a trust prompt (same `AppInfo` seam). Size: **M**.
+4. **Transfer throughput and progress.** Impact: high. Copying a 1,000-photo folder at the measured 6 files/s takes about 3 minutes, and there is no ETA. Approach: profile fsync and SQLite commit placement per file (`.scratch/file-manager/COPY-XXH3-PERFORMANCE.md:100-105`). Batch durability barriers (for example `syncfs` or one directory fsync per batch, with group commits) without weakening the Undo contract. Add a pre-scan of total items and bytes to `TransferProgress`, plus a rate/ETA estimate and a progress bar. Size: **L** (engine) + **S** (UI).
+5. **Thumbnails and MIME types.** Impact: high for Pictures and Videos. Approach: implement the freedesktop thumbnail spec. Read `~/.cache/thumbnails/{normal,large}/MD5(uri).png`, check `Thumb::MTime`, and generate missing ones by running `/usr/share/thumbnailers/*.thumbnailer` entries under `bwrap` (already a dependency) on a bounded worker pool. Use the `image` crate for PNG I/O. For MIME, use `gio::content_type_guess` in the helper, or parse shared-mime-info `globs2` and `magic` (the portal already parses `globs2` in `crates/canopa-portal/src/chooser_ui/filters.rs`). Then use themed MIME icons and real Kind labels. Size: **M–L**.
+6. **Network locations and MTP.** Impact: high for a distribution default. Approach: add `gvfs`, `gvfs-smb`, `gvfs-mtp` and `gvfs-gphoto2` as dependencies. Stop filtering network and MTP volumes. Add "Connect to server" that calls `gio::File::for_uri(..).mount_enclosing_volume` through the existing helper and `MountOperation` question plumbing. Browse through the GVFS FUSE path (`/run/user/UID/gvfs/...`) first. Then validate or relax engine assumptions (fsync, `renameat`, `openat`, inode identity) on FUSE, or add a GIO-backed transfer path for non-POSIX mounts. Size: **L**.
+7. **Properties: reachable, folder size, editable permissions.** Impact: medium-high. Approach: add `Command::Properties` (Alt+Return) and a context-menu entry. Compute recursive size on a cancellable worker (reuse the `search.rs` traversal). Make mode, group and executable bit editable through a journalled mutation, and show the default app (pairs with gap 3). Size: **S** (reach) + **M** (rest).
+8. **Accessibility (AccessKit).** Impact: high for the M2 milestone; a blind user cannot use Files. Approach: PRD W6 plan, generalizing the Shell/Notify AccessKit integration into `canopa-ui`. Files then needs roles for list rows, the tree, dialogs and the Quick Look window. Size: **L** (cross-app).
+9. **Translations.** Impact: high for M2. Approach: workspace-wide `gettext-rs` or `fluent`. Strings are scattered as literals, so extraction is mechanical but broad. Size: **L** (cross-app).
+10. **File chooser portal quality.** Impact: medium-high, because every Flatpak and GTK app's Open/Save uses it. Approach: reuse the Files listing geometry and virtualized rows, cache MIME filter results per directory snapshot instead of per `view()`, and add bookmarks, devices, recent, sort columns and a preview pane. Size: **M**.
+11. **Archives.** Impact: medium. Approach: ship default custom actions ("Extract here", "Compress…") using `bsdtar`. Later, add native integration with the `compress-tools` crate (libarchive) running as a Transfer so it gets progress, cancellation and Undo of created output. Size: **S** (actions) / **M** (native).
+12. **ACL/xattr preservation.** Impact: medium (SELinux distros, Samba shares, tagging users). Approach: in `operations/copy_backend.rs::restore_metadata`, copy xattrs descriptor-to-descriptor with `rustix::fs::{flistxattr, fgetxattr, fsetxattr}` (already a dependency). POSIX ACLs travel as `system.posix_acl_*`. Treat `ENOTSUP` on the destination as a per-file note, not a failure. Also decide on setgid on directories. Size: **S–M**.
+13. **Batch rename.** Impact: medium. Approach: a multi-item name dialog (find/replace, numbering), emitted as one Operation of N `Rename` mutations so Undo covers the batch. Size: **M**.
+14. **Free-space and FAT preflight.** Impact: medium. Approach: `rustix::fs::fstatvfs` on the destination at queue time, comparing against pre-scanned bytes (pairs with gap 4). Reject files over 4 GiB and illegal names on `vfat`/`exfat` with an upfront question. Size: **S**.
+15. **Recent files.** Impact: medium. Approach: read `~/.local/share/recently-used.xbel` with `roxmltree` (already in the workspace) as a virtual search-results tab, and write entries on open. Size: **S–M**.
+16. **Smaller polish** (all **S**):
+    - natural sort (`browse.rs:167`, with the `natord` crate or a hand-rolled version);
+    - `text/plain` clipboard offer;
+    - sharing GTK bookmarks;
+    - Music and Videos places, and hiding Recovery unless it is non-empty;
+    - "Open in new tab";
+    - New document from `~/Templates`;
+    - default "Open terminal here" action;
+    - a `mimeapps.list` default for `inode/directory`.
+17. **Content search.** Impact: medium. Per W9 this belongs to the launcher provider protocol (LocalSearch/Tracker); Files would only add a "search contents" hand-off. Size: **L**, outside Files.
+
+## Bugs or risks found
+
+- **No auto-refresh** (gap 1). It also affects column ancestors and search results: stale entries stay visible after external deletes, and acting on them yields errors.
+- **Copy throughput.** The optimized headless engine recorded 16.86 s for 100 small files and 18.13 s for 128 MiB on local ext4 (`.scratch/file-manager/COPY-XXH3-PERFORMANCE.md:100-105`, i5-6200U). ADR0159 records 121 steps in 9 s for a queued 270-item debug copy. USB sticks and SD cards will be far slower. This is the main threat to "solid".
+- **Undeletable files.** If `.Trash-UID` cannot be created on a volume (root-owned top directory, read-only top, some bind mounts), Trash fails and nothing else can delete (`operations/trash.rs:205-229`).
+- **Blocking open call.** `gio open` runs as a blocking `std::process::Command::status()` inside `Task::perform` (`iced_desktop/mod.rs:1367-1381`). A slow D-Bus activation ties up an executor thread. No activation token is passed, so focus handoff depends on Niri policy.
+- **Portal chooser speed.** The chooser builds one button per entry and re-matches MIME globs for every entry on every `view()` (`crates/canopa-portal/src/chooser_ui.rs:363-382,925-957`). `/usr/bin` or a large Downloads folder in an Open dialog will be slow.
+- **Large-folder cost.** `Browser::visible_entries()` allocates a full filtered vector at 12 call sites per update (`browse.rs:320-334`); cost scales with folder size on every key press.
+- **Metadata loss** on Copy and cross-filesystem Move: ACL, xattr, SELinux context, special mode bits and ownership (`operations/copy_backend.rs:21-33`). It is silent: there is no report of what was dropped.
+- **History format breaks without migration.** The content-fingerprint change notes that "Old file-content histories may fail to load or Undo", with no conversion path (`.scratch/file-manager/COPY-XXH3-PERFORMANCE.md:22-27`); the store pins `user_version` (`operations/store.rs:124,197,258`). For a distribution this means upgrades can strand Undo or Recovery data unless a migration and degrade policy exists.
+- **Resident memory.** About 190 MiB RSS after the last window closes (debug measurement, `.scratch/file-manager/RESIDENT-WIP.md:54-55`). With `org.freedesktop.FileManager1.service` starting `--daemon`, every session may carry it after the first "Show in folder".
+- **Runtime dependencies are not packaged.** `gvfs*` is missing, so phones and network cannot work, and `poppler` is only an optional dependency. GStreamer playback depends on `gst-libav`/`-good`, which are present.
+- **No `inode/directory` default.** Nothing ships a `mimeapps.list` default for `inode/directory`, so another installed file manager can win `xdg-open ~/`.
+- **Stale failure record.** `.scratch/file-manager/CURRENT-FAILURES.md` (2026-10-29) is stale (see Code-health). Teams triaging the W9 "timing failures" item should re-baseline instead of trusting it.
+
+## Code-health notes
+
+- **Size and shape.** The crate has 113.9k lines in `src/` plus 44.3k in `tests/`:
+  - `operations/` is 57.8k lines, 51% of `src/`, including about 16k lines of `#[cfg(test)]` crash-boundary modules (`*_boundary.rs`).
+  - `iced_desktop/` is 25.9k lines.
+  - `src/desktop/` holds 10.0k lines of **uncompiled** GTK code, kept as "migration reference" (`lib.rs:9-11` routes `desktop` to `iced_desktop/mod.rs`, and there is no `gtk` dependency). Grep results and newcomers trip over it; archive it or move it out of `src/`.
+- **Boundaries.** These are clear and follow the AGENTS.md rules:
+  - Filesystem models (`browse`, `search`, `preview`, `file_properties`, `trash`) are toolkit-free.
+  - Mutations go through `operation_jobs::Request` → `OperationEngine`.
+  - GIO is isolated in a helper process (`local_volumes.rs:1-2`).
+  - New UI features (Open With, Properties, Empty Trash, thumbnails, watchers) slot into existing seams without touching the engine.
+  - Anything that mutates files (permanent delete, batch rename, archive extraction, network copy) must enter the journalled engine. Its proof obligations (claims, stages, Undo bindings, roughly 160 ADRs at "schema60") make even small new operations **M** rather than **S**. Budget for that, and consider a lighter "non-undoable, confirmed" lane for permanent delete.
+- **Dev loop.** This audit ran two focused checks from a warm `target/`:
+  - Seven integration modules: 64 s incremental build, then 51 passed, 0 failed, 4 ignored in 30.6 s (1:41 wall).
+  - Full library: 17 s build, then **376 passed, 0 failed, 34 ignored in 53.3 s** (1:16 wall).
+- **Known failures.** On this run, everything listed in `CURRENT-FAILURES.md` passed:
+  - `undo_unavailable_moves` and `undo_unavailable_saved`;
+  - `recovery_catalog::pages_remain_loaded_and_saved_identity_survives_active_undo_expiry`;
+  - the 500-item `undo_destinations::restarting_a_killed_keep_both_destination_restore_...` 20 s gate;
+  - the four parallel crash-worker deadlines (the library run has 0 failed, against 4 failed and 235 s recorded on 2026-10-29).
+
+  ADR0157, ADR0159 and ADR0160 claim these fixes. The deadline cases are load-sensitive (25 s worker deadlines and a 20 s wall-clock gate in a debug build), so expect flakes on a loaded CI machine. One idle-machine run does not prove stability, and the workspace gate was not run.
+- **Docs.**
+  - `docs/files/CONTEXT.md` is accurate.
+  - The decision index is a flat list of about 160 ADRs, most of them about Undo durability. A maintained feature/status reference (like the table above) is missing, as PRD W10 notes.
+  - `.scratch/file-manager/IMPLEMENTATION.md` (4.6k lines) is a dense log and hard to use for intent.
+
+## Hands-on checks needed
+
+1. **Live refresh.** Open `~/Downloads` in Files, then run `touch ~/Downloads/new-file` in a terminal. Expected per this audit: the file does not appear until F5.
+2. **Copy throughput.** Create 1,000 small files with `mkdir /tmp/c && for i in $(seq 1000); do head -c 20000 /dev/urandom > /tmp/c/f$i; done` (adjust if `/tmp` is tmpfs; use a folder on ext4 or btrfs). Copy the folder into `~/` with Files, and compare the time against `cp -r`. Repeat onto a USB stick, and note whether the progress text is usable.
+3. **Trash.** Trash a file, open Trash, and look for Empty or Delete; there are none. Then try trashing a file under a root-owned mount where you own only a subfolder.
+4. **Large folder.** Open `/usr/lib` or a 100k-file test folder and time how long it takes to appear. Hold the Down arrow and watch for lag. Repeat in a portal Open dialog (for example Firefox → Open File → `/usr/bin`).
+5. **Properties.** Look for Properties in the right-click menu. Then run `gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 --method org.freedesktop.FileManager1.ShowItemProperties "['file:///etc/hosts']" ""`.
+6. **Encrypted USB.** Insert a LUKS stick, mount it from the sidebar, enter the passphrase, then eject with a file open in another app (the busy-processes question should appear).
+7. **Phone.** Plug in an Android phone in file-transfer mode, with and without `gvfs-mtp` installed. Check the sidebar, and whether copying a photo to the phone succeeds.
+8. **ACL/xattr.** Run `setfattr -n user.test -v 1 f && setfacl -m u:nobody:r f`, copy `f` with Files, and compare `getfattr -d` and `getfacl` on the copy.
+9. **Interop.**
+   - Copy files in Files and paste into Nautilus or Dolphin (should work) and into `foot` (expected to paste nothing).
+   - Drag from Files into a Firefox upload field, and from Firefox's download list into Files.
+10. **Open.**
+    - Double-click a `.sh` with the executable bit set.
+    - Double-click a `.desktop` file.
+    - Open a PNG and confirm the launched viewer gets focus on Niri.
+11. **Release startup and memory.** Run `cargo build --release -p canopa-files`. Time a cold `canopa-files ~` to the first painted window. Check RSS after closing the window in `--daemon` mode.
+12. **Re-baseline the stale failure list** under load: `bash scripts/check.sh --files --lib` while another build runs, to see whether the crash-worker deadlines still flake.
