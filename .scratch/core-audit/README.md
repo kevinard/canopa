@@ -57,7 +57,7 @@ detail, `file:line` evidence and sizes:
 | A | Move the zbus and libpulse clients (NetworkManager, BlueZ, UPower, power-profiles-daemon, logind, audio) out of `canopa-shell` into a shared crate. | Settings pages, Shell session actions | M |
 | B | Settings architecture: page registry, shared page patterns (live service pages, not only edit-and-save), single instance with a D-Bus entry point and deep links, scalable navigation. | 15 pages | M |
 | C | One shared freedesktop icon-theme and MIME lookup in `canopa-ui`/`canopa-file`. Use the user's theme, SVG and absolute `Icon=` paths, and shared-mime-info detection. | Launcher icons, Notify icons, Files file types and thumbnails | M |
-| D | Shell on-screen indicators plus brightness, media and keyboard-backlight key bindings, through logind `SetBrightness` and MPRIS. | Daily laptop use | M |
+| D | Shell on-screen indicators plus brightness, media and keyboard-backlight key bindings, through logind `SetBrightness` and MPRIS. **Fixed in e9f8f9c and 004f775** (Shell ADR 0025). | Daily laptop use | M |
 | E | Fix the layershellev keyboard serial for activation tokens, in the fork's activation-token topic. | Keyboard activation in the Notification Center, raising running apps from the launcher | S |
 
 ### Tier 3: features, in dependency order
