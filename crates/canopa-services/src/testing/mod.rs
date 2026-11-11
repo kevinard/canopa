@@ -70,3 +70,5 @@ pub mod power_profiles;
 pub mod upower;
 pub mod wifi;
 pub mod bluez;
+#[cfg(feature = "audio")]
+pub mod audio;

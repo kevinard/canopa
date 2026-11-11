@@ -1,10 +1,10 @@
 //! Device controls presented through the existing accessible rich panel contract.
-use crate::audio::{self, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation};
 use crate::provider_io::write_v5 as write;
 use canopa_panel_protocol::v5::{self, Content, HostMessage, Interaction, Session, Update};
 use canopa_panel_protocol::{
     InteractionTarget, PanelAction, PanelContent, PanelItem, PanelSection,
 };
+use canopa_services::audio::{self, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation};
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
@@ -13,7 +13,7 @@ use std::{
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
 type ActionMap = HashMap<(String, String), (AudioDeviceId, DeviceOperation)>;
-type PendingOperation = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+type PendingOperation = Pin<Box<dyn Future<Output = Result<(), audio::AudioError>> + Send>>;
 
 #[derive(Default)]
 struct AudioPanel {
@@ -214,7 +214,7 @@ pub async fn run(
                     }
                 } => {
                     pending = None;
-                    error = result.err();
+                    error = result.err().map(|error| error.to_string());
                     // The observer supplies authoritative values; do not invent
                     // a successful volume/default state from command completion.
                     let latest = state.borrow_and_update().clone();

@@ -13,7 +13,7 @@ fn build_volume_stream(
 ) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = crate::app::Message> + Send + 'static>> {
     crate::dbus::subscription::build::<Option<(f64, bool)>, crate::app::Message, _, _, _>(
         |tx| {
-            std::thread::spawn(move || canopa_shell::audio::run_pa_thread(tx));
+            std::thread::spawn(move || canopa_services::audio::run_pa_thread(tx));
         },
         |reading| {
             let Some((volume, muted)) = reading else {
@@ -39,4 +39,4 @@ pub(crate) fn volume_subscription() -> iced::Subscription<crate::app::Message> {
     iced::Subscription::run_with(VolumeConnData, build_volume_stream)
 }
 
-pub(crate) use canopa_shell::audio::adjust_default_sink_volume;
+pub(crate) use canopa_services::audio::adjust_default_sink_volume;

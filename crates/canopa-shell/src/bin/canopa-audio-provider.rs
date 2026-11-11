@@ -1,5 +1,7 @@
 #[tokio::main]
 async fn main() {
+    // Keep the Pulse client name the audio server showed before the shared client.
+    canopa_services::audio::set_client_name("canopa-shell");
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

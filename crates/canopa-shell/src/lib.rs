@@ -10,7 +10,6 @@ pub mod external_panel {
 
 pub mod wifi_provider;
 
-pub mod audio;
 pub mod audio_provider;
 
 pub mod media;

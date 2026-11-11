@@ -1,4 +1,42 @@
-//! Audio observation and control shared by the bar and audio panel provider.
+//! Audio devices and the default output through the PulseAudio protocol,
+//! which PipeWire's compatibility server also implements. Behind the `audio`
+//! feature, because it links libpulse.
+//!
+//! - [`monitor`] keeps the latest snapshot of outputs and inputs (no monitor
+//!   sources) and serializes identity-bound [`DeviceOperation`]s. A device id
+//!   is valid only for the connection that listed it; a reconnect or a
+//!   removed device is [`AudioError::ConnectionChanged`] or
+//!   [`AudioError::DeviceGone`], never another device.
+//! - [`run_pa_thread`] and [`adjust_default_sink_volume`] are the bar's
+//!   lightweight default-output observer and scroll control.
+//!
+//! Volume changes keep channel proportions, cap the loudest channel at 100 %
+//! and leave mute unchanged. Discovery opens no capture stream.
+//!
+//! ```no_run
+//! use canopa_services::audio::{self, DeviceKind, DeviceOperation};
+//! # async fn page() {
+//! audio::set_client_name("canopa-settings");
+//! let (control, mut state) = audio::monitor(None); // `None`: the default server.
+//! while state.changed().await.is_ok() {
+//!     let Some(snapshot) = state.borrow_and_update().clone() else {
+//!         println!("No audio server"); // Unavailable; the monitor reconnects.
+//!         continue;
+//!     };
+//!     for device in snapshot.devices.iter().filter(|d| d.id.kind == DeviceKind::Output) {
+//!         println!("{} {:.0} %", device.description, device.volume);
+//!     }
+//!     if let Some(output) = snapshot.devices.first() {
+//!         let result = control
+//!             .apply(output.id.clone(), DeviceOperation::SetVolume { percent: 40 })
+//!             .await;
+//!         if let Err(error) = result {
+//!             eprintln!("{error}");
+//!         }
+//!     }
+//! }
+//! # }
+//! ```
 use tokio::sync::mpsc;
 
 mod devices;
@@ -6,6 +44,62 @@ mod volume;
 pub use devices::{
     AudioControl, AudioDevice, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation, monitor,
 };
+
+/// Why an audio read or command failed. The messages are plain sentences
+/// that panels show as they are.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AudioError {
+    /// The command queue is full or the observer has stopped.
+    #[error("Audio controls are busy or unavailable.")]
+    Busy,
+    #[error("Audio operation timed out.")]
+    TimedOut,
+    /// The observer ended before answering.
+    #[error("Audio controls are unavailable.")]
+    ControlsUnavailable,
+    /// No audio server connection.
+    #[error("Audio is unavailable.")]
+    Unavailable,
+    #[error("Audio server did not respond.")]
+    NoResponse,
+    #[error("Too many audio devices.")]
+    TooManyDevices,
+    #[error("Could not read audio devices.")]
+    ReadFailed,
+    /// The id came from an earlier connection.
+    #[error("The audio connection changed. Choose a current device.")]
+    ConnectionChanged,
+    #[error("The audio device is no longer available. Choose a current device.")]
+    DeviceGone,
+    #[error("Invalid audio channel volumes.")]
+    InvalidChannels,
+    #[error("Volume must be between 0% and 100%.")]
+    VolumeOutOfRange,
+    #[error("The audio server rejected the change.")]
+    Rejected,
+    #[error("default audio sink is unavailable")]
+    NoDefaultSink,
+    #[error("audio server rejected volume adjustment")]
+    AdjustmentRejected,
+    #[error("audio adjustment timed out")]
+    AdjustmentTimedOut,
+    /// Connecting to the server failed; the detail is for logs.
+    #[error("{0}")]
+    Connection(String),
+}
+
+static CLIENT_NAME: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// The application name the audio server shows for this process's
+/// connections (for example in a mixer). Set it once, before connecting;
+/// the default is `canopa`.
+pub fn set_client_name(name: &'static str) {
+    let _ = CLIENT_NAME.set(name);
+}
+
+fn client_name() -> &'static str {
+    CLIENT_NAME.get().copied().unwrap_or("canopa")
+}
 
 #[cfg(test)]
 mod tests;
@@ -29,14 +123,14 @@ struct PulseConnection {
 }
 
 impl PulseConnection {
-    fn connect(server: Option<&str>, cancelled: impl Fn() -> bool) -> Result<Self, String> {
-        let mut mainloop =
-            pulse::mainloop::threaded::Mainloop::new().ok_or("cannot create audio mainloop")?;
-        let context = pulse::context::Context::new(&mainloop, "canopa-shell")
-            .ok_or("cannot create audio context")?;
+    fn connect(server: Option<&str>, cancelled: impl Fn() -> bool) -> Result<Self, AudioError> {
+        let mut mainloop = pulse::mainloop::threaded::Mainloop::new()
+            .ok_or_else(|| AudioError::Connection("cannot create audio mainloop".into()))?;
+        let context = pulse::context::Context::new(&mainloop, client_name())
+            .ok_or_else(|| AudioError::Connection("cannot create audio context".into()))?;
         mainloop
             .start()
-            .map_err(|error| format!("audio mainloop: {error:?}"))?;
+            .map_err(|error| AudioError::Connection(format!("audio mainloop: {error:?}")))?;
         let mut connection = Self {
             context: Rc::new(RefCell::new(context)),
             mainloop,
@@ -48,7 +142,7 @@ impl PulseConnection {
             None,
         );
         connection.mainloop.unlock();
-        result.map_err(|error| format!("audio connection: {error:?}"))?;
+        result.map_err(|error| AudioError::Connection(format!("audio connection: {error:?}")))?;
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             connection.mainloop.lock();
@@ -57,10 +151,12 @@ impl PulseConnection {
             match state {
                 pulse::context::State::Ready => return Ok(connection),
                 pulse::context::State::Failed | pulse::context::State::Terminated => {
-                    return Err("audio server unavailable".into());
+                    return Err(AudioError::Connection("audio server unavailable".into()));
                 }
                 _ if cancelled() || Instant::now() >= deadline => {
-                    return Err("audio connection cancelled or timed out".into());
+                    return Err(AudioError::Connection(
+                        "audio connection cancelled or timed out".into(),
+                    ));
                 }
                 _ => std::thread::sleep(Duration::from_millis(10)),
             }
@@ -79,6 +175,9 @@ impl Drop for PulseConnection {
     }
 }
 
+/// The bar's default-output observer: sends `Ok(Some((percent, muted)))` on
+/// each change, `Ok(None)` without a default sink, and `Err(())` once when the
+/// connection fails. Runs on the calling thread until `tx` closes.
 pub fn run_pa_thread(tx: VolumeSender) {
     run_pa_thread_on(None, tx);
 }
@@ -190,16 +289,18 @@ fn fetch_volume(
         });
 }
 
-pub async fn adjust_default_sink_volume(step: u8, up: bool) -> Result<(), String> {
+/// Raise or lower the default output by `step` percent, serialized so rapid
+/// scroll events do not lose increments.
+pub async fn adjust_default_sink_volume(step: u8, up: bool) -> Result<(), AudioError> {
     // Serialize read/modify/write so rapid scroll events do not lose increments.
     static ADJUSTMENT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = ADJUSTMENT.lock().await;
     tokio::task::spawn_blocking(move || adjust_volume_on(None, step, up))
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| AudioError::Connection(error.to_string()))?
 }
 
-fn adjust_volume_on(server: Option<&str>, step: u8, up: bool) -> Result<(), String> {
+fn adjust_volume_on(server: Option<&str>, step: u8, up: bool) -> Result<(), AudioError> {
     use pulse::callbacks::ListResult;
     let mut connection = PulseConnection::connect(server, || false)?;
     let (tx, rx) = std::sync::mpsc::channel();
@@ -232,20 +333,20 @@ fn adjust_volume_on(server: Option<&str>, step: u8, up: bool) -> Result<(), Stri
                         let _ = tx.send(if success {
                             Ok(())
                         } else {
-                            Err("audio server rejected volume adjustment".into())
+                            Err(AudioError::AdjustmentRejected)
                         });
                     })),
                 );
             }
             ListResult::Error => {
-                let _ = tx.send(Err("default audio sink is unavailable".into()));
+                let _ = tx.send(Err(AudioError::NoDefaultSink));
             }
             ListResult::End if !found => {
-                let _ = tx.send(Err("default audio sink is unavailable".into()));
+                let _ = tx.send(Err(AudioError::NoDefaultSink));
             }
             ListResult::End => {}
         });
     connection.mainloop.unlock();
     rx.recv_timeout(Duration::from_secs(2))
-        .map_err(|_| "audio adjustment timed out".to_owned())?
+        .map_err(|_| AudioError::AdjustmentTimedOut)?
 }

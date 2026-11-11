@@ -1,4 +1,5 @@
 //! Channel-preserving level policy shared by default-output and device controls.
+use super::AudioError;
 use super::pulse::volume::{ChannelVolumes, Volume};
 
 pub(super) enum Change {
@@ -9,14 +10,14 @@ pub(super) enum Change {
 pub(super) fn apply(
     mut channels: ChannelVolumes,
     change: Change,
-) -> Result<ChannelVolumes, String> {
+) -> Result<ChannelVolumes, AudioError> {
     if !channels.is_valid() {
-        return Err("Invalid audio channel volumes.".into());
+        return Err(AudioError::InvalidChannels);
     }
     let maximum = match change {
         Change::Set { percent } => {
             if percent > 100 {
-                return Err("Volume must be between 0% and 100%.".into());
+                return Err(AudioError::VolumeOutOfRange);
             }
             u32::from(percent) * Volume::NORMAL.0 / 100
         }
@@ -36,6 +37,6 @@ pub(super) fn apply(
     };
     channels
         .scale(Volume(maximum))
-        .ok_or("Invalid audio channel volumes.")?;
+        .ok_or(AudioError::InvalidChannels)?;
     Ok(channels)
 }

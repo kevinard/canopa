@@ -4,6 +4,8 @@
 //! asks them. It has no Iced, Wayland or panel-protocol dependency, so the Shell,
 //! its headless providers and Settings share one client per service.
 
+#[cfg(feature = "audio")]
+pub mod audio;
 pub mod backlight;
 pub mod bluetooth;
 pub mod bus;

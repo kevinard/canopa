@@ -45,6 +45,8 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
 }
 
 fn main() {
+    // Keep the Pulse client name the audio server showed before the shared client.
+    canopa_services::audio::set_client_name("canopa-shell");
     let command = cli::parse();
     if let cli::Command::ClipboardFrame(kind) = command {
         std::process::exit(i32::from(launcher::clipboard::write_frame(kind).is_err()));

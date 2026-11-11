@@ -1,5 +1,5 @@
 //! Bounded Pulse-protocol device queries and explicit, identity-bound operations.
-use super::{PulseConnection, pulse};
+use super::{AudioError, PulseConnection, pulse};
 use pulse::{callbacks::ListResult, volume::ChannelVolumes};
 use std::sync::{
     Arc,
@@ -66,10 +66,14 @@ pub struct AudioControl {
 struct OperationRequest {
     id: AudioDeviceId,
     operation: DeviceOperation,
-    reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    reply: tokio::sync::oneshot::Sender<Result<(), AudioError>>,
 }
 impl AudioControl {
-    pub async fn apply(&self, id: AudioDeviceId, operation: DeviceOperation) -> Result<(), String> {
+    pub async fn apply(
+        &self,
+        id: AudioDeviceId,
+        operation: DeviceOperation,
+    ) -> Result<(), AudioError> {
         let (reply, response) = tokio::sync::oneshot::channel();
         self.commands
             .try_send(OperationRequest {
@@ -77,11 +81,11 @@ impl AudioControl {
                 operation,
                 reply,
             })
-            .map_err(|_| "Audio controls are busy or unavailable.".to_owned())?;
+            .map_err(|_| AudioError::Busy)?;
         tokio::time::timeout(Duration::from_secs(10), response)
             .await
-            .map_err(|_| "Audio operation timed out.".to_owned())?
-            .map_err(|_| "Audio controls are unavailable.".to_owned())?
+            .map_err(|_| AudioError::TimedOut)?
+            .map_err(|_| AudioError::ControlsUnavailable)?
     }
 }
 
@@ -99,7 +103,7 @@ pub fn monitor(server: Option<String>) -> (AudioControl, watch::Receiver<Option<
                     return;
                 }
                 while let Ok(request) = requests.try_recv() {
-                    let _ = request.reply.send(Err("Audio is unavailable.".into()));
+                    let _ = request.reply.send(Err(AudioError::Unavailable));
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
@@ -173,12 +177,12 @@ fn observe(
     }
 }
 
-fn receive<T>(rx: mpsc::Receiver<T>) -> Result<T, String> {
+fn receive<T>(rx: mpsc::Receiver<T>) -> Result<T, AudioError> {
     rx.recv_timeout(DEADLINE)
-        .map_err(|_| "Audio server did not respond.".into())
+        .map_err(|_| AudioError::NoResponse)
 }
 
-fn snapshot(connection: &mut PulseConnection, session: u64) -> Result<AudioSnapshot, String> {
+fn snapshot(connection: &mut PulseConnection, session: u64) -> Result<AudioSnapshot, AudioError> {
     let (tx, rx) = mpsc::channel();
     connection.mainloop.lock();
     connection
@@ -251,7 +255,7 @@ fn snapshot(connection: &mut PulseConnection, session: u64) -> Result<AudioSnaps
 
 fn collect<T>(
     devices: &mut Option<Vec<AudioDevice>>,
-    tx: &mpsc::Sender<Result<Vec<AudioDevice>, String>>,
+    tx: &mpsc::Sender<Result<Vec<AudioDevice>, AudioError>>,
     item: ListResult<&T>,
     convert: impl FnOnce(&T) -> Option<AudioDevice>,
 ) {
@@ -262,7 +266,7 @@ fn collect<T>(
         ListResult::Item(item) => {
             if current.len() >= MAX_DEVICES {
                 *devices = None;
-                let _ = tx.send(Err("Too many audio devices.".into()));
+                let _ = tx.send(Err(AudioError::TooManyDevices));
             } else if let Some(device) = convert(item) {
                 current.push(device);
             }
@@ -272,7 +276,7 @@ fn collect<T>(
         }
         ListResult::Error => {
             *devices = None;
-            let _ = tx.send(Err("Could not read audio devices.".into()));
+            let _ = tx.send(Err(AudioError::ReadFailed));
         }
     }
 }
@@ -313,16 +317,16 @@ fn apply_to(
     session: u64,
     id: &AudioDeviceId,
     operation: DeviceOperation,
-) -> Result<(), String> {
+) -> Result<(), AudioError> {
     if id.session != session {
-        return Err("The audio connection changed. Choose a current device.".into());
+        return Err(AudioError::ConnectionChanged);
     }
     let current = snapshot(connection, session)?;
     let device = current
         .devices
         .iter()
         .find(|device| device.id == *id)
-        .ok_or("The audio device is no longer available. Choose a current device.")?;
+        .ok_or(AudioError::DeviceGone)?;
     let channels = match operation {
         DeviceOperation::AdjustVolume { step, up } => Some(super::volume::apply(
             device.channels,
@@ -394,6 +398,6 @@ fn apply_to(
     if receive(rx)? {
         Ok(())
     } else {
-        Err("The audio server rejected the change.".into())
+        Err(AudioError::Rejected)
     }
 }
