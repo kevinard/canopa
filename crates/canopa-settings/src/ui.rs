@@ -5,6 +5,7 @@ mod launcher;
 mod live_example;
 mod live_page;
 mod navigation;
+mod network;
 mod power;
 mod profiles;
 mod shortcuts;
@@ -119,6 +120,8 @@ enum Message {
     Raised(bool),
     Power(crate::live::Event<crate::power::PowerService>),
     Sound(crate::live::Event<crate::sound::SoundService>),
+    Network(crate::live::Event<crate::network::NetworkService>),
+    NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
     AlertSounds(bool),
@@ -159,6 +162,8 @@ struct State {
     power_choices: FileDraft<PowerChoices>,
     power: power::PowerPage,
     sound: sound::SoundPage,
+    network: network::NetworkPage,
+    network_forms: network::NetworkForms,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -253,6 +258,8 @@ impl State {
             power_choices,
             power: live_page::LivePage::new(Default::default()),
             sound: live_page::LivePage::new(Default::default()),
+            network: live_page::LivePage::new(Default::default()),
+            network_forms: Default::default(),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -676,7 +683,7 @@ impl State {
                 match self.page {
                     #[cfg(debug_assertions)]
                     Page::LiveExample => self.busy = false,
-                    Page::Sound => self.busy = false,
+                    Page::Sound | Page::Network => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -803,6 +810,8 @@ impl State {
             }
             Message::Power(event) => return self.power.update(event, power::message),
             Message::Sound(event) => return self.sound.update(event, sound::message),
+            Message::Network(event) => return self.network.update(event, network::message),
+            Message::NetworkForm(edit) => return self.network_edit(edit),
             Message::Level(level) if self.page == Page::Sound => self.input_level = level,
             Message::AlertSounds(enabled) if !self.busy && self.trial.is_none() => {
                 self.busy = true;
@@ -1025,6 +1034,9 @@ impl State {
             Page::Sound => self
                 .sound
                 .update(crate::live::Event::Reload, sound::message),
+            Page::Network => self
+                .network
+                .update(crate::live::Event::Reload, network::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -1042,6 +1054,9 @@ impl State {
         }
         if self.page == Page::Sound {
             subscriptions.push(self.sound_subscription());
+        }
+        if self.page == Page::Network {
+            subscriptions.push(self.network.subscription(Message::Network));
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1111,6 +1126,7 @@ impl State {
             Page::Displays => self.displays(),
             Page::Input => self.input_view(),
             Page::Sound => self.sound_view(),
+            Page::Network => self.network_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

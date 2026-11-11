@@ -6,6 +6,7 @@ pub mod input;
 pub mod instance;
 pub mod launcher;
 pub mod live;
+pub mod network;
 pub mod niri;
 pub mod power;
 pub mod preferences;

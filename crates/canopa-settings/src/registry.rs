@@ -10,6 +10,7 @@
 pub enum Page {
     Displays,
     Input,
+    Network,
     Sound,
     Personal,
     Power,
@@ -172,6 +173,41 @@ pub static PAGES: &[Entry] = &[
             documents: &[Document::Input],
             apply: Apply::Save,
         },
+        hidden: false,
+    },
+    Entry {
+        page: Page::Network,
+        id: "network",
+        title: "Network",
+        description: "Connect to Wi-Fi, wired networks and VPNs, and share a hotspot.",
+        icon: "preferences-system-network",
+        group: Group::Devices,
+        keywords: &[
+            "wifi",
+            "wi-fi",
+            "wireless",
+            "internet",
+            "ethernet",
+            "wired",
+            "cable",
+            "ip address",
+            "dns",
+            "dhcp",
+            "vpn",
+            "wireguard",
+            "openvpn",
+            "ipsec",
+            "hotspot",
+            "tethering",
+            "eduroam",
+            "enterprise",
+            "802.1x",
+            "certificate",
+            "metered",
+            "proxy",
+            "airplane",
+        ],
+        kind: Kind::Live,
         hidden: false,
     },
     Entry {
@@ -503,6 +539,8 @@ mod tests {
             "launcher",
             "shortcuts",
             "widgets",
+            "network",
+            "sound",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -517,6 +555,7 @@ mod tests {
             [
                 Page::Displays,
                 Page::Input,
+                Page::Network,
                 Page::Sound,
                 Page::Personal,
                 Page::Power,
@@ -533,7 +572,7 @@ mod tests {
         assert_eq!(grouped, order);
         assert_eq!(step(Page::Widgets, 1), Page::Displays);
         assert_eq!(step(Page::Displays, -1), Page::Widgets);
-        assert_eq!(step(Page::Input, 1), Page::Sound);
+        assert_eq!(step(Page::Input, 1), Page::Network);
     }
 
     #[test]
@@ -550,6 +589,8 @@ mod tests {
         assert_eq!(pages("suspend"), [Page::Power]);
         assert_eq!(pages("clipboard"), [Page::Launcher]);
         assert_eq!(pages("microphone"), [Page::Sound]);
+        assert_eq!(pages("wireguard"), [Page::Network]);
+        assert_eq!(pages("wi-fi")[0], Page::Network);
         assert_eq!(pages("lid"), [Page::Power]);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
         // A title match ranks above keyword matches on other pages.
