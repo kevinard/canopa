@@ -56,9 +56,9 @@ save refreshes the other page's view of `niri.kdl`.
 **Live service** (`Kind::Live`, `live.rs`, `ui/live_page.rs`): state comes
 from a system service and each change applies at once, with no Save footer. A
 service client implements `LiveService` through a small adapter: a name, a
-snapshot, a stream of updates, and `apply` for one change. Settings does not
-depend on the shared services crate; that crate's clients get adapters as pages
-are added. `Live` is a toolkit-free state machine:
+snapshot, a stream of updates, and `apply` for one change. The Network, Sound
+and Power pages adapt the shared services crate's clients this way
+(ADR 0137, 0139, 0140). `Live` is a toolkit-free state machine:
 
 - the page shows "Connecting…" until the first reply;
 - an unavailable service shows "Service not available" with Try again, and the

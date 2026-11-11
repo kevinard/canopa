@@ -64,22 +64,22 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | | VRR | missing | K | not in `actions` (`display.rs:92-132`). A hand-written `variable-refresh-rate` is preserved by `display.rs:267-343` | Gamers must edit KDL |
 | | Saved profiles | works | S | `profiles.rs`, `ui/profiles.rs`, `profile_watch.rs`, ADR 0133 | Hotplug offers and auto-switch. Physical dock testing is still unverified (`.scratch/display-profiles/PRD.md`) |
 | | Night light | missing | – | none (PRD W3) | |
-| Network | Wi-Fi | partial | Sh | `canopa-shell/src/wifi_provider/backends.rs` (NM and iwd), enterprise refused at `:415-418` | Scan, connect open/WPA-Personal/hidden from the panel. WPA-Enterprise/eduroam: "unsupported network". No forget or saved-network list |
-| | Wired | missing | – | Shell only shows connectivity (`dbus/networkmanager.rs`) | No static IP, no 802.1X wired |
-| | VPN | missing | – | none | Needs `nmcli`/`nm-connection-editor` |
-| | Hotspot | missing | – | none | |
-| | Proxy | missing | – | none | |
+| Network | Wi-Fi | partial | Sh | `canopa-shell/src/wifi_provider/backends.rs` (NM and iwd), enterprise refused at `:415-418` | Scan, connect open/WPA-Personal/hidden from the panel. WPA-Enterprise/eduroam: "unsupported network". No forget or saved-network list **Fixed in 77f2b41 (Settings Network: list, join incl. hidden and WPA-Enterprise PEAP/TTLS/TLS, forget, auto-connect, Wi-Fi switch; secrets ADR 0139), 50a3626 and 3861301 (Shell).** |
+| | Wired | missing | – | Shell only shows connectivity (`dbus/networkmanager.rs`) | No static IP, no 802.1X wired **Fixed in 77f2b41:** wired status and IPv4/IPv6 method, addresses and DNS (802.1X wired still open). |
+| | VPN | missing | – | none | Needs `nmcli`/`nm-connection-editor` **Fixed in 77f2b41:** connect/disconnect, WireGuard create and `.conf` import, plugin VPN import through `nmcli connection import`. |
+| | Hotspot | missing | – | none | **Fixed in 77f2b41.** |
+| | Proxy | missing | – | none | **Fixed in 77f2b41** (connection proxy: none, PAC URL, or manual through a PAC script; metered flag too). |
 | Bluetooth | Devices | partial | Sh | `canopa-shell/src/hardware_panel/bluetooth.rs` (raw zbus, agent `:358`, power `:629`, connect/disconnect `:668-671`) | Can power, scan, pair and connect. No forget/remove, battery, rename or audio profile |
-| Sound | Output/input device | partial | Sh | `canopa-shell/src/audio/devices.rs:55-60` (libpulse) | Can set default, volume and mute per device |
-| | Per-app volume | missing | – | no sink-input handling | |
-| | Card profiles | missing | – | none | Can't switch HDMI/analog or A2DP/HFP |
-| | Input level meter / alert sound | missing | – | none | |
+| Sound | Output/input device | partial | Sh | `canopa-shell/src/audio/devices.rs:55-60` (libpulse) | Can set default, volume and mute per device **Fixed in 1e58759:** also in Settings Sound, with balance. |
+| | Per-app volume | missing | – | no sink-input handling | **Fixed in 43b9907 and 1e58759.** |
+| | Card profiles | missing | – | none | Can't switch HDMI/analog or A2DP/HFP **Fixed in 43b9907 and 1e58759.** |
+| | Input level meter / alert sound | missing | – | none | **Fixed in 1e58759:** level meter while the page is shown; Notify notification sounds switch. |
 | | Volume keys | works | K (shipped defaults) | `packaging/niri/defaults.kdl:39-42` (`wpctl`) | No on-screen display (PRD W3) |
-| Power | Battery status | partial | Sh (bar) | `canopa-shell/src/dbus/upower.rs` | Bar indicator only. No health or details |
-| | Power profiles | partial | Sh | `hardware_panel/power.rs:11-19` (power-profiles-daemon) | Panel only, not in Settings |
-| | Brightness | partial | Sh | `hardware_panel/power.rs` (logind `SetBrightness`) | Slider works. **No brightness keys** in `defaults.kdl` |
-| | Lid / power-button actions | missing | – | none | logind defaults only |
-| | Idle lock/screen-off/suspend timeouts | rough | S | `ui.rs:1267-1337`, `preferences.rs:166-316` | Times in seconds as text fields. **Save is disabled unless Stasis is running** (`ui.rs:618-622`, `:915-918`). Custom plans are read-only |
+| Power | Battery status | partial | Sh (bar) | `canopa-shell/src/dbus/upower.rs` | Bar indicator only. No health or details **Fixed in 53776d4 and 101c4ba:** Settings Power shows charge, estimates, health and cycles. |
+| | Power profiles | partial | Sh | `hardware_panel/power.rs:11-19` (power-profiles-daemon) | Panel only, not in Settings **Fixed in 101c4ba.** |
+| | Brightness | partial | Sh | `hardware_panel/power.rs` (logind `SetBrightness`) | Slider works. **No brightness keys** in `defaults.kdl` **Fixed in 101c4ba:** Settings slider and the Shell slider use the perceptual mapping (keys: 004f775). |
+| | Lid / power-button actions | missing | – | none | logind defaults only **Fixed in 101c4ba** (ADR 0140: lid choice through logind's inhibitor in the session; power button Suspend or the system setting). |
+| | Idle lock/screen-off/suspend timeouts | rough | S | `ui.rs:1267-1337`, `preferences.rs:166-316` | Times in seconds as text fields. **Save is disabled unless Stasis is running** (`ui.rs:618-622`, `:915-918`). Custom plans are read-only **Fixed in 101c4ba:** duration pickers, Save works without Stasis, idle daemon state shown. |
 | | Idle profile, pause/resume | rough | S | `ui.rs:1291-1318` | Profile name is free text with default `"none"` (`ui.rs:228`) |
 | Keyboard | Layouts | rough | S | `ui.rs:1082-1096`, validation `input.rs:39-75` | Must type XKB ids (`us,fr`) and options (`grp:alt_shift_toggle`). No picker or search |
 | | Repeat | works | S | `ui.rs:1097-1115` | |
@@ -232,7 +232,7 @@ desktop. M1/M2 refer to the PRD milestones.
 4. **Power page can't save without Stasis.** `Save` requires `idle_available`
    (`ui.rs:618-622`, `:915-918`), and every page change resets that flag
    (`ui.rs:391`). If Stasis isn't installed or is stopped, the timeouts can't be
-   saved even though the policy file exists.
+   saved even though the policy file exists. Fixed in 101c4ba: Stasis stays optional; Save writes the file without it.
 5. **Editable defaults hide read-only state.** When a source fails to load or
    parse, the page shows default values as if they were editable
    (`ui.rs:174-195`). Only Save reveals that the page is read-only. `notice` keeps

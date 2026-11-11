@@ -48,6 +48,9 @@ its commit. Commits by area:
 | C | `6c4d1f3`..`5675085` | Shared icon-theme and MIME lookup (ADR 0138) |
 | D | `b33521c`..`9825b5b` | On-screen indicators and brightness, media and keyboard-backlight keys (Shell ADR 0025) |
 | E | `e489cad` | Fork `kevinard/exwlshelleventloop` `fecb4f1a`: keyboard serial for activation tokens |
+| Tier 3.1 Network | `50a3626`, `77f2b41`, `3861301` | Settings Network page, NetworkManager settings client and secret agent (ADR 0139), Shell Wi-Fi off/disconnect/forget and wired/VPN state |
+| Tier 3.2 Sound | `43b9907`, `1e58759` | Settings Sound page: devices, balance, applications, card profiles, level meter, notification sounds |
+| Tier 3.3 Power | `53776d4`, `101c4ba` | Settings Power page: battery health, power modes, perceptual brightness, lid and power button (ADR 0140), idle timeouts without Stasis |
 
 Workspace gate after both tiers: only Files `device_runtime` ("private device
 runtime did not settle", pre-existing) and the flaky Files video playback test

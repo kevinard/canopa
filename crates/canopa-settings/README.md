@@ -1,7 +1,8 @@
 # Canopa Settings
 
-An ordinary Iced window for display/input configuration, shared appearance and
-lockscreen preferences, the existing wallpaper picker and Stasis idle controls.
+An ordinary Iced window for display/input configuration, network, sound and
+power, shared appearance and lockscreen preferences, the existing wallpaper
+picker and Stasis idle controls.
 Run `canopa-settings [PAGE]` or `canopa settings`; a running window switches to
 the page instead of opening another. See [the settings guide](../../docs/settings.md).
 
