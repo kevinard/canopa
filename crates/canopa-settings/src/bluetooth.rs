@@ -471,8 +471,8 @@ impl LiveService for BluetoothService {
     type State = BluetoothState;
     type Action = BluetoothAction;
 
-    fn name(&self) -> &str {
-        "BlueZ"
+    fn name(&self) -> String {
+        "BlueZ".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<BluetoothState, ServiceError>> {

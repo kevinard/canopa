@@ -1,15 +1,16 @@
 //! The Power page: live battery, power mode and brightness sections, then the
 //! saved lid choice and idle timeouts, and the power button (applied at once).
-use super::{Message, State, adjust, choice, live_page::LivePage, settings_group};
+use super::{Message, State, adjust, live_page::LivePage, pick, settings_group};
 use crate::{
     live::Event,
     power::{DURATIONS, PowerAction, PowerService, PowerState, duration_label, lid_label},
     preferences::IdleDraft,
 };
 use canopa_services::{power_switches::LidAction, upower::PowerState as Charge};
+use canopa_ui::direction;
 use iced::{
     Alignment, Element,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type PowerPage = LivePage<PowerService>;
@@ -18,26 +19,31 @@ pub(super) fn message(event: Event<PowerService>) -> Message {
     Message::Power(event)
 }
 
-/// The power-button choices: Niri suspends by default; the system setting
-/// leaves the button to logind.
-const POWER_KEY: [(&str, bool); 2] = [("Suspend", false), ("Use the system setting", true)];
+/// The power-button choices, by whether the button is left to logind: Niri
+/// suspends by default.
+fn power_key_options() -> Vec<(bool, String)> {
+    vec![
+        (false, fl!("settings-power-suspend")),
+        (true, fl!("settings-power-system-setting")),
+    ]
+}
 
-fn charge(state: Charge) -> &'static str {
+fn charge(state: Charge) -> String {
     match state {
-        Charge::Charging => "Charging",
-        Charge::Discharging => "On battery",
-        Charge::Empty => "Empty",
-        Charge::FullyCharged => "Fully charged",
-        Charge::PendingCharge => "Plugged in, not charging",
-        Charge::PendingDischarge => "Waiting to discharge",
-        Charge::Unknown => "Charge state unknown",
+        Charge::Charging => fl!("settings-battery-charging"),
+        Charge::Discharging => fl!("settings-battery-discharging"),
+        Charge::Empty => fl!("settings-battery-empty"),
+        Charge::FullyCharged => fl!("settings-battery-full"),
+        Charge::PendingCharge => fl!("settings-battery-pending-charge"),
+        Charge::PendingDischarge => fl!("settings-battery-pending-discharge"),
+        Charge::Unknown => fl!("settings-battery-unknown"),
     }
 }
 
 fn approximately(seconds: u64) -> String {
     // Estimates move constantly; minutes are as precise as they get.
     let minutes = (seconds + 30) / 60;
-    duration_label((minutes.max(1) * 60).min(u64::from(u32::MAX)) as u32)
+    canopa_i18n::format::duration(minutes.max(1) * 60)
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
@@ -57,21 +63,35 @@ impl State {
     fn battery_section(state: &PowerState) -> Element<'_, Message> {
         let Some(supply) = &state.supply else {
             return settings_group(
-                "Battery",
-                muted("Battery information is not available because UPower is not running."),
+                fl!("settings-battery"),
+                muted(fl!("settings-battery-no-upower")),
             );
         };
         if supply.batteries.is_empty() {
-            return settings_group("Battery", muted("This computer has no battery."));
+            return settings_group(fl!("settings-battery"), muted(fl!("settings-battery-none")));
         }
         let mut body = column![].spacing(10);
         for battery in &supply.batteries {
-            let mut status = format!("{:.0}% · {}", battery.percentage, charge(battery.state));
-            if let Some(seconds) = battery.time_to_empty.filter(|_| supply.on_battery) {
-                status.push_str(&format!(" · about {} left", approximately(seconds)));
+            let level = canopa_i18n::format::percent(battery.percentage);
+            let state = charge(battery.state);
+            let status = if let Some(seconds) = battery.time_to_empty.filter(|_| supply.on_battery)
+            {
+                fl!(
+                    "settings-battery-status-left",
+                    level = level,
+                    state = state,
+                    time = approximately(seconds)
+                )
             } else if let Some(seconds) = battery.time_to_full {
-                status.push_str(&format!(" · full in about {}", approximately(seconds)));
-            }
+                fl!(
+                    "settings-battery-status-to-full",
+                    level = level,
+                    state = state,
+                    time = approximately(seconds)
+                )
+            } else {
+                fl!("settings-battery-status", level = level, state = state)
+            };
             let name = [battery.vendor.as_str(), battery.model.as_str()]
                 .into_iter()
                 .filter(|part| !part.is_empty())
@@ -86,51 +106,53 @@ impl State {
                 battery.energy_full,
                 battery.energy_full_design,
             ) {
-                (Some(capacity), Some(full), Some(design)) => Some(format!(
-                    "Health: {capacity:.0}% of its original capacity ({full:.1} of {design:.1} Wh)"
+                (Some(capacity), Some(full), Some(design)) => Some(fl!(
+                    "settings-battery-health-energy",
+                    capacity = canopa_i18n::format::percent(capacity),
+                    full = canopa_i18n::format::decimal(full, 1, true),
+                    design = canopa_i18n::format::decimal(design, 1, true)
                 )),
-                (Some(capacity), ..) => {
-                    Some(format!("Health: {capacity:.0}% of its original capacity"))
-                }
+                (Some(capacity), ..) => Some(fl!(
+                    "settings-battery-health",
+                    capacity = canopa_i18n::format::percent(capacity)
+                )),
                 _ => None,
             };
-            card =
-                card.push(muted(health.unwrap_or_else(|| {
-                    "The battery does not report its health.".into()
-                })));
+            card = card.push(muted(
+                health.unwrap_or_else(|| fl!("settings-battery-health-unknown")),
+            ));
             if let Some(cycles) = battery.cycles {
-                card = card.push(muted(format!("Charge cycles: {cycles}")));
+                card = card.push(muted(fl!("settings-battery-cycles", cycles = cycles)));
             }
             body = body.push(card);
         }
-        settings_group("Battery", body)
+        settings_group(fl!("settings-battery"), body)
     }
 
     fn live_power_sections<'a>(&'a self, state: &'a PowerState) -> Element<'a, Message> {
         let page = &self.power;
         let profiles: Element<'_, Message> = match &state.profiles {
-            None => {
-                muted("Power modes are not available because power-profiles-daemon is not running.")
-            }
+            None => muted(fl!("settings-power-modes-unavailable")),
             Some(profiles) => {
                 let active = match page.live.pending("power-profile") {
                     Some(PowerAction::Profile(profile)) => profile.as_str(),
                     _ => profiles.active.as_str(),
                 };
-                let mut buttons = row![].spacing(10);
-                for name in &profiles.supported {
-                    buttons =
-                        buttons.push(self.action(
-                            format!("power-profile-{name}"),
-                            profile_label(name),
-                            (active != *name).then(|| {
-                                message(Event::Apply(PowerAction::Profile((*name).into())))
-                            }),
-                            active == *name,
-                        ));
-                }
+                let buttons = direction::row(profiles.supported.iter().map(|name| {
+                    self.action(
+                        format!("power-profile-{name}"),
+                        profile_label(name),
+                        (active != *name)
+                            .then(|| message(Event::Apply(PowerAction::Profile((*name).into())))),
+                        active == *name,
+                    )
+                }))
+                .spacing(10);
                 column![
-                    text(format!("Current mode: {}", profile_label(active))),
+                    text(fl!(
+                        "settings-power-mode-current",
+                        mode = profile_label(active)
+                    )),
                     buttons,
                     page.control_status("power-profile", message),
                 ]
@@ -139,14 +161,17 @@ impl State {
             }
         };
         let brightness: Element<'_, Message> = match &state.backlight {
-            None => muted("This computer has no built-in display backlight."),
+            None => muted(fl!("settings-brightness-none")),
             Some(light) => {
                 let value = match page.live.pending("brightness") {
                     Some(PowerAction::Brightness(value)) => *value,
                     _ => light.perceptual().max(1),
                 };
                 column![
-                    text(format!("Built-in display: {value}%")),
+                    text(fl!(
+                        "settings-brightness-built-in",
+                        value = canopa_i18n::format::percent(f64::from(value))
+                    )),
                     adjust("power-brightness", 1.0..=100., f64::from(value), 1., |v| {
                         message(Event::Apply(PowerAction::Brightness(v.round() as u16)))
                     }),
@@ -158,8 +183,8 @@ impl State {
         };
         column![
             Self::battery_section(state),
-            settings_group("Power mode", profiles),
-            settings_group("Brightness", brightness),
+            settings_group(fl!("settings-power-mode"), profiles),
+            settings_group(fl!("settings-brightness"), brightness),
         ]
         .spacing(14)
         .into()
@@ -167,53 +192,33 @@ impl State {
 
     fn lid_section(&self) -> Element<'_, Message> {
         let lid = self.power_choices.value.lid_close;
-        let options: Vec<String> = LidAction::ALL
+        let options: Vec<(LidAction, String)> = LidAction::ALL
             .into_iter()
-            .map(|action| lid_label(action).to_owned())
+            .map(|action| (action, lid_label(action)))
             .collect();
         let power_key: Element<'_, Message> = if self.paths.active() {
-            let current = POWER_KEY
-                .iter()
-                .find(|(_, logind)| *logind == self.input.value.power_key_to_logind)
-                .map(|(label, _)| label.to_string());
             column![
-                text("When the power button is pressed"),
-                choice(
+                text(fl!("settings-power-button-pressed")),
+                pick(
                     "power-button",
-                    POWER_KEY
-                        .iter()
-                        .map(|(label, _)| label.to_string())
-                        .collect(),
-                    current,
-                    |label| Message::PowerKey(
-                        POWER_KEY
-                            .iter()
-                            .any(|(name, logind)| *name == label && *logind)
-                    ),
+                    power_key_options(),
+                    Some(self.input.value.power_key_to_logind),
+                    Message::PowerKey,
                 ),
-                muted("Applies at once. The system setting is usually Power off."),
+                muted(fl!("settings-power-button-hint")),
             ]
             .spacing(6)
             .into()
         } else {
-            muted("The power button can be changed in a Canopa session.")
+            muted(fl!("settings-power-button-needs-session"))
         };
         settings_group(
-            "Lid and power button",
+            fl!("settings-power-lid-and-button"),
             column![
                 column![
-                    text("When the lid is closed"),
-                    choice("lid-close", options, Some(lid_label(lid).to_owned()), |label| {
-                        Message::LidClose(
-                            LidAction::ALL
-                                .into_iter()
-                                .find(|action| lid_label(*action) == label)
-                                .unwrap_or_default(),
-                        )
-                    }),
-                    muted(
-                        "Applies after Save, in the Canopa session. While an external display is connected, closing the lid does nothing.",
-                    ),
+                    text(fl!("settings-power-lid-closed")),
+                    pick("lid-close", options, Some(lid), Message::LidClose),
+                    muted(fl!("settings-power-lid-hint")),
                 ]
                 .spacing(6),
                 power_key,
@@ -224,9 +229,9 @@ impl State {
 
     fn idle_section(&self) -> Element<'_, Message> {
         let stages = [
-            "Lock the screen after",
-            "Then turn off the displays after",
-            "Then suspend after",
+            fl!("settings-idle-lock-after"),
+            fl!("settings-idle-displays-after"),
+            fl!("settings-idle-suspend-after"),
         ];
         let picker = |battery: bool, index: usize| {
             let values = if battery {
@@ -242,21 +247,17 @@ impl State {
                 seconds.push(current);
                 seconds.sort_unstable();
             }
-            let labels: Vec<String> = seconds.iter().map(|value| duration_label(*value)).collect();
+            let options: Vec<(u32, String)> = seconds
+                .iter()
+                .map(|value| (*value, duration_label(*value)))
+                .collect();
             column![
-                text(stages[index]),
-                choice(
+                text(stages[index].clone()),
+                pick(
                     format!("idle-{}-{index}", if battery { "battery" } else { "ac" }),
-                    labels,
-                    current.map(duration_label),
-                    move |label| {
-                        let value = seconds
-                            .iter()
-                            .find(|value| duration_label(**value) == label)
-                            .copied()
-                            .unwrap_or(300);
-                        Message::IdleTime(battery, index, value.to_string())
-                    },
+                    options,
+                    current,
+                    move |value| Message::IdleTime(battery, index, value.to_string()),
                 ),
             ]
             .spacing(6)
@@ -269,37 +270,40 @@ impl State {
         }
         let daemon: Element<'_, Message> = if self.idle_available {
             column![
-                text(format!("Idle daemon: running. {}", self.idle_status)),
-                row![
+                text(fl!(
+                    "settings-idle-running",
+                    status = self.idle_status.as_str()
+                )),
+                direction::row([
                     self.action(
                         "settings-button-pause-idle-actions",
-                        "Pause idle actions",
+                        fl!("settings-idle-pause"),
                         (!self.busy).then_some(Message::IdleAction("pause")),
-                        false
+                        false,
                     ),
                     self.action(
                         "settings-button-resume",
-                        "Resume",
+                        fl!("settings-idle-resume"),
                         (!self.busy).then_some(Message::IdleAction("resume")),
-                        false
+                        false,
                     ),
-                ]
+                ])
                 .spacing(12),
-                row![
+                direction::row([
                     super::field(
                         "settings-field-stasis-profile",
-                        "Stasis profile",
+                        fl!("settings-idle-profile"),
                         &self.profile,
-                        Message::Profile
+                        Message::Profile,
                     ),
                     self.action(
                         "settings-button-use-profile",
-                        "Use profile",
+                        fl!("settings-idle-use-profile"),
                         (!self.busy && !self.profile.trim().is_empty())
                             .then_some(Message::UseProfile),
-                        false
-                    )
-                ]
+                        false,
+                    ),
+                ])
                 .spacing(12)
                 .align_y(Alignment::End),
             ]
@@ -307,25 +311,21 @@ impl State {
             .into()
         } else {
             column![
-                text("Idle daemon: not running."),
-                muted(
-                    "Stasis is optional. You can still save timeouts; they take effect when Stasis starts.",
-                ),
+                text(fl!("settings-idle-not-running")),
+                muted(fl!("settings-idle-optional")),
             ]
             .spacing(6)
             .into()
         };
         column![
-            settings_group("Idle", daemon),
-            muted("Each stage waits after the previous one: lock, displays off, then suspend."),
-            row![
-                settings_group("On AC power", ac),
-                settings_group("On battery", battery)
-            ]
+            settings_group(fl!("settings-idle"), daemon),
+            muted(fl!("settings-idle-stages-hint")),
+            direction::row([
+                settings_group(fl!("settings-idle-ac"), ac),
+                settings_group(fl!("settings-idle-battery"), battery),
+            ])
             .spacing(12),
-            muted(
-                "Custom commands, profiles and inhibition rules stay in your existing idle policy.",
-            ),
+            muted(fl!("settings-idle-custom-hint")),
         ]
         .spacing(14)
         .into()
@@ -341,11 +341,11 @@ impl State {
     }
 }
 
-fn profile_label(profile: &str) -> &str {
+fn profile_label(profile: &str) -> String {
     match profile {
-        "power-saver" => "Power saver",
-        "balanced" => "Balanced",
-        "performance" => "Performance",
-        other => other,
+        "power-saver" => fl!("settings-power-mode-saver"),
+        "balanced" => fl!("settings-power-mode-balanced"),
+        "performance" => fl!("settings-power-mode-performance"),
+        other => other.to_owned(),
     }
 }

@@ -1878,6 +1878,9 @@ impl State {
                 &self.personal.value.values.lock.date_format,
                 |v| { Message::PersonalText(2, v) }
             ),
+            text(fl!("settings-personal-formats-hint"))
+                .size(14)
+                .style(canopa_ui::muted),
             field(
                 "settings-field-font-family",
                 fl!("settings-personal-font"),

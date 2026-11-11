@@ -51,8 +51,9 @@ pub trait LiveService: Send + Sync + 'static {
     type State: Clone + fmt::Debug + Send + 'static;
     type Action: LiveAction;
 
-    /// A user-facing service name, such as "NetworkManager".
-    fn name(&self) -> &str;
+    /// A user-facing service name, such as "NetworkManager", in the
+    /// selected language when it is not a program's own name.
+    fn name(&self) -> String;
     /// Read the current state.
     fn snapshot(&self) -> BoxFuture<'static, Result<Self::State, ServiceError>>;
     /// New states as the service reports changes. The stream ends, or yields
@@ -404,8 +405,8 @@ pub mod fake {
         type State = State;
         type Action = Action;
 
-        fn name(&self) -> &str {
-            "Example service"
+        fn name(&self) -> String {
+            "Example service".into()
         }
 
         fn snapshot(&self) -> BoxFuture<'static, Result<State, ServiceError>> {

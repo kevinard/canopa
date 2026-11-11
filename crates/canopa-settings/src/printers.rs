@@ -531,8 +531,8 @@ impl LiveService for PrintersService {
     type State = PrintersState;
     type Action = PrinterAction;
 
-    fn name(&self) -> &str {
-        "CUPS"
+    fn name(&self) -> String {
+        "CUPS".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<PrintersState, ServiceError>> {

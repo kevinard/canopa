@@ -125,8 +125,8 @@ impl LiveService for SoundService {
     type State = AudioSnapshot;
     type Action = SoundAction;
 
-    fn name(&self) -> &str {
-        "The audio server"
+    fn name(&self) -> String {
+        fl!("settings-service-audio")
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<AudioSnapshot, ServiceError>> {

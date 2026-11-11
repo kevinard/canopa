@@ -156,8 +156,6 @@ impl Default for PowerService {
     }
 }
 
-const NO_BUS: &str = "The system bus is not reachable.";
-
 impl PowerService {
     /// A service on an existing connection, with backlights under `root`.
     pub fn with(system: zbus::Connection, root: PathBuf) -> Self {
@@ -172,7 +170,7 @@ impl PowerService {
             .get_or_try_init(canopa_services::bus::system)
             .await
             .cloned()
-            .map_err(|_| ServiceError::Unavailable(NO_BUS.into()))
+            .map_err(|_| ServiceError::Unavailable(fl!("settings-error-bus")))
     }
 
     async fn read(&self) -> Result<PowerState, ServiceError> {
@@ -199,8 +197,8 @@ impl LiveService for PowerService {
     type State = PowerState;
     type Action = PowerAction;
 
-    fn name(&self) -> &str {
-        "The power services"
+    fn name(&self) -> String {
+        fl!("settings-service-power")
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<PowerState, ServiceError>> {
@@ -212,8 +210,10 @@ impl LiveService for PowerService {
         let service = self.clone();
         futures_util::stream::once(async move {
             let Ok(system) = service.connection().await else {
-                return futures_util::stream::iter([Err(ServiceError::Unavailable(NO_BUS.into()))])
-                    .boxed();
+                return futures_util::stream::iter([Err(ServiceError::Unavailable(fl!(
+                    "settings-error-bus"
+                )))])
+                .boxed();
             };
             let parts = futures_util::stream::select_all([
                 upower::watch_power_supply(system.clone())
@@ -250,13 +250,13 @@ impl LiveService for PowerService {
             let result = match &action {
                 PowerAction::Profile(profile) => {
                     let profiles = current.profiles.ok_or_else(|| {
-                        ServiceError::Failed("Power modes are not available.".into())
+                        ServiceError::Failed(fl!("settings-power-error-no-modes"))
                     })?;
                     profiles.set(&system, profile).await
                 }
                 PowerAction::Brightness(percent) => {
                     let light = current.backlight.ok_or_else(|| {
-                        ServiceError::Failed("There is no built-in display backlight.".into())
+                        ServiceError::Failed(fl!("settings-power-error-no-backlight"))
                     })?;
                     light
                         .set_perceptual_at(&service.backlights, &system, *percent)
@@ -273,33 +273,39 @@ impl LiveService for PowerService {
 fn failure(action: &PowerAction, error: &canopa_services::Error) -> String {
     use canopa_services::Error;
     match (action, error) {
-        (_, Error::NotAuthorized) => "The system did not allow this change.".into(),
-        (_, Error::Changed) => "The device changed. Try again.".into(),
-        (_, Error::TimedOut) => "The service did not answer in time.".into(),
-        (PowerAction::Brightness(_), Error::Invalid(message)) => (*message).into(),
-        (PowerAction::Brightness(_), _) => {
-            "The brightness could not be changed in this session.".into()
+        (_, Error::NotAuthorized) => fl!("settings-error-not-authorized"),
+        (_, Error::Changed) => fl!("settings-error-device-changed"),
+        (_, Error::TimedOut) => fl!("settings-error-service-timed-out"),
+        (PowerAction::Brightness(_), Error::Invalid(message)) => {
+            crate::service_text::invalid(message)
         }
-        (PowerAction::Profile(_), _) => "The power mode could not be changed.".into(),
+        (PowerAction::Brightness(_), _) => fl!("settings-power-error-brightness"),
+        (PowerAction::Profile(_), _) => fl!("settings-power-error-mode"),
     }
 }
 
 /// Seconds as words: "30 seconds", "5 minutes", "1 hour 30 minutes".
 pub fn duration_label(seconds: u32) -> String {
-    let plural =
-        |value: u32, unit: &str| format!("{value} {unit}{}", if value == 1 { "" } else { "s" });
     let (hours, minutes, rest) = (seconds / 3600, seconds % 3600 / 60, seconds % 60);
-    let mut parts = Vec::new();
-    if hours > 0 {
-        parts.push(plural(hours, "hour"));
+    let whole = match (hours, minutes) {
+        (0, 0) => return fl!("settings-duration-seconds", seconds = rest),
+        (0, minutes) => fl!("settings-duration-minutes", minutes = minutes),
+        (hours, 0) => fl!("settings-duration-hours", hours = hours),
+        (hours, minutes) => fl!(
+            "settings-duration-hours-minutes",
+            hours = hours,
+            minutes = minutes
+        ),
+    };
+    if rest == 0 {
+        whole
+    } else {
+        fl!(
+            "settings-duration-and-seconds",
+            duration = whole,
+            seconds = rest
+        )
     }
-    if minutes > 0 {
-        parts.push(plural(minutes, "minute"));
-    }
-    if rest > 0 || parts.is_empty() {
-        parts.push(plural(rest, "second"));
-    }
-    parts.join(" ")
 }
 
 /// The durations offered for each idle stage, in seconds. A saved value that
@@ -309,14 +315,14 @@ pub const DURATIONS: [u32; 14] = [
 ];
 
 /// What a lid choice is called on the page.
-pub fn lid_label(action: LidAction) -> &'static str {
+pub fn lid_label(action: LidAction) -> String {
     match action {
-        LidAction::System => "Use the system setting",
-        LidAction::Suspend => "Suspend",
-        LidAction::Hibernate => "Hibernate",
-        LidAction::Lock => "Lock the screen",
-        LidAction::Nothing => "Do nothing",
-        LidAction::PowerOff => "Power off",
+        LidAction::System => fl!("settings-power-system-setting"),
+        LidAction::Suspend => fl!("settings-power-suspend"),
+        LidAction::Hibernate => fl!("settings-power-hibernate"),
+        LidAction::Lock => fl!("settings-power-lock"),
+        LidAction::Nothing => fl!("settings-power-nothing"),
+        LidAction::PowerOff => fl!("settings-power-off"),
     }
 }
 

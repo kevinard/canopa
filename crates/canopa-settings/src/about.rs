@@ -362,8 +362,8 @@ impl LiveService for AboutService {
     type State = AboutState;
     type Action = AboutAction;
 
-    fn name(&self) -> &str {
-        "systemd-hostnamed"
+    fn name(&self) -> String {
+        "systemd-hostnamed".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<AboutState, ServiceError>> {

@@ -610,8 +610,8 @@ impl LiveService for RegionService {
     type State = RegionState;
     type Action = RegionAction;
 
-    fn name(&self) -> &str {
-        "systemd-localed"
+    fn name(&self) -> String {
+        "systemd-localed".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<RegionState, ServiceError>> {

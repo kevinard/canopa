@@ -223,6 +223,8 @@ settings-personal-wallpaper = Choose wallpaper…
 settings-personal-wallpaper-hint = Preview and save wallpaper for each monitor. The default image folder is { $folder }.
 settings-personal-clock-format = Clock format
 settings-personal-date-format = Date format
+# Under the clock and date format fields.
+settings-personal-formats-hint = Leave a format empty to follow Region & language. Formats use strftime patterns, such as %H:%M.
 settings-personal-font = Font family
 settings-personal-avatar = Avatar image (optional absolute path)
 settings-personal-dimming = Background dimming: { $dim }
@@ -548,3 +550,102 @@ settings-network-proxy-server = Proxy server (host:port)
 settings-network-proxy-url = Configuration URL (PAC)
 settings-network-proxy-hint = Applications that ask the system proxy (PacRunner, libproxy) use this.
 settings-network-forget = Forget this connection
+
+## Service names, in sentences such as "Connecting to the audio server…"
+
+settings-service-power = The power services
+settings-service-audio = The audio server
+settings-service-permission-store = The portal permission store
+settings-service-applications = The application list
+settings-error-device-changed = The device changed. Try again.
+settings-error-service-timed-out = The service did not answer in time.
+
+## Durations of idle stages
+
+settings-duration-seconds = { $seconds ->
+    [one] { $seconds } second
+   *[other] { $seconds } seconds
+}
+settings-duration-minutes = { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+}
+settings-duration-hours = { $hours ->
+    [one] { $hours } hour
+   *[other] { $hours } hours
+}
+settings-duration-hours-minutes = { $hours ->
+    [one] { $hours } hour
+   *[other] { $hours } hours
+} { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+}
+# $duration is one of the durations above.
+settings-duration-and-seconds = { $duration } { $seconds ->
+    [one] { $seconds } second
+   *[other] { $seconds } seconds
+}
+
+## Power
+
+settings-battery = Battery
+settings-battery-no-upower = Battery information is not available because UPower is not running.
+settings-battery-none = This computer has no battery.
+settings-battery-charging = Charging
+settings-battery-discharging = On battery
+settings-battery-empty = Empty
+settings-battery-full = Fully charged
+settings-battery-pending-charge = Plugged in, not charging
+settings-battery-pending-discharge = Waiting to discharge
+settings-battery-unknown = Charge state unknown
+# $level is a formatted percentage, $state a charge state above, $time a duration.
+settings-battery-status = { $level } · { $state }
+settings-battery-status-left = { $level } · { $state } · about { $time } left
+settings-battery-status-to-full = { $level } · { $state } · full in about { $time }
+# $full and $design are watt-hours.
+settings-battery-health-energy = Health: { $capacity } of its original capacity ({ $full } of { $design } Wh)
+settings-battery-health = Health: { $capacity } of its original capacity
+settings-battery-health-unknown = The battery does not report its health.
+settings-battery-cycles = Charge cycles: { $cycles }
+settings-power-mode = Power mode
+settings-power-modes-unavailable = Power modes are not available because power-profiles-daemon is not running.
+settings-power-mode-current = Current mode: { $mode }
+settings-power-mode-saver = Power saver
+settings-power-mode-balanced = Balanced
+settings-power-mode-performance = Performance
+settings-power-error-no-modes = Power modes are not available.
+settings-power-error-no-backlight = There is no built-in display backlight.
+settings-power-error-brightness = The brightness could not be changed in this session.
+settings-power-error-mode = The power mode could not be changed.
+settings-brightness = Brightness
+settings-brightness-none = This computer has no built-in display backlight.
+settings-brightness-built-in = Built-in display: { $value }
+settings-power-lid-and-button = Lid and power button
+settings-power-lid-closed = When the lid is closed
+settings-power-lid-hint = Applies after Save, in the Canopa session. While an external display is connected, closing the lid does nothing.
+settings-power-button-pressed = When the power button is pressed
+settings-power-button-hint = Applies at once. The system setting is usually Power off.
+settings-power-button-needs-session = The power button can be changed in a Canopa session.
+settings-power-system-setting = Use the system setting
+settings-power-suspend = Suspend
+settings-power-hibernate = Hibernate
+settings-power-lock = Lock the screen
+settings-power-nothing = Do nothing
+settings-power-off = Power off
+settings-idle = Idle
+settings-idle-lock-after = Lock the screen after
+settings-idle-displays-after = Then turn off the displays after
+settings-idle-suspend-after = Then suspend after
+# $status is settings-idle-status.
+settings-idle-running = Idle daemon: running. { $status }
+settings-idle-not-running = Idle daemon: not running.
+settings-idle-optional = Stasis is optional. You can still save timeouts; they take effect when Stasis starts.
+settings-idle-pause = Pause idle actions
+settings-idle-resume = Resume
+settings-idle-profile = Stasis profile
+settings-idle-use-profile = Use profile
+settings-idle-stages-hint = Each stage waits after the previous one: lock, displays off, then suspend.
+settings-idle-ac = On AC power
+settings-idle-battery = On battery
+settings-idle-custom-hint = Custom commands, profiles and inhibition rules stay in your existing idle policy.

@@ -502,8 +502,8 @@ impl LiveService for DefaultAppsService {
     type State = DefaultApps;
     type Action = DefaultAction;
 
-    fn name(&self) -> &str {
-        "The application list"
+    fn name(&self) -> String {
+        fl!("settings-service-applications")
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<DefaultApps, ServiceError>> {

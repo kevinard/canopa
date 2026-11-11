@@ -368,8 +368,8 @@ impl LiveService for UsersService {
     type State = UsersState;
     type Action = UsersAction;
 
-    fn name(&self) -> &str {
-        "AccountsService"
+    fn name(&self) -> String {
+        "AccountsService".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<UsersState, ServiceError>> {

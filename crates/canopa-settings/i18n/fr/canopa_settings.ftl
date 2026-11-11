@@ -205,6 +205,7 @@ settings-personal-wallpaper = Choisir un fond d’écran…
 settings-personal-wallpaper-hint = Prévisualisez et enregistrez le fond d’écran de chaque moniteur. Le dossier d’images par défaut est { $folder }.
 settings-personal-clock-format = Format de l’horloge
 settings-personal-date-format = Format de la date
+settings-personal-formats-hint = Laissez un format vide pour suivre Région et langue. Les formats utilisent des motifs strftime, comme %H:%M.
 settings-personal-font = Famille de police
 settings-personal-avatar = Image d’avatar (chemin absolu, facultatif)
 settings-personal-dimming = Assombrissement de l’arrière-plan : { $dim }
@@ -233,10 +234,10 @@ settings-shortcuts-saved = Raccourcis clavier enregistrés.
 
 ## Live pages
 
-settings-live-connecting = Connexion à { $service }…
-settings-live-stopped = { $service } s’est arrêté.
+settings-live-connecting = Connexion en cours : { $service }…
+settings-live-stopped = Service arrêté : { $service }.
 settings-live-unavailable-title = Service indisponible
-settings-live-unavailable = { $service } n’est pas installé ou ne fonctionne pas. { $reason }
+settings-live-unavailable = Service non installé ou arrêté : { $service }. { $reason }
 settings-live-try-again = Réessayer
 settings-live-retry = Réessayer
 settings-live-dismiss = Ignorer
@@ -497,3 +498,98 @@ settings-network-proxy-server = Serveur mandataire (hôte:port)
 settings-network-proxy-url = Adresse de configuration (PAC)
 settings-network-proxy-hint = Les applications qui interrogent le mandataire du système (PacRunner, libproxy) l’utilisent.
 settings-network-forget = Oublier cette connexion
+
+## Service names
+
+settings-service-power = Services d’alimentation
+settings-service-audio = Serveur audio
+settings-service-permission-store = Magasin d’autorisations du portail
+settings-service-applications = Liste des applications
+settings-error-device-changed = L’appareil a changé. Réessayez.
+settings-error-service-timed-out = Le service n’a pas répondu à temps.
+
+## Durations of idle stages
+
+settings-duration-seconds = { $seconds ->
+    [one] { $seconds } seconde
+   *[other] { $seconds } secondes
+}
+settings-duration-minutes = { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+}
+settings-duration-hours = { $hours ->
+    [one] { $hours } heure
+   *[other] { $hours } heures
+}
+settings-duration-hours-minutes = { $hours ->
+    [one] { $hours } heure
+   *[other] { $hours } heures
+} { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+}
+settings-duration-and-seconds = { $duration } { $seconds ->
+    [one] { $seconds } seconde
+   *[other] { $seconds } secondes
+}
+
+## Power
+
+settings-battery = Batterie
+settings-battery-no-upower = Les informations sur la batterie ne sont pas disponibles car UPower ne fonctionne pas.
+settings-battery-none = Cet ordinateur n’a pas de batterie.
+settings-battery-charging = En charge
+settings-battery-discharging = Sur batterie
+settings-battery-empty = Vide
+settings-battery-full = Complètement chargée
+settings-battery-pending-charge = Branchée, pas en charge
+settings-battery-pending-discharge = En attente de décharge
+settings-battery-unknown = État de charge inconnu
+settings-battery-status = { $level } · { $state }
+settings-battery-status-left = { $level } · { $state } · environ { $time } restantes
+settings-battery-status-to-full = { $level } · { $state } · pleine dans environ { $time }
+settings-battery-health-energy = Santé : { $capacity } de sa capacité d’origine ({ $full } sur { $design } Wh)
+settings-battery-health = Santé : { $capacity } de sa capacité d’origine
+settings-battery-health-unknown = La batterie n’indique pas son état de santé.
+settings-battery-cycles = Cycles de charge : { $cycles }
+settings-power-mode = Mode d’alimentation
+settings-power-modes-unavailable = Les modes d’alimentation ne sont pas disponibles car power-profiles-daemon ne fonctionne pas.
+settings-power-mode-current = Mode actuel : { $mode }
+settings-power-mode-saver = Économie d’énergie
+settings-power-mode-balanced = Équilibré
+settings-power-mode-performance = Performances
+settings-power-error-no-modes = Les modes d’alimentation ne sont pas disponibles.
+settings-power-error-no-backlight = Il n’y a pas de rétroéclairage d’écran intégré.
+settings-power-error-brightness = La luminosité n’a pas pu être modifiée dans cette session.
+settings-power-error-mode = Le mode d’alimentation n’a pas pu être modifié.
+settings-brightness = Luminosité
+settings-brightness-none = Cet ordinateur n’a pas de rétroéclairage d’écran intégré.
+settings-brightness-built-in = Écran intégré : { $value }
+settings-power-lid-and-button = Capot et bouton d’alimentation
+settings-power-lid-closed = À la fermeture du capot
+settings-power-lid-hint = S’applique après l’enregistrement, dans la session Canopa. Tant qu’un écran externe est branché, fermer le capot ne fait rien.
+settings-power-button-pressed = À l’appui sur le bouton d’alimentation
+settings-power-button-hint = S’applique immédiatement. Le réglage du système est généralement Éteindre.
+settings-power-button-needs-session = Le bouton d’alimentation se modifie dans une session Canopa.
+settings-power-system-setting = Utiliser le réglage du système
+settings-power-suspend = Mettre en veille
+settings-power-hibernate = Mettre en hibernation
+settings-power-lock = Verrouiller l’écran
+settings-power-nothing = Ne rien faire
+settings-power-off = Éteindre
+settings-idle = Inactivité
+settings-idle-lock-after = Verrouiller l’écran après
+settings-idle-displays-after = Puis éteindre les écrans après
+settings-idle-suspend-after = Puis mettre en veille après
+settings-idle-running = Gestionnaire d’inactivité : en fonctionnement. { $status }
+settings-idle-not-running = Gestionnaire d’inactivité : arrêté.
+settings-idle-optional = Stasis est facultatif. Vous pouvez quand même enregistrer les délais ; ils s’appliqueront au démarrage de Stasis.
+settings-idle-pause = Suspendre les actions d’inactivité
+settings-idle-resume = Reprendre
+settings-idle-profile = Profil Stasis
+settings-idle-use-profile = Utiliser le profil
+settings-idle-stages-hint = Chaque étape attend après la précédente : verrouillage, extinction des écrans, puis mise en veille.
+settings-idle-ac = Sur secteur
+settings-idle-battery = Sur batterie
+settings-idle-custom-hint = Les commandes, profils et règles d’inhibition personnalisés restent dans votre politique d’inactivité existante.

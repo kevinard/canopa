@@ -223,8 +223,8 @@ impl LiveService for DateTimeService {
     type State = DateTimeState;
     type Action = DateTimeAction;
 
-    fn name(&self) -> &str {
-        "systemd-timedated"
+    fn name(&self) -> String {
+        "systemd-timedated".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<DateTimeState, ServiceError>> {

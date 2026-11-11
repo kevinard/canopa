@@ -364,8 +364,8 @@ impl LiveService for NetworkService {
     type State = NetworkState;
     type Action = NetworkAction;
 
-    fn name(&self) -> &str {
-        "NetworkManager"
+    fn name(&self) -> String {
+        "NetworkManager".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<NetworkState, ServiceError>> {

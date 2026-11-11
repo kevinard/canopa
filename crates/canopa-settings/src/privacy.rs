@@ -547,8 +547,8 @@ impl LiveService for PrivacyService {
     type State = PrivacyState;
     type Action = PrivacyAction;
 
-    fn name(&self) -> &str {
-        "The portal permission store"
+    fn name(&self) -> String {
+        fl!("settings-service-permission-store")
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<PrivacyState, ServiceError>> {

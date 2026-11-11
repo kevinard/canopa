@@ -144,8 +144,8 @@ impl LiveService for NotificationService {
     type State = NotificationPreferences;
     type Action = NotificationAction;
 
-    fn name(&self) -> &str {
-        "Canopa Notify"
+    fn name(&self) -> String {
+        "Canopa Notify".into()
     }
 
     fn snapshot(&self) -> BoxFuture<'static, Result<NotificationPreferences, ServiceError>> {
