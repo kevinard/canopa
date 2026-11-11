@@ -5,7 +5,7 @@ use crate::global_shortcuts::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{checkbox, column, container, row, scrollable, text, text_input},
+    widget::{checkbox, column, container, scrollable, text, text_input},
     window,
 };
 use std::io::Write;
@@ -186,15 +186,14 @@ impl Dialog {
                 self.recording = None;
                 self.error = match reason {
                     R::User => None,
-                    R::Unrepresentable => Some("This key combination is unavailable in the current keyboard layout. Choose another shortcut.".into()),
-                    R::KeymapChanged => Some("The keyboard setup changed. Record the shortcut again.".into()),
-                    _ => Some("Keyboard recording was interrupted. Focus this window and try again.".into()),
+                    R::Unrepresentable => Some(fl!("portal-shortcuts-unrepresentable")),
+                    R::KeymapChanged => Some(fl!("portal-shortcuts-keymap-changed")),
+                    _ => Some(fl!("portal-shortcuts-recording-interrupted")),
                 };
             }
             S::Closed => {
                 self.recording = None;
-                self.error =
-                    Some("Keyboard recording is no longer available in this window.".into());
+                self.error = Some(fl!("portal-shortcuts-recording-gone"));
             }
             _ => {}
         }
@@ -235,7 +234,7 @@ impl Dialog {
                     .as_ref()
                     .and_then(|inhibitor| inhibitor.record());
                 let Some(handle) = handle else {
-                    self.error = Some("Keyboard recording is unavailable. Enter a shortcut or focus this window and try again.".into());
+                    self.error = Some(fl!("portal-shortcuts-recording-unavailable"));
                     return Task::none();
                 };
                 let Some(changes) = handle.changes() else {
@@ -262,11 +261,11 @@ impl Dialog {
                 self.generation = feedback.generation;
                 self.busy = feedback.busy;
                 self.error = feedback.error.map(|error| match error.as_str() {
-                    "conflict"=>"A selected shortcut is already in use. Choose another trigger.",
-                    "stale_generation"=>"Available shortcuts changed. Review your choices and try again.",
-                    "unresolved"=>"A selected key combination is unavailable in the current keyboard layout.",
-                    _=>"These shortcuts could not be applied. Review the selected keys and try again.",
-                }.to_owned());
+                    "conflict" => fl!("portal-shortcuts-conflict"),
+                    "stale_generation" => fl!("portal-shortcuts-stale"),
+                    "unresolved" => fl!("portal-shortcuts-unresolved"),
+                    _ => fl!("portal-shortcuts-failed"),
+                });
                 self.failed = feedback.failed;
             }
             Message::Enabled(index, value) if !self.busy && self.recording.is_none() => {
@@ -284,7 +283,7 @@ impl Dialog {
             Message::Apply if !self.busy && self.recording.is_none() => {
                 let bindings = self.selected();
                 if self.request.actions.definitions(&bindings).is_err() {
-                    self.error = Some("Choose a key for every selected shortcut.".into());
+                    self.error = Some(fl!("portal-shortcuts-missing-key"));
                     return Task::none();
                 }
                 if self
@@ -324,14 +323,13 @@ impl Dialog {
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let mut body = column![
             text(if self.request.configuring {
-                "Configure global shortcuts"
+                fl!("portal-shortcuts-configure")
             } else {
-                "Allow global shortcuts?"
+                fl!("portal-shortcuts-question")
             })
             .size(24),
             text(self.name.as_deref().unwrap_or(&self.request.app_id)).size(18),
-            text("Choose which shortcuts this app can use while other windows are focused.")
-                .size(14)
+            text(fl!("portal-shortcuts-explanation")).size(14)
         ]
         .spacing(12);
         if self.name.is_some() {
@@ -351,15 +349,15 @@ impl Dialog {
                 .filter(|recording| recording.row == index);
             let trigger: Element<'_, Message> = if self.recording.is_some() {
                 container(text(if draft.trigger.is_empty() {
-                    "No shortcut chosen"
+                    fl!("portal-shortcuts-none-chosen")
                 } else {
-                    &draft.trigger
+                    draft.trigger.clone()
                 }))
                 .padding(6)
                 .width(Length::Fill)
                 .into()
             } else {
-                let mut input = text_input("CTRL+ALT+a or LOGO+F9", &draft.trigger);
+                let mut input = text_input(&fl!("portal-shortcuts-placeholder"), &draft.trigger);
                 if !self.busy {
                     input = input.on_input(move |value| Message::Trigger(index, value));
                 }
@@ -370,9 +368,9 @@ impl Dialog {
                 && self.inhibition == Some(window::keyboard_shortcuts::Status::Active);
             let record = canopa_ui::action(
                 text(if active.is_some() {
-                    "Cancel recording"
+                    fl!("portal-shortcuts-cancel-recording")
                 } else {
-                    "Record keys"
+                    fl!("portal-shortcuts-record")
                 }),
                 if active.is_some() {
                     Some(Message::StopRecording)
@@ -384,24 +382,23 @@ impl Dialog {
             );
             let mut item = column![
                 toggle,
-                row![trigger, record].spacing(8),
+                canopa_ui::direction::row([trigger, record.into()]).spacing(8),
                 text(label(&draft.id)).size(12).style(canopa_ui::muted)
             ]
             .spacing(6);
             if let Some(recording) = active {
                 use window::keyboard_shortcuts::RecordingState as S;
                 let prompt = match recording.state {
-                    S::Preparing => "Preparing keyboard recording…",
-                    S::WaitingForRelease => "Release held keys to begin.",
-                    S::Ready => "Press the shortcut keys.",
-                    S::Collecting => "Release the keys to finish.",
-                    _ => "Finishing keyboard recording…",
+                    S::Preparing => fl!("portal-shortcuts-preparing"),
+                    S::WaitingForRelease => fl!("portal-shortcuts-release-to-begin"),
+                    S::Ready => fl!("portal-shortcuts-press"),
+                    S::Collecting => fl!("portal-shortcuts-release-to-finish"),
+                    _ => fl!("portal-shortcuts-finishing"),
                 };
                 item = item.push(text(prompt).size(13));
             }
             if self.failed.contains(&draft.id) {
-                item = item
-                    .push(text("This shortcut is unavailable. Choose another trigger.").size(13));
+                item = item.push(text(fl!("portal-shortcuts-unavailable")).size(13));
             }
             actions = actions.push(
                 container(item)
@@ -411,36 +408,42 @@ impl Dialog {
             );
         }
         if self.rows.is_empty() {
-            actions = actions.push(text("This app requested no shortcuts."));
+            actions = actions.push(text(fl!("portal-shortcuts-none-requested")));
         }
         body = body.push(scrollable(actions).height(Length::Fill));
-        body=body.push(text("Use CTRL, ALT, SHIFT or LOGO (Super), followed by a key name. Example: CTRL+ALT+a.").size(12).style(canopa_ui::muted));
+        body = body.push(
+            text(fl!("portal-shortcuts-syntax-hint"))
+                .size(12)
+                .style(canopa_ui::muted),
+        );
         if let Some(error) = &self.error {
             body = body.push(text(label(error)).size(14));
         }
         body = body.push(
-            row![
+            canopa_ui::direction::row([
                 canopa_ui::action(
-                    text("Cancel"),
+                    text(fl!("portal-cancel")),
                     (!self.busy).then_some(Message::Cancel),
                     canopa_ui::Action::Quiet,
-                    false
+                    false,
                 )
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .into(),
                 canopa_ui::action(
                     text(if self.busy {
-                        "Applying…"
+                        fl!("portal-shortcuts-applying")
                     } else if self.request.configuring {
-                        "Save shortcuts"
+                        fl!("portal-shortcuts-save")
                     } else {
-                        "Allow selected"
+                        fl!("portal-usb-allow-selected")
                     }),
                     (!self.busy && self.recording.is_none()).then_some(Message::Apply),
                     canopa_ui::Action::Normal,
-                    false
+                    false,
                 )
-                .width(Length::Fill),
-            ]
+                .width(Length::Fill)
+                .into(),
+            ])
             .spacing(12),
         );
         container(body)
@@ -525,7 +528,12 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| "Global shortcuts — Canopa".to_owned())
+    .title(|_: &Dialog, _| {
+        fl!(
+            "portal-window-title",
+            title = fl!("portal-shortcuts-window")
+        )
+    })
     .theme(|dialog: &Dialog, _| dialog.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)

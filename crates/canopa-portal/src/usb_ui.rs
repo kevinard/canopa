@@ -6,7 +6,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Task, Theme, keyboard,
-    widget::{checkbox, column, container, row, scrollable, text},
+    widget::{checkbox, column, container, scrollable, text},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -74,7 +74,7 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
+    .title(|_: &Dialog, _| window_title())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(|app: &Dialog| {
         let input = iced::event::listen().map(Message::Event);
@@ -91,8 +91,9 @@ pub fn run(
 
 /// The AT-SPI window of the device question and its title.
 const WINDOW_KEY: &str = "usb";
-const WINDOW_TITLE: &str = "USB device access — Canopa";
-const QUESTION: &str = "Allow USB device access?";
+fn window_title() -> String {
+    fl!("portal-window-title", title = fl!("portal-usb-window"))
+}
 
 struct Dialog {
     request: UsbRequest,
@@ -148,7 +149,7 @@ impl Dialog {
             Message::Opened => {
                 let window = self.window;
                 if let Some(state) = &mut self.accessibility {
-                    state.opened(WINDOW_TITLE, window);
+                    state.opened(&window_title(), window);
                 }
             }
             Message::Name(name) => self.name = name,
@@ -219,34 +220,48 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let requester = self.name.as_deref().unwrap_or_else(|| {
+        let requester = self.name.clone().unwrap_or_else(|| {
             if self.request.app_id.is_empty() {
-                "The requesting app"
+                fl!("portal-requesting-app")
             } else {
-                &self.request.app_id
+                self.request.app_id.clone()
             }
         });
+        let question = fl!("portal-usb-question");
         let mut body = column![
-            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(24)),
-            text(requester).size(18)
+            semantic(
+                Node::heading(question.clone(), 1),
+                text(question.clone()).size(24)
+            ),
+            text(requester.clone()).size(18)
         ]
         .spacing(12);
         if self.name.is_some() && !self.request.app_id.is_empty() {
             body = body.push(text(&self.request.app_id).size(12).style(canopa_ui::muted));
         }
-        body = body.push(text("Choose the devices this app may access.").size(14));
+        body = body.push(text(fl!("portal-usb-choose")).size(14));
         let selected = self.selected.iter().filter(|selected| **selected).count();
-        let count = format!("{selected} of {} selected", self.selected.len());
-        let select_all = if selected == self.selected.len() {
-            "Clear selection"
+        let count = fl!(
+            "portal-usb-selected",
+            count = selected,
+            total = self.selected.len()
+        );
+        let all = selected == self.selected.len();
+        let select_all = if all {
+            fl!("portal-usb-clear-selection")
         } else {
-            "Select all"
+            fl!("portal-usb-select-all")
+        };
+        let select_all_button = if all {
+            fl!("portal-usb-clear-selection-shortcut")
+        } else {
+            fl!("portal-usb-select-all-shortcut")
         };
         body = body.push(
-            row![
+            canopa_ui::direction::row([
                 semantic(
                     Node::status(&count).key("usb-selection"),
-                    text(count.clone()).width(Length::Fill)
+                    text(count.clone()).width(Length::Fill),
                 ),
                 semantic(
                     Node::button(select_all)
@@ -254,13 +269,13 @@ impl Dialog {
                         .shortcut("Alt+S")
                         .on_click(Some(Message::SelectAll)),
                     canopa_ui::action(
-                        text(format!("{select_all} (Alt+S)")),
+                        text(select_all_button),
                         Some(Message::SelectAll),
                         canopa_ui::Action::Quiet,
-                        false
-                    )
-                )
-            ]
+                        false,
+                    ),
+                ),
+            ])
             .spacing(12)
             .align_y(iced::Center),
         );
@@ -279,9 +294,9 @@ impl Dialog {
                         .on_toggle(move |value| Message::Selected(index, value)),
                 ),
                 text(if device.writable {
-                    "Read-write access requested"
+                    fl!("portal-usb-read-write")
                 } else {
-                    "Read-only access requested"
+                    fl!("portal-usb-read-only")
                 })
                 .size(13)
                 .style(canopa_ui::muted)
@@ -294,26 +309,29 @@ impl Dialog {
             }
             if !device.serial.is_empty() {
                 information = information.push(
-                    text(format!("Serial: {}", device.serial))
+                    text(fl!("portal-usb-serial", serial = device.serial.as_str()))
                         .size(12)
                         .style(canopa_ui::muted),
                 );
             }
             if !device.location.is_empty() {
                 information = information.push(
-                    text(format!("Location: {}", device.location))
-                        .size(12)
-                        .style(canopa_ui::muted),
+                    text(fl!(
+                        "portal-usb-location",
+                        location = device.location.as_str()
+                    ))
+                    .size(12)
+                    .style(canopa_ui::muted),
                 );
             }
             if device.writable {
                 information = information.push(a11y::check_box(
                     format!("{key}-read-only"),
-                    "Use read-only access instead",
+                    fl!("portal-usb-use-read-only"),
                     !self.writable[index],
                     Some(Message::ReadOnly(index, self.writable[index])),
                     checkbox(!self.writable[index])
-                        .label("Use read-only access instead")
+                        .label(fl!("portal-usb-use-read-only"))
                         .style(canopa_ui::checkbox_style)
                         .on_toggle(move |value| Message::ReadOnly(index, value)),
                 ));
@@ -328,50 +346,48 @@ impl Dialog {
         }
         body = body.push(scrollable(devices).height(Length::Fill));
         body = body.push(
-            text("Alt+R makes the selected devices read-only.")
+            text(fl!("portal-usb-read-only-hint"))
                 .size(12)
                 .style(canopa_ui::muted),
         );
         let allow = (selected != 0).then_some(Message::Allow);
         body = body.push(
-            row![
+            canopa_ui::direction::row([
                 a11y::button(
                     "usb-deny",
-                    "Deny",
+                    fl!("portal-access-deny"),
                     Some(Message::Deny),
                     canopa_ui::action(
-                        text("Deny"),
+                        text(fl!("portal-access-deny")),
                         Some(Message::Deny),
                         canopa_ui::Action::Quiet,
-                        false
+                        false,
                     )
-                    .width(Length::Fill)
+                    .width(Length::Fill),
                 ),
                 semantic(
-                    Node::button("Allow selected")
+                    Node::button(fl!("portal-usb-allow-selected"))
                         .key("usb-allow")
                         .shortcut("Alt+A")
                         .disabled(allow.is_none())
                         .on_click(allow.clone()),
                     canopa_ui::action(
-                        text("Allow selected (Alt+A)"),
+                        text(fl!("portal-usb-allow-selected-shortcut")),
                         allow,
                         canopa_ui::Action::Normal,
-                        false
+                        false,
                     )
-                    .width(Length::Fill)
-                )
-            ]
+                    .width(Length::Fill),
+                ),
+            ])
             .spacing(12),
         );
         a11y::dialog_window(
             WINDOW_KEY,
-            WINDOW_TITLE,
-            Node::alert_dialog(QUESTION)
+            window_title(),
+            Node::alert_dialog(question)
                 .key("usb-dialog")
-                .description(format!(
-                    "{requester}. Choose the devices this app may access."
-                )),
+                .description(fl!("portal-usb-description", requester = requester)),
             container(body)
                 .padding(24)
                 .width(Length::Fill)

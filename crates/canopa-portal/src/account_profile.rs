@@ -172,7 +172,7 @@ pub(crate) fn load(request: &AccountRequest, foreground: canopa_theme::Rgb) -> P
         .map(|app| app.name.chars().take(120).collect())
         .unwrap_or_else(|| {
             if request.app_id.is_empty() {
-                "The requesting app".into()
+                fl!("portal-requesting-app")
             } else {
                 request.app_id.chars().take(120).collect()
             }

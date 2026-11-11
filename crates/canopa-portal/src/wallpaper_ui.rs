@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::accessibility_ui::{self as a11y, Node, semantic};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, image, row, scrollable, text},
+    widget::{column, container, image, scrollable, text},
     window,
 };
 
@@ -61,7 +61,7 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
+    .title(|_: &Dialog, _| window_title())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -105,8 +105,12 @@ mod tests {
 
 /// The AT-SPI window of the wallpaper review and its title.
 const WINDOW_KEY: &str = "wallpaper";
-const WINDOW_TITLE: &str = "Set wallpaper — Canopa";
-const QUESTION: &str = "Change wallpaper?";
+fn window_title() -> String {
+    fl!(
+        "portal-window-title",
+        title = fl!("portal-wallpaper-window")
+    )
+}
 
 struct Dialog {
     app_id: String,
@@ -178,7 +182,7 @@ impl Dialog {
             Message::Opened => {
                 let window = self.window;
                 if let Some(state) = &mut self.accessibility {
-                    state.opened(WINDOW_TITLE, window);
+                    state.opened(&window_title(), window);
                 }
             }
             Message::Apply => {
@@ -209,12 +213,18 @@ impl Dialog {
 
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let requester = if self.app_id.is_empty() {
-            "The requesting app"
+            fl!("portal-requesting-app")
         } else {
-            &self.app_id
+            self.app_id.clone()
         };
+        let question = fl!("portal-wallpaper-question");
+        let size = fl!(
+            "portal-pixel-size",
+            width = self.dimensions.0.to_string(),
+            height = self.dimensions.1.to_string()
+        );
         let preview = semantic(
-            Node::image("Wallpaper preview").key("wallpaper-preview"),
+            Node::image(fl!("portal-wallpaper-preview")).key("wallpaper-preview"),
             container(
                 image(self.preview.clone())
                     .content_fit(iced::ContentFit::Contain)
@@ -224,48 +234,49 @@ impl Dialog {
             .style(|_| container::Style::default().background(iced::Color::BLACK)),
         );
         let mut content = column![
-            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(22)),
-            text(format!("Requested by {requester}")).style(canopa_ui::muted),
+            semantic(
+                Node::heading(question.clone(), 1),
+                text(question.clone()).size(22)
+            ),
+            text(fl!("portal-requested-by", requester = requester.as_str()))
+                .style(canopa_ui::muted),
             preview,
             text(self.destination.label()).size(18),
-            text(format!(
-                "{} × {} pixels",
-                self.dimensions.0, self.dimensions.1
-            ))
-            .style(canopa_ui::muted)
+            text(size.clone()).style(canopa_ui::muted)
         ]
         .spacing(14)
         .width(Length::Fill);
         if self.destination != crate::wallpaper::Destination::Background {
-            content = content.push(
-                text("The lock screen image is used by Canopa’s Lock action.")
-                    .style(canopa_ui::muted),
-            );
+            content = content.push(text(fl!("portal-wallpaper-lock-hint")).style(canopa_ui::muted));
         }
-        let action = |key: &'static str, label: &'static str, message: Message| {
+        let action = |key: &'static str, label: String, message: Message| {
             a11y::button(
                 key,
-                label,
+                label.clone(),
                 Some(message.clone()),
                 canopa_ui::action(text(label), Some(message), canopa_ui::Action::Normal, false)
                     .width(Length::Fill),
             )
         };
-        let actions = row![
-            action("wallpaper-cancel", "Cancel", Message::Cancel),
-            action("wallpaper-apply", "Apply", Message::Apply),
-        ]
+        let actions = canopa_ui::direction::row([
+            action("wallpaper-cancel", fl!("portal-cancel"), Message::Cancel),
+            action(
+                "wallpaper-apply",
+                fl!("portal-wallpaper-apply"),
+                Message::Apply,
+            ),
+        ])
         .spacing(12);
         a11y::dialog_window(
             WINDOW_KEY,
-            WINDOW_TITLE,
-            Node::dialog(QUESTION)
+            window_title(),
+            Node::dialog(question)
                 .key("wallpaper-dialog")
-                .description(format!(
-                    "Requested by {requester}. {}, {} × {} pixels.",
-                    self.destination.label(),
-                    self.dimensions.0,
-                    self.dimensions.1
+                .description(fl!(
+                    "portal-wallpaper-description",
+                    requester = requester.as_str(),
+                    destination = self.destination.label(),
+                    size = size
                 )),
             container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
                 .padding(20)

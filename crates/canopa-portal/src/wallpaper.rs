@@ -24,11 +24,11 @@ impl Destination {
             Self::Both => 3,
         }
     }
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Background => "Desktop background",
-            Self::Lockscreen => "Lock screen",
-            Self::Both => "Desktop and lock screen",
+            Self::Background => fl!("portal-wallpaper-background"),
+            Self::Lockscreen => fl!("portal-wallpaper-lock-screen"),
+            Self::Both => fl!("portal-wallpaper-both"),
         }
     }
 }

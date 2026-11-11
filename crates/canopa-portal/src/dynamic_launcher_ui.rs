@@ -6,7 +6,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, image, row, scrollable, text, text_input},
+    widget::{column, container, image, scrollable, text, text_input},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -66,7 +66,7 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
+    .title(|_: &Dialog, _| window_title())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -77,7 +77,9 @@ pub fn run(
 
 /// The AT-SPI window of the launcher review and its title.
 const WINDOW_KEY: &str = "dynamic-launcher";
-const WINDOW_TITLE: &str = "Install launcher — Canopa";
+fn window_title() -> String {
+    fl!("portal-window-title", title = fl!("portal-launcher-window"))
+}
 
 struct Dialog {
     draft: LauncherDraft,
@@ -154,7 +156,7 @@ impl Dialog {
             Message::Opened => {
                 let window = self.window;
                 if let Some(state) = &mut self.accessibility {
-                    state.opened(WINDOW_TITLE, window);
+                    state.opened(&window_title(), window);
                 }
             }
             Message::Name(value) if self.draft.editable_name => {
@@ -191,34 +193,38 @@ impl Dialog {
 
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let heading = match self.draft.launcher_type {
-            LauncherType::Application => "Install application launcher?",
-            LauncherType::Webapp => "Install web app?",
+            LauncherType::Application => fl!("portal-launcher-install-application"),
+            LauncherType::Webapp => fl!("portal-launcher-install-webapp"),
         };
         let requester = if self.draft.app_id.is_empty() {
-            "The requesting app"
+            fl!("portal-requesting-app")
         } else {
-            &self.draft.app_id
+            self.draft.app_id.clone()
         };
+        let name_label = fl!("portal-launcher-name");
+        let placeholder = fl!("portal-launcher-name-placeholder");
         let icon = container(image(self.preview.clone()).width(96).height(96))
             .padding(8)
             .style(|_| container::Style::default().background(iced::Color::WHITE));
-        let mut name = column![text("Launcher name")]
+        let mut name = column![text(name_label.clone())]
             .spacing(8)
             .width(Length::Fill);
-        let problem = (self.invalid || !valid_name(&self.name)).then_some(if self.invalid {
-            "Use a shorter name on one line."
-        } else {
-            "Enter a launcher name."
+        let problem = (self.invalid || !valid_name(&self.name)).then(|| {
+            if self.invalid {
+                fl!("portal-launcher-name-too-long")
+            } else {
+                fl!("portal-launcher-name-missing")
+            }
         });
         if self.draft.editable_name {
             name = name.push(semantic(
-                Node::text_input("Launcher name", &self.name)
+                Node::text_input(name_label, &self.name)
                     .key("dynamic-launcher-name")
-                    .placeholder("Enter a name")
+                    .placeholder(placeholder.clone())
                     .required(true)
                     .invalid(problem.is_some())
                     .on_text(Message::Name),
-                text_input("Enter a name", &self.name)
+                text_input(&placeholder, &self.name)
                     .on_input(Message::Name)
                     .id("launcher-name")
                     .padding(10),
@@ -228,54 +234,72 @@ impl Dialog {
         }
         if let Some(problem) = problem {
             name = name.push(semantic(
-                Node::alert(problem).key("dynamic-launcher-problem"),
+                Node::alert(problem.clone()).key("dynamic-launcher-problem"),
                 text(problem),
             ));
         }
         let mut content = column![
-            semantic(Node::heading(heading, 1), text(heading).size(22)),
-            text(format!("Requested by {requester}")).style(canopa_ui::muted),
-            row![icon, name].spacing(18).align_y(iced::Top),
+            semantic(
+                Node::heading(heading.clone(), 1),
+                text(heading.clone()).size(22)
+            ),
+            text(fl!("portal-requested-by", requester = requester.as_str()))
+                .style(canopa_ui::muted),
+            canopa_ui::direction::row([icon.into(), name.into()])
+                .spacing(18)
+                .align_y(iced::Top),
         ]
         .spacing(14)
         .width(Length::Fill);
         if self.draft.launcher_type == LauncherType::Webapp {
             content = content
-                .push(text("Web address"))
+                .push(text(fl!("portal-launcher-web-address")))
                 .push(text(&self.draft.target));
         }
-        content = content
-            .push(text("The launcher will appear in your applications.").style(canopa_ui::muted));
+        content = content.push(text(fl!("portal-launcher-hint")).style(canopa_ui::muted));
         let install = self.can_install().then_some(Message::Install);
-        let actions = row![
+        let actions = canopa_ui::direction::row([
             a11y::button(
                 "dynamic-launcher-cancel",
-                "Cancel",
+                fl!("portal-cancel"),
                 Some(Message::Cancel),
                 canopa_ui::action(
-                    text("Cancel"),
+                    text(fl!("portal-cancel")),
                     Some(Message::Cancel),
                     canopa_ui::Action::Normal,
-                    false
+                    false,
                 )
-                .width(Length::Fill)
+                .width(Length::Fill),
             ),
             a11y::button(
                 "dynamic-launcher-install",
-                "Install",
+                fl!("portal-launcher-install"),
                 install.clone(),
-                canopa_ui::action(text("Install"), install, canopa_ui::Action::Normal, false)
-                    .width(Length::Fill)
+                canopa_ui::action(
+                    text(fl!("portal-launcher-install")),
+                    install,
+                    canopa_ui::Action::Normal,
+                    false,
+                )
+                .width(Length::Fill),
             ),
-        ]
+        ])
         .spacing(12);
-        let mut description = format!("Requested by {requester}.");
-        if self.draft.launcher_type == LauncherType::Webapp {
-            description.push_str(&format!(" Web address {}.", self.draft.target));
-        }
+        let description = if self.draft.launcher_type == LauncherType::Webapp {
+            fl!(
+                "portal-launcher-description-webapp",
+                requester = requester.as_str(),
+                address = self.draft.target.as_str()
+            )
+        } else {
+            fl!(
+                "portal-launcher-description",
+                requester = requester.as_str()
+            )
+        };
         a11y::dialog_window(
             WINDOW_KEY,
-            WINDOW_TITLE,
+            window_title(),
             Node::dialog(heading)
                 .key("dynamic-launcher-dialog")
                 .description(description),

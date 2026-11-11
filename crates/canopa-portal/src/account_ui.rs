@@ -10,7 +10,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{checkbox, column, container, image, row, scrollable, text, text_input},
+    widget::{checkbox, column, container, image, scrollable, text, text_input},
     window,
 };
 use std::{
@@ -59,11 +59,12 @@ pub fn run(
         Dialog::view,
     )
     .title(|app: &Dialog, _| {
-        if matches!(app.view, View::Profile) {
-            "Share profile — Canopa".into()
+        let title = if matches!(app.view, View::Profile) {
+            fl!("portal-account-window")
         } else {
-            "Choose profile image — Canopa".into()
-        }
+            fl!("portal-account-image-window")
+        };
+        fl!("portal-window-title", title = title)
     })
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
@@ -134,7 +135,7 @@ impl Dialog {
         output: Arc<Mutex<Option<UserInformation>>>,
     ) -> Self {
         let requester = if request.app_id.is_empty() {
-            "The requesting app".into()
+            fl!("portal-requesting-app")
         } else {
             request.app_id.chars().take(120).collect()
         };
@@ -233,7 +234,7 @@ impl Dialog {
                         self.pictures = profile.pictures;
                         self.install_avatar(profile.avatar);
                     }
-                    Err(_) => self.error = Some("Enter the information you want to share.".into()),
+                    Err(_) => self.error = Some(fl!("portal-account-enter-information")),
                 }
             }
             Message::Id(value) if self.editable() && self.share_id => {
@@ -281,16 +282,16 @@ impl Dialog {
                     Mode::Open,
                     self.request.app_id.clone(),
                     String::new(),
-                    "Choose profile image".into(),
+                    fl!("portal-account-image-window"),
                     Default::default(),
                 )
                 .expect("local picker request");
-                request.accept_label = "Select".into();
+                request.accept_label = fl!("portal-account-select");
                 let mut folder = self.pictures.as_os_str().as_bytes().to_vec();
                 folder.push(0);
                 request.current_folder = Some(folder);
                 let filter = (
-                    "Images".into(),
+                    fl!("portal-account-images"),
                     [
                         "image/png",
                         "image/jpeg",
@@ -312,7 +313,7 @@ impl Dialog {
                             result.and_then(|value| {
                                 value
                                     .map(Box::new)
-                                    .map_err(|_| "Couldn't open the image picker.".into())
+                                    .map_err(|_| fl!("portal-account-picker-failed"))
                             }),
                         )
                     },
@@ -369,7 +370,7 @@ impl Dialog {
                                 Message::Avatar(
                                     generation,
                                     result.and_then(|value| {
-                                        value.map_err(|_| "Couldn't load that image.".into())
+                                        value.map_err(|_| fl!("portal-account-image-failed"))
                                     }),
                                 )
                             },
@@ -418,8 +419,12 @@ impl Dialog {
                         })
                     }),
                     move |result| {
-                        Message::Shared(generation,
-                    result.and_then(|value| value.map_err(|_| "Couldn't prepare the image for sharing. Retry or turn off image sharing.".into())))
+                        Message::Shared(
+                            generation,
+                            result.and_then(|value| {
+                                value.map_err(|_| fl!("portal-account-image-prepare-failed"))
+                            }),
+                        )
                     },
                 );
             }
@@ -475,9 +480,9 @@ impl Dialog {
             View::PreparingPicker(_) => {
                 return container(
                     column![
-                        text("Preparing image picker…"),
+                        text(fl!("portal-account-preparing-picker")),
                         canopa_ui::action(
-                            text("Back"),
+                            text(canopa_ui::direction::back_label()),
                             Some(Message::Back),
                             canopa_ui::Action::Normal,
                             false
@@ -495,8 +500,12 @@ impl Dialog {
         }
         let enabled = self.editable();
         let mut content = column![
-            text("Share your profile").size(22),
-            text(format!("Requested by {}", self.requester)).size(16),
+            text(fl!("portal-account-title")).size(22),
+            text(fl!(
+                "portal-requested-by",
+                requester = self.requester.as_str()
+            ))
+            .size(16),
         ]
         .spacing(14)
         .width(Length::Fill);
@@ -507,24 +516,24 @@ impl Dialog {
             content = content.push(text(&self.request.reason));
         }
         if self.loading {
-            content = content.push(text("Loading profile…").style(canopa_ui::muted));
+            content = content.push(text(fl!("portal-account-loading")).style(canopa_ui::muted));
         } else {
             let preview: Element<'_, Message> = match &self.preview {
                 Some(handle) => image(handle.clone()).width(96).height(96).into(),
-                None => container(text("No image").style(canopa_ui::muted))
+                None => container(text(fl!("portal-account-no-image")).style(canopa_ui::muted))
                     .center_x(96)
                     .center_y(96)
                     .into(),
             };
             let actions = column![
                 canopa_ui::action(
-                    text("Choose image"),
+                    text(fl!("portal-account-choose-image")),
                     (enabled && !self.image_loading).then_some(Message::ChooseImage),
                     canopa_ui::Action::Normal,
                     false
                 ),
                 canopa_ui::action(
-                    text("Clear image"),
+                    text(fl!("portal-account-clear-image")),
                     (enabled && (self.avatar.is_some() || self.image_loading))
                         .then_some(Message::ClearImage),
                     canopa_ui::Action::Quiet,
@@ -532,26 +541,30 @@ impl Dialog {
                 ),
             ]
             .spacing(8);
-            content = content.push(row![preview, actions].spacing(16).align_y(iced::Center));
+            content = content.push(
+                canopa_ui::direction::row([preview, actions.into()])
+                    .spacing(16)
+                    .align_y(iced::Center),
+            );
             let mut share_image = checkbox(self.share_image)
-                .label("Share profile image")
+                .label(fl!("portal-account-share-image"))
                 .style(canopa_ui::checkbox_style);
             if enabled && !self.image_loading && self.avatar.is_some() {
                 share_image = share_image.on_toggle(Message::ShareImage);
             }
             content = content.push(share_image);
             let mut share_id = checkbox(self.share_id)
-                .label("Share username")
+                .label(fl!("portal-account-share-username"))
                 .style(canopa_ui::checkbox_style);
             let mut share_name = checkbox(self.share_name)
-                .label("Share name")
+                .label(fl!("portal-account-share-name"))
                 .style(canopa_ui::checkbox_style);
             if enabled {
                 share_id = share_id.on_toggle(Message::ShareId);
                 share_name = share_name.on_toggle(Message::ShareName);
             }
-            let mut id = text_input("Username", &self.id).id("account-id");
-            let mut name = text_input("Name", &self.name).id("account-name");
+            let mut id = text_input(&fl!("portal-account-username"), &self.id).id("account-id");
+            let mut name = text_input(&fl!("portal-account-name"), &self.name).id("account-name");
             if enabled && self.share_id {
                 id = id.on_input(Message::Id);
             }
@@ -562,31 +575,39 @@ impl Dialog {
                 .push(column![share_id, id].spacing(6))
                 .push(column![share_name, name].spacing(6));
             if (self.share_id && self.invalid_id) || (self.share_name && self.invalid_name) {
-                content = content.push(text("That name is too long or contains an unsupported character. Edit it before sharing.").style(text::danger));
+                content =
+                    content.push(text(fl!("portal-account-invalid-name")).style(text::danger));
             }
             if self.image_loading {
-                content = content.push(text("Preparing image…").style(canopa_ui::muted));
+                content = content
+                    .push(text(fl!("portal-account-preparing-image")).style(canopa_ui::muted));
             }
         }
         if let Some(error) = &self.error {
             content = content.push(text(error).style(text::danger));
         }
-        let footer = row![
+        let footer = canopa_ui::direction::row([
             canopa_ui::action(
-                text("Cancel"),
+                text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
-                false
+                false,
             )
-            .width(Length::Fill),
+            .width(Length::Fill)
+            .into(),
             canopa_ui::action(
-                text(if self.busy { "Sharing…" } else { "Share" }),
+                text(if self.busy {
+                    fl!("portal-account-sharing")
+                } else {
+                    fl!("portal-share")
+                }),
                 self.can_share().then_some(Message::Share(self.generation)),
                 canopa_ui::Action::Normal,
-                false
+                false,
             )
-            .width(Length::Fill),
-        ]
+            .width(Length::Fill)
+            .into(),
+        ])
         .spacing(12);
         container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
             .padding(20)

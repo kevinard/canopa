@@ -173,7 +173,7 @@ impl UsbRequest {
             parsed.push(Device {
                 id,
                 name: if name.is_empty() {
-                    "USB device".into()
+                    fl!("portal-usb-device")
                 } else {
                     name
                 },
