@@ -68,7 +68,7 @@ pub(super) async fn prepare(content: &PanelContent) -> PreparedAssets {
     };
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        prepare_assets(paths, icons, canopa_assets::icons::search_roots())
+        prepare_assets(paths, icons, canopa_assets::icons::IconResolver::system())
     })
     .await
     .unwrap_or_default()
@@ -77,7 +77,7 @@ pub(super) async fn prepare(content: &PanelContent) -> PreparedAssets {
 fn prepare_assets(
     paths: Vec<String>,
     icons: Vec<PanelIcon>,
-    roots: Vec<std::path::PathBuf>,
+    resolver: &canopa_assets::icons::IconResolver,
 ) -> PreparedAssets {
     let policy = RasterPolicy {
         max_encoded_bytes: MAX_FILE_BYTES,
@@ -99,52 +99,52 @@ fn prepare_assets(
         .into_iter()
         .filter_map(|path| {
             let image = images.load(Path::new(&path))?;
-            Some((
-                path,
-                Handle::from_rgba(image.width, image.height, image.pixels),
-            ))
+            Some((path, canopa_ui::icons::handle(image)))
         })
         .collect();
+    // Sender icons: PNG/JPEG or SVG by content, so extensionless files work.
     let mut pixels = RasterBatch::new(
         RasterPolicy {
-            formats: Formats::StaticPngJpeg,
+            formats: Formats::SniffedPngJpeg,
             thumbnail: Some(128),
             ..policy
         },
         budget(MAX_ICONS),
         &|| false,
     );
-    let mut lookups = HashMap::new();
+    let vector = canopa_assets::svg::Policy {
+        max_encoded_bytes: MAX_FILE_BYTES,
+        max_dimension: 2048,
+        max_pixels: 2048 * 2048,
+        output_side: 128,
+        // Symbolic SVGs: a neutral ink readable on light and dark panels.
+        foreground: [0x88, 0x88, 0x88],
+    };
     let mut prepared_icons = HashMap::new();
     for icon in &icons {
-        use canopa_assets::icons::{IconFormats, IconLookup, LookupOptions};
+        use canopa_assets::icons::{IconQuery, IconSource};
         let path = match icon {
-            PanelIcon::LocalPath { path } => Some(std::path::PathBuf::from(path)),
+            PanelIcon::LocalPath { path } => IconSource::parse(path)
+                .filter(|source| matches!(source, IconSource::Path(_)))
+                .and_then(|source| {
+                    resolver.resolve_source(&source, &IconQuery::new(&[], 34), &|| false)
+                }),
             PanelIcon::Theme {
                 names,
                 theme,
                 scale,
-            } => lookups
-                .entry((theme.as_str(), *scale))
-                .or_insert_with(|| {
-                    IconLookup::new(
-                        &roots,
-                        LookupOptions {
-                            theme,
-                            scale: *scale,
-                            formats: IconFormats::PngJpeg,
-                            allow_unindexed_hicolor: false,
-                        },
-                        &|| false,
-                    )
-                })
-                .resolve(names, 34),
+            } => resolver.resolve(
+                &IconQuery {
+                    scale: *scale,
+                    theme: Some(theme),
+                    generic_fallback: true,
+                    ..IconQuery::new(names, 34)
+                },
+                &|| false,
+            ),
         };
-        if let Some(image) = path.and_then(|path| pixels.load(&path)) {
-            prepared_icons.insert(
-                icon.clone(),
-                Handle::from_rgba(image.width, image.height, image.pixels),
-            );
+        if let Some(image) = path.and_then(|path| pixels.load_image_or_svg(&path, &vector)) {
+            prepared_icons.insert(icon.clone(), canopa_ui::icons::handle(image));
         }
     }
     PreparedAssets {
@@ -202,14 +202,18 @@ mod tests {
         let prepared = prepare_assets(
             vec![explicit.to_str().unwrap().into()],
             vec![named.clone(), local.clone(), missing.clone()],
-            vec![root.to_path_buf()],
+            &canopa_assets::icons::IconResolver::new(vec![root.to_path_buf()], Vec::new()),
         );
         assert_eq!(color(&prepared.icons[&named]), &[11, 22, 33, 255]);
         assert_eq!(color(&prepared.icons[&local]), &[44, 55, 66, 255]);
         assert_eq!(prepared.images.len(), 1);
         assert!(!prepared.icons.contains_key(&missing));
         write_icon(&explicit, [77, 88, 99, 255]);
-        let next = prepare_assets(vec![], vec![local.clone()], vec![root.to_path_buf()]);
+        let next = prepare_assets(
+            vec![],
+            vec![local.clone()],
+            &canopa_assets::icons::IconResolver::new(vec![root.to_path_buf()], Vec::new()),
+        );
         assert_eq!(color(&next.icons[&local]), &[77, 88, 99, 255]);
         assert_eq!(
             color(&prepared.icons[&local]),

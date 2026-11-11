@@ -59,8 +59,13 @@ fn resolve_application_icon_from_applications(
 }
 
 fn application_icon_from_icon_value(icon: &str) -> Option<ApplicationIcon> {
+    // Absolute paths and file:// URLs must exist; themed names may stay unresolved.
     if icon.contains('/') {
-        let path = PathBuf::from(icon);
+        let Some(canopa_assets::icons::IconSource::Path(path)) =
+            canopa_assets::icons::IconSource::parse(icon)
+        else {
+            return None;
+        };
         return path.exists().then(|| ApplicationIcon {
             name: icon.into(),
             path: Some(path),

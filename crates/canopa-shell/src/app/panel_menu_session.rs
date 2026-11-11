@@ -763,7 +763,7 @@ pub(super) fn installed_app_entries(
         let icon = app
             .icon
             .as_ref()
-            .filter(|icon| crate::icon_theme::is_valid_icon_name(icon))
+            .filter(|icon| crate::icon_theme::is_valid_icon_reference(icon))
             .cloned();
         let view = PanelMenuEntry {
             label,

@@ -93,7 +93,7 @@ async fn load(names: Vec<String>) -> Loaded {
         names
             .into_iter()
             .map(|name| {
-                let handle = crate::icon_theme::resolve_icon_path_at_size(&name, 48)
+                let handle = crate::icon_theme::resolve_menu_icon_path(&name)
                     .and_then(|path| prepare::from_path(&path));
                 (name, handle)
             })
