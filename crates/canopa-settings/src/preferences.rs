@@ -99,14 +99,89 @@ impl Personal {
     }
 }
 
+/// The Personalization page's draft: the shared appearance and lock screen
+/// preferences, and the accent as typed.
+#[derive(Clone, Debug)]
+pub struct Personalization {
+    pub values: Personal,
+    pub accent: String,
+}
+
+impl crate::file_page::FileModel for Personalization {
+    const DOCUMENT: crate::registry::Document = crate::registry::Document::Common;
+
+    fn path(paths: &crate::session::Paths) -> std::path::PathBuf {
+        paths.common()
+    }
+    fn read(source: &Snapshot) -> Result<Self> {
+        Personal::load(source).map(Self::from)
+    }
+    fn fallback() -> Self {
+        let (lock, _) = canopa_session_ui::settings::Settings::load(
+            &canopa_config::Request::Defaults,
+            canopa_config::Component::Lockscreen,
+        )
+        .expect("embedded lock settings are valid");
+        Personal::from_lock(lock).into()
+    }
+    fn write(&self, _: &crate::session::Paths, source: &Snapshot) -> Result<Snapshot> {
+        let mut value = self.values.clone();
+        value.appearance.accent = parse_accent(&self.accent)?;
+        let saved = value.save(source)?;
+        // The Settings portal owns its own explicit reload contract.
+        let _ = crate::storage::command(
+            "systemctl",
+            &[
+                "--user".into(),
+                "reload".into(),
+                "xdg-desktop-portal-canopa.service".into(),
+            ],
+        );
+        let _ =
+            crate::storage::command(companion("canopa-notify"), &["ctl".into(), "reload".into()]);
+        Ok(saved)
+    }
+    /// Widgets writes the rest of `config.kdl`.
+    fn section(text: &str) -> Result<String> {
+        Ok(common_sections(text)?.0)
+    }
+}
+
+impl From<Personal> for Personalization {
+    fn from(values: Personal) -> Self {
+        let accent = values
+            .appearance
+            .accent
+            .map(|Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+            .unwrap_or_default();
+        Self { values, accent }
+    }
+}
+
+/// An optional `#RRGGBB` accent.
+pub fn parse_accent(value: &str) -> Result<Option<Rgb>> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+    ensure!(
+        value.len() == 7
+            && value.starts_with('#')
+            && value[1..].bytes().all(|v| v.is_ascii_hexdigit()),
+        "accent must be #RRGGBB"
+    );
+    Ok(Some(Rgb(
+        u8::from_str_radix(&value[1..3], 16)?,
+        u8::from_str_radix(&value[3..5], 16)?,
+        u8::from_str_radix(&value[5..7], 16)?,
+    )))
+}
+
 /// Lockscreen fields that Personalization writes. Widgets writes the others.
-#[cfg(feature = "desktop")]
 const PERSONAL_LOCK_FIELDS: [&str; 5] = ["clock-format", "date-format", "dim", "font", "avatar"];
 
 /// The parts of the shared configuration written by Personalization and by
 /// Widgets, without formatting. Both pages edit `config.kdl`; each rebases its
 /// pending edits on the other's save only if the save left its part unchanged.
-#[cfg(feature = "desktop")]
 pub(crate) fn common_sections(text: &str) -> Result<(String, String)> {
     let document: kdl::KdlDocument = if text.trim().is_empty() {
         kdl::KdlDocument::new()
@@ -135,18 +210,6 @@ pub(crate) fn common_sections(text: &str) -> Result<(String, String)> {
         part.push_str(&plain(node));
     }
     Ok((personal, widgets))
-}
-
-/// Whether Personalization, still based on `current`, can adopt `saved`: the
-/// Widgets page saved it from that same version and left Personalization's
-/// part unchanged. Any other difference is an external edit.
-#[cfg(feature = "desktop")]
-pub(crate) fn personal_rebase(current: &Snapshot, previous: &Snapshot, saved: &Snapshot) -> bool {
-    current.same(previous)
-        && matches!(
-            (common_sections(&previous.text), common_sections(&saved.text)),
-            (Ok((before, _)), Ok((after, _))) if before == after
-        )
 }
 
 pub(crate) fn save_common(snapshot: &Snapshot, text: &str) -> Result<Snapshot> {
@@ -281,6 +344,47 @@ impl IdleTimes {
             return Err(error.context("Stasis rejected the reload; the previous file was restored"));
         }
         Ok(saved)
+    }
+}
+
+/// The Power & idle page's draft: timeout fields as typed, in seconds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdleDraft {
+    pub ac: [String; 3],
+    pub battery: [String; 3],
+}
+
+impl From<IdleTimes> for IdleDraft {
+    fn from(times: IdleTimes) -> Self {
+        Self {
+            ac: times.ac.map(|value| value.to_string()),
+            battery: times.battery.map(|value| value.to_string()),
+        }
+    }
+}
+
+impl crate::file_page::FileModel for IdleDraft {
+    const DOCUMENT: crate::registry::Document = crate::registry::Document::Idle;
+    const READ_ONLY: &'static str = "initialize Canopa idle policy before editing timeouts";
+
+    fn path(paths: &crate::session::Paths) -> std::path::PathBuf {
+        paths.idle()
+    }
+    fn read(source: &Snapshot) -> Result<Self> {
+        IdleTimes::parse(&source.text).map(Self::from)
+    }
+    fn fallback() -> Self {
+        IdleTimes::default().into()
+    }
+    fn write(&self, _: &crate::session::Paths, source: &Snapshot) -> Result<Snapshot> {
+        let parse = |values: &[String; 3]| -> Result<[u32; 3]> {
+            Ok([values[0].parse()?, values[1].parse()?, values[2].parse()?])
+        };
+        IdleTimes {
+            ac: parse(&self.ac)?,
+            battery: parse(&self.battery)?,
+        }
+        .save(source)
     }
 }
 

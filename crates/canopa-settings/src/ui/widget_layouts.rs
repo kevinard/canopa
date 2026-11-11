@@ -106,22 +106,21 @@ impl State {
                 self.busy = false;
                 match result {
                     Ok(editor) => {
-                        // Personalization adopts this save only if it saw the
-                        // same version; otherwise its save reports the change.
-                        let previous = view
+                        // The shared-document rule: Personalization keeps its
+                        // draft only if it saw the version this save replaced.
+                        if let Some(previous) = view
                             .editor
                             .as_ref()
                             .and_then(|result| result.as_ref().ok())
-                            .map(|editor| editor.source.clone());
-                        if let (Some(current), Some(previous)) = (&self.common_source, previous)
-                            && crate::preferences::personal_rebase(
-                                current,
-                                &previous,
-                                &editor.source,
-                            )
+                            .map(|editor| editor.source.clone())
                         {
-                            self.common_source = Some(editor.source.clone());
+                            self.document_saved(
+                                crate::Page::Widgets,
+                                crate::registry::Document::Common,
+                                Some((&previous, &editor.source)),
+                            );
                         }
+                        let view = &mut self.widget_layouts;
                         view.bar = view.bar.min(editor.bars.len() - 1);
                         view.editor = Some(Ok(*editor));
                         self.notice = "Widget layouts saved.".into();

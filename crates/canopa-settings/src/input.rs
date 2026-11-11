@@ -209,3 +209,26 @@ fn number(value: Option<&kdl::KdlValue>) -> Result<f64> {
         _ => anyhow::bail!("invalid pointer speed"),
     }
 }
+
+/// Keyboard & pointer is a file-backed page over the managed input include.
+impl crate::file_page::FileModel for Input {
+    const DOCUMENT: crate::registry::Document = crate::registry::Document::Input;
+    const READ_ONLY: &'static str = "input configuration is read-only";
+
+    fn path(paths: &crate::session::Paths) -> std::path::PathBuf {
+        paths.input()
+    }
+    fn read(source: &crate::storage::Snapshot) -> Result<Self> {
+        Self::parse(&source.text)
+    }
+    fn fallback() -> Self {
+        Self::default()
+    }
+    fn write(
+        &self,
+        paths: &crate::session::Paths,
+        source: &crate::storage::Snapshot,
+    ) -> Result<crate::storage::Snapshot> {
+        apply(paths, source, self)
+    }
+}

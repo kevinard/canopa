@@ -7,9 +7,11 @@ mod shortcuts;
 mod widget_layouts;
 use crate::{
     display::{Monitor, TrialHandle, transform_name},
+    file_page::{FileDraft, FileModel},
     input::Input,
     niri::Client,
-    preferences::{IdleTimes, Personal},
+    preferences::{IdleDraft, Personalization},
+    registry::Document,
     session::Paths,
     storage::{Snapshot, companion},
 };
@@ -116,14 +118,9 @@ struct State {
     display_dirty: bool,
     display_profiles: profiles::Editor,
     widget_layouts: widget_layouts::View,
-    input: Input,
-    input_source: Option<Snapshot>,
-    personal: Personal,
-    common_source: Option<Snapshot>,
-    accent: String,
-    idle_source: Option<Snapshot>,
-    idle_ac: [String; 3],
-    idle_battery: [String; 3],
+    input: FileDraft<Input>,
+    personal: FileDraft<Personalization>,
+    idle: FileDraft<IdleDraft>,
     profile: String,
     idle_status: String,
     idle_available: bool,
@@ -168,48 +165,6 @@ impl State {
         Self::boot_with(Paths::discover().expect("settings require a configuration home"))
     }
 
-    fn load_input(paths: &Paths) -> (Option<Snapshot>, Input, Option<String>) {
-        let source = Snapshot::load(paths.input()).ok();
-        let (input, error) = match source.as_ref().map(|s| Input::parse(&s.text)).transpose() {
-            Ok(input) => (input.unwrap_or_default(), None),
-            Err(error) => (Input::default(), Some(error.to_string())),
-        };
-        (source, input, error)
-    }
-
-    fn load_personal(paths: &Paths) -> (Option<Snapshot>, Personal, String, Option<String>) {
-        let source = Snapshot::load(paths.common()).ok();
-        let (personal, error) = match source.as_ref().map(Personal::load).transpose() {
-            Ok(Some(personal)) => (personal, None),
-            result => {
-                let (lock, _) = canopa_session_ui::settings::Settings::load(
-                    &canopa_config::Request::Defaults,
-                    canopa_config::Component::Lockscreen,
-                )
-                .expect("embedded lock settings are valid");
-                (
-                    Personal::from_lock(lock),
-                    result.err().map(|error| error.to_string()),
-                )
-            }
-        };
-        let accent = personal
-            .appearance
-            .accent
-            .map(|canopa_theme::Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
-            .unwrap_or_default();
-        (source, personal, accent, error)
-    }
-
-    fn load_idle(paths: &Paths) -> (Option<Snapshot>, IdleTimes) {
-        let source = Snapshot::load(paths.idle()).ok();
-        let idle = source
-            .as_ref()
-            .and_then(|s| IdleTimes::parse(&s.text).ok())
-            .unwrap_or_default();
-        (source, idle)
-    }
-
     fn load_motion(paths: &Paths) -> Option<bool> {
         paths
             .active()
@@ -222,9 +177,10 @@ impl State {
     }
 
     fn boot_with(paths: Paths) -> (Self, Task<Message>) {
-        let (input_source, input, input_error) = Self::load_input(&paths);
-        let (common_source, personal, accent, personal_error) = Self::load_personal(&paths);
-        let (idle_source, idle) = Self::load_idle(&paths);
+        let (input, input_error) = FileDraft::load(&paths);
+        let (personal, personal_error) = FileDraft::load(&paths);
+        // Unreadable idle policy shows the defaults without a notice, as before.
+        let (idle, _) = FileDraft::load(&paths);
         let compositor_motion = Self::load_motion(&paths);
         let notice = personal_error.or(input_error).unwrap_or_default();
         let profile_task = profiles::Editor::load(&paths);
@@ -248,13 +204,8 @@ impl State {
             display_profiles: profiles::Editor::default(),
             widget_layouts: widget_layouts::View::default(),
             input,
-            input_source,
             personal,
-            common_source,
-            accent,
-            idle_source,
-            idle_ac: idle.ac.map(|v| v.to_string()),
-            idle_battery: idle.battery.map(|v| v.to_string()),
+            idle,
             profile: "none".into(),
             idle_status: "Connecting to the idle manager…".into(),
             idle_available: false,
@@ -446,6 +397,7 @@ impl State {
                     Ok(editor) => {
                         self.shortcuts = Some(Ok(editor));
                         self.notice = "Keyboard shortcuts saved.".into();
+                        self.document_saved(Page::Shortcuts, Document::Niri, None);
                     }
                     Err(error) => self.notice = error,
                 }
@@ -531,39 +483,42 @@ impl State {
                 self.display_dirty = true;
             }
             Message::InputText(field, value) => match field {
-                0 => self.input.layouts = value,
-                1 => self.input.variants = value,
-                _ => self.input.options = value,
+                0 => self.input.value.layouts = value,
+                1 => self.input.value.variants = value,
+                _ => self.input.value.options = value,
             },
             Message::InputNumber(field, value) => match field {
-                0 => self.input.repeat_delay = value as u16,
-                1 => self.input.repeat_rate = value as u8,
-                2 => self.input.mouse_speed = value,
-                _ => self.input.touchpad_speed = value,
+                0 => self.input.value.repeat_delay = value as u16,
+                1 => self.input.value.repeat_rate = value as u8,
+                2 => self.input.value.mouse_speed = value,
+                _ => self.input.value.touchpad_speed = value,
             },
             Message::InputFlag(field, value) => match field {
-                0 => self.input.mouse_left_handed = value,
-                1 => self.input.mouse_natural_scroll = value,
-                2 => self.input.touchpad_tap = value,
-                3 => self.input.touchpad_natural_scroll = value,
-                _ => self.input.touchpad_disable_while_typing = value,
+                0 => self.input.value.mouse_left_handed = value,
+                1 => self.input.value.mouse_natural_scroll = value,
+                2 => self.input.value.touchpad_tap = value,
+                3 => self.input.value.touchpad_natural_scroll = value,
+                _ => self.input.value.touchpad_disable_while_typing = value,
             },
             Message::PersonalText(field, value) => match field {
-                0 => self.accent = value,
-                1 => self.personal.lock.clock_format = value,
-                2 => self.personal.lock.date_format = value,
-                3 => self.personal.lock.font = value,
-                _ => self.personal.lock.avatar = (!value.is_empty()).then(|| value.into()),
+                0 => self.personal.value.accent = value,
+                1 => self.personal.value.values.lock.clock_format = value,
+                2 => self.personal.value.values.lock.date_format = value,
+                3 => self.personal.value.values.lock.font = value,
+                _ => {
+                    self.personal.value.values.lock.avatar =
+                        (!value.is_empty()).then(|| value.into())
+                }
             },
             Message::Light(value) => {
-                self.personal.appearance.color_scheme = if value {
+                self.personal.value.values.appearance.color_scheme = if value {
                     canopa_theme::ColorScheme::Light
                 } else {
                     canopa_theme::ColorScheme::Dark
                 }
             }
-            Message::TextScale(value) => self.personal.text_scale = value as u16,
-            Message::ReducedMotion(value) => self.personal.reduced_motion = value,
+            Message::TextScale(value) => self.personal.value.values.text_scale = value as u16,
+            Message::ReducedMotion(value) => self.personal.value.values.reduced_motion = value,
             Message::CompositorMotion(enabled) if !self.busy && self.trial.is_none() => {
                 if matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
                     self.notice =
@@ -587,18 +542,18 @@ impl State {
                 match result {
                     Ok(enabled) => {
                         self.compositor_motion = Some(enabled);
-                        self.shortcuts = None;
                         self.notice = "Compositor motion settings saved.".into();
+                        self.document_saved(Page::Personal, Document::Niri, None);
                     }
                     Err(error) => self.notice = error,
                 }
             }
-            Message::Dim(value) => self.personal.lock.dim = value as u8,
+            Message::Dim(value) => self.personal.value.values.lock.dim = value as u8,
             Message::IdleTime(battery, index, value) => {
                 if battery {
-                    self.idle_battery[index] = value;
+                    self.idle.value.battery[index] = value;
                 } else {
-                    self.idle_ac[index] = value;
+                    self.idle.value.ac[index] = value;
                 }
             }
             Message::Profile(value) => self.profile = value,
@@ -692,96 +647,19 @@ impl State {
                             Message::TrialStarted,
                         );
                     }
-                    Page::Input => {
-                        let value = self.input.clone();
-                        let source = self.input_source.clone();
-                        return task(
-                            move || {
-                                let source = source.context("input configuration is read-only")?;
-                                let saved = crate::input::apply(&paths, &source, &value)?;
-                                Ok((Page::Input, saved))
-                            },
-                            Message::Stored,
-                        );
-                    }
+                    Page::Input => return file_save(Page::Input, self.input.save_job(&paths)),
                     Page::Personal => {
-                        let mut value = self.personal.clone();
-                        let source = self.common_source.clone();
-                        let accent = self.accent.clone();
-                        return task(
-                            move || {
-                                value.appearance.accent = parse_accent(&accent)?;
-                                let saved =
-                                    value.save(&source.context("configuration is read-only")?)?;
-                                // The Settings portal owns its own explicit reload contract.
-                                let _ = crate::storage::command(
-                                    "systemctl",
-                                    &[
-                                        "--user".into(),
-                                        "reload".into(),
-                                        "xdg-desktop-portal-canopa.service".into(),
-                                    ],
-                                );
-                                let _ = crate::storage::command(
-                                    companion("canopa-notify"),
-                                    &["ctl".into(), "reload".into()],
-                                );
-                                Ok((Page::Personal, saved))
-                            },
-                            Message::Stored,
-                        );
+                        return file_save(Page::Personal, self.personal.save_job(&paths));
                     }
-                    Page::Power => {
-                        let source = self.idle_source.clone();
-                        let ac = self.idle_ac.clone();
-                        let battery = self.idle_battery.clone();
-                        return task(
-                            move || {
-                                let parse = |values: [String; 3]| -> Result<[u32; 3]> {
-                                    Ok([values[0].parse()?, values[1].parse()?, values[2].parse()?])
-                                };
-                                let times = IdleTimes {
-                                    ac: parse(ac)?,
-                                    battery: parse(battery)?,
-                                };
-                                Ok((
-                                    Page::Power,
-                                    times.save(&source.context(
-                                        "initialize Canopa idle policy before editing timeouts",
-                                    )?)?,
-                                ))
-                            },
-                            Message::Stored,
-                        );
-                    }
+                    Page::Power => return file_save(Page::Power, self.idle.save_job(&paths)),
                 }
             }
             Message::Stored(result) => {
                 self.busy = false;
                 match result {
-                    Ok((page, snapshot)) => {
-                        match page {
-                            Page::Input => self.input_source = Some(snapshot),
-                            Page::Personal => {
-                                if let Ok(personal) = Personal::load(&snapshot) {
-                                    self.personal = personal;
-                                }
-                                let previous = self.common_source.replace(snapshot.clone());
-                                self.notice = "Settings saved.".into();
-                                if !self.widget_layouts.dirty() {
-                                    self.widget_layouts.editor = None;
-                                } else if let (Some(previous), Some(Ok(editor))) =
-                                    (previous, &mut self.widget_layouts.editor)
-                                    && let Err(error) = editor.rebase(&previous, &snapshot)
-                                {
-                                    self.notice = format!("Settings saved. {error}");
-                                }
-                                return Task::none();
-                            }
-                            Page::Power => self.idle_source = Some(snapshot),
-                            _ => {}
-                        }
+                    Ok((page, saved)) => {
                         self.notice = "Settings saved.".into();
+                        self.file_saved(page, saved);
                     }
                     Err(error) => self.notice = error,
                 }
@@ -844,6 +722,58 @@ impl State {
         }
         Task::none()
     }
+    /// A file-backed page saved: adopt the save, then apply the shared-document rule.
+    fn file_saved(&mut self, page: Page, saved: Snapshot) {
+        let (document, previous) = match page {
+            Page::Input => (Input::DOCUMENT, self.input.saved(saved.clone())),
+            Page::Personal => (
+                Personalization::DOCUMENT,
+                self.personal.saved(saved.clone()),
+            ),
+            Page::Power => (IdleDraft::DOCUMENT, self.idle.saved(saved.clone())),
+            _ => return,
+        };
+        if let Some(previous) = previous {
+            self.document_saved(page, document, Some((&previous, &saved)));
+        }
+    }
+    /// The shared-document rule (see [`crate::file_page`]): `by` saved
+    /// `document`, replacing the first snapshot with the second when known.
+    /// Every other page that edits it keeps its draft on the new version when
+    /// it can. A page without a rule here stays on its version, so its own
+    /// next save reports the change instead of overwriting it.
+    pub(super) fn document_saved(
+        &mut self,
+        by: Page,
+        document: Document,
+        change: Option<(&Snapshot, &Snapshot)>,
+    ) {
+        let pages = registry::PAGES
+            .iter()
+            .filter(|entry| entry.page != by && entry.page.edits(document));
+        for entry in pages {
+            match (entry.page, document, change) {
+                (Page::Personal, Document::Common, Some((previous, saved))) => {
+                    self.personal.rebase(previous, saved);
+                }
+                (Page::Widgets, Document::Common, Some((previous, saved))) => {
+                    if !self.widget_layouts.dirty() {
+                        self.widget_layouts.editor = None;
+                    } else if let Some(Ok(editor)) = &mut self.widget_layouts.editor
+                        && let Err(error) = editor.rebase(previous, saved)
+                    {
+                        self.notice = format!("{} {error}", self.notice);
+                    }
+                }
+                // Shortcuts reload from the new file when next opened.
+                (Page::Shortcuts, Document::Niri, _) => self.shortcuts = None,
+                (Page::Personal, Document::Niri, _) => {
+                    self.compositor_motion = Self::load_motion(&self.paths);
+                }
+                _ => {}
+            }
+        }
+    }
     /// Reload the current page's sources, discarding only its drafts.
     fn reload_page(&mut self) -> Task<Message> {
         self.notice.clear();
@@ -859,26 +789,16 @@ impl State {
                 ])
             }
             Page::Input => {
-                let (source, input, error) = Self::load_input(&paths);
-                self.input_source = source;
-                self.input = input;
-                self.notice = error.unwrap_or_default();
+                self.notice = self.input.reload(&paths).unwrap_or_default();
                 Task::none()
             }
             Page::Personal => {
-                let (source, personal, accent, error) = Self::load_personal(&paths);
-                self.common_source = source;
-                self.personal = personal;
-                self.accent = accent;
+                self.notice = self.personal.reload(&paths).unwrap_or_default();
                 self.compositor_motion = Self::load_motion(&paths);
-                self.notice = error.unwrap_or_default();
                 Task::none()
             }
             Page::Power => {
-                let (source, idle) = Self::load_idle(&paths);
-                self.idle_source = source;
-                self.idle_ac = idle.ac.map(|v| v.to_string());
-                self.idle_battery = idle.battery.map(|v| v.to_string());
+                self.idle.reload(&paths);
                 self.profile = "none".into();
                 Task::none()
             }
@@ -1175,89 +1095,98 @@ impl State {
         let keyboard = column![
             field(
                 "Layouts, in switch order (for example us,fr)",
-                &self.input.layouts,
+                &self.input.value.layouts,
                 |v| Message::InputText(0, v)
             ),
             field(
                 "Variants (optional, in the same order)",
-                &self.input.variants,
+                &self.input.value.variants,
                 |v| Message::InputText(1, v)
             ),
             field(
                 "XKB options (for example grp:alt_shift_toggle)",
-                &self.input.options,
+                &self.input.value.options,
                 |v| Message::InputText(2, v)
             ),
-            text(format!("Repeat delay: {} ms", self.input.repeat_delay)),
+            text(format!(
+                "Repeat delay: {} ms",
+                self.input.value.repeat_delay
+            )),
             adjust(
                 "repeat-delay",
                 100.0..=2000.,
-                f64::from(self.input.repeat_delay),
+                f64::from(self.input.value.repeat_delay),
                 50.,
                 |v| Message::InputNumber(0, v)
             ),
             text(format!(
                 "Repeat rate: {} keys/second",
-                self.input.repeat_rate
+                self.input.value.repeat_rate
             )),
             adjust(
                 "repeat-rate",
                 1.0..=100.,
-                f64::from(self.input.repeat_rate),
+                f64::from(self.input.value.repeat_rate),
                 1.,
                 |v| Message::InputNumber(1, v)
             ),
         ]
         .spacing(10);
         let mouse = column![
-            text(format!("Pointer speed: {:.2}", self.input.mouse_speed)),
+            text(format!(
+                "Pointer speed: {:.2}",
+                self.input.value.mouse_speed
+            )),
             adjust(
                 "mouse-speed",
                 -1.0..=1.,
-                self.input.mouse_speed,
+                self.input.value.mouse_speed,
                 0.05,
                 |v| Message::InputNumber(2, v)
             ),
             toggle(
                 "input-flag-0",
                 "Left-handed buttons",
-                self.input.mouse_left_handed,
-                Message::InputFlag(0, !self.input.mouse_left_handed)
+                self.input.value.mouse_left_handed,
+                Message::InputFlag(0, !self.input.value.mouse_left_handed)
             ),
             toggle(
                 "input-flag-1",
                 "Natural scrolling for mouse",
-                self.input.mouse_natural_scroll,
-                Message::InputFlag(1, !self.input.mouse_natural_scroll)
+                self.input.value.mouse_natural_scroll,
+                Message::InputFlag(1, !self.input.value.mouse_natural_scroll)
             ),
         ]
         .spacing(10);
         let touchpad = column![
-            text(format!("Touchpad speed: {:.2}", self.input.touchpad_speed)),
+            text(format!(
+                "Touchpad speed: {:.2}",
+                self.input.value.touchpad_speed
+            )),
             adjust(
                 "touchpad-speed",
                 -1.0..=1.,
-                self.input.touchpad_speed,
+                self.input.value.touchpad_speed,
                 0.05,
                 |v| Message::InputNumber(3, v)
             ),
             toggle(
                 "input-flag-2",
                 "Tap to click",
-                self.input.touchpad_tap,
-                Message::InputFlag(2, !self.input.touchpad_tap)
+                self.input.value.touchpad_tap,
+                Message::InputFlag(2, !self.input.value.touchpad_tap)
             ),
             toggle(
                 "input-flag-3",
                 "Natural scrolling for touchpad",
-                self.input.touchpad_natural_scroll,
-                Message::InputFlag(3, !self.input.touchpad_natural_scroll)
+                self.input.value.touchpad_natural_scroll,
+                Message::InputFlag(3, !self.input.value.touchpad_natural_scroll)
             ),
             toggle(
                 "input-flag-4",
                 "Disable touchpad while typing",
-                self.input.touchpad_disable_while_typing,
-                Message::InputFlag(4, !self.input.touchpad_disable_while_typing)
+                self.input.value.touchpad_disable_while_typing,
+                Message::InputFlag(4, !self.input.value.touchpad_disable_while_typing)
             )
         ]
         .spacing(10);
@@ -1274,46 +1203,52 @@ impl State {
             toggle(
                 "light",
                 "Light appearance",
-                self.personal.appearance.color_scheme == canopa_theme::ColorScheme::Light,
+                self.personal.value.values.appearance.color_scheme == canopa_theme::ColorScheme::Light,
                 Message::Light(
-                    self.personal.appearance.color_scheme != canopa_theme::ColorScheme::Light
+                    self.personal.value.values.appearance.color_scheme != canopa_theme::ColorScheme::Light
                 )
             ),
-            container(field("Accent color (optional, #RRGGBB)", &self.accent, |v| {
+            container(field("Accent color (optional, #RRGGBB)", &self.personal.value.accent, |v| {
                 Message::PersonalText(0, v)
             })).max_width(300),
-            text(format!("Text size · {}%", self.personal.text_scale)),
+            text(format!("Text size · {}%", self.personal.value.values.text_scale)),
             adjust(
                 "settings-text-scale",
                 100.0..=150.0,
-                f64::from(self.personal.text_scale),
+                f64::from(self.personal.value.values.text_scale),
                 5.0,
                 Message::TextScale
             ),
             toggle(
                 "settings-reduced-motion",
                 "Reduce Shell panel motion",
-                self.personal.reduced_motion,
-                Message::ReducedMotion(!self.personal.reduced_motion)
+                self.personal.value.values.reduced_motion,
+                Message::ReducedMotion(!self.personal.value.values.reduced_motion)
             ),
             self.action("Choose wallpaper…", Some(Message::Wallpaper), true),
             text("Preview and save wallpaper for each monitor. The default image folder is ~/Pictures/Wallpapers.")
                 .size(14).style(canopa_ui::muted),
         ].spacing(12);
         let lockscreen = column![
-            field("Clock format", &self.personal.lock.clock_format, |v| {
-                Message::PersonalText(1, v)
-            }),
-            field("Date format", &self.personal.lock.date_format, |v| {
-                Message::PersonalText(2, v)
-            }),
-            field("Font family", &self.personal.lock.font, |v| {
+            field(
+                "Clock format",
+                &self.personal.value.values.lock.clock_format,
+                |v| { Message::PersonalText(1, v) }
+            ),
+            field(
+                "Date format",
+                &self.personal.value.values.lock.date_format,
+                |v| { Message::PersonalText(2, v) }
+            ),
+            field("Font family", &self.personal.value.values.lock.font, |v| {
                 Message::PersonalText(3, v)
             }),
             field(
                 "Avatar image (optional absolute path)",
                 &self
                     .personal
+                    .value
+                    .values
                     .lock
                     .avatar
                     .as_ref()
@@ -1321,11 +1256,14 @@ impl State {
                     .unwrap_or_default(),
                 |v| Message::PersonalText(4, v)
             ),
-            text(format!("Background dimming: {}%", self.personal.lock.dim)),
+            text(format!(
+                "Background dimming: {}%",
+                self.personal.value.values.lock.dim
+            )),
             adjust(
                 "lock-dim",
                 0.0..=100.,
-                f64::from(self.personal.lock.dim),
+                f64::from(self.personal.value.values.lock.dim),
                 1.,
                 Message::Dim
             ),
@@ -1372,13 +1310,13 @@ impl State {
             ac = ac.push(field_id(
                 format!("idle-ac-{index}"),
                 label,
-                &self.idle_ac[index],
+                &self.idle.value.ac[index],
                 move |v| Message::IdleTime(false, index, v),
             ));
             battery = battery.push(field_id(
                 format!("idle-battery-{index}"),
                 label,
-                &self.idle_battery[index],
+                &self.idle.value.battery[index],
                 move |v| Message::IdleTime(true, index, v),
             ));
         }
@@ -1591,21 +1529,9 @@ fn transforms() -> [Transform; 8] {
         Transform::Flipped270,
     ]
 }
-fn parse_accent(value: &str) -> Result<Option<canopa_theme::Rgb>> {
-    if value.is_empty() {
-        return Ok(None);
-    }
-    ensure!(
-        value.len() == 7
-            && value.starts_with('#')
-            && value[1..].bytes().all(|v| v.is_ascii_hexdigit()),
-        "accent must be #RRGGBB"
-    );
-    Ok(Some(canopa_theme::Rgb(
-        u8::from_str_radix(&value[1..3], 16)?,
-        u8::from_str_radix(&value[3..5], 16)?,
-        u8::from_str_radix(&value[5..7], 16)?,
-    )))
+/// Run a file-backed page's save job and report it as `Message::Stored`.
+fn file_save(page: Page, job: impl FnOnce() -> Result<Snapshot> + Send + 'static) -> Task<Message> {
+    task(move || Ok((page, job()?)), Message::Stored)
 }
 fn idle_events() -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::SinkExt;
@@ -1729,8 +1655,10 @@ pub fn run_with_profile(page: Page, profile: Option<String>) -> Result<()> {
         State::view,
     )
     .title("Canopa Settings")
-    .theme(|state: &State| canopa_ui::theme(state.personal.appearance.clone()))
-    .scale_factor(|state: &State| f32::from(state.personal.appearance.text_scale()) / 100.0)
+    .theme(|state: &State| canopa_ui::theme(state.personal.value.values.appearance.clone()))
+    .scale_factor(|state: &State| {
+        f32::from(state.personal.value.values.appearance.text_scale()) / 100.0
+    })
     .subscription(State::subscription)
     .window(iced::window::Settings {
         size: iced::Size::new(1000., 780.),
@@ -1778,10 +1706,12 @@ mod tests {
 
     /// Save Personalization as Settings does, without the owner's validator.
     fn save_personal(state: &mut State) -> Snapshot {
-        let source = state.common_source.clone().unwrap();
-        state.personal.appearance.accent = Some(canopa_theme::Rgb(0x12, 0x34, 0x56));
+        let source = state.personal.source().cloned().unwrap();
+        state.personal.value.accent = "#123456".into();
+        let mut values = state.personal.value.values.clone();
+        values.appearance.accent = Some(canopa_theme::Rgb(0x12, 0x34, 0x56));
         let saved = source
-            .save(&state.personal.text(&source).unwrap(), |_| Ok(()))
+            .save(&values.text(&source).unwrap(), |_| Ok(()))
             .unwrap();
         let _ = state.update(Message::Stored(Ok((Page::Personal, saved.clone()))));
         saved
@@ -1818,14 +1748,14 @@ mod tests {
         let _ = state.update(Message::InputText(0, "fr".into()));
         let _ = state.update(Message::PersonalText(0, "#123456".into()));
         let _ = state.update(Message::ReloadSaved);
-        assert_eq!(state.input.layouts, Input::default().layouts);
-        assert_eq!(state.accent, "#123456");
+        assert_eq!(state.input.value.layouts, Input::default().layouts);
+        assert_eq!(state.personal.value.accent, "#123456");
 
         let _ = state.update(Message::InputText(0, "de".into()));
         let _ = state.update(Message::Page(Page::Personal));
         let _ = state.update(Message::ReloadSaved);
-        assert_eq!(state.accent, "");
-        assert_eq!(state.input.layouts, "de");
+        assert_eq!(state.personal.value.accent, "");
+        assert_eq!(state.input.value.layouts, "de");
     }
 
     #[test]
@@ -1841,7 +1771,7 @@ mod tests {
         assert!(candidate.contains("// keep this note"));
         let after = save_widgets(&mut state);
         // Personalization adopts the Widgets save in turn.
-        assert!(state.common_source.as_ref().unwrap().same(&after));
+        assert!(state.personal.source().unwrap().same(&after));
     }
 
     #[test]
@@ -1850,11 +1780,19 @@ mod tests {
         let _ = state.update(Message::PersonalText(0, "#abcdef".into()));
         open_widgets(&mut state);
         let saved = save_widgets(&mut state);
-        let common = state.common_source.clone().unwrap();
+        let common = state.personal.source().cloned().unwrap();
         assert!(common.same(&saved));
-        assert_eq!(state.accent, "#abcdef");
+        assert_eq!(state.personal.value.accent, "#abcdef");
         assert!(common.unchanged().is_ok());
-        assert!(state.personal.text(&common).unwrap().contains("bottom"));
+        assert!(
+            state
+                .personal
+                .value
+                .values
+                .text(&common)
+                .unwrap()
+                .contains("bottom")
+        );
     }
 
     #[test]
@@ -1868,17 +1806,20 @@ mod tests {
         .unwrap();
         open_widgets(&mut state);
         let saved = save_widgets(&mut state);
-        let common = state.common_source.clone().unwrap();
+        let common = state.personal.source().cloned().unwrap();
         assert!(!common.same(&saved));
         assert!(common.unchanged().is_err());
 
         // Nor does a Personalization save rebase widget edits made on that version.
         let (_root, mut state) = fresh();
-        let previous = state.common_source.clone().unwrap();
+        let previous = state.personal.source().cloned().unwrap();
         std::fs::write(state.paths.common(), "schema-version 1\n// external\n").unwrap();
         open_widgets(&mut state);
         let saved = previous
-            .save(&state.personal.text(&previous).unwrap(), |_| Ok(()))
+            .save(
+                &state.personal.value.values.text(&previous).unwrap(),
+                |_| Ok(()),
+            )
             .unwrap_err();
         assert!(saved.to_string().contains("outside this editor"));
         let widgets = state
