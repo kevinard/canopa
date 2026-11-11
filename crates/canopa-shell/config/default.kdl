@@ -109,7 +109,10 @@ bar "main" {
         center "workspaces"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
-        end "notifications" "system" "clock"
+        // The tray shows one icon per StatusNotifierItem application. Network,
+        // volume and battery are compact icons that hide while their service
+        // (or the battery itself) is absent.
+        end "tray" "network" "volume" "battery" "notifications" "system" "clock"
     }
 
     // Default panel content for this bar.
@@ -224,6 +227,13 @@ modules {
         actions { click { open-menu "Power off?"; } }
     }
     module "media"
+    // tray: StatusNotifierItem icons for background applications. Left click
+    // activates an item, right click opens its menu. The Shell owns the
+    // org.kde.StatusNotifierWatcher name while a tray module is placed.
+    module "tray" {
+        // Show a filter field at the top of long tray menus.
+        // menu-search #true
+    }
     // Manual keep-awake control in Quick settings, initially off.
     module "idle-inhibitor"
     // Click opens the Center; right-click toggles DND.

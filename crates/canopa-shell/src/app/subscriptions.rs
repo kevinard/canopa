@@ -237,6 +237,23 @@ mod tests {
     }
 
     #[test]
+    fn shipped_defaults_run_the_tray_watcher_and_status_sources() {
+        // The StatusNotifierWatcher only runs while a tray module is placed, so
+        // the shipped bar must place one or tray-only applications have no icon.
+        let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        let (app, _) = App::boot(config, vec![]);
+        assert!(app.has_module_kind(ModuleKind::Tray));
+        for kind in [ModuleKind::Network, ModuleKind::Volume, ModuleKind::Battery] {
+            assert!(
+                app.has_module_kind(kind),
+                "{kind:?} is not on the default bar"
+            );
+        }
+        assert!(app.has_capability(|capabilities| capabilities.needs_session_dbus));
+        assert!(app.has_capability(|capabilities| capabilities.needs_system_dbus));
+    }
+
+    #[test]
     fn app_needs_ipc_subscription_for_panel_commands() {
         let (app, _) = App::boot(Config::default(), vec![]);
 

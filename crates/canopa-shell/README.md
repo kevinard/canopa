@@ -38,8 +38,14 @@ for the shell, Notification Center, and Notify banners.
 
 The bundled left bar is Canopa's spine: a 64-pixel rounded frame, 12-pixel outer
 spacing and a stable 88-pixel reservation. Launcher and native overview are at the
-top, local workspaces in the middle, and notifications, controls and time below.
-Existing custom bar layouts retain their placement. Inspect the bundled layout
+top, local workspaces in the middle, and status, controls and time below: the
+system tray, network, volume and battery icons, then notifications, Quick settings
+and the clock. Network and volume hide while their service is unavailable, and
+battery appears only when UPower reports a present battery. The tray (and the
+`org.kde.StatusNotifierWatcher` it owns) runs because the default bar places it.
+Only the embedded defaults changed: a `shell` block in your `config.kdl`, including
+one saved by Settings, keeps its own layout. Add `"tray" "network" "volume"
+"battery"` to a bar's `end` zone, or place them in Settings > Widgets, to match. Inspect the bundled layout
 with `target/debug/canopa-shell --canopa-config examples/canopa-desktop.kdl`; the
 example selects the shared Canopa palette, with `"light"` available as a companion.
 The controls button uses `toggle-bar-panel` to open that bar's configured modules;

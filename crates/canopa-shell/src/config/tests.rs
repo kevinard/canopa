@@ -94,12 +94,22 @@ mod config_tests {
         // UX-DR18: zone assignments
         assert_eq!(config.bars[0].modules.start, vec!["launcher", "overview"]);
         assert_eq!(config.bars[0].modules.center, vec!["workspaces"]);
+        // The shipped bar shows status at a glance: tray, network, volume and
+        // battery (hidden without a battery) sit above the existing controls.
         assert_eq!(
             config.bars[0].modules.end,
-            vec!["notifications", "system", "clock"]
+            vec![
+                "tray",
+                "network",
+                "volume",
+                "battery",
+                "notifications",
+                "system",
+                "clock"
+            ]
         );
         // All default modules declared
-        assert_eq!(config.modules.len(), 18);
+        assert_eq!(config.modules.len(), 19);
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));
@@ -110,6 +120,9 @@ mod config_tests {
         assert!(names.contains(&"notifications"));
         assert!(names.contains(&"bluetooth"));
         assert!(names.contains(&"power-and-brightness"));
+        let tray = config.modules.iter().find(|m| m.name == "tray").unwrap();
+        assert_eq!(tray.module_type, "tray");
+        assert_eq!(tray.params, ModuleParams::Tray(TrayConfig::default()));
     }
 
     #[test]
