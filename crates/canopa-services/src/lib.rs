@@ -9,11 +9,11 @@
 //! | --- | --- | --- | --- | --- |
 //! | [`network`] | NetworkManager, systemd-networkd, iwd | [`network::NetworkStatus`], [`network::wifi::WifiSnapshot`] | [`network::status::watch`], `RuntimeBackend::changes` | Wi-Fi scan and connect |
 //! | [`bluetooth`] | BlueZ | [`bluetooth::Snapshot`] | [`bluetooth::watch`] | power, discovery, connect, [`bluetooth::pair`] |
-//! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot` | `audio::monitor` | volume, mute, default device |
+//! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot`, `audio::Defaults` | `audio::monitor`, `audio::watch_defaults` | volume, mute, default device, `audio::change_default` |
 //! | [`upower`] | UPower | [`upower::DisplayDevice`] | [`upower::watch`] | – |
 //! | [`power_profiles`] | power-profiles-daemon | [`power_profiles::PowerProfiles`] | [`power_profiles::watch`] | [`power_profiles::PowerProfiles::set`] |
 //! | [`logind`] | systemd-logind | [`logind::Capabilities`], [`logind::InhibitorLock`] | [`logind::watch_capabilities`] | [`logind::request`], [`logind::inhibit`], [`logind::Session::set_brightness`] |
-//! | [`backlight`] | sysfs backlight through logind | [`backlight::Backlight`] | [`backlight::watch`] (polling) | [`backlight::Backlight::set`] |
+//! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level` |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
 //! Observers yield [`ServiceState`]: a missing service is `Unavailable`, not an

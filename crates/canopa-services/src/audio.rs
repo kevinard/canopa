@@ -9,6 +9,8 @@
 //!   [`AudioError::DeviceGone`], never another device.
 //! - [`run_pa_thread`] and [`adjust_default_sink_volume`] are the bar's
 //!   lightweight default-output observer and scroll control.
+//! - [`watch_defaults`] and [`change_default`] follow and change the default
+//!   output and input for device keys and on-screen indicators.
 //!
 //! Volume changes keep channel proportions, cap the loudest channel at 100 %
 //! and leave mute unchanged. Discovery opens no capture stream.
@@ -39,8 +41,10 @@
 //! ```
 use tokio::sync::mpsc;
 
+mod defaults;
 mod devices;
 mod volume;
+pub use defaults::{DefaultChange, DefaultDevice, Defaults, change_default, watch_defaults};
 pub use devices::{
     AudioControl, AudioDevice, AudioDeviceId, AudioSnapshot, DeviceKind, DeviceOperation, monitor,
 };

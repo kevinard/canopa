@@ -143,6 +143,9 @@ impl FakePlayback {
     fn previous(&self) {
         self.0.1.lock().unwrap().push("Previous".into());
     }
+    fn stop(&self) {
+        self.0.1.lock().unwrap().push("Stop".into());
+    }
 }
 
 /// Export `player` under its bus name on a new connection.

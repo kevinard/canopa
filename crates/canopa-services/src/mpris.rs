@@ -69,6 +69,9 @@ impl Player {
             Operation::Pause => self.can_pause,
             Operation::Next => self.can_next,
             Operation::Previous => self.can_previous,
+            // MPRIS gates Stop on CanControl alone; a player that can neither
+            // play nor pause has nothing to stop.
+            Operation::Stop => self.can_play || self.can_pause,
         }
     }
     pub fn label(&self) -> String {
@@ -88,6 +91,7 @@ pub enum Operation {
     Play,
     Pause,
     Next,
+    Stop,
 }
 
 /// Why a control was refused.
@@ -420,6 +424,7 @@ pub async fn control(
         Operation::Play => "Play",
         Operation::Pause => "Pause",
         Operation::Next => "Next",
+        Operation::Stop => "Stop",
     };
     // Address the captured unique owner. Never redirect a late click to a replacement process.
     conn.call_method(

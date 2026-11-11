@@ -32,6 +32,10 @@ async fn players_are_read_and_controls_revalidate_owner_track_and_capability() {
         .await
         .unwrap();
     assert_eq!(*a.1.lock().unwrap(), ["Pause"]);
+    control(&client, &current.id, &current.track, Operation::Stop)
+        .await
+        .unwrap();
+    assert_eq!(*a.1.lock().unwrap(), ["Pause", "Stop"]);
     assert_eq!(
         control(&client, &current.id, &current.track, Operation::Previous).await,
         Err(MprisError::Unsupported)
@@ -46,5 +50,5 @@ async fn players_are_read_and_controls_revalidate_owner_track_and_capability() {
         control(&client, &replaced, &current.track, Operation::Play).await,
         Err(MprisError::Changed)
     );
-    assert_eq!(a.1.lock().unwrap().len(), 1);
+    assert_eq!(a.1.lock().unwrap().len(), 2);
 }
