@@ -44,6 +44,7 @@ mod tests {
 
     #[test]
     fn notification_lines_fit_four_lines() {
+        let _english = crate::i18n::english();
         assert_eq!(notification_lines(&LockScreenSnapshot::default()), None);
         let two = LockScreenSnapshot {
             entries: vec![entry("Clock"), entry("Phone")],

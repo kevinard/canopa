@@ -7,10 +7,18 @@ canopa_i18n::localization!();
 pub(crate) struct Selected(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 
 #[cfg(test)]
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Holds English for a test that asserts English text.
+#[cfg(test)]
+pub(crate) fn english() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+#[cfg(test)]
 impl Selected {
     pub(crate) fn new(language: &str, pseudo: bool) -> Self {
-        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
+        let guard = english();
         let tag: canopa_i18n::LanguageIdentifier = language.parse().unwrap();
         canopa_i18n::select(canopa_i18n::Selection {
             languages: canopa_i18n::negotiate(std::slice::from_ref(&tag)),
