@@ -443,6 +443,8 @@ pub(super) fn styled_segment_text<'a>(
         "canopa:logout" => Some(include_bytes!("../../assets/logout.svg").as_slice()),
         "canopa:reboot" => Some(include_bytes!("../../assets/reboot.svg").as_slice()),
         "canopa:poweroff" => Some(include_bytes!("../../assets/poweroff.svg").as_slice()),
+        "canopa:suspend" => Some(include_bytes!("../../assets/moon.svg").as_slice()),
+        "canopa:hibernate" => Some(include_bytes!("../../assets/hibernate.svg").as_slice()),
         _ => None,
     };
     if let Some(bytes) = icon {

@@ -70,12 +70,22 @@ Wayland login can use logind. The power profile list reflects the options
 advertised by the system Power Profiles daemon or a compatible service.
 The launcher can also open both panels.
 
-Lock, Log out, Reboot and Power off occupy a two-column footer. Lock launches
-`canopa-lock` with session ownership (install its PAM service first; see
-[session tools](../../docs/session-tools.md)). The other buttons open confirmation menus with
-Cancel selected first; Cancel returns to Quick settings. Log out asks Niri to quit,
-and Reboot/Power off use `systemctl` without force options. These ordinary button
-actions and menus can be rebound in the configuration.
+Lock, Suspend, Hibernate, Log out, Reboot and Power off occupy a two-column footer.
+Lock launches `canopa-lock` with session ownership (install its PAM service first; see
+[session tools](../../docs/session-tools.md)). Suspend and Hibernate act at once.
+Log out, Reboot and Power off open confirmation menus with Cancel selected first;
+Cancel returns to Quick settings. Log out asks Niri to quit.
+
+Suspend, Hibernate, Reboot and Power off ask systemd-logind directly with the
+`session "suspend"`, `"hibernate"`, `"reboot"` and `"power-off"` actions, never
+through a timed command, so polkit can ask for a password (for example while
+other users are logged in). Buttons for actions logind refuses (`CanSuspend` and
+friends answer `no` or `na`) are hidden, and Hibernate appears only when
+`CanHibernate` answers `yes`. A confirmation lists applications that block the
+action, such as "Blocked by Firefox: Downloading files", and a failed request is
+reported in a notification instead of failing silently. These ordinary button
+actions and menus can be rebound in the configuration; `session` also works in
+your own menus, where items for refused actions are left out.
 
 For Swaylock sessions, `canopa-shell lock` passes the lockscreen image selected
 through the Wallpaper portal to Swaylock. Custom launch commands remain literal argv.
@@ -104,8 +114,9 @@ the compressed icon shapes in patched coding fonts. Normal text keeps its defaul
 font, and systems without the symbols font keep normal glyph fallback.
 
 Unrotated icon segments also accept `canopa:mark`, `canopa:overview`,
-`canopa:controls`, `canopa:lock`, `canopa:logout`, `canopa:reboot`, and
-`canopa:poweroff`: embedded monochrome SVGs following the configured size/color.
+`canopa:controls`, `canopa:lock`, `canopa:logout`, `canopa:suspend`,
+`canopa:hibernate`, `canopa:reboot`, and `canopa:poweroff`: embedded monochrome
+SVGs following the configured size/color.
 
 In bar formats, a standalone `"{icon}"` segment uses the icon size; other segments
 use the text size. Write `format "{icon}" "{value}"` to keep those roles distinct.

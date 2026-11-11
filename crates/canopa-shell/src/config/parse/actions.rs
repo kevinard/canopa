@@ -88,6 +88,7 @@ fn parse_panel_action(
         "command" => parse_command_node_ctx(operation, &operation_ctx, command_policy)
             .map(PanelAction::Command),
         "launch" => parse_launch(operation, &operation_ctx).map(PanelAction::Launch),
+        "session" => parse_session(operation, &operation_ctx).map(PanelAction::Session),
         "open-panel" => {
             require_no_arguments(operation, &operation_ctx)?;
             Ok(PanelAction::OpenPanel)
@@ -119,7 +120,7 @@ fn parse_panel_action(
             operation,
             format!("unknown action operation {other:?}"),
             Some(
-                "expected `command`, `launch`, `open-panel`, `toggle-panel`, `open-bar-panel`, `toggle-bar-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
+                "expected `command`, `launch`, `session`, `open-panel`, `toggle-panel`, `open-bar-panel`, `toggle-bar-panel`, `close-panel`, `open-menu`, `toggle-menu`, or `open-provider`"
                     .into(),
             ),
         )),
@@ -152,6 +153,35 @@ pub(super) fn parse_launch(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Vec<S
         argv.push(value.to_owned());
     }
     Ok(argv)
+}
+
+/// `session "suspend"`: a logind request, never a shell command.
+pub(super) fn parse_session(
+    node: &KdlNode,
+    ctx: &ParseCtx,
+) -> ConfigResult<crate::session::SessionAction> {
+    let expected = || {
+        Some(format!(
+            "expected one of {}",
+            crate::session::SessionAction::CONFIG_NAMES
+        ))
+    };
+    if node.children().is_some() || node.entries().len() != 1 {
+        return Err(ctx.node_err(node, "expected `session \"action\"`", expected()));
+    }
+    let entry = &node.entries()[0];
+    match entry.value().as_string() {
+        Some(name) if entry.name().is_none() => {
+            crate::session::SessionAction::from_config_name(name).ok_or_else(|| {
+                ctx.entry_err(
+                    entry,
+                    format!("unknown session action {name:?}"),
+                    expected(),
+                )
+            })
+        }
+        _ => Err(ctx.entry_err(entry, "expected a session action string", expected())),
+    }
 }
 
 fn require_no_arguments(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<()> {

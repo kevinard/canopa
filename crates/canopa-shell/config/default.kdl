@@ -23,6 +23,9 @@
 // ─── Menus ───────────────────────────────────────────────────────────────────
 // Named panel menus can be opened from bar or module actions.
 // Use launch for desktop applications; command actions are bounded automation.
+// `session "suspend"`, "hibernate", "reboot" or "power-off" asks logind directly:
+// polkit can prompt for a password, failures and blocking applications are
+// reported, and buttons for actions logind refuses are hidden.
 menus {
     menu "Applications" show-icons=#true prompt="Search apps, files, and more" {
         source "launcher"
@@ -34,11 +37,11 @@ menus {
     }
     menu "Reboot?" prompt="Unsaved work may be lost." {
         item "Cancel" { open-bar-panel; }
-        item "Reboot" { command { argv "systemctl" "reboot"; }; }
+        item "Reboot" { session "reboot"; }
     }
     menu "Power off?" prompt="Unsaved work may be lost." {
         item "Cancel" { open-bar-panel; }
-        item "Power off" { command { argv "systemctl" "poweroff"; }; }
+        item "Power off" { session "power-off"; }
     }
 }
 
@@ -130,7 +133,8 @@ bar "main" {
         start "network" "volume"
         center "notifications" "idle-inhibitor" "bluetooth" "power-and-brightness"
         // Trailing buttons form a compact footer with two columns.
-        end "battery" "media" "session-lock" "session-logout" "session-reboot" "session-poweroff"
+        // Hibernate appears only when logind answers CanHibernate with "yes".
+        end "battery" "media" "session-lock" "session-suspend" "session-hibernate" "session-logout" "session-reboot" "session-poweroff"
     }
 }
 
@@ -207,6 +211,19 @@ modules {
         label "Lock"
         icon "canopa:lock"
         actions { click { launch "canopa-lock"; } }
+    }
+    // Suspend and hibernate keep the session, so they need no confirmation.
+    module "session-suspend" {
+        type "button"
+        label "Suspend"
+        icon "canopa:suspend"
+        actions { click { session "suspend"; } }
+    }
+    module "session-hibernate" {
+        type "button"
+        label "Hibernate"
+        icon "canopa:hibernate"
+        actions { click { session "hibernate"; } }
     }
     module "session-logout" {
         type "button"

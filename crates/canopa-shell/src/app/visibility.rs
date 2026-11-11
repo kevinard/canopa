@@ -12,10 +12,11 @@ impl App {
         surface: &SurfaceState,
         mode: FormatMode,
     ) -> bool {
-        self.modules.kind_for(id).is_some_and(|kind| {
-            let state = self.module_render_state(kind, id, surface);
-            self.modules.has_content(id, &state, mode)
-        })
+        self.module_offered(id)
+            && self.modules.kind_for(id).is_some_and(|kind| {
+                let state = self.module_render_state(kind, id, surface);
+                self.modules.has_content(id, &state, mode)
+            })
     }
 
     pub(super) fn reconcile_module_visibility(&mut self) -> Vec<Task<Message>> {

@@ -52,6 +52,7 @@ policy and lifetime. The supported system installation has a dedicated session.
 - [Launcher preferences, bundled extensions and action search](docs/adr/0131-launcher-preferences-and-bundled-extensions.md)
 - [Launcher file actions and Settings pages](docs/adr/0130-launcher-file-actions-and-settings-pages.md)
 - [Unified launcher and search providers](docs/shell/adr/0023-unified-launcher-providers.md)
+- [Shell session actions through logind](docs/shell/adr/0024-session-actions-through-logind.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
 - [Theme configuration reference](docs/theme-customization.md)

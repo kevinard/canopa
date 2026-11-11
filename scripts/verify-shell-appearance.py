@@ -128,8 +128,13 @@ Gtk.main()
         for original, replacement in [
             ('launch "canopa-lock";', f'launch "python3" "{stub}" "lock";'),
             ('argv "niri" "msg" "action" "quit" "--skip-confirmation";', f'argv "python3" "{stub}" "logout";'),
-            ('argv "systemctl" "reboot";', f'argv "python3" "{stub}" "reboot";'),
-            ('argv "systemctl" "poweroff";', f'argv "python3" "{stub}" "poweroff";'),
+            # logind actions become stub commands: the fixture never asks the
+            # machine to sleep or shut down, and every button stays visible
+            # whatever the host's CanHibernate answer is.
+            ('session "suspend";', f'command {{ argv "python3" "{stub}" "suspend"; }};'),
+            ('session "hibernate";', f'command {{ argv "python3" "{stub}" "hibernate"; }};'),
+            ('session "reboot";', f'command {{ argv "python3" "{stub}" "reboot"; }};'),
+            ('session "power-off";', f'command {{ argv "python3" "{stub}" "poweroff"; }};'),
         ]:
             assert shell.count(original) == 1, f"missing session fixture binding: {original}"
             shell = shell.replace(original, replacement)
@@ -279,7 +284,13 @@ Gtk.main()
         press_keys(*(["Tab"] * 7), "Return")
         session.wait_for(lambda: (runtime / "lock.requested").exists(), "stub locker launch")
         session.capture("session-controls.png")
-        for target, steps in [("logout", 8), ("reboot", 9), ("poweroff", 10)]:
+        # Footer rows: Lock | Suspend, Hibernate | Log out, Reboot | Power off.
+        # Suspend and Hibernate keep the session and need no confirmation.
+        for target, (x, y) in [("suspend", (372, height - 162)), ("hibernate", (196, height - 112))]:
+            click(x, y)
+            session.wait_for(lambda: (runtime / f"{target}.requested").exists(), f"stub {target}")
+        session.capture("session-controls.png")
+        for target, steps in [("logout", 10), ("reboot", 11), ("poweroff", 12)]:
             for confirm in [False, True]:
                 menu_count = count_panels("menu")
                 if confirm:

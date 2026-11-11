@@ -722,6 +722,7 @@ impl App {
             crate::config::PanelAction::Launch(argv) => {
                 Task::batch(self.apply_app_effects(vec![AppEffect::LaunchApplication(argv)]))
             }
+            crate::config::PanelAction::Session(action) => self.request_session_action(action),
             crate::config::PanelAction::OpenProvider(provider_name) => {
                 self.open_provider_panel(origin_window, origin, provider_name, None)
             }
@@ -1011,16 +1012,24 @@ impl App {
                 anchor,
             } => {
                 self.close_external_panel_session_for_replacement();
+                let refresh = self.refresh_session_state_for(&content);
                 let request = self.panel_open_request(origin_window, origin, content, anchor);
                 let module_detail_sessions = self.module_detail_sessions_for_request(&request);
-                let context = super::foreground::PanelOpenContext::new(
-                    self.config.menus.as_slice(),
-                    module_detail_sessions,
+                let menus = super::session_actions::offered_menus(
+                    &self.config.menus,
+                    &self.session.capabilities,
                 );
+                let context =
+                    super::foreground::PanelOpenContext::new(&menus, module_detail_sessions);
                 let effects = self
                     .foreground
                     .handle(super::foreground::ForegroundIntent::TogglePanel { request, context });
-                Task::batch(self.apply_foreground_effects(effects))
+                drop(menus);
+                Task::batch(
+                    self.apply_foreground_effects(effects)
+                        .into_iter()
+                        .chain([refresh]),
+                )
             }
             PanelEvent::OpenProvider {
                 origin_window,
@@ -1113,16 +1122,21 @@ impl App {
         if !preserve_external_session {
             self.close_external_panel_session_for_replacement();
         }
+        let refresh = self.refresh_session_state_for(&content);
         let request = self.panel_open_request(origin_window, origin, content, anchor);
         let module_detail_sessions = self.module_detail_sessions_for_request(&request);
-        let context = super::foreground::PanelOpenContext::new(
-            self.config.menus.as_slice(),
-            module_detail_sessions,
-        );
+        let menus =
+            super::session_actions::offered_menus(&self.config.menus, &self.session.capabilities);
+        let context = super::foreground::PanelOpenContext::new(&menus, module_detail_sessions);
         let effects = self
             .foreground
             .handle(super::foreground::ForegroundIntent::OpenPanel { request, context });
-        Task::batch(self.apply_foreground_effects(effects))
+        drop(menus);
+        Task::batch(
+            self.apply_foreground_effects(effects)
+                .into_iter()
+                .chain([refresh]),
+        )
     }
 
     pub(super) fn panel_open_request(
@@ -1203,12 +1217,13 @@ impl App {
                 self.effective_panel_module_layout_for_bar(bar)
                     .into_iter()
                     .filter(|(_, id)| {
-                        self.modules.kind_for(id).is_some_and(|kind| {
-                            self.modules.has_bar_panel_content(
-                                id,
-                                &self.module_render_state(kind, id, &origin_surface),
-                            )
-                        })
+                        self.module_offered(id)
+                            && self.modules.kind_for(id).is_some_and(|kind| {
+                                self.modules.has_bar_panel_content(
+                                    id,
+                                    &self.module_render_state(kind, id, &origin_surface),
+                                )
+                            })
                     })
                     .map(|(zone, id)| {
                         let focused = self.foreground.focused_panel_module().map_or(
@@ -1686,7 +1701,9 @@ pub(super) fn panel_event_for_action(
                 anchor,
             })
         }
-        crate::config::PanelAction::Command(_) | crate::config::PanelAction::Launch(_) => None,
+        crate::config::PanelAction::Command(_)
+        | crate::config::PanelAction::Launch(_)
+        | crate::config::PanelAction::Session(_) => None,
     }
 }
 

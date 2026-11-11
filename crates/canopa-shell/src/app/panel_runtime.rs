@@ -1352,40 +1352,52 @@ mod tests {
     #[test]
     fn bundled_session_confirmations_default_to_cancel_and_emit_only_explicit_actions() {
         use crate::config::{ActionTrigger, ConfiguredCommandSpec, PanelAction};
+        use crate::session::SessionAction;
         let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
-        let lock = config
-            .modules
-            .iter()
-            .find(|module| module.name == "session-lock")
-            .unwrap();
+        let click = |name: &str| {
+            config
+                .modules
+                .iter()
+                .find(|module| module.name == name)
+                .unwrap()
+                .actions
+                .action_for(&ActionTrigger::Click)
+                .cloned()
+        };
         assert_eq!(
-            lock.actions.action_for(&ActionTrigger::Click),
-            Some(&PanelAction::Launch(vec!["canopa-lock".into()]))
+            click("session-lock"),
+            Some(PanelAction::Launch(vec!["canopa-lock".into()]))
         );
-        for (module, menu, program, arguments) in [
+        // Suspend and hibernate keep the session: logind directly, no confirmation.
+        assert_eq!(
+            click("session-suspend"),
+            Some(PanelAction::Session(SessionAction::Suspend))
+        );
+        assert_eq!(
+            click("session-hibernate"),
+            Some(PanelAction::Session(SessionAction::Hibernate))
+        );
+        let quit = PanelAction::Command(crate::config::ConfiguredCommand::argv(
+            "niri".into(),
+            ["msg", "action", "quit", "--skip-confirmation"]
+                .map(String::from)
+                .to_vec(),
+            &crate::config::CommandPolicy::default(),
+        ));
+        for (module, menu, confirmed) in [
+            ("session-logout", "Log out?", quit),
             (
-                "session-logout",
-                "Log out?",
-                "niri",
-                vec!["msg", "action", "quit", "--skip-confirmation"],
+                "session-reboot",
+                "Reboot?",
+                PanelAction::Session(SessionAction::Reboot),
             ),
-            ("session-reboot", "Reboot?", "systemctl", vec!["reboot"]),
             (
                 "session-poweroff",
                 "Power off?",
-                "systemctl",
-                vec!["poweroff"],
+                PanelAction::Session(SessionAction::PowerOff),
             ),
         ] {
-            let button = config
-                .modules
-                .iter()
-                .find(|item| item.name == module)
-                .unwrap();
-            assert_eq!(
-                button.actions.action_for(&ActionTrigger::Click),
-                Some(&PanelAction::OpenMenu(menu.into()))
-            );
+            assert_eq!(click(module), Some(PanelAction::OpenMenu(menu.into())));
             let mut runtime = PanelRuntime::default();
             runtime.handle(PanelRuntimeIntent::PrepareOpen {
                 request: open_request(
@@ -1412,19 +1424,19 @@ mod tests {
             runtime.move_focus(1);
             let effects = runtime.activate(None);
             let [
-                PanelRuntimeEffect::RunPanelAction(PanelAction::Command(command)),
+                PanelRuntimeEffect::RunPanelAction(action),
                 PanelRuntimeEffect::RequestPanelClose,
             ] = effects.as_slice()
             else {
-                panic!("explicit confirmation must emit one bounded command and close");
+                panic!("explicit confirmation must emit one action and close");
             };
-            assert_eq!(
-                command.spec(),
-                &ConfiguredCommandSpec::Argv {
-                    program: program.into(),
-                    args: arguments.into_iter().map(String::from).collect(),
-                }
-            );
+            if let PanelAction::Command(command) = action {
+                assert!(matches!(
+                    command.spec(),
+                    ConfiguredCommandSpec::Argv { program, .. } if program == "niri"
+                ));
+            }
+            assert_eq!(action, &confirmed);
         }
     }
 

@@ -289,7 +289,9 @@ impl App {
                     && matches!(menu.items.as_slice(), [cancel, confirm]
                         if cancel.children.is_empty() && confirm.children.is_empty()
                         && cancel.action == Some(crate::config::PanelAction::OpenBarPanel)
-                        && matches!(confirm.action, Some(crate::config::PanelAction::Command(_))))));
+                        && matches!(confirm.action, Some(
+                            crate::config::PanelAction::Command(_)
+                            | crate::config::PanelAction::Session(_))))));
         let compact_at_end = !bar.edge.is_horizontal()
             && matches!(&tree.origin, crate::surface::panel::PanelOrigin::Module(origin)
                 if self.effective_module_layout_for_bar(bar).iter().any(|(zone, id)|
@@ -368,7 +370,7 @@ impl App {
             menu_entries: menu.entries,
             icons: &self.panel_icons,
             show_icons: menu.show_icons,
-            menu_prompt: menu.prompt,
+            menu_prompt: self.session_prompt(&tree.content, menu.prompt),
             launcher_session: menu.launcher_session,
             launcher_generation: launcher.map_or(0, |session| session.generation),
             launcher_status: menu.launcher_status,

@@ -109,7 +109,7 @@ mod config_tests {
             ]
         );
         // All default modules declared
-        assert_eq!(config.modules.len(), 19);
+        assert_eq!(config.modules.len(), 21);
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));

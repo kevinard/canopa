@@ -16,6 +16,7 @@ mod launcher;
 mod modules;
 mod niri;
 mod notice;
+mod session;
 mod surface;
 mod theme;
 mod wallpaper;

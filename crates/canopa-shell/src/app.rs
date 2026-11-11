@@ -36,6 +36,7 @@ mod panel_sizing;
 mod perf;
 mod render;
 mod selectable_menu_session;
+mod session_actions;
 mod shared;
 mod subscriptions;
 mod surface_input_router;
@@ -75,6 +76,7 @@ pub(crate) struct App {
     canopa_accessibility: Option<canopa_accessibility::PanelAccessibility>,
     accessibility_focused_window: Option<iced::window::Id>,
     notices: crate::notice::Outbox,
+    session: session_actions::SessionRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -90,6 +92,7 @@ pub enum Message {
     Configuration(configuration::Event),
     /// A button on one of the Shell's own notices, or on the bar's error badge.
     Notice(crate::notice::NoticeAction),
+    Session(session_actions::Event),
     Wallpaper(crate::wallpaper::Event),
     LauncherHistory(crate::launcher::history::Event),
     LauncherClipboardLoaded(crate::launcher::clipboard::SavedChange),
@@ -164,6 +167,7 @@ impl Message {
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Configuration(_) => "Configuration",
             Message::Notice(_) => "Notice",
+            Message::Session(_) => "Session",
             Message::Wallpaper(_) => "Wallpaper",
             Message::LauncherHistory(_) => "LauncherHistory",
             Message::LauncherClipboardLoaded(_) => "LauncherClipboardLoaded",
@@ -343,12 +347,14 @@ impl App {
             canopa_accessibility: None,
             accessibility_focused_window: None,
             notices: Default::default(),
+            session: Default::default(),
             #[cfg(test)]
             external_panel_responses_for_test: std::collections::HashMap::new(),
             #[cfg(test)]
             external_panel_event_responses_for_test: std::collections::HashMap::new(),
         };
-        let window_tasks = app.apply_bar_surface_lifecycle_effects(effects);
+        let mut window_tasks = app.apply_bar_surface_lifecycle_effects(effects);
+        window_tasks.push(app.refresh_session_capabilities());
         tracing::debug!(
             target: "canopa_shell::runtime",
             bar_count,
@@ -382,7 +388,11 @@ impl App {
         }
         let visibility_changed = matches!(
             &message,
-            Message::Modules(_) | Message::Niri(_) | Message::DbusReady(_) | Message::Tray(_)
+            Message::Modules(_)
+                | Message::Niri(_)
+                | Message::DbusReady(_)
+                | Message::Tray(_)
+                | Message::Session(_)
         );
         match &message {
             Message::Surface(messages::SurfaceEvent::BarFocusGained(window)) => {
@@ -408,6 +418,7 @@ impl App {
         let task = match message {
             Message::Configuration(event) => self.handle_configuration_event(event),
             Message::Notice(action) => self.handle_notice_action(action),
+            Message::Session(event) => self.handle_session_event(event),
             Message::Wallpaper(event) => self.handle_wallpaper(event),
             Message::LauncherPreferences(event) => {
                 self.launcher_preferences.apply(event);
