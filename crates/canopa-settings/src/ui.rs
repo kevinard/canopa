@@ -1,5 +1,6 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod bluetooth;
+mod date_time;
 mod default_apps;
 mod focus;
 mod launcher;
@@ -130,6 +131,8 @@ enum Message {
     NotificationsForm(notifications::Edit),
     DefaultApps(crate::live::Event<crate::default_apps::DefaultAppsService>),
     DefaultAppsSearch(String),
+    DateTime(crate::live::Event<crate::date_time::DateTimeService>),
+    DateTimeForm(date_time::Edit),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -182,6 +185,8 @@ struct State {
     notification_query: String,
     default_apps: default_apps::DefaultAppsPage,
     default_apps_query: String,
+    date_time: date_time::DateTimePage,
+    date_time_forms: date_time::DateTimeForms,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -285,6 +290,8 @@ impl State {
             notification_query: String::new(),
             default_apps: live_page::LivePage::new(Default::default()),
             default_apps_query: String::new(),
+            date_time: live_page::LivePage::new(Default::default()),
+            date_time_forms: Default::default(),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -472,6 +479,9 @@ impl State {
                 }
                 if page == Page::Widgets && self.widget_layouts.editor.is_none() {
                     return widget_layouts::View::load(&self.paths);
+                }
+                if page == Page::DateTime {
+                    self.date_time_opened();
                 }
                 if page == Page::Notifications && self.notification_apps.is_none() {
                     return task(notifications::installed, |apps| {
@@ -717,7 +727,8 @@ impl State {
                     | Page::Network
                     | Page::Bluetooth
                     | Page::Notifications
-                    | Page::DefaultApps => self.busy = false,
+                    | Page::DefaultApps
+                    | Page::DateTime => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -855,6 +866,8 @@ impl State {
             Message::DefaultApps(event) => {
                 return self.default_apps.update(event, default_apps::message);
             }
+            Message::DateTime(event) => return self.date_time.update(event, date_time::message),
+            Message::DateTimeForm(edit) => return self.date_time_edit(edit),
             Message::DefaultAppsSearch(query) => {
                 self.default_apps_query = query.chars().take(100).collect();
             }
@@ -1092,6 +1105,11 @@ impl State {
             Page::DefaultApps => self
                 .default_apps
                 .update(crate::live::Event::Reload, default_apps::message),
+            Page::DateTime => {
+                self.date_time_opened();
+                self.date_time
+                    .update(crate::live::Event::Reload, date_time::message)
+            }
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -1121,6 +1139,13 @@ impl State {
         }
         if self.page == Page::DefaultApps {
             subscriptions.push(self.default_apps.subscription(Message::DefaultApps));
+        }
+        if self.page == Page::DateTime {
+            subscriptions.push(self.date_time.subscription(Message::DateTime));
+            subscriptions.push(
+                iced::time::every(Duration::from_secs(1))
+                    .map(|_| Message::DateTimeForm(date_time::Edit::Tick)),
+            );
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1194,6 +1219,7 @@ impl State {
             Page::Bluetooth => self.bluetooth_view(),
             Page::Notifications => self.notifications_view(),
             Page::DefaultApps => self.default_apps_view(),
+            Page::DateTime => self.date_time_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

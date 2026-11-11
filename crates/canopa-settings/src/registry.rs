@@ -15,6 +15,7 @@ pub enum Page {
     Sound,
     Personal,
     Power,
+    DateTime,
     Notifications,
     DefaultApps,
     Launcher,
@@ -339,6 +340,31 @@ pub static PAGES: &[Entry] = &[
         hidden: false,
     },
     Entry {
+        page: Page::DateTime,
+        id: "date-time",
+        title: "Date & time",
+        description: "Set the time zone, network time and the 12- or 24-hour clock.",
+        icon: "preferences-system-time",
+        group: Group::System,
+        keywords: &[
+            "date",
+            "time",
+            "clock",
+            "time zone",
+            "timezone",
+            "ntp",
+            "network time",
+            "automatic",
+            "location",
+            "12-hour",
+            "24-hour",
+            "am",
+            "pm",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
         page: Page::Notifications,
         id: "notifications",
         title: "Notifications",
@@ -632,6 +658,7 @@ mod tests {
             "bluetooth",
             "notifications",
             "default-apps",
+            "date-time",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -651,6 +678,7 @@ mod tests {
                 Page::Sound,
                 Page::Personal,
                 Page::Power,
+                Page::DateTime,
                 Page::Notifications,
                 Page::DefaultApps,
                 Page::Launcher,
@@ -689,6 +717,7 @@ mod tests {
         assert_eq!(pages("pair")[0], Page::Bluetooth);
         assert_eq!(pages("do not disturb"), [Page::Notifications]);
         assert_eq!(pages("browser"), [Page::DefaultApps]);
+        assert_eq!(pages("timezone"), [Page::DateTime]);
         assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);

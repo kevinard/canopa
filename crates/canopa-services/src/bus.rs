@@ -193,6 +193,33 @@ where
     })
 }
 
+/// How long a privileged call may wait, including a polkit password prompt.
+pub const AUTHORIZATION_DEADLINE: Duration = Duration::from_secs(300);
+
+/// Call `method` allowing polkit to ask for a password, within
+/// [`AUTHORIZATION_DEADLINE`]. A cancelled or refused prompt is
+/// [`Error::NotAuthorized`].
+pub async fn call_interactive<B, R>(
+    proxy: &zbus::Proxy<'_>,
+    method: &str,
+    body: &B,
+) -> Result<R, Error>
+where
+    B: serde::Serialize + zbus::zvariant::DynamicType,
+    R: for<'d> zbus::zvariant::DynamicDeserialize<'d>,
+{
+    let reply = tokio::time::timeout(
+        AUTHORIZATION_DEADLINE,
+        proxy.call_with_flags::<_, _, R>(
+            method,
+            zbus::proxy::MethodFlags::AllowInteractiveAuth.into(),
+            body,
+        ),
+    )
+    .await??;
+    reply.ok_or(Error::Refused("the service sent no reply".into()))
+}
+
 /// Replace control characters and bound text from another process.
 pub(crate) fn bounded_text(text: &str, limit: usize) -> String {
     let mut out: String = text

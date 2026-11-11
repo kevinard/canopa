@@ -104,6 +104,26 @@ impl<M: FileModel> FileDraft<M> {
         }
         adopt
     }
+
+    /// Another page changed this page's section in a way it can repeat:
+    /// apply `change` to the draft and continue from `saved`. Only a draft
+    /// read from `previous` follows; others keep failing safely on save.
+    pub fn follow(
+        &mut self,
+        previous: &Snapshot,
+        saved: &Snapshot,
+        change: impl FnOnce(&mut M),
+    ) -> bool {
+        let follows = self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.same(previous));
+        if follows {
+            change(&mut self.value);
+            self.source = Some(saved.clone());
+        }
+        follows
+    }
 }
 
 #[cfg(test)]

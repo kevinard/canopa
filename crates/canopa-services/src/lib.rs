@@ -15,6 +15,8 @@
 //! | [`power_switches`] | logind's lid switch | [`power_switches::LidAction`] | – | [`power_switches::handle_lid`] |
 //! | [`logind`] | systemd-logind | [`logind::Capabilities`], [`logind::InhibitorLock`] | [`logind::watch_capabilities`] | [`logind::request`], [`logind::inhibit`], [`logind::Session::set_brightness`] |
 //! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level`, `set_perceptual` |
+//! | [`timedate`] | systemd-timedated | [`timedate::Clock`] | [`timedate::watch`] | time zone, network time, system clock (polkit) |
+//! | [`geoclue`] | GeoClue | [`geoclue::Place`] | – | [`geoclue::locate`] (once, city accuracy) |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
 //! Observers yield [`ServiceState`]: a missing service is `Unavailable`, not an
@@ -31,6 +33,7 @@ pub mod backlight;
 pub mod bluetooth;
 pub mod bus;
 mod error;
+pub mod geoclue;
 pub mod logind;
 pub mod mpris;
 pub mod network;
@@ -38,6 +41,7 @@ pub mod power_profiles;
 pub mod power_switches;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod timedate;
 pub mod upower;
 
 pub use error::{Error, ServiceState};

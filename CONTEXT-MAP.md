@@ -20,6 +20,7 @@ The supported system installation has a dedicated session.
 - [Arch system installation](docs/installation.md)
 - [Settings application](docs/settings.md)
 - [Settings pages, page patterns and activation](docs/adr/0136-settings-pages-patterns-and-activation.md)
+- [The 12/24-hour clock in the clock format strings](docs/adr/0142-clock-hour-cycle-in-format-strings.md)
 
 - [Wallpaper, lockscreen and shared widget data](docs/adr/0119-session-tools-and-widget-data.md)
 - [Logind, interactive PAM and lock composition](docs/adr/0120-logind-authentication-and-lock-composition.md)

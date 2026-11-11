@@ -12,10 +12,10 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Notifications and Default applications are live
-pages: each change applies at once, without Save, and shows its own progress or error with Retry.
+Network, Bluetooth, Sound, Date & time, Notifications and Default
+applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
-Canopa Notify) is not running, the page says so and reconnects by itself when
+systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
 it returns.
 
 Only one Settings window runs at a time. Opening Settings again, from the
@@ -162,6 +162,22 @@ analog output, or a Bluetooth headset's high-fidelity playback (A2DP) or
 headset mode with its microphone (HFP). **Play notification sounds** turns
 Canopa Notify's sounds on or off in `config.kdl` at once; unsaved
 Personalization and Widgets edits are kept.
+
+## Date & time
+
+The Date & time page follows systemd-timedated; changes to the system clock ask
+for permission through the polkit agent.
+
+- **Time zone**: find a zone by city or region and choose **Use**. When GeoClue
+  is installed, **Use my location** sets the zone of this computer's location
+  once (the nearest zone city in `zone1970.tab`); GeoClue decides whether
+  Settings may know the location.
+- **Set the time automatically from the network** turns network time on or off
+  (systemd-timesyncd, chrony or ntpd). When it is off, set the date and time.
+- **Clock format**: 24-hour or 12-hour for the bar clocks and the lock screen,
+  applied at once to `config.kdl`. A clock with a pattern of your own (for
+  example `%a %H:%M`) keeps it; see
+  [ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md).
 
 ## Notifications
 
