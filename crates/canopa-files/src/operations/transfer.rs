@@ -1789,10 +1789,14 @@ fn run_transfer_inner(
                         TransferAccess::DestinationFolder,
                     )
                     .and_then(|()| check_pending(state, &mut check))
-                    .is_err() =>
+                    .is_err()
+                    || destination_observation.confirm_reachable().is_err() =>
             {
                 result.needs_attention = true;
-                result.attention = Some(error.to_string());
+                result.attention = Some(match destination_observation.confirm_reachable() {
+                    Err(lost) => lost.to_string(),
+                    Ok(()) => error.to_string(),
+                });
                 pending.push_front((source, destination, finish));
                 break;
             }

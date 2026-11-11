@@ -260,6 +260,14 @@ pub(super) fn copied_output_digest(
             "The prepared output changed while its receipt was read.",
         ));
     }
+    // Reading the output back is what proves a network destination kept it:
+    // through GVFS the read reopens the file on the server (ADR0168).
+    if offset != output_before.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "The destination returned less or more data than it reported for the copy.",
+        ));
+    }
     Ok(hash.digest128().to_be_bytes())
 }
 

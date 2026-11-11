@@ -25,6 +25,7 @@ mod cases {
     mod job_handoff;
     mod job_payloads;
     mod job_registry;
+    mod network_gvfs;
     mod operation_attention;
     mod operation_drops;
     mod operation_jobs;

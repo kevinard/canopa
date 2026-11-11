@@ -146,6 +146,19 @@ fn prepare_using(
         if !same_snapshot(before, &input.metadata()?) {
             return Err(changed());
         }
+        // The source is unchanged, so the destination must hold all of it. On
+        // a network share or phone this is the end-to-end check that the
+        // server accepted the whole file (ADR0168).
+        let kept = output.metadata()?.len();
+        if kept != before.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "The destination kept {kept} of {} bytes. The copy was not completed.",
+                    before.len()
+                ),
+            ));
+        }
         source.require_current()?;
         payload.require_current()?;
         copy_backend::restore_metadata(&output, before)?;

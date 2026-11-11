@@ -134,12 +134,21 @@ impl TrashLocation {
         if source_mount == home_mount {
             return Self::home(data_home);
         }
-        let top = mounts()?
+        let (top, kind) = mounts()?
             .into_iter()
-            .find_map(|(id, top)| (id == source_mount).then_some(top))
+            .find_map(|(id, top, kind)| (id == source_mount).then_some((top, kind)))
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, "the source volume is unavailable")
             })?;
+        // GVFS exposes every network share, phone and camera below one FUSE
+        // mount. A Trash at its top would mix all of them, and no GVFS backend
+        // keeps a freedesktop Trash, so these locations have none (ADR0168).
+        if kind == "fuse.gvfsd-fuse" {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "network locations, phones and cameras have no Trash",
+            ));
+        }
         Self::volume(top)
     }
 
@@ -154,7 +163,10 @@ impl TrashLocation {
         let mut creation_parents = Vec::new();
         let uid = rustix::process::geteuid().as_raw();
         let mut seen = std::collections::BTreeSet::new();
-        for (_, top) in mounts()? {
+        for (_, top, kind) in mounts()? {
+            if kind == "fuse.gvfsd-fuse" {
+                continue;
+            }
             if !seen.insert(top.clone()) {
                 continue;
             }
@@ -1039,7 +1051,8 @@ fn mount_id(path: &Path) -> io::Result<u64> {
     }
     Ok(status.stx_mnt_id)
 }
-fn mounts() -> io::Result<Vec<(u64, PathBuf)>> {
+/// Mount ID, mount point and filesystem type of every mount.
+fn mounts() -> io::Result<Vec<(u64, PathBuf, String)>> {
     let mut data = Vec::new();
     fs::File::open("/proc/self/mountinfo")?
         .take(8 * 1024 * 1024 + 1)
@@ -1077,7 +1090,15 @@ fn mounts() -> io::Result<Vec<(u64, PathBuf)>> {
                 offset += 1;
             }
         }
-        mounts.push((id, PathBuf::from(OsString::from_vec(path))));
+        // The filesystem type follows the optional fields' " - " separator.
+        let kind = fields
+            .iter()
+            .skip(6)
+            .skip_while(|field| **field != b"-")
+            .nth(1)
+            .map(|kind| String::from_utf8_lossy(kind).into_owned())
+            .unwrap_or_default();
+        mounts.push((id, PathBuf::from(OsString::from_vec(path)), kind));
     }
     Ok(mounts)
 }

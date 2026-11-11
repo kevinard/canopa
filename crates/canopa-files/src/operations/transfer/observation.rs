@@ -169,6 +169,35 @@ impl DestinationObservation {
         Ok(())
     }
 
+    /// Ask the filesystem itself whether the observed root still exists, past
+    /// the kernel's attribute and name caches. A network share or GVFS location
+    /// that went away keeps answering from FUSE caches for a while, so a failed
+    /// step there must not be mistaken for a per-item failure (ADR0168). Local
+    /// filesystems ignore the forced synchronization.
+    pub(super) fn confirm_reachable(&self) -> io::Result<()> {
+        let opened = self
+            .0
+            .opened
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let Some(opened) = opened.as_ref() else {
+            return Ok(());
+        };
+        rustix::fs::statx(
+            rustix::fs::CWD,
+            &self.0.path,
+            rustix::fs::AtFlags::STATX_FORCE_SYNC,
+            rustix::fs::StatxFlags::BASIC_STATS,
+        )
+        .map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::NotConnected,
+                format!("The destination folder is no longer reachable: {error}"),
+            )
+        })?;
+        self.require_original(opened)
+    }
+
     pub(super) fn check_if_observed(&self) -> io::Result<()> {
         let opened = self
             .0

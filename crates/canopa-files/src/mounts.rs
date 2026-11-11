@@ -116,6 +116,12 @@ impl Mounts {
         Self { mounts }
     }
 
+    /// Whether `path` is on a network filesystem, GVFS locations included.
+    /// An unreadable mount table says nothing, so it is not remote.
+    pub fn remote(&self, path: &Path) -> bool {
+        !self.mounts.is_empty() && self.facts(path).placement == Placement::Network
+    }
+
     /// Facts for `path`, from the innermost mount containing it. Symlinks are
     /// resolved first when possible. Removable block devices are recognized
     /// from sysfs, and anything mounted under `/media` or `/run/media`.
@@ -213,6 +219,7 @@ mod tests {
         "34 30 0:51 / /home/me/remote\\040box rw,noexec - fuse.sshfs me@box: rw\n",
         "35 22 0:52 / /tmp rw,nosuid,nodev,noexec - tmpfs tmpfs rw\n",
         "36 22 0:53 / /srv/nfs rw - nfs4 server:/export rw\n",
+        "37 35 0:54 / /run/user/1000/gvfs rw,nosuid,nodev - fuse.gvfsd-fuse gvfsd-fuse rw\n",
         "malformed line\n",
     );
 
@@ -238,6 +245,14 @@ mod tests {
         assert_eq!(remote.placement, Placement::Network);
         assert!(remote.noexec);
         assert_eq!(facts("/srv/nfs/x").placement, Placement::Network);
+        // GVFS locations (SMB, SFTP, WebDAV, MTP phones, cameras) are remote:
+        // no thumbnails by default, no executable trust, no inotify.
+        let gvfs = facts("/run/user/1000/gvfs/smb-share:server=nas,share=photos/a.jpg");
+        assert_eq!(gvfs.placement, Placement::Network);
+        assert!(!gvfs.meaningful_executable_bit());
+        assert!(mounts.remote(Path::new("/run/user/1000/gvfs/mtp:host=Pixel/DCIM")));
+        assert!(!mounts.remote(Path::new("/home/me")));
+        assert!(!Mounts::default().remote(Path::new("/home/me")));
         let tmp = facts("/tmp/script.sh");
         assert!(tmp.local() && tmp.noexec && !tmp.meaningful_executable_bit());
         assert_eq!(
