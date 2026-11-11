@@ -4,6 +4,7 @@ pub mod display;
 pub mod file_page;
 pub mod input;
 pub mod launcher;
+pub mod live;
 pub mod niri;
 pub mod preferences;
 pub mod profile_watch;

@@ -1,6 +1,10 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod focus;
 mod launcher;
+#[cfg(debug_assertions)]
+mod live_example;
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
+mod live_page;
 mod navigation;
 mod profiles;
 mod shortcuts;
@@ -98,6 +102,10 @@ enum Message {
     Wallpaper,
     Finished(std::result::Result<String, String>),
     WallpaperFinished(std::result::Result<(), String>),
+    #[cfg(debug_assertions)]
+    LiveExample(crate::live::Event<crate::live::fake::Service>),
+    #[cfg(debug_assertions)]
+    Simulate(live_example::Simulate),
 }
 struct State {
     paths: Paths,
@@ -126,6 +134,8 @@ struct State {
     idle_available: bool,
     trial: Option<TrialHandle>,
     remaining: u64,
+    #[cfg(debug_assertions)]
+    live_example: live_example::Example,
 }
 fn task<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
@@ -211,6 +221,8 @@ impl State {
             idle_available: false,
             trial: None,
             remaining: 0,
+            #[cfg(debug_assertions)]
+            live_example: live_page::LivePage::new(Default::default()),
         };
         (
             state,
@@ -718,6 +730,12 @@ impl State {
                 self.busy = false;
                 self.notice = result.unwrap_or_else(|error| error);
             }
+            #[cfg(debug_assertions)]
+            Message::LiveExample(event) => {
+                return self.live_example.update(event, live_example::message);
+            }
+            #[cfg(debug_assertions)]
+            Message::Simulate(simulate) => self.simulate(simulate),
             _ => {}
         }
         Task::none()
@@ -826,7 +844,9 @@ impl State {
                 widget_layouts::View::load(&paths)
             }
             #[cfg(debug_assertions)]
-            Page::LiveExample => Task::none(),
+            Page::LiveExample => self
+                .live_example
+                .update(crate::live::Event::Reload, live_example::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -843,6 +863,10 @@ impl State {
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
+        }
+        #[cfg(debug_assertions)]
+        if self.page == Page::LiveExample {
+            subscriptions.push(self.live_example.subscription(live_example::message));
         }
         Subscription::batch(subscriptions)
     }
@@ -907,7 +931,7 @@ impl State {
             Page::Shortcuts => self.shortcuts_view(),
             Page::Widgets => self.widget_layouts_view(),
             #[cfg(debug_assertions)]
-            Page::LiveExample => text("").into(),
+            Page::LiveExample => self.live_example_view(),
         });
         let content = column![
             container(title).padding([19, 20]).width(Length::Fill),
