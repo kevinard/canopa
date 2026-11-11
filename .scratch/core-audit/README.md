@@ -1,6 +1,6 @@
 # Core-experience audit
 
-Status: in-progress (Tier 1 and Tier 2 done 2026-11-11; Tier 3 open, item 5 done at the code level)
+Status: ready-for-human (Tiers 1–3 done at the code level 2026-11-11; hands-on checks pending)
 
 Code-reading audit, 2026-11-11, of the five components Canopa owns: Shell,
 launcher, Settings, Files and Notify. Nothing was run in a desktop session;
@@ -62,6 +62,26 @@ Workspace gate after both tiers: only Files `device_runtime` ("private device
 runtime did not settle", pre-existing) and the flaky Files video playback test
 (1 in 3 runs alone) fail. The 3 Notify layout tests now pass. None of this has
 been run in a live session yet; use the hands-on checks in each report.
+
+### Tier 3 (2026-11-11)
+
+All Tier 3 items are implemented; each audit file marks its rows with commits.
+
+| Item | What landed | ADRs |
+| --- | --- | --- |
+| 1–3 Settings Network, Sound, Power | Live pages over NetworkManager (Enterprise Wi-Fi, VPN import, hotspot, proxy), PipeWire-pulse (per-app volume, profiles, meter), UPower/power-profiles-daemon/logind (battery, lid, power button, idle without Stasis) | 0139, 0140 |
+| 4 Files | Open With and `mimeapps.list`; Run prompts and `.desktop` trust; sandboxed thumbnails; batched Copy durability (100 small files 16.1 s to 0.8 s) with totals and ETA | Files 0165–0167, root 0141 |
+| 5 Notify | Do-not-disturb timer and schedule, fullscreen and sharing suppression, per-app rules, Center bulk actions, lock-screen feed, portal v2 replies and display hints | Notify 0055 |
+| 6 Launcher | Desktop actions, browse all apps, session and Settings pages in search, switch to running apps, per-app scopes | — |
+| 7 Settings | Bluetooth, Notifications, Default apps, Date & time, About, Region & language, Users, Privacy, Printers | 0142, 0143 |
+| 8 Cross-cutting | Files network locations through GVFS; AT-SPI trees for Settings, the launcher, Files, the Shell bar and menus, and 8 portal dialogs; Fluent and ICU4X translations with a complete French catalog (machine-assisted, needs review) and an RTL pseudo-locale | Files 0168, 0144, 0145 |
+
+Workspace gate on the final tree: everything passes except Files
+`device_runtime`, which already failed before this work. It sees the machine's
+own USB mounts. The Files video playback test failed deterministically for a
+while on an incremental build and passed on the clean rebuild; keep watching
+it. Nothing has been run in a live session: use the hands-on checks in each
+report.
 
 ## Ranked plan
 
