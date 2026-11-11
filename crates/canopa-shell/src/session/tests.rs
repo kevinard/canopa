@@ -46,7 +46,31 @@ async fn blocked_and_denied_requests_are_explained() {
 }
 
 #[test]
+fn failure_notices_are_translated() {
+    let english = crate::i18n_testing::english();
+    let english_notice = notice(&Failure::TimedOut, SessionAction::Reboot);
+    assert_eq!(english_notice.summary, "Couldn't restart");
+    assert_eq!(
+        english_notice.body,
+        "The login manager did not answer in time."
+    );
+    drop(english);
+    let _french = crate::i18n_testing::select("fr", false);
+    let blocked = Failure::Blocked(vec![Inhibitor {
+        who: "Firefox".into(),
+        why: "Téléchargement".into(),
+    }]);
+    let french_notice = notice(&blocked, SessionAction::PowerOff);
+    assert_eq!(french_notice.summary, "Impossible d’éteindre");
+    assert_eq!(
+        french_notice.body,
+        "Bloqué par Firefox: Téléchargement. Terminez ou fermez cette application, puis réessayez."
+    );
+}
+
+#[test]
 fn config_names_round_trip_and_blocker_lists_are_bounded() {
+    let _english = crate::i18n_testing::english();
     for action in SessionAction::ALL {
         assert_eq!(from_config_name(action.id()), Some(action));
     }

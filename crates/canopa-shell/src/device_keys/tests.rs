@@ -55,6 +55,7 @@ fn commands_parse_with_optional_bounded_steps() {
 
 #[test]
 fn indicators_describe_levels_mute_and_absence() {
+    let _english = crate::i18n_testing::english();
     let speakers = Indicator::Level {
         channel: Channel::Volume,
         percent: 45,
@@ -90,6 +91,23 @@ fn indicators_describe_levels_mute_and_absence() {
         "Brightness unavailable"
     );
     assert_eq!(Outcome::NoPlayer.indicator(), None);
+}
+
+#[test]
+fn indicators_are_announced_in_french() {
+    let _french = crate::i18n_testing::select("fr", false);
+    let speakers = Indicator::Level {
+        channel: Channel::Volume,
+        percent: 45,
+        muted: false,
+        device: Some("Haut-parleurs".into()),
+    };
+    assert_eq!(speakers.value(), "45\u{202f}%");
+    assert_eq!(speakers.announcement(), "Volume 45\u{202f}%, Haut-parleurs");
+    assert_eq!(
+        Indicator::Unavailable(Channel::KeyboardBacklight).announcement(),
+        "Luminosité du clavier indisponible"
+    );
 }
 
 fn device(root: &Path, name: &str, kind: &str, max: u32, value: u32) {
