@@ -55,6 +55,8 @@ case "$1" in
         python3 scripts/test-portal-config.py
         python3 scripts/test-install-system.py
         python3 scripts/test-check-scripts.py
+        python3 scripts/test-check-i18n.py
+        python3 scripts/check-i18n.py
         python3 scripts/test-test-layout.py
         python3 scripts/test-fork-sources.py
         python3 scripts/test-remote-touch-core.py --output "${CARGO_TARGET_DIR:-target}/remote-touch-core-check.json"

@@ -201,6 +201,8 @@ class CheckScripts(unittest.TestCase):
         self.assertIn(["build", "--locked", "-p", "canopa-cli", "-p", "canopa-session", "-p", "canopa-greeter", "-p", "canopa-polkit", "-p", "canopa-pinentry", "-p", "canopa-settings"], cargo)
         self.assertIn("scripts/test-check-scripts.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-portal-config.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
+        self.assertIn("scripts/check-i18n.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
+        self.assertIn("scripts/test-check-i18n.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertIn("scripts/test-fork-sources.py", [item["args"][0] for item in commands if item["tool"] == "python3"])
         self.assertFalse(any("vendor" in argument for item in commands for argument in item["args"]))
         self.assertIn("scripts/test-remote-touch-core.py", [item["args"][0] for item in commands if item["tool"] == "python3"])

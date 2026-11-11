@@ -1,0 +1,4 @@
+# Exceptions to scripts/check-i18n.py: literals that look user-visible but are
+# not translated. One per line, `path: "literal"  # reason` or `path: *  # reason`;
+# paths may be fnmatch patterns. Keep each reason specific.
+crates/canopa-files/src/desktop/*.rs: *  # the retired GTK adapter; lib.rs builds `desktop` from iced_desktop/
