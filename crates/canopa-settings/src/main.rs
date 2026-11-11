@@ -222,10 +222,17 @@ mod tests {
     fn pages_list_the_visible_registry_in_sidebar_order() {
         let json = pages_json();
         let pages = json["pages"].as_array().unwrap();
-        let ids: Vec<_> = pages.iter().map(|page| page["id"].as_str().unwrap()).collect();
+        let ids: Vec<_> = pages
+            .iter()
+            .map(|page| page["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, registry::ids().collect::<Vec<_>>());
         let displays = pages.iter().find(|page| page["id"] == "displays").unwrap();
         assert_eq!(displays["title"], Page::Displays.title());
-        assert!(displays["keywords"].as_array().is_some_and(|k| !k.is_empty()));
+        assert!(
+            displays["keywords"]
+                .as_array()
+                .is_some_and(|k| !k.is_empty())
+        );
     }
 }
