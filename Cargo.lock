@@ -1271,7 +1271,6 @@ dependencies = [
  "iced_layershell",
  "image",
  "kdl 6.7.1",
- "libpulse-binding",
  "miette 7.6.0",
  "niri-ipc",
  "resvg",
