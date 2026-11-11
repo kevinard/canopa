@@ -167,6 +167,34 @@ fn applications(
     apps
 }
 
+/// The `Icon=` of one desktop entry, without scanning the catalog: the first
+/// `applications/<id>.desktop` in the XDG data directories wins, and a hidden
+/// entry has no icon. A trailing `.desktop` on `id` is accepted. Call on a worker.
+pub fn desktop_entry_icon(id: &str) -> Option<String> {
+    desktop_entry_icon_in_data_dirs(id, &xdg_data_dirs())
+}
+
+pub fn desktop_entry_icon_in_data_dirs(id: &str, data_dirs: &[PathBuf]) -> Option<String> {
+    let id = id.trim();
+    let id = id.strip_suffix(".desktop").unwrap_or(id);
+    if id.is_empty() || id.len() > 255 || id.starts_with('.') || id.contains(['/', '\\', '\0']) {
+        return None;
+    }
+    let file = format!("{id}.desktop");
+    let body = data_dirs
+        .iter()
+        .filter(|dir| dir.is_absolute())
+        .find_map(|dir| {
+            canopa_file::read_bounded(&dir.join("applications").join(&file), MAX_ENTRY_BYTES).ok()
+        })
+        .and_then(|bytes| String::from_utf8(bytes).ok())?;
+    let fields = parse_desktop_entry_fields(&body);
+    if bool_field(&fields, "Hidden") {
+        return None;
+    }
+    optional_non_empty_field(&fields, "Icon")
+}
+
 fn xdg_data_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let data_home = std::env::var_os("XDG_DATA_HOME")
@@ -934,5 +962,48 @@ mod tests {
         );
         assert_eq!(exec_program(r#""open"#), None);
         assert_eq!(exec_program("   "), None);
+    }
+
+    #[test]
+    fn single_desktop_entry_icons_respect_precedence_and_hidden_overrides() {
+        let temp = tempfile::tempdir().unwrap();
+        let user = temp.path().join("user");
+        let system = temp.path().join("system");
+        for dir in [&user, &system] {
+            std::fs::create_dir_all(dir.join("applications")).unwrap();
+        }
+        let entry = |icon: &str| {
+            format!("[Desktop Entry]\nType=Application\nName=Mail\nIcon={icon}\nExec=mail\n")
+        };
+        std::fs::write(
+            system.join("applications/org.example.Mail.desktop"),
+            entry("mail-system"),
+        )
+        .unwrap();
+        let dirs = [user.clone(), system.clone()];
+        assert_eq!(
+            desktop_entry_icon_in_data_dirs("org.example.Mail.desktop", &dirs).as_deref(),
+            Some("mail-system")
+        );
+        std::fs::write(
+            user.join("applications/org.example.Mail.desktop"),
+            entry("/opt/mail.png"),
+        )
+        .unwrap();
+        assert_eq!(
+            desktop_entry_icon_in_data_dirs("org.example.Mail", &dirs).as_deref(),
+            Some("/opt/mail.png")
+        );
+        std::fs::write(
+            user.join("applications/org.example.Mail.desktop"),
+            "[Desktop Entry]\nHidden=true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            desktop_entry_icon_in_data_dirs("org.example.Mail", &dirs),
+            None
+        );
+        assert_eq!(desktop_entry_icon_in_data_dirs("../escape", &dirs), None);
+        assert_eq!(desktop_entry_icon_in_data_dirs("missing", &dirs), None);
     }
 }
