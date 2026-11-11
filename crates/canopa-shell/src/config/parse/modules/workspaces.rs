@@ -23,6 +23,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Workspac
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
@@ -32,6 +33,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Workspac
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
 

@@ -1414,6 +1414,7 @@ mod tests {
         use crate::surface::panel::PanelContent;
         let menus = vec![crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             prompt: None,
             show_icons: true,
             source: Some(crate::config::MenuSourceConfig {
@@ -1458,6 +1459,7 @@ mod tests {
     fn stale_launcher_discovery_cannot_reopen_closed_or_replaced_panel() {
         let menus = vec![crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             prompt: None,
             show_icons: true,
             source: Some(crate::config::MenuSourceConfig {

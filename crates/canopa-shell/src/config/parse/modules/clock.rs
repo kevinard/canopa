@@ -22,6 +22,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
@@ -33,24 +34,23 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<ClockCon
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
-
-    let defaults = ClockConfig::default();
 
     let time_format = fields::field(children, ctx, "time-format")
         .optional()
         .help("expected a chrono format string such as \"%H:%M\"")
         .nonempty_string()
-        .unwrap_or(defaults.time_format)?;
+        .transpose()?;
 
     let date_format = fields::field(children, ctx, "date-format")
         .optional()
         .help("expected a chrono format string such as \"%a %d %b\"")
         .nonempty_string()
-        .unwrap_or(defaults.date_format)?;
+        .transpose()?;
     for (name, format) in [("time-format", &time_format), ("date-format", &date_format)] {
-        if let Some(field) = children.get(name)
+        if let (Some(field), Some(format)) = (children.get(name), format)
             && chrono::DateTime::from_timestamp(1_700_000_000, 0)
                 .expect("valid validation timestamp")
                 .format(format)

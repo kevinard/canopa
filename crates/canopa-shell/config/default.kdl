@@ -26,22 +26,26 @@
 // `session "suspend"`, "hibernate", "reboot" or "power-off" asks logind directly:
 // polkit can prompt for a password, failures and blocking applications are
 // reported, and buttons for actions logind refuses are hidden.
+//
+// Built-in texts use message IDs (`title-id`, `prompt-id`, `label-id`) so they
+// follow the session language; write `prompt="…"` or `item "My label"` for
+// your own text. A menu's name stays its identifier for `open-menu`.
 menus {
-    menu "Applications" show-icons=#true prompt="Search apps, files, and more" {
+    menu "Applications" show-icons=#true prompt-id="shell-menu-launcher-prompt" {
         source "launcher"
     }
     // Cancel is first so Enter never ends the session by default.
-    menu "Log out?" prompt="Unsaved work may be lost." {
-        item "Cancel" { open-bar-panel; }
-        item "Log out" { command { argv "niri" "msg" "action" "quit" "--skip-confirmation"; }; }
+    menu "Log out?" title-id="shell-menu-log-out-title" prompt-id="shell-menu-unsaved-work" {
+        item label-id="shell-menu-cancel" { open-bar-panel; }
+        item label-id="shell-menu-log-out" { command { argv "niri" "msg" "action" "quit" "--skip-confirmation"; }; }
     }
-    menu "Reboot?" prompt="Unsaved work may be lost." {
-        item "Cancel" { open-bar-panel; }
-        item "Reboot" { session "reboot"; }
+    menu "Reboot?" title-id="shell-menu-reboot-title" prompt-id="shell-menu-unsaved-work" {
+        item label-id="shell-menu-cancel" { open-bar-panel; }
+        item label-id="shell-menu-reboot" { session "reboot"; }
     }
-    menu "Power off?" prompt="Unsaved work may be lost." {
-        item "Cancel" { open-bar-panel; }
-        item "Power off" { session "power-off"; }
+    menu "Power off?" title-id="shell-menu-power-off-title" prompt-id="shell-menu-unsaved-work" {
+        item label-id="shell-menu-cancel" { open-bar-panel; }
+        item label-id="shell-menu-power-off" { session "power-off"; }
     }
 }
 
@@ -132,7 +136,8 @@ bar "main" {
 
     // Default panel content for this bar.
     panel {
-        title "Quick settings"
+        // `title "My panel"` sets your own heading.
+        title-id "shell-panel-quick-settings"
         // Use a drawer for browsing and a compact popover for individual modules.
         // "drawer" uses drawers for all panels; horizontal bars use auto sizing.
         presentation "adaptive"
@@ -178,41 +183,45 @@ bar "main" {
 //         click { launch "my-application" }
 //         right-click { command "my-other-command" }
 //     }
+//
+// The built-in buttons name their texts with `label-id` and `tooltip-id` so
+// they follow the session language. Replace them with `label "…"` and
+// `tooltip "…"` for your own text (a module takes one or the other).
 modules {
     // These are ordinary configurable buttons; the existing bar is the spine.
     module "launcher" {
         type "button"
-        label "Search"
+        label-id "shell-module-search"
         icon "canopa:search"
-        tooltip "Launcher"
+        tooltip-id "shell-tooltip-launcher"
         ui { padding 7 0; foreground "accent"; }
         actions { click { toggle-menu "Applications"; } }
     }
     module "overview" {
         type "button"
-        label "Overview"
+        label-id "shell-module-overview"
         icon "canopa:overview"
-        tooltip "Overview"
+        tooltip-id "shell-tooltip-overview"
         ui { padding 7 0; }
         actions { click { command { argv "niri" "msg" "action" "toggle-overview"; }; } }
     }
     module "system" {
         type "button"
-        label "Controls"
+        label-id "shell-module-controls"
         icon "canopa:controls"
-        tooltip "Quick settings"
+        tooltip-id "shell-tooltip-quick-settings"
         ui { padding 7 0; }
         actions { click { toggle-bar-panel; } }
     }
     module "bluetooth" {
         type "button"
-        label "Bluetooth"
+        label-id "shell-module-bluetooth"
         icon "canopa:bluetooth"
         actions { click { open-provider "bluetooth"; } }
     }
     module "power-and-brightness" {
         type "button"
-        label "Power & display"
+        label-id "shell-module-power-and-display"
         icon "canopa:brightness"
         actions { click { open-provider "power"; } }
     }
@@ -220,38 +229,38 @@ modules {
     // or session manager. Launch lets the locker outlive the shell's command timeout.
     module "session-lock" {
         type "button"
-        label "Lock"
+        label-id "shell-module-lock"
         icon "canopa:lock"
         actions { click { launch "canopa-lock"; } }
     }
     // Suspend and hibernate keep the session, so they need no confirmation.
     module "session-suspend" {
         type "button"
-        label "Suspend"
+        label-id "shell-module-suspend"
         icon "canopa:suspend"
         actions { click { session "suspend"; } }
     }
     module "session-hibernate" {
         type "button"
-        label "Hibernate"
+        label-id "shell-module-hibernate"
         icon "canopa:hibernate"
         actions { click { session "hibernate"; } }
     }
     module "session-logout" {
         type "button"
-        label "Log out"
+        label-id "shell-module-log-out"
         icon "canopa:logout"
         actions { click { open-menu "Log out?"; } }
     }
     module "session-reboot" {
         type "button"
-        label "Reboot"
+        label-id "shell-module-reboot"
         icon "canopa:reboot"
         actions { click { open-menu "Reboot?"; } }
     }
     module "session-poweroff" {
         type "button"
-        label "Power off"
+        label-id "shell-module-power-off"
         icon "canopa:poweroff"
         actions { click { open-menu "Power off?"; } }
     }
@@ -308,7 +317,8 @@ modules {
         // Tooltip on hover. Same grammar as `format` (string segments or
         // styled `segment` block). Use `tooltip #false` to disable.
         // Omit to use the module's built-in default (none for workspaces).
-        tooltip "Workspace {index}"
+        // The shipped tooltip is the built-in text "Workspace {index}".
+        tooltip-id "shell-tooltip-workspace"
     }
 
     // focused-window: shows the title of the focused window on this output.
@@ -485,12 +495,13 @@ modules {
         ui { padding 16 0; }
         format "{time}"
         actions { click { open-panel; } }
-        // Time format string using chrono strftime syntax.
-        // Default: "%H:%M" (24-hour, e.g. "14:30"). Use "%I:%M %p" for 12-hour.
-        time-format "%H:%M"
-        // Date format string using chrono strftime syntax.
-        // Default: "%a %d %b" (e.g. "Mon 12 Apr").
-        date-format "%A, %-d %B"
+        // Time format string using chrono strftime syntax. Without one, the
+        // clock follows the language's time format and hour cycle ("14:30"
+        // in French, "2:30 PM" in US English).
+        // time-format "%H:%M"         // 24-hour; "%-I:%M %p" for 12-hour
+        // Date format string using chrono strftime syntax. Without one, the
+        // date follows the language ("Wednesday, November 11").
+        // date-format "%A, %-d %B"
         // Optional display templates. Placeholders: {icon}, {value}, {time}, {date}.
         // format "{icon} {time}"
         // expanded-format "{icon} {time}\n{date}"

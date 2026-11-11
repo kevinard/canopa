@@ -286,23 +286,23 @@ mod config_tests {
     #[test]
     fn clock_config_default_formats() {
         let cfg = ClockConfig::default();
-        assert_eq!(cfg.time_format, "%H:%M");
-        assert_eq!(cfg.date_format, "%a %d %b");
+        assert_eq!(cfg.time_format, None);
+        assert_eq!(cfg.date_format, None);
     }
 
     #[test]
     fn module_params_clock_stores_config() {
         let params = ModuleParams::Clock(ClockConfig {
-            time_format: "%I:%M %p".into(),
-            date_format: "%Y-%m-%d".into(),
+            time_format: Some("%I:%M %p".into()),
+            date_format: Some("%Y-%m-%d".into()),
             format: FormatConfig::default(),
             content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
         });
         match params {
             ModuleParams::Clock(cfg) => {
-                assert_eq!(cfg.time_format, "%I:%M %p");
-                assert_eq!(cfg.date_format, "%Y-%m-%d");
+                assert_eq!(cfg.time_format.as_deref(), Some("%I:%M %p"));
+                assert_eq!(cfg.date_format.as_deref(), Some("%Y-%m-%d"));
             }
             _ => panic!("expected ModuleParams::Clock"),
         }
@@ -578,6 +578,7 @@ mod config_tests {
             menus: vec![
                 MenuConfig {
                     name: "main".into(),
+                    title: None,
                     show_icons: false,
                     prompt: None,
                     source: None,
@@ -585,6 +586,7 @@ mod config_tests {
                 },
                 MenuConfig {
                     name: "main".into(),
+                    title: None,
                     show_icons: false,
                     prompt: None,
                     source: None,
@@ -687,6 +689,7 @@ mod config_tests {
         let mut config = Config::default();
         config.menus = vec![MenuConfig {
             name: "apps".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: Some(MenuSourceConfig {

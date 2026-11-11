@@ -1668,6 +1668,7 @@ mod tests {
         let mut config = Config {
             menus: vec![MenuConfig {
                 name: "apps".into(),
+                title: None,
                 show_icons: false,
                 prompt: None,
                 source: Some(MenuSourceConfig {

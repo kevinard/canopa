@@ -32,6 +32,7 @@ pub(super) fn parse(
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
@@ -43,6 +44,7 @@ pub(super) fn parse(
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
 

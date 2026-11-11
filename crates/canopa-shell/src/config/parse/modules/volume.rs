@@ -25,6 +25,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<VolumeCo
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
@@ -37,6 +38,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<VolumeCo
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
 

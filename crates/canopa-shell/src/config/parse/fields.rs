@@ -502,6 +502,81 @@ fn parse_nonempty_string_node(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<St
     }
 }
 
+/// A text field given literally (`label "Reboot"`) or as a Shell message ID
+/// (`label-id "shell-module-reboot"`), never both. The ID resolves in the
+/// Shell's language; an unknown ID is an error.
+pub(super) fn text_or_message(
+    children: &KdlDocument,
+    ctx: &ParseCtx,
+    name: &str,
+    id_name: &str,
+) -> ConfigResult<Option<String>> {
+    let literal = field(children, ctx, name)
+        .optional()
+        .nonempty_string()
+        .transpose()?;
+    let Some(node) = field(children, ctx, id_name).optional_node()? else {
+        return Ok(literal);
+    };
+    let id_ctx = ctx.child(id_name);
+    let id = parse_nonempty_string_node(node, &id_ctx)?;
+    if literal.is_some() {
+        return Err(id_ctx.node_err(
+            node,
+            format!("`{name}` and `{id_name}` cannot both be set"),
+            Some(format!("keep `{name}` for your own text")),
+        ));
+    }
+    crate::config::messages::text(&id).map(Some).ok_or_else(|| {
+        id_ctx.node_err(
+            node,
+            format!("unknown message ID {id:?}"),
+            Some(crate::config::messages::unknown_help()),
+        )
+    })
+}
+
+/// A string property given literally (`prompt="…"`) or as a message ID
+/// (`prompt-id="shell-…"`), never both.
+pub(super) fn property_text_or_message(
+    node: &KdlNode,
+    ctx: &ParseCtx,
+    name: &str,
+    id_name: &str,
+) -> ConfigResult<Option<String>> {
+    let entry = |wanted: &str| {
+        node.entries()
+            .iter()
+            .rfind(|entry| entry.name().map(|name| name.value()) == Some(wanted))
+    };
+    let string = |entry: &KdlEntry| {
+        entry
+            .value()
+            .as_string()
+            .map(str::to_owned)
+            .ok_or_else(|| ctx.entry_err(entry, format!("expected {name} string"), None))
+    };
+    let literal = entry(name).map(string).transpose()?;
+    let Some(id_entry) = entry(id_name) else {
+        return Ok(literal);
+    };
+    let id = string(id_entry)?;
+    if literal.is_some() {
+        return Err(ctx.entry_err(
+            id_entry,
+            format!("`{name}` and `{id_name}` cannot both be set"),
+            Some(format!("keep `{name}` for your own text")),
+        ));
+    }
+    crate::config::messages::text(&id).map(Some).ok_or_else(|| {
+        ctx.entry_err(
+            id_entry,
+            format!("unknown message ID {id:?}"),
+            Some(crate::config::messages::unknown_help()),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use ::kdl::KdlDocument;

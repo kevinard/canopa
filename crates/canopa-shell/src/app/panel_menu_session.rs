@@ -974,6 +974,7 @@ mod tests {
     fn menu_with_apps_browser() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            title: None,
             show_icons: true,
             prompt: Some("Search".into()),
             source: None,

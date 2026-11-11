@@ -409,6 +409,7 @@ mod tests {
     fn menu(name: &str, action: PanelAction) -> MenuConfig {
         MenuConfig {
             name: name.into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: None,

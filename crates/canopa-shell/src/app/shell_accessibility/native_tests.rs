@@ -82,6 +82,7 @@ async fn native_launcher_search_announces_the_selected_result_and_launches_it() 
     let config = Config {
         menus: vec![MenuConfig {
             name: "Applications".into(),
+            title: None,
             show_icons: false,
             prompt: Some("Search apps".into()),
             source: Some(MenuSourceConfig {

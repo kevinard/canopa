@@ -83,8 +83,8 @@ modules {
         assert_eq!(config.modules.len(), 1);
         match &config.modules[0].params {
             ModuleParams::Clock(cfg) => {
-                assert_eq!(cfg.time_format, "%I:%M %p");
-                assert_eq!(cfg.date_format, "%Y-%m-%d");
+                assert_eq!(cfg.time_format.as_deref(), Some("%I:%M %p"));
+                assert_eq!(cfg.date_format.as_deref(), Some("%Y-%m-%d"));
             }
             _ => panic!("expected ModuleParams::Clock"),
         }
@@ -97,8 +97,9 @@ modules {
         assert_eq!(config.modules.len(), 1);
         match &config.modules[0].params {
             ModuleParams::Clock(cfg) => {
-                assert_eq!(cfg.time_format, "%H:%M");
-                assert_eq!(cfg.date_format, "%a %d %b");
+                // Without patterns the clock follows the language.
+                assert_eq!(cfg.time_format, None);
+                assert_eq!(cfg.date_format, None);
             }
             _ => panic!("expected ModuleParams::Clock"),
         }

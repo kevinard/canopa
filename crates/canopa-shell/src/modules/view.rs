@@ -844,11 +844,11 @@ fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) 
 }
 
 /// A compact, full-width control within the host's Bar Panel card frame.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum PanelControlEnd {
     Navigate,
     Toggle(bool),
-    Status(&'static str),
+    Status(String),
 }
 
 pub(super) fn panel_control<'a>(
@@ -859,17 +859,23 @@ pub(super) fn panel_control<'a>(
     context: super::render::PanelModuleContext,
 ) -> iced::Element<'a, crate::app::Message> {
     use canopa_ui::accessibility::{Node, semantic};
-    use iced::widget::{column, row};
+    use iced::widget::column;
     let (title, description): (String, String) = (title.into(), description.into());
     // A switch for toggles, otherwise a button; focus is the panel's own selection.
-    let node = match end {
-        PanelControlEnd::Toggle(on) => Node::switch(title.clone(), on),
+    let node = match &end {
+        PanelControlEnd::Toggle(on) => Node::switch(title.clone(), *on),
         PanelControlEnd::Navigate | PanelControlEnd::Status(_) => Node::button(title.clone()),
     };
     let node = node
         .key(context.key.clone())
-        .description(match end {
-            PanelControlEnd::Status(status) => format!("{description}, {status}"),
+        .description(match &end {
+            PanelControlEnd::Status(status) => {
+                fl!(
+                    "shell-control-description-status",
+                    description = description.clone(),
+                    status = status.clone()
+                )
+            }
             _ => description.clone(),
         })
         .disabled(context.primary.is_none())
@@ -885,7 +891,7 @@ pub(super) fn panel_control<'a>(
         (palette.accent, crate::theme::accent_surface())
     };
     let trailing: Element<'_, Message> = match end {
-        PanelControlEnd::Navigate => crate::theme::text("›")
+        PanelControlEnd::Navigate => crate::theme::text(canopa_ui::direction::forward_chevron())
             .size(22)
             .style(canopa_ui::muted)
             .into(),
@@ -904,28 +910,37 @@ pub(super) fn panel_control<'a>(
                         })
                         .border(iced::Border::default().rounded(6))
                 });
-            row![
-                crate::theme::strong_text(if active { "On" } else { "Off" })
-                    .size(crate::theme::label_size())
-                    .style(canopa_ui::muted),
+            canopa_ui::direction::row([
+                crate::theme::strong_text(if active {
+                    fl!("shell-switch-on")
+                } else {
+                    fl!("shell-switch-off")
+                })
+                .size(crate::theme::label_size())
+                .style(canopa_ui::muted)
+                .into(),
                 container(knob)
                     .width(34)
                     .height(20)
                     .padding(4)
+                    // The knob sits at the trailing edge when on.
                     .align_x(if active {
-                        Alignment::End
+                        canopa_ui::direction::end()
                     } else {
-                        Alignment::Start
+                        canopa_ui::direction::start()
                     })
                     .align_y(Alignment::Center)
-                    .style(move |_| container::Style::default()
-                        .background(if active {
-                            palette.accent
-                        } else {
-                            palette.muted.scale_alpha(0.4)
-                        })
-                        .border(iced::Border::default().rounded(10))),
-            ]
+                    .style(move |_| {
+                        container::Style::default()
+                            .background(if active {
+                                palette.accent
+                            } else {
+                                palette.muted.scale_alpha(0.4)
+                            })
+                            .border(iced::Border::default().rounded(10))
+                    })
+                    .into(),
+            ])
             .spacing(8)
             .align_y(Alignment::Center)
             .into()
@@ -946,24 +961,32 @@ pub(super) fn panel_control<'a>(
         let status: Element<'_, Message> = if toggle {
             trailing
         } else {
-            row![description.width(Length::Fill), trailing]
+            canopa_ui::direction::row([description.width(Length::Fill).into(), trailing])
                 .spacing(6)
                 .align_y(Alignment::Center)
                 .into()
         };
         column![
-            row![icon, title].spacing(8).align_y(Alignment::Center),
+            canopa_ui::direction::row([icon.into(), title.into()])
+                .spacing(8)
+                .align_y(Alignment::Center),
             status,
         ]
         .spacing(5)
         .width(Length::Fill)
         .into()
     } else {
-        row![
-            icon,
-            column![title, description].spacing(3).width(Length::Fill),
+        canopa_ui::direction::row([
+            icon.into(),
+            column![
+                title.align_x(canopa_ui::direction::text_start()),
+                description.align_x(canopa_ui::direction::text_start())
+            ]
+            .spacing(3)
+            .width(Length::Fill)
+            .into(),
             trailing,
-        ]
+        ])
         .spacing(12)
         .align_y(Alignment::Center)
         .into()

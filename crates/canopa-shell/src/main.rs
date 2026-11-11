@@ -1,4 +1,19 @@
+/// The Shell's messages: the library's catalog, with a local `fl!` checked
+/// against the same English file.
+#[macro_use]
+mod i18n {
+    pub use canopa_shell::i18n::LOADER;
+
+    macro_rules! fl {
+        ($($args:tt)*) => {
+            canopa_i18n::checked_fl!(crate::i18n::LOADER.get(), $($args)*)
+        };
+    }
+}
 mod app;
+#[cfg(test)]
+#[allow(dead_code)]
+mod i18n_testing;
 #[cfg(test)]
 mod test_bus;
 
@@ -47,6 +62,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
 }
 
 fn main() {
+    canopa_i18n::init();
     // Keep the Pulse client name the audio server showed before the shared client.
     canopa_services::audio::set_client_name("canopa-shell");
     let command = cli::parse();

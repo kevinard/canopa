@@ -56,8 +56,15 @@ fn format_needs_second_updates(format: &str) -> bool {
     })
 }
 
-fn clock_update_cadence(time_format: &str, date_format: &str) -> ClockUpdateCadence {
-    if format_needs_second_updates(time_format) || format_needs_second_updates(date_format) {
+/// Locale formats show hours and minutes, so only explicit patterns can need
+/// second updates.
+fn clock_update_cadence(
+    time_format: Option<&str>,
+    date_format: Option<&str>,
+) -> ClockUpdateCadence {
+    if time_format.is_some_and(format_needs_second_updates)
+        || date_format.is_some_and(format_needs_second_updates)
+    {
         ClockUpdateCadence::Second
     } else {
         ClockUpdateCadence::Minute
@@ -86,19 +93,58 @@ pub(super) struct CalendarMonth {
     pub(super) today: Option<u32>,
 }
 
-/// The full date a calendar cell reads as, such as "Today, Wednesday 11 November 2026".
+/// The full date a calendar cell reads as, such as "Today, Wednesday, November 11, 2026".
 pub(super) fn calendar_day_label(year: i32, month: u32, day: u32, today: bool) -> String {
-    let date = chrono::NaiveDate::from_ymd_opt(year, month, day)
-        .map(|date| date.format("%A %-d %B %Y").to_string())
-        .unwrap_or_else(|| day.to_string());
+    let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day) else {
+        return canopa_i18n::format::integer(i64::from(day));
+    };
+    let date = canopa_i18n::format::date_with(date, canopa_i18n::format::DateStyle::Full);
     if today {
-        format!("Today, {date}")
+        fl!("shell-calendar-today-cell", date = date)
     } else {
         date
     }
 }
 
+/// The clock's time: the person's Chrono pattern, or the language's format.
+fn format_time(now: &chrono::DateTime<chrono::Local>, pattern: Option<&str>) -> String {
+    match pattern {
+        Some(pattern) => now.format(pattern).to_string(),
+        None => canopa_i18n::format::time(now.time()),
+    }
+}
+
+/// The clock's date: the person's Chrono pattern, or the language's weekday,
+/// month and day ("Wednesday, November 11"; "mercredi 11 novembre").
+fn format_date(now: &chrono::DateTime<chrono::Local>, pattern: Option<&str>) -> String {
+    match pattern {
+        Some(pattern) => now.format(pattern).to_string(),
+        None => canopa_i18n::format::weekday_month_day_with(
+            now.date_naive(),
+            canopa_i18n::format::Length::Long,
+        ),
+    }
+}
+
+/// The week's days in calendar order, from the region's first weekday.
+fn calendar_weekdays(first: chrono::Weekday) -> [chrono::Weekday; 7] {
+    let mut days = [first; 7];
+    for index in 1..7 {
+        days[index] = days[index - 1].succ();
+    }
+    days
+}
+
 pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) -> CalendarMonth {
+    calendar_month_from(today, month_offset, canopa_i18n::format::first_weekday())
+}
+
+/// The month around `today`, with weeks starting on `first_weekday`.
+pub(super) fn calendar_month_from(
+    today: chrono::NaiveDate,
+    month_offset: i32,
+    first_weekday: chrono::Weekday,
+) -> CalendarMonth {
     use chrono::{Datelike, NaiveDate};
 
     let month_index = today.year() * 12 + today.month0() as i32 + month_offset;
@@ -112,7 +158,9 @@ pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) ->
     let next_first =
         NaiveDate::from_ymd_opt(next_year, next_month, 1).expect("computed next month is valid");
     let days_in_month = (next_first - chrono::Duration::days(1)).day();
-    let leading_blanks = first.weekday().num_days_from_monday() as usize;
+    let leading_blanks = (first.weekday().num_days_from_monday() + 7
+        - first_weekday.num_days_from_monday()) as usize
+        % 7;
 
     let mut weeks = Vec::new();
     let mut day = 1;
@@ -144,12 +192,12 @@ pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) ->
 
 fn build_clock_message(
     id: crate::modules::ModuleId,
-    time_fmt: &str,
-    date_fmt: &str,
+    time_fmt: Option<&str>,
+    date_fmt: Option<&str>,
 ) -> crate::app::Message {
     let now = chrono::Local::now();
-    let time = now.format(time_fmt).to_string();
-    let date = now.format(date_fmt).to_string();
+    let time = format_time(&now, time_fmt);
+    let date = format_date(&now, date_fmt);
     crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Module(
         id,
         crate::modules::ModuleEvent::Clock(ClockEvent::Tick { time, date }),
@@ -159,8 +207,8 @@ fn build_clock_message(
 /// Clock module: shows current time and date, updated every second via subscription.
 pub(super) struct ClockModule {
     id: crate::modules::ModuleId,
-    time_format: String,
-    date_format: String,
+    time_format: Option<String>,
+    date_format: Option<String>,
     format: crate::config::FormatConfig,
     content_rotation: crate::config::ContentRotation,
 }
@@ -175,8 +223,8 @@ impl ClockModule {
     ) -> Self {
         Self::new_with_content_rotation(
             id,
-            time_format,
-            date_format,
+            Some(time_format),
+            Some(date_format),
             format,
             crate::config::ContentRotation::None,
         )
@@ -184,8 +232,8 @@ impl ClockModule {
 
     pub(super) fn new_with_content_rotation(
         id: crate::modules::ModuleId,
-        time_format: String,
-        date_format: String,
+        time_format: Option<String>,
+        date_format: Option<String>,
         format: crate::config::FormatConfig,
         content_rotation: crate::config::ContentRotation,
     ) -> Self {
@@ -251,9 +299,13 @@ impl ClockModule {
         let month = calendar_month_for(today, month_offset);
         let first = chrono::NaiveDate::from_ymd_opt(month.year, month.month, 1)
             .expect("calendar month is valid");
-        let title = first.format("%B %Y").to_string();
+        let title = canopa_i18n::format::month_year(first);
 
-        let action = |label, name: &str, key: &str, event: ClockDetailMessage, width: f32| {
+        let action = |label: String,
+                      name: &str,
+                      key: &str,
+                      event: ClockDetailMessage,
+                      width: f32| {
             let message =
                 crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Detail {
                     target: self.id.clone(),
@@ -275,30 +327,42 @@ impl ClockModule {
                 .width(width),
             )
         };
-        let controls = row![
+        let today_label = fl!("shell-calendar-today");
+        let today_width =
+            (crate::theme::text_width(&today_label, crate::theme::label_size()) + 22.0).max(54.0);
+        // Mirrored for right-to-left languages: the previous month is on the right.
+        let controls = canopa_ui::direction::row([
             // The month is announced as it changes.
             semantic(
                 Node::heading(title.clone(), 2)
                     .key("calendar-month")
                     .live(Live::Polite),
-                crate::theme::strong_text(title.clone()).width(Length::Fill),
+                crate::theme::strong_text(title.clone())
+                    .width(Length::Fill)
+                    .align_x(canopa_ui::direction::text_start()),
             ),
-            action("Today", "Today", "today", ClockDetailMessage::Today, 54.0),
             action(
-                "‹",
-                "Previous month",
+                today_label.clone(),
+                &today_label,
+                "today",
+                ClockDetailMessage::Today,
+                today_width,
+            ),
+            action(
+                canopa_ui::direction::back_chevron().to_owned(),
+                &fl!("shell-calendar-previous-month"),
                 "previous",
                 ClockDetailMessage::PreviousMonth,
-                32.0
+                32.0,
             ),
             action(
-                "›",
-                "Next month",
+                canopa_ui::direction::forward_chevron().to_owned(),
+                &fl!("shell-calendar-next-month"),
                 "next",
                 ClockDetailMessage::NextMonth,
-                32.0
+                32.0,
             ),
-        ]
+        ])
         .spacing(5)
         .align_y(Alignment::Center)
         .width(Length::Fill);
@@ -307,15 +371,12 @@ impl ClockModule {
             .spacing(10)
             .width(Length::Fill);
         let mut weekdays = row![].spacing(4).width(Length::Fill);
-        for (label, name) in [
-            ("Mon", "Monday"),
-            ("Tue", "Tuesday"),
-            ("Wed", "Wednesday"),
-            ("Thu", "Thursday"),
-            ("Fri", "Friday"),
-            ("Sat", "Saturday"),
-            ("Sun", "Sunday"),
-        ] {
+        // Calendar order from the region's first weekday, mirrored for RTL.
+        for day in
+            canopa_ui::direction::ordered(calendar_weekdays(canopa_i18n::format::first_weekday()))
+        {
+            use canopa_i18n::format::{Length as Name, weekday};
+            let (label, name) = (weekday(day, Name::Medium), weekday(day, Name::Long));
             weekdays = weekdays.push(semantic(
                 Node::new(Role::ColumnHeader).label(name).hide_text(),
                 container(
@@ -336,9 +397,11 @@ impl ClockModule {
 
         for (index, week) in month.weeks.into_iter().enumerate() {
             let mut row = row![].spacing(4).width(Length::Fill);
-            for day in week {
+            for day in canopa_ui::direction::ordered(week) {
                 let is_today = day.is_some() && day == month.today;
-                let label = day.map(|day| day.to_string()).unwrap_or_default();
+                let label = day
+                    .map(|day| canopa_i18n::format::integer(i64::from(day)))
+                    .unwrap_or_default();
                 let palette = crate::theme::palette();
                 let cell = container(crate::theme::strong_text(label))
                     .width(Length::FillPortion(1))
@@ -401,7 +464,8 @@ impl crate::modules::Module for ClockModule {
     fn subscription(&self) -> iced::Subscription<crate::app::Message> {
         // Tick only as often as the configured formats can visibly change.
         // The id is included in the key tuple so multiple clock instances subscribe independently.
-        let cadence = clock_update_cadence(&self.time_format, &self.date_format);
+        let cadence =
+            clock_update_cadence(self.time_format.as_deref(), self.date_format.as_deref());
         iced::Subscription::run_with(
             (
                 self.id.clone(),
@@ -431,7 +495,11 @@ impl crate::modules::Module for ClockModule {
                             tokio::time::sleep(sleep_for).await;
                         }
 
-                        let msg = build_clock_message(id.clone(), &time_fmt, &date_fmt);
+                        let msg = build_clock_message(
+                            id.clone(),
+                            time_fmt.as_deref(),
+                            date_fmt.as_deref(),
+                        );
                         Some((msg, (id, time_fmt, date_fmt, cadence, false)))
                     },
                 )
@@ -653,13 +721,14 @@ mod tests {
 
     #[test]
     fn calendar_cells_read_as_full_dates() {
+        let _english = crate::i18n_testing::english();
         assert_eq!(
             calendar_day_label(2026, 11, 11, true),
-            "Today, Wednesday 11 November 2026"
+            "Today, Wednesday, November 11, 2026"
         );
         assert_eq!(
             calendar_day_label(2026, 2, 1, false),
-            "Sunday 1 February 2026"
+            "Sunday, February 1, 2026"
         );
         assert_eq!(calendar_day_label(2026, 2, 30, false), "30");
     }
@@ -725,19 +794,25 @@ mod tests {
     #[test]
     fn clock_update_cadence_defaults_to_minute() {
         assert_eq!(
-            clock_update_cadence("%H:%M", "%a %d %b"),
+            clock_update_cadence(Some("%H:%M"), Some("%a %d %b")),
             ClockUpdateCadence::Minute
+        );
+        // The language's formats show minutes.
+        assert_eq!(clock_update_cadence(None, None), ClockUpdateCadence::Minute);
+        assert_eq!(
+            clock_update_cadence(None, Some("%T")),
+            ClockUpdateCadence::Second
         );
     }
 
     #[test]
     fn clock_update_cadence_uses_seconds_when_format_shows_seconds() {
         assert_eq!(
-            clock_update_cadence("%H:%M:%S", "%a %d %b"),
+            clock_update_cadence(Some("%H:%M:%S"), Some("%a %d %b")),
             ClockUpdateCadence::Second
         );
         assert_eq!(
-            clock_update_cadence("%H:%M", "%c"),
+            clock_update_cadence(Some("%H:%M"), Some("%c")),
             ClockUpdateCadence::Second
         );
     }
@@ -748,14 +823,14 @@ mod tests {
             "%_S", "%T", "%X", "%r", "%c", "%+", "%s", "%f", "%.3f", "%3f", "%6f", "%9f",
         ] {
             assert_eq!(
-                clock_update_cadence(format, "%Y"),
+                clock_update_cadence(Some(format), Some("%Y")),
                 ClockUpdateCadence::Second,
                 "{format}"
             );
         }
         for format in ["%R", "%%S", "%:z", "%::z", "%:::z", "%Z"] {
             assert_eq!(
-                clock_update_cadence(format, "%Y"),
+                clock_update_cadence(Some(format), Some("%Y")),
                 ClockUpdateCadence::Minute,
                 "{format}"
             );
@@ -765,7 +840,7 @@ mod tests {
     #[test]
     fn clock_update_cadence_ignores_escaped_percent() {
         assert_eq!(
-            clock_update_cadence("%%S %H:%M", "%Y-%m-%d"),
+            clock_update_cadence(Some("%%S %H:%M"), Some("%Y-%m-%d")),
             ClockUpdateCadence::Minute
         );
     }
@@ -790,7 +865,11 @@ mod tests {
     fn calendar_month_uses_monday_first_blank_outside_cells_and_marks_today() {
         use chrono::NaiveDate;
 
-        let month = calendar_month_for(NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(), 0);
+        let month = calendar_month_from(
+            NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(),
+            0,
+            chrono::Weekday::Mon,
+        );
 
         assert_eq!(month.year, 2026);
         assert_eq!(month.month, 5);
@@ -814,10 +893,84 @@ mod tests {
     }
 
     #[test]
+    fn calendar_weeks_start_on_the_regions_first_weekday() {
+        use chrono::{NaiveDate, Weekday};
+
+        let may = NaiveDate::from_ymd_opt(2026, 5, 23).unwrap();
+        let english = crate::i18n_testing::english();
+        // English formats are US: weeks start on Sunday. May 1, 2026 is a Friday.
+        assert_eq!(canopa_i18n::format::first_weekday(), Weekday::Sun);
+        assert_eq!(
+            calendar_month_for(may, 0).weeks[0],
+            [None, None, None, None, None, Some(1), Some(2)]
+        );
+        assert_eq!(
+            calendar_weekdays(Weekday::Sun),
+            [
+                Weekday::Sun,
+                Weekday::Mon,
+                Weekday::Tue,
+                Weekday::Wed,
+                Weekday::Thu,
+                Weekday::Fri,
+                Weekday::Sat
+            ]
+        );
+        drop(english);
+        // Saturday-first regions.
+        assert_eq!(
+            calendar_month_from(may, 0, Weekday::Sat).weeks[0],
+            [None, None, None, None, None, None, Some(1)]
+        );
+    }
+
+    #[test]
+    fn french_calendar_starts_on_monday_with_french_names() {
+        use chrono::{NaiveDate, TimeZone, Weekday};
+
+        let _french = crate::i18n_testing::select("fr", false);
+        let may = NaiveDate::from_ymd_opt(2026, 5, 23).unwrap();
+        assert_eq!(canopa_i18n::format::first_weekday(), Weekday::Mon);
+        assert_eq!(
+            calendar_month_for(may, 0).weeks[0],
+            [None, None, None, None, Some(1), Some(2), Some(3)]
+        );
+        assert_eq!(
+            calendar_day_label(2026, 11, 11, true),
+            "Aujourd’hui, mercredi 11 novembre 2026"
+        );
+        assert_eq!(canopa_i18n::format::month_year(may), "mai 2026");
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 11, 14, 30, 0)
+            .unwrap();
+        assert_eq!(format_time(&now, None), "14:30");
+        assert_eq!(format_date(&now, None), "mercredi 11 novembre");
+        // A person's own pattern stays as written.
+        assert_eq!(format_time(&now, Some("%I.%M")), "02.30");
+    }
+
+    #[test]
+    fn english_clock_follows_the_locale_hour_cycle() {
+        use chrono::TimeZone;
+
+        let _english = crate::i18n_testing::english();
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 11, 14, 30, 0)
+            .unwrap();
+        assert_eq!(format_time(&now, None).replace('\u{202f}', " "), "2:30 PM");
+        assert_eq!(format_date(&now, None), "Wednesday, November 11");
+        assert_eq!(format_time(&now, Some("%H:%M")), "14:30");
+    }
+
+    #[test]
     fn calendar_month_offset_browses_without_marking_today_in_other_months() {
         use chrono::NaiveDate;
 
-        let month = calendar_month_for(NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(), -1);
+        let month = calendar_month_from(
+            NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(),
+            -1,
+            chrono::Weekday::Mon,
+        );
 
         assert_eq!(month.year, 2026);
         assert_eq!(month.month, 4);

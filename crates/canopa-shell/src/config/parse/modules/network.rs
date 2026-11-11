@@ -22,6 +22,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<NetworkC
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
             "provider",
         ],
         &[
@@ -33,6 +34,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<NetworkC
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
             "provider",
         ],
     )?;

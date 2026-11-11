@@ -1,6 +1,9 @@
 #[macro_use]
 pub mod i18n;
 #[cfg(test)]
+#[allow(dead_code)]
+mod i18n_testing;
+#[cfg(test)]
 mod test_bus;
 pub mod external_panel {
     #[cfg(feature = "desktop")]

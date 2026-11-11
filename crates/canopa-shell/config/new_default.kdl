@@ -330,12 +330,12 @@ modules {
 
     // clock: current time and date display.
     module "clock" {
-        // Time format string using chrono strftime syntax.
-        // Default: "%H:%M" (24-hour, e.g. "14:30"). Use "%I:%M %p" for 12-hour.
-        time-format "%H:%M"
-        // Date format string using chrono strftime syntax.
-        // Default: "%a %d %b" (e.g. "Mon 12 Apr").
-        date-format "%a %d %b"
+        // Time format string using chrono strftime syntax. Without one, the
+        // clock follows the language's time format and hour cycle.
+        // time-format "%H:%M"         // 24-hour; "%-I:%M %p" for 12-hour
+        // Date format string using chrono strftime syntax. Without one, the
+        // date follows the language ("Wednesday, November 11").
+        // date-format "%a %d %b"
         // Optional display templates. Placeholders: {icon}, {value}, {time}, {date}.
         // format "{icon} {time}"
         // expanded-format "{icon} {time}\n{date}"

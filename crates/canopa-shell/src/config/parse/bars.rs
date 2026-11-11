@@ -288,6 +288,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         panel_children,
         &[
             "title",
+            "title-id",
             "presentation",
             "ui",
             "drawer-mode",
@@ -303,6 +304,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
         ],
         &[
             "title",
+            "title-id",
             "presentation",
             "ui",
             "drawer-mode",
@@ -375,10 +377,7 @@ fn parse_panel(children: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<PanelConf
     };
 
     Ok(PanelConfig {
-        title: fields::field(panel_children, ctx, "title")
-            .optional()
-            .nonempty_string()
-            .transpose()?,
+        title: fields::text_or_message(panel_children, ctx, "title", "title-id")?,
         ui: super::parse_ui(panel_children, ctx, canopa_theme::UiKind::Panel)?,
         presentation,
         drawer_mode,

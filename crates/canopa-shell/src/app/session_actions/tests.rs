@@ -62,6 +62,7 @@ fn quick_settings_follow_logind_answers() {
 fn refused_items_are_left_out_of_menus() {
     let mut menus = vec![MenuConfig {
         name: "Power".into(),
+        title: None,
         show_icons: false,
         prompt: None,
         source: None,

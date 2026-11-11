@@ -231,7 +231,7 @@ modules {
     assert_eq!(config.modules[0].module_type, "clock");
     use crate::config::ModuleParams;
     match &config.modules[0].params {
-        ModuleParams::Clock(cfg) => assert_eq!(cfg.time_format, "%H:%M"),
+        ModuleParams::Clock(cfg) => assert_eq!(cfg.time_format.as_deref(), Some("%H:%M")),
         _ => panic!("expected Clock params"),
     }
 }
@@ -1321,4 +1321,78 @@ fn osd_block_sets_key_steps_and_display_timeout_within_bounds() {
     ] {
         assert!(parse(refused).is_err(), "{refused}");
     }
+}
+
+#[test]
+fn message_ids_give_built_in_texts_and_literals_stay_literal() {
+    use crate::config::{ModuleParams, TooltipSetting};
+    let _english = crate::i18n_testing::english();
+    let config = parse(
+        r#"
+menus {
+    menu "Reboot?" title-id="shell-menu-reboot-title" prompt-id="shell-menu-unsaved-work" {
+        item label-id="shell-menu-cancel" { open-bar-panel; }
+        item "Restart now" { session "reboot"; }
+    }
+}
+modules {
+    module "session-lock" {
+        type "button"
+        label-id "shell-module-lock"
+        icon "canopa:lock"
+        tooltip-id "shell-tooltip-launcher"
+        actions { click { launch "canopa-lock"; } }
+    }
+    module "mine" {
+        type "button"
+        label "My lock"
+        icon "canopa:lock"
+        actions { click { launch "canopa-lock"; } }
+    }
+}
+"#,
+    )
+    .unwrap();
+    let menu = &config.menus[0];
+    assert_eq!(menu.name, "Reboot?");
+    assert_eq!(menu.title.as_deref(), Some("Reboot?"));
+    assert_eq!(menu.prompt.as_deref(), Some("Unsaved work may be lost."));
+    assert_eq!(menu.items[0].label, "Cancel");
+    assert_eq!(menu.items[1].label, "Restart now");
+    let ModuleParams::Button(lock) = &config.modules[0].params else {
+        panic!("button");
+    };
+    assert_eq!(lock.label, "Lock");
+    assert!(matches!(lock.tooltip, TooltipSetting::Custom(_)));
+    let ModuleParams::Button(mine) = &config.modules[1].params else {
+        panic!("button");
+    };
+    assert_eq!(mine.label, "My lock");
+
+    for refused in [
+        r#"modules { module "b" { type "button"; label "A"; label-id "shell-module-lock"; icon "x"; actions { click { launch "a"; }; }; }; }"#,
+        r#"modules { module "b" { type "button"; label-id "shell-no-such-text"; icon "x"; actions { click { launch "a"; }; }; }; }"#,
+        r#"menus { menu "m" prompt="A" prompt-id="shell-menu-unsaved-work" { item "x" { open-bar-panel; }; }; }"#,
+        r#"menus { menu "m" { item "x" label-id="shell-menu-cancel" { open-bar-panel; }; }; }"#,
+    ] {
+        assert!(parse(refused).is_err(), "{refused}");
+    }
+}
+
+#[test]
+fn shipped_defaults_follow_the_language() {
+    let _french = crate::i18n_testing::select("fr", false);
+    let (config, _) =
+        crate::config::load(&canopa_config::Request::Defaults, false).expect("defaults load");
+    assert_eq!(
+        config.bars[0].panel.title.as_deref(),
+        Some("Réglages rapides")
+    );
+    let logout = config
+        .menus
+        .iter()
+        .find(|menu| menu.name == "Log out?")
+        .unwrap();
+    assert_eq!(logout.title.as_deref(), Some("Se déconnecter\u{a0}?"));
+    assert_eq!(logout.items[0].label, "Annuler");
 }

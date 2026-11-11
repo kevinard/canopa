@@ -10,6 +10,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Notifica
         "type",
         "actions",
         "tooltip",
+        "tooltip-id",
         "format",
         "expanded-format",
         "horizontal-format",

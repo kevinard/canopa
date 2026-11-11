@@ -22,6 +22,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "fallback-icon",
             "max-length",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
@@ -33,6 +34,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<FocusedW
             "fallback-icon",
             "max-length",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
 

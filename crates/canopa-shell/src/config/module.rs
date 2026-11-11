@@ -106,11 +106,13 @@ impl ConfiguredCommand {
     }
 }
 
-/// Format strings for the clock module (AC: #4, #5).
+/// Format strings for the clock module (AC: #4, #5). `None` follows the
+/// language's time and date formats; an explicit Chrono pattern is the
+/// person's own and is used as written.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClockConfig {
-    pub time_format: String,
-    pub date_format: String,
+    pub time_format: Option<String>,
+    pub date_format: Option<String>,
     pub format: FormatConfig,
     pub content_rotation: ContentRotation,
     pub tooltip: TooltipSetting,
@@ -119,8 +121,8 @@ pub struct ClockConfig {
 impl Default for ClockConfig {
     fn default() -> Self {
         ClockConfig {
-            time_format: String::from("%H:%M"),
-            date_format: String::from("%a %d %b"),
+            time_format: None,
+            date_format: None,
             format: FormatConfig::default(),
             content_rotation: ContentRotation::None,
             tooltip: TooltipSetting::Default,
@@ -509,6 +511,8 @@ pub type ModuleActionsConfig = ActionsConfig;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuConfig {
     pub name: String,
+    /// The title shown instead of the name, from `title` or `title-id`.
+    pub title: Option<String>,
     pub show_icons: bool,
     pub prompt: Option<String>,
     pub source: Option<MenuSourceConfig>,

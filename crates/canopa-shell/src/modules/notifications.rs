@@ -11,6 +11,12 @@ use canopa_notify_client::{DoNotDisturbReason, Summary, SummarySubscription, Sup
 
 /// "Until 08:00", "Scheduled until 07:00" or "Until turned off", in local time.
 fn dnd_detail(summary: &Summary) -> Option<String> {
+    dnd_detail_in(summary, false)
+}
+
+/// The DND detail, as a sentence (`Until 08:00`) or inside one
+/// (`DND on (until 08:00)`, `inline`).
+fn dnd_detail_in(summary: &Summary, inline: bool) -> Option<String> {
     if !summary.do_not_disturb {
         return None;
     }
@@ -19,23 +25,39 @@ fn dnd_detail(summary: &Summary) -> Option<String> {
         .and_then(chrono::DateTime::from_timestamp_millis)
         .map(|until| {
             let until = until.with_timezone(&chrono::Local);
+            let time = canopa_i18n::format::time(until.time());
             if until.date_naive() == chrono::Local::now().date_naive() {
-                until.format("%H:%M").to_string()
+                time
             } else {
-                until.format("%a %H:%M").to_string()
+                use chrono::Datelike;
+                fl!(
+                    "shell-dnd-weekday-time",
+                    weekday = canopa_i18n::format::weekday(
+                        until.weekday(),
+                        canopa_i18n::format::Length::Medium
+                    ),
+                    time = time
+                )
             }
         });
-    Some(match (summary.do_not_disturb_reason, until) {
-        (Some(DoNotDisturbReason::Schedule), Some(until)) => format!("Scheduled until {until}"),
-        (_, Some(until)) => format!("Until {until}"),
-        _ => "Until turned off".to_owned(),
+    Some(match (summary.do_not_disturb_reason, until, inline) {
+        (Some(DoNotDisturbReason::Schedule), Some(until), false) => {
+            fl!("shell-dnd-scheduled-until", time = until)
+        }
+        (Some(DoNotDisturbReason::Schedule), Some(until), true) => {
+            fl!("shell-dnd-scheduled-until-inline", time = until)
+        }
+        (_, Some(until), false) => fl!("shell-dnd-until", time = until),
+        (_, Some(until), true) => fl!("shell-dnd-until-inline", time = until),
+        (_, None, false) => fl!("shell-dnd-until-turned-off"),
+        (_, None, true) => fl!("shell-dnd-until-turned-off-inline"),
     })
 }
 
-fn suppression_detail(summary: &Summary) -> Option<&'static str> {
+fn suppression_detail(summary: &Summary) -> Option<String> {
     match summary.suppression? {
-        Suppression::Fullscreen => Some("Fullscreen: banners are saved quietly"),
-        Suppression::ScreenSharing => Some("Screen sharing: banners are hidden"),
+        Suppression::Fullscreen => Some(fl!("shell-notifications-fullscreen")),
+        Suppression::ScreenSharing => Some(fl!("shell-notifications-screen-sharing")),
     }
 }
 
@@ -98,31 +120,37 @@ impl Presentation {
                 } else {
                     "󰂚"
                 },
-                count: summary.requires_attention.to_string(),
+                count: canopa_i18n::format::integer(summary.requires_attention as i64),
                 status: if summary.do_not_disturb {
                     "dnd"
                 } else {
                     "available"
                 },
                 dnd: summary.do_not_disturb,
-                help: format!(
-                    "{} require attention · DND {}{}{} · Click to open · Right-click to toggle DND",
-                    summary.requires_attention,
-                    if summary.do_not_disturb { "on" } else { "off" },
-                    dnd_detail(&summary)
-                        .map(|detail| format!(" ({})", detail.to_lowercase()))
-                        .unwrap_or_default(),
-                    suppression_detail(&summary)
-                        .map(|detail| format!(" · {detail}"))
-                        .unwrap_or_default(),
-                ),
+                help: {
+                    let mut parts = vec![
+                        fl!(
+                            "shell-notifications-attention",
+                            count = summary.requires_attention
+                        ),
+                        match dnd_detail_in(&summary, true) {
+                            Some(detail) => {
+                                fl!("shell-notifications-dnd-on-detail", detail = detail)
+                            }
+                            None => fl!("shell-notifications-dnd-off"),
+                        },
+                    ];
+                    parts.extend(suppression_detail(&summary));
+                    parts.push(fl!("shell-notifications-click-help"));
+                    parts.join(" · ")
+                },
             },
             None => Self {
                 icon: "󰂜",
                 count: "?".into(),
                 status: "unavailable",
                 dnd: false,
-                help: "Notifications unavailable · Reconnecting".into(),
+                help: fl!("shell-notifications-unavailable-reconnecting"),
             },
         }
     }
@@ -138,7 +166,7 @@ impl Presentation {
 
     fn label(self) -> String {
         if self.dnd {
-            format!("{} · DND", self.count)
+            fl!("shell-notifications-count-dnd", count = self.count)
         } else {
             self.count
         }
@@ -216,20 +244,21 @@ impl ModuleRender for NotificationsModule {
     ) -> Option<iced::Element<'_, Message>> {
         let summary = summary(state);
         let description = summary.map_or_else(
-            || "Notifications unavailable".to_owned(),
+            || fl!("shell-notifications-unavailable"),
             |s| match (dnd_detail(&s), suppression_detail(&s)) {
-                (Some(detail), _) => format!("Banners are paused · {detail}"),
-                (None, Some(suppression)) => suppression.to_owned(),
-                (None, None) => "Banners are allowed".to_owned(),
+                (Some(detail), _) => fl!("shell-notifications-banners-paused", detail = detail),
+                (None, Some(suppression)) => suppression,
+                (None, None) => fl!("shell-notifications-banners-allowed"),
             },
         );
         Some(super::view::panel_control(
             include_bytes!("../../assets/moon.svg"),
-            "Do Not Disturb",
+            fl!("shell-notifications-do-not-disturb"),
             description,
-            summary.map_or(super::view::PanelControlEnd::Status("Unavailable"), |s| {
-                super::view::PanelControlEnd::Toggle(s.do_not_disturb)
-            }),
+            summary.map_or(
+                super::view::PanelControlEnd::Status(fl!("shell-status-unavailable")),
+                |s| super::view::PanelControlEnd::Toggle(s.do_not_disturb),
+            ),
             super::render::PanelModuleContext {
                 primary: summary.and(context.primary),
                 ..context
@@ -323,11 +352,15 @@ mod tests {
             do_not_disturb_until: Some(until.timestamp_millis()),
             ..Default::default()
         };
-        let clock = until.format("%H:%M").to_string();
+        let clock = canopa_i18n::format::time(until.time());
         let expected = if until.date_naive() == chrono::Local::now().date_naive() {
             format!("Until {clock}")
         } else {
-            format!("Until {}", until.format("%a %H:%M"))
+            use chrono::Datelike;
+            format!(
+                "Until {} {clock}",
+                canopa_i18n::format::weekday(until.weekday(), canopa_i18n::format::Length::Medium)
+            )
         };
         assert_eq!(dnd_detail(&timer).unwrap(), expected);
         let schedule = Summary {

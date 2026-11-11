@@ -103,7 +103,36 @@ pub(super) fn parse_tooltip_field_ctx(
     allowed_placeholders: &[&str],
     allowed_states: &[&str],
 ) -> ConfigResult<TooltipSetting> {
-    let Some(node) = fields::field(children, module_ctx, "tooltip").optional_node()? else {
+    let tooltip = fields::field(children, module_ctx, "tooltip").optional_node()?;
+    if let Some(id_node) = fields::field(children, module_ctx, "tooltip-id").optional_node()? {
+        let ctx = module_ctx.child("tooltip-id");
+        if tooltip.is_some() {
+            return Err(ctx.node_err(
+                id_node,
+                "`tooltip` and `tooltip-id` cannot both be set",
+                Some("keep `tooltip` for your own text".into()),
+            ));
+        }
+        let Some(id) = id_node
+            .entries()
+            .first()
+            .and_then(|entry| entry.value().as_string())
+            .filter(|id| !id.is_empty() && id_node.entries().len() == 1)
+        else {
+            return Err(ctx.node_err(id_node, "expected one message ID string", None));
+        };
+        let Some(text) = crate::config::messages::template(id, allowed_placeholders) else {
+            return Err(ctx.node_err(
+                id_node,
+                format!("unknown message ID {id:?}"),
+                Some(crate::config::messages::unknown_help()),
+            ));
+        };
+        return crate::config::FormatTemplate::parse(&[&text], allowed_placeholders, id)
+            .map(TooltipSetting::Custom)
+            .map_err(|error| ctx.node_err(id_node, error.to_string(), None));
+    }
+    let Some(node) = tooltip else {
         return Ok(TooltipSetting::Default);
     };
     let ctx = module_ctx.child("tooltip");

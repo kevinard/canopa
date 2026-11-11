@@ -332,6 +332,8 @@ fn parse_menus_section(
         let name = required_menu_name(node, &menu_ctx)?;
         let show_icons = parse_menu_show_icons(node, &menu_ctx)?;
         let prompt = parse_menu_prompt(node, &menu_ctx)?;
+        let title = fields::property_text_or_message(node, &menu_ctx, "title", "title-id")?
+            .filter(|title| !title.is_empty());
         let mut source = None;
         let mut item_nodes = Vec::new();
         if let Some(menu_children) = node.children() {
@@ -367,6 +369,7 @@ fn parse_menus_section(
         let items = parse_menu_items_from_nodes(item_nodes, &menu_ctx, command_policy)?;
         menus.push(MenuConfig {
             name,
+            title,
             show_icons,
             prompt,
             source,
@@ -452,17 +455,7 @@ fn parse_panel_providers_section(
 }
 
 fn parse_menu_prompt(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<Option<String>> {
-    let mut prompt = None;
-    for entry in node.entries().iter().filter(|entry| entry.name().is_some()) {
-        if entry.name().map(|name| name.value()) != Some("prompt") {
-            continue;
-        }
-        let value = entry
-            .value()
-            .as_string()
-            .ok_or_else(|| ctx.entry_err(entry, "expected prompt string", None))?;
-        prompt = Some(value.to_string());
-    }
+    let prompt = fields::property_text_or_message(node, ctx, "prompt", "prompt-id")?;
     Ok(prompt.filter(|value| !value.is_empty()))
 }
 
@@ -523,7 +516,17 @@ fn parse_menu_item(
     ctx: &ParseCtx,
     command_policy: &CommandPolicy,
 ) -> ConfigResult<MenuItemConfig> {
-    let label = required_string_argument(node, ctx, "item label")?;
+    let label = match fields::property_text_or_message(node, ctx, "label", "label-id")? {
+        Some(_) if node.entries().iter().any(|entry| entry.name().is_none()) => {
+            return Err(ctx.node_err(
+                node,
+                "an item has either a label string or `label-id`",
+                Some("keep the label string for your own text".into()),
+            ));
+        }
+        Some(label) => label,
+        None => required_string_argument(node, ctx, "item label")?,
+    };
     let Some(children) = node.children() else {
         return Ok(MenuItemConfig {
             label,
@@ -666,7 +669,7 @@ fn parse_menu_show_icons(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<bool> {
                     .as_bool()
                     .ok_or_else(|| ctx.entry_err(entry, "expected #true or #false", None))?;
             }
-            Some("prompt") => {}
+            Some("prompt" | "prompt-id" | "title" | "title-id") => {}
             Some(name) => {
                 return Err(ctx.entry_err(entry, format!("unknown menu property {name:?}"), None));
             }

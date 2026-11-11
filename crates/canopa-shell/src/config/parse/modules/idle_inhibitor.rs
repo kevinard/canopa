@@ -11,6 +11,7 @@ pub(super) fn parse_ctx(node: &KdlNode, ctx: &ParseCtx) -> ConfigResult<IdleInhi
         "backend",
         "actions",
         "tooltip",
+        "tooltip-id",
         "icons",
         "format",
         "expanded-format",

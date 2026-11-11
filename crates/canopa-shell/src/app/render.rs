@@ -202,9 +202,11 @@ impl App {
             None
         }
         .filter(|_| {
-            let tile_width =
-                (crate::theme::text_width("Do Not Disturb", crate::theme::body_size()) + 64.0)
-                    .max(168.0);
+            let tile_width = (crate::theme::text_width(
+                &fl!("shell-notifications-do-not-disturb"),
+                crate::theme::body_size(),
+            ) + 64.0)
+                .max(168.0);
             content_width >= 2.0 * tile_width + ui.gap.px()
         })
         .map(|pair| [pair[0].id.clone(), pair[1].id.clone()]);
@@ -305,36 +307,45 @@ impl App {
                     .panel
                     .title
                     .clone()
-                    .unwrap_or_else(|| "Overview".to_owned()),
+                    .unwrap_or_else(|| fl!("shell-panel-overview")),
                 PanelContent::ModulePanel(id) => match self.modules.kind_for(id) {
-                    Some(ModuleKind::Clock) => "Calendar".to_owned(),
-                    Some(ModuleKind::Volume) => "Sound".to_owned(),
-                    Some(ModuleKind::Network) => "Network".to_owned(),
-                    Some(ModuleKind::Notifications) => "Notifications".to_owned(),
-                    Some(ModuleKind::IdleInhibitor) => "Idle inhibitor".to_owned(),
-                    Some(ModuleKind::Battery) => "Battery".to_owned(),
+                    Some(ModuleKind::Clock) => fl!("shell-panel-calendar"),
+                    Some(ModuleKind::Volume) => fl!("shell-panel-sound"),
+                    Some(ModuleKind::Network) => fl!("shell-panel-network"),
+                    Some(ModuleKind::Notifications) => fl!("shell-panel-notifications"),
+                    Some(ModuleKind::IdleInhibitor) => fl!("shell-panel-idle-inhibitor"),
+                    Some(ModuleKind::Battery) => fl!("shell-panel-battery"),
                     Some(ModuleKind::Workspaces | ModuleKind::WorkspaceItem) => {
-                        "Workspaces".to_owned()
+                        fl!("shell-panel-workspaces")
                     }
-                    Some(ModuleKind::FocusedWindow) => "Focused window".to_owned(),
+                    Some(ModuleKind::FocusedWindow) => fl!("shell-panel-focused-window"),
                     _ => self
                         .modules
                         .configured_module_name_for_instance(id)
                         .to_owned(),
                 },
-                PanelContent::Menu(name)
-                    if name == "Applications" && menu.launcher_session.is_some() =>
-                {
-                    "Launcher".into()
+                PanelContent::Menu(name) => {
+                    let configured = self
+                        .config
+                        .menus
+                        .iter()
+                        .find(|menu| &menu.name == name)
+                        .and_then(|menu| menu.title.clone());
+                    match configured {
+                        Some(title) => title,
+                        None if name == "Applications" && menu.launcher_session.is_some() => {
+                            fl!("shell-panel-launcher")
+                        }
+                        None => name.clone(),
+                    }
                 }
-                PanelContent::Menu(name) => name.clone(),
-                PanelContent::DmenuRequest => "Choose an item".to_owned(),
+                PanelContent::DmenuRequest => fl!("shell-panel-choose-item"),
                 PanelContent::ExternalProvider(content) => content
                     .document
                     .canopa()
                     .map(|snapshot| snapshot.content.title.clone())
                     .unwrap_or_else(|| match content.provider_name.as_str() {
-                        "wifi" => "Wi-Fi".into(),
+                        "wifi" => fl!("shell-panel-wifi"),
                         _ => content.provider_name.clone(),
                     }),
             }
@@ -1003,6 +1014,7 @@ mod tests {
         let config = Config {
             menus: vec![MenuConfig {
                 name: "main".into(),
+                title: None,
                 show_icons: true,
                 prompt: None,
                 source: None,
@@ -1047,6 +1059,7 @@ mod tests {
         let config = Config {
             menus: vec![MenuConfig {
                 name: "main".into(),
+                title: None,
                 show_icons: false,
                 prompt: None,
                 source: None,

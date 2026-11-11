@@ -211,11 +211,43 @@ the shared appearance's colors and reduced motion. See
 
 ## Clock formats
 
-Clock modules accept Chrono output directives in `time-format` (default `%H:%M`)
-and `date-format` (default `%a %d %b`). Invalid directives, dangling `%`, and
-parse-only directives fail configuration validation with a source location.
-Use `%%` for a literal percent. Formats showing seconds or fractions update each
-second; other formats update at minute boundaries, including escaped directives.
+Clock modules accept Chrono output directives in `time-format` and
+`date-format`. Without them, the clock follows the session language's formats
+(`LC_TIME`): its time format and hour cycle (`14:30` in French, `2:30 PM` in US
+English) and its weekday, month and day (`mercredi 11 novembre`, `Wednesday,
+November 11`). An explicit pattern is the person's own and is used as written;
+Settings' 12/24-hour switch writes one
+([ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md)). The shipped
+defaults set neither. Invalid directives, dangling `%`, and parse-only
+directives fail configuration validation with a source location. Use `%%` for
+a literal percent. Formats showing seconds or fractions update each second;
+other formats, and the language's formats, update at minute boundaries.
+
+The calendar in the clock's panel starts weeks on the region's first weekday
+(Sunday in the US, Monday in France) and names days and months in the
+session language.
+
+## Translated labels
+
+The Shell's built-in buttons, menus and panel headings name their texts by
+message ID so they follow the session language
+([translations](translations.md)); text you write stays literal. Each field
+takes either form, not both:
+
+| Literal (your text) | Message ID (built-in text) | Where |
+| --- | --- | --- |
+| `label "Lock"` | `label-id "shell-module-lock"` | `button` modules |
+| `tooltip "Launcher"` | `tooltip-id "shell-tooltip-launcher"` | every module with `tooltip` |
+| `title "Quick settings"` | `title-id "shell-panel-quick-settings"` | a bar's `panel` |
+| `menu "Log out?" title="…"` | `title-id="shell-menu-log-out-title"` | `menu` properties; the name stays the identifier for `open-menu` |
+| `prompt="Unsaved work may be lost."` | `prompt-id="shell-menu-unsaved-work"` | `menu` properties |
+| `item "Cancel" { … }` | `item label-id="shell-menu-cancel" { … }` | menu items |
+
+IDs are the `shell-` messages of
+`crates/canopa-shell/i18n/en/canopa_shell.ftl`; an unknown ID fails validation.
+A `tooltip-id` message's `{ $name }` variables become the module's `{name}`
+placeholders (`shell-tooltip-workspace` is `Workspace {index}`). IDs resolve
+when the configuration loads, in the language the Shell started with.
 
 ## Idle inhibitor
 

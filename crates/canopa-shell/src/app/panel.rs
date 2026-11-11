@@ -3191,6 +3191,7 @@ mod tests {
     fn menu_with_apps_browser() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: None,
@@ -3215,6 +3216,7 @@ mod tests {
     fn menu_with_two_entries() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: None,
@@ -3240,6 +3242,7 @@ mod tests {
     fn menu_with_entries(count: usize) -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "main".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: None,
@@ -3379,6 +3382,7 @@ mod tests {
     fn menu_search_matches_breadcrumb_as_lowest_priority() {
         let menu = crate::config::MenuConfig {
             name: "main".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: None,
@@ -3446,6 +3450,7 @@ mod tests {
     fn app_with_installed_apps_menu(apps: Vec<crate::desktop_apps::DesktopApplication>) -> App {
         let config = config_with_menu(crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             show_icons: false,
             prompt: None,
             source: Some(crate::config::MenuSourceConfig {

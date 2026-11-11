@@ -26,22 +26,20 @@ impl IdleInhibitorState {
             Self::Unavailable => "unavailable",
         }
     }
-    fn value(self) -> &'static str {
+    fn value(self) -> String {
         match self {
-            Self::Inactive => "Off",
-            Self::Active => "On",
-            Self::Pending => "…",
-            Self::Unavailable => "Unavailable",
+            Self::Inactive => fl!("shell-switch-off"),
+            Self::Active => fl!("shell-switch-on"),
+            Self::Pending => "…".into(),
+            Self::Unavailable => fl!("shell-status-unavailable"),
         }
     }
-    fn help(self) -> &'static str {
+    fn help(self) -> String {
         match self {
-            Self::Inactive => "Idle inhibitor off · Click to keep awake",
-            Self::Active => "Idle inhibitor on · Click to allow idle",
-            Self::Pending => "Updating idle inhibitor…",
-            Self::Unavailable => {
-                "Idle inhibition unavailable · Requires a visible bar and compositor support"
-            }
+            Self::Inactive => fl!("shell-idle-help-off"),
+            Self::Active => fl!("shell-idle-help-on"),
+            Self::Pending => fl!("shell-idle-help-pending"),
+            Self::Unavailable => fl!("shell-idle-help-unavailable"),
         }
     }
 }
@@ -145,8 +143,8 @@ impl IconLabel for IdleInhibitorModule {
     }
     fn label(&self, state: &ModuleState) -> String {
         match state {
-            ModuleState::Stasis(s) if s.paused && !s.manually_paused => "Inhibited".into(),
-            _ => status(state).value().into(),
+            ModuleState::Stasis(s) if s.paused && !s.manually_paused => fl!("shell-idle-inhibited"),
+            _ => status(state).value(),
         }
     }
     fn color(&self, state: &ModuleState) -> iced::Color {
@@ -194,21 +192,25 @@ impl ModuleRender for IdleInhibitorModule {
         let state = status(state);
         Some(super::view::panel_control(
             include_bytes!("../../assets/awake.svg"),
-            "Keep awake",
+            fl!("shell-idle-keep-awake"),
             match state {
-                IdleInhibitorState::Active => "Screen idle is paused",
-                IdleInhibitorState::Inactive => "Screen can idle automatically",
-                IdleInhibitorState::Pending => "Updating…",
+                IdleInhibitorState::Active => fl!("shell-idle-paused"),
+                IdleInhibitorState::Inactive => fl!("shell-idle-automatic"),
+                IdleInhibitorState::Pending => fl!("shell-idle-updating"),
                 IdleInhibitorState::Unavailable if self.config.backend == IdleBackend::Stasis => {
-                    "Stasis unavailable"
+                    fl!("shell-idle-stasis-unavailable")
                 }
-                IdleInhibitorState::Unavailable => "Unavailable on this compositor",
+                IdleInhibitorState::Unavailable => fl!("shell-idle-compositor-unavailable"),
             },
             match state {
                 IdleInhibitorState::Active => super::view::PanelControlEnd::Toggle(true),
                 IdleInhibitorState::Inactive => super::view::PanelControlEnd::Toggle(false),
-                IdleInhibitorState::Pending => super::view::PanelControlEnd::Status("Wait"),
-                IdleInhibitorState::Unavailable => super::view::PanelControlEnd::Status("Retry"),
+                IdleInhibitorState::Pending => {
+                    super::view::PanelControlEnd::Status(fl!("shell-idle-wait"))
+                }
+                IdleInhibitorState::Unavailable => {
+                    super::view::PanelControlEnd::Status(fl!("shell-action-retry"))
+                }
             },
             context,
         ))
@@ -224,16 +226,16 @@ impl ModuleRender for IdleInhibitorModule {
     fn tooltip_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
         let status = status(state);
         let help = match state {
-            ModuleState::Stasis(s) => format!(
-                "Stasis: {} · Profile: {} · Manual hold: {} · Click to toggle manual hold",
-                s.state,
-                s.profile,
-                if s.manually_paused { "on" } else { "off" }
+            ModuleState::Stasis(s) => fl!(
+                "shell-idle-stasis-help",
+                state = s.state.to_string(),
+                profile = s.profile.to_string(),
+                hold = if s.manually_paused { "on" } else { "off" }
             ),
             _ if self.config.backend == IdleBackend::Stasis => {
-                "Stasis unavailable · Start canopa-idle and install its backend".into()
+                fl!("shell-idle-stasis-help-unavailable")
             }
-            _ => status.help().into(),
+            _ => status.help(),
         };
         vec![
             ("icon", self.icon(state)),

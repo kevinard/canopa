@@ -840,6 +840,7 @@ mod tests {
     fn menu_with_two_entries() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             prompt: Some("Run".into()),
             show_icons: false,
             source: None,
@@ -869,6 +870,7 @@ mod tests {
     fn menu_with_apps_submenu() -> crate::config::MenuConfig {
         crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             prompt: Some("Run".into()),
             show_icons: false,
             source: None,
@@ -1080,6 +1082,7 @@ mod tests {
         let mut runtime = PanelRuntime::default();
         let menus = vec![crate::config::MenuConfig {
             name: "apps".into(),
+            title: None,
             prompt: Some("Run".into()),
             show_icons: true,
             source: Some(crate::config::MenuSourceConfig {

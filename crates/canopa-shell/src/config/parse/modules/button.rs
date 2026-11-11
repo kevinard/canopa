@@ -16,7 +16,7 @@ pub(super) fn parse_ctx(
     let Some(children) = node.children() else {
         return Err(ctx.node_err(
             node,
-            "missing required parameters block. Expected child nodes: label, icon, actions",
+            "missing required parameters block. Expected child nodes: label (or label-id), icon, actions",
             None,
         ));
     };
@@ -26,6 +26,7 @@ pub(super) fn parse_ctx(
         &[
             "type",
             "label",
+            "label-id",
             "icon",
             "actions",
             "format",
@@ -33,10 +34,12 @@ pub(super) fn parse_ctx(
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
         &[
             "type",
             "label",
+            "label-id",
             "icon",
             "actions",
             "format",
@@ -44,10 +47,17 @@ pub(super) fn parse_ctx(
             "horizontal-format",
             "content-rotation",
             "tooltip",
+            "tooltip-id",
         ],
     )?;
 
-    let label = fields::field(children, ctx, "label").required_nonempty_string()?;
+    let label = fields::text_or_message(children, ctx, "label", "label-id")?.ok_or_else(|| {
+        ctx.child("label").err(
+            None,
+            "missing required parameter. Expected: a string value",
+            Some("set `label \"…\"`, or `label-id` for a built-in text".into()),
+        )
+    })?;
 
     let icon = fields::field(children, ctx, "icon").required_nonempty_string()?;
 
