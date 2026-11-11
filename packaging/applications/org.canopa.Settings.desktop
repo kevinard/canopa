@@ -1,6 +1,8 @@
 [Desktop Entry]
 Name=Canopa Settings
+Name[fr]=Paramètres Canopa
 Comment=Configure displays, input, appearance and idle behavior
+Comment[fr]=Configurer les écrans, les périphériques d’entrée, l’apparence et la mise en veille
 Exec=canopa-settings
 TryExec=canopa-settings
 Icon=preferences-system
@@ -8,3 +10,4 @@ Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
 Keywords=Display;Monitor;Keyboard;Mouse;Touchpad;Wallpaper;Power;
+Keywords[fr]=Affichage;Écran;Clavier;Souris;Pavé tactile;Fond d’écran;Énergie;

@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Canopa
 Comment=Canopa desktop on Niri
+Comment[fr]=Bureau Canopa sur Niri
 Exec=env XDG_SESSION_TYPE=wayland XDG_SESSION_DESKTOP=canopa XDG_CURRENT_DESKTOP=canopa:niri niri-session
 TryExec=niri-session
 Type=Application
