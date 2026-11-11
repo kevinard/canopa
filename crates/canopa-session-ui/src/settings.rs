@@ -8,7 +8,13 @@ use std::{
 };
 
 pub const PASSIVE_WIDGETS: &[&str] = &[
-    "username", "avatar", "keyboard", "battery", "media", "weather",
+    "username",
+    "avatar",
+    "keyboard",
+    "battery",
+    "media",
+    "weather",
+    "notifications",
 ];
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -126,6 +132,11 @@ impl Settings {
             value.layout.regions[1]
                 .widgets
                 .retain(|name| name != "keyboard");
+            // Notify's read-only lock-screen feed: critical items only by default.
+            value.layout.regions[1]
+                .widgets
+                .insert(0, "notifications".into());
+            value.widgets.push("notifications".into());
         }
         let mut explicit_layout = false;
         let mut seen = HashSet::new();

@@ -121,6 +121,7 @@ enum Update {
     Authentication { generation: u64, event: auth::Event },
     Battery(canopa_widgets::battery::BatteryState),
     Media(Option<String>),
+    Notifications(Option<String>),
     Custom { name: String, text: Option<String> },
 }
 struct App {
@@ -196,6 +197,14 @@ fn initialize(
                                 return;
                             }
                             ui.media = label;
+                        }
+                    }
+                    Update::Notifications(lines) => {
+                        if let Some(ui) = &mut app.ui {
+                            if ui.notifications == lines {
+                                return;
+                            }
+                            ui.notifications = lines;
                         }
                     }
                     Update::Custom { name, text } => {
@@ -1639,6 +1648,7 @@ fn start_widgets(settings: &Settings, updates: channel::Sender<Update>) -> Optio
             .send(match event {
                 Widget::Battery(v) => Update::Battery(v),
                 Widget::Media(v) => Update::Media(v),
+                Widget::Notifications(v) => Update::Notifications(v),
                 Widget::Custom { name, text } => Update::Custom { name, text },
             })
             .is_ok()

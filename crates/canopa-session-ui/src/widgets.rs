@@ -3,7 +3,92 @@ use std::time::Duration;
 pub enum Update {
     Battery(canopa_widgets::battery::BatteryState),
     Media(Option<String>),
-    Custom { name: String, text: Option<String> },
+    /// Notify's lock-screen feed, already filtered by its lock-screen policy.
+    Notifications(Option<String>),
+    Custom {
+        name: String,
+        text: Option<String>,
+    },
+}
+
+/// One line per entry, then "+N more", within the text widget's four lines;
+/// None when there is nothing to show.
+pub fn notification_lines(snapshot: &canopa_notify_client::LockScreenSnapshot) -> Option<String> {
+    let total = snapshot.entries.len() + snapshot.more as usize;
+    let shown = if total > 4 { 3 } else { total };
+    let mut lines: Vec<_> = snapshot
+        .entries
+        .iter()
+        .take(shown)
+        .map(|entry| entry.line())
+        .collect();
+    if total > shown {
+        lines.push(format!("+{} more", total - shown));
+    }
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use canopa_notify_client::{LockScreenEntry, LockScreenSnapshot};
+
+    fn entry(app: &str) -> LockScreenEntry {
+        LockScreenEntry {
+            app: app.into(),
+            text: "New notification".into(),
+            critical: true,
+        }
+    }
+
+    #[test]
+    fn notification_lines_fit_four_lines() {
+        assert_eq!(notification_lines(&LockScreenSnapshot::default()), None);
+        let two = LockScreenSnapshot {
+            entries: vec![entry("Clock"), entry("Phone")],
+            more: 0,
+        };
+        assert_eq!(
+            notification_lines(&two).unwrap(),
+            "Clock — New notification\nPhone — New notification"
+        );
+        let many = LockScreenSnapshot {
+            entries: vec![entry("A"), entry("B"), entry("C"), entry("D")],
+            more: 2,
+        };
+        let lines = notification_lines(&many).unwrap();
+        assert_eq!(lines.lines().count(), 4);
+        assert!(lines.ends_with("+3 more"));
+    }
+}
+
+/// Follow the feed and reconnect while the locker runs. Read-only: the
+/// locker never sends actions or acknowledgements to Notify.
+async fn follow_notifications(updates: Sink) {
+    use canopa_notify_client::LockScreenSubscription;
+    loop {
+        if let Ok(socket) = canopa_notify_client::default_socket()
+            && let Ok((mut subscription, mut snapshot)) =
+                LockScreenSubscription::connect(&socket).await
+        {
+            loop {
+                if updates
+                    .send(Update::Notifications(notification_lines(&snapshot)))
+                    .is_err()
+                {
+                    return;
+                }
+                match subscription.next().await {
+                    Ok(Some(next)) => snapshot = next,
+                    _ => break,
+                }
+            }
+        }
+        if updates.send(Update::Notifications(None)).is_err() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
 #[derive(Clone)]
 struct Sink(std::sync::Arc<dyn Fn(Update) -> bool + Send + Sync>);
@@ -33,13 +118,14 @@ pub fn start(
     let updates = Sink(std::sync::Arc::new(notify));
     let battery = settings.widgets.iter().any(|w| w == "battery");
     let media = settings.widgets.iter().any(|w| w == "media");
+    let notifications = settings.widgets.iter().any(|w| w == "notifications");
     let scripts: Vec<_> = settings
         .custom
         .iter()
         .filter(|(name, _)| settings.widgets.contains(name))
         .map(|(n, w)| (n.clone(), w.clone()))
         .collect();
-    if !battery && !media && scripts.is_empty() {
+    if !battery && !media && !notifications && scripts.is_empty() {
         return None;
     }
     let (shutdown, stop) = tokio::sync::oneshot::channel();
@@ -83,6 +169,9 @@ pub fn start(
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 });
+            }
+            if notifications {
+                tasks.spawn(follow_notifications(updates.clone()));
             }
             if media {
                 let updates=updates.clone();

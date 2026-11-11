@@ -264,7 +264,9 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
                         }
                         app.controller.ui.battery = Some(v)
                     }
-                    Update::Widget(widgets::Update::Media(_)) => {}
+                    Update::Widget(
+                        widgets::Update::Media(_) | widgets::Update::Notifications(_),
+                    ) => {}
                     Update::Widget(widgets::Update::Custom { name, text }) => {
                         if app.controller.ui.custom.get(&name) == text.as_ref() {
                             return;

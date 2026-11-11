@@ -47,6 +47,8 @@ pub struct SessionView {
     pub action_labels: Option<(String, String)>,
     pub battery: Option<canopa_widgets::battery::BatteryState>,
     pub media: Option<String>,
+    /// Lock-screen notification lines from Notify, display text only.
+    pub notifications: Option<String>,
     pub custom: std::collections::BTreeMap<String, String>,
 }
 impl SessionView {
@@ -78,6 +80,7 @@ impl SessionView {
             action_labels: None,
             battery: None,
             media: None,
+            notifications: None,
             custom: Default::default(),
         })
     }
@@ -279,6 +282,7 @@ impl SessionView {
                     )
                 }),
                 "media" => self.media.clone(),
+                "notifications" => self.notifications.clone(),
                 "weather" => settings
                     .weather_file
                     .as_deref()
