@@ -100,6 +100,13 @@ fn owned_value_to_menu_item(
         icon_name,
         children: vec![],
         is_separator,
+        toggle: crate::surface::menu_popup::MenuToggle::from_dbusmenu(
+            &prop_str(&props, "toggle-type"),
+            props
+                .get("toggle-state")
+                .and_then(|ov| ov.downcast_ref::<i32>().ok())
+                .unwrap_or(-1),
+        ),
     })
 }
 
@@ -209,6 +216,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                toggle: None,
             })
             .collect();
 

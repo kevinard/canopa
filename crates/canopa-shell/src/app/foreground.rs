@@ -1401,6 +1401,7 @@ mod tests {
                     icon_name: None,
                     children: Vec::new(),
                     is_separator: false,
+                    toggle: None,
                 })
                 .collect(),
             anchor: (0, 0),

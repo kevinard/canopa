@@ -23,6 +23,27 @@ pub struct MenuItem {
     /// Submenus -- not rendered in MVP; retained for future nesting support.
     pub children: Vec<MenuItem>,
     pub is_separator: bool,
+    /// A check or radio item's state (DBusMenu `toggle-type`, `toggle-state`).
+    pub toggle: Option<MenuToggle>,
+}
+
+/// A checkable menu item and whether it is checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuToggle {
+    Check(bool),
+    Radio(bool),
+}
+
+impl MenuToggle {
+    /// DBusMenu marks indeterminate (and unknown) state with -1.
+    pub fn from_dbusmenu(kind: &str, state: i32) -> Option<Self> {
+        let checked = state == 1;
+        match kind {
+            "checkmark" => Some(Self::Check(checked)),
+            "radio" => Some(Self::Radio(checked)),
+            _ => None,
+        }
+    }
 }
 
 /// Render a popup menu from a `MenuTree`.
@@ -39,6 +60,7 @@ pub fn view_menu_popup<'a>(
     hovered_item: Option<&str>,
     focused_item: Option<&str>,
 ) -> iced::Element<'a, crate::app::Message> {
+    use canopa_ui::accessibility::{Node, Role, semantic};
     use iced::Length;
     use iced::widget::{column, container, rule};
 
@@ -74,32 +96,43 @@ pub fn view_menu_popup<'a>(
                         )
                     });
                 let row = container(row).padding(canopa_ui::padding(row_ui.margin));
+                let node = match item.toggle {
+                    Some(MenuToggle::Check(on)) => Node::new(Role::MenuItemCheckBox).toggled(on),
+                    Some(MenuToggle::Radio(on)) => Node::new(Role::MenuItemRadio).toggled(on),
+                    None => Node::new(Role::MenuItem),
+                }
+                .label(item.label.clone())
+                .key(format!("tray-item-{}", item.id))
+                .disabled(!item.enabled)
+                .focused(focused);
 
                 if item.enabled {
                     let menu_item_id: i32 = item.id.parse().unwrap_or(0);
                     let menu_path = menu_path.clone();
                     let service = service.to_string();
                     let item_id_enter = item.id.clone();
+                    let select =
+                        crate::app::Message::Menu(crate::app::messages::MenuEvent::ItemSelected {
+                            service,
+                            menu_item_id,
+                            menu_path,
+                        });
                     // on_exit is NOT on individual items -- it belongs on the container below.
                     // Per-item on_exit fires when moving to an adjacent item, momentarily clearing
                     // the hover state before the next on_enter fires, causing inconsistent highlights.
-                    iced::widget::mouse_area(row)
-                        .on_press(crate::app::Message::Menu(
-                            crate::app::messages::MenuEvent::ItemSelected {
-                                service,
-                                menu_item_id,
-                                menu_path,
-                            },
-                        ))
-                        .on_enter(crate::app::Message::Menu(
-                            crate::app::messages::MenuEvent::ItemHoverEnter {
-                                window,
-                                item_id: item_id_enter,
-                            },
-                        ))
-                        .into()
+                    semantic(
+                        node.on_click(Some(select.clone())),
+                        iced::widget::mouse_area(row).on_press(select).on_enter(
+                            crate::app::Message::Menu(
+                                crate::app::messages::MenuEvent::ItemHoverEnter {
+                                    window,
+                                    item_id: item_id_enter,
+                                },
+                            ),
+                        ),
+                    )
                 } else {
-                    row.into()
+                    semantic(node, row)
                 }
             }
         })
@@ -108,9 +141,12 @@ pub fn view_menu_popup<'a>(
     // Wrap the entire item list in a mouse_area so hover clears only when the pointer
     // leaves the menu, not when crossing between adjacent items.
     let menu_content = iced::widget::mouse_area(
-        container(column(items).spacing(ui.gap.px()))
-            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui))
-            .padding(canopa_ui::content_padding(ui)),
+        container(semantic(
+            Node::menu("Menu").key("tray-menu"),
+            column(items).spacing(ui.gap.px()),
+        ))
+        .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui))
+        .padding(canopa_ui::content_padding(ui)),
     )
     .on_exit(crate::app::Message::Menu(
         crate::app::messages::MenuEvent::ItemHoverExit(window),
@@ -204,6 +240,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dbusmenu_check_and_radio_items_carry_their_state() {
+        assert_eq!(
+            MenuToggle::from_dbusmenu("checkmark", 1),
+            Some(MenuToggle::Check(true))
+        );
+        assert_eq!(
+            MenuToggle::from_dbusmenu("radio", 0),
+            Some(MenuToggle::Radio(false))
+        );
+        // Indeterminate is not checked.
+        assert_eq!(
+            MenuToggle::from_dbusmenu("checkmark", -1),
+            Some(MenuToggle::Check(false))
+        );
+        assert_eq!(MenuToggle::from_dbusmenu("", 1), None);
+    }
+
+    #[test]
     fn popup_size_single_item() {
         let tree = MenuTree {
             items: vec![MenuItem {
@@ -214,6 +268,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                toggle: None,
             }],
             anchor: (0, 0),
             screen_size: (0, 0),
@@ -237,6 +292,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
                 MenuItem {
                     id: "0".into(),
@@ -246,6 +302,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: true,
+                    toggle: None,
                 },
                 MenuItem {
                     id: "2".into(),
@@ -255,6 +312,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
             ],
             anchor: (0, 0),
@@ -277,6 +335,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
                 MenuItem {
                     id: "2".into(),
@@ -286,6 +345,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
             ],
             anchor: (0, 0),
@@ -308,6 +368,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
                 MenuItem {
                     id: "2".into(),
@@ -317,6 +378,7 @@ mod tests {
                     icon_name: None,
                     children: vec![],
                     is_separator: false,
+                    toggle: None,
                 },
             ],
             anchor: (0, 0),
@@ -338,6 +400,7 @@ mod tests {
                 icon_name: None,
                 children: vec![],
                 is_separator: false,
+                toggle: None,
             }],
             anchor: (100, 200),
             screen_size: (0, 0),
@@ -356,6 +419,7 @@ mod tests {
             icon_name: None,
             children: vec![],
             is_separator: true,
+            toggle: None,
         };
         assert!(sep.is_separator);
         assert!(sep.label.is_empty());
@@ -371,6 +435,7 @@ mod tests {
             icon_name: None,
             children: vec![],
             is_separator: false,
+            toggle: None,
         };
         assert!(!item.enabled);
     }

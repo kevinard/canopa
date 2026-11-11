@@ -28,20 +28,27 @@ impl App {
 
         // Tray menus use compositor-managed popup grabs for outside dismissal.
         if let Some(model) = self.popup_render_model(window) {
+            let root = window_node(Surface::Menu, window, "Tray menu");
             if let Some(session) = self
                 .foreground
                 .menu_session(window)
                 .filter(|session| session.search_enabled())
             {
-                return render_searchable_sni_popup_model(model, window, session);
+                return semantic(
+                    root,
+                    render_searchable_sni_popup_model(model, window, session),
+                );
             }
             let hovered_item = self.foreground.hovered_menu_item(window);
             let focused_item = self.foreground.focused_menu_item(window);
-            return render_popup_model(
-                model,
-                window,
-                hovered_item.as_deref(),
-                focused_item.as_deref(),
+            return semantic(
+                root,
+                render_popup_model(
+                    model,
+                    window,
+                    hovered_item.as_deref(),
+                    focused_item.as_deref(),
+                ),
             );
         }
 
@@ -1161,11 +1168,28 @@ fn render_searchable_sni_popup_model<'a>(
     let entries_snapshot = session.entries_snapshot();
     let focused_index = session.focused_index();
     let hovered_index = session.hovered_index();
-    let search = crate::theme::input("Search", session.search_query())
-        .on_input(move |query| {
-            Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
-        })
-        .width(Length::Fill);
+    let selected = focused_index
+        .and_then(|index| entries_snapshot.get(index))
+        .and_then(|entry| match &entry.target {
+            super::selectable_menu_session::SelectableMenuEntryTarget::SniMenuItem(id) => {
+                Some(format!("tray-item-{id}"))
+            }
+            _ => None,
+        });
+    let search = semantic(
+        Node::search_input("Search", session.search_query())
+            .key("tray-menu-search")
+            .controls("tray-menu")
+            .active_descendant(selected)
+            .on_text(move |query| {
+                Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
+            }),
+        crate::theme::input("Search", session.search_query())
+            .on_input(move |query| {
+                Message::Menu(super::messages::MenuEvent::SearchChanged { window, query })
+            })
+            .width(Length::Fill),
+    );
 
     let mut entries = column![].spacing(ui.gap.px());
     for (index, entry) in entries_snapshot.iter().enumerate() {
@@ -1194,19 +1218,25 @@ fn render_searchable_sni_popup_model<'a>(
         let service = model.service.to_string();
         let menu_path = model.menu_path.clone();
         let hover_id = item_id.clone();
-        entries = entries.push(
+        let select = Message::Menu(super::messages::MenuEvent::ItemSelected {
+            service,
+            menu_item_id,
+            menu_path,
+        });
+        entries = entries.push(semantic(
+            Node::option(entry.label.clone(), focused_index == Some(index))
+                .key(format!("tray-item-{item_id}"))
+                .position(index + 1, entries_snapshot.len())
+                .on_click(Some(select.clone())),
             mouse_area(row)
                 .on_enter(Message::Menu(super::messages::MenuEvent::ItemHoverEnter {
                     window,
                     item_id: hover_id,
                 }))
-                .on_press(Message::Menu(super::messages::MenuEvent::ItemSelected {
-                    service,
-                    menu_item_id,
-                    menu_path,
-                })),
-        );
+                .on_press(select),
+        ));
     }
+    let entries = semantic(Node::list("Menu").key("tray-menu"), entries);
 
     let menu = mouse_area(
         container(column![search, entries].spacing(4))
@@ -1486,6 +1516,7 @@ mod tests {
                         icon_name: None,
                         children: vec![],
                         is_separator: false,
+                        toggle: None,
                     }],
                     anchor: (0, 0),
                     screen_size: (0, 0),
