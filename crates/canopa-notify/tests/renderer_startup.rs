@@ -33,6 +33,7 @@ async fn unresponsive_wayland_startup_preserves_history_and_does_not_publish_leg
         let _compositor = UnixListener::bind(&display).unwrap();
         let mut command = assert_cmd::cargo::cargo_bin_cmd!("canopa-notify");
         command
+            .env("CANOPA_LANGUAGE", "en")
             .env("WAYLAND_DISPLAY", display)
             .env_remove("WAYLAND_SOCKET")
             .env("XDG_RUNTIME_DIR", temp.path())

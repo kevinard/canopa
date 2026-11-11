@@ -1,6 +1,5 @@
 use crate::support;
 
-use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions};
 use canopa_panel_protocol::{ProviderResponse, RichBodyImageSource, RichBodySegment};
 use predicates::str::contains;
@@ -16,7 +15,7 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("missing.sock");
 
-    Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args(["panel-provider", "--socket", support::path_arg(&socket)])
         .assert()

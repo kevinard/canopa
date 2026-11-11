@@ -1,6 +1,5 @@
 use crate::support;
 
-use assert_cmd::Command;
 use predicates::str::contains;
 
 #[test]
@@ -8,7 +7,7 @@ fn ctl_status_reports_clear_unavailable_error_when_daemon_is_not_running() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");
 
-    Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "status"])
         .assert()
@@ -30,14 +29,14 @@ fn headless_daemon_reports_available_through_private_runtime_socket() {
 
     support::wait_for_status_with_child(&socket, &mut daemon);
 
-    Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "status"])
         .assert()
         .success()
         .stdout(contains("Canopa Notify daemon available"));
 
-    let status = Command::cargo_bin("canopa-notify")
+    let status = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -71,7 +70,7 @@ fn daemon_fails_clearly_when_another_instance_owns_the_runtime_socket() {
     ]);
     support::wait_for_status_with_child(&socket, &mut first);
 
-    Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args([
             "daemon",
@@ -106,7 +105,7 @@ async fn rejected_duplicate_startup_preserves_active_notification_history() {
         .unwrap();
     // A listening endpoint represents a running owner; inspect state through Daemon.
     let _owner = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args([
             "daemon",
@@ -178,7 +177,7 @@ fn cli_do_not_disturb_survives_a_daemon_restart() {
     ];
     let mut daemon = support::spawn_canopa_notify(args);
     support::wait_for_status_with_child(&socket, &mut daemon);
-    let enabled = Command::cargo_bin("canopa-notify")
+    let enabled = crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "dnd", "on"])
         .output()
@@ -192,7 +191,7 @@ fn cli_do_not_disturb_survives_a_daemon_restart() {
     );
     let mut daemon = support::spawn_canopa_notify(args);
     support::wait_for_status_with_child(&socket, &mut daemon);
-    let status = Command::cargo_bin("canopa-notify")
+    let status = crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "dnd"])
         .output()
@@ -226,7 +225,7 @@ fn oversized_control_command_is_rejected_without_disrupting_the_daemon() {
     let _ = stream.write_all(request.as_bytes());
     let mut reply = String::new();
     let _ = stream.read_to_string(&mut reply);
-    let status = Command::cargo_bin("canopa-notify")
+    let status = crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "status"])
         .output()

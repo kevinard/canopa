@@ -75,7 +75,7 @@ async fn failed_presentation_installation_preserves_configuration_without_exposi
 }
 
 fn cli(socket: &std::path::Path, arguments: &[&str]) -> std::process::Output {
-    assert_cmd::Command::cargo_bin("canopa-notify")
+    crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(socket)])
         .args(arguments)
@@ -501,7 +501,7 @@ fn fifo_configuration_fails_promptly_without_waiting_for_a_writer() {
         0,
     )
     .unwrap();
-    let output = assert_cmd::Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "daemon",

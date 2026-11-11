@@ -19,8 +19,18 @@ pub fn path_arg(path: &Path) -> &str {
     path.to_str().expect("test path must be valid UTF-8")
 }
 
+/// Spawned Notify processes show English text whatever the machine's locale.
 pub fn canopa_notify_command() -> StdCommand {
-    StdCommand::new(canopa_notify_bin())
+    let mut command = StdCommand::new(canopa_notify_bin());
+    command.env("CANOPA_LANGUAGE", "en");
+    command
+}
+
+/// `assert_cmd`'s command for the Notify binary, in English.
+pub fn cargo_bin() -> Result<Command, assert_cmd::cargo::CargoError> {
+    let mut command = Command::cargo_bin("canopa-notify")?;
+    command.env("CANOPA_LANGUAGE", "en");
+    Ok(command)
 }
 
 pub fn spawn_canopa_notify<I, S>(args: I) -> Child
@@ -58,7 +68,7 @@ pub fn wait_for_status_with_child(socket: &Path, daemon: &mut Child) {
             panic!("daemon exited before status was available: {status}");
         }
 
-        let assertion = Command::cargo_bin("canopa-notify")
+        let assertion = cargo_bin()
             .unwrap()
             .args(["ctl", "--socket", path_arg(socket), "status"])
             .assert();

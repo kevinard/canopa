@@ -1,6 +1,5 @@
 use crate::support;
 
-use assert_cmd::Command;
 use canopa_notify::{Daemon, DaemonOptions, DeliveryOutcome, Urgency, UserRule};
 use futures_util::StreamExt;
 use std::collections::HashMap;
@@ -93,7 +92,7 @@ async fn dev_dbus_notify_call_creates_active_notification_visible_through_contro
         ]
     );
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -174,7 +173,7 @@ async fn dev_dbus_action_icons_hint_preserves_action_icon_names() {
         .await
         .unwrap();
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -260,7 +259,7 @@ async fn dev_dbus_notify_accepts_body_image_markup_without_advertising_capabilit
 
     assert!(id > 0);
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -352,7 +351,7 @@ async fn dev_dbus_notify_replacement_returns_existing_id_and_updates_active_noti
 
     assert_eq!(replacement_id, first_id);
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -439,7 +438,7 @@ async fn dev_dbus_notify_fixed_replacement_token_updates_prior_notification() {
 
     assert_eq!(replacement_id, 9999);
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -532,7 +531,7 @@ async fn dev_dbus_noop_notification_returns_nonzero_sender_id_without_history() 
     let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(id,)).await;
     assert!(close_result.is_err());
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -631,7 +630,7 @@ async fn dev_dbus_headless_transient_notification_does_not_expire_without_displa
     let (closed_id, reason): (u32, u32) = signal.body().deserialize().unwrap();
     assert_eq!((closed_id, reason), (id, 3));
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -804,7 +803,7 @@ async fn dev_dbus_dropped_replacement_preserves_original_sender_lifecycle() {
             .is_err()
     );
 
-    let output = Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",

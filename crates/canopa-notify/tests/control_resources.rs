@@ -63,7 +63,7 @@ fn cli_with_reply(arguments: &[&str], reply: Vec<u8>) -> std::process::Output {
         assert!(line.ends_with('\n'));
         let _ = reader.get_mut().write_all(&reply);
     });
-    let output = assert_cmd::Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket)])
         .args(arguments)
@@ -240,7 +240,7 @@ fn oversized_cli_request_is_rejected_before_connecting_or_sending() {
     listener.set_nonblocking(true).unwrap();
     let oversized_path = format!("/{}", "x".repeat(70_000));
     // The peer never replies; local admission must not need a connection or timeout.
-    let output = assert_cmd::Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -295,7 +295,7 @@ fn cli_request_limit_counts_encoded_bytes_and_accepts_the_exact_boundary() {
     // JSON escaping, rather than the path's raw size, crosses the admission limit.
     let escaped_path = format!("/{}", "\\".repeat(35_000));
     assert!(escaped_path.len() < 65_536 && command(&escaped_path).len() > 65_536);
-    let output = assert_cmd::Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args([
             "ctl",
@@ -347,7 +347,7 @@ fn cli_deadline_covers_slow_drip_replies_without_retrying_the_command() {
         );
     });
     let started = std::time::Instant::now();
-    let output = assert_cmd::Command::cargo_bin("canopa-notify")
+    let output = crate::support::cargo_bin()
         .unwrap()
         .args(["ctl", "--socket", support::path_arg(&socket), "clear"])
         .timeout(Duration::from_secs(36))
