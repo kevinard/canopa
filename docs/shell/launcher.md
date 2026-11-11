@@ -28,6 +28,12 @@ session actions and file/folder names.
 Choose a scope below the search field to narrow the current query. Choose **All**
 to search across sources again. You can also type a scope directly, as in
 `apps firefox`, `windows notes`, `settings volume`, or `files budget`.
+The English scope keywords (`apps`, `files`, `windows`, `settings`, `clip`,
+`snip`, `emoji`, `symbol`) always work; the session language adds its own
+(`shell-keyword-*` in the Shell's translations), such as `fichiers budget` or
+`presse-papiers` in French. An extension with the same keyword keeps priority.
+Controls and session actions also match search words in the session language
+beside the English ones.
 Window rows show the application and workspace. Enter switches to the existing
 window and a secondary action can launch another instance. Up and Down select a
 result. Enter performs the selected result’s first action. Press Tab to filter the selected result’s
@@ -144,8 +150,10 @@ calculator command language.
 
 Type a numerical amount, a source unit, `to` or `in`, and a target unit. `->` and
 `→` also work as conversion separators. Conversions are recognized during ordinary
-search and in explicit `=` mode. Enter copies the displayed value including its
-unit, using the same calculator action.
+search and in explicit `=` mode. Results are shown with the session language's
+grouping and decimal separator (`3,600,000 J`; `3 600 000 J` in French); Enter
+copies the plain value with its unit (`3600000 J`), using the same calculator
+action.
 
 | Query | Result |
 | --- | --- |
