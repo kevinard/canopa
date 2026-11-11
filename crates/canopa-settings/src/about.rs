@@ -174,11 +174,19 @@ impl SystemInfo {
                         Some((vendor, Some(device))) => {
                             format!("{} {device}", short_vendor(&vendor))
                         }
-                        Some((vendor, None)) => format!("{} graphics", short_vendor(&vendor)),
-                        None => format!("Graphics {vendor:04x}:{id:04x}"),
+                        Some((vendor, None)) => fl!(
+                            "settings-about-graphics-vendor",
+                            vendor = short_vendor(&vendor)
+                        ),
+                        None => fl!(
+                            "settings-about-graphics-id",
+                            id = format!("{vendor:04x}:{id:04x}")
+                        ),
                     },
                     _ => match &driver {
-                        Some(driver) => format!("Graphics ({driver})"),
+                        Some(driver) => {
+                            fl!("settings-about-graphics-driver", driver = driver.as_str())
+                        }
                         None => continue,
                     },
                 };

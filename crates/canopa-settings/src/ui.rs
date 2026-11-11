@@ -2493,6 +2493,34 @@ mod tests {
     }
 
     #[test]
+    fn every_page_renders_right_to_left_in_the_pseudo_locale() {
+        crate::i18n::isolated(
+            concat!(
+                module_path!(),
+                "::every_page_renders_right_to_left_in_the_pseudo_locale"
+            ),
+            || {
+                let _language = crate::i18n::Language::english();
+                canopa_i18n::select(canopa_i18n::Selection {
+                    pseudo: true,
+                    ..Default::default()
+                });
+                assert!(direction::is_rtl());
+                let (_root, mut state) = fresh();
+                for entry in registry::PAGES {
+                    let _ = state.update(Message::Page(entry.page));
+                    drop(state.view());
+                }
+                let title = Page::Displays.title();
+                assert_ne!(title, "Displays");
+                assert_eq!(canopa_i18n::pseudo::strip(&title), "Displays");
+                // English words still find pages.
+                assert_eq!(registry::search("display")[0].page, Page::Displays);
+            },
+        );
+    }
+
+    #[test]
     fn reload_discards_only_the_current_page() {
         let (_root, mut state) = fresh();
         let _ = state.update(Message::Page(Page::Input));

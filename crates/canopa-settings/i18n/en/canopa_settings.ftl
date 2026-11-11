@@ -966,6 +966,10 @@ settings-about-memory = Memory
 # Installed memory. $value is a number of gibibytes.
 settings-about-memory-size = { $value } GiB
 settings-about-graphics = Graphics
+# A graphics adapter known only by its maker ($vendor), PCI id ($id) or driver.
+settings-about-graphics-vendor = { $vendor } graphics
+settings-about-graphics-id = Graphics { $id }
+settings-about-graphics-driver = Graphics ({ $driver })
 settings-about-disk-capacity = Disk capacity
 # One disk: its model and formatted size.
 settings-about-disk = { $name } ({ $size })
@@ -1117,6 +1121,7 @@ settings-error-shortcut-invalid = { $action } needs a valid shortcut.
 settings-error-launcher-not-loaded = Load launcher preferences before saving.
 settings-error-history-limit = Enter a history limit from 1 to { $limit }.
 settings-error-bar-exists = A bar with that name already exists.
+settings-error-widgets-changed = The shared configuration changed outside the Widgets page. Reload Widgets before saving.
 settings-error-bar-name = Enter a bar name of 1 to 80 bytes.
 settings-error-bar-limit = This editor can create up to 32 bars.
 # $bar is a bar's name.

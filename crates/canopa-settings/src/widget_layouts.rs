@@ -362,7 +362,8 @@ impl Editor {
             self.source.same(previous)
                 && crate::preferences::common_sections(&previous.text)?.1
                     == crate::preferences::common_sections(&saved.text)?.1,
-            "The shared configuration changed outside the Widgets page. Reload Widgets before saving."
+            "{}",
+            fl!("settings-error-widgets-changed")
         );
         self.source = saved.clone();
         Ok(())

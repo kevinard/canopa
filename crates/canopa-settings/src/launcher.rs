@@ -143,7 +143,7 @@ impl ClipboardEditor {
         };
         let saved = clipboard::Saved::update(path, |current| {
             if current.options() != self.saved {
-                return Err(fl!("settings-error-clipboard-changed").into());
+                return Err(fl!("settings-error-clipboard-changed"));
             }
             current.set_options(options);
             Ok(())
