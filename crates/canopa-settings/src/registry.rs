@@ -1,7 +1,9 @@
 //! Every Settings page is declared once, here.
 //!
 //! The sidebar, its groups and Ctrl+1–9 order, search, command-line and D-Bus
-//! page ids, page titles and descriptions all come from [`PAGES`]. A page's
+//! page ids, page titles and descriptions all come from [`PAGES`]; titles,
+//! descriptions and translated keywords are Fluent messages
+//! (`settings-page-<id>-title`, `-description`, `-keywords`). A page's
 //! [`Kind`] selects its building block: a file-backed draft with Save
 //! ([`crate::file_page`]) or a live service page ([`crate::live`]).
 
@@ -55,15 +57,16 @@ impl Group {
         Self::Developer,
     ];
 
-    pub fn title(self) -> &'static str {
+    /// The section heading, in the selected language.
+    pub fn title(self) -> String {
         match self {
-            Self::Devices => "Devices",
-            Self::Input => "Input",
-            Self::Appearance => "Appearance",
-            Self::System => "System",
-            Self::Desktop => "Desktop",
+            Self::Devices => fl!("settings-group-devices"),
+            Self::Input => fl!("settings-group-input"),
+            Self::Appearance => fl!("settings-group-appearance"),
+            Self::System => fl!("settings-group-system"),
+            Self::Desktop => fl!("settings-group-desktop"),
             #[cfg(debug_assertions)]
-            Self::Developer => "Developer",
+            Self::Developer => fl!("settings-group-developer"),
         }
     }
 }
@@ -120,12 +123,14 @@ pub struct Entry {
     /// Stable lowercase name for `canopa-settings <id>`, `--page <id>` and the
     /// D-Bus `OpenPage` method. Never rename one; existing callers use them.
     pub id: &'static str,
-    pub title: &'static str,
-    pub description: &'static str,
+    /// The English title. Shown through [`Entry::title`]; searched in every
+    /// language so English words keep finding pages.
+    pub english: &'static str,
     /// A freedesktop icon name for launchers and, later, the sidebar.
     pub icon: &'static str,
     pub group: Group,
-    /// Extra lowercase search terms; titles are always searched.
+    /// Extra lowercase English search terms, searched in every language
+    /// beside [`Entry::keywords_translated`]; titles are always searched.
     pub keywords: &'static [&'static str],
     pub kind: Kind,
     /// Reachable by id only: not in the sidebar, search or Ctrl+1–9.
@@ -137,8 +142,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Displays,
         id: "displays",
-        title: "Displays",
-        description: "Manage connected monitors and save display layouts.",
+        english: "Displays",
         icon: "preferences-desktop-display",
         group: Group::Devices,
         keywords: &[
@@ -162,8 +166,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Input,
         id: "input",
-        title: "Keyboard & pointer",
-        description: "Adjust keyboard, mouse, and touchpad behavior.",
+        english: "Keyboard & pointer",
         icon: "input-keyboard",
         group: Group::Devices,
         keywords: &[
@@ -188,8 +191,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Network,
         id: "network",
-        title: "Network",
-        description: "Connect to Wi-Fi, wired networks and VPNs, and share a hotspot.",
+        english: "Network",
         icon: "preferences-system-network",
         group: Group::Devices,
         keywords: &[
@@ -223,8 +225,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Bluetooth,
         id: "bluetooth",
-        title: "Bluetooth",
-        description: "Pair and connect headphones, keyboards, mice and other wireless devices.",
+        english: "Bluetooth",
         icon: "preferences-system-bluetooth",
         group: Group::Devices,
         keywords: &[
@@ -253,8 +254,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Printers,
         id: "printers",
-        title: "Printers",
-        description: "Add printers, choose your default and manage print jobs.",
+        english: "Printers",
         icon: "printer",
         group: Group::Devices,
         keywords: &[
@@ -275,8 +275,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Sound,
         id: "sound",
-        title: "Sound",
-        description: "Choose speakers and microphones, and set application volumes.",
+        english: "Sound",
         icon: "preferences-desktop-sound",
         group: Group::Devices,
         keywords: &[
@@ -305,8 +304,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Personal,
         id: "personal",
-        title: "Personalization",
-        description: "Choose how your desktop and lock screen look and feel.",
+        english: "Personalization",
         icon: "preferences-desktop-theme",
         group: Group::Appearance,
         keywords: &[
@@ -334,8 +332,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Accessibility,
         id: "accessibility",
-        title: "Accessibility",
-        description: "High contrast, larger text and cursor, reduced motion and the screen reader.",
+        english: "Accessibility",
         icon: "preferences-desktop-accessibility",
         group: Group::Appearance,
         keywords: &[
@@ -361,8 +358,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Power,
         id: "power",
-        title: "Power",
-        description: "Battery, power mode, brightness, the lid and idle timeouts.",
+        english: "Power",
         icon: "preferences-system-power",
         group: Group::System,
         keywords: &[
@@ -397,8 +393,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::DateTime,
         id: "date-time",
-        title: "Date & time",
-        description: "Set the time zone, network time and the 12- or 24-hour clock.",
+        english: "Date & time",
         icon: "preferences-system-time",
         group: Group::System,
         keywords: &[
@@ -422,8 +417,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Region,
         id: "region",
-        title: "Region & language",
-        description: "Choose your language and formats, and the system's language and keyboard.",
+        english: "Region & language",
         icon: "preferences-desktop-locale",
         group: Group::System,
         keywords: &[
@@ -446,8 +440,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Users,
         id: "users",
-        title: "Users",
-        description: "Change your name, picture and password, and manage other accounts.",
+        english: "Users",
         icon: "system-users",
         group: Group::System,
         keywords: &[
@@ -470,8 +463,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Privacy,
         id: "privacy",
-        title: "Privacy",
-        description: "Review what applications may use, and what starts when you log in.",
+        english: "Privacy",
         icon: "preferences-system-privacy",
         group: Group::System,
         keywords: &[
@@ -497,8 +489,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Notifications,
         id: "notifications",
-        title: "Notifications",
-        description: "Do not disturb, its schedule, and each application's notifications.",
+        english: "Notifications",
         icon: "preferences-system-notifications",
         group: Group::Desktop,
         keywords: &[
@@ -524,8 +515,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::DefaultApps,
         id: "default-apps",
-        title: "Default applications",
-        description: "Choose which applications open web links, mail, music, files and more.",
+        english: "Default applications",
         icon: "preferences-desktop-default-applications",
         group: Group::Desktop,
         keywords: &[
@@ -552,8 +542,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Launcher,
         id: "launcher",
-        title: "Launcher",
-        description: "Choose search providers and manage clipboard history.",
+        english: "Launcher",
         icon: "system-search",
         group: Group::Desktop,
         keywords: &[
@@ -573,8 +562,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Shortcuts,
         id: "shortcuts",
-        title: "Shortcuts",
-        description: "Find and edit keyboard shortcuts for your desktop.",
+        english: "Shortcuts",
         icon: "preferences-desktop-keyboard-shortcuts",
         group: Group::Desktop,
         keywords: &[
@@ -593,8 +581,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Widgets,
         id: "widgets",
-        title: "Widgets",
-        description: "Arrange widgets on your desktop and lock screen.",
+        english: "Widgets",
         icon: "preferences-desktop",
         group: Group::Desktop,
         keywords: &["bar", "panel", "modules", "layout", "lock screen", "shell"],
@@ -607,8 +594,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::About,
         id: "about",
-        title: "About",
-        description: "This computer's name, hardware and software.",
+        english: "About",
         icon: "help-about",
         group: Group::System,
         keywords: &[
@@ -639,8 +625,7 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::LiveExample,
         id: "live-example",
-        title: "Live page example",
-        description: "The live service page pattern on a simulated service.",
+        english: "Live page example",
         icon: "applications-development",
         group: Group::Developer,
         keywords: &[],
@@ -648,6 +633,107 @@ pub static PAGES: &[Entry] = &[
         hidden: true,
     },
 ];
+
+impl Entry {
+    /// The page title in the selected language.
+    pub fn title(&self) -> String {
+        match self.page {
+            Page::Displays => fl!("settings-page-displays-title"),
+            Page::Input => fl!("settings-page-input-title"),
+            Page::Network => fl!("settings-page-network-title"),
+            Page::Bluetooth => fl!("settings-page-bluetooth-title"),
+            Page::Printers => fl!("settings-page-printers-title"),
+            Page::Sound => fl!("settings-page-sound-title"),
+            Page::Personal => fl!("settings-page-personal-title"),
+            Page::Accessibility => fl!("settings-page-accessibility-title"),
+            Page::Power => fl!("settings-page-power-title"),
+            Page::DateTime => fl!("settings-page-date-time-title"),
+            Page::Region => fl!("settings-page-region-title"),
+            Page::Users => fl!("settings-page-users-title"),
+            Page::Privacy => fl!("settings-page-privacy-title"),
+            Page::Notifications => fl!("settings-page-notifications-title"),
+            Page::DefaultApps => fl!("settings-page-default-apps-title"),
+            Page::Launcher => fl!("settings-page-launcher-title"),
+            Page::Shortcuts => fl!("settings-page-shortcuts-title"),
+            Page::Widgets => fl!("settings-page-widgets-title"),
+            Page::About => fl!("settings-page-about-title"),
+            #[cfg(debug_assertions)]
+            Page::LiveExample => fl!("settings-page-live-example-title"),
+        }
+    }
+
+    /// The one-line description under the page title.
+    pub fn description(&self) -> String {
+        match self.page {
+            Page::Displays => fl!("settings-page-displays-description"),
+            Page::Input => fl!("settings-page-input-description"),
+            Page::Network => fl!("settings-page-network-description"),
+            Page::Bluetooth => fl!("settings-page-bluetooth-description"),
+            Page::Printers => fl!("settings-page-printers-description"),
+            Page::Sound => fl!("settings-page-sound-description"),
+            Page::Personal => fl!("settings-page-personal-description"),
+            Page::Accessibility => fl!("settings-page-accessibility-description"),
+            Page::Power => fl!("settings-page-power-description"),
+            Page::DateTime => fl!("settings-page-date-time-description"),
+            Page::Region => fl!("settings-page-region-description"),
+            Page::Users => fl!("settings-page-users-description"),
+            Page::Privacy => fl!("settings-page-privacy-description"),
+            Page::Notifications => fl!("settings-page-notifications-description"),
+            Page::DefaultApps => fl!("settings-page-default-apps-description"),
+            Page::Launcher => fl!("settings-page-launcher-description"),
+            Page::Shortcuts => fl!("settings-page-shortcuts-description"),
+            Page::Widgets => fl!("settings-page-widgets-description"),
+            Page::About => fl!("settings-page-about-description"),
+            #[cfg(debug_assertions)]
+            Page::LiveExample => fl!("settings-page-live-example-description"),
+        }
+    }
+
+    /// Search terms in the selected language, lowercase. In English they are
+    /// [`Entry::keywords`].
+    pub fn keywords_translated(&self) -> Vec<String> {
+        let list = match self.page {
+            Page::Displays => fl!("settings-page-displays-keywords"),
+            Page::Input => fl!("settings-page-input-keywords"),
+            Page::Network => fl!("settings-page-network-keywords"),
+            Page::Bluetooth => fl!("settings-page-bluetooth-keywords"),
+            Page::Printers => fl!("settings-page-printers-keywords"),
+            Page::Sound => fl!("settings-page-sound-keywords"),
+            Page::Personal => fl!("settings-page-personal-keywords"),
+            Page::Accessibility => fl!("settings-page-accessibility-keywords"),
+            Page::Power => fl!("settings-page-power-keywords"),
+            Page::DateTime => fl!("settings-page-date-time-keywords"),
+            Page::Region => fl!("settings-page-region-keywords"),
+            Page::Users => fl!("settings-page-users-keywords"),
+            Page::Privacy => fl!("settings-page-privacy-keywords"),
+            Page::Notifications => fl!("settings-page-notifications-keywords"),
+            Page::DefaultApps => fl!("settings-page-default-apps-keywords"),
+            Page::Launcher => fl!("settings-page-launcher-keywords"),
+            Page::Shortcuts => fl!("settings-page-shortcuts-keywords"),
+            Page::Widgets => fl!("settings-page-widgets-keywords"),
+            Page::About => fl!("settings-page-about-keywords"),
+            #[cfg(debug_assertions)]
+            Page::LiveExample => return Vec::new(),
+        };
+        list.split(',')
+            .map(|keyword| keyword.trim().to_lowercase())
+            .filter(|keyword| !keyword.is_empty())
+            .collect()
+    }
+
+    /// Every search term for launchers: the translated ones first, then the
+    /// English ones not already listed, at most `limit`.
+    pub fn search_keywords(&self, limit: usize) -> Vec<String> {
+        let mut keywords = self.keywords_translated();
+        for keyword in self.keywords {
+            if !keywords.iter().any(|known| known == keyword) {
+                keywords.push((*keyword).to_owned());
+            }
+        }
+        keywords.truncate(limit);
+        keywords
+    }
+}
 
 impl Page {
     pub fn entry(self) -> &'static Entry {
@@ -661,8 +747,9 @@ impl Page {
         self.entry().id
     }
 
-    pub fn title(self) -> &'static str {
-        self.entry().title
+    /// The page title in the selected language.
+    pub fn title(self) -> String {
+        self.entry().title()
     }
 
     pub fn kind(self) -> Kind {
@@ -734,34 +821,82 @@ pub fn step(page: Page, offset: isize) -> Page {
     pages[(index as isize + offset).rem_euclid(len) as usize].page
 }
 
-/// How well one search term matches one entry; 0 is no match.
-fn term_score(entry: &Entry, term: &str) -> u32 {
-    let title = entry.title.to_lowercase();
-    let words = |text: &str| {
-        text.split(|c: char| !c.is_alphanumeric())
-            .filter(|word| !word.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-    };
-    if title.starts_with(term) {
-        4
-    } else if words(&title).iter().any(|word| word.starts_with(term)) {
-        3
-    } else if entry.keywords.iter().any(|keyword| {
-        keyword.starts_with(term) || words(keyword).iter().any(|w| w.starts_with(term))
-    }) {
-        2
-    } else if title.contains(term) || entry.keywords.iter().any(|keyword| keyword.contains(term)) {
-        1
-    } else {
-        0
+/// Lowercase without the accents of Latin letters, so `ecran` finds `Écrans`.
+fn fold(text: &str) -> String {
+    let mut folded = String::with_capacity(text.len());
+    for c in text.chars().flat_map(char::to_lowercase) {
+        match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => folded.push('a'),
+            'ç' => folded.push('c'),
+            'è' | 'é' | 'ê' | 'ë' => folded.push('e'),
+            'ì' | 'í' | 'î' | 'ï' => folded.push('i'),
+            'ñ' => folded.push('n'),
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' => folded.push('o'),
+            'ù' | 'ú' | 'û' | 'ü' => folded.push('u'),
+            'ý' | 'ÿ' => folded.push('y'),
+            'œ' => folded.push_str("oe"),
+            'æ' => folded.push_str("ae"),
+            '’' => folded.push('\''),
+            c => folded.push(c),
+        }
+    }
+    folded
+}
+
+/// One page's searchable text, folded, in the selected language and in English.
+struct Terms {
+    titles: Vec<String>,
+    keywords: Vec<String>,
+}
+
+impl Terms {
+    fn of(entry: &Entry) -> Self {
+        let mut titles = vec![fold(&entry.title()), fold(entry.english)];
+        titles.dedup();
+        let mut keywords: Vec<String> = entry
+            .keywords_translated()
+            .iter()
+            .map(|keyword| fold(keyword))
+            .collect();
+        keywords.extend(entry.keywords.iter().map(|keyword| fold(keyword)));
+        Self { titles, keywords }
+    }
+
+    /// How well one folded search term matches; 0 is no match.
+    fn score(&self, term: &str) -> u32 {
+        let words = |text: &str| {
+            text.split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        if self.titles.iter().any(|title| title.starts_with(term)) {
+            4
+        } else if self
+            .titles
+            .iter()
+            .any(|title| words(title).iter().any(|word| word.starts_with(term)))
+        {
+            3
+        } else if self.keywords.iter().any(|keyword| {
+            keyword.starts_with(term) || words(keyword).iter().any(|w| w.starts_with(term))
+        }) {
+            2
+        } else if self.titles.iter().any(|title| title.contains(term))
+            || self.keywords.iter().any(|keyword| keyword.contains(term))
+        {
+            1
+        } else {
+            0
+        }
     }
 }
 
 /// Visible pages whose title or keywords match every word of `query`, best
-/// first. Case is ignored. An empty query matches nothing.
+/// first. Titles and keywords match in the selected language and in English;
+/// case and accents are ignored. An empty query matches nothing.
 pub fn search(query: &str) -> Vec<&'static Entry> {
-    let query = query.trim().to_lowercase();
+    let query = fold(query.trim());
     let terms: Vec<_> = query.split_whitespace().collect();
     if terms.is_empty() {
         return Vec::new();
@@ -770,9 +905,10 @@ pub fn search(query: &str) -> Vec<&'static Entry> {
         .into_iter()
         .enumerate()
         .filter_map(|(order, entry)| {
+            let page = Terms::of(entry);
             terms
                 .iter()
-                .map(|term| term_score(entry, term))
+                .map(|term| page.score(term))
                 .try_fold(0, |total, score| (score > 0).then_some(total + score))
                 .map(|score| (score, order, entry))
         })
@@ -909,5 +1045,48 @@ mod tests {
         assert!(pages("nothing-like-this").is_empty());
         // Hidden pages are reachable by id only.
         assert!(search("live").iter().all(|entry| !entry.hidden));
+    }
+
+    #[test]
+    fn english_messages_repeat_the_registry() {
+        for entry in PAGES {
+            assert_eq!(entry.title(), entry.english);
+            assert!(!entry.description().is_empty());
+            assert_eq!(entry.keywords_translated(), entry.keywords, "{}", entry.id);
+        }
+        assert_eq!(Group::Devices.title(), "Devices");
+    }
+
+    #[test]
+    fn french_titles_show_and_english_words_still_search() {
+        crate::i18n::isolated(
+            concat!(
+                module_path!(),
+                "::french_titles_show_and_english_words_still_search"
+            ),
+            || {
+                let _french = crate::i18n::Language::select("fr");
+                assert_eq!(Page::Displays.title(), "Écrans");
+                assert_eq!(Page::Region.title(), "Région et langue");
+                assert_eq!(Group::System.title(), "Système");
+                let pages = |query| search(query).iter().map(|e| e.page).collect::<Vec<_>>();
+                // English titles and keywords keep finding pages.
+                assert_eq!(pages("display")[0], Page::Displays);
+                assert_eq!(pages("monitor"), [Page::Displays]);
+                assert_eq!(pages("wallpaper"), [Page::Personal]);
+                assert_eq!(pages("touchpad"), [Page::Input]);
+                // French words, with or without accents.
+                assert_eq!(pages("écran")[0], Page::Displays);
+                assert_eq!(pages("ecran")[0], Page::Displays);
+                assert_eq!(pages("fond d'écran"), [Page::Personal]);
+                assert_eq!(pages("langue")[0], Page::Region);
+                assert_eq!(pages("pavé tactile")[0], Page::Input);
+                // Launchers get both, translated first, within their limit.
+                let keywords = Page::Displays.entry().search_keywords(32);
+                assert_eq!(keywords[0], "écran");
+                assert!(keywords.iter().any(|keyword| keyword == "monitor"));
+                assert!(Page::Network.entry().search_keywords(32).len() <= 32);
+            },
+        );
     }
 }

@@ -69,23 +69,26 @@ enum Operation {
     WatchDisplayProfiles,
 }
 /// `{"pages":[{"id","title","description","icon","keywords"}]}`, the same
-/// registry entries the sidebar, search and D-Bus `Pages` use.
+/// registry entries the sidebar, search and D-Bus `Pages` use, in the
+/// selected language; keywords also list the English ones.
 fn pages_json() -> serde_json::Value {
     let pages: Vec<_> = registry::navigation()
         .into_iter()
         .map(|entry| {
             serde_json::json!({
                 "id": entry.id,
-                "title": entry.title,
-                "description": entry.description,
+                "title": entry.title(),
+                "description": entry.description(),
                 "icon": entry.icon,
-                "keywords": entry.keywords,
+                // The Shell's launcher accepts up to 32 keywords a page.
+                "keywords": entry.search_keywords(32),
             })
         })
         .collect();
     serde_json::json!({ "pages": pages })
 }
 fn main() {
+    canopa_i18n::init();
     if let Err(error) = run() {
         eprintln!("canopa-settings: {error:#}");
         std::process::exit(1);

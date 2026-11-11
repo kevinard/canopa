@@ -3,11 +3,14 @@
 //! the loading, unavailable and per-control states with the shared controls.
 use super::{Message, button, focus, settings_group};
 use crate::live::{ControlStatus, Effect, Event, Live, LiveService, ServiceError, Status};
-use canopa_ui::accessibility::{Node, semantic};
+use canopa_ui::{
+    accessibility::{Node, semantic},
+    direction,
+};
 use futures_util::{StreamExt, stream::BoxStream};
 use iced::{
     Alignment, Element, Length, Subscription, Task,
-    widget::{column, container, row, text},
+    widget::{column, container, text},
 };
 use std::{hash::Hash, sync::Arc, time::Duration};
 
@@ -64,9 +67,9 @@ fn follow<S: LiveService>(service: &Service<S>) -> BoxStream<'static, Event<S>> 
                             Some(Ok(state)) => (Event::Changed(Ok(state)), Phase::Follow(updates)),
                             Some(Err(error)) => (Event::Changed(Err(error)), Phase::Wait),
                             None => (
-                                Event::Changed(Err(ServiceError::Unavailable(format!(
-                                    "{} stopped.",
-                                    service.name()
+                                Event::Changed(Err(ServiceError::Unavailable(fl!(
+                                    "settings-live-stopped",
+                                    service = service.name()
                                 )))),
                                 Phase::Wait,
                             ),
@@ -122,7 +125,7 @@ impl<S: LiveService> LivePage<S> {
     ) -> Element<'a, Message> {
         match self.live.status() {
             Status::Loading => {
-                let connecting = format!("Connecting to {}…", self.service.name());
+                let connecting = fl!("settings-live-connecting", service = self.service.name());
                 semantic(
                     Node::status(connecting.clone())
                         .key("settings-live-loading")
@@ -131,12 +134,13 @@ impl<S: LiveService> LivePage<S> {
                 )
             }
             Status::Unavailable(reason) => settings_group(
-                "Service not available",
+                fl!("settings-live-unavailable-title"),
                 column![
                     {
-                        let message = format!(
-                            "{} is not installed or not running. {reason}",
-                            self.service.name()
+                        let message = fl!(
+                            "settings-live-unavailable",
+                            service = self.service.name(),
+                            reason = reason.as_str()
                         );
                         semantic(
                             Node::status(message.clone()).key("settings-live-unavailable"),
@@ -145,7 +149,7 @@ impl<S: LiveService> LivePage<S> {
                     },
                     button(
                         "settings-button-try-again",
-                        "Try again",
+                        fl!("settings-live-try-again"),
                         Some(map(Event::Reload)),
                         canopa_ui::Action::Normal,
                         Length::Shrink,
@@ -175,27 +179,34 @@ impl<S: LiveService> LivePage<S> {
                 );
             }
             ControlStatus::Applying => semantic(
-                Node::status("Applying…").key(status).busy(true),
-                text("Applying…").size(13).style(canopa_ui::muted),
+                Node::status(fl!("settings-applying"))
+                    .key(status)
+                    .busy(true),
+                text(fl!("settings-applying"))
+                    .size(13)
+                    .style(canopa_ui::muted),
             ),
-            ControlStatus::Failed(error) => row![
+            ControlStatus::Failed(error) => direction::row([
                 semantic(
                     Node::alert(error.to_owned()).key(status),
-                    text(error.to_owned()).size(13).width(Length::Fill)
+                    text(error.to_owned())
+                        .size(13)
+                        .width(Length::Fill)
+                        .align_x(direction::text_start()),
                 ),
                 control_button(
                     format!("settings-live-{control}-retry"),
-                    "Retry",
+                    fl!("settings-live-retry"),
                     map(Event::Retry(control.into())),
                     canopa_ui::Action::Normal,
                 ),
                 control_button(
                     format!("settings-live-{control}-dismiss"),
-                    "Dismiss",
+                    fl!("settings-live-dismiss"),
                     map(Event::Dismiss(control.into())),
                     canopa_ui::Action::Quiet,
                 ),
-            ]
+            ])
             .spacing(8)
             .align_y(Alignment::Center)
             .into(),
@@ -207,12 +218,12 @@ impl<S: LiveService> LivePage<S> {
 /// A button with a focus id unique to its control.
 fn control_button<'a>(
     id: String,
-    label: &'a str,
+    label: String,
     message: Message,
     treatment: canopa_ui::Action,
 ) -> Element<'a, Message> {
     semantic(
-        Node::button(label)
+        Node::button(label.clone())
             .key(id.clone())
             .on_click(Some(message.clone())),
         focus::control(

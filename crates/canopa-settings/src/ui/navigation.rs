@@ -1,7 +1,10 @@
 //! The sidebar: registry groups, a search field and keyboard page movement.
 use super::{Message, State, focus, heading};
 use crate::registry::{self, Entry};
-use canopa_ui::accessibility::{Node, semantic};
+use canopa_ui::{
+    accessibility::{Node, semantic},
+    direction,
+};
 use iced::{
     Element, Length,
     widget::{column, container, scrollable, text, text_input},
@@ -23,8 +26,14 @@ impl State {
             let pages = registry::navigation();
             for (group, entries) in registry::groups() {
                 list = list.push(
-                    container(text(group.title()).size(12).style(canopa_ui::muted))
-                        .padding(iced::Padding::from([0, 12]).top(10)),
+                    container(
+                        text(group.title())
+                            .size(12)
+                            .style(canopa_ui::muted)
+                            .width(Length::Fill)
+                            .align_x(direction::text_start()),
+                    )
+                    .padding(iced::Padding::from([0, 12]).top(10)),
                 );
                 for entry in entries {
                     list = list.push(self.page_link(entry, &pages, enabled));
@@ -34,9 +43,8 @@ impl State {
             let found = registry::search(&self.search);
             list = list.push(semantic(
                 Node::status(match found.len() {
-                    0 => "No matching settings".to_owned(),
-                    1 => "1 matching page".to_owned(),
-                    n => format!("{n} matching pages"),
+                    0 => fl!("settings-search-none"),
+                    count => fl!("settings-search-found", count = count),
                 })
                 .key("settings-search-status"),
                 // A plain space lays out as 0×0 and stays; a fixed zero height
@@ -46,9 +54,11 @@ impl State {
             if found.is_empty() {
                 list = list.push(
                     container(
-                        text("No matching settings")
+                        text(fl!("settings-search-none"))
                             .size(13)
-                            .style(canopa_ui::muted),
+                            .style(canopa_ui::muted)
+                            .width(Length::Fill)
+                            .align_x(direction::text_start()),
                     )
                     .padding([8, 12]),
                 );
@@ -58,30 +68,35 @@ impl State {
             }
         }
         semantic(
-            Node::navigation("Settings pages").key("settings-navigation"),
+            Node::navigation(fl!("settings-sidebar-navigation")).key("settings-navigation"),
             container(
                 column![
                     column![
-                        text("Canopa").size(13).style(canopa_ui::muted),
-                        heading("Settings", 24)
+                        text(fl!("settings-sidebar-brand"))
+                            .size(13)
+                            .style(canopa_ui::muted),
+                        heading(fl!("settings-sidebar-heading"), 24)
                     ]
+                    .align_x(direction::start())
+                    .width(Length::Fill)
                     .spacing(3)
                     .padding([8, 8]),
                     semantic(
-                        Node::search_input("Search settings", &self.search)
+                        Node::search_input(fl!("settings-search-placeholder"), &self.search)
                             .key("settings-search-field")
-                            .placeholder("Search settings")
+                            .placeholder(fl!("settings-search-placeholder"))
                             .shortcut("Control+F")
                             .controls("settings-pages")
                             .on_text(Message::Search),
-                        text_input("Search settings", &self.search)
+                        text_input(&fl!("settings-search-placeholder"), &self.search)
                             .id(SEARCH)
+                            .align_x(direction::start())
                             .on_input(Message::Search)
                             .on_submit(Message::SearchSubmit)
                             .padding(8)
                     ),
                     semantic(
-                        Node::list("Pages").key("settings-pages"),
+                        Node::list(fl!("settings-sidebar-pages")).key("settings-pages"),
                         canopa_ui::scroll_speed(
                             scrollable(list)
                                 .id("settings-navigation-scroll")
@@ -115,8 +130,9 @@ impl State {
         let neighbour =
             |offset: usize| enabled.then(|| Message::Page(siblings[(index + offset) % len].page));
         let open = enabled.then_some(Message::Page(entry.page));
+        let title = entry.title();
         semantic(
-            Node::option(entry.title, entry.page == self.page)
+            Node::option(title.clone(), entry.page == self.page)
                 .key(link_id(entry))
                 .position(index + 1, len)
                 .disabled(!enabled)
@@ -129,7 +145,9 @@ impl State {
                 neighbour(len - 1),
                 self.busy,
                 canopa_ui::action(
-                    text(entry.title),
+                    text(title)
+                        .width(Length::Fill)
+                        .align_x(direction::text_start()),
                     open,
                     if entry.page == self.page {
                         canopa_ui::Action::Normal

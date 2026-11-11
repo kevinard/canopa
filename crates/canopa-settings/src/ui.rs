@@ -21,7 +21,7 @@ mod sound;
 mod users;
 mod widget_layouts;
 use crate::{
-    display::{Monitor, TrialHandle, transform_name},
+    display::{Monitor, TrialHandle},
     file_page::{FileDraft, FileModel},
     input::Input,
     instance::{Instance, Request},
@@ -33,7 +33,10 @@ use crate::{
     storage::{Snapshot, companion},
 };
 use anyhow::{Context, Result, ensure};
-use canopa_ui::accessibility::{self, Node, semantic};
+use canopa_ui::{
+    accessibility::{self, Node, semantic},
+    direction,
+};
 use iced::{
     Alignment, Element, Font, Length, Subscription, Task, Theme,
     font::Weight,
@@ -57,8 +60,6 @@ use crate::{
 };
 /// The window's Wayland app id and desktop entry name.
 const APPLICATION_ID: &str = "org.canopa.Settings";
-/// The footer action reloads only the selected page; other drafts remain.
-const RELOAD_PAGE: &str = "Reload this page and discard its edits";
 #[derive(Clone, Debug)]
 enum Message {
     LauncherLoaded(Result<crate::launcher::Model, String>),
@@ -96,9 +97,10 @@ enum Message {
     WidgetLayouts(widget_layouts::Action),
     OpenLockWidgetEditor,
     Enabled(usize, bool),
-    Mode(usize, String),
+    /// A display's mode, by its index in the display's mode list.
+    Mode(usize, usize),
     Scale(usize, f64),
-    Rotation(usize, String),
+    Rotation(usize, Transform),
     Position(usize, bool, String),
     InputText(u8, String),
     InputNumber(u8, f64),
@@ -251,7 +253,7 @@ impl State {
     fn action<'a>(
         &self,
         key: impl Into<String>,
-        label: &'a str,
+        label: impl Into<String>,
         message: Option<Message>,
         active: bool,
     ) -> Element<'a, Message> {
@@ -339,7 +341,7 @@ impl State {
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
-            idle_status: "Connecting to the idle manager…".into(),
+            idle_status: fl!("settings-idle-connecting"),
             idle_available: false,
             trial: None,
             remaining: 0,
@@ -417,7 +419,7 @@ impl State {
                 match result {
                     Ok(model) => {
                         self.launcher = model;
-                        self.notice = "Launcher preferences saved.".into();
+                        self.notice = fl!("settings-launcher-saved");
                     }
                     Err(error) => self.notice = error,
                 }
@@ -431,7 +433,7 @@ impl State {
                 match result {
                     Ok(editor) => {
                         self.clipboard = Some(editor);
-                        self.clipboard_notice = "Clipboard settings saved.".into();
+                        self.clipboard_notice = fl!("settings-clipboard-saved");
                     }
                     Err(error) => self.clipboard_notice = error,
                 }
@@ -572,7 +574,7 @@ impl State {
                 match result {
                     Ok(editor) => {
                         self.shortcuts = Some(Ok(editor));
-                        self.notice = "Keyboard shortcuts saved.".into();
+                        self.notice = fl!("settings-shortcuts-saved");
                         self.document_saved(Page::Shortcuts, Document::Niri, None);
                     }
                     Err(error) => self.notice = error,
@@ -616,7 +618,7 @@ impl State {
                                 .map(|m| (m.x.to_string(), m.y.to_string()))
                                 .collect();
                         } else {
-                            self.notice="Displays changed while you were editing. Reload connected displays to update the draft.".into();
+                            self.notice = fl!("settings-displays-changed-while-editing");
                         }
                     }
                     Err(error) => self.notice = error,
@@ -626,11 +628,9 @@ impl State {
                 self.monitors[index].enabled = value;
                 self.display_dirty = true;
             }
-            Message::Mode(index, label) => {
-                self.monitors[index].mode = self.monitors[index]
-                    .modes
-                    .iter()
-                    .position(|mode| mode_label(mode) == label);
+            Message::Mode(index, mode) => {
+                self.monitors[index].mode =
+                    (mode < self.monitors[index].modes.len()).then_some(mode);
                 self.monitors[index].custom_mode = self
                     .outputs
                     .get(&self.monitors[index].name)
@@ -643,11 +643,8 @@ impl State {
                 self.monitors[index].scale = scale;
                 self.display_dirty = true;
             }
-            Message::Rotation(index, name) => {
-                self.monitors[index].transform = transforms()
-                    .into_iter()
-                    .find(|t| transform_name(*t) == name)
-                    .unwrap_or(Transform::Normal);
+            Message::Rotation(index, transform) => {
+                self.monitors[index].transform = transform;
                 self.display_dirty = true;
             }
             Message::Position(index, horizontal, value) => {
@@ -710,9 +707,7 @@ impl State {
                     .and_then(|source| <Input as FileModel>::read(source).ok())
                     .is_none_or(|saved| saved != self.input.value);
                 if unsaved {
-                    self.notice =
-                        "Save or reload your Keyboard & pointer edits before changing the cursor size."
-                            .into();
+                    self.notice = fl!("settings-cursor-size-unsaved-input");
                     return Task::none();
                 }
                 self.busy = true;
@@ -729,16 +724,14 @@ impl State {
                     Ok(_) => {
                         // The Input draft had no edits; read the new include.
                         self.input.reload(&self.paths);
-                        self.notice = "Cursor size applied. New windows use it at once.".into();
+                        self.notice = fl!("settings-cursor-size-applied");
                     }
                     Err(error) => self.notice = error,
                 }
             }
             Message::CompositorMotion(enabled) if !self.busy && self.trial.is_none() => {
                 if matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
-                    self.notice =
-                        "Save or discard your shortcut edits before changing compositor motion."
-                            .into();
+                    self.notice = fl!("settings-compositor-motion-unsaved-shortcuts");
                     return Task::none();
                 }
                 self.busy = true;
@@ -757,7 +750,7 @@ impl State {
                 match result {
                     Ok(enabled) => {
                         self.compositor_motion = Some(enabled);
-                        self.notice = "Compositor motion settings saved.".into();
+                        self.notice = fl!("settings-compositor-motion-saved");
                         self.document_saved(Page::Personal, Document::Niri, None);
                     }
                     Err(error) => self.notice = error,
@@ -779,7 +772,7 @@ impl State {
                 return task(
                     move || {
                         crate::preferences::idle_command(&[action.into()])?;
-                        Ok("Idle policy updated.".into())
+                        Ok(fl!("settings-idle-policy-updated"))
                     },
                     Message::Finished,
                 );
@@ -796,7 +789,7 @@ impl State {
                             "invalid profile name"
                         );
                         crate::preferences::idle_command(&["profile".into(), profile])?;
-                        Ok("Idle profile selected.".into())
+                        Ok(fl!("settings-idle-profile-selected"))
                     },
                     Message::Finished,
                 );
@@ -807,11 +800,12 @@ impl State {
                         .map(|info| {
                             self.idle_available =
                                 info["state"].is_string() && info["manually_paused"].is_boolean();
-                            format!(
-                                "State: {}    Profile: {}    Paused manually: {}",
-                                info["state"].as_str().unwrap_or("available"),
-                                info["profile"].as_str().unwrap_or("default"),
-                                if info["manually_paused"].as_bool().unwrap_or(false) {
+                            // State and profile are Stasis's own names.
+                            fl!(
+                                "settings-idle-status",
+                                state = info["state"].as_str().unwrap_or("available"),
+                                profile = info["profile"].as_str().unwrap_or("default"),
+                                paused = if info["manually_paused"].as_bool().unwrap_or(false) {
                                     "yes"
                                 } else {
                                     "no"
@@ -821,7 +815,7 @@ impl State {
                         .unwrap_or(value),
                     Err(error) => {
                         self.idle_available = false;
-                        format!("Idle manager unavailable: {error}")
+                        fl!("settings-idle-unavailable", error = error)
                     }
                 }
             }
@@ -895,7 +889,7 @@ impl State {
                 self.busy = false;
                 match result {
                     Ok((page, saved)) => {
-                        self.notice = "Settings saved.".into();
+                        self.notice = fl!("settings-saved");
                         self.file_saved(page, saved);
                     }
                     Err(error) => self.notice = error,
@@ -941,9 +935,9 @@ impl State {
                 });
                 return Task::perform(
                     async move {
-                        receive.await.unwrap_or_else(|_| {
-                            Err("Wallpaper launcher stopped unexpectedly.".into())
-                        })
+                        receive
+                            .await
+                            .unwrap_or_else(|_| Err(fl!("settings-wallpaper-stopped")))
                     },
                     Message::WallpaperFinished,
                 );
@@ -1008,7 +1002,7 @@ impl State {
                 match result {
                     Ok((previous, saved)) => {
                         self.alert_sounds = crate::sound::alert_sounds(&saved.text).ok();
-                        self.notice = "Notification sounds updated.".into();
+                        self.notice = fl!("settings-alert-sounds-updated");
                         self.document_saved(
                             Page::Sound,
                             Document::Common,
@@ -1031,9 +1025,7 @@ impl State {
                     .and_then(|source| <Input as FileModel>::read(source).ok())
                     .is_none_or(|saved| saved != self.input.value);
                 if unsaved {
-                    self.notice =
-                        "Save or reload your Keyboard & pointer edits before changing the power button."
-                            .into();
+                    self.notice = fl!("settings-power-key-unsaved-input");
                     return Task::none();
                 }
                 self.busy = true;
@@ -1050,7 +1042,7 @@ impl State {
                     Ok(_) => {
                         // The Input draft had no edits; read the new include.
                         self.input.reload(&self.paths);
-                        self.notice = "Power button setting applied.".into();
+                        self.notice = fl!("settings-power-key-applied");
                     }
                     Err(error) => self.notice = error,
                 }
@@ -1064,15 +1056,13 @@ impl State {
                             Ok(Some(saved)) => {
                                 self.idle.saved(saved);
                                 if self.idle_available {
-                                    "Settings saved.".into()
+                                    fl!("settings-saved")
                                 } else {
-                                    "Settings saved. No idle daemon is running; Stasis uses these timeouts when it starts.".into()
+                                    fl!("settings-saved-idle-not-running")
                                 }
                             }
-                            Ok(None) => "Settings saved.".into(),
-                            Err(error) => format!(
-                                "The lid choice was saved, but the idle timeouts were not: {error}"
-                            ),
+                            Ok(None) => fl!("settings-saved"),
+                            Err(error) => fl!("settings-lid-saved-idle-failed", error = error),
                         };
                     }
                     Err(error) => self.notice = error,
@@ -1094,7 +1084,7 @@ impl State {
             return raise();
         };
         if self.busy || self.trial.is_some() {
-            self.notice = format!("Finish the current change, then open {}.", page.title());
+            self.notice = fl!("settings-activate-busy", page = page.title());
             return raise();
         }
         if let Some(profile) = request.display_profile {
@@ -1324,13 +1314,21 @@ impl State {
     fn view(&self) -> Element<'_, Message> {
         let navigation = self.navigation();
         let entry = self.page.entry();
+        let page_title = entry.title();
         let title = column![
             semantic(
-                Node::heading(entry.title, 1).key("settings-page-title"),
-                heading(entry.title, 28)
+                Node::heading(page_title.clone(), 1).key("settings-page-title"),
+                heading(page_title.clone(), 28)
+                    .width(Length::Fill)
+                    .align_x(direction::text_start())
             ),
-            text(entry.description).size(14).style(canopa_ui::muted)
+            text(entry.description())
+                .size(14)
+                .style(canopa_ui::muted)
+                .width(Length::Fill)
+                .align_x(direction::text_start())
         ]
+        .align_x(direction::start())
         .spacing(5);
         // Keep this child present so asynchronous notices do not replace the
         // page's widget tree and discard keyboard focus or typed drafts.
@@ -1349,25 +1347,21 @@ impl State {
         .spacing(16);
         if self.trial.is_some() {
             body = body.push(semantic(
-                Node::alert_dialog("Keep these display settings?").key("settings-trial"),
+                Node::alert_dialog(fl!("settings-trial-title")).key("settings-trial"),
                 container(
                     column![
-                        text(format!(
-                            "Keep these display settings? Reverting in {} seconds.",
-                            self.remaining
-                        ))
-                        .size(20),
-                        text("Ctrl+Enter keeps changes. Escape reverts."),
+                        text(fl!("settings-trial-countdown", seconds = self.remaining)).size(20),
+                        text(fl!("settings-trial-keys")),
                         row![
                             self.action(
                                 "settings-button-revert",
-                                "Revert",
+                                fl!("settings-trial-revert"),
                                 Some(Message::Decision(false)),
                                 false
                             ),
                             self.action(
                                 "settings-button-keep-changes",
-                                "Keep changes",
+                                fl!("settings-trial-keep"),
                                 Some(Message::Decision(true)),
                                 true
                             )
@@ -1382,8 +1376,8 @@ impl State {
         }
         if matches!(self.page, Page::Displays | Page::Input) && !self.paths.active() {
             body = body.push(settings_group(
-                "Changes require a Canopa session",
-                text("Sign in to the Canopa desktop to save display and input settings.")
+                fl!("settings-session-required-title"),
+                text(fl!("settings-session-required"))
                     .size(14)
                     .style(canopa_ui::muted),
             ));
@@ -1416,7 +1410,7 @@ impl State {
             rule::horizontal(1).style(settings_rule),
             semantic(
                 Node::new(accessibility::Role::Main)
-                    .label(entry.title)
+                    .label(page_title)
                     .key("settings-page"),
                 canopa_ui::scroll_speed(
                     scrollable(
@@ -1436,7 +1430,12 @@ impl State {
             None => content,
         };
         let window = focus::group(
-            row![navigation, rule::vertical(1).style(settings_rule), content],
+            // The sidebar leads: on the right in right-to-left languages.
+            direction::row([
+                navigation,
+                rule::vertical(1).style(settings_rule).into(),
+                content.into(),
+            ]),
             self.trial.as_ref().map(|_| Message::Decision(false)),
             format!(
                 "{:?}-{}-{:?}",
@@ -1459,7 +1458,7 @@ impl State {
             self.busy,
         );
         semantic(
-            Node::window(ACCESSIBILITY_ROOT, "Canopa Settings").busy(self.busy),
+            Node::window(ACCESSIBILITY_ROOT, fl!("settings-window-title")).busy(self.busy),
             window,
         )
     }
@@ -1479,30 +1478,32 @@ impl State {
             return None;
         };
         Some(semantic(
-            Node::toolbar("Page actions").key("settings-footer"),
-            row![
-                space().width(Length::Fill),
+            Node::toolbar(fl!("settings-footer-label")).key("settings-footer"),
+            // Actions sit at the trailing edge, the primary one last.
+            direction::row([
+                space().width(Length::Fill).into(),
+                // Reloads only the selected page; other drafts remain.
                 self.action(
                     "settings-reload-page",
-                    RELOAD_PAGE,
+                    fl!("settings-footer-reload"),
                     (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
-                    false
+                    false,
                 ),
                 button(
                     "settings-apply",
                     if self.busy {
-                        "Applying…"
+                        fl!("settings-applying")
                     } else if apply == Apply::Trial {
-                        "Test display changes"
+                        fl!("settings-footer-test-displays")
                     } else {
-                        "Save changes"
+                        fl!("settings-footer-save")
                     },
                     self.can_save().then_some(Message::Save),
                     canopa_ui::Action::Primary,
                     Length::Shrink,
                     self.busy,
-                )
-            ]
+                ),
+            ])
             .align_y(Alignment::Center)
             .spacing(12)
             .padding([10, 20]),
@@ -1510,13 +1511,13 @@ impl State {
     }
     fn displays(&self) -> Element<'_, Message> {
         let mut body = column![
-            text("Choose a mode, scale and position for each connected display."),
+            text(fl!("settings-displays-intro")),
             self.action(
                 "settings-button-reload-displays",
                 if self.refreshing {
-                    "Refreshing…"
+                    fl!("settings-displays-refreshing")
                 } else {
-                    "Reload connected displays"
+                    fl!("settings-displays-reload")
                 },
                 (!self.busy && !self.refreshing && self.trial.is_none())
                     .then_some(Message::Refresh),
@@ -1528,11 +1529,15 @@ impl State {
             body = body.push(self.profiles_view());
         }
         if self.monitors.is_empty() {
-            body = body.push(text("No connected displays are available."));
+            body = body.push(text(fl!("settings-displays-none")));
         }
         for (index, monitor) in self.monitors.iter().enumerate() {
-            let modes: Vec<_> = monitor.modes.iter().map(mode_label).collect();
-            let selected = monitor.mode.and_then(|m| modes.get(m)).cloned();
+            let modes: Vec<_> = monitor
+                .modes
+                .iter()
+                .enumerate()
+                .map(|(index, mode)| (index, mode_label(mode)))
+                .collect();
             let card = column![
                 text(format!(
                     "{} · {} {}",
@@ -1541,34 +1546,40 @@ impl State {
                 .size(20),
                 toggle(
                     format!("display-enabled-{index}"),
-                    "Enabled",
+                    fl!("settings-display-enabled"),
                     monitor.enabled,
                     Message::Enabled(index, !monitor.enabled)
                 ),
                 row![
                     column![
-                        text("Resolution & refresh rate"),
-                        choice(format!("display-mode-{index}"), modes, selected, move |v| {
-                            Message::Mode(index, v)
-                        })
+                        text(fl!("settings-display-mode")),
+                        pick(
+                            format!("display-mode-{index}"),
+                            modes,
+                            monitor.mode,
+                            move |v| { Message::Mode(index, v) }
+                        )
                     ]
                     .spacing(6),
                     column![
-                        text("Rotation"),
-                        choice(
+                        text(fl!("settings-display-rotation")),
+                        pick(
                             format!("display-rotation-{index}"),
                             transforms()
                                 .into_iter()
-                                .map(|v| transform_name(v).to_owned())
-                                .collect::<Vec<_>>(),
-                            Some(transform_name(monitor.transform).to_owned()),
+                                .map(|v| (v, transform_label(v)))
+                                .collect(),
+                            Some(monitor.transform),
                             move |v| Message::Rotation(index, v)
                         )
                     ]
                     .spacing(6)
                 ]
                 .spacing(18),
-                text(format!("Scale: {:.0}%", monitor.scale * 100.)),
+                text(fl!(
+                    "settings-display-scale",
+                    scale = canopa_i18n::format::percent(monitor.scale * 100.)
+                )),
                 adjust(
                     format!("display-scale-{index}"),
                     0.5..=4.,
@@ -1579,19 +1590,19 @@ impl State {
                 row![
                     field(
                         format!("display-x-{}", monitor.name),
-                        "Horizontal position",
+                        fl!("settings-display-x"),
                         &self.positions[index].0,
                         move |v| Message::Position(index, true, v)
                     ),
                     field(
                         format!("display-y-{}", monitor.name),
-                        "Vertical position",
+                        fl!("settings-display-y"),
                         &self.positions[index].1,
                         move |v| Message::Position(index, false, v)
                     )
                 ]
                 .spacing(18),
-                text("Positions use logical pixels. Keep at least one display enabled.")
+                text(fl!("settings-displays-positions-hint"))
             ]
             .spacing(10);
             body = body.push(
@@ -1610,25 +1621,25 @@ impl State {
         let keyboard = column![
             field(
                 "settings-field-layouts-in-switch-order-for-example-us-fr",
-                "Layouts, in switch order (for example us,fr)",
+                fl!("settings-input-layouts"),
                 &self.input.value.layouts,
                 |v| Message::InputText(0, v)
             ),
             field(
                 "settings-field-variants-optional-in-the-same-order",
-                "Variants (optional, in the same order)",
+                fl!("settings-input-variants"),
                 &self.input.value.variants,
                 |v| Message::InputText(1, v)
             ),
             field(
                 "settings-field-xkb-options-for-example-grp-alt-shift-toggle",
-                "XKB options (for example grp:alt_shift_toggle)",
+                fl!("settings-input-options"),
                 &self.input.value.options,
                 |v| Message::InputText(2, v)
             ),
-            text(format!(
-                "Repeat delay: {} ms",
-                self.input.value.repeat_delay
+            text(fl!(
+                "settings-input-repeat-delay",
+                delay = self.input.value.repeat_delay
             )),
             adjust(
                 "repeat-delay",
@@ -1637,9 +1648,9 @@ impl State {
                 50.,
                 |v| Message::InputNumber(0, v)
             ),
-            text(format!(
-                "Repeat rate: {} keys/second",
-                self.input.value.repeat_rate
+            text(fl!(
+                "settings-input-repeat-rate",
+                rate = self.input.value.repeat_rate
             )),
             adjust(
                 "repeat-rate",
@@ -1651,9 +1662,9 @@ impl State {
         ]
         .spacing(10);
         let mouse = column![
-            text(format!(
-                "Pointer speed: {:.2}",
-                self.input.value.mouse_speed
+            text(fl!(
+                "settings-input-pointer-speed",
+                speed = canopa_i18n::format::decimal(self.input.value.mouse_speed, 2, true)
             )),
             adjust(
                 "mouse-speed",
@@ -1664,22 +1675,22 @@ impl State {
             ),
             toggle(
                 "input-flag-0",
-                "Left-handed buttons",
+                fl!("settings-input-left-handed"),
                 self.input.value.mouse_left_handed,
                 Message::InputFlag(0, !self.input.value.mouse_left_handed)
             ),
             toggle(
                 "input-flag-1",
-                "Natural scrolling for mouse",
+                fl!("settings-input-mouse-natural-scroll"),
                 self.input.value.mouse_natural_scroll,
                 Message::InputFlag(1, !self.input.value.mouse_natural_scroll)
             ),
         ]
         .spacing(10);
         let touchpad = column![
-            text(format!(
-                "Touchpad speed: {:.2}",
-                self.input.value.touchpad_speed
+            text(fl!(
+                "settings-input-touchpad-speed",
+                speed = canopa_i18n::format::decimal(self.input.value.touchpad_speed, 2, true)
             )),
             adjust(
                 "touchpad-speed",
@@ -1690,28 +1701,28 @@ impl State {
             ),
             toggle(
                 "input-flag-2",
-                "Tap to click",
+                fl!("settings-input-tap"),
                 self.input.value.touchpad_tap,
                 Message::InputFlag(2, !self.input.value.touchpad_tap)
             ),
             toggle(
                 "input-flag-3",
-                "Natural scrolling for touchpad",
+                fl!("settings-input-touchpad-natural-scroll"),
                 self.input.value.touchpad_natural_scroll,
                 Message::InputFlag(3, !self.input.value.touchpad_natural_scroll)
             ),
             toggle(
                 "input-flag-4",
-                "Disable touchpad while typing",
+                fl!("settings-input-disable-while-typing"),
                 self.input.value.touchpad_disable_while_typing,
                 Message::InputFlag(4, !self.input.value.touchpad_disable_while_typing)
             )
         ]
         .spacing(10);
         column![
-            settings_group("Keyboard", keyboard),
-            settings_group("Mouse", mouse),
-            settings_group("Touchpad", touchpad)
+            settings_group(fl!("settings-input-keyboard"), keyboard),
+            settings_group(fl!("settings-input-mouse"), mouse),
+            settings_group(fl!("settings-input-touchpad"), touchpad)
         ]
         .spacing(14)
         .into()
@@ -1722,29 +1733,22 @@ impl State {
         let values = &self.personal.value.values;
         let cursor = self.input.value.cursor_size;
         let cursor_label = |size: Option<u16>| match size {
-            None => "Default (24 px)".to_owned(),
-            Some(size) => format!("{size} px"),
+            None => fl!("settings-cursor-size-default", size = 24),
+            Some(size) => fl!("settings-cursor-size-pixels", size = size),
         };
-        let cursor_options: Vec<String> = std::iter::once(None)
+        let cursor_options: Vec<_> = std::iter::once(None)
             .chain(crate::input::CURSOR_SIZES[1..].iter().copied().map(Some))
-            .map(cursor_label)
+            .map(|size| (size, cursor_label(size)))
             .collect();
         let cursor_control: Element<'_, Message> = if self.paths.active() {
-            choice(
+            pick(
                 "settings-cursor-size",
                 cursor_options,
-                Some(cursor_label(cursor)),
-                |label| {
-                    Message::CursorSize(
-                        label
-                            .split_once(' ')
-                            .and_then(|(size, unit)| (unit == "px").then_some(size))
-                            .and_then(|size| size.parse().ok()),
-                    )
-                },
+                Some(cursor),
+                Message::CursorSize,
             )
         } else {
-            text("The cursor size is editable in a Canopa session.")
+            text(fl!("settings-cursor-size-needs-session"))
                 .size(14)
                 .style(canopa_ui::muted)
                 .into()
@@ -1752,17 +1756,17 @@ impl State {
         let seeing = column![
             toggle(
                 "settings-high-contrast",
-                "High contrast",
+                fl!("settings-a11y-high-contrast"),
                 values.high_contrast,
                 Message::HighContrast(!values.high_contrast)
             ),
-            text(
-                "Black and white surfaces with full-strength text and borders. \
-                 Applications that follow the desktop contrast setting change too."
-            )
-            .size(14)
-            .style(canopa_ui::muted),
-            text(format!("Larger text · {}%", values.text_scale)),
+            text(fl!("settings-a11y-high-contrast-hint"))
+                .size(14)
+                .style(canopa_ui::muted),
+            text(fl!(
+                "settings-a11y-text-scale",
+                scale = canopa_i18n::format::percent(f64::from(values.text_scale))
+            )),
             adjust(
                 "settings-accessibility-text-scale",
                 100.0..=150.0,
@@ -1770,14 +1774,14 @@ impl State {
                 5.0,
                 Message::TextScale
             ),
-            text("Cursor size (applies at once)"),
+            text(fl!("settings-a11y-cursor-size")),
             cursor_control,
         ]
         .spacing(12);
         let motion = column![
             toggle(
                 "settings-accessibility-reduced-motion",
-                "Reduce motion in Canopa and in applications",
+                fl!("settings-a11y-reduced-motion"),
                 values.reduced_motion,
                 Message::ReducedMotion(!values.reduced_motion)
             ),
@@ -1785,33 +1789,27 @@ impl State {
                 Some(reduced) => self.action(
                     "settings-accessibility-compositor-motion",
                     if reduced {
-                        "Use Niri animation settings"
+                        fl!("settings-motion-use-niri")
                     } else {
-                        "Reduce window and workspace motion"
+                        fl!("settings-motion-reduce")
                     },
                     Some(Message::CompositorMotion(!reduced)),
                     false,
                 ),
-                None => text(
-                    "Compositor motion is editable in a Canopa session with a managed Niri configuration."
-                )
-                .size(14)
-                .style(canopa_ui::muted)
-                .into(),
+                None => text(fl!("settings-motion-needs-session"))
+                    .size(14)
+                    .style(canopa_ui::muted)
+                    .into(),
             },
         ]
         .spacing(12);
-        let reader = text(
-            "Settings, the launcher, Files, the Shell bar and notifications work with \
-             the Orca screen reader. Start it with the command orca, or turn it on \
-             for every session in Orca's own preferences.",
-        )
-        .size(14)
-        .style(canopa_ui::muted);
+        let reader = text(fl!("settings-a11y-screen-reader-hint"))
+            .size(14)
+            .style(canopa_ui::muted);
         column![
-            settings_group("Seeing", seeing),
-            settings_group("Motion", motion),
-            settings_group("Screen reader", reader),
+            settings_group(fl!("settings-a11y-seeing"), seeing),
+            settings_group(fl!("settings-a11y-motion"), motion),
+            settings_group(fl!("settings-a11y-screen-reader"), reader),
         ]
         .spacing(16)
         .into()
@@ -1820,16 +1818,26 @@ impl State {
         let appearance = column![
             toggle(
                 "light",
-                "Light appearance",
-                self.personal.value.values.appearance.color_scheme == canopa_theme::ColorScheme::Light,
+                fl!("settings-personal-light"),
+                self.personal.value.values.appearance.color_scheme
+                    == canopa_theme::ColorScheme::Light,
                 Message::Light(
-                    self.personal.value.values.appearance.color_scheme != canopa_theme::ColorScheme::Light
+                    self.personal.value.values.appearance.color_scheme
+                        != canopa_theme::ColorScheme::Light
                 )
             ),
-            container(field("settings-field-accent-color-optional-rrggbb", "Accent color (optional, #RRGGBB)", &self.personal.value.accent, |v| {
-                Message::PersonalText(0, v)
-            })).max_width(300),
-            text(format!("Text size · {}%", self.personal.value.values.text_scale)),
+            container(field(
+                "settings-field-accent-color-optional-rrggbb",
+                fl!("settings-personal-accent"),
+                &self.personal.value.accent,
+                |v| { Message::PersonalText(0, v) }
+            ))
+            .max_width(300),
+            text(fl!(
+                "settings-personal-text-scale",
+                scale =
+                    canopa_i18n::format::percent(f64::from(self.personal.value.values.text_scale))
+            )),
             adjust(
                 "settings-text-scale",
                 100.0..=150.0,
@@ -1839,36 +1847,46 @@ impl State {
             ),
             toggle(
                 "settings-reduced-motion",
-                "Reduce Shell panel motion",
+                fl!("settings-personal-reduced-motion"),
                 self.personal.value.values.reduced_motion,
                 Message::ReducedMotion(!self.personal.value.values.reduced_motion)
             ),
-            self.action("settings-button-choose-wallpaper", "Choose wallpaper…", Some(Message::Wallpaper), true),
-            text("Preview and save wallpaper for each monitor. The default image folder is ~/Pictures/Wallpapers.")
-                .size(14).style(canopa_ui::muted),
-        ].spacing(12);
+            self.action(
+                "settings-button-choose-wallpaper",
+                fl!("settings-personal-wallpaper"),
+                Some(Message::Wallpaper),
+                true
+            ),
+            text(fl!(
+                "settings-personal-wallpaper-hint",
+                folder = "~/Pictures/Wallpapers"
+            ))
+            .size(14)
+            .style(canopa_ui::muted),
+        ]
+        .spacing(12);
         let lockscreen = column![
             field(
                 "settings-field-clock-format",
-                "Clock format",
+                fl!("settings-personal-clock-format"),
                 &self.personal.value.values.lock.clock_format,
                 |v| { Message::PersonalText(1, v) }
             ),
             field(
                 "settings-field-date-format",
-                "Date format",
+                fl!("settings-personal-date-format"),
                 &self.personal.value.values.lock.date_format,
                 |v| { Message::PersonalText(2, v) }
             ),
             field(
                 "settings-field-font-family",
-                "Font family",
+                fl!("settings-personal-font"),
                 &self.personal.value.values.lock.font,
                 |v| { Message::PersonalText(3, v) }
             ),
             field(
                 "settings-field-avatar-image-optional-absolute-path",
-                "Avatar image (optional absolute path)",
+                fl!("settings-personal-avatar"),
                 &self
                     .personal
                     .value
@@ -1880,9 +1898,9 @@ impl State {
                     .unwrap_or_default(),
                 |v| Message::PersonalText(4, v)
             ),
-            text(format!(
-                "Background dimming: {}%",
-                self.personal.value.values.lock.dim
+            text(fl!(
+                "settings-personal-dimming",
+                dim = canopa_i18n::format::percent(f64::from(self.personal.value.values.lock.dim))
             )),
             adjust(
                 "lock-dim",
@@ -1893,7 +1911,7 @@ impl State {
             ),
             self.action(
                 "settings-button-edit-lock-screen-widgets",
-                "Edit lock screen widgets…",
+                fl!("settings-personal-edit-lock-widgets"),
                 Some(Message::OpenLockWidgetEditor),
                 false
             )
@@ -1903,21 +1921,23 @@ impl State {
             self.action(
                 "settings-button-compositor-motion",
                 if reduced {
-                    "Use Niri animation settings"
+                    fl!("settings-motion-use-niri")
                 } else {
-                    "Reduce window and workspace motion"
+                    fl!("settings-motion-reduce")
                 },
                 Some(Message::CompositorMotion(!reduced)),
                 false,
             )
         } else {
-            text("Compositor motion is editable in a Canopa session with a managed Niri configuration.")
-                .size(14).style(canopa_ui::muted).into()
+            text(fl!("settings-motion-needs-session"))
+                .size(14)
+                .style(canopa_ui::muted)
+                .into()
         };
         column![
-            settings_group("Appearance", appearance),
-            settings_group("Lock screen", lockscreen),
-            settings_group("Window and workspace motion", motion),
+            settings_group(fl!("settings-personal-appearance"), appearance),
+            settings_group(fl!("settings-personal-lock-screen"), lockscreen),
+            settings_group(fl!("settings-personal-motion"), motion),
         ]
         .spacing(14)
         .into()
@@ -1926,39 +1946,50 @@ impl State {
 /// A labelled text field. `key` is its focus and accessibility identity.
 fn field<'a>(
     key: impl Into<String>,
-    label: &'a str,
+    label: impl Into<String>,
     value: &str,
     change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
 ) -> Element<'a, Message> {
     let key = key.into();
+    let label = label.into();
     semantic(
-        Node::text_input(label, value)
+        Node::text_input(label.clone(), value)
             .key(format!("{key}-field"))
             .on_text(change.clone()),
         column![
             text(label),
-            text_input("", value).id(key).on_input(change).padding(10)
+            text_input("", value)
+                .id(key)
+                .on_input(change)
+                .align_x(direction::start())
+                .padding(10)
         ]
         .spacing(6)
         .width(Length::Fill),
     )
 }
-fn heading(label: &str, size: u32) -> iced::widget::Text<'_> {
-    text(label).size(size).font(Font {
+fn heading<'a>(label: impl Into<String>, size: u32) -> iced::widget::Text<'a> {
+    text(label.into()).size(size).font(Font {
         weight: Weight::Semibold,
         ..Font::DEFAULT
     })
 }
 
 fn settings_group<'a>(
-    label: &'a str,
+    label: impl Into<String>,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
+    let label = label.into();
     semantic(
-        Node::group(label),
+        Node::group(label.clone()),
         container(
             column![
-                semantic(Node::heading(label, 2), heading(label, 18)),
+                semantic(
+                    Node::heading(label.clone(), 2),
+                    heading(label, 18)
+                        .width(Length::Fill)
+                        .align_x(direction::text_start())
+                ),
                 content.into()
             ]
             .spacing(12),
@@ -1982,15 +2013,16 @@ fn settings_rule(theme: &Theme) -> rule::Style {
 /// never depends on the (translatable) label.
 fn button<'a>(
     key: impl Into<String>,
-    label: &'a str,
+    label: impl Into<String>,
     message: Option<Message>,
     treatment: canopa_ui::Action,
     width: Length,
     preserve_disabled: bool,
 ) -> Element<'a, Message> {
     let key = key.into();
+    let label = label.into();
     semantic(
-        Node::button(label)
+        Node::button(label.clone())
             .key(key.clone())
             .disabled(message.is_none())
             .on_click(message.clone()),
@@ -2113,7 +2145,14 @@ fn choice<'a>(
         Node::new(accessibility::Role::ComboBox)
             .key(id.clone())
             .value(selected.clone().unwrap_or_default())
-            .description(format!("{} of {}", index + 1, options.len()))
+            .description({
+                let (position, count) = (index as u64 + 1, options.len() as u64);
+                fl!(
+                    "settings-choice-position",
+                    position = position,
+                    count = count
+                )
+            })
             .on_click(right.clone())
             .on_increment(right.clone())
             .on_decrement(left.clone())
@@ -2134,13 +2173,52 @@ fn choice<'a>(
         ),
     )
 }
+/// A pick list of values shown by their labels; messages carry the value,
+/// never the (translated) label. Labels must be distinct.
+fn pick<'a, V: Clone + PartialEq + 'a>(
+    id: impl Into<String>,
+    options: Vec<(V, String)>,
+    selected: Option<V>,
+    change: impl Fn(V) -> Message + 'a,
+) -> Element<'a, Message> {
+    let labels: Vec<String> = options.iter().map(|(_, label)| label.clone()).collect();
+    let selected = selected.and_then(|selected| {
+        options
+            .iter()
+            .find(|(value, _)| *value == selected)
+            .map(|(_, label)| label.clone())
+    });
+    choice(id, labels, selected, move |label| {
+        let value = options
+            .iter()
+            .find(|(_, known)| *known == label)
+            .or(options.first())
+            .map(|(value, _)| value.clone())
+            .expect("a pick list chooses one of its options");
+        change(value)
+    })
+}
 fn mode_label(mode: &niri_ipc::Mode) -> String {
-    format!(
-        "{} × {} · {:.2} Hz",
-        mode.width,
-        mode.height,
-        f64::from(mode.refresh_rate) / 1000.
+    // Pixel counts are passed as text: no digit grouping.
+    fl!(
+        "settings-display-mode-option",
+        width = mode.width.to_string(),
+        height = mode.height.to_string(),
+        refresh = canopa_i18n::format::decimal(f64::from(mode.refresh_rate) / 1000., 2, true)
     )
+}
+/// A rotation's name in the selected language.
+fn transform_label(transform: Transform) -> String {
+    match transform {
+        Transform::Normal => fl!("settings-rotation-normal"),
+        Transform::_90 => fl!("settings-rotation-90"),
+        Transform::_180 => fl!("settings-rotation-180"),
+        Transform::_270 => fl!("settings-rotation-270"),
+        Transform::Flipped => fl!("settings-rotation-flipped"),
+        Transform::Flipped90 => fl!("settings-rotation-flipped-90"),
+        Transform::Flipped180 => fl!("settings-rotation-flipped-180"),
+        Transform::Flipped270 => fl!("settings-rotation-flipped-270"),
+    }
 }
 fn transforms() -> [Transform; 8] {
     [
@@ -2306,7 +2384,7 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
             let (mut state, task) = State::boot();
             state.activations = activations.clone();
             let mut bridge = accessibility::Bridge::new("canopa-settings");
-            bridge.open(ACCESSIBILITY_ROOT, "Canopa Settings", None);
+            bridge.open(ACCESSIBILITY_ROOT, &fl!("settings-window-title"), None);
             // A new ordinary window normally has focus; compositor events correct it.
             bridge.set_window_focused(ACCESSIBILITY_ROOT, true);
             state.accessibility = Some(bridge);
@@ -2322,7 +2400,7 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
         State::update,
         State::view,
     )
-    .title("Canopa Settings")
+    .title(|_: &State| fl!("settings-window-title"))
     .theme(|state: &State| canopa_ui::theme(state.personal.value.values.appearance.clone()))
     .scale_factor(|state: &State| {
         f32::from(state.personal.value.values.appearance.text_scale()) / 100.0
