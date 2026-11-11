@@ -137,6 +137,11 @@ mod tests {
 
     #[test]
     fn french_labels_are_translated_for_display() {
+        if !crate::i18n::tests::isolated(
+            "history_labels::tests::french_labels_are_translated_for_display",
+        ) {
+            return;
+        }
         let _french = crate::i18n::tests::Selected::french();
         assert_eq!(
             display("Undo copy to Photos"),

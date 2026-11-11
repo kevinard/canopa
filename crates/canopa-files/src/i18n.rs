@@ -7,6 +7,29 @@ pub(crate) mod tests {
 
     /// The language selection is process-global; tests that change it hold this.
     static SERIAL: Mutex<()> = Mutex::new(());
+    const CHILD: &str = "CANOPA_FILES_LANGUAGE_TEST_CHILD";
+
+    /// Whether the test `name` (its full path in this test binary) should run
+    /// its body here. Tests that select another language call this first: the
+    /// parent re-runs the test alone in a child process, so the process-global
+    /// selection never reaches tests that assert English text concurrently.
+    pub(crate) fn isolated(name: &str) -> bool {
+        if std::env::var_os(CHILD).is_some() {
+            return true;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name, "--exact", "--test-threads=1"])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        let report = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && report.contains("1 passed"),
+            "{name} did not pass in its child process:\n{report}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        false
+    }
 
     /// A language selection until dropped, even when the test panics.
     pub(crate) struct Selected(#[allow(dead_code)] MutexGuard<'static, ()>);
@@ -50,6 +73,9 @@ pub(crate) mod tests {
     #[test]
     fn commands_and_sizes_follow_the_selected_language() {
         use crate::interface::Command;
+        if !isolated("i18n::tests::commands_and_sizes_follow_the_selected_language") {
+            return;
+        }
         {
             let _french = Selected::french();
             assert_eq!(Command::Trash.label(), "Mettre à la corbeille");

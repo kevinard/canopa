@@ -578,6 +578,11 @@ mod tests {
 
     #[test]
     fn arrows_and_chevrons_point_the_other_way_right_to_left() {
+        if !crate::i18n::tests::isolated(
+            "desktop::chrome::tests::arrows_and_chevrons_point_the_other_way_right_to_left",
+        ) {
+            return;
+        }
         assert_eq!(Icon::Back.directional(), Icon::Back);
         let _rtl = crate::i18n::tests::Selected::pseudo();
         assert_eq!(Icon::Back.directional(), Icon::Forward);
