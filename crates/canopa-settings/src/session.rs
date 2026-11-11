@@ -30,6 +30,14 @@ impl Paths {
     pub fn idle(&self) -> PathBuf {
         self.directory.join("stasis.rune")
     }
+    /// The user's changes to the shipped key bindings.
+    pub fn shortcuts(&self) -> PathBuf {
+        self.directory.join(crate::shortcuts::DELTA)
+    }
+    /// Shipped defaults with the shortcut changes applied, for Niri to include.
+    pub fn generated_shortcuts(&self) -> PathBuf {
+        self.directory.join(crate::shortcuts::GENERATED)
+    }
     pub fn active(&self) -> bool {
         std::env::var_os("NIRI_CONFIG")
             .map(PathBuf::from)
@@ -39,22 +47,7 @@ impl Paths {
     }
     pub fn initialize(&self, defaults: Option<&Path>) -> Result<()> {
         std::fs::create_dir_all(&self.directory)?;
-        let base = if let Some(path) = defaults {
-            ensure!(
-                path.is_absolute() && path.is_file(),
-                "session defaults are unavailable"
-            );
-            path.to_owned()
-        } else {
-            let system = PathBuf::from("/usr/share/canopa/niri-defaults.kdl");
-            if system.is_file() {
-                system
-            } else {
-                let path = self.directory.join("niri-defaults.kdl");
-                create(&path, include_str!("../../../packaging/niri/defaults.kdl"))?;
-                path
-            }
-        };
+        let base = self.shipped_defaults(defaults)?;
         create(&self.input(), &crate::input::Input::default().text()?)?;
         create(&self.displays(), "// Managed display preferences.\n")?;
         create(
@@ -77,7 +70,29 @@ impl Paths {
         )?;
         Ok(())
     }
+
+    /// The packaged compositor defaults: an explicit file, the system copy, or
+    /// a private copy of the built-in defaults for uninstalled builds.
+    pub fn shipped_defaults(&self, defaults: Option<&Path>) -> Result<PathBuf> {
+        if let Some(path) = defaults {
+            ensure!(
+                path.is_absolute() && path.is_file(),
+                "session defaults are unavailable"
+            );
+            return Ok(path.to_owned());
+        }
+        let system = PathBuf::from(SYSTEM_DEFAULTS);
+        if system.is_file() {
+            return Ok(system);
+        }
+        std::fs::create_dir_all(&self.directory)?;
+        let path = self.directory.join("niri-defaults.kdl");
+        create(&path, include_str!("../../../packaging/niri/defaults.kdl"))?;
+        Ok(path)
+    }
 }
+
+pub const SYSTEM_DEFAULTS: &str = "/usr/share/canopa/niri-defaults.kdl";
 
 fn create(path: &Path, text: &str) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};

@@ -80,6 +80,19 @@ fn run() -> Result<()> {
                 .map(Ok)
                 .unwrap_or_else(Paths::discover)?;
             paths.initialize(defaults_file.as_deref())?;
+            // Shortcut changes must never prevent logging in: keep the last
+            // valid files and report why they were not updated.
+            match canopa_settings::shortcuts::refresh(
+                &paths,
+                defaults_file.as_deref(),
+                canopa_settings::niri::validate,
+            ) {
+                Ok(Some(change)) => eprintln!("canopa-settings: {change}"),
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!("canopa-settings: keyboard shortcuts were not updated: {error:#}")
+                }
+            }
             canopa_settings::niri::validate(&paths.niri())?;
             println!("{}", paths.niri().display());
         }

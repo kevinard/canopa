@@ -163,6 +163,48 @@ fn input_round_trips_and_actual_niri_validates_the_generated_include() {
     assert!(invalid.validate().is_err());
 }
 #[test]
+#[ignore = "requires a native Niri parser; the desktop workflow runs this check"]
+fn migrated_shortcut_changes_and_generated_defaults_validate_with_niri() {
+    use canopa_settings::{niri::validate, shortcuts::refresh};
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    let defaults = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packaging/niri/defaults.kdl")
+        .canonicalize()
+        .unwrap();
+    // The former first save copied the defaults into niri.kdl; one key changed.
+    let copied = std::fs::read_to_string(&defaults)
+        .unwrap()
+        .replace("    Mod+Space {", "    Mod+Shift+Space {");
+    std::fs::write(
+        paths.niri(),
+        format!(
+            "// Canopa session; your ordinary Niri configuration is separate.\n{copied}include \"niri-input.kdl\"\ninclude \"niri-displays.kdl\"\ninclude \"niri-custom.kdl\"\n"
+        ),
+    )
+    .unwrap();
+    validate(&paths.niri()).unwrap();
+    assert!(
+        refresh(&paths, Some(&defaults), validate)
+            .unwrap()
+            .is_some()
+    );
+    validate(&paths.niri()).unwrap();
+    let generated = std::fs::read_to_string(paths.generated_shortcuts()).unwrap();
+    assert!(generated.contains("Mod+Shift+Space"));
+    assert!(!generated.contains("Mod+Space {"));
+    assert!(
+        std::fs::read_to_string(paths.niri())
+            .unwrap()
+            .contains("include \"niri-shortcuts.kdl\"")
+    );
+    assert!(
+        refresh(&paths, Some(&defaults), validate)
+            .unwrap()
+            .is_none()
+    );
+}
+#[test]
 fn stale_sources_validation_errors_and_symlinks_cannot_destroy_configuration() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("config.kdl");

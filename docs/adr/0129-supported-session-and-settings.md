@@ -2,6 +2,10 @@
 
 Status: accepted; physical installation acceptance remains separate.
 
+The shortcut materialization below is superseded by
+[ADR 0135](0135-shortcut-changes-over-shipped-defaults.md), which stores shortcut
+changes as a delta over the shipped defaults.
+
 Canopa Settings is an ordinary independently launched Iced application, sharing
 appearance and controls. It does not own compositor, wallpaper, authentication or
 idle lifetimes. Existing owners validate and apply their own configuration.

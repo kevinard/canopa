@@ -49,6 +49,16 @@ impl Snapshot {
         })
     }
 
+    /// Whether the file existed when this snapshot was taken.
+    pub fn exists(&self) -> bool {
+        self.identity.is_some()
+    }
+
+    /// Whether both snapshots observed the same version of the same file.
+    pub fn same(&self, other: &Self) -> bool {
+        self.path == other.path && self.identity == other.identity && self.text == other.text
+    }
+
     pub fn unchanged(&self) -> Result<()> {
         let now = Self::load(&self.path)?;
         ensure!(

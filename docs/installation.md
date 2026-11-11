@@ -53,7 +53,10 @@ sessions do not inherit a Canopa autostart link.
 The initial compositor files are under `~/.config/canopa/` (or XDG_CONFIG_HOME):
 `niri.kdl` includes system defaults, `niri-input.kdl`, `niri-displays.kdl` and
 `niri-custom.kdl`. Settings owns the first two preference includes. Put additional
-compositor options and key bindings in the custom file. Existing
+compositor options and key bindings in the custom file. After you change a shipped
+shortcut, `niri.kdl` includes the generated `niri-shortcuts.kdl` in place of the
+system defaults, and your changes live in `shortcuts.kdl`; see
+[shortcuts](settings.md#shortcuts). Existing
 `~/.config/niri/config.kdl` is never replaced or imported silently.
 
 Useful defaults: Super+Space opens applications, Super+E opens Files,
@@ -205,7 +208,8 @@ For a failed login, use a separate TTY and inspect
 `journalctl --user -u canopa-compositor -u canopa-shell -u canopa-lock`.
 `canopa-settings check` validates the user compositor configuration. Moving a bad
 managed include aside and running `canopa-settings init-session` recreates only
-missing files; preserve the original for diagnosis. A locked compositor remains
+missing files, apart from regenerating `niri-shortcuts.kdl` from `shortcuts.kdl`;
+preserve the original for diagnosis. A locked compositor remains
 locked if its locker dies; do not use process termination as an unlock method.
 
 Private staging and nested compositor tests do not establish physical DRM/VT,

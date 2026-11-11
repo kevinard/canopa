@@ -1,15 +1,40 @@
-//! Edit the packaged keyboard actions in the Canopa session. Niri validates
-//! the whole candidate, including user includes, before the editor publishes it.
-use crate::{niri, session::Paths, storage::Snapshot};
-use anyhow::{Context, Result, ensure};
-use kdl::{KdlDocument, KdlNode};
+//! Keyboard shortcuts for the Canopa session.
+//!
+//! Niri lets a later `binds` block override an inherited key but cannot remove
+//! one. Settings therefore stores only the user's changes, as a delta in
+//! `shortcuts.kdl`, and generates `niri-shortcuts.kdl`: the shipped defaults
+//! with that delta applied. While the delta has changes, `niri.kdl` includes
+//! the generated file in place of the shipped defaults. Session start
+//! regenerates it, so new and changed shipped bindings still arrive, and a user
+//! binding wins any conflict over its key. Niri validates every candidate,
+//! including user includes, before Settings publishes it.
+use crate::{
+    niri,
+    session::Paths,
+    storage::{Snapshot, quote},
+};
+use anyhow::{Context, Result, bail, ensure};
+use kdl::{KdlDocument, KdlEntry, KdlNode};
 use std::{
     collections::HashSet,
+    io::Write,
     path::{Path, PathBuf},
 };
 
+/// The user's changes to the shipped bindings.
+pub const DELTA: &str = "shortcuts.kdl";
+/// Shipped defaults with the user's changes applied. Settings replaces it.
+pub const GENERATED: &str = "niri-shortcuts.kdl";
+#[cfg(test)]
 const DEFAULTS: &str = include_str!("../../../packaging/niri/defaults.kdl");
+/// The shipped defaults that the former first-save materialization copied into
+/// `niri.kdl` (887ec8a, the only release before the delta format). Migration
+/// compares the copied block with this, not with the current defaults.
+const LEGACY_DEFAULTS: &str = include_str!("shortcuts/legacy-defaults.kdl");
+const DEFAULTS_HEADER: &str = "// Canopa compositor defaults.";
 const MAX_INCLUDES: usize = 32;
+const LEGACY_READ_ONLY: &str =
+    "Custom top-level binding blocks are read-only. Keep your own bindings in niri-custom.kdl.";
 
 #[derive(Clone, Debug)]
 pub struct Shortcut {
@@ -17,6 +42,232 @@ pub struct Shortcut {
     pub key: String,
     pub saved_key: String,
     pub default_key: String,
+    /// The shipped binding this row edits.
+    shipped: KdlNode,
+    /// The delta binding that currently carries this row's action, if any.
+    claim: Option<usize>,
+}
+
+/// Added or changed bindings, and shipped actions that were moved or turned off.
+#[derive(Clone, Debug, Default)]
+struct Delta {
+    defaults: Option<PathBuf>,
+    binds: Vec<KdlNode>,
+    removed: Vec<KdlNode>,
+}
+
+impl Delta {
+    fn parse(text: &str) -> Result<Self> {
+        let mut delta = Self::default();
+        if text.trim().is_empty() {
+            return Ok(delta);
+        }
+        let document = KdlDocument::parse_v1(text).context("shortcuts.kdl is not valid KDL")?;
+        let mut seen = HashSet::new();
+        for node in document.nodes() {
+            let name = node.name().value();
+            ensure!(
+                seen.insert(name.to_owned()),
+                "shortcuts.kdl has more than one {name} section"
+            );
+            match name {
+                "defaults" => {
+                    let path = node
+                        .get(0)
+                        .and_then(|value| value.as_string())
+                        .map(PathBuf::from)
+                        .filter(|path| path.is_absolute())
+                        .context("shortcuts.kdl needs an absolute defaults path")?;
+                    delta.defaults = Some(path);
+                }
+                "binds" => delta.binds = bindings(node)?.to_vec(),
+                "remove" => {
+                    ensure!(
+                        node.entries().is_empty(),
+                        "Unsupported remove section in shortcuts.kdl"
+                    );
+                    delta.removed = node
+                        .children()
+                        .map(|children| children.nodes().to_vec())
+                        .unwrap_or_default();
+                }
+                _ => bail!("shortcuts.kdl has an unsupported {name} section"),
+            }
+        }
+        let mut keys = HashSet::new();
+        for bind in &delta.binds {
+            action(bind)?;
+            ensure!(
+                keys.insert(key_id(bind)),
+                "{} is assigned more than once in shortcuts.kdl",
+                bind.name().value()
+            );
+        }
+        Ok(delta)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.binds.is_empty() && self.removed.is_empty()
+    }
+
+    fn text(&self) -> Result<String> {
+        let mut text = String::from(
+            "// Your changes to Canopa's shipped key bindings. Canopa Settings edits this file.\n\
+             // Shipped bindings that are not listed here follow package updates.\n",
+        );
+        if let Some(path) = &self.defaults {
+            text.push_str(&format!(
+                "defaults {}\n",
+                quote(path.to_str().context("defaults path must be UTF-8")?)
+            ));
+        }
+        text.push_str(
+            "// Added and changed bindings. Each replaces a shipped binding with the same key.\n",
+        );
+        text.push_str(&section("binds", &self.binds));
+        text.push_str("// Shipped actions that you moved or turned off.\n");
+        text.push_str(&section("remove", &self.removed));
+        Ok(text)
+    }
+}
+
+/// A block with one node per line, keeping each node's own source text.
+fn section(name: &str, nodes: &[KdlNode]) -> String {
+    let mut text = format!("{name} {{\n");
+    for node in nodes {
+        let mut node = node.clone();
+        if let Some(format) = node.format_mut() {
+            format.leading.clear();
+            format.before_terminator.clear();
+            format.terminator.clear();
+            format.trailing.clear();
+        }
+        text.push_str("    ");
+        text.push_str(node.to_string().trim());
+        text.push('\n');
+    }
+    text.push_str("}\n");
+    text
+}
+
+/// The packaged defaults file and its text.
+#[derive(Clone, Debug)]
+struct Shipped {
+    path: PathBuf,
+    text: String,
+}
+
+impl Shipped {
+    fn read(path: &Path) -> Result<Self> {
+        let bytes = canopa_file::read_canonical_bounded(path, crate::storage::MAX_BYTES)
+            .with_context(|| format!("Could not read Canopa defaults {}", path.display()))?;
+        Ok(Self {
+            path: path.to_owned(),
+            text: String::from_utf8(bytes)?,
+        })
+    }
+
+    fn binds(&self) -> Result<Vec<KdlNode>> {
+        let document = KdlDocument::parse_v1(&self.text)?;
+        let binds = bindings(document.get("binds").context("Missing Canopa bindings")?)?;
+        binds.iter().try_for_each(|node| action(node).map(drop))?;
+        Ok(binds.to_vec())
+    }
+
+    /// The shipped defaults with `delta` applied, for `niri-shortcuts.kdl`.
+    fn generate(&self, delta: &Delta) -> Result<String> {
+        let document = KdlDocument::parse_v1(&self.text)?;
+        ensure!(
+            document
+                .nodes()
+                .iter()
+                .all(|node| node.name().value() != "include"),
+            "Canopa defaults that include other files cannot be combined with shortcut changes."
+        );
+        let binds = effective(&self.binds()?, delta)?;
+        let span = document
+            .nodes()
+            .iter()
+            .find(|node| node.name().value() == "binds")
+            .context("Missing Canopa bindings")?
+            .span();
+        let original = self
+            .text
+            .get(span.offset()..span.offset() + span.len())
+            .unwrap_or_default()
+            .trim_end();
+        ensure!(
+            original.starts_with("binds") && original.ends_with('}'),
+            "Unsupported Canopa bindings block"
+        );
+        // Keep the rest of the shipped file byte for byte.
+        let mut text = self.text.clone();
+        text.replace_range(
+            span.offset()..span.offset() + original.len(),
+            section("binds", &binds).trim_end(),
+        );
+        Ok(format!(
+            "// Generated by Canopa Settings from {} and {DELTA}.\n\
+             // Change shortcuts in Settings or {DELTA}; Canopa replaces this file.\n{text}",
+            self.path.display()
+        ))
+    }
+}
+
+/// Shipped bindings minus moved or turned-off actions and keys that the user
+/// assigned, followed by the user's bindings.
+fn effective(shipped: &[KdlNode], delta: &Delta) -> Result<Vec<KdlNode>> {
+    let removed = delta.removed.iter().map(plain).collect::<HashSet<_>>();
+    let keys = delta.binds.iter().map(key_id).collect::<HashSet<_>>();
+    let mut result = Vec::with_capacity(shipped.len() + delta.binds.len());
+    for node in shipped {
+        if !removed.contains(&action_id(node)?) && !keys.contains(&key_id(node)) {
+            result.push(node.clone());
+        }
+    }
+    result.extend(delta.binds.iter().cloned());
+    Ok(result)
+}
+
+/// Separate the user's changes in a materialized binding block from the
+/// shipped `base` it was copied from. The result must reproduce `user` exactly.
+fn migrate(base: &[KdlNode], user: &[KdlNode]) -> Result<Delta> {
+    let mut keys = HashSet::new();
+    for node in user {
+        action(node)?;
+        ensure!(
+            keys.insert(key_id(node)),
+            "{} is assigned more than once in niri.kdl",
+            node.name().value()
+        );
+    }
+    let base_set = base.iter().map(binding_id).collect::<HashSet<_>>();
+    let user_set = user.iter().map(binding_id).collect::<HashSet<_>>();
+    let mut removed = Vec::new();
+    let mut removed_ids = HashSet::new();
+    for node in base {
+        if !user_set.contains(&binding_id(node)) && removed_ids.insert(action_id(node)?) {
+            removed.push(action(node)?.clone());
+        }
+    }
+    let mut binds = Vec::new();
+    for node in user {
+        if !base_set.contains(&binding_id(node)) || removed_ids.contains(&action_id(node)?) {
+            binds.push(node.clone());
+        }
+    }
+    let delta = Delta {
+        defaults: None,
+        binds,
+        removed,
+    };
+    let result = effective(base, &delta)?;
+    ensure!(
+        result.len() == user.len()
+            && result.iter().map(binding_id).collect::<HashSet<_>>() == user_set,
+        "Your shortcut changes could not be separated from the shipped bindings. Edit niri.kdl in KDL."
+    );
+    Ok(delta)
 }
 
 #[derive(Clone, Debug)]
@@ -27,18 +278,7 @@ struct Include {
 
 impl Include {
     fn load(parent: &Path, node: &KdlNode) -> Result<Self> {
-        let value = node
-            .get(0)
-            .and_then(|e| e.as_string())
-            .context("Invalid Niri include path")?;
-        let path = if let Some(relative) = value.strip_prefix("~/") {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .context("Home directory is unavailable")?
-                .join(relative)
-        } else {
-            parent.join(value)
-        };
+        let path = include_path(parent, node)?;
         let optional = node.get("optional").and_then(|e| e.as_bool()) == Some(true);
         Ok(Self {
             text: Self::read(&path, optional)?,
@@ -57,6 +297,14 @@ impl Include {
         Ok(Some(String::from_utf8(bytes)?))
     }
 
+    fn shipped(&self) -> bool {
+        self.path == Path::new(crate::session::SYSTEM_DEFAULTS)
+            || self
+                .text
+                .as_deref()
+                .is_some_and(|text| text.starts_with(DEFAULTS_HEADER))
+    }
+
     fn unchanged(&self) -> Result<()> {
         ensure!(
             Self::read(&self.path, self.text.is_none())? == self.text,
@@ -66,11 +314,78 @@ impl Include {
     }
 }
 
+fn include_path(parent: &Path, node: &KdlNode) -> Result<PathBuf> {
+    let value = node
+        .get(0)
+        .and_then(|e| e.as_string())
+        .context("Invalid Niri include path")?;
+    Ok(if let Some(relative) = value.strip_prefix("~/") {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .context("Home directory is unavailable")?
+            .join(relative)
+    } else {
+        parent.join(value)
+    })
+}
+
+/// Point an include at another file, keeping its other properties and format.
+fn retarget(node: &mut KdlNode, value: &str) -> Result<()> {
+    let entry = node
+        .entries_mut()
+        .iter_mut()
+        .find(|entry| entry.name().is_none())
+        .context("include needs a filename")?;
+    // Replacing only the value would retain its old source representation.
+    *entry = string_entry(value)?;
+    Ok(())
+}
+
+/// A string entry with a KDL v1 representation, so the document needs no
+/// conversion that would rewrite the representation of the user's values.
+fn string_entry(value: &str) -> Result<KdlEntry> {
+    let document = KdlDocument::parse_v1(&format!("include {}\n", quote(value)))?;
+    document.nodes()[0]
+        .entries()
+        .first()
+        .cloned()
+        .context("Invalid include path")
+}
+
+/// Where `niri.kdl` gets the Canopa bindings from.
+#[derive(Clone, Debug)]
+enum Source {
+    /// An include of the packaged defaults; there are no changes.
+    Shipped(usize),
+    /// An include of the generated defaults with the user's changes.
+    Generated(usize),
+    /// A full copy of the legacy defaults, spliced into `niri.kdl` by the
+    /// former first save. `kept` holds copied sections the user edited.
+    Legacy {
+        start: usize,
+        end: usize,
+        kept: Vec<KdlNode>,
+    },
+}
+
+/// Files a save writes. `None` leaves a file as it is.
+#[derive(Debug, Default)]
+struct Plan {
+    main: Option<String>,
+    generated: Option<Option<String>>,
+    delta: Option<String>,
+    backup: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Editor {
-    source: Snapshot,
+    main: Snapshot,
     document: KdlDocument,
-    managed_index: usize,
+    source: Source,
+    delta_file: Snapshot,
+    delta: Delta,
+    generated: Snapshot,
+    shipped: Shipped,
     includes: Vec<Include>,
     external_keys: HashSet<String>,
     pub rows: Vec<Shortcut>,
@@ -78,45 +393,38 @@ pub struct Editor {
 
 impl Editor {
     pub fn load(paths: &Paths) -> Result<Self> {
-        let source = Snapshot::load(paths.niri())?;
+        let main = Snapshot::load(paths.niri())?;
         ensure!(
-            !source.text.is_empty(),
+            !main.text.is_empty(),
             "Log into the Canopa session to edit keyboard shortcuts."
         );
-        Self::parse(source)
+        Self::parse(paths, main, None)
     }
 
-    fn parse(source: Snapshot) -> Result<Self> {
-        let defaults = KdlDocument::parse_v1(DEFAULTS)?;
-        let mut document = KdlDocument::parse_v1(&source.text)?;
-        let mut includes = Vec::new();
-        let mut external_keys = HashSet::new();
-        let parent = source
+    fn parse(paths: &Paths, main: Snapshot, defaults: Option<&Path>) -> Result<Self> {
+        let document = KdlDocument::parse_v1(&main.text)?;
+        let parent = main
             .path
             .parent()
-            .context("Niri configuration needs a directory")?;
-        let root_binds = document
-            .nodes()
-            .iter()
-            .enumerate()
-            .filter(|(_, node)| node.name().value() == "binds")
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        ensure!(
-            root_binds.len() <= 1,
-            "Multiple top-level binding blocks are read-only."
-        );
-        let mut inherited = None;
+            .context("Niri configuration needs a directory")?
+            .to_owned();
+        let generated_path = paths.generated_shortcuts();
+        let mut includes = Vec::new();
+        let mut external_keys = HashSet::new();
         let mut include_budget = crate::storage::MAX_BYTES * 2;
+        let mut source = None;
+        let mut shipped_include = None;
         for (index, node) in document.nodes().iter().enumerate() {
-            if node.name().value() == "include" {
-                let include = Include::load(parent, node)?;
-                if include.text.as_deref() == Some(DEFAULTS) {
-                    ensure!(
-                        root_binds.is_empty() && inherited.is_none(),
-                        "Ambiguous Canopa binding source. Edit this configuration in Niri's KDL files."
-                    );
-                    inherited = Some(index);
+            if node.name().value() != "include" {
+                continue;
+            }
+            let found = if include_path(&parent, node)? == generated_path {
+                Some(Source::Generated(index))
+            } else {
+                let include = Include::load(&parent, node)?;
+                let found = if include.shipped() {
+                    shipped_include = Some(include.path.clone());
+                    Some(Source::Shipped(index))
                 } else {
                     collect_included_keys(
                         &include,
@@ -124,120 +432,507 @@ impl Editor {
                         &mut external_keys,
                         &mut include_budget,
                     )?;
-                }
+                    None
+                };
                 includes.push(include);
+                found
+            };
+            if let Some(found) = found {
                 ensure!(
-                    includes.len() <= MAX_INCLUDES,
-                    "Too many Niri includes for the shortcut editor."
+                    source.is_none(),
+                    "Ambiguous Canopa binding source. Edit this configuration in Niri's KDL files."
                 );
+                source = Some(found);
             }
-        }
-        let managed_index = if let Some(index) = inherited {
-            // Niri merges includes by key and cannot remove an inherited key.
-            // Materialize the shipped block in its original position on first
-            // save so changing a key really releases the old binding.
-            let mut nodes = defaults.nodes().to_vec();
-            let first = nodes.first_mut().context("Missing Canopa defaults")?;
-            if let (Some(origin), Some(format)) =
-                (document.nodes()[index].format(), first.format_mut())
-            {
-                format.leading.insert_str(0, &origin.leading);
-            }
-            let offset = nodes
-                .iter()
-                .position(|node| node.name().value() == "binds")
-                .context("Missing Canopa bindings")?;
-            document.nodes_mut().splice(index..=index, nodes);
-            index + offset
-        } else {
-            *root_binds.first().context(
-                "No editable Canopa binding block. Custom Niri bindings are edited in KDL.",
-            )?
-        };
-        let shipped = bindings(defaults.get("binds").context("Missing Canopa bindings")?)?;
-        let current = bindings(&document.nodes()[managed_index])?;
-        ensure!(
-            shipped.len() == current.len(),
-            "Custom top-level binding blocks are read-only."
-        );
-        let mut rows = Vec::with_capacity(current.len());
-        for (entry, default) in current.iter().zip(shipped) {
             ensure!(
-                same_action(entry, default),
-                "Custom top-level binding blocks are read-only."
+                includes.len() <= MAX_INCLUDES,
+                "Too many Niri includes for the shortcut editor."
             );
-            rows.push(Shortcut {
-                label: label(default)?,
-                key: entry.name().value().to_owned(),
-                saved_key: entry.name().value().to_owned(),
-                default_key: default.name().value().to_owned(),
+        }
+        let root_binds = document
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.name().value() == "binds")
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let delta_file = Snapshot::load(paths.shortcuts())?;
+        let generated = Snapshot::load(&generated_path)?;
+        let (source, mut delta) = match source {
+            Some(source) => {
+                // A hand-written block in niri.kdl overrides like an include.
+                for index in root_binds {
+                    external_keys.extend(
+                        bindings(&document.nodes()[index])?
+                            .iter()
+                            .filter_map(|node| normalize(node.name().value())),
+                    );
+                }
+                let delta = if matches!(source, Source::Generated(_)) {
+                    Delta::parse(&delta_file.text)?
+                } else {
+                    Delta::default()
+                };
+                (source, delta)
+            }
+            None => {
+                ensure!(
+                    root_binds.len() == 1,
+                    "No editable Canopa binding source. Custom Niri configurations are edited in KDL."
+                );
+                legacy(&document, root_binds[0])?
+            }
+        };
+        let shipped_path = match shipped_include
+            .clone()
+            .or_else(|| defaults.map(Path::to_owned))
+            .or_else(|| delta.defaults.clone())
+        {
+            Some(path) => path,
+            None => paths.shipped_defaults(None)?,
+        };
+        let shipped = Shipped::read(&std::path::absolute(shipped_path)?)?;
+        if shipped_include.is_none() {
+            includes.push(Include {
+                path: shipped.path.clone(),
+                text: Some(shipped.text.clone()),
             });
         }
+        delta.defaults = Some(shipped.path.clone());
+        let rows = rows(&shipped.binds()?, &delta)?;
         Ok(Self {
-            source,
+            main,
             document,
-            managed_index,
+            source,
+            delta_file,
+            delta,
+            generated,
+            shipped,
             includes,
             external_keys,
             rows,
         })
     }
 
-    fn candidate(&self) -> Result<String> {
-        let mut document = self.document.clone();
+    /// The delta after applying the edited rows to the saved changes.
+    fn changes(&self) -> Result<Delta> {
+        let mut delta = self.delta.clone();
         let mut keys = HashSet::new();
-        let nodes = document.nodes_mut()[self.managed_index]
-            .children_mut()
-            .as_mut()
-            .context("Missing bindings")?
-            .nodes_mut();
-        ensure!(
-            nodes.len() == self.rows.len(),
-            "Shortcut list changed while editing."
-        );
-        for (node, shortcut) in nodes.iter_mut().zip(&self.rows) {
-            let key = shortcut.key.trim();
-            let normalized = normalize(key)
-                .with_context(|| format!("{} needs a valid shortcut", shortcut.label))?;
+        for row in &self.rows {
+            let key = row.key.trim();
+            if key.is_empty() {
+                continue;
+            }
+            let normalized =
+                normalize(key).with_context(|| format!("{} needs a valid shortcut", row.label))?;
             ensure!(
-                keys.insert(normalized.clone()),
+                keys.insert(normalized),
                 "{key} is assigned to more than one shortcut."
             );
-            if node.name().value() != key {
+        }
+        let claimed = self
+            .rows
+            .iter()
+            .filter_map(|row| row.claim)
+            .collect::<HashSet<_>>();
+        for (index, bind) in delta.binds.iter().enumerate() {
+            ensure!(
+                claimed.contains(&index) || !keys.contains(&key_id(bind)),
+                "{} is already assigned in {DELTA}.",
+                bind.name().value()
+            );
+        }
+        let changed = self
+            .rows
+            .iter()
+            .filter(|row| row.key.trim() != row.saved_key)
+            .collect::<Vec<_>>();
+        let released = changed
+            .iter()
+            .filter_map(|row| row.claim)
+            .collect::<HashSet<_>>();
+        let previous = delta.binds;
+        delta.binds = previous
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !released.contains(index))
+            .map(|(_, node)| node.clone())
+            .collect();
+        for row in changed {
+            let key = row.key.trim();
+            let action = action_id(&row.shipped)?;
+            if !key.is_empty() && normalize(key) != normalize(&row.saved_key) {
                 ensure!(
-                    normalize(node.name().value()).as_ref() == Some(&normalized)
-                        || !self.external_keys.contains(&normalized),
+                    !self.external_keys.contains(&key_id_of(key)),
                     "{key} is already assigned in a Niri include."
                 );
+            }
+            delta.removed.retain(|node| plain(node) != action);
+            if normalize(key).is_some() && normalize(key) == normalize(&row.default_key) {
+                continue;
+            }
+            delta
+                .removed
+                .push(crate::shortcuts::action(&row.shipped)?.clone());
+            if !key.is_empty() {
+                let mut node = row
+                    .claim
+                    .map(|index| previous[index].clone())
+                    .unwrap_or_else(|| row.shipped.clone());
                 node.set_name(key);
+                delta.binds.push(node);
             }
         }
-        document.ensure_v1();
-        Ok(document.to_string())
+        Ok(delta)
+    }
+
+    fn plan(&self, delta: &Delta) -> Result<Plan> {
+        let mut plan = Plan::default();
+        let mut document = self.document.clone();
+        let target = if delta.is_empty() {
+            self.shipped
+                .path
+                .to_str()
+                .context("defaults path must be UTF-8")?
+                .to_owned()
+        } else {
+            GENERATED.to_owned()
+        };
+        match &self.source {
+            Source::Shipped(index) => {
+                if delta.is_empty() {
+                    return Ok(plan);
+                }
+                retarget(&mut document.nodes_mut()[*index], &target)?;
+            }
+            Source::Generated(index) => {
+                if delta.is_empty() {
+                    retarget(&mut document.nodes_mut()[*index], &target)?;
+                    plan.generated = Some(None);
+                }
+            }
+            Source::Legacy { start, end, kept } => {
+                let mut include = KdlDocument::parse_v1(&format!("include {}\n", quote(&target)))?
+                    .nodes()[0]
+                    .clone();
+                if let (Some(origin), Some(format)) =
+                    (document.nodes()[*start].format(), include.format_mut())
+                {
+                    // The copied defaults brought their header comment along.
+                    format.leading = origin
+                        .leading
+                        .split_inclusive('\n')
+                        .filter(|line| !line.trim_start().starts_with(DEFAULTS_HEADER))
+                        .collect();
+                }
+                // Edited copies of other sections follow the include so they keep
+                // overriding the shipped values, as they did before.
+                let replacement = std::iter::once(include).chain(kept.iter().cloned());
+                document.nodes_mut().splice(*start..=*end, replacement);
+                plan.backup = true;
+            }
+        }
+        let main = document.to_string();
+        if main != self.main.text {
+            plan.main = Some(main);
+        }
+        if !delta.is_empty() {
+            let generated = self.shipped.generate(delta)?;
+            if generated != self.generated.text || !self.generated.exists() {
+                plan.generated = Some(Some(generated));
+            }
+        }
+        if !delta.is_empty() || self.delta_file.exists() {
+            let text = delta.text()?;
+            if text != self.delta_file.text {
+                plan.delta = Some(text);
+            }
+        }
+        Ok(plan)
+    }
+
+    fn unchanged(&self) -> Result<()> {
+        self.main.unchanged()?;
+        self.delta_file.unchanged()?;
+        self.generated.unchanged()?;
+        for include in &self.includes {
+            include.unchanged()?;
+        }
+        Ok(())
+    }
+
+    /// Publish `plan`. A live session validates and reloads the compositor;
+    /// otherwise the candidate is only validated. Earlier writes roll back when
+    /// a later one fails.
+    fn apply(
+        &self,
+        paths: &Paths,
+        plan: &Plan,
+        live: bool,
+        validate: &dyn Fn(&Path) -> Result<()>,
+    ) -> Result<Option<PathBuf>> {
+        self.unchanged()?;
+        let main = plan.main.as_deref().unwrap_or(&self.main.text);
+        let generated = match &plan.generated {
+            Some(text) => text.as_deref(),
+            None => self
+                .generated
+                .exists()
+                .then_some(self.generated.text.as_str()),
+        };
+        validate_candidate(&paths.directory, main, generated, validate)?;
+        let backup = if plan.backup {
+            Some(backup(&self.main)?)
+        } else {
+            None
+        };
+        let written = match &plan.generated {
+            Some(Some(text)) => Some(self.generated.save(text, |_| Ok(()))?),
+            _ => None,
+        };
+        let restore_generated = || -> Result<()> {
+            if let Some(saved) = &written {
+                if self.generated.exists() {
+                    saved.save(&self.generated.text, |_| Ok(()))?;
+                } else {
+                    std::fs::remove_file(&saved.path)?;
+                }
+            }
+            Ok(())
+        };
+        let published = match &plan.main {
+            Some(text) if live => niri::save_main(&self.main, text, || {
+                for include in &self.includes {
+                    include.unchanged()?;
+                }
+                Ok(())
+            })
+            .map(Some),
+            Some(text) => self.main.save(text, validate).map(Some),
+            None if live && written.is_some() => niri::Client::discover()
+                .and_then(|client| client.reload())
+                .map(|()| None),
+            None => Ok(None),
+        };
+        let published = match published {
+            Ok(value) => value,
+            Err(error) => {
+                restore_generated()?;
+                if live && written.is_some() && plan.main.is_none() {
+                    let _ = niri::Client::discover().and_then(|client| client.reload());
+                }
+                return Err(error);
+            }
+        };
+        if let Some(text) = &plan.delta
+            && let Err(error) = self.delta_file.save(text, |_| Ok(()))
+        {
+            if let Some(saved) = &published {
+                if live {
+                    niri::save_main(saved, &self.main.text, || Ok(()))?;
+                } else {
+                    saved.save(&self.main.text, |_| Ok(()))?;
+                }
+            }
+            restore_generated()?;
+            return Err(error);
+        }
+        if plan.generated == Some(None) && self.generated.exists() {
+            match std::fs::remove_file(&self.generated.path) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(error.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(backup)
     }
 
     pub fn save(&self, paths: &Paths) -> Result<Self> {
         ensure!(
-            paths.active() && self.source.path == paths.niri(),
+            paths.active() && self.main.path == paths.niri(),
             "Log into the Canopa session to edit keyboard shortcuts."
         );
-        let text = self.candidate()?;
-        self.source.unchanged()?;
-        if !self.dirty() {
+        let delta = self.changes()?;
+        self.unchanged()?;
+        if !self.dirty() && !self.migration_pending() {
             return Ok(self.clone());
         }
-        let saved = niri::save_main(&self.source, &text, || {
-            for include in &self.includes {
-                include.unchanged()?;
-            }
-            Ok(())
-        })?;
-        Self::parse(saved)
+        let plan = self.plan(&delta)?;
+        self.apply(paths, &plan, true, &niri::validate)?;
+        Self::load(paths)
     }
 
     pub fn dirty(&self) -> bool {
         self.rows.iter().any(|row| row.key.trim() != row.saved_key)
     }
+
+    /// Whether `niri.kdl` still holds a full copy of the legacy bindings.
+    pub fn migration_pending(&self) -> bool {
+        matches!(self.source, Source::Legacy { .. })
+    }
+}
+
+/// Session start: move a legacy copy of the shipped bindings to the delta
+/// format and regenerate the combined defaults from the current shipped file.
+/// Returns a description of any change.
+pub fn refresh(
+    paths: &Paths,
+    defaults: Option<&Path>,
+    validate: impl Fn(&Path) -> Result<()>,
+) -> Result<Option<String>> {
+    let main = Snapshot::load(paths.niri())?;
+    if main.text.is_empty() {
+        return Ok(None);
+    }
+    let editor = Editor::parse(paths, main, defaults)?;
+    if matches!(editor.source, Source::Shipped(_)) {
+        return Ok(None);
+    }
+    let plan = editor.plan(&editor.delta)?;
+    if plan.main.is_none() && plan.generated.is_none() && plan.delta.is_none() {
+        return Ok(None);
+    }
+    let backup = editor.apply(paths, &plan, false, &validate)?;
+    Ok(Some(match backup {
+        Some(path) => format!(
+            "moved your shortcut changes to {}; the previous configuration is saved as {}",
+            paths.shortcuts().display(),
+            path.display()
+        ),
+        None => format!(
+            "updated {} from the shipped defaults",
+            paths.generated_shortcuts().display()
+        ),
+    }))
+}
+
+/// Recognize the former first-save materialization: the legacy defaults'
+/// sections around the only top-level binding block, in their original order.
+fn legacy(document: &KdlDocument, binds: usize) -> Result<(Source, Delta)> {
+    let base = KdlDocument::parse_v1(LEGACY_DEFAULTS)?;
+    let offset = base
+        .nodes()
+        .iter()
+        .position(|node| node.name().value() == "binds")
+        .context("Missing legacy Canopa bindings")?;
+    let (before, after) = (&base.nodes()[..offset], &base.nodes()[offset + 1..]);
+    let nodes = document.nodes();
+    ensure!(
+        binds >= before.len() && binds + after.len() < nodes.len(),
+        LEGACY_READ_ONLY
+    );
+    let (start, end) = (binds - before.len(), binds + after.len());
+    let mut kept = Vec::new();
+    for (node, base) in nodes[start..binds]
+        .iter()
+        .zip(before)
+        .chain(nodes[binds + 1..=end].iter().zip(after))
+    {
+        ensure!(node.name().value() == base.name().value(), LEGACY_READ_ONLY);
+        if plain(node) != plain(base) {
+            kept.push(node.clone());
+        }
+    }
+    let delta = migrate(bindings(&base.nodes()[offset])?, bindings(&nodes[binds])?)?;
+    Ok((Source::Legacy { start, end, kept }, delta))
+}
+
+fn rows(shipped: &[KdlNode], delta: &Delta) -> Result<Vec<Shortcut>> {
+    let removed = delta.removed.iter().map(plain).collect::<HashSet<_>>();
+    let keys = delta.binds.iter().map(key_id).collect::<HashSet<_>>();
+    let mut rows = Vec::with_capacity(shipped.len());
+    for node in shipped {
+        let action = action_id(node)?;
+        let moved = removed.contains(&action);
+        let claim = delta.binds.iter().position(|bind| {
+            action_id(bind).is_ok_and(|id| id == action) && (moved || key_id(bind) == key_id(node))
+        });
+        let key = match claim {
+            Some(index) => delta.binds[index].name().value().to_owned(),
+            // Turned off, or its key now belongs to another binding.
+            None if moved || keys.contains(&key_id(node)) => String::new(),
+            None => node.name().value().to_owned(),
+        };
+        rows.push(Shortcut {
+            label: label(node)?,
+            saved_key: key.clone(),
+            key,
+            default_key: node.name().value().to_owned(),
+            shipped: node.clone(),
+            claim,
+        });
+    }
+    Ok(rows)
+}
+
+fn backup(main: &Snapshot) -> Result<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
+    for attempt in 0..100 {
+        let mut name = main
+            .path
+            .file_name()
+            .context("niri.kdl needs a file name")?
+            .to_owned();
+        name.push(".before-shortcut-changes");
+        if attempt > 0 {
+            name.push(format!(".{attempt}"));
+        }
+        let path = main.path.with_file_name(name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(main.text.as_bytes())?;
+                file.sync_all()?;
+                return Ok(path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    bail!("Could not back up niri.kdl before moving your shortcut changes")
+}
+
+/// Validate a candidate `niri.kdl` whose generated include reads `generated`.
+fn validate_candidate(
+    directory: &Path,
+    main: &str,
+    generated: Option<&str>,
+    validate: &dyn Fn(&Path) -> Result<()>,
+) -> Result<()> {
+    let mut document = KdlDocument::parse_v1(main)?;
+    let candidate = generated
+        .map(|text| -> Result<_> {
+            let mut file = tempfile::Builder::new()
+                .prefix(".canopa-settings-")
+                .suffix(".kdl")
+                .tempfile_in(directory)?;
+            file.write_all(text.as_bytes())?;
+            file.as_file().sync_all()?;
+            Ok(file)
+        })
+        .transpose()?;
+    for node in document.nodes_mut() {
+        if node.name().value() == "include"
+            && include_path(directory, node)? == directory.join(GENERATED)
+        {
+            let file = candidate
+                .as_ref()
+                .with_context(|| format!("{GENERATED} is missing"))?;
+            retarget(node, file.path().to_str().context("path must be UTF-8")?)?;
+        }
+    }
+    let mut wrapper = tempfile::Builder::new()
+        .prefix(".canopa-settings-")
+        .suffix(".kdl")
+        .tempfile_in(directory)?;
+    wrapper.write_all(document.to_string().as_bytes())?;
+    wrapper.as_file().sync_all()?;
+    validate(wrapper.path())
 }
 
 fn bindings(node: &KdlNode) -> Result<&[KdlNode]> {
@@ -245,24 +940,48 @@ fn bindings(node: &KdlNode) -> Result<&[KdlNode]> {
         node.entries().is_empty() && node.ty().is_none(),
         "Unsupported bindings block"
     );
-    Ok(node.children().context("Missing bindings")?.nodes())
+    Ok(node.children().map(KdlDocument::nodes).unwrap_or_default())
 }
 
-fn same_action(node: &KdlNode, default: &KdlNode) -> bool {
-    let signature = |node: &KdlNode| {
-        let mut node = node.clone();
-        node.set_name("action");
-        node.clear_format_recursive();
-        node.to_string()
-    };
-    signature(node) == signature(default)
+fn action(node: &KdlNode) -> Result<&KdlNode> {
+    let actions = node.children().map(KdlDocument::nodes).unwrap_or_default();
+    ensure!(
+        actions.len() == 1,
+        "{} needs exactly one action",
+        node.name().value()
+    );
+    Ok(&actions[0])
+}
+
+/// A node without formatting, for comparing parsed sources.
+fn plain(node: &KdlNode) -> String {
+    let mut node = node.clone();
+    node.clear_format_recursive();
+    node.to_string().trim().to_owned()
+}
+
+fn action_id(node: &KdlNode) -> Result<String> {
+    Ok(plain(action(node)?))
+}
+
+/// A binding's key and everything else, ignoring formatting.
+fn binding_id(node: &KdlNode) -> (String, String) {
+    let mut rest = node.clone();
+    rest.set_name("binding");
+    (key_id(node), plain(&rest))
+}
+
+fn key_id(node: &KdlNode) -> String {
+    key_id_of(node.name().value())
+}
+
+/// Niri compares parsed keys. Keep unparsed names, such as mouse buttons, apart.
+fn key_id_of(key: &str) -> String {
+    normalize(key).unwrap_or_else(|| format!("raw:{}", key.to_ascii_lowercase()))
 }
 
 fn label(node: &KdlNode) -> Result<String> {
-    let action = node
-        .children()
-        .and_then(|children| children.nodes().first())
-        .context("Missing shortcut action")?;
+    let action = action(node)?;
     let label = match node.name().value() {
         "Mod+Return" => "Open terminal",
         "Mod+Space" => "Open Applications",
@@ -369,58 +1088,4 @@ fn collect_included_keys(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn editing_releases_inherited_key_and_preserves_custom_sources() {
-        let root = tempfile::tempdir().unwrap();
-        let paths = Paths {
-            directory: root.path().to_owned(),
-        };
-        paths.initialize(None).unwrap();
-        // Use the checked-in defaults even if this test host has installed a different version.
-        let bundled = root.path().join("default-fixture.kdl");
-        std::fs::write(&bundled, DEFAULTS).unwrap();
-        let before = "include \"default-fixture.kdl\"\n// retain this include\ninclude \"niri-custom.kdl\"\n";
-        std::fs::write(paths.niri(), before).unwrap();
-        std::fs::write(
-            root.path().join("niri-custom.kdl"),
-            "binds { Super+X { close-window; }; }\n",
-        )
-        .unwrap();
-        let mut editor = Editor::load(&paths).unwrap();
-        let index = editor
-            .rows
-            .iter()
-            .position(|row| row.default_key == "Mod+Space")
-            .unwrap();
-        editor.rows[index].key = "Mod+X".into();
-        assert!(
-            editor
-                .candidate()
-                .unwrap_err()
-                .to_string()
-                .contains("already assigned")
-        );
-        editor.rows[index].key = "Mod+E".into();
-        assert!(
-            editor
-                .candidate()
-                .unwrap_err()
-                .to_string()
-                .contains("more than one")
-        );
-        editor.rows[index].key = "Mod+Shift+Space".into();
-        let text = editor.candidate().unwrap();
-        assert!(text.contains("Mod+Shift+Space"));
-        assert!(!text.contains("Mod+Space"));
-        assert!(text.contains("// retain this include\ninclude \"niri-custom.kdl\""));
-        assert_eq!(std::fs::read_to_string(paths.niri()).unwrap(), before);
-        std::fs::write(paths.niri(), text).unwrap();
-        let mut reloaded = Editor::load(&paths).unwrap();
-        assert_eq!(reloaded.rows[index].key, "Mod+Shift+Space");
-        reloaded.rows[index].key = reloaded.rows[index].default_key.clone();
-        assert!(reloaded.candidate().unwrap().contains("Mod+Space"));
-    }
-}
+mod tests;

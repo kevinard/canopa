@@ -13,7 +13,7 @@ impl State {
             Some(Ok(editor)) => editor,
         };
         let mut content = column![
-            text("Edit the keyboard shortcuts shipped with Canopa. Use Niri key names such as Mod+Shift+Space. Mod is normally Super."),
+            text("Edit the keyboard shortcuts shipped with Canopa. Use Niri key names such as Mod+Shift+Space. Mod is normally Super. Leave a shortcut empty to turn it off. Shortcuts you have not changed follow Canopa updates."),
             field_id(
                 "settings-shortcut-search",
                 "Search shortcuts",
@@ -21,6 +21,11 @@ impl State {
                 Message::ShortcutSearch,
             ),
         ].spacing(14);
+        if editor.migration_pending() {
+            content = content.push(text(
+                "Your shortcuts are stored as a full copy of an older set of defaults. Saving keeps only your changes, so new and updated default shortcuts reach you again. A backup of niri.kdl is kept next to it.",
+            ));
+        }
         let editable = self.paths.active() && !self.busy;
         if editable {
             content = content.push(self.action(
@@ -50,7 +55,16 @@ impl State {
                     move |value| Message::ShortcutKey(index, value),
                 )
             } else {
-                text(format!("{} · {}", shortcut.label, shortcut.key)).into()
+                text(format!(
+                    "{} · {}",
+                    shortcut.label,
+                    if shortcut.key.is_empty() {
+                        "Off"
+                    } else {
+                        &shortcut.key
+                    }
+                ))
+                .into()
             });
         }
         if !found {
