@@ -38,13 +38,14 @@ impl Default for Request {
             kind: Kind::Pin,
             title: String::new(),
             description: String::new(),
-            prompt: "Passphrase:".into(),
-            ok: "Continue".into(),
-            cancel: "Cancel".into(),
+            // Canopa's defaults when GnuPG sends no SETPROMPT, SETOK or SETCANCEL.
+            prompt: fl!("pinentry-default-prompt"),
+            ok: fl!("pinentry-default-ok"),
+            cancel: fl!("pinentry-default-cancel"),
             notok: String::new(),
             error: String::new(),
             repeat: None,
-            repeat_error: "Passphrases do not match. Try again.".into(),
+            repeat_error: fl!("pinentry-default-repeat-error"),
             timeout: 120,
             focus_cancel: false,
             quality: None,
@@ -200,7 +201,7 @@ pub fn serve_agent(
             "SETREPEATOK" | "SETKEYINFO" => {}
             "SETQUALITYBAR" => {
                 request.quality = Some(if value.is_empty() {
-                    "Quality".into()
+                    fl!("pinentry-quality-name")
                 } else {
                     value
                 })

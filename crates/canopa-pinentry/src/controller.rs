@@ -13,7 +13,7 @@ pub struct Controller {
     pub ui: SessionView,
     pub request: Request,
     pub response: Option<Response>,
-    heading: &'static str,
+    heading: String,
     first: Option<Secret>,
     details: Option<usize>,
     selected: usize,
@@ -49,19 +49,19 @@ fn excerpt(text: &str, limit: usize) -> String {
 }
 impl Controller {
     pub fn new(settings: &Settings, request: Request) -> Result<Self> {
-        Self::new_named(settings, request, "Canopa Secure Input")
+        Self::new_named(settings, request, fl!("pinentry-secure-input"))
     }
 
     pub(crate) fn new_named(
         settings: &Settings,
         request: Request,
-        heading: &'static str,
+        heading: String,
     ) -> Result<Self> {
         let mut ui = SessionView::new(settings, String::new())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
-            heading: "Passphrase required".into(),
-            eyebrow: "SECURE INPUT".into(),
+            heading: fl!("pinentry-passphrase-required"),
+            eyebrow: fl!("pinentry-eyebrow"),
             emblem: Emblem::Key,
             dialog: true,
             choices: &[(7, Emblem::Key), (8, Emblem::Cycle)],
@@ -104,7 +104,9 @@ impl Controller {
         self.ui.interaction_epoch = (self.revision, u64::from(self.checking));
         self.ui.busy = self.checking;
         self.ui.custom.clear();
-        self.ui.custom.insert("heading".into(), self.heading.into());
+        self.ui
+            .custom
+            .insert("heading".into(), self.heading.clone());
         let fingerprint = self.request.description.lines().any(|line| {
             line.trim()
                 .trim_end_matches(':')
@@ -118,14 +120,13 @@ impl Controller {
             self.request.kind,
             self.first.is_some(),
         ) {
-            (true, _, _) => "Request details",
-            (false, Kind::Pin, true) => "Confirm passphrase",
-            (false, Kind::Pin, false) if openpgp => "Unlock OpenPGP key",
-            (false, Kind::Pin, false) => "Passphrase required",
-            (false, Kind::Confirm, _) => "Confirmation required",
-            (false, Kind::Message, _) => "Message",
-        }
-        .into();
+            (true, _, _) => fl!("pinentry-request-details"),
+            (false, Kind::Pin, true) => fl!("pinentry-confirm-passphrase"),
+            (false, Kind::Pin, false) if openpgp => fl!("pinentry-unlock-openpgp-key"),
+            (false, Kind::Pin, false) => fl!("pinentry-passphrase-required"),
+            (false, Kind::Confirm, _) => fl!("pinentry-confirmation-required"),
+            (false, Kind::Message, _) => fl!("pinentry-message"),
+        };
         if self.details.is_none() && !self.request.title.is_empty() {
             self.ui
                 .custom
@@ -152,30 +153,34 @@ impl Controller {
         self.ui.prompt = if self.ui.hide_input {
             None
         } else {
+            // GnuPG's own prompts are shown as sent; Canopa's fallback is translated.
             let text = if self.first.is_some() {
                 self.request
                     .repeat
-                    .as_deref()
+                    .clone()
                     .filter(|s| !s.is_empty())
-                    .unwrap_or("Repeat passphrase:")
+                    .unwrap_or_else(|| fl!("pinentry-repeat-passphrase"))
             } else {
-                &self.request.prompt
+                self.request.prompt.clone()
             };
             Some(Prompt {
                 id: 1,
-                text: excerpt(&label(text), 96),
+                text: excerpt(&label(&text), 96),
                 echo: self.generated && self.revealed,
             })
         };
         if let Some(page) = self.details {
-            self.ui.controls.push(Control::new(2, "Back (Enter)"));
+            let (shown, total) = ((page + 1) as u64, self.pages() as u64);
+            self.ui
+                .controls
+                .push(Control::new(2, fl!("pinentry-details-back")));
             self.ui.controls.push(Control::new(
                 4,
-                format!("Next page (Page Down) · {} / {}", page + 1, self.pages()),
+                fl!("pinentry-details-next", page = shown, count = total),
             ));
             self.ui
                 .controls
-                .push(Control::new(5, "Previous page (Page Up)"));
+                .push(Control::new(5, fl!("pinentry-details-previous")));
         } else {
             self.ui
                 .controls
@@ -193,9 +198,9 @@ impl Controller {
             self.ui.controls.push(Control::new(
                 4,
                 if fingerprint {
-                    "Key details"
+                    fl!("pinentry-key-details")
                 } else {
-                    "Request details"
+                    fl!("pinentry-request-details")
                 },
             ));
         }
@@ -207,9 +212,9 @@ impl Controller {
                 self.ui.controls.push(Control::new(
                     8,
                     if self.revealed {
-                        "Hide generated passphrase"
+                        fl!("pinentry-hide-generated")
                     } else {
-                        "Reveal generated passphrase"
+                        fl!("pinentry-reveal-generated")
                     },
                 ));
             }
@@ -219,15 +224,17 @@ impl Controller {
             && !self.checking
             && !self.generated
         {
-            self.ui.message = format!(
-                "{}: {quality}%{}",
-                self.request.quality.as_deref().unwrap_or("Quality"),
-                if quality < 0 {
-                    " · agent rejects this passphrase"
-                } else {
-                    ""
-                }
-            );
+            let name = self
+                .request
+                .quality
+                .clone()
+                .unwrap_or_else(|| fl!("pinentry-quality-name"));
+            let value = canopa_i18n::format::percent(f64::from(quality));
+            self.ui.message = if quality < 0 {
+                fl!("pinentry-quality-rejected", name = name, value = value)
+            } else {
+                fl!("pinentry-quality", name = name, value = value)
+            };
         }
         for control in &mut self.ui.controls {
             if control.id == self.selected {
@@ -288,7 +295,7 @@ impl Controller {
                     revision: self.revision,
                     kind: crate::agent::Kind::Generate,
                 });
-                self.ui.message = "Requesting a passphrase from the agent…".into();
+                self.ui.message = fl!("pinentry-requesting-generated");
             }
             8 if self.generated => {
                 self.revealed = !self.revealed;
@@ -322,8 +329,7 @@ impl Controller {
             return;
         }
         if self.generated && !self.generated_seen {
-            self.ui.message =
-                "Reveal and record the generated passphrase before continuing.".into();
+            self.ui.message = fl!("pinentry-record-generated-first");
             return;
         }
         if self.request.repeat.is_some() {
@@ -400,8 +406,7 @@ impl Controller {
             if secret.as_bytes().len() > 300 {
                 self.checking = false;
                 self.ui.failed = true;
-                self.ui.message =
-                    "Passphrase exceeds the agent constraint check's 300-byte limit.".into();
+                self.ui.message = fl!("pinentry-constraint-limit", limit = 300);
                 return;
             }
             self.pending = Some(crate::agent::Query {
@@ -409,7 +414,7 @@ impl Controller {
                 kind: crate::agent::Kind::Check(Self::copy(&secret)),
             });
             self.checked = Some((secret, repeated));
-            self.ui.message = "Checking the agent's passphrase requirements…".into();
+            self.ui.message = fl!("pinentry-checking-requirements");
         } else {
             self.finish(Response::Pin { secret, repeated });
         }
@@ -422,7 +427,7 @@ impl Controller {
             crate::agent::Answer::Quality(quality) => {
                 self.quality = quality;
                 if quality.is_none() {
-                    self.ui.message = "Agent quality feedback unavailable.".into();
+                    self.ui.message = fl!("pinentry-quality-unavailable");
                 }
             }
             crate::agent::Answer::Check(result) => {
@@ -434,7 +439,10 @@ impl Controller {
                 } else {
                     self.checked = None;
                     self.ui.failed = true;
-                    self.ui.message = match result { Ok(Some(reason)) => excerpt(&reason, 160), _ => "Could not verify the agent's passphrase requirements. Try again or cancel.".into() };
+                    self.ui.message = match result {
+                        Ok(Some(reason)) => excerpt(&reason, 160),
+                        _ => fl!("pinentry-check-failed"),
+                    };
                 }
             }
             crate::agent::Answer::Generated(secret) => {
@@ -445,11 +453,10 @@ impl Controller {
                     self.generated = true;
                     self.revealed = false;
                     self.ui.failed = false;
-                    self.ui.message =
-                        "Reveal and record this generated passphrase before continuing.".into();
+                    self.ui.message = fl!("pinentry-record-generated");
                 } else {
                     self.ui.failed = true;
-                    self.ui.message = "The agent could not generate a passphrase.".into();
+                    self.ui.message = fl!("pinentry-generate-failed");
                 }
             }
         }
@@ -508,7 +515,7 @@ impl Controller {
             + text.chars().count()
             > 2048
         {
-            self.ui.message = "Passphrase limit: 2048 characters. Input was rejected.".into();
+            self.ui.message = fl!("pinentry-length-limit", limit = 2048);
             self.ui.failed = true;
         } else {
             let replaces_all = self.ui.secret.selection() == (0..self.ui.secret.as_bytes().len());
@@ -527,6 +534,47 @@ mod tests {
     fn controller(request: Request) -> Controller {
         let (settings, _) = crate::config::load(&canopa_config::Request::Defaults).unwrap();
         Controller::new(&settings, request).unwrap()
+    }
+
+    /// Changes the process-wide selection; restores English even on panic.
+    struct French(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+    impl Drop for French {
+        fn drop(&mut self) {
+            canopa_i18n::select(canopa_i18n::Selection::default());
+        }
+    }
+    fn french() -> French {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
+        let fr: canopa_i18n::LanguageIdentifier = "fr".parse().unwrap();
+        canopa_i18n::select(canopa_i18n::Selection {
+            languages: canopa_i18n::negotiate(std::slice::from_ref(&fr)),
+            time: fr.clone(),
+            numbers: fr,
+            pseudo: false,
+        });
+        French(guard)
+    }
+
+    #[test]
+    fn canopa_defaults_are_translated_and_agent_text_is_shown_as_sent() {
+        let _french = french();
+        let c = controller(Request::default());
+        assert_eq!(c.ui.prompt.as_ref().unwrap().text, "Phrase secrète\u{a0}:");
+        let labels: Vec<_> = c.ui.controls.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["Continuer", "Annuler", "Détails de la demande"]);
+        assert!(c.ui.controls[0].selected);
+        let c = controller(Request {
+            prompt: "Passphrase:".into(),
+            ok: "_Unlock".into(),
+            ..Request::default()
+        });
+        assert_eq!(c.ui.prompt.as_ref().unwrap().text, "Passphrase:");
+        assert_eq!(c.ui.controls[0].label, "Unlock");
+        assert_eq!(
+            c.ui.authentication_panel.as_ref().unwrap().heading,
+            "Phrase secrète requise"
+        );
     }
     #[test]
     fn generated_values_require_reveal_after_caret_changes_and_partial_edits() {

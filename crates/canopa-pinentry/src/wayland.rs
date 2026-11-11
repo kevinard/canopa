@@ -111,11 +111,15 @@ fn run_inner(
     let shm = Shm::bind(&globals, &qh)?;
     let pool = SlotPool::new(4096, &shm)?;
     let (app_id, name) = if keyring {
-        ("org.canopa.Keyring", "Canopa Keyring")
+        ("org.canopa.Keyring", fl!("pinentry-keyring-title"))
     } else {
-        ("org.canopa.Pinentry", "Canopa Pinentry")
+        ("org.canopa.Pinentry", fl!("pinentry-title"))
     };
-    let heading = if keyring { name } else { "Canopa Secure Input" };
+    let heading = if keyring {
+        name.clone()
+    } else {
+        fl!("pinentry-secure-input")
+    };
     let controller = Controller::new_named(settings, request.clone(), heading)?;
     let window = shell.create_window(
         compositor.create_surface(&qh),
@@ -129,11 +133,15 @@ fn run_inner(
         .filter(|c| !c.is_control())
         .take(120)
         .collect();
-    window.set_title(format!(
-        "{name}{}{}",
-        if title.is_empty() { "" } else { " · " },
-        title
-    ));
+    window.set_title(if title.is_empty() {
+        name.clone()
+    } else {
+        fl!(
+            "pinentry-window-title",
+            name = name.as_str(),
+            title = title.as_str()
+        )
+    });
     window.set_min_size(Some(DIALOG_SIZE));
     window.set_max_size(Some(DIALOG_SIZE));
     window.commit();
@@ -162,7 +170,7 @@ fn run_inner(
     };
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
-        name,
+        &name,
         move |request| {
             let _ = a11y_sender.send(request);
         },
@@ -289,7 +297,7 @@ fn run_inner(
 impl App {
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         if let (Some(a), Some(c)) = (&mut self.accessibility, &self.controller) {
-            a.update("Canopa Pinentry", &c.ui, &self.settings, self.focused);
+            a.update(&fl!("pinentry-title"), &c.ui, &self.settings, self.focused);
         }
         use canopa_session_ui::accessibility::{Operation, select};
         if !self.focused
@@ -409,7 +417,7 @@ impl App {
         };
         c.refresh();
         if let Some(a) = &mut self.accessibility {
-            a.update("Canopa Pinentry", &c.ui, &self.settings, self.focused);
+            a.update(&fl!("pinentry-title"), &c.ui, &self.settings, self.focused);
         }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);

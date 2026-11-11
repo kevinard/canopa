@@ -56,7 +56,7 @@ pub fn run(settings: &Settings, dialog: Dialog) -> Result<i32> {
         } else {
             dialog.cancel
         },
-        repeat: dialog.password_new.then(|| "Repeat password:".into()),
+        repeat: dialog.password_new.then(|| fl!("pinentry-repeat-password")),
         timeout: settings.auth_timeout,
         ..defaults
     };

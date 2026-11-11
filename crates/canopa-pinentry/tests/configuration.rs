@@ -7,6 +7,7 @@ fn configuration_preview_and_validation_do_not_connect_or_execute_commands() {
     std::fs::write(&path, "schema-version 1\npinentry {auth-timeout 10;}\n").unwrap();
     for action in ["check-config", "preview"] {
         let mut app = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-pinentry"));
+        app.env("CANOPA_LANGUAGE", "en");
         app.arg("--canopa-config").arg(&path).arg(action);
         if action == "preview" {
             app.arg(&output);

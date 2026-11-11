@@ -3,6 +3,18 @@ use canopa_config::Request;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// The library's catalog, with a local `fl!` checked against the same
+/// English file, for the binary's own modules.
+#[macro_use]
+mod i18n {
+    pub use canopa_pinentry::i18n::LOADER;
+
+    macro_rules! fl {
+        ($($args:tt)*) => {
+            canopa_i18n::checked_fl!(crate::i18n::LOADER.get(), $($args)*)
+        };
+    }
+}
 mod keyring;
 
 #[derive(Parser)]
@@ -31,6 +43,7 @@ enum Operation {
     KeyringDialog(keyring::Dialog),
 }
 fn main() {
+    canopa_i18n::init();
     match run(Cli::parse()) {
         Ok(status) => std::process::exit(status),
         Err(error) => {
