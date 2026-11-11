@@ -287,9 +287,7 @@ impl InterfaceSettings {
                 .count()
                 != 1
         {
-            return Err(invalid(
-                "the toolbar needs exactly one location field and at most 64 items",
-            ));
+            return Err(invalid(fl!("files-config-toolbar-location")));
         }
         let mut seen = BTreeSet::new();
         for id in &self.toolbar {
@@ -300,17 +298,17 @@ impl InterfaceSettings {
                         .strip_prefix("action:")
                         .is_some_and(|id| actions.iter().any(|action| action.id == id)))
             {
-                return Err(invalid("unknown or duplicate toolbar item"));
+                return Err(invalid(fl!("files-config-toolbar-unknown")));
             }
         }
         if self.places.len() > 256 {
-            return Err(invalid("at most 256 locations are supported"));
+            return Err(invalid(fl!("files-config-too-many-places")));
         }
         let mut builtins = BTreeSet::new();
         for place in &self.places {
             match place {
                 Place::Builtin(kind) if !builtins.insert(kind.id()) => {
-                    return Err(invalid("duplicate built-in location"));
+                    return Err(invalid(fl!("files-config-duplicate-place")));
                 }
                 Place::Bookmark { name, path }
                     if name.trim().is_empty()
@@ -320,9 +318,7 @@ impl InterfaceSettings {
                         || path.as_os_str().as_encoded_bytes().len() > 16384
                         || path.as_os_str().as_encoded_bytes().contains(&0) =>
                 {
-                    return Err(invalid(
-                        "a bookmark needs a name and an absolute local folder",
-                    ));
+                    return Err(invalid(fl!("files-config-bookmark-invalid")));
                 }
                 _ => {}
             }
@@ -331,7 +327,7 @@ impl InterfaceSettings {
         for command in Command::ALL {
             let bindings = self.bindings(*command);
             if bindings.len() > 8 {
-                return Err(invalid("at most eight shortcuts per command are supported"));
+                return Err(invalid(fl!("files-config-too-many-shortcuts")));
             }
             for binding in bindings {
                 register(&mut shortcuts, &binding, &command.label())?;
@@ -341,9 +337,7 @@ impl InterfaceSettings {
             if let Some(binding) = &action.shortcut {
                 let chord = KeyChord::parse(binding)?;
                 if !chord.can_bind_action() {
-                    return Err(invalid(
-                        "custom actions need a Ctrl, Alt, Super or function-key shortcut",
-                    ));
+                    return Err(invalid(fl!("files-config-action-modifier")));
                 }
                 register(&mut shortcuts, binding, &action.name)?;
             }
@@ -378,13 +372,14 @@ fn register(seen: &mut BTreeMap<KeyChord, String>, binding: &str, label: &str) -
                     | "grave"
             ))
     {
-        return Err(invalid(
-            "selection, focus, Escape, context-menu and unmodified typing keys stay available",
-        ));
+        return Err(invalid(fl!("files-config-reserved-keys")));
     }
     if let Some(other) = seen.insert(chord, label.to_owned()) {
-        return Err(invalid(format!(
-            "{label} and {other} use the same shortcut ({binding})"
+        return Err(invalid(fl!(
+            "files-config-shortcut-conflict",
+            label = label.to_string(),
+            other = other.to_string(),
+            binding = binding.to_string()
         )));
     }
     Ok(())
@@ -401,21 +396,21 @@ impl KeyChord {
         let mut rest = input.trim();
         let mut modifiers = 0;
         if rest.len() > 128 {
-            return Err(invalid("shortcut is too long"));
+            return Err(invalid(fl!("files-config-shortcut-too-long")));
         }
         while let Some(tail) = rest.strip_prefix('<') {
             let (name, tail) = tail
                 .split_once('>')
-                .ok_or_else(|| invalid("invalid shortcut modifier"))?;
+                .ok_or_else(|| invalid(fl!("files-config-modifier-invalid")))?;
             let bit = match name.to_ascii_lowercase().as_str() {
                 "control" | "ctrl" | "primary" => 1,
                 "shift" => 2,
                 "alt" | "mod1" => 4,
                 "super" | "mod4" => 8,
-                _ => return Err(invalid("unsupported shortcut modifier")),
+                _ => return Err(invalid(fl!("files-config-modifier-unsupported"))),
             };
             if modifiers & bit != 0 {
-                return Err(invalid("duplicate shortcut modifier"));
+                return Err(invalid(fl!("files-config-modifier-duplicate")));
             }
             modifiers |= bit;
             rest = tail;
@@ -472,9 +467,7 @@ impl KeyChord {
                 });
             }
             _ => {
-                return Err(invalid(
-                    "use an accelerator such as <Control><Shift>f or F6",
-                ));
+                return Err(invalid(fl!("files-config-accelerator-hint")));
             }
         }
         .to_owned();

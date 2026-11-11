@@ -1271,3 +1271,30 @@ files-actions-runtime-busy = The custom-action runtime is busy or stopped.
 files-app-work-pending = Files still has accepted work or unsaved results.
 files-configuration-other-source = This configuration belongs to another source selection.
 files-configuration-worker-stopped = The configuration worker has stopped.
+
+## Configuration checks of the toolbar, places and shortcuts
+
+files-config-toolbar-location = the toolbar needs exactly one location field and at most 64 items
+files-config-toolbar-unknown = unknown or duplicate toolbar item
+files-config-too-many-places = at most 256 locations are supported
+files-config-duplicate-place = duplicate built-in location
+files-config-bookmark-invalid = a bookmark needs a name and an absolute local folder
+files-config-too-many-shortcuts = at most eight shortcuts per command are supported
+files-config-action-modifier = custom actions need a Ctrl, Alt, Super or function-key shortcut
+files-config-reserved-keys = selection, focus, Escape, context-menu and unmodified typing keys stay available
+files-config-shortcut-too-long = shortcut is too long
+files-config-modifier-invalid = invalid shortcut modifier
+files-config-modifier-unsupported = unsupported shortcut modifier
+files-config-modifier-duplicate = duplicate shortcut modifier
+files-config-accelerator-hint = use an accelerator such as <Control><Shift>f or F6
+# $label and $other are command or action names, $binding a shortcut.
+files-config-shortcut-conflict = { $label } and { $other } use the same shortcut ({ $binding })
+
+## Custom action and configuration checks
+
+files-action-invalid = invalid custom action
+files-action-needs-file = %f requires a selected file
+files-action-needs-name = %n requires a selected file
+files-config-defaults-read-only = built-in defaults cannot be edited
+files-config-needs-parent = configuration needs a parent folder
+files-config-too-many-actions = at most 256 custom actions are supported

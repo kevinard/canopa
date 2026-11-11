@@ -1226,3 +1226,29 @@ files-actions-runtime-busy = Le service des actions personnalisées est occupé 
 files-app-work-pending = Fichiers a encore du travail accepté ou des résultats non enregistrés.
 files-configuration-other-source = Cette configuration appartient à une autre sélection de source.
 files-configuration-worker-stopped = Le service de configuration s’est arrêté.
+
+## Configuration checks of the toolbar, places and shortcuts
+
+files-config-toolbar-location = la barre d’outils doit contenir exactement un champ d’emplacement et au plus 64 éléments
+files-config-toolbar-unknown = élément de barre d’outils inconnu ou en double
+files-config-too-many-places = 256 emplacements au maximum sont pris en charge
+files-config-duplicate-place = emplacement intégré en double
+files-config-bookmark-invalid = un signet nécessite un nom et un dossier local absolu
+files-config-too-many-shortcuts = huit raccourcis au maximum sont pris en charge par commande
+files-config-action-modifier = les actions personnalisées nécessitent un raccourci avec Ctrl, Alt, Super ou une touche de fonction
+files-config-reserved-keys = les touches de sélection, de focus, Échap, du menu contextuel et de saisie sans modificateur restent disponibles
+files-config-shortcut-too-long = le raccourci est trop long
+files-config-modifier-invalid = modificateur de raccourci non valide
+files-config-modifier-unsupported = modificateur de raccourci non pris en charge
+files-config-modifier-duplicate = modificateur de raccourci en double
+files-config-accelerator-hint = utilisez un raccourci tel que <Control><Shift>f ou F6
+files-config-shortcut-conflict = « { $label } » et « { $other } » utilisent le même raccourci ({ $binding })
+
+## Custom action and configuration checks
+
+files-action-invalid = action personnalisée non valide
+files-action-needs-file = %f nécessite un fichier sélectionné
+files-action-needs-name = %n nécessite un fichier sélectionné
+files-config-defaults-read-only = les valeurs par défaut intégrées ne peuvent pas être modifiées
+files-config-needs-parent = la configuration nécessite un dossier parent
+files-config-too-many-actions = 256 actions personnalisées au maximum sont prises en charge

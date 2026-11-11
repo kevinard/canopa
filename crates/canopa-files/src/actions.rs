@@ -71,7 +71,7 @@ impl CustomAction {
     }
 
     pub fn validate(&self) -> io::Result<()> {
-        let invalid = || io::Error::new(io::ErrorKind::InvalidInput, "invalid custom action");
+        let invalid = || io::Error::new(io::ErrorKind::InvalidInput, fl!("files-action-invalid"));
         if self.id.is_empty()
             || self.id.len() > 96
             || !self
@@ -240,13 +240,13 @@ fn expand(token: &str, selected: &[PathBuf], directory: &Path) -> io::Result<Vec
                 .first()
                 .map(|path| path.as_os_str())
                 .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "%f requires a selected file")
+                    io::Error::new(io::ErrorKind::InvalidInput, fl!("files-action-needs-file"))
                 })?,
             Some(b'n') => selected
                 .first()
                 .map(|path| path.file_name().unwrap_or(path.as_os_str()))
                 .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "%n requires a selected file")
+                    io::Error::new(io::ErrorKind::InvalidInput, fl!("files-action-needs-name"))
                 })?,
             _ => {
                 return Err(io::Error::new(

@@ -140,7 +140,7 @@ impl ConfigurationSnapshot {
         let selected = self
             .edit_path
             .as_ref()
-            .ok_or_else(|| io::Error::other("built-in defaults cannot be edited"))?;
+            .ok_or_else(|| io::Error::other(fl!("files-config-defaults-read-only")))?;
         let stale = || {
             io::Error::new(
                 io::ErrorKind::WouldBlock,
@@ -158,7 +158,7 @@ impl ConfigurationSnapshot {
         let path = current_target.as_ref().unwrap_or(selected);
         let parent = path
             .parent()
-            .ok_or_else(|| io::Error::other("configuration needs a parent folder"))?;
+            .ok_or_else(|| io::Error::other(fl!("files-config-needs-parent")))?;
         fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -242,7 +242,7 @@ fn validate_actions(actions: &[CustomAction]) -> io::Result<()> {
     let mut ids = BTreeSet::new();
     let mut shortcuts = BTreeSet::new();
     if actions.len() > 256 {
-        return Err(io::Error::other("at most 256 custom actions are supported"));
+        return Err(io::Error::other(fl!("files-config-too-many-actions")));
     }
     for action in actions {
         action.validate()?;
