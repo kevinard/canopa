@@ -56,12 +56,25 @@ impl TransferQuestion {
     }
 }
 
-#[derive(Clone, Debug)]
+pub use super::transfer_progress::TransferTotal;
+use super::transfer_progress::{Estimator, Scan};
+
+/// Published at most every [`PROGRESS_INTERVAL`], so the UI wakes about 4 Hz.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Debug, Default)]
 pub struct TransferProgress {
+    /// The item being transferred now.
     pub path: PathBuf,
     pub completed: usize,
     pub bytes: u64,
     pub verifying: bool,
+    /// Pre-scanned selection size; incomplete while still counting.
+    pub total: Option<TransferTotal>,
+    /// Smoothed content rate.
+    pub bytes_per_second: Option<f64>,
+    /// Smoothed remaining time, once the total is known.
+    pub remaining: Option<Duration>,
 }
 
 pub(super) use crate::operations::transfer::StoppedTransfer as Stopped;
@@ -176,7 +189,12 @@ pub(super) fn run(
         destination,
     } = placement;
     let request = observed.request();
-    let mut interaction = publication.interaction(false);
+    let mut interaction = publication
+        .interaction(false)
+        .with_scan(match continuation {
+            Some(plan) => plan.task_sources().cloned().collect(),
+            None => request.sources.clone(),
+        });
     let check = |path: &Path, access| match access {
         TransferAccess::SourceEntry => source.check(&[Access::entry(path)]),
         TransferAccess::DestinationFolder => {
@@ -243,6 +261,8 @@ pub(super) struct Interaction {
     last: Option<Instant>,
     completed: usize,
     bytes: u64,
+    scan: Option<Scan>,
+    estimator: Estimator,
 }
 impl Publication {
     pub(super) fn interaction(self, recovery: bool) -> Interaction {
@@ -252,10 +272,29 @@ impl Publication {
             last: None,
             completed: 0,
             bytes: 0,
+            scan: None,
+            estimator: Estimator::new(Instant::now()),
         }
     }
 }
 impl Interaction {
+    /// Count the selection in the background for totals and remaining time.
+    pub(super) fn with_scan(mut self, sources: Vec<PathBuf>) -> Self {
+        self.scan = Some(Scan::start(sources));
+        self
+    }
+
+    fn progress(&self, path: PathBuf, verifying: bool) -> TransferProgress {
+        TransferProgress {
+            path,
+            completed: self.completed,
+            bytes: self.bytes,
+            verifying,
+            total: self.scan.as_ref().and_then(Scan::total),
+            ..TransferProgress::default()
+        }
+    }
+
     pub(super) fn event(
         &mut self,
         event: TransferEvent,
@@ -270,12 +309,8 @@ impl Interaction {
                 destination,
                 folders,
             } => {
-                self.publication.progress(TransferProgress {
-                    path: source.path.clone(),
-                    completed: self.completed,
-                    bytes: self.bytes,
-                    verifying: false,
-                });
+                self.publication
+                    .progress(self.progress(source.path.clone(), false));
                 return self.publication.ask(
                     TransferQuestion::Conflict {
                         source,
@@ -290,12 +325,8 @@ impl Interaction {
                 destination,
                 message,
             } => {
-                self.publication.progress(TransferProgress {
-                    path: destination.clone(),
-                    completed: self.completed,
-                    bytes: self.bytes,
-                    verifying: false,
-                });
+                self.publication
+                    .progress(self.progress(destination.clone(), false));
                 return self.publication.ask(
                     TransferQuestion::Unavailable {
                         destination,
@@ -305,12 +336,7 @@ impl Interaction {
                     cancellation,
                 );
             }
-            TransferEvent::Verifying { source, .. } => TransferProgress {
-                path: source,
-                completed: self.completed,
-                bytes: self.bytes,
-                verifying: true,
-            },
+            TransferEvent::Verifying { source, .. } => (source, true),
             TransferEvent::Progress {
                 path,
                 completed,
@@ -318,20 +344,22 @@ impl Interaction {
             } => {
                 self.completed = completed;
                 self.bytes = bytes;
-                TransferProgress {
-                    path,
-                    completed,
-                    bytes,
-                    verifying: false,
-                }
+                (path, false)
             }
         };
+        let now = Instant::now();
         if self
             .last
-            .is_none_or(|last| last.elapsed() >= Duration::from_millis(80))
+            .is_none_or(|last| now.saturating_duration_since(last) >= PROGRESS_INTERVAL)
         {
+            let mut progress = self.progress(progress.0, progress.1);
+            let estimate =
+                self.estimator
+                    .sample(now, self.completed as u64, self.bytes, progress.total);
+            progress.bytes_per_second = estimate.bytes_per_second;
+            progress.remaining = estimate.remaining;
             self.publication.progress(progress);
-            self.last = Some(Instant::now());
+            self.last = Some(now);
         }
         TransferReply::Continue
     }

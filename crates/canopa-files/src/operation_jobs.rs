@@ -21,6 +21,7 @@ mod rename;
 pub use recovery::{RecoveryActions, RecoveryPart, RecoveryReport};
 pub use rename::PreparedRename;
 mod transfer;
+mod transfer_progress;
 mod transfer_resume;
 mod trash;
 use crate::operations::execution::{MutationConfirmation, TransferConfirmation};
@@ -39,7 +40,9 @@ use std::{
         mpsc,
     },
 };
-pub use transfer::{TransferFailure, TransferProgress, TransferQuestion, TransferReport};
+pub use transfer::{
+    TransferFailure, TransferProgress, TransferQuestion, TransferReport, TransferTotal,
+};
 pub use transfer_resume::{TransferActions, TransferPart, TransferResolution};
 pub use trash::{DeleteReport, RestoreReport, TrashFailure, TrashReport};
 
@@ -1794,7 +1797,7 @@ impl Worker {
                             // Bound presentation work for folders with many entries.
                             if last.is_none_or(|last| last.elapsed() >= std::time::Duration::from_millis(100)) {
                                 last = Some(std::time::Instant::now());
-                                publication.progress(TransferProgress { path: path.to_owned(), completed: totals.entries as usize, bytes: totals.bytes, verifying: false });
+                                publication.progress(TransferProgress { path: path.to_owned(), completed: totals.entries as usize, bytes: totals.bytes, ..TransferProgress::default() });
                             }
                         };
                         let (from_trash, outcome) = match request {

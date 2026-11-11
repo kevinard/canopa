@@ -1,7 +1,7 @@
 //! Read-only inspection of one operation; the worker remains its sole executor.
 use super::file_operations::Event;
 use super::*;
-use crate::operation_jobs::{JobSnapshot, Phase, TransferReport};
+use crate::operation_jobs::{JobSnapshot, Phase, TransferProgress, TransferReport};
 use canopa_theme::UiKind;
 use iced::{
     Length,
@@ -163,23 +163,83 @@ pub(super) fn progress<'a>(
             .size(size)
             .style(canopa_ui::muted)
             .wrapping(text::Wrapping::WordOrGlyph),
-            text(format!(
-                "{} {} completed · {} bytes",
-                progress.completed,
-                if progress.completed == 1 {
-                    "item"
-                } else {
-                    "items"
-                },
-                progress.bytes
-            ))
-            .font(font)
-            .size(size)
-            .wrapping(text::Wrapping::WordOrGlyph),
+            progress_fraction(progress).map(|fraction| {
+                iced::widget::progress_bar(0.0..=1.0, fraction)
+                    .girth(4)
+                    .style(iced::widget::progress_bar::primary)
+            }),
+            text(progress_counts(progress))
+                .font(font)
+                .size(size)
+                .wrapping(text::Wrapping::WordOrGlyph),
+            progress_rate(progress).map(|rate| {
+                text(rate)
+                    .font(font)
+                    .size(size)
+                    .style(canopa_ui::muted)
+                    .wrapping(text::Wrapping::WordOrGlyph)
+            }),
         ]
         .spacing(6)
         .into(),
     )
+}
+
+/// Weighted like the remaining-time estimate: content plus per-item work.
+fn progress_fraction(progress: &TransferProgress) -> Option<f32> {
+    let total = progress.total.filter(|total| total.complete)?;
+    const ITEM: f64 = 256.0 * 1024.0;
+    let work = |items: u64, bytes: u64| items as f64 * ITEM + bytes as f64;
+    let all = work(total.items, total.bytes);
+    (all > 0.0)
+        .then(|| (work(progress.completed as u64, progress.bytes) / all).clamp(0.0, 1.0) as f32)
+}
+
+fn items(count: u64) -> &'static str {
+    if count == 1 { "item" } else { "items" }
+}
+
+/// "X of Y items · A of B", or the running counts while the scan continues.
+pub(super) fn progress_counts(progress: &TransferProgress) -> String {
+    let done = progress.completed as u64;
+    let size = super::listing_ui::size;
+    match progress.total {
+        Some(total) if total.complete => format!(
+            "{done} of {} {} · {} of {}",
+            total.items.max(done),
+            items(total.items.max(done)),
+            size(progress.bytes),
+            size(total.bytes.max(progress.bytes)),
+        ),
+        Some(total) => format!(
+            "{done} of {}+ {} · {} · counting…",
+            total.items.max(done),
+            items(total.items.max(done)),
+            size(progress.bytes),
+        ),
+        None => format!("{done} {} · {}", items(done), size(progress.bytes)),
+    }
+}
+
+/// "12.0 MiB/s · about 2 min left" once the estimate has settled.
+pub(super) fn progress_rate(progress: &TransferProgress) -> Option<String> {
+    let rate = progress
+        .bytes_per_second
+        .map(|rate| format!("{}/s", super::listing_ui::size(rate as u64)));
+    let remaining = progress.remaining.map(|left| {
+        let seconds = left.as_secs();
+        let label = match seconds {
+            0..5 => "a few seconds".to_owned(),
+            5..60 => format!("{} s", seconds.div_ceil(5) * 5),
+            60..3600 => format!("{} min", seconds.div_ceil(60)),
+            _ => format!("{} h {} min", seconds / 3600, (seconds % 3600) / 60),
+        };
+        format!("about {label} left")
+    });
+    match (rate, remaining) {
+        (Some(rate), Some(left)) => Some(format!("{rate} · {left}")),
+        (rate, left) => rate.or(left),
+    }
 }
 
 impl Desktop {
@@ -656,4 +716,60 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
     .height(Length::Fill)
     .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
     super::focus::group(body, order, reveal, Some(control(dialog.window, 0)))
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use crate::operation_jobs::TransferTotal;
+    use std::time::Duration;
+
+    fn progress(total: Option<TransferTotal>) -> TransferProgress {
+        TransferProgress {
+            completed: 3,
+            bytes: 2048,
+            total,
+            ..TransferProgress::default()
+        }
+    }
+
+    #[test]
+    fn counts_show_totals_after_counting_and_a_floor_while_counting() {
+        assert_eq!(progress_counts(&progress(None)), "3 items · 2.0 KiB");
+        let mut total = TransferTotal {
+            items: 10,
+            bytes: 4 * 1024 * 1024,
+            complete: false,
+        };
+        assert_eq!(
+            progress_counts(&progress(Some(total))),
+            "3 of 10+ items · 2.0 KiB · counting…"
+        );
+        total.complete = true;
+        assert_eq!(
+            progress_counts(&progress(Some(total))),
+            "3 of 10 items · 2.0 KiB of 4.0 MiB"
+        );
+        let fraction = progress_fraction(&progress(Some(total))).unwrap();
+        assert!(fraction > 0.0 && fraction < 1.0);
+        assert!(progress_fraction(&progress(None)).is_none());
+    }
+
+    #[test]
+    fn rate_and_remaining_time_are_rounded() {
+        let mut shown = progress(None);
+        assert_eq!(progress_rate(&shown), None);
+        shown.bytes_per_second = Some(12.0 * 1024.0 * 1024.0);
+        assert_eq!(progress_rate(&shown).unwrap(), "12.0 MiB/s");
+        shown.remaining = Some(Duration::from_secs(91));
+        assert_eq!(
+            progress_rate(&shown).unwrap(),
+            "12.0 MiB/s · about 2 min left"
+        );
+        shown.remaining = Some(Duration::from_secs(12));
+        assert_eq!(
+            progress_rate(&shown).unwrap(),
+            "12.0 MiB/s · about 15 s left"
+        );
+    }
 }
