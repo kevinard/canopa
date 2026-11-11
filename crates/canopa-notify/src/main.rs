@@ -134,6 +134,14 @@ enum CtlCommand {
         path: PathBuf,
     },
     Clear,
+    /// Mark every notification read.
+    ReadAll,
+    /// Dismiss, mark read and hide everything from the Center; prints an undo token.
+    ClearAll,
+    /// Undo the latest clear-all within 30 seconds.
+    UndoClear {
+        token: u64,
+    },
     DeleteHistory,
 }
 
@@ -606,6 +614,17 @@ fn control_request_for_ctl(command: &CtlCommand) -> control_adapters::CtlRequest
         CtlCommand::Clear => control_adapters::CtlRequest::Command(
             canopa_notify::ControlCommand::ClearActiveNotifications,
         ),
+        CtlCommand::ReadAll => {
+            control_adapters::CtlRequest::Command(canopa_notify::ControlCommand::MarkAllRead)
+        }
+        CtlCommand::ClearAll => {
+            control_adapters::CtlRequest::Command(canopa_notify::ControlCommand::ClearAll)
+        }
+        CtlCommand::UndoClear { token } => {
+            control_adapters::CtlRequest::Command(canopa_notify::ControlCommand::UndoClear {
+                undo: *token,
+            })
+        }
         CtlCommand::DeleteHistory => control_adapters::CtlRequest::Command(
             canopa_notify::ControlCommand::DeleteNotificationHistory,
         ),

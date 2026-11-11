@@ -6,3 +6,16 @@ icons theme="hicolor" scale=1
 // Rules are ordered: the first decisive matching rule wins.
 // rule "quiet-chat" app="org.example.Chat" category="im.received" outcome="silenced"
 // rule "block-low-priority" app="org.example.Noisy" urgency="low" outcome="drop"
+
+// Do Not Disturb policy. Critical notifications always show; break-through lets
+// alarms (alarm.*) and incoming calls (call.incoming) show too. Fullscreen and
+// screen-sharing suppression save banners quietly (sharing also hides content).
+// do-not-disturb {
+//     schedule from="22:00" to="07:00" days="mon tue wed thu fri"
+//     break-through alarms=#true calls=#true
+//     suppress fullscreen=#true screen-sharing=#true
+// }
+
+// Per-application sound and lock-screen visibility (hidden, name-only, content).
+// Settings and `canopa-notify ctl app` store UI-managed overrides separately.
+// app "org.example.Chat" sound=#false lock-screen="name-only"

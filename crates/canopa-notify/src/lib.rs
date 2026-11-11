@@ -44,14 +44,14 @@ pub use delivery_policy::{
 };
 pub use domain::{
     AcceptedNotification, DEFAULT_NOTIFICATION_SOUND_NAME, DEFAULT_NOTIFICATION_SOUND_THEME,
-    DeliveryOutcome, NotificationAction, NotificationBodyContent, NotificationBodyFormat,
-    NotificationBodyImage, NotificationBodyImageSource, NotificationBodyRun,
-    NotificationBodySegment, NotificationBodyStyle, NotificationImageData, NotificationInput,
-    NotificationPosition, NotificationReceipt, NotificationSnapshot, NotificationSound,
-    NotificationSoundPlayback, NotificationSoundRequest, NotificationSoundSettings,
-    NotificationStatus, NotificationThread, NotificationTimeout, NotificationTimeoutDefaults,
-    NotificationVisualReference, SenderCloseReason, SenderEvent, Urgency, UserRule,
-    normalize_notification_category,
+    DeliveryOutcome, MAX_REPLY_BYTES, NotificationAction, NotificationBodyContent,
+    NotificationBodyFormat, NotificationBodyImage, NotificationBodyImageSource,
+    NotificationBodyRun, NotificationBodySegment, NotificationBodyStyle, NotificationImageData,
+    NotificationInput, NotificationPosition, NotificationReceipt, NotificationSnapshot,
+    NotificationSound, NotificationSoundPlayback, NotificationSoundRequest,
+    NotificationSoundSettings, NotificationStatus, NotificationThread, NotificationTimeout,
+    NotificationTimeoutDefaults, NotificationVisualReference, PresentationHints, ReplyRequest,
+    SenderCloseReason, SenderEvent, Urgency, UserRule, normalize_notification_category,
 };
 pub use input_limits::NotificationLimitExceeded;
 pub use lifecycle::{
@@ -77,7 +77,7 @@ pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
     BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerRendererState,
-    BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, HIDDEN_CONTENT_SUMMARY,
+    BannerReply, BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, HIDDEN_CONTENT_SUMMARY,
     NoopBannerPresenter, NotificationBannerState, StructuredLogBannerPresenter,
     app_identity_icon_name_candidates,
 };
@@ -86,6 +86,11 @@ pub use sender_events::{SenderEventPublication, SenderEventPublisher};
 #[cfg(feature = "audio")]
 pub use sound::RodioSoundPresenter;
 pub use sound::{NoopSoundPresenter, SoundPresenter};
+
+/// Lock-screen hints are bounded like the pending-attention store.
+pub(crate) fn runtime_resources_lock_hint_limit() -> usize {
+    4096
+}
 
 use configuration::LoadedNotificationConfiguration;
 use intake::{NotificationIntakeResult, intake_notification};
@@ -278,6 +283,7 @@ impl Daemon {
         NotificationRuntime::complete_mutation(command, async move {
             input_limits::validate_input(&input)?;
             let expire_timeout = input.expire_timeout;
+            let presentation = input.presentation.clone();
             let accepted = match intake_notification(input) {
                 NotificationIntakeResult::Accepted(accepted) => *accepted,
                 NotificationIntakeResult::NoOpDropped {
@@ -296,6 +302,7 @@ impl Daemon {
                     accepted.image_data,
                     expire_timeout,
                     accepted.sound,
+                    presentation,
                     on_receipt,
                 )
                 .await
@@ -460,6 +467,13 @@ impl Daemon {
     }
 
     /// Feed compositor fullscreen/screencast state. Service mode uses Niri IPC.
+    /// The current lock-screen feed; see `canopa_notify_client::LockScreenSnapshot`.
+    pub async fn lock_screen_snapshot(
+        &self,
+    ) -> anyhow::Result<canopa_notify_client::LockScreenSnapshot> {
+        self.runtime.lock_screen_snapshot().await
+    }
+
     pub fn set_suppression(&self, suppression: SuppressionState) {
         self.runtime.set_suppression(suppression);
     }

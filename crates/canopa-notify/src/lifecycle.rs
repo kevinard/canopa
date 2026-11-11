@@ -529,6 +529,29 @@ where
         Ok(LifecycleEffects::empty())
     }
 
+    /// Change Requires Attention without touching the sender lifecycle: "Mark
+    /// all read" keeps live notifications live, and Undo restores attention.
+    pub(crate) async fn set_attention_if_current_revision(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        requires_attention: bool,
+    ) -> anyhow::Result<LifecycleEffects> {
+        let mut thread = self.thread(notification_id).await?;
+        if thread.revision != revision
+            || thread.requires_attention == requires_attention
+            || thread.accepted_notification.transient
+        {
+            return Ok(LifecycleEffects::empty());
+        }
+        thread.requires_attention = requires_attention;
+        thread.updated_at = self.now_millis();
+        let committed = self
+            .persist_thread(thread, PersistPrecondition::ExpectedRevision(revision))
+            .await?;
+        Ok(LifecycleEffects::new(vec![attention_changed(&committed)]))
+    }
+
     pub async fn expire(
         &self,
         notification_id: InternalNotificationId,

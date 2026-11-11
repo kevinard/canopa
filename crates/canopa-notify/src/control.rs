@@ -163,6 +163,17 @@ impl NotifyControl {
                     },
                 }
             }
+            ControlCommand::MarkAllRead => {
+                self.daemon.runtime.mark_all_read().await?;
+                Ok(ControlReply::CommandApplied)
+            }
+            ControlCommand::ClearAll => Ok(ControlReply::Cleared {
+                undo: self.daemon.runtime.clear_all().await?,
+            }),
+            ControlCommand::UndoClear { undo } => {
+                self.daemon.runtime.undo_clear(undo).await?;
+                Ok(ControlReply::CommandApplied)
+            }
             ControlCommand::DeleteNotificationHistory => {
                 self.daemon.delete_notification_history().await?;
                 Ok(ControlReply::CommandApplied)
@@ -207,6 +218,22 @@ impl NotifyControl {
         &self,
     ) -> anyhow::Result<crate::NotificationCenterReader> {
         self.daemon.runtime.notification_center_reader().await
+    }
+
+    /// The current "Clear all" undo token, while it can still be used.
+    pub fn clear_undo(&self) -> Option<u64> {
+        self.daemon
+            .runtime
+            .clear_undo_offer()
+            .map(|offer| offer.token)
+    }
+
+    /// Current Do Not Disturb and suppression, for the Center's header.
+    pub fn do_not_disturb_view(&self) -> (crate::DoNotDisturbStatus, Option<crate::Suppression>) {
+        (
+            self.daemon.do_not_disturb_status(),
+            self.daemon.runtime.active_suppression(),
+        )
     }
 
     pub fn subscribe_notification_state(&self) -> NotificationStateSubscription {
@@ -323,6 +350,14 @@ pub enum ControlCommand {
         permission: AppPermissionControl,
     },
     ClearActiveNotifications,
+    /// Acknowledge every unread item; live notifications stay live.
+    MarkAllRead,
+    /// Dismiss live notifications, mark all read and hide them from the Center.
+    ClearAll,
+    /// Restore the Center and unread state of the latest Clear all, for 30 seconds.
+    UndoClear {
+        undo: u64,
+    },
     DeleteNotificationHistory,
     InvokeNotificationAction {
         notification_id: InternalNotificationId,
@@ -369,6 +404,8 @@ pub enum NotificationCenterAction {
     InvokeAction {
         action_key: String,
     },
+    /// Reopen the live banner with its reply composer; the text stays in Notify.
+    Reply,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -383,7 +420,13 @@ pub enum ControlReply {
     NotificationCenterProjection(NotificationCenterProjection),
     NotificationCenterBatch(NotificationCenterBatch),
     CommandApplied,
-    ClearPartiallyApplied { dismissed: usize },
+    ClearPartiallyApplied {
+        dismissed: usize,
+    },
+    /// Clear all applied; `undo` names it for `undo-clear`.
+    Cleared {
+        undo: u64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -507,6 +550,9 @@ pub struct NotificationCenterItem {
     /// Whether activating this live item invokes a sender action instead of dismissing it.
     #[serde(default)]
     pub has_default_action: bool,
+    /// The live item accepts a text reply through its banner composer.
+    #[serde(default)]
+    pub can_reply: bool,
     pub summary: String,
     pub body: String,
     pub body_content: NotificationBodyContent,

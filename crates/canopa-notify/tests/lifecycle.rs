@@ -1003,7 +1003,8 @@ async fn actions_dismiss_non_resident_notifications_but_resident_notifications_s
                     notification_id,
                     reason,
                 } => (None, *notification_id, Some(reason.as_str())),
-                SenderEvent::ActivationToken { .. } => unreachable!(),
+                SenderEvent::ActivationToken { .. } | SenderEvent::ReplyText { .. } =>
+                    unreachable!(),
             })
             .collect::<Vec<_>>(),
         vec![

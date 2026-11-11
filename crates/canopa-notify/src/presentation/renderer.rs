@@ -16,6 +16,14 @@ const BANNER_MAX_WIDTH: f32 = 360.0;
 // One ordinary Iced wheel step: leave room to fully reveal middle stack cards.
 const BANNER_SCROLL_REVEAL_SPACE: f32 = 60.0;
 const BANNER_ACTIVATION_TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
+const REPLY_INPUT_ID: &str = "canopa-notify-reply";
+
+/// The one open reply composer. Its text lives only in the renderer until sent.
+#[derive(Clone, Debug)]
+struct ReplyDraft {
+    target: BannerTarget,
+    text: String,
+}
 
 mod accessibility;
 mod accessibility_bounds;
@@ -243,6 +251,7 @@ struct BannerUiState {
     accessibility_enabled: bool,
     accessibility: Option<(iced::window::Id, u64, accessibility::BannerAccessibility)>,
     idle_reclamation: Option<(iced::window::Id, iced::task::Handle)>,
+    reply: Option<ReplyDraft>,
 }
 
 #[derive(Clone, Debug)]
@@ -299,6 +308,17 @@ enum BannerUiMessage {
         callback: iced_layershell::actions::ActivationTokenCallback,
     },
     SetInputRegion(BannerInputRegion),
+    /// Open the composer; the surface takes keyboard focus while it is open.
+    ReplyRequested(BannerTarget),
+    ReplyChanged(String),
+    ReplySubmitted,
+    ReplySend {
+        target: BannerTarget,
+        text: String,
+        activation_token: Option<String>,
+    },
+    ReplyCancelled,
+    SetKeyboardInteractivity(iced::window::Id, bool),
 }
 
 // Banner placement remains compositor-owned; named output snapshots are for the shell.
@@ -350,6 +370,17 @@ impl TryInto<iced_layershell::actions::LayerShellCustomActionWithId> for BannerU
                     callback,
                 },
             )),
+            Self::SetKeyboardInteractivity(window, exclusive) => {
+                use iced_layershell::reexport::KeyboardInteractivity;
+                Ok(LayerShellCustomActionWithId::new(
+                    Some(window),
+                    LayerShellCustomAction::KeyboardInteractivityChange(if exclusive {
+                        KeyboardInteractivity::Exclusive
+                    } else {
+                        KeyboardInteractivity::None
+                    }),
+                ))
+            }
             Self::SetInputRegion(latest) => Ok(LayerShellCustomActionWithId::new(
                 None,
                 LayerShellCustomAction::SetInputRegion(
@@ -494,6 +525,7 @@ fn run_banner_ui(
                 accessibility_enabled: true,
                 accessibility: None,
                 idle_reclamation: None,
+                reply: None,
             };
             let window = state.surface.window().unwrap();
             let task = open_banner_surface(&mut state.surface, window);
@@ -527,8 +559,20 @@ fn banner_ui_subscription(state: &BannerUiState) -> iced::Subscription<BannerUiM
     } else {
         iced::Subscription::none()
     };
+    let escape = if state.reply.is_some() {
+        iced::keyboard::listen().filter_map(|event| match event {
+            iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            } => Some(BannerUiMessage::ReplyCancelled),
+            _ => None,
+        })
+    } else {
+        iced::Subscription::none()
+    };
     iced::Subscription::batch([
         readiness,
+        escape,
         iced::window::close_events().map(BannerUiMessage::WindowClosed),
         iced::Subscription::run_with(state.runtime_id, banner_update_stream),
     ])
@@ -622,8 +666,53 @@ fn banner_ui_update(
             let effects = state
                 .surface
                 .content_changed(!state.presentation.banners.is_empty());
-            apply_surface_effects(state, effects)
+            let surface = apply_surface_effects(state, effects);
+            iced::Task::batch([surface, sync_reply_composer(state)])
         }
+        BannerUiMessage::ReplyRequested(target) => open_reply_composer(state, target),
+        BannerUiMessage::ReplyChanged(text) => {
+            if let Some(draft) = &mut state.reply
+                && text.len() <= crate::MAX_REPLY_BYTES
+            {
+                draft.text = text;
+            }
+            iced::Task::none()
+        }
+        BannerUiMessage::ReplySubmitted => {
+            let Some(draft) = state
+                .reply
+                .clone()
+                .filter(|draft| !draft.text.trim().is_empty())
+            else {
+                return iced::Task::none();
+            };
+            let Some(banner) = current_banner(state, draft.target) else {
+                return iced::Task::none();
+            };
+            activation_token_task(banner.app_identity.clone(), move |activation_token| {
+                BannerUiMessage::ReplySend {
+                    target: draft.target,
+                    text: draft.text,
+                    activation_token,
+                }
+            })
+        }
+        BannerUiMessage::ReplySend {
+            target,
+            text,
+            activation_token,
+        } => {
+            state
+                .interactions
+                .try_send(BannerInteraction::Reply {
+                    target,
+                    text,
+                    activation_token,
+                })
+                .ok();
+            close_reply_composer(state)
+        }
+        BannerUiMessage::ReplyCancelled => close_reply_composer(state),
         BannerUiMessage::LayoutFrame {
             window,
             generation,
@@ -761,6 +850,81 @@ fn banner_ui_update(
         _ => iced::Task::none(),
     };
     iced::Task::batch([task, sync_banner_accessibility(state)])
+}
+
+fn open_reply_composer(
+    state: &mut BannerUiState,
+    target: BannerTarget,
+) -> iced::Task<BannerUiMessage> {
+    let Some(window) = state.surface.window() else {
+        return iced::Task::none();
+    };
+    if current_banner(state, target).is_none_or(|banner| banner.reply.is_none())
+        || state
+            .reply
+            .as_ref()
+            .is_some_and(|draft| draft.target == target)
+    {
+        return iced::Task::none();
+    }
+    let previous = close_reply_composer(state);
+    state.reply = Some(ReplyDraft {
+        target,
+        text: String::new(),
+    });
+    state
+        .interactions
+        .try_send(BannerInteraction::Composing {
+            target,
+            composing: true,
+        })
+        .ok();
+    iced::Task::batch([
+        previous,
+        iced::Task::done(BannerUiMessage::SetKeyboardInteractivity(window, true)),
+        iced::widget::operation::focus(REPLY_INPUT_ID),
+    ])
+}
+
+/// Close the composer and return keyboard focus; the banner-hide timer resumes.
+fn close_reply_composer(state: &mut BannerUiState) -> iced::Task<BannerUiMessage> {
+    let Some(draft) = state.reply.take() else {
+        return iced::Task::none();
+    };
+    state
+        .interactions
+        .try_send(BannerInteraction::Composing {
+            target: draft.target,
+            composing: false,
+        })
+        .ok();
+    match state.surface.window() {
+        Some(window) => iced::Task::done(BannerUiMessage::SetKeyboardInteractivity(window, false)),
+        None => iced::Task::none(),
+    }
+}
+
+/// Drop a composer whose revision disappeared, and honour a Center "Reply…" request.
+fn sync_reply_composer(state: &mut BannerUiState) -> iced::Task<BannerUiMessage> {
+    if let Some(draft) = &state.reply
+        && current_banner(state, draft.target).is_none_or(|banner| banner.reply.is_none())
+    {
+        state.reply = None;
+        if let Some(window) = state.surface.window() {
+            return iced::Task::done(BannerUiMessage::SetKeyboardInteractivity(window, false));
+        }
+        return iced::Task::none();
+    }
+    let requested = state
+        .presentation
+        .banners
+        .iter()
+        .find(|banner| banner.reply.as_ref().is_some_and(|reply| reply.compose))
+        .map(BannerView::target);
+    match requested {
+        Some(target) if state.reply.is_none() => open_reply_composer(state, target),
+        _ => iced::Task::none(),
+    }
 }
 
 fn sync_banner_accessibility(state: &mut BannerUiState) -> iced::Task<BannerUiMessage> {
@@ -1230,6 +1394,7 @@ mod tests {
             accessibility_enabled: false,
             accessibility: None,
             idle_reclamation: None,
+            reply: None,
         }
     }
 
@@ -1250,6 +1415,93 @@ mod tests {
                 }),
             }),
         );
+    }
+
+    #[tokio::test]
+    async fn reply_composer_holds_the_timer_and_sends_the_text_once() {
+        let (interactions, mut received) = tokio::sync::mpsc::channel(32);
+        let mut state = BannerUiState {
+            interactions,
+            ..banner_ui_test_state()
+        };
+        let mut banner = banner_view(9, "Message");
+        banner.actions = vec![BannerAction {
+            key: "portal-button-0".into(),
+            label: "Reply".into(),
+            icon: None,
+        }];
+        banner.reply = Some(crate::BannerReply {
+            action_key: "portal-button-0".into(),
+            placeholder: None,
+            compose: false,
+        });
+        let target = banner.target();
+        let _ = banner_ui_update(
+            &mut state,
+            BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+                presentation: BannerPresentation::visible_banners(vec![banner.clone()]),
+                acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+            }),
+        );
+        let _ = banner_ui_update(&mut state, BannerUiMessage::ReplyRequested(target));
+        assert!(state.reply.is_some());
+        assert_eq!(
+            received.try_recv().unwrap(),
+            BannerInteraction::Composing {
+                target,
+                composing: true
+            }
+        );
+        let oversized = "x".repeat(crate::MAX_REPLY_BYTES + 1);
+        let _ = banner_ui_update(&mut state, BannerUiMessage::ReplyChanged(oversized));
+        assert!(
+            state.reply.as_ref().unwrap().text.is_empty(),
+            "oversized input is refused"
+        );
+        let _ = banner_ui_update(&mut state, BannerUiMessage::ReplyChanged("Hi".into()));
+        let _ = banner_ui_update(
+            &mut state,
+            BannerUiMessage::ReplySend {
+                target,
+                text: "Hi".into(),
+                activation_token: None,
+            },
+        );
+        assert_eq!(
+            received.try_recv().unwrap(),
+            BannerInteraction::Reply {
+                target,
+                text: "Hi".into(),
+                activation_token: None
+            }
+        );
+        assert_eq!(
+            received.try_recv().unwrap(),
+            BannerInteraction::Composing {
+                target,
+                composing: false
+            }
+        );
+        assert!(state.reply.is_none());
+
+        // A Center "Reply…" opens the composer; losing the banner drops it.
+        banner.reply.as_mut().unwrap().compose = true;
+        let _ = banner_ui_update(
+            &mut state,
+            BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+                presentation: BannerPresentation::visible_banners(vec![banner]),
+                acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+            }),
+        );
+        assert!(state.reply.is_some());
+        let _ = banner_ui_update(
+            &mut state,
+            BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+                presentation: BannerPresentation::default(),
+                acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+            }),
+        );
+        assert!(state.reply.is_none());
     }
 
     #[tokio::test]
@@ -1574,6 +1826,7 @@ mod tests {
             actions: Vec::new(),
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
+            reply: None,
         }
     }
 
@@ -1653,9 +1906,13 @@ fn banner_stack_widget(
                 // Display means the bounded card viewport is visible, not every
                 // line of oversized content has been read (ADR 0046).
                 container(
-                    scrollable(notification_banner_widget(
+                    scrollable(notification_banner_widget_with_reply(
                         banner,
                         &state.presentation.appearance,
+                        state
+                            .reply
+                            .as_ref()
+                            .filter(|draft| draft.target == banner.target()),
                     ))
                     .width(Length::Fill),
                 )
@@ -1699,13 +1956,22 @@ fn banner_stack_item_key(banner: &BannerView) -> BannerStackItemKey {
     BannerStackItemKey::Notification(banner.notification_id)
 }
 
+#[cfg(test)]
 fn notification_banner_widget<'a>(
     banner: &'a BannerView,
     appearance: &canopa_theme::Appearance,
 ) -> iced::Element<'a, BannerUiMessage> {
+    notification_banner_widget_with_reply(banner, appearance, None)
+}
+
+fn notification_banner_widget_with_reply<'a>(
+    banner: &'a BannerView,
+    appearance: &canopa_theme::Appearance,
+    draft: Option<&'a ReplyDraft>,
+) -> iced::Element<'a, BannerUiMessage> {
     // Keep the outer card/scroll state while retiring a press captured before replacement.
     iced::widget::container(revision::own(
-        notification_banner_content(banner, appearance),
+        notification_banner_content(banner, appearance, draft),
         banner.target(),
     ))
     .padding(canopa_ui::padding(
@@ -1717,6 +1983,7 @@ fn notification_banner_widget<'a>(
 fn notification_banner_content<'a>(
     banner: &'a BannerView,
     appearance: &canopa_theme::Appearance,
+    draft: Option<&'a ReplyDraft>,
 ) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{button, column, container, progress_bar, row, text};
     use iced::{Alignment, Length};
@@ -1804,6 +2071,9 @@ fn notification_banner_content<'a>(
     if !banner.actions.is_empty() {
         card = card.push(banner_actions_widget(banner, appearance));
     }
+    if let Some(draft) = draft {
+        card = card.push(reply_composer_widget(banner, draft, appearance));
+    }
 
     if let Some(progress) = banner.progress {
         card = card.push(
@@ -1854,10 +2124,21 @@ fn banner_actions_widget<'a>(
                 container(
                     canopa_ui::styled_action(
                         banner_action_content(action, appearance),
-                        Some(BannerUiMessage::InvokeActionRequested(
-                            banner.target(),
-                            action.key.clone(),
-                        )),
+                        // The reply action opens the composer; sending invokes it.
+                        Some(
+                            if banner
+                                .reply
+                                .as_ref()
+                                .is_some_and(|reply| reply.action_key == action.key)
+                            {
+                                BannerUiMessage::ReplyRequested(banner.target())
+                            } else {
+                                BannerUiMessage::InvokeActionRequested(
+                                    banner.target(),
+                                    action.key.clone(),
+                                )
+                            },
+                        ),
                         canopa_ui::Action::Normal,
                         false,
                         appearance,
@@ -1876,6 +2157,52 @@ fn banner_actions_widget<'a>(
     }
 
     container(actions).width(Length::Fill).into()
+}
+
+fn reply_composer_widget<'a>(
+    banner: &'a BannerView,
+    draft: &'a ReplyDraft,
+    appearance: &canopa_theme::Appearance,
+) -> iced::Element<'a, BannerUiMessage> {
+    use iced::widget::{row, text, text_input};
+    use iced::{Alignment, Length};
+    let placeholder = banner
+        .reply
+        .as_ref()
+        .and_then(|reply| reply.placeholder.as_deref())
+        .unwrap_or("Reply…");
+    let label = |value: &'static str| {
+        text(value)
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().body_size.px())
+    };
+    let can_send = !draft.text.trim().is_empty();
+    row![
+        text_input(placeholder, &draft.text)
+            .id(REPLY_INPUT_ID)
+            .on_input(BannerUiMessage::ReplyChanged)
+            .on_submit(BannerUiMessage::ReplySubmitted)
+            .size(appearance.typography().body_size.px())
+            .width(Length::Fill),
+        canopa_ui::styled_action(
+            label("Send"),
+            can_send.then_some(BannerUiMessage::ReplySubmitted),
+            canopa_ui::Action::Normal,
+            false,
+            appearance,
+        ),
+        canopa_ui::styled_action(
+            label("Cancel"),
+            Some(BannerUiMessage::ReplyCancelled),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        ),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
+    .width(Length::Fill)
+    .into()
 }
 
 fn banner_action_content<'a>(

@@ -215,9 +215,13 @@ fn spawn_panel_interaction_forwarder(
 }
 
 fn is_page_navigation(line: &str) -> bool {
+    use canopa_panel_protocol::InteractionTarget;
     matches!(serde_json::from_str::<InteractionEvent>(line), Ok(InteractionEvent::Invoke {
-        target: canopa_panel_protocol::InteractionTarget::Content, action_key, ..
+        target: InteractionTarget::Content, action_key, ..
     }) if action_key == super::pages::PAGE_KEY)
+        || matches!(serde_json::from_str::<InteractionEvent>(line), Ok(InteractionEvent::Invoke {
+            target: InteractionTarget::Section { .. }, action_key, ..
+        }) if action_key == super::pages::GROUP_KEY)
 }
 
 fn read_panel_interaction(reader: &mut impl BufRead) -> std::io::Result<Option<String>> {
@@ -335,6 +339,15 @@ impl ControlSocket {
             "level=info component=control event=request command={}",
             request.kind()
         );
+
+        if matches!(request, SocketControlRequest::LockScreenSubscribe) {
+            let Ok(_permit) = self.summary_subscriptions.try_acquire() else {
+                write_socket_frame(stream.get_mut(), b"error too many summary subscriptions\n")
+                    .await?;
+                return Ok(());
+            };
+            return stream_lock_screen_subscription(&mut stream, control).await;
+        }
 
         if matches!(request, SocketControlRequest::SummarySubscribe) {
             let Ok(_permit) = self.summary_subscriptions.try_acquire() else {
@@ -527,6 +540,37 @@ impl Write for JsonLineBuffer {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+/// Read-only lock-screen feed with the summary stream's framing and coalescing.
+async fn stream_lock_screen_subscription(
+    stream: &mut BufReader<tokio::net::UnixStream>,
+    control: NotifyControl,
+) -> anyhow::Result<()> {
+    if !stream.buffer().is_empty() {
+        return Ok(());
+    }
+    let mut subscription = control.subscribe_notification_state();
+    let mut unexpected = [0];
+    let mut last = None;
+    loop {
+        let snapshot = tokio::select! {
+            biased;
+            result = stream.read(&mut unexpected) => { result?; break; }
+            snapshot = subscription.next_lock_screen() => snapshot?,
+        };
+        let Some(snapshot) = snapshot else {
+            break;
+        };
+        if last.as_ref() == Some(&snapshot) {
+            continue;
+        }
+        let line = json_line(&snapshot, canopa_notify_client::MAX_LOCK_SCREEN_BYTES)?
+            .ok_or_else(|| anyhow::anyhow!("lock-screen feed exceeds frame limit"))?;
+        write_socket_frame(stream.get_mut(), line.as_bytes()).await?;
+        last = Some(snapshot);
+    }
+    Ok(())
 }
 
 async fn stream_summary_subscription(

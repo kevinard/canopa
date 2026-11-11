@@ -16,6 +16,7 @@ pub struct NotificationCenterReader {
     lifecycle: NotificationLifecycle<SqlitePersistedState>,
     projection: CenterProjection,
     transient: Vec<NotificationCenterCursor>,
+    cleared_through: Option<NotificationCenterCursor>,
 }
 
 /// One bounded read row carries its position and page-local permission controls.
@@ -31,6 +32,7 @@ impl NotificationCenterReader {
         storage: SqlitePersistedState,
         lifecycle: NotificationLifecycle<SqlitePersistedState>,
         projection: CenterProjection,
+        cleared_through: Option<NotificationCenterCursor>,
     ) -> Self {
         let transient = lifecycle.transient_center_cursors();
         Self {
@@ -38,6 +40,7 @@ impl NotificationCenterReader {
             lifecycle,
             projection,
             transient,
+            cleared_through,
         }
     }
 
@@ -50,10 +53,19 @@ impl NotificationCenterReader {
             (1..=16).contains(&limit),
             "center batch limit must be between 1 and 16"
         );
-        let mut threads = self.storage.center_threads_after(after, limit).await?;
+        let mut threads = self
+            .storage
+            .center_threads_after(after, limit, self.cleared_through)
+            .await?;
+        let cleared = self.cleared_through;
         threads.extend(
             self.lifecycle
-                .transient_center_threads(&self.transient, after, limit),
+                .transient_center_threads(&self.transient, after, limit)
+                .into_iter()
+                .filter(|thread| {
+                    thread.status == NotificationStatus::Active
+                        || cleared.is_none_or(|c| NotificationCenterCursor::for_thread(thread) > c)
+                }),
         );
         threads
             .sort_by_key(|thread| std::cmp::Reverse(NotificationCenterCursor::for_thread(thread)));
@@ -95,9 +107,18 @@ pub(crate) struct CenterProjection {
     category_permissions: HashMap<(String, String), AppPermissionControl>,
     instance: [u8; 16],
     icon_settings: BannerIconSettings,
+    replies: std::collections::HashSet<(crate::InternalNotificationId, i64)>,
 }
 
 impl CenterProjection {
+    pub(crate) fn with_replies(
+        mut self,
+        replies: std::collections::HashSet<(crate::InternalNotificationId, i64)>,
+    ) -> Self {
+        self.replies = replies;
+        self
+    }
+
     pub(crate) fn new(
         user_rules: &[UserRule],
         instance: [u8; 16],
@@ -131,6 +152,7 @@ impl CenterProjection {
             category_permissions,
             instance,
             icon_settings,
+            replies: Default::default(),
         }
     }
 
@@ -140,6 +162,7 @@ impl CenterProjection {
             category_permissions,
             instance,
             icon_settings,
+            replies,
         } = self;
         let mut grouped: BTreeMap<String, Vec<NotificationCenterItem>> = BTreeMap::new();
         let mut categories: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -182,6 +205,8 @@ impl CenterProjection {
                             .actions
                             .iter()
                             .any(|action| action.key == "default"),
+                    can_reply: thread.status == NotificationStatus::Active
+                        && replies.contains(&(thread.id, thread.revision)),
                     summary: notification.summary,
                     body: notification.body,
                     body_content: notification.body_content,

@@ -554,7 +554,9 @@ async fn large_history(protocol: &str) {
                 );
             }
         }
-        assert_eq!(settings.sections.len(), categories_by_app.len());
+        // Settings starts with the Do Not Disturb header (ADR 0055), then one section per app.
+        assert_eq!(settings.sections[0].id, "do-not-disturb");
+        assert_eq!(settings.sections.len(), categories_by_app.len() + 1);
         for (app, categories) in categories_by_app {
             let section = settings
                 .sections

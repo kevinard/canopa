@@ -302,7 +302,7 @@ fn ordinary_portal_notifications_use_the_server_default_timeout_policy() {
 }
 
 #[tokio::test]
-async fn displayed_portal_banners_expire_unless_urgent() {
+async fn portal_banners_hide_after_their_timeout_but_keep_center_actions_live() {
     let fixture = Fixture::with_options("BannerTimeout", |path| {
         canopa_notify::DaemonOptions::graphical(path, canopa_notify::NoopBannerPresenter)
             .with_notification_timeout_defaults(canopa_notify::NotificationTimeoutDefaults {
@@ -312,8 +312,16 @@ async fn displayed_portal_banners_expire_unless_urgent() {
             })
     })
     .await;
+    let mut normal = values_for("Hides by itself");
+    normal.insert(
+        "buttons".into(),
+        owned(vec![HashMap::from([
+            ("label".to_string(), Value::from("Archive")),
+            ("action".to_string(), Value::from("archive")),
+        ])]),
+    );
     fixture
-        .add("org.canopa.Chat", "normal", values_for("Hides by itself"))
+        .add("org.canopa.Chat", "normal", normal)
         .await
         .unwrap();
     let mut urgent = values_for("Stays on screen");
@@ -323,29 +331,326 @@ async fn displayed_portal_banners_expire_unless_urgent() {
         .await
         .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        while fixture.daemon.snapshot().await.unwrap().active.len() != 1 {
+        while fixture.daemon.visible_banners().await.len() != 1 {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("the normal portal banner never expired");
-    let snapshot = fixture.daemon.snapshot().await.unwrap();
+    .expect("the normal portal banner never hid");
     assert_eq!(
-        snapshot.active[0].accepted_notification.summary,
+        fixture.daemon.visible_banners().await[0].summary,
         "Stays on screen"
     );
-    assert!(snapshot.history.iter().any(|thread| {
-        thread.accepted_notification.summary == "Hides by itself"
-            && thread.status == canopa_notify::NotificationStatus::Expired
-    }));
-    // The expired registration is retired, so the same portal ID starts anew.
+    // Both remain live: the hidden one keeps its sender action in the Center.
+    let items = fixture.active_items().await;
+    let hidden = items
+        .iter()
+        .find(|item| item.summary == "Hides by itself")
+        .unwrap();
+    assert_eq!(hidden.actions[0].label, "Archive");
+    // The same portal ID still updates the live notification in place.
     fixture
-        .add("org.canopa.Chat", "normal", values_for("Again"))
+        .add("org.canopa.Chat", "normal", values_for("Updated quietly"))
         .await
         .unwrap();
+    assert_eq!(fixture.daemon.snapshot().await.unwrap().active.len(), 2);
+    assert!(
+        fixture
+            .daemon
+            .visible_banners()
+            .await
+            .iter()
+            .all(|banner| banner.summary != "Updated quietly"),
+        "without show-as-new a hidden notification updates without a new banner"
+    );
+    let mut again = values_for("Shown as new");
+    again.insert("display-hint".into(), owned(vec!["show-as-new"]));
+    fixture
+        .add("org.canopa.Chat", "normal", again)
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .daemon
+            .visible_banners()
+            .await
+            .iter()
+            .any(|banner| banner.summary == "Shown as new")
+    );
     fixture.remove("org.canopa.Chat", "urgent").await;
     fixture.remove("org.canopa.Chat", "normal").await;
+    assert!(fixture.daemon.snapshot().await.unwrap().active.is_empty());
     fixture.finish().await;
+}
+
+#[test]
+fn display_hints_and_button_purposes_map_to_presentation() {
+    let identity = || Identity {
+        app_id: "org.canopa.Chat".into(),
+        id: "message".into(),
+    };
+    let with_hints = |hints: &[&str]| {
+        let mut values = values_for("Hinted");
+        let hints: Vec<String> = hints.iter().map(|hint| hint.to_string()).collect();
+        values.insert("display-hint".into(), owned(hints));
+        intake::prepare(identity(), values)
+    };
+    let (input, _) = intake::prepare(identity(), values_for("Plain")).unwrap();
+    assert!(input.presentation.keep_after_banner && input.presentation.quiet_update);
+    assert!(!input.presentation.center_only && input.presentation.lock_screen.is_none());
+
+    let (input, _) = with_hints(&["transient"]).unwrap();
+    assert!(input.transient && !input.presentation.keep_after_banner);
+    let (input, _) = with_hints(&["tray", "persistent", "show-as-new"]).unwrap();
+    assert!(input.presentation.center_only && input.resident && !input.presentation.quiet_update);
+    let (input, _) = with_hints(&["hide-content-on-lock-screen"]).unwrap();
+    assert_eq!(
+        input.presentation.lock_screen,
+        Some(canopa_notify::LockScreenVisibility::NameOnly)
+    );
+    // The 1.22 XML spelling is accepted too; hiding wins over hiding content.
+    let (input, _) = with_hints(&["hide-content-on-lockscreen", "hide-on-lockscreen"]).unwrap();
+    assert_eq!(
+        input.presentation.lock_screen,
+        Some(canopa_notify::LockScreenVisibility::Hidden)
+    );
+    let (input, _) = with_hints(&["unknown-future-hint"]).unwrap();
+    assert!(input.presentation.keep_after_banner);
+    assert!(with_hints(&["transient", "tray"]).is_err());
+
+    let mut values = values_for("Message");
+    values.insert("category".into(), owned("im.received"));
+    values.insert(
+        "buttons".into(),
+        owned(vec![
+            HashMap::from([
+                ("purpose".to_string(), Value::from("im.reply-with-text")),
+                ("action".to_string(), Value::from("reply")),
+            ]),
+            HashMap::from([
+                ("purpose".to_string(), Value::from("call.decline")),
+                ("action".to_string(), Value::from("app.decline")),
+            ]),
+            HashMap::from([
+                ("purpose".to_string(), Value::from("x-unknown.purpose")),
+                ("action".to_string(), Value::from("unknown")),
+            ]),
+            HashMap::from([
+                ("purpose".to_string(), Value::from("x-unknown.purpose")),
+                ("label".to_string(), Value::from("Labelled")),
+                ("action".to_string(), Value::from("labelled")),
+            ]),
+        ]),
+    );
+    let (input, binding) = intake::prepare(identity(), values).unwrap();
+    let labels: Vec<_> = input
+        .actions
+        .iter()
+        .map(|a| (a.key.as_str(), a.label.as_str()))
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            ("default", ""),
+            ("portal-button-0", "Reply"),
+            ("portal-button-1", "Decline"),
+            ("portal-button-3", "Labelled"),
+        ],
+        "an unlabelled unknown purpose is skipped; a labelled one degrades to a button"
+    );
+    assert_eq!(
+        input.presentation.reply,
+        Some(canopa_notify::ReplyRequest {
+            action_key: "portal-button-0".into(),
+            placeholder: None,
+        })
+    );
+    assert_eq!(binding.actions["portal-button-0"].name, "reply");
+}
+
+#[tokio::test]
+async fn supported_options_advertise_categories_and_purposes() {
+    let fixture = Fixture::new("Options").await;
+    let options: HashMap<String, OwnedValue> = fixture
+        .proxy
+        .get_property("SupportedOptions")
+        .await
+        .unwrap();
+    let strings = |key: &str| Vec::<String>::try_from(options[key].try_clone().unwrap()).unwrap();
+    assert_eq!(strings("category"), intake::SUPPORTED_CATEGORIES);
+    assert_eq!(strings("button-purpose"), intake::SUPPORTED_PURPOSES);
+    assert!(bool::try_from(&options[EXPIRY_OPTION]).unwrap());
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn tray_hint_delivers_quietly_and_transient_skips_history() {
+    let fixture = Fixture::new("Hints").await;
+    let mut tray = values_for("Tray only");
+    tray.insert("display-hint".into(), owned(vec!["tray"]));
+    fixture.add("org.canopa.Chat", "tray", tray).await.unwrap();
+    let log = fixture.daemon.delivery_decision_logs().await.pop().unwrap();
+    assert_eq!(
+        log.delivery_outcome,
+        canopa_notify::DeliveryOutcome::Silenced
+    );
+    assert_eq!(
+        log.reason,
+        canopa_notify::DeliveryDecisionReason::DisplayHint
+    );
+    let mut transient = values_for("Banner only");
+    transient.insert("display-hint".into(), owned(vec!["transient"]));
+    fixture
+        .add("org.canopa.Chat", "transient", transient)
+        .await
+        .unwrap();
+    let history = fixture.daemon.snapshot().await.unwrap().history;
+    assert!(
+        history
+            .iter()
+            .all(|thread| thread.accepted_notification.summary != "Banner only")
+    );
+    fixture.remove("org.canopa.Chat", "tray").await;
+    fixture.remove("org.canopa.Chat", "transient").await;
+    fixture.finish().await;
+}
+
+fn reply_values(action: &str) -> HashMap<String, OwnedValue> {
+    let mut values = values_for("Alice");
+    values.insert("category".into(), owned("im.received"));
+    values.insert(
+        "buttons".into(),
+        owned(vec![HashMap::from([
+            ("purpose".to_string(), Value::from("im.reply-with-text")),
+            ("action".to_string(), Value::from(action.to_owned())),
+            ("target".to_string(), Value::from("thread-7")),
+        ])]),
+    );
+    values
+}
+
+async fn send_reply(fixture: &Fixture, summary: &str, text: &str) {
+    let thread = fixture
+        .daemon
+        .snapshot()
+        .await
+        .unwrap()
+        .active
+        .into_iter()
+        .find(|thread| thread.accepted_notification.summary == summary)
+        .unwrap();
+    fixture
+        .daemon
+        .handle_banner_interaction(canopa_notify::BannerInteraction::Reply {
+            target: canopa_notify::BannerTarget {
+                notification_id: thread.id,
+                revision: thread.revision,
+            },
+            text: text.into(),
+            activation_token: Some("reply-token".into()),
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn inline_replies_reach_the_signal_and_exported_actions_after_their_target() {
+    let fixture = Fixture::new("Reply").await;
+    let mut signals = fixture.proxy.receive_signal("ActionInvoked").await.unwrap();
+    fixture
+        .add("org.canopa.Chat", "message", reply_values("reply"))
+        .await
+        .unwrap();
+    // The Center offers "Reply…" for the live item.
+    assert!(fixture.active_items().await[0].can_reply);
+    assert!(
+        fixture
+            .daemon
+            .handle_banner_interaction(canopa_notify::BannerInteraction::Reply {
+                target: canopa_notify::BannerTarget {
+                    notification_id: fixture.daemon.snapshot().await.unwrap().active[0].id,
+                    revision: 1,
+                },
+                text: "   ".into(),
+                activation_token: None,
+            })
+            .await
+            .is_err(),
+        "empty replies are rejected"
+    );
+    send_reply(&fixture, "Alice", "  On my way  ").await;
+    let message = tokio::time::timeout(std::time::Duration::from_secs(3), signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let (app, id, action, values): (String, String, String, Vec<OwnedValue>) =
+        message.body().deserialize().unwrap();
+    assert_eq!(
+        (app.as_str(), id.as_str(), action.as_str()),
+        ("org.canopa.Chat", "message", "reply")
+    );
+    assert_eq!(values.len(), 3, "target, platform data, then the response");
+    assert_eq!(<&str>::try_from(&values[0]).unwrap(), "thread-7");
+    let platform = HashMap::<String, OwnedValue>::try_from(values[1].try_clone().unwrap()).unwrap();
+    assert_eq!(
+        <&str>::try_from(&platform["activation-token"]).unwrap(),
+        "reply-token"
+    );
+    assert_eq!(<&str>::try_from(&values[2]).unwrap(), "On my way");
+    // Diagnostics never keep the text.
+    assert!(
+        fixture
+            .daemon
+            .sender_events()
+            .await
+            .iter()
+            .all(|event| !matches!(
+                event,
+                SenderEvent::ReplyText { text, .. } if !text.is_empty()
+            ))
+    );
+    let history = fixture.daemon.snapshot().await.unwrap().history;
+    assert!(
+        history
+            .iter()
+            .all(|thread| !thread.accepted_notification.summary.contains("On my way"))
+    );
+
+    // Exported action: ActivateAction(name, [target, response], platform).
+    let name = format!("org.canopa.ReplyApp.p{}", std::process::id());
+    let path = format!("/{}", name.replace('.', "/"));
+    let (sent, mut calls) = tokio::sync::mpsc::unbounded_channel();
+    let application = zbus::connection::Builder::session()
+        .unwrap()
+        .name(name.clone())
+        .unwrap()
+        .serve_at(path.as_str(), RecordingApplication(sent))
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    fixture
+        .add(&name, "exported", reply_values("app.reply"))
+        .await
+        .unwrap();
+    send_reply(&fixture, "Alice", "Exported").await;
+    let (action, parameters, platform) =
+        tokio::time::timeout(std::time::Duration::from_secs(3), calls.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(action, "reply");
+    let parameters: Vec<String> = parameters
+        .into_iter()
+        .map(|value| String::try_from(value).unwrap())
+        .collect();
+    assert_eq!(parameters, ["thread-7", "Exported"]);
+    assert_eq!(
+        <&str>::try_from(&platform["activation-token"]).unwrap(),
+        "reply-token"
+    );
+    fixture.finish().await;
+    application.close().await.unwrap();
 }
 
 #[tokio::test]

@@ -39,6 +39,38 @@ const ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_millis(100);
 const DND_TIMER_KEY: &str = "do_not_disturb_timer";
 const DND_PREFERENCES_KEY: &str = "do_not_disturb_preferences";
 const APP_PREFERENCES_KEY: &str = "app_preferences";
+const CENTER_CLEARED_KEY: &str = "center_cleared_through";
+/// How long "Clear all" can be undone.
+pub(crate) const CLEAR_UNDO_WINDOW: Duration = Duration::from_secs(30);
+const MAX_UNDO_ATTENTION: u32 = 4096;
+
+/// Runtime-only record of the latest "Clear all"; never persisted.
+struct ClearUndo {
+    token: u64,
+    expires: std::time::Instant,
+    previous: Option<crate::NotificationCenterCursor>,
+    unread: Vec<(InternalNotificationId, i64)>,
+}
+
+/// Runtime-only presentation state for one revision (ADR 0055).
+#[derive(Clone, Debug)]
+pub(crate) struct ThreadHints {
+    pub(crate) revision: i64,
+    pub(crate) keep_after_banner: bool,
+    pub(crate) reply: Option<crate::ReplyRequest>,
+    /// The Center asked to reopen the banner with its reply composer.
+    pub(crate) compose: bool,
+    timeout: NotificationTimeout,
+    urgency: Urgency,
+}
+
+const MAX_THREAD_HINTS: usize = 4096;
+
+/// An undo offer for the Center: its opaque token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ClearUndoOffer {
+    pub(crate) token: u64,
+}
 
 /// Configuration-authored preference layer (ADR 0055).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -86,6 +118,16 @@ pub(crate) struct NotificationRuntime {
     center_instance: [u8; 16],
     /// Wakes the Do Not Disturb clock after policy changes.
     dnd_wake: Arc<tokio::sync::Notify>,
+    cleared_through: Arc<Mutex<Option<crate::NotificationCenterCursor>>>,
+    clear_undo: Arc<Mutex<Option<ClearUndo>>>,
+    /// Sender lock-screen limits (portal display hints), runtime-only and bounded.
+    lock_hints:
+        Arc<Mutex<std::collections::BTreeMap<InternalNotificationId, crate::LockScreenVisibility>>>,
+    thread_hints: Arc<Mutex<std::collections::BTreeMap<InternalNotificationId, ThreadHints>>>,
+    /// A quiet replacement whose banner must not reappear in the current commit.
+    quiet_banner: Arc<Mutex<Option<InternalNotificationId>>>,
+    /// Reply text for the action committed under the current mutation.
+    pending_reply: Arc<Mutex<Option<String>>>,
 }
 
 impl NotificationRuntime {
@@ -156,6 +198,10 @@ impl NotificationRuntime {
                     config_apps: configured.apps,
                     user_apps,
                 });
+        let cleared_through = storage
+            .metadata_json(CENTER_CLEARED_KEY)
+            .await
+            .unwrap_or_default();
         let (state_changes, _state_change_receiver) = watch::channel(0);
         let (sender_event_changes, _sender_event_receiver) = broadcast::channel(128);
         let activation_token_capable = activation_token_provider.available();
@@ -187,6 +233,12 @@ impl NotificationRuntime {
             state_changes: Arc::new(state_changes),
             center_instance,
             dnd_wake: Arc::new(tokio::sync::Notify::new()),
+            cleared_through: Arc::new(Mutex::new(cleared_through)),
+            clear_undo: Arc::default(),
+            lock_hints: Arc::default(),
+            thread_hints: Arc::default(),
+            quiet_banner: Arc::default(),
+            pending_reply: Arc::default(),
         }
         .with_dnd_clock())
     }
@@ -277,10 +329,24 @@ impl NotificationRuntime {
         image_data: Option<NotificationImageData>,
         expire_timeout: NotificationTimeout,
         sound_request: NotificationSoundRequest,
+        hints: crate::PresentationHints,
         on_receipt: impl FnOnce(&NotificationReceipt),
     ) -> anyhow::Result<NotificationReceipt> {
         let policy = self.delivery_policy();
-        let decision = policy.decide(&notification);
+        let mut decision = policy.decide(&notification);
+        if hints.center_only && decision.outcome == DeliveryOutcome::Shown {
+            decision.outcome = DeliveryOutcome::Silenced;
+            decision.rule_reference = Some("display-hint".into());
+            decision.log.delivery_outcome = DeliveryOutcome::Silenced;
+            decision.log.rule_reference = decision.rule_reference.clone();
+            decision.log.reason = crate::DeliveryDecisionReason::DisplayHint;
+        }
+        // Without `show-as-new`, a replacement whose banner already hid updates quietly.
+        let quiet = hints.quiet_update
+            && notification
+                .replaces_id
+                .is_some_and(|id| !self.banner_state.lock().unwrap().shows(id));
+        let urgency = notification.urgency;
         let evicted = self.resources.lock().unwrap().admit(
             &notification,
             decision.outcome,
@@ -312,21 +378,57 @@ impl NotificationRuntime {
             .lock()
             .unwrap()
             .record_receipt(&effects, image_data);
+        let revision = effects.raw().iter().find_map(|effect| match effect {
+            crate::LifecycleEffect::ThreadCreated(thread)
+            | crate::LifecycleEffect::ThreadRevised(thread)
+                if thread.id == receipt.notification_id =>
+            {
+                Some(thread.revision)
+            }
+            _ => None,
+        });
+        if let Some(revision) = revision {
+            self.record_thread_hints(
+                receipt.notification_id,
+                revision,
+                &hints,
+                expire_timeout,
+                urgency,
+            );
+        }
         let app_sound = self
             .loaded_policy_state
             .lock()
             .unwrap()
             .preferences()
             .sound_enabled(&sound_app_identity);
-        let sound =
-            (decision.outcome == DeliveryOutcome::Shown && !sound_request.suppress && app_sound)
-                .then_some(NotificationSoundPlayback {
-                    notification_id: receipt.notification_id,
-                    app_identity: sound_app_identity,
-                    summary: sound_summary,
-                    requested_sound: sound_request.sound,
-                });
-        self.apply_lifecycle_effects(&effects, None, sound).await?;
+        let sound = (decision.outcome == DeliveryOutcome::Shown
+            && !sound_request.suppress
+            && app_sound
+            && !quiet)
+            .then_some(NotificationSoundPlayback {
+                notification_id: receipt.notification_id,
+                app_identity: sound_app_identity,
+                summary: sound_summary,
+                requested_sound: sound_request.sound,
+            });
+        if quiet {
+            *self.quiet_banner.lock().unwrap() = Some(receipt.notification_id);
+        }
+        let applied = self.apply_lifecycle_effects(&effects, None, sound).await;
+        if quiet {
+            *self.quiet_banner.lock().unwrap() = None;
+            // The hidden revision is never displayed, so it has no display timeout.
+            if let Some(revision) = revision {
+                self.timeouts.lock().unwrap().apply([
+                    crate::NotificationTimeoutChange::CancelThroughRevision {
+                        notification_id: receipt.notification_id,
+                        revision,
+                    },
+                ]);
+            }
+        }
+        applied?;
         Ok(receipt)
     }
 
@@ -396,6 +498,24 @@ impl NotificationRuntime {
         activation_token: Option<String>,
         expected_revision: Option<i64>,
     ) -> anyhow::Result<()> {
+        self.invoke_action_with_reply(
+            notification_id,
+            action_key,
+            activation_token,
+            expected_revision,
+            None,
+        )
+        .await
+    }
+
+    async fn invoke_action_with_reply(
+        &self,
+        notification_id: InternalNotificationId,
+        action_key: &str,
+        activation_token: Option<String>,
+        expected_revision: Option<i64>,
+        reply: Option<String>,
+    ) -> anyhow::Result<()> {
         let thread = self
             .lifecycle
             .prepare_action(notification_id, action_key)
@@ -421,9 +541,168 @@ impl NotificationRuntime {
                     Some(thread.revision),
                 )
                 .await?;
-            runtime
+            *runtime.pending_reply.lock().unwrap() = reply;
+            let applied = runtime
                 .apply_lifecycle_effects(&effects, activation_token, None)
-                .await
+                .await;
+            runtime.pending_reply.lock().unwrap().take();
+            applied
+        })
+        .await
+    }
+
+    fn record_thread_hints(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        hints: &crate::PresentationHints,
+        timeout: NotificationTimeout,
+        urgency: Urgency,
+    ) {
+        if let Some(visibility) = hints.lock_screen {
+            self.record_lock_hint(notification_id, visibility);
+        } else {
+            self.lock_hints.lock().unwrap().remove(&notification_id);
+        }
+        let mut thread_hints = self.thread_hints.lock().unwrap();
+        if hints.keep_after_banner || hints.reply.is_some() {
+            thread_hints.insert(
+                notification_id,
+                ThreadHints {
+                    revision,
+                    keep_after_banner: hints.keep_after_banner,
+                    reply: hints.reply.clone(),
+                    compose: false,
+                    timeout,
+                    urgency,
+                },
+            );
+            while thread_hints.len() > MAX_THREAD_HINTS {
+                thread_hints.pop_first();
+            }
+        } else {
+            thread_hints.remove(&notification_id);
+        }
+    }
+
+    pub(crate) fn thread_hints(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) -> Option<ThreadHints> {
+        self.thread_hints
+            .lock()
+            .unwrap()
+            .get(&notification_id)
+            .filter(|hints| hints.revision == revision)
+            .cloned()
+    }
+
+    pub(crate) fn reply_revisions(
+        &self,
+    ) -> std::collections::HashSet<(InternalNotificationId, i64)> {
+        self.thread_hints
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, hints)| hints.reply.is_some())
+            .map(|(id, hints)| (*id, hints.revision))
+            .collect()
+    }
+
+    /// Send typed reply text with the revision's reply action. The text is never
+    /// stored; it travels with the committed action to the sender transport.
+    pub(crate) async fn reply_to_notification(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        text: String,
+        activation_token: Option<String>,
+    ) -> anyhow::Result<()> {
+        let text = text.trim().to_owned();
+        anyhow::ensure!(
+            !text.is_empty() && text.len() <= crate::MAX_REPLY_BYTES && !text.contains('\0'),
+            "invalid reply text"
+        );
+        let action_key = self
+            .thread_hints(notification_id, revision)
+            .and_then(|hints| hints.reply)
+            .map(|reply| reply.action_key)
+            .ok_or_else(|| anyhow::anyhow!("notification does not accept replies"))?;
+        self.invoke_action_with_reply(
+            notification_id,
+            &action_key,
+            activation_token,
+            Some(revision),
+            Some(text),
+        )
+        .await
+    }
+
+    /// Hold or release the banner-hide timer while a reply is being composed.
+    pub(crate) fn set_composing(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+        composing: bool,
+    ) {
+        let Some(hints) = self.thread_hints(notification_id, revision) else {
+            return;
+        };
+        if let Some(stored) = self.thread_hints.lock().unwrap().get_mut(&notification_id) {
+            stored.compose = false;
+        }
+        if composing {
+            self.timeouts.lock().unwrap().apply([
+                crate::NotificationTimeoutChange::CancelThroughRevision {
+                    notification_id,
+                    revision,
+                },
+            ]);
+        } else {
+            self.timeouts.lock().unwrap().apply([
+                crate::NotificationTimeoutChange::StartsOnDisplay {
+                    notification_id,
+                    revision,
+                    timeout: hints.timeout,
+                    urgency: hints.urgency,
+                },
+            ]);
+            if self.banner_state.lock().unwrap().shows(notification_id) {
+                self.start_timeouts_for_presented_revisions([(notification_id, revision)]);
+            }
+        }
+        let _ = self.sync_presentation();
+    }
+
+    /// Reopen an active notification's banner with its reply composer (Center "Reply…").
+    pub(crate) async fn open_reply_composer(
+        &self,
+        notification_id: InternalNotificationId,
+        revision: i64,
+    ) -> anyhow::Result<()> {
+        self.mutate(move |runtime| async move {
+            let thread = runtime.lifecycle.thread(notification_id).await?;
+            anyhow::ensure!(
+                thread.revision == revision && thread.status == NotificationStatus::Active,
+                "notification was replaced or closed before replying"
+            );
+            {
+                let mut hints = runtime.thread_hints.lock().unwrap();
+                let hints = hints
+                    .get_mut(&notification_id)
+                    .filter(|hints| hints.revision == revision && hints.reply.is_some())
+                    .ok_or_else(|| anyhow::anyhow!("notification does not accept replies"))?;
+                hints.compose = true;
+            }
+            runtime
+                .banner_state
+                .lock()
+                .unwrap()
+                .apply_changes([crate::BannerLifecycleChange::ConsiderOpportunity(thread)]);
+            let _ = runtime.sync_presentation();
+            runtime.notify_state_changed();
+            Ok(())
         })
         .await
     }
@@ -575,6 +854,23 @@ impl NotificationRuntime {
                 )
                 .await
             }
+            BannerInteraction::Reply {
+                target,
+                text,
+                activation_token,
+            } => {
+                self.reply_to_notification(
+                    target.notification_id,
+                    target.revision,
+                    text,
+                    activation_token,
+                )
+                .await
+            }
+            BannerInteraction::Composing { target, composing } => {
+                self.set_composing(target.notification_id, target.revision, composing);
+                Ok(())
+            }
         }
     }
 
@@ -589,6 +885,10 @@ impl NotificationRuntime {
             "notification center target is obsolete"
         );
         match action {
+            NotificationCenterAction::Reply => {
+                self.open_reply_composer(target.notification_id, target.revision)
+                    .await
+            }
             NotificationCenterAction::OpenLink { segment_index } => {
                 self.open_link_for_revision(
                     target.notification_id,
@@ -802,6 +1102,240 @@ impl NotificationRuntime {
             batch.result
         })
         .await
+    }
+
+    /// Acknowledge every unread item without ending live sender lifecycles.
+    pub(crate) async fn mark_all_read(&self) -> anyhow::Result<usize> {
+        self.mutate(|runtime| async move {
+            let unread = runtime
+                .storage
+                .attention_revisions(MAX_UNDO_ATTENTION)
+                .await?;
+            let mut changed = 0;
+            for (id, revision) in unread {
+                let effects = runtime
+                    .lifecycle
+                    .set_attention_if_current_revision(
+                        InternalNotificationId::try_from(id)?,
+                        revision,
+                        false,
+                    )
+                    .await?;
+                changed += usize::from(!effects.is_empty());
+                runtime
+                    .apply_lifecycle_effects(&effects, None, None)
+                    .await?;
+            }
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Dismiss live notifications, mark everything read and hide the cleared
+    /// items from the Center. Undo restores visibility and unread state for
+    /// `CLEAR_UNDO_WINDOW`; dismissals already reached their senders.
+    pub(crate) async fn clear_all(&self) -> anyhow::Result<u64> {
+        self.mutate(|runtime| async move {
+            let unread: Vec<_> = runtime
+                .storage
+                .attention_revisions(MAX_UNDO_ATTENTION)
+                .await?
+                .into_iter()
+                .filter_map(|(id, revision)| {
+                    Some((InternalNotificationId::try_from(id).ok()?, revision))
+                })
+                .collect();
+            let batch = runtime.lifecycle.clear_active_notifications().await?;
+            runtime
+                .apply_lifecycle_effects(&batch.effects, None, None)
+                .await?;
+            batch.result?;
+            for (id, revision) in &unread {
+                let effects = runtime
+                    .lifecycle
+                    .set_attention_if_current_revision(*id, *revision, false)
+                    .await?;
+                runtime
+                    .apply_lifecycle_effects(&effects, None, None)
+                    .await?;
+            }
+            let newest = runtime
+                .storage
+                .newest_center_cursor()
+                .await?
+                .into_iter()
+                .chain(
+                    runtime
+                        .lifecycle
+                        .transient_center_cursors()
+                        .first()
+                        .copied(),
+                )
+                .max();
+            let previous = *runtime.cleared_through.lock().unwrap();
+            let through = newest.max(previous);
+            runtime
+                .storage
+                .set_metadata(&[(
+                    CENTER_CLEARED_KEY,
+                    through.map(|c| serde_json::to_string(&c)).transpose()?,
+                )])
+                .await?;
+            *runtime.cleared_through.lock().unwrap() = through;
+            let token = runtime.state_version.fetch_add(1, Ordering::Relaxed) + 1;
+            *runtime.clear_undo.lock().unwrap() = Some(ClearUndo {
+                token,
+                expires: std::time::Instant::now() + CLEAR_UNDO_WINDOW,
+                previous,
+                unread,
+            });
+            // Re-render once the offer lapses so the Center drops its Undo action.
+            let changes = Arc::downgrade(&runtime.state_changes);
+            let version = Arc::downgrade(&runtime.state_version);
+            tokio::spawn(async move {
+                tokio::time::sleep(CLEAR_UNDO_WINDOW + Duration::from_millis(50)).await;
+                if let (Some(changes), Some(version)) = (changes.upgrade(), version.upgrade()) {
+                    let _ = changes.send(version.fetch_add(1, Ordering::Relaxed) + 1);
+                }
+            });
+            runtime.notify_state_changed();
+            Ok(token)
+        })
+        .await
+    }
+
+    pub(crate) fn clear_undo_offer(&self) -> Option<ClearUndoOffer> {
+        let undo = self.clear_undo.lock().unwrap();
+        undo.as_ref()
+            .filter(|undo| undo.expires > std::time::Instant::now())
+            .map(|undo| ClearUndoOffer { token: undo.token })
+    }
+
+    pub(crate) async fn undo_clear(&self, token: u64) -> anyhow::Result<()> {
+        self.mutate(move |runtime| async move {
+            let undo = {
+                let mut slot = runtime.clear_undo.lock().unwrap();
+                anyhow::ensure!(
+                    slot.as_ref().is_some_and(
+                        |undo| undo.token == token && undo.expires > std::time::Instant::now()
+                    ),
+                    "nothing to undo"
+                );
+                slot.take().expect("checked undo")
+            };
+            runtime
+                .storage
+                .set_metadata(&[(
+                    CENTER_CLEARED_KEY,
+                    undo.previous
+                        .map(|c| serde_json::to_string(&c))
+                        .transpose()?,
+                )])
+                .await?;
+            *runtime.cleared_through.lock().unwrap() = undo.previous;
+            for (id, revision) in undo.unread {
+                // A replaced or deleted item keeps its current state.
+                if let Ok(effects) = runtime
+                    .lifecycle
+                    .set_attention_if_current_revision(id, revision, true)
+                    .await
+                {
+                    runtime
+                        .apply_lifecycle_effects(&effects, None, None)
+                        .await?;
+                }
+            }
+            runtime.notify_state_changed();
+            Ok(())
+        })
+        .await
+    }
+
+    /// Remember a sender's lock-screen limit for a thread (runtime-only).
+    pub(crate) fn record_lock_hint(
+        &self,
+        notification_id: InternalNotificationId,
+        visibility: crate::LockScreenVisibility,
+    ) {
+        let mut hints = self.lock_hints.lock().unwrap();
+        hints.insert(notification_id, visibility);
+        while hints.len() > crate::runtime_resources_lock_hint_limit() {
+            hints.pop_first();
+        }
+    }
+
+    /// The lock-screen feed (ADR 0055). Only critical notifications, and alarm
+    /// or call notifications when they break through Do Not Disturb, that are
+    /// live or unread. Each shows "App — New notification" unless the app's rule
+    /// (and the sender) allows its summary. Nothing interactive crosses.
+    pub(crate) async fn lock_screen_snapshot(
+        &self,
+    ) -> anyhow::Result<canopa_notify_client::LockScreenSnapshot> {
+        use canopa_notify_client::{LockScreenEntry, LockScreenSnapshot, MAX_LOCK_SCREEN_ENTRIES};
+        let mut threads = self.storage.lock_screen_candidates(64).await?;
+        threads.extend(self.lifecycle.transient_threads());
+        threads.sort_by_key(|thread| {
+            std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
+        });
+        let (layers, break_through) = {
+            let state = self.loaded_policy_state.lock().unwrap();
+            (
+                state.preferences().clone(),
+                state.preferences().dnd().break_through,
+            )
+        };
+        let hints = self.lock_hints.lock().unwrap().clone();
+        let mut snapshot = LockScreenSnapshot::default();
+        for thread in threads {
+            let notification = &thread.accepted_notification;
+            if !(thread.status == NotificationStatus::Active || thread.requires_attention)
+                || thread.delivery_outcome == DeliveryOutcome::Dropped
+            {
+                continue;
+            }
+            let critical = notification.urgency == Urgency::Critical;
+            if !critical && !break_through.matches(notification.category.as_deref()) {
+                continue;
+            }
+            let mut visibility = layers.lock_screen(&notification.app_identity);
+            if let Some(hint) = hints.get(&thread.id) {
+                visibility = visibility.min(*hint);
+            }
+            if visibility == crate::LockScreenVisibility::Hidden {
+                continue;
+            }
+            if snapshot.entries.len() == MAX_LOCK_SCREEN_ENTRIES {
+                snapshot.more = snapshot.more.saturating_add(1);
+                continue;
+            }
+            let app = [
+                notification.app_name.trim(),
+                notification.app_identity.trim(),
+            ]
+            .into_iter()
+            .find(|name| !name.is_empty())
+            .unwrap_or("Application");
+            let text = if visibility == crate::LockScreenVisibility::Content
+                && !notification.summary.trim().is_empty()
+            {
+                notification.summary.trim()
+            } else {
+                crate::HIDDEN_CONTENT_SUMMARY
+            };
+            let bounded = |value: &str, limit: usize| {
+                value
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(limit)
+                    .collect()
+            };
+            snapshot.entries.push(LockScreenEntry {
+                app: bounded(app, 64),
+                text: bounded(text, 120),
+                critical,
+            });
+        }
+        Ok(snapshot)
     }
 
     pub(crate) async fn delete_notification_history(&self) -> anyhow::Result<()> {
@@ -1161,6 +1695,12 @@ impl NotificationRuntime {
     ) -> anyhow::Result<NotificationCenterProjection> {
         let mut threads = self.snapshot().await?.history;
         threads.extend(self.lifecycle.transient_threads());
+        let cleared = *self.cleared_through.lock().unwrap();
+        threads.retain(|thread| {
+            thread.status == NotificationStatus::Active
+                || thread.requires_attention
+                || cleared.is_none_or(|c| crate::NotificationCenterCursor::for_thread(thread) > c)
+        });
         // Match retained ordering and keep runtime-only HashMap iteration out of the UI.
         threads.sort_by_key(|thread| {
             std::cmp::Reverse(crate::NotificationCenterCursor::for_thread(thread))
@@ -1171,6 +1711,7 @@ impl NotificationRuntime {
             self.center_instance,
             self.presentation.icon_settings(),
         )
+        .with_replies(self.reply_revisions())
         .project(threads))
     }
 
@@ -1204,7 +1745,9 @@ impl NotificationRuntime {
                 &rules,
                 self.center_instance,
                 self.presentation.icon_settings(),
-            ),
+            )
+            .with_replies(self.reply_revisions()),
+            *self.cleared_through.lock().unwrap(),
         ))
     }
 
@@ -1242,8 +1785,20 @@ impl NotificationRuntime {
             self.start_timeouts_for_presented_revisions(effects.silenced_revisions());
         }
         {
+            let quiet = *self.quiet_banner.lock().unwrap();
             let mut banner_state = self.banner_state.lock().unwrap();
-            banner_state.apply_changes(effects.banner_changes());
+            banner_state.apply_changes(effects.banner_changes().filter(|change| {
+                !matches!(change, crate::BannerLifecycleChange::ConsiderOpportunity(thread)
+                    if Some(thread.id) == quiet)
+            }));
+        }
+        for event in effects.sender_events() {
+            if let SenderEvent::NotificationClosed {
+                notification_id, ..
+            } = event
+            {
+                self.thread_hints.lock().unwrap().remove(&notification_id);
+            }
         }
         self.publish_sender_events_with_activation_token(effects, activation_token)
             .await;
@@ -1279,6 +1834,17 @@ impl NotificationRuntime {
         effects: &LifecycleEffects,
         activation_token: Option<String>,
     ) {
+        let reply = self.pending_reply.lock().unwrap().take();
+        self.publish_sender_events(effects, activation_token, reply)
+            .await
+    }
+
+    async fn publish_sender_events(
+        &self,
+        effects: &LifecycleEffects,
+        activation_token: Option<String>,
+        mut reply: Option<String>,
+    ) {
         let mut activation_token = activation_token.filter(|token| !token.is_empty());
         // Decorate the canonical Lifecycle projection. Only the first action
         // consumes the token, immediately before its action event.
@@ -1294,7 +1860,17 @@ impl NotificationRuntime {
                     }),
                 _ => None,
             };
-            token.into_iter().chain(std::iter::once(event))
+            // The reply, like the token, belongs only to the first action.
+            let text = match &event {
+                SenderEvent::ActionInvoked {
+                    notification_id, ..
+                } => reply.take().map(|text| SenderEvent::ReplyText {
+                    notification_id: *notification_id,
+                    text,
+                }),
+                _ => None,
+            };
+            token.into_iter().chain(text).chain(std::iter::once(event))
         });
         let publisher = self.sender_publisher.lock().unwrap().clone();
         for event in events {
@@ -1304,6 +1880,16 @@ impl NotificationRuntime {
                 *self.sender_publication_error.lock().unwrap() = Some(format!("{error:#}"));
                 eprintln!("level=error component=transport event=sender_publication_failed");
             }
+            // Reply text reaches only the transport, never diagnostics or broadcasts.
+            let event = match event {
+                SenderEvent::ReplyText {
+                    notification_id, ..
+                } => SenderEvent::ReplyText {
+                    notification_id,
+                    text: String::new(),
+                },
+                event => event,
+            };
             record_recent(&self.sender_events, event.clone());
             let _ = self.sender_event_changes.send(event);
         }
@@ -1380,7 +1966,15 @@ impl NotificationRuntime {
                     .into_iter()
                     .map(|thread| {
                         let image = resources.image_for(thread.id, thread.revision);
-                        let view = BannerView::from_thread(thread, image);
+                        let hints = self.thread_hints(thread.id, thread.revision);
+                        let mut view = BannerView::from_thread(thread, image);
+                        view.reply = hints.and_then(|hints| {
+                            hints.reply.map(|reply| crate::BannerReply {
+                                action_key: reply.action_key,
+                                placeholder: reply.placeholder,
+                                compose: hints.compose,
+                            })
+                        });
                         if hide_content {
                             view.with_hidden_content()
                         } else {
@@ -1465,6 +2059,21 @@ impl NotificationRuntime {
         revision: i64,
     ) -> anyhow::Result<()> {
         self.mutate(move |runtime| async move {
+            if runtime
+                .thread_hints(notification_id, revision)
+                .is_some_and(|hints| hints.keep_after_banner)
+            {
+                // Banner-hide timer: the sender lifecycle and its actions stay
+                // live in the Center until the user or the application ends them.
+                runtime
+                    .banner_state
+                    .lock()
+                    .unwrap()
+                    .apply_changes([crate::BannerLifecycleChange::Remove { notification_id }]);
+                let _ = runtime.sync_presentation();
+                runtime.notify_state_changed();
+                return Ok(());
+            }
             let effects = runtime
                 .lifecycle
                 .expire_timeout_if_current_revision(notification_id, revision)
@@ -1495,6 +2104,16 @@ impl NotificationStateSubscription {
     pub async fn next_summary(&mut self) -> anyhow::Result<Option<canopa_notify_client::Summary>> {
         if self.changed().await {
             Ok(Some(self.runtime.notification_summary().await?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn next_lock_screen(
+        &mut self,
+    ) -> anyhow::Result<Option<canopa_notify_client::LockScreenSnapshot>> {
+        if self.changed().await {
+            Ok(Some(self.runtime.lock_screen_snapshot().await?))
         } else {
             Ok(None)
         }

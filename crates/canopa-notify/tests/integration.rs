@@ -7,6 +7,7 @@ mod support;
 use support::notifications;
 
 mod active_resources;
+mod center_controls;
 mod configuration_intake;
 mod control_api;
 mod control_resources;

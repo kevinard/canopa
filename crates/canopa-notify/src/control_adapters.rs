@@ -23,6 +23,10 @@ const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
 const PANEL_CATEGORY_PERMISSION_KEY_PREFIX: &str = "canopa-notify:category-permission:";
 const PANEL_CLEAR_ACTIVE_KEY: &str = "canopa-notify:clear-active";
 const PANEL_DELETE_HISTORY_KEY: &str = "canopa-notify:delete-history";
+const PANEL_MARK_ALL_READ_KEY: &str = "canopa-notify:mark-all-read";
+const PANEL_CLEAR_ALL_KEY: &str = "canopa-notify:clear-all";
+const PANEL_UNDO_CLEAR_KEY: &str = "canopa-notify:undo-clear";
+const PANEL_DND_KEY: &str = "canopa-notify:do-not-disturb";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CtlRequest {
@@ -94,6 +98,7 @@ impl CtlRequest {
                             ControlCommand::NotificationPreferences,
                             ControlReply::NotificationPreferences(_)
                         )
+                        | (ControlCommand::ClearAll, ControlReply::Cleared { .. })
                         | (
                             ControlCommand::ActiveNotifications,
                             ControlReply::ActiveNotifications(_)
@@ -121,6 +126,8 @@ impl CtlRequest {
                                 | ControlCommand::SetCategoryPermission { .. }
                                 | ControlCommand::SetDoNotDisturbPreferences { .. }
                                 | ControlCommand::SetAppPreferences { .. }
+                                | ControlCommand::MarkAllRead
+                                | ControlCommand::UndoClear { .. }
                                 | ControlCommand::ClearActiveNotifications
                                 | ControlCommand::DeleteNotificationHistory
                                 | ControlCommand::InvokeNotificationAction { .. }
@@ -136,6 +143,7 @@ impl CtlRequest {
                     }
                     ControlReply::CommandApplied => Ok("ok\n".into()),
                     ControlReply::DoNotDisturbStatus(status) => Ok(dnd_status_text(&status)),
+                    ControlReply::Cleared { undo } => Ok(format!("ok undo={undo}\n")),
                     ControlReply::NotificationPreferences(preferences) => {
                         Ok(serde_json::to_string_pretty(&preferences)? + "\n")
                     }
@@ -198,6 +206,7 @@ enum SocketControlRequest {
     PanelSnapshot,
     PanelSubscribe,
     SummarySubscribe,
+    LockScreenSubscribe,
     PanelSession,
     InvokeNotificationAction {
         notification_id: InternalNotificationId,
@@ -216,6 +225,12 @@ struct SocketControlRequestSpec {
 }
 
 const SOCKET_CONTROL_REQUESTS: &[SocketControlRequestSpec] = &[
+    SocketControlRequestSpec {
+        request: SocketControlRequest::LockScreenSubscribe,
+        line: canopa_notify_client::LOCK_SCREEN_REQUEST,
+        command: None,
+        format_reply: None,
+    },
     SocketControlRequestSpec {
         request: SocketControlRequest::SummarySubscribe,
         line: canopa_notify_client::SUMMARY_REQUEST,
@@ -419,7 +434,12 @@ fn format_command_applied_reply(reply: ControlReply) -> anyhow::Result<String> {
             "error clear stopped after {dismissed} committed dismissals\n"
         ));
     }
-    let ControlReply::CommandApplied = reply else {
+    // Center interactions ignore payloads such as the clear undo token or DND status;
+    // the next frame shows their effect.
+    let (ControlReply::CommandApplied
+    | ControlReply::Cleared { .. }
+    | ControlReply::DoNotDisturbStatus(_)) = reply
+    else {
         return Err(unexpected_control_reply());
     };
     Ok("ok\n".to_string())
@@ -508,9 +528,16 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                 .chain(receipt_time(item.received_at))
                                 .collect(),
                             actions: item
-                                .actions
+                                .can_reply
+                                .then(|| {
+                                    panel_center_action(
+                                        item.target.clone(),
+                                        NotificationCenterAction::Reply,
+                                        "Reply…".to_string(),
+                                    )
+                                })
                                 .into_iter()
-                                .map(|action| {
+                                .chain(item.actions.into_iter().map(|action| {
                                     panel_center_action(
                                         item.target.clone(),
                                         NotificationCenterAction::InvokeAction {
@@ -518,7 +545,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                         },
                                         action.label,
                                     )
-                                })
+                                }))
                                 .chain(
                                     (item.status == canopa_notify::NotificationStatus::Active)
                                         .then(|| {
@@ -574,6 +601,8 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
         actions: vec![
             PanelAction::new(PANEL_CLEAR_ACTIVE_KEY, "Clear active notifications"),
             PanelAction::new(PANEL_DELETE_HISTORY_KEY, "Delete notification history"),
+            PanelAction::new(PANEL_MARK_ALL_READ_KEY, "Mark all read"),
+            PanelAction::new(PANEL_CLEAR_ALL_KEY, "Clear all"),
         ],
         error: None,
     }
@@ -687,6 +716,7 @@ fn panel_center_action_key(action: &NotificationCenterAction) -> &'static str {
         NotificationCenterAction::Acknowledge => PANEL_ACKNOWLEDGE_ITEM_KEY,
         NotificationCenterAction::Activate => PANEL_ACTIVATE_ITEM_KEY,
         NotificationCenterAction::InvokeAction { .. } => PANEL_NOTIFICATION_ACTION_KEY,
+        NotificationCenterAction::Reply => "canopa-notify:reply",
     }
 }
 
@@ -846,6 +876,31 @@ fn control_command_from_panel_interaction(event: InteractionEvent) -> Option<Con
             InteractionTarget::Content if action_key == PANEL_DELETE_HISTORY_KEY => {
                 Some(ControlCommand::DeleteNotificationHistory)
             }
+            InteractionTarget::Content if action_key == PANEL_MARK_ALL_READ_KEY => {
+                Some(ControlCommand::MarkAllRead)
+            }
+            InteractionTarget::Content if action_key == PANEL_CLEAR_ALL_KEY => {
+                Some(ControlCommand::ClearAll)
+            }
+            InteractionTarget::Content if action_key == PANEL_UNDO_CLEAR_KEY => {
+                Some(ControlCommand::UndoClear {
+                    undo: value?.parse().ok()?,
+                })
+            }
+            InteractionTarget::Section { id }
+                if action_key == PANEL_DND_KEY && id == "do-not-disturb" =>
+            {
+                use canopa_notify::DoNotDisturbRequest;
+                Some(ControlCommand::RequestDoNotDisturb {
+                    request: match value.as_deref()? {
+                        "off" => DoNotDisturbRequest::Off,
+                        "on" => DoNotDisturbRequest::On,
+                        "for-60" => DoNotDisturbRequest::For { minutes: 60 },
+                        "until-tomorrow" => DoNotDisturbRequest::UntilTomorrow,
+                        _ => return None,
+                    },
+                })
+            }
             InteractionTarget::Content | InteractionTarget::Section { .. } => None,
         },
     }
@@ -983,6 +1038,7 @@ mod tests {
                     target: center_target_fixture(),
                     transient: false,
                     has_default_action: false,
+                    can_reply: false,
                     summary: "Inbox".to_string(),
                     body: String::new(),
                     body_content: NotificationBodyContent::default(),

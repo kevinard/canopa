@@ -58,6 +58,7 @@ impl NotificationServerRequest {
             requested_position: requested_position_hint(&hints),
             image_data,
             image_reference,
+            presentation: Default::default(),
         };
         crate::input_limits::validate_input(&input)?;
         Ok(input)

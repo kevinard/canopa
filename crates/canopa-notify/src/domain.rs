@@ -75,7 +75,51 @@ pub struct NotificationInput {
     pub sound: Option<NotificationSound>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_position: Option<NotificationPosition>,
+    /// Sender presentation requests from the portal (`display-hint`, purposes).
+    #[serde(default, skip_serializing_if = "PresentationHints::is_default")]
+    pub presentation: PresentationHints,
 }
+
+/// Runtime-only presentation requests that History does not persist (ADR 0055).
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationHints {
+    /// Hide the banner after its display timeout but keep the sender lifecycle
+    /// and actions live in the Center (portal notifications).
+    #[serde(default)]
+    pub keep_after_banner: bool,
+    /// Deliver to the Center only (`tray`).
+    #[serde(default)]
+    pub center_only: bool,
+    /// Sender limit on lock-screen disclosure (`hide-on-lock-screen`, …).
+    #[serde(default)]
+    pub lock_screen: Option<crate::LockScreenVisibility>,
+    /// Update a replaced notification in place: no new banner or sound unless
+    /// its banner is still visible (portal replacements without `show-as-new`).
+    #[serde(default)]
+    pub quiet_update: bool,
+    /// An action that takes a text reply (`im.reply-with-text`).
+    #[serde(default)]
+    pub reply: Option<ReplyRequest>,
+}
+
+impl PresentationHints {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReplyRequest {
+    /// The notification action key invoked with the reply text.
+    pub action_key: String,
+    #[serde(default)]
+    pub placeholder: Option<String>,
+}
+
+/// Bytes of reply text accepted from the composer.
+pub const MAX_REPLY_BYTES: usize = 4096;
 
 /// The sender contract determines how raw body text becomes display content.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1030,6 +1074,12 @@ pub enum SenderEvent {
     ActionInvoked {
         notification_id: InternalNotificationId,
         action_key: String,
+    },
+    /// Text typed into a reply composer; immediately precedes its `ActionInvoked`.
+    /// Never persisted, and redacted from diagnostics and broadcasts.
+    ReplyText {
+        notification_id: InternalNotificationId,
+        text: String,
     },
     NotificationClosed {
         notification_id: InternalNotificationId,

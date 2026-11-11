@@ -645,6 +645,49 @@ impl SqlitePersistedState {
         Ok(())
     }
 
+    /// Unread retained threads as (id, revision), newest first, bounded.
+    pub(crate) async fn attention_revisions(&self, limit: u32) -> anyhow::Result<Vec<(i64, i64)>> {
+        Ok(sqlx::query_as(
+            "SELECT id, revision FROM notification_threads WHERE requires_attention = 1 \
+             ORDER BY created_at DESC, id DESC LIMIT ?1",
+        )
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    /// Live or unread critical and alarm/call notifications, newest first, for the
+    /// lock-screen feed. Policy filtering happens in the runtime.
+    pub(crate) async fn lock_screen_candidates(
+        &self,
+        limit: u32,
+    ) -> anyhow::Result<Vec<NotificationThread>> {
+        let sql = notification_thread_select_sql(
+            "WHERE (status = 'active' OR requires_attention = 1) \
+             AND (urgency = 'critical' OR category = 'alarm' OR category LIKE 'alarm.%' \
+                  OR category IN ('call', 'call.incoming')) \
+             ORDER BY created_at DESC, id DESC LIMIT ?1",
+        );
+        sqlx::query(&sql)
+            .bind(i64::from(limit))
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|row| NotificationThreadRecord::from_row(row)?.into_thread())
+            .collect()
+    }
+
+    /// Newest retained Center position.
+    pub(crate) async fn newest_center_cursor(
+        &self,
+    ) -> anyhow::Result<Option<crate::NotificationCenterCursor>> {
+        Ok(self
+            .center_threads_after(None, 1, None)
+            .await?
+            .first()
+            .map(crate::NotificationCenterCursor::for_thread))
+    }
+
     pub(crate) async fn requires_attention_count(&self) -> anyhow::Result<u64> {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM notification_threads WHERE requires_attention = 1",
@@ -697,11 +740,22 @@ impl SqlitePersistedState {
         &self,
         after: Option<crate::NotificationCenterCursor>,
         limit: u8,
+        cleared_through: Option<crate::NotificationCenterCursor>,
     ) -> anyhow::Result<Vec<NotificationThread>> {
-        let predicate = if after.is_some() {
-            "WHERE (created_at, id) < (?1, ?2)"
+        let mut predicates = Vec::new();
+        if after.is_some() {
+            predicates.push("(created_at, id) < (?1, ?2)");
+        }
+        // "Clear all" hides older read, finished items; live and unread ones stay.
+        if cleared_through.is_some() {
+            predicates.push(
+                "((created_at, id) > (?4, ?5) OR status = 'active' OR requires_attention = 1)",
+            );
+        }
+        let predicate = if predicates.is_empty() {
+            String::new()
         } else {
-            ""
+            format!("WHERE {}", predicates.join(" AND "))
         };
         let sql = notification_thread_select_sql(&format!(
             "{predicate} ORDER BY created_at DESC, id DESC LIMIT ?3"
@@ -710,6 +764,8 @@ impl SqlitePersistedState {
             .bind(after.map(|cursor| cursor.created_at))
             .bind(after.map(|cursor| cursor.id.get()))
             .bind(i64::from(limit))
+            .bind(cleared_through.map(|cursor| cursor.created_at))
+            .bind(cleared_through.map(|cursor| cursor.id.get()))
             .fetch_all(&self.pool)
             .await?
             .iter()

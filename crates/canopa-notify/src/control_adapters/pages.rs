@@ -4,7 +4,11 @@ use canopa_notify::NotificationCenterCursor;
 use serde::{Deserialize, Serialize};
 
 pub(super) const PAGE_KEY: &str = "canopa-notify:page";
-const NAVIGATION_RESERVE: usize = 2048;
+/// Section control that collapses or expands one app group; view-local.
+pub(super) const GROUP_KEY: &str = "canopa-notify:group";
+const DND_SECTION_ID: &str = "do-not-disturb";
+const MAX_COLLAPSED_GROUPS: usize = 256;
+const NAVIGATION_RESERVE: usize = 8192;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Position {
@@ -20,6 +24,10 @@ enum Direction {
     Next,
     Settings,
     Notifications,
+    /// Group the reading view by application.
+    Grouped,
+    /// Return to the single chronological list.
+    Timeline,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -42,15 +50,36 @@ pub(super) struct Session {
     previous: std::collections::VecDeque<Position>,
     next: Option<Position>,
     settings: bool,
+    grouped: bool,
+    collapsed: std::collections::BTreeSet<String>,
 }
 
 impl Session {
     pub(super) fn navigate(&mut self, bytes: &[u8]) -> bool {
+        let event = serde_json::from_slice(bytes);
+        if let Ok(InteractionEvent::Invoke {
+            target: InteractionTarget::Section { id },
+            action_key,
+            value: Some(value),
+        }) = &event
+            && action_key == GROUP_KEY
+        {
+            let Some(app) = id.strip_prefix("app/") else {
+                return false;
+            };
+            return match value.as_str() {
+                "collapsed" if self.collapsed.len() < MAX_COLLAPSED_GROUPS => {
+                    self.collapsed.insert(app.to_owned())
+                }
+                "expanded" => self.collapsed.remove(app),
+                _ => false,
+            };
+        }
         let Ok(InteractionEvent::Invoke {
             target: InteractionTarget::Content,
             action_key,
             value: Some(value),
-        }) = serde_json::from_slice(bytes)
+        }) = event
         else {
             return false;
         };
@@ -66,6 +95,8 @@ impl Session {
         match navigation.direction {
             Direction::Settings => self.settings = true,
             Direction::Notifications => self.settings = false,
+            Direction::Grouped => self.grouped = true,
+            Direction::Timeline => self.grouped = false,
             Direction::First => {
                 self.current = Position::default();
                 self.previous.clear();
@@ -111,7 +142,8 @@ impl Session {
             page = self::page(control, self.current).await?;
         }
         self.next = page.next;
-        let mut content = present(page, self.settings);
+        let grouped = self.grouped && !self.settings;
+        let mut content = present(page, self.settings, grouped, &self.collapsed);
         content.actions.insert(
             0,
             navigation(
@@ -123,6 +155,37 @@ impl Session {
                 },
             ),
         );
+        if !self.settings {
+            if let Some(token) = control.clear_undo() {
+                content.actions.push(PanelAction {
+                    request_activation_token: false,
+                    key: PANEL_UNDO_CLEAR_KEY.into(),
+                    label: "Undo clear".into(),
+                    value: Some(token.to_string()),
+                });
+            }
+            content.actions.push(navigation(
+                self.generation,
+                if grouped {
+                    Direction::Timeline
+                } else {
+                    Direction::Grouped
+                },
+            ));
+        }
+        // The reading view names the state; Settings offers the choices.
+        let (status, suppression) = control.do_not_disturb_view();
+        let header = do_not_disturb_section(&status, suppression);
+        if self.settings {
+            content.sections.insert(0, header);
+        } else if status.active {
+            content.title = format!(
+                "Notifications · Do Not Disturb {}",
+                header.controls[0].label
+            );
+        } else if let Some((_, suppression)) = header.controls[0].label.split_once(" · ") {
+            content.title = format!("Notifications · {suppression}");
+        }
         if self.current.after.is_some() || self.current.action_offset > 0 {
             content
                 .actions
@@ -144,10 +207,129 @@ impl Session {
     }
 }
 
+/// The Center's Do Not Disturb header: current state and quick choices.
+fn do_not_disturb_section(
+    status: &canopa_notify::DoNotDisturbStatus,
+    suppression: Option<canopa_notify::Suppression>,
+) -> PanelSection {
+    let state = super::dnd_status_text(status);
+    let mut label = if status.active {
+        format!(
+            "On{}",
+            state.trim_end().strip_prefix("on").unwrap_or_default()
+        )
+    } else {
+        "Off".to_owned()
+    };
+    match suppression {
+        Some(canopa_notify::Suppression::Fullscreen) => {
+            label.push_str(" · Fullscreen: banners are saved quietly")
+        }
+        Some(canopa_notify::Suppression::ScreenSharing) => {
+            label.push_str(" · Screen sharing: banners are hidden")
+        }
+        None => {}
+    }
+    let option = |value: &str, label: &str| PanelControlOption {
+        value: value.into(),
+        label: label.into(),
+    };
+    PanelSection {
+        id: DND_SECTION_ID.into(),
+        title: "Do Not Disturb".into(),
+        icon: None,
+        items: Vec::new(),
+        controls: vec![PanelControl {
+            key: PANEL_DND_KEY.into(),
+            label,
+            value: if status.active { "on" } else { "off" }.into(),
+            options: vec![
+                option("off", "Off"),
+                option("on", "On"),
+                option("for-60", "For 1 hour"),
+                option("until-tomorrow", "Until tomorrow"),
+            ],
+        }],
+    }
+}
+
+/// Grouped reading view: one section per application, newest first, each with
+/// a collapse control. A collapsed group shows its newest message and a count.
+fn group_sections(
+    sections: Vec<PanelSection>,
+    collapsed: &std::collections::BTreeSet<String>,
+) -> Vec<PanelSection> {
+    sections
+        .into_iter()
+        .map(|mut section| {
+            let app = section
+                .id
+                .strip_prefix("app/")
+                .unwrap_or_default()
+                .to_owned();
+            let unread = section
+                .items
+                .iter()
+                .filter(|item| item.metadata.iter().any(|m| m.key == "attention"))
+                .count();
+            let count = section.items.len();
+            let is_collapsed = collapsed.contains(&app) && count > 0;
+            let mut label = format!("{count} notification{}", if count == 1 { "" } else { "s" });
+            if unread > 0 {
+                label.push_str(&format!(" · {unread} unread"));
+            }
+            section.controls = vec![PanelControl {
+                key: GROUP_KEY.into(),
+                label,
+                value: if is_collapsed {
+                    "collapsed"
+                } else {
+                    "expanded"
+                }
+                .into(),
+                options: vec![
+                    PanelControlOption {
+                        value: "expanded".into(),
+                        label: "Show".into(),
+                    },
+                    PanelControlOption {
+                        value: "collapsed".into(),
+                        label: "Collapse".into(),
+                    },
+                ],
+            }];
+            if is_collapsed {
+                let newest = section.items.swap_remove(0);
+                section.items = vec![PanelItem {
+                    id: format!("group/{}", section.id),
+                    title: newest.title,
+                    attribution: newest.attribution,
+                    body: (count > 1).then(|| format!("and {} more", count - 1)),
+                    styled_body: None,
+                    rich_body: None,
+                    metadata: newest
+                        .metadata
+                        .into_iter()
+                        .filter(|m| m.key == "received")
+                        .collect(),
+                    actions: Vec::new(),
+                    slider: None,
+                }];
+            }
+            section
+        })
+        .collect()
+}
+
 // Keep the bounded page and its position intact when switching views. Delivery
 // rules belong to the applications/categories on that page, including categories
 // collected across multiple rows. Only presentation changes here.
-fn present(page: Page, settings: bool) -> PanelContent {
+fn present(
+    page: Page,
+    settings: bool,
+    grouped: bool,
+    collapsed: &std::collections::BTreeSet<String>,
+) -> PanelContent {
     let Page {
         mut content, order, ..
     } = page;
@@ -158,12 +340,11 @@ fn present(page: Page, settings: bool) -> PanelContent {
     }
     .into();
     content.actions.retain(|action| {
-        action.key
-            == if settings {
-                PANEL_DELETE_HISTORY_KEY
-            } else {
-                PANEL_CLEAR_ACTIVE_KEY
-            }
+        if settings {
+            action.key == PANEL_DELETE_HISTORY_KEY
+        } else {
+            action.key == PANEL_MARK_ALL_READ_KEY || action.key == PANEL_CLEAR_ALL_KEY
+        }
     });
     for section in &mut content.sections {
         if settings {
@@ -188,6 +369,8 @@ fn present(page: Page, settings: bool) -> PanelContent {
         content
             .sections
             .retain(|section| !section.controls.is_empty());
+    } else if grouped {
+        content.sections = group_sections(std::mem::take(&mut content.sections), collapsed);
     } else if !content.sections.is_empty() {
         let mut items: Vec<_> = std::mem::take(&mut content.sections)
             .into_iter()
@@ -215,6 +398,8 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
             Direction::Previous => "Previous page",
             Direction::Settings => "Settings",
             Direction::Notifications => "Back to notifications",
+            Direction::Grouped => "Group by app",
+            Direction::Timeline => "Show timeline",
         }
         .into(),
         value: Some(
@@ -228,7 +413,8 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
 }
 
 const READ_BATCH: u8 = 16;
-const NAVIGATION_ACTIONS: usize = 4;
+/// First/Previous/Next, view toggles, Undo and the Do Not Disturb choices.
+const NAVIGATION_ACTIONS: usize = 16;
 
 async fn page(control: &NotifyControl, mut position: Position) -> anyhow::Result<Page> {
     let reader = control.notification_center_reader().await?;
@@ -366,7 +552,8 @@ impl PageBuilder {
                 .count()
             + usize::from(item.slider.is_some());
         if self.items == 4096
-            || (existing.is_none() && self.sections.len() == 1024)
+            // One section is reserved for the Do Not Disturb header.
+            || (existing.is_none() && self.sections.len() == 1023)
             || !self.fits(extra_bytes, extra_interactions)
         {
             return Ok(Insert::Full { action: false });
@@ -595,6 +782,169 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn frame_content(frame: &str) -> PanelContent {
+        let value: serde_json::Value = serde_json::from_str(frame).unwrap();
+        serde_json::from_value(value["content"].clone()).unwrap()
+    }
+
+    fn invoke(target: InteractionTarget, key: &str, value: &str) -> Vec<u8> {
+        serde_json::to_vec(&InteractionEvent::Invoke {
+            target,
+            action_key: key.into(),
+            value: Some(value.into()),
+        })
+        .unwrap()
+    }
+
+    fn page_action<'a>(content: &'a PanelContent, label: &str) -> &'a PanelAction {
+        content
+            .actions
+            .iter()
+            .find(|action| action.label == label)
+            .unwrap_or_else(|| panic!("no {label} action in {:?}", content.actions))
+    }
+
+    #[tokio::test]
+    async fn grouped_view_collapses_apps_and_settings_offers_do_not_disturb() {
+        let directory = tempfile::tempdir().unwrap();
+        let daemon = canopa_notify::Daemon::open(canopa_notify::DaemonOptions::headless(
+            directory.path().join("history.db"),
+        ))
+        .await
+        .unwrap();
+        for (app, summary) in [("Mail", "First"), ("Chat", "Hello"), ("Mail", "Second")] {
+            daemon
+                .receive_notification(canopa_notify::NotificationInput {
+                    app_name: app.into(),
+                    summary: summary.into(),
+                    expire_timeout: canopa_notify::NotificationTimeout::Never,
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+        }
+        let control = NotifyControl::new(daemon.clone());
+        let mut session = Session::default();
+        let timeline = frame_content(&session.frame(&control, false).await.unwrap());
+        assert_eq!(timeline.sections.len(), 1, "timeline is one list");
+        assert!(
+            timeline
+                .actions
+                .iter()
+                .any(|a| a.key == PANEL_MARK_ALL_READ_KEY)
+        );
+        assert!(
+            timeline
+                .actions
+                .iter()
+                .any(|a| a.key == PANEL_CLEAR_ALL_KEY)
+        );
+        let group = page_action(&timeline, "Group by app")
+            .value
+            .clone()
+            .unwrap();
+        assert!(session.navigate(&invoke(InteractionTarget::Content, PAGE_KEY, &group)));
+        let grouped = frame_content(&session.frame(&control, false).await.unwrap());
+        assert_eq!(
+            grouped
+                .sections
+                .iter()
+                .map(|s| s.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Mail", "Chat"],
+            "newest app first"
+        );
+        assert_eq!(grouped.sections[0].items.len(), 2);
+        assert_eq!(
+            grouped.sections[0].controls[0].label,
+            "2 notifications · 2 unread"
+        );
+        grouped.validate().unwrap();
+
+        let mail = InteractionTarget::Section {
+            id: "app/Mail".into(),
+        };
+        assert!(session.navigate(&invoke(mail.clone(), GROUP_KEY, "collapsed")));
+        let collapsed = frame_content(&session.frame(&control, false).await.unwrap());
+        let mail_section = &collapsed.sections[0];
+        assert_eq!(mail_section.controls[0].value, "collapsed");
+        assert_eq!(mail_section.items.len(), 1);
+        assert_eq!(mail_section.items[0].title, "Second");
+        assert_eq!(mail_section.items[0].body.as_deref(), Some("and 1 more"));
+        assert_eq!(
+            collapsed.sections[1].items.len(),
+            1,
+            "other groups stay expanded"
+        );
+        collapsed.validate().unwrap();
+        assert!(session.navigate(&invoke(mail, GROUP_KEY, "expanded")));
+        assert_eq!(
+            frame_content(&session.frame(&control, false).await.unwrap()).sections[0]
+                .items
+                .len(),
+            2
+        );
+
+        // Clear all offers a one-shot Undo that maps back to the daemon command.
+        let ControlReply::Cleared { undo } =
+            control.execute(ControlCommand::ClearAll).await.unwrap()
+        else {
+            panic!("unexpected clear reply")
+        };
+        let cleared = frame_content(&session.frame(&control, true).await.unwrap());
+        let action = page_action(&cleared, "Undo clear");
+        assert_eq!(action.value.as_deref(), Some(undo.to_string().as_str()));
+        assert_eq!(
+            control_command_from_panel_interaction(InteractionEvent::Invoke {
+                target: InteractionTarget::Content,
+                action_key: action.key.clone(),
+                value: action.value.clone(),
+            }),
+            Some(ControlCommand::UndoClear { undo })
+        );
+        control
+            .execute(ControlCommand::UndoClear { undo })
+            .await
+            .unwrap();
+
+        // Do Not Disturb: named in the reading title, chosen in Settings.
+        daemon
+            .request_do_not_disturb(canopa_notify::DoNotDisturbRequest::On)
+            .await
+            .unwrap();
+        let reading = frame_content(&session.frame(&control, true).await.unwrap());
+        assert_eq!(reading.title, "Notifications · Do Not Disturb On");
+        let settings = page_action(&reading, "Settings").value.clone().unwrap();
+        assert!(session.navigate(&invoke(InteractionTarget::Content, PAGE_KEY, &settings)));
+        let settings = frame_content(&session.frame(&control, false).await.unwrap());
+        let header = &settings.sections[0];
+        assert_eq!(header.id, DND_SECTION_ID);
+        assert_eq!(header.controls[0].value, "on");
+        assert_eq!(
+            header.controls[0]
+                .options
+                .iter()
+                .map(|o| o.value.as_str())
+                .collect::<Vec<_>>(),
+            ["off", "on", "for-60", "until-tomorrow"]
+        );
+        let command = control_command_from_panel_interaction(InteractionEvent::Invoke {
+            target: InteractionTarget::Section {
+                id: DND_SECTION_ID.into(),
+            },
+            action_key: PANEL_DND_KEY.into(),
+            value: Some("for-60".into()),
+        })
+        .unwrap();
+        assert_eq!(
+            command,
+            ControlCommand::RequestDoNotDisturb {
+                request: canopa_notify::DoNotDisturbRequest::For { minutes: 60 }
+            }
+        );
+        daemon.shutdown().await.unwrap();
     }
 
     #[tokio::test]

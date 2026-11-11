@@ -317,6 +317,8 @@ impl canopa_notify::SenderEventPublisher for DbusSenderPublisher {
             | SenderEvent::ActionInvoked {
                 notification_id, ..
             } => self.sender_ids.sender_id(*notification_id),
+            // Freedesktop notifications are never offered a reply composer.
+            SenderEvent::ReplyText { .. } => None,
         };
         let queue = self.queue.clone();
         Box::pin(async move {
@@ -366,6 +368,7 @@ async fn emit_sender_event(
         SenderEvent::ActionInvoked { action_key, .. } => {
             emitter.action_invoked(sender_id, action_key).await?;
         }
+        SenderEvent::ReplyText { .. } => {}
         SenderEvent::NotificationClosed { reason, .. } => {
             emitter
                 .notification_closed(sender_id, close_reason_code(*reason))

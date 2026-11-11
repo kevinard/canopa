@@ -56,6 +56,7 @@ struct State {
     by_identity: HashMap<Identity, InternalNotificationId>,
     by_internal: HashMap<InternalNotificationId, Arc<Binding>>,
     tokens: HashMap<InternalNotificationId, String>,
+    replies: HashMap<InternalNotificationId, String>,
     bytes: usize,
     expires: HashMap<InternalNotificationId, (Instant, Weak<Binding>)>,
 }
@@ -89,6 +90,7 @@ impl Registry {
         state.bytes += binding.bytes;
         state.by_identity.insert(binding.identity.clone(), id);
         state.tokens.remove(&id);
+        state.replies.remove(&id);
         if let Some(deadline) = binding.deadline {
             state
                 .expires
@@ -111,6 +113,9 @@ impl Registry {
             | SenderEvent::ActionInvoked {
                 notification_id, ..
             }
+            | SenderEvent::ReplyText {
+                notification_id, ..
+            }
             | SenderEvent::NotificationClosed {
                 notification_id, ..
             } => *notification_id,
@@ -123,8 +128,14 @@ impl Registry {
                 state.tokens.insert(id, activation_token.clone());
                 None
             }
+            SenderEvent::ReplyText { text, .. } => {
+                state.replies.insert(id, text.clone());
+                None
+            }
             SenderEvent::ActionInvoked { action_key, .. } => {
                 let token = state.tokens.remove(&id);
+                // A reply belongs to exactly the next action of its registration.
+                let reply = state.replies.remove(&id);
                 binding
                     .actions
                     .contains_key(action_key)
@@ -132,12 +143,14 @@ impl Registry {
                         binding,
                         key: action_key.clone(),
                         token,
+                        reply,
                     })
             }
             SenderEvent::NotificationClosed { .. } => {
                 state.by_internal.remove(&id);
                 state.by_identity.remove(&binding.identity);
                 state.tokens.remove(&id);
+                state.replies.remove(&id);
                 state.expires.remove(&id);
                 self.1.notify_one();
                 state.bytes -= binding.bytes;
@@ -151,6 +164,7 @@ pub(super) struct Publication {
     binding: Arc<Binding>,
     key: String,
     token: Option<String>,
+    reply: Option<String>,
 }
 
 impl Publication {
@@ -166,7 +180,11 @@ impl Publication {
         if let Some(target) = &action.target {
             parameters.push((**target).try_clone()?);
         }
+        // Portal v2: the response follows the target for exported actions, and
+        // the target and platform data for the ActionInvoked signal.
+        let reply = self.reply.as_deref().map(Value::from);
         if action.name.is_empty() || action.name.starts_with("app.") {
+            parameters.extend(reply);
             let path = format!("/{}", identity.app_id.replace('.', "/").replace('-', "_"));
             // Application failures are per-invocation and must not poison the
             // authoritative sender queue or attach this token to a later click.
@@ -204,6 +222,7 @@ impl Publication {
             }
         } else {
             parameters.push(Value::from(platform));
+            parameters.extend(reply);
             let emitter = SignalEmitter::new(connection, PATH)?;
             PortalServer::action_invoked(
                 &emitter,
@@ -464,7 +483,20 @@ impl PortalServer {
 
     #[zbus(property)]
     fn supported_options(&self) -> HashMap<String, OwnedValue> {
-        HashMap::from([(EXPIRY_OPTION.into(), true.into())])
+        let list = |values: &[&str]| {
+            OwnedValue::try_from(Value::from(
+                values
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>(),
+            ))
+            .expect("string arrays have no descriptors")
+        };
+        HashMap::from([
+            (EXPIRY_OPTION.into(), true.into()),
+            ("category".into(), list(intake::SUPPORTED_CATEGORIES)),
+            ("button-purpose".into(), list(intake::SUPPORTED_PURPOSES)),
+        ])
     }
 
     #[zbus(signal)]

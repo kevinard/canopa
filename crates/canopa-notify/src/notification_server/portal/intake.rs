@@ -9,6 +9,73 @@ use std::os::unix::fs::FileExt;
 use zbus::zvariant::{OwnedValue, Value};
 
 const ICON_BYTES: usize = 1024 * 1024;
+
+/// Categories with Canopa-specific handling: reply composer, and alarm/call
+/// break-through and lock-screen display.
+pub(crate) const SUPPORTED_CATEGORIES: &[&str] = &["im.received", "alarm.ringing", "call.incoming"];
+/// Button purposes Notify presents: a reply composer and labelled call controls.
+pub(crate) const SUPPORTED_PURPOSES: &[&str] = &[
+    "im.reply-with-text",
+    "call.accept",
+    "call.decline",
+    "call.hang-up",
+    "call.enable-speakerphone",
+    "call.disable-speakerphone",
+];
+const REPLY_PURPOSE: &str = "im.reply-with-text";
+
+fn purpose_label(purpose: &str) -> Option<&'static str> {
+    Some(match purpose {
+        REPLY_PURPOSE => "Reply",
+        "call.accept" => "Answer",
+        "call.decline" => "Decline",
+        "call.hang-up" => "Hang up",
+        "call.enable-speakerphone" => "Speaker on",
+        "call.disable-speakerphone" => "Speaker off",
+        _ => return None,
+    })
+}
+
+/// Portal v2 `display-hint` values (both `lock-screen` spellings are accepted).
+#[derive(Default)]
+struct DisplayHints {
+    transient: bool,
+    tray: bool,
+    persistent: bool,
+    hide_on_lock_screen: bool,
+    hide_content_on_lock_screen: bool,
+    show_as_new: bool,
+}
+
+fn display_hints(values: &mut HashMap<String, OwnedValue>) -> zbus::fdo::Result<DisplayHints> {
+    let Some(value) = values.remove("display-hint") else {
+        return Ok(DisplayHints::default());
+    };
+    let hints = Vec::<String>::try_from(value).map_err(|_| invalid())?;
+    if hints.len() > 16 {
+        return Err(invalid());
+    }
+    let mut parsed = DisplayHints::default();
+    for hint in hints {
+        match hint.as_str() {
+            "transient" => parsed.transient = true,
+            "tray" => parsed.tray = true,
+            "persistent" => parsed.persistent = true,
+            "hide-on-lock-screen" | "hide-on-lockscreen" => parsed.hide_on_lock_screen = true,
+            "hide-content-on-lock-screen" | "hide-content-on-lockscreen" => {
+                parsed.hide_content_on_lock_screen = true
+            }
+            "show-as-new" => parsed.show_as_new = true,
+            // Unknown hints are advisory and ignored.
+            _ => {}
+        }
+    }
+    // The portal documents `transient` with `tray` as a programmer error.
+    if parsed.transient && parsed.tray {
+        return Err(invalid());
+    }
+    Ok(parsed)
+}
 const SOUND_BYTES: usize = 8 * 1024 * 1024;
 
 fn invalid() -> zbus::fdo::Error {
@@ -134,6 +201,8 @@ pub(super) fn prepare_at(
         _ => return Err(invalid()),
     };
     let category = text(&values, "category", 256)?;
+    let display = display_hints(&mut values)?;
+    let mut reply = None;
     let mut actions = HashMap::new();
     let default_name = text(&values, "default-action", 4096)?.unwrap_or_default();
     validate_action(&default_name, true)?;
@@ -152,15 +221,28 @@ pub(super) fn prepare_at(
             return Err(invalid());
         }
         for (index, mut button) in buttons.into_iter().enumerate() {
-            let Some(label) = text(&button, "label", 4096)? else {
+            let purpose = text(&button, "purpose", 256)?;
+            // A known purpose supplies a label; an unknown one degrades to the label.
+            let label = text(&button, "label", 4096)?
+                .filter(|label| !label.trim().is_empty())
+                .or_else(|| {
+                    purpose
+                        .as_deref()
+                        .and_then(purpose_label)
+                        .map(str::to_owned)
+                });
+            let Some(label) = label else {
                 continue;
             };
-            if label.trim().is_empty() {
-                continue;
-            }
             let name = text(&button, "action", 4096)?.ok_or_else(invalid)?;
             validate_action(&name, false)?;
             let key = format!("portal-button-{index}");
+            if purpose.as_deref() == Some(REPLY_PURPOSE) && reply.is_none() {
+                reply = Some(canopa_notify::ReplyRequest {
+                    action_key: key.clone(),
+                    placeholder: None,
+                });
+            }
             controls.push(NotificationAction::new(&key, label));
             actions.insert(
                 key,
@@ -222,8 +304,26 @@ pub(super) fn prepare_at(
         sound,
         suppress_sound,
         // Request questions remain runtime-only. This is transport withdrawal,
-        // not Notify's display-based attention timeout.
-        transient: deadline.is_some(),
+        // not Notify's display-based attention timeout. `transient` asks for a
+        // banner without a Center/history entry.
+        transient: deadline.is_some() || display.transient,
+        // `persistent` notifications stay after an action until withdrawn.
+        resident: display.persistent,
+        presentation: canopa_notify::PresentationHints {
+            // The banner hides after its timeout; callbacks stay live in the
+            // Center until the user or application ends the notification.
+            keep_after_banner: deadline.is_none() && !display.transient,
+            center_only: display.tray,
+            lock_screen: if display.hide_on_lock_screen {
+                Some(canopa_notify::LockScreenVisibility::Hidden)
+            } else if display.hide_content_on_lock_screen {
+                Some(canopa_notify::LockScreenVisibility::NameOnly)
+            } else {
+                None
+            },
+            quiet_update: !display.show_as_new,
+            reply,
+        },
         // Portal has no sender timeout, so ordinary portal notifications follow
         // the server default banner policy like freedesktop requests with -1:
         // low/normal expire after display and critical (`urgent`) stays. Timed

@@ -298,6 +298,17 @@ pub enum BannerInteraction {
         action_key: String,
         activation_token: Option<String>,
     },
+    /// Send composed reply text with the revision's reply action.
+    Reply {
+        target: BannerTarget,
+        text: String,
+        activation_token: Option<String>,
+    },
+    /// The composer opened or closed; the banner-hide timer waits while open.
+    Composing {
+        target: BannerTarget,
+        composing: bool,
+    },
 }
 
 #[derive(Clone, Default)]
@@ -369,6 +380,20 @@ pub struct BannerView {
     pub actions: Vec<BannerAction>,
     pub placement: BannerPlacement,
     pub focus_behavior: BannerFocusBehavior,
+    /// A reply composer for this revision (portal `im.reply-with-text`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<BannerReply>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BannerReply {
+    /// The action whose button opens the composer and which the reply invokes.
+    pub action_key: String,
+    #[serde(default)]
+    pub placeholder: Option<String>,
+    /// Open the composer immediately (the Center's "Reply…").
+    #[serde(default)]
+    pub compose: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -536,6 +561,8 @@ impl BannerView {
         self.body_segments.clear();
         self.image = None;
         self.progress = None;
+        // Typing a reply would reveal the conversation while sharing.
+        self.reply = None;
         self
     }
 
@@ -582,6 +609,7 @@ impl BannerView {
             actions,
             placement: BannerPlacement::TopRightFocusedOutputWithFallback,
             focus_behavior: BannerFocusBehavior::DoesNotTakeFocus,
+            reply: None,
         }
     }
 }
@@ -744,6 +772,11 @@ impl NotificationBannerState {
             .iter()
             .filter_map(|id| self.visible.get(id).cloned())
             .collect()
+    }
+
+    /// Whether a banner or overflow slot currently presents this notification.
+    pub(crate) fn shows(&self, notification_id: InternalNotificationId) -> bool {
+        self.visible.contains_key(&notification_id) || self.overflow.contains_key(&notification_id)
     }
 
     pub(crate) fn overflow_count(&self) -> usize {
