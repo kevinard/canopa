@@ -121,3 +121,13 @@ native accessibility coverage for ordinary bar modules, tray menus and generic
 provider controls. Those remain unverified. See the
 [desktop acceptance procedure](manual-validation.md) and the
 [dated validation record](audits/2026-09-23-desktop-validation.md).
+
+## Shared AT-SPI bridge (2026-11-11)
+
+The launcher, bar modules, Quick settings cards, power confirmations, menus,
+calendar and tray menus now publish through the shared `canopa-ui`
+accessibility layer ([ADR 0144](../adr/0144-shared-accesskit-layer.md)), with
+native AT-SPI tests for launcher search and selection and a bar item. Provider
+panels keep the bridge described above; a surface never has both. Secondary
+actions (right click, scroll) and tooltips are not exposed, and no Orca pass
+has been recorded yet.

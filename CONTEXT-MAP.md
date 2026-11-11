@@ -63,6 +63,7 @@ The supported system installation has a dedicated session.
 - [Device keys and the on-screen display](docs/shell/adr/0025-device-keys-and-on-screen-display.md)
 - [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
+- [Shared AccessKit layer, high contrast and the Accessibility page](docs/adr/0144-shared-accesskit-layer.md)
 - [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
 - [Theme configuration reference](docs/theme-customization.md)
 - [Canopa visual direction and first shell slice](docs/adr/0014-canopa-visual-direction.md)
