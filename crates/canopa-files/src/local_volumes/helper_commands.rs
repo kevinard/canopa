@@ -110,7 +110,7 @@ impl Commands {
             self.send(
                 request.id,
                 Update::Refused {
-                    message: "Unsupported or stopping device request.".into(),
+                    message: fl!("files-device-request-unsupported"),
                     terminal: self
                         .active
                         .borrow()
@@ -368,7 +368,7 @@ impl Commands {
             {
                 Some(root) => Outcome::Mounted { root },
                 None => Outcome::Failed {
-                    message: "The device is no longer available as a local folder.".into(),
+                    message: fl!("files-device-not-local"),
                 },
             },
             Ok(()) => Outcome::Removed,
@@ -454,7 +454,7 @@ impl Commands {
                         Outcome::Connected { root, location }
                     }
                     (Some(_), Some(_)) => Outcome::Failed {
-                        message: "The mounted location is outside its mount.".into(),
+                        message: fl!("files-device-outside-mount"),
                     },
                     _ => Outcome::ConnectedRemote { uri: uri.clone() },
                 },

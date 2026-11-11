@@ -1035,3 +1035,40 @@ files-media-seek = Seek
 files-media-seek-unavailable = Seek unavailable
 # $volume is a percentage such as "80%".
 files-media-volume = Volume { $volume }
+
+## Recovery items (why a version is kept)
+
+files-recovery-kept-interrupted = Kept by an interrupted operation. Recovering a copy leaves the saved version intact.
+files-recovery-newer-work = This retained version contains newer or unexpected work. It is protected from automatic cleanup.
+files-recovery-protected = This version is protected from automatic cleanup. Recovering a copy leaves it intact.
+files-recovery-needed-by-undo = Still needed by an Undo entry. Recovering a copy leaves it available to Undo.
+files-recovery-undo-expired = Kept after its Undo entry expired. Recovering a copy leaves the retained version intact.
+files-recovery-saved-return = Interrupted saved destination return. Keep in Recovery preserves its original work folder and commits only the completed incoming return.
+files-recovery-saved-returned = The saved destination has already returned. Keep in Recovery preserves this work folder and finishes the recorded Undo without replaying its return.
+files-recovery-copy-undo = Interrupted Copy Undo work folder. Keep in Recovery preserves its contents and leaves the original Undo history available.
+files-recovery-undo-cleanup = Completed Undo work folder. Keep in Recovery preserves its contents without replaying the completed Undo step.
+files-recovery-undo-return = Interrupted Undo return. Keep in Recovery preserves this entire work folder and leaves the original Undo history unchanged.
+files-recovery-undo-recovery = Interrupted Undo recovery. Keep in Recovery preserves every work folder and leaves the original Undo history available.
+files-recovery-work-folder = Contains all files in this work folder. Keep in Recovery preserves all work folders and lets you continue the original transfer.
+files-recovery-interrupted-file = Interrupted file. Keep in Recovery preserves all work folders and lets you continue the original transfer.
+files-recovery-copy-cancelled = Recovery copy cancelled before more work started.
+files-recovery-copy-attention = Recovery copy needs attention
+files-recovery-identities-exhausted = Recovery catalog identities exhausted. Close and reopen Recovery.
+files-recovery-reader-stopped-reopen = The Recovery reader stopped. Close and reopen Recovery.
+files-recovery-read-cancelled = Recovery read cancelled
+files-recovery-queue-stopped = The operation queue stopped while reading Recovery.
+files-recovery-refresh-unavailable = Automatic refresh unavailable for { $path }: { $error }. Use Refresh.
+
+## Device helper results
+
+files-device-request-unsupported = Unsupported or stopping device request.
+files-device-not-local = The device is no longer available as a local folder.
+files-device-outside-mount = The mounted location is outside its mount.
+files-transfer-partial-kept = Partial copy data was kept in Recovery.
+files-device-helper-stopped = The device helper stopped before confirming this request. The device may have changed. { $message }
+files-transfer-destination-changed = The destination folder is unavailable or has changed: { $error }
+files-transfer-source-retained = The source is retained; its changed destination also remains: { $error }
+files-undo-trash-info-unverified = Trash information cannot be verified: { $error }
+files-jobs-completed-before-interruption = Filesystem operation #{ $operation } completed before interruption; its recorded result was restored.
+# $detail summarizes a transfer's result.
+files-jobs-result-restored = { $detail } · recorded filesystem result restored after interruption

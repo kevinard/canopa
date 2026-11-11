@@ -48,9 +48,9 @@ impl Worker {
             version: 1,
             title: summary.label,
             paths: summary.paths,
-            detail: Some(format!(
-                "Filesystem operation #{} completed before interruption; its recorded result was restored.",
-                summary.id
+            detail: Some(fl!(
+                "files-jobs-completed-before-interruption",
+                operation = summary.id.to_string()
             )),
             transfer: None,
         };
@@ -249,10 +249,7 @@ impl Worker {
                         version: 1,
                         title: Request::Transfer(request.clone()).title(),
                         paths: report.destinations.clone(),
-                        detail: Some(format!(
-                            "{} · recorded filesystem result restored after interruption",
-                            report.detail()
-                        )),
+                        detail: Some(fl!("files-jobs-result-restored", detail = report.detail())),
                         transfer: Some(report),
                     },
                     false,

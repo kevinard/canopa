@@ -15,3 +15,12 @@ crates/canopa-portal/src/input_capture_transport/worker.rs: "EI connection alrea
 crates/canopa-portal/src/input_capture_transport/worker.rs: "ConnectToEIS must precede Enable"  # worker-to-portal protocol reply naming D-Bus methods, returned as a D-Bus error
 crates/canopa-portal/src/input_capture_transport/worker.rs: "EI receiver device not ready"  # worker-to-portal protocol reply, returned to the app as a D-Bus error
 crates/canopa-shell/src/modules/view/rotated_text.rs: *  # wgpu debug labels for the rotated-glyph pipeline, never shown to people
+crates/canopa-files/src/operations/interrupted.rs: "Restore folder permissions"  # stored English history label; history_labels translates it when shown
+crates/canopa-files/src/operations/store/undo_work.rs: "Kept interrupted Undo work folder"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/undo.rs: "Preserved by Undo {label}"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/undo/changed_copy.rs: "Preserved by Undo {label}"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/undo/changed_move.rs: "Preserved by keeping an item during Undo {label}"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/undo/unavailable_move.rs: "Preserved after finishing an unavailable item during Undo {label}"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/undo/unavailable_saved.rs: "Preserved after finishing an unavailable saved version during Undo {label}"  # stored English Recovery label; history_labels translates it when shown
+crates/canopa-files/src/operations/saved_stage.rs: *  # saved-version proof diagnostics of the crash-durable engine, journaled with the transfer; not yet translated (rare Recovery attention)
+crates/canopa-files/src/operations/saved_stage/forward.rs: *  # saved-version proof diagnostics of the crash-durable engine, journaled with the transfer; not yet translated (rare Recovery attention)

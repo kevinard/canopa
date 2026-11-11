@@ -438,7 +438,7 @@ impl RecoveryItem {
         continuation: Option<&RecoveryCopyContinuation>,
     ) -> RecoveryCopyOutcome {
         let mut outcome = match continuation {
-            Some(plan) => plan.paused("Recovery copy cancelled before more work started.".into()),
+            Some(plan) => plan.paused(fl!("files-recovery-copy-cancelled")),
             None => RecoveryCopyOutcome {
                 remaining: self.entry.iter().map(|entry| entry.path.clone()).collect(),
                 ..Default::default()
@@ -498,13 +498,35 @@ impl RecoveryItem {
         let observed = record.available();
         let (status, message) = match &observed {
             Err(error) => (RecoveryStatus::Unavailable, error.to_string()),
-            Ok(_) if matches!(key, Key::Pending(_)) => (RecoveryStatus::NeedsRecovery, "Kept by an interrupted operation. Recovering a copy leaves the saved version intact.".into()),
-            Ok(version) if record.retained.version.as_ref().is_some_and(|expected| expected != version) || record.retained.original_identity() != version.identity =>
-                (RecoveryStatus::NeedsRecovery, "This retained version contains newer or unexpected work. It is protected from automatic cleanup.".into()),
-            Ok(_) if record.retained.recovery =>
-                (RecoveryStatus::NeedsRecovery, "This version is protected from automatic cleanup. Recovering a copy leaves it intact.".into()),
-            Ok(_) if held_for_undo => (RecoveryStatus::UndoBackup, "Still needed by an Undo entry. Recovering a copy leaves it available to Undo.".into()),
-            Ok(_) => (RecoveryStatus::NeedsRecovery, "Kept after its Undo entry expired. Recovering a copy leaves the retained version intact.".into()),
+            Ok(_) if matches!(key, Key::Pending(_)) => (
+                RecoveryStatus::NeedsRecovery,
+                fl!("files-recovery-kept-interrupted"),
+            ),
+            Ok(version)
+                if record
+                    .retained
+                    .version
+                    .as_ref()
+                    .is_some_and(|expected| expected != version)
+                    || record.retained.original_identity() != version.identity =>
+            {
+                (
+                    RecoveryStatus::NeedsRecovery,
+                    fl!("files-recovery-newer-work"),
+                )
+            }
+            Ok(_) if record.retained.recovery => (
+                RecoveryStatus::NeedsRecovery,
+                fl!("files-recovery-protected"),
+            ),
+            Ok(_) if held_for_undo => (
+                RecoveryStatus::UndoBackup,
+                fl!("files-recovery-needed-by-undo"),
+            ),
+            Ok(_) => (
+                RecoveryStatus::NeedsRecovery,
+                fl!("files-recovery-undo-expired"),
+            ),
         };
         let entry = observed
             .as_ref()
@@ -677,7 +699,7 @@ impl OperationEngine {
                         .flatten()
                         .map(std::sync::Arc::new);
                     if item.saved_return_review.is_some() {
-                        item.message="Interrupted saved destination return. Keep in Recovery preserves its original work folder and commits only the completed incoming return.".into();
+                        item.message = fl!("files-recovery-saved-return");
                     }
                     item.copy_undo_review = state
                         .copy_undo_review(slot)
@@ -686,10 +708,10 @@ impl OperationEngine {
                         .map(std::sync::Arc::new);
                     if let Some(review) = &item.copy_undo_review {
                         item.message = if review.finishes_saved_return() {
-                            "The saved destination has already returned. Keep in Recovery preserves this work folder and finishes the recorded Undo without replaying its return."
+                            fl!("files-recovery-saved-returned")
                         } else {
-                            "Interrupted Copy Undo work folder. Keep in Recovery preserves its contents and leaves the original Undo history available."
-                        }.into();
+                            fl!("files-recovery-copy-undo")
+                        };
                     }
                     item.undo_cleanup_review = state
                         .undo_cleanup_review(slot)
@@ -697,7 +719,7 @@ impl OperationEngine {
                         .flatten()
                         .map(std::sync::Arc::new);
                     if item.undo_cleanup_review.is_some() {
-                        item.message = "Completed Undo work folder. Keep in Recovery preserves its contents without replaying the completed Undo step.".into();
+                        item.message = fl!("files-recovery-undo-cleanup");
                     }
                     item.undo_review = state
                         .undo_work_review(slot)
@@ -705,7 +727,7 @@ impl OperationEngine {
                         .flatten()
                         .map(std::sync::Arc::new);
                     if item.undo_review.is_some() {
-                        item.message="Interrupted Undo return. Keep in Recovery preserves this entire work folder and leaves the original Undo history unchanged.".into();
+                        item.message = fl!("files-recovery-undo-return");
                     }
                     item.disposal_review = state
                         .disposal_review(slot)
@@ -714,12 +736,12 @@ impl OperationEngine {
                         .map(std::sync::Arc::new);
                     if let Some(review) = &item.disposal_review {
                         item.message = if review.is_undo() {
-                            "Interrupted Undo recovery. Keep in Recovery preserves every work folder and leaves the original Undo history available."
+                            fl!("files-recovery-undo-recovery")
                         } else if item.saved.container {
-                            "Contains all files in this work folder. Keep in Recovery preserves all work folders and lets you continue the original transfer."
+                            fl!("files-recovery-work-folder")
                         } else {
-                            "Interrupted file. Keep in Recovery preserves all work folders and lets you continue the original transfer."
-                        }.into();
+                            fl!("files-recovery-interrupted-file")
+                        };
                     }
                 }
                 items.push(item);
@@ -765,7 +787,7 @@ impl OperationEngine {
                 io::ErrorKind::WouldBlock,
                 outcome
                     .attention
-                    .unwrap_or_else(|| "Recovery copy needs attention".into()),
+                    .unwrap_or_else(|| fl!("files-recovery-copy-attention")),
             ));
         }
         if !outcome.skipped.is_empty() || !outcome.remaining.is_empty() {

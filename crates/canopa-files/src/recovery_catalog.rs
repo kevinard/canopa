@@ -68,8 +68,7 @@ impl Shared {
             .checked_add(1)
             .zip(state.pages.checked_add(usize::from(more)));
         let Some((revision, pages)) = next else {
-            state.published.error =
-                Some("Recovery catalog identities exhausted. Close and reopen Recovery.".into());
+            state.published.error = Some(fl!("files-recovery-identities-exhausted"));
             state.published.loading = false;
             drop(state);
             self.notify();
@@ -155,8 +154,7 @@ impl Reader {
                 match result {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => worker.failed(error.to_string()),
-                    Err(_) => worker
-                        .failed("The Recovery reader stopped. Close and reopen Recovery.".into()),
+                    Err(_) => worker.failed(fl!("files-recovery-reader-stopped-reopen")),
                 }
             })?;
         let _ = shared
@@ -288,9 +286,10 @@ impl Watches {
                     active.insert(path.clone());
                     monitors.push(monitor);
                 }
-                Err(error) => self.warnings.push(format!(
-                    "Automatic refresh unavailable for {}: {error}. Use Refresh.",
-                    path.display()
+                Err(error) => self.warnings.push(fl!(
+                    "files-recovery-refresh-unavailable",
+                    path = path.display().to_string(),
+                    error = error.to_string()
                 )),
             }
         }
@@ -333,14 +332,14 @@ async fn read(
         if cancellation.is_cancelled() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
-                "Recovery read cancelled",
+                fl!("files-recovery-read-cancelled"),
             ));
         }
         let page = shared
             .jobs
             .recovery_page(cursor, cancellation.clone())?
             .await
-            .map_err(|_| io::Error::other("The operation queue stopped while reading Recovery."))?
+            .map_err(|_| io::Error::other(fl!("files-recovery-queue-stopped")))?
             .map_err(io::Error::other)?;
         catalog.items.extend(
             page.items

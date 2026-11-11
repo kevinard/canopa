@@ -993,7 +993,10 @@ fn run_transfer_inner(
             }
             match interact(TransferEvent::Unavailable {
                 destination: request.destination.clone(),
-                message: format!("The destination folder is unavailable or has changed: {error}"),
+                message: fl!(
+                    "files-transfer-destination-changed",
+                    error = error.to_string()
+                ),
             }) {
                 TransferReply::Retry => {
                     check_cancel(cancellation)?;
@@ -1805,7 +1808,7 @@ fn run_transfer_inner(
                     && placement_failure(&error).is_none() =>
             {
                 if compensate_failed_task(state, id, &destination)? {
-                    result.attention = Some("Partial copy data was kept in Recovery.".into());
+                    result.attention = Some(fl!("files-transfer-partial-kept"));
                 }
                 if let Some(receipt) = saved_receipts.get(&source).copied()
                     && state.saved_move_completed(&receipt, &source, &destination)?
@@ -1830,9 +1833,7 @@ fn run_transfer_inner(
                         source: source.clone(),
                         destination: destination.clone(),
                         kind: error.kind(),
-                        message: format!(
-                            "The source is retained; its changed destination also remains: {error}"
-                        ),
+                        message: fl!("files-transfer-source-retained", error = error.to_string()),
                     });
                     failed.push((source.clone(), destination.clone(), finish));
                     rollback_failed = true;

@@ -127,7 +127,10 @@ pub(in crate::operations::undo) fn review(
                 UndoItem::Unavailable {
                     path: source.to_owned(),
                     kind: error.kind(),
-                    message: format!("Trash information cannot be verified: {error}"),
+                    message: fl!(
+                        "files-undo-trash-info-unverified",
+                        error = error.to_string()
+                    ),
                 },
                 destination,
                 UndoSource::MergeSource,

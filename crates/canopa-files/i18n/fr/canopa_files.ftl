@@ -994,3 +994,39 @@ files-media-time-seeking = { $elapsed } / { $total } · Déplacement…
 files-media-seek = Position
 files-media-seek-unavailable = Déplacement impossible
 files-media-volume = Volume { $volume }
+
+## Recovery items (why a version is kept)
+
+files-recovery-kept-interrupted = Conservé par une opération interrompue. Récupérer une copie laisse la version enregistrée intacte.
+files-recovery-newer-work = Cette version conservée contient des travaux plus récents ou inattendus. Elle est protégée du nettoyage automatique.
+files-recovery-protected = Cette version est protégée du nettoyage automatique. Récupérer une copie la laisse intacte.
+files-recovery-needed-by-undo = Encore nécessaire à une entrée d’annulation. Récupérer une copie la laisse disponible pour l’annulation.
+files-recovery-undo-expired = Conservée après l’expiration de son entrée d’annulation. Récupérer une copie laisse la version conservée intacte.
+files-recovery-saved-return = Retour interrompu d’une destination enregistrée. Conserver dans Récupération préserve son dossier de travail d’origine et ne valide que le retour entrant terminé.
+files-recovery-saved-returned = La destination enregistrée a déjà été rétablie. Conserver dans Récupération préserve ce dossier de travail et termine l’annulation enregistrée sans rejouer son retour.
+files-recovery-copy-undo = Dossier de travail d’une annulation de copie interrompue. Conserver dans Récupération préserve son contenu et laisse l’historique d’annulation d’origine disponible.
+files-recovery-undo-cleanup = Dossier de travail d’une annulation terminée. Conserver dans Récupération préserve son contenu sans rejouer l’étape d’annulation terminée.
+files-recovery-undo-return = Retour d’annulation interrompu. Conserver dans Récupération préserve tout ce dossier de travail et laisse l’historique d’annulation d’origine inchangé.
+files-recovery-undo-recovery = Récupération d’annulation interrompue. Conserver dans Récupération préserve chaque dossier de travail et laisse l’historique d’annulation d’origine disponible.
+files-recovery-work-folder = Contient tous les fichiers de ce dossier de travail. Conserver dans Récupération préserve tous les dossiers de travail et vous permet de poursuivre le transfert d’origine.
+files-recovery-interrupted-file = Fichier interrompu. Conserver dans Récupération préserve tous les dossiers de travail et vous permet de poursuivre le transfert d’origine.
+files-recovery-copy-cancelled = Copie de récupération annulée avant le début d’autres travaux.
+files-recovery-copy-attention = La copie de récupération nécessite votre attention
+files-recovery-identities-exhausted = Identifiants du catalogue de Récupération épuisés. Fermez puis rouvrez Récupération.
+files-recovery-reader-stopped-reopen = Le lecteur de Récupération s’est arrêté. Fermez puis rouvrez Récupération.
+files-recovery-read-cancelled = Lecture de Récupération annulée
+files-recovery-queue-stopped = La file des opérations s’est arrêtée pendant la lecture de Récupération.
+files-recovery-refresh-unavailable = Actualisation automatique indisponible pour { $path } : { $error }. Utilisez Actualiser.
+
+## Device helper results
+
+files-device-request-unsupported = Demande de périphérique non prise en charge ou en cours d’arrêt.
+files-device-not-local = Le périphérique n’est plus disponible en tant que dossier local.
+files-device-outside-mount = L’emplacement monté se trouve en dehors de son point de montage.
+files-transfer-partial-kept = Les données partiellement copiées ont été conservées dans Récupération.
+files-device-helper-stopped = L’assistant des périphériques s’est arrêté avant de confirmer cette demande. Le périphérique a peut-être changé. { $message }
+files-transfer-destination-changed = Le dossier de destination est indisponible ou a changé : { $error }
+files-transfer-source-retained = La source est conservée ; sa destination modifiée reste également : { $error }
+files-undo-trash-info-unverified = Les informations de la corbeille ne peuvent pas être vérifiées : { $error }
+files-jobs-completed-before-interruption = L’opération de fichiers n° { $operation } s’est terminée avant l’interruption ; son résultat enregistré a été restauré.
+files-jobs-result-restored = { $detail } · résultat enregistré restauré après l’interruption

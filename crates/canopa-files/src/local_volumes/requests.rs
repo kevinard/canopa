@@ -701,9 +701,7 @@ impl Requests {
                 retired.push(settle(
                     job,
                     wire::Outcome::Uncertain {
-                        message: format!(
-                            "The device helper stopped before confirming this request. The device may have changed. {message}"
-                        ),
+                        message: fl!("files-device-helper-stopped", message = message.to_string()),
                     },
                 ));
             }
