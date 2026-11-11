@@ -115,6 +115,12 @@ pub(super) fn enter() -> Option<impl Drop> {
         return None;
     }
     DEFERRING.set(true);
+    // A span's commits are unsynced until the next barrier.
+    SESSION.with(|session| {
+        if let Some(batch) = session.borrow_mut().as_mut() {
+            batch.since.get_or_insert_with(Instant::now);
+        }
+    });
     Some(Leave)
 }
 
@@ -170,16 +176,21 @@ pub(super) fn completed(bytes: u64) -> io::Result<()> {
 /// Make every deferred step so far durable: filesystems first, then the
 /// journal, so a durable history row never precedes its own barrier.
 pub(super) fn flush() -> io::Result<()> {
+    // A batch with nothing deferred since its last barrier is already durable.
     let taken = SESSION.with(|session| {
-        session.borrow_mut().as_mut().map(|batch| {
-            batch.items = 0;
-            batch.bytes = 0;
-            batch.since = None;
-            (
-                std::mem::take(&mut batch.filesystems),
-                batch.journal.clone(),
-            )
-        })
+        let mut session = session.borrow_mut();
+        session
+            .as_mut()
+            .filter(|batch| batch.since.is_some())
+            .map(|batch| {
+                batch.items = 0;
+                batch.bytes = 0;
+                batch.since = None;
+                (
+                    std::mem::take(&mut batch.filesystems),
+                    batch.journal.clone(),
+                )
+            })
     });
     let Some((filesystems, journal)) = taken else {
         return Ok(());
@@ -233,7 +244,7 @@ mod tests {
         assert_eq!(take_counts(), (0, 1));
         session.flush().unwrap();
         assert!(!batching());
-        assert_eq!(take_counts(), (0, 1));
+        assert_eq!(take_counts(), (0, 0), "nothing was deferred since");
     }
 
     #[test]

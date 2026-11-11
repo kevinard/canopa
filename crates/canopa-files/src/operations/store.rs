@@ -190,14 +190,18 @@ impl Store {
         let Some(span) = plain.then(super::durability::enter).flatten() else {
             return run(self);
         };
+        // A deferred span also checkpoints less often: each automatic
+        // checkpoint syncs the WAL and the database, and a plain Copy step
+        // writes about 70 WAL pages, so the default 1000 checkpoints every
+        // ~14 items. 4096 pages bounds the WAL near 16 MiB.
         self.connection
-            .execute_batch("PRAGMA synchronous=NORMAL;")
+            .execute_batch("PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=4096;")
             .map_err(db_error)?;
         let result = run(self);
         drop(span);
         let restored = self
             .connection
-            .execute_batch("PRAGMA synchronous=FULL;")
+            .execute_batch("PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;")
             .map_err(db_error);
         let value = result?;
         restored.map(|()| value)
