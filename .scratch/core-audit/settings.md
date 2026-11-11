@@ -91,7 +91,7 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | Default apps | mimeapps.list | missing | CLI | `docs/files.md:146` (`xdg-mime default …`). `canopa-apps` has no `MimeType` field (`canopa-apps/src/lib.rs:7-16`) | Can't choose browser, mail or terminal. `Mod+Return` is hard-wired to `foot` (`defaults.kdl:13`) **Fixed in e7c5f15:** Settings Default applications page (browser, mail, calendar, music, video, photos, text editor, file manager, terminal through `xdg-terminals.list`, other file types by name or extension). `Mod+Return` still runs `foot`. |
 | | Autostart | missing | – (Background portal owns modern autostart, `canopa-portal/src/background/service.rs:1`) | none | No list or toggle of login apps |
 | Date & time | Time zone, NTP, 12/24 h | missing | K (clock format strings) | none | **Fixed in ef645c5:** Settings Date & time page: time zone search, zone from location once (GeoClue), NTP, manual date and time, 12/24 h in the Shell and lock clock formats with custom patterns kept (ADR 0142). Continuous automatic time zone still open. |
-| Region & language | Locale, formats | missing | – | none (PRD W5) | |
+| Region & language | Locale, formats | missing | – | none (PRD W5) | **Fixed in 53a8820:** Settings Region & language page: user language and formats in `~/.config/locale.conf` (and AccountsService) with a preview, system language and keyboard through localed. Translations (W5) still open. |
 | Users | Accounts | missing | – | AccountsService reader exists only in `canopa-greeter/src/accounts.rs` | |
 | Privacy | Lockdown switches | missing | CLI (`busctl`) | `docs/lockdown-portal.md` | Switches exist, but there's no UI |
 | | Portal permissions / screen-share history | missing | – | none | |
