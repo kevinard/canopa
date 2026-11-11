@@ -135,6 +135,12 @@ fn calendar_weekdays(first: chrono::Weekday) -> [chrono::Weekday; 7] {
     days
 }
 
+/// The weekday columns left to right: calendar order from the region's first
+/// weekday, mirrored for right-to-left languages.
+fn visual_weekdays() -> Vec<chrono::Weekday> {
+    canopa_ui::direction::ordered(calendar_weekdays(canopa_i18n::format::first_weekday()))
+}
+
 pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) -> CalendarMonth {
     calendar_month_from(today, month_offset, canopa_i18n::format::first_weekday())
 }
@@ -371,10 +377,7 @@ impl ClockModule {
             .spacing(10)
             .width(Length::Fill);
         let mut weekdays = row![].spacing(4).width(Length::Fill);
-        // Calendar order from the region's first weekday, mirrored for RTL.
-        for day in
-            canopa_ui::direction::ordered(calendar_weekdays(canopa_i18n::format::first_weekday()))
-        {
+        for day in visual_weekdays() {
             use canopa_i18n::format::{Length as Name, weekday};
             let (label, name) = (weekday(day, Name::Medium), weekday(day, Name::Long));
             weekdays = weekdays.push(semantic(
@@ -947,6 +950,20 @@ mod tests {
         assert_eq!(format_date(&now, None), "mercredi 11 novembre");
         // A person's own pattern stays as written.
         assert_eq!(format_time(&now, Some("%I.%M")), "02.30");
+    }
+
+    #[test]
+    fn right_to_left_calendar_mirrors_weekdays_and_month_navigation() {
+        use chrono::Weekday;
+
+        // The pseudo-locale is right to left with US English formats.
+        let _pseudo = crate::i18n_testing::select("en", true);
+        let days = visual_weekdays();
+        assert_eq!(days.first(), Some(&Weekday::Sat));
+        assert_eq!(days.last(), Some(&Weekday::Sun));
+        // "Previous month" points right, toward the earlier days.
+        assert_eq!(canopa_ui::direction::back_chevron(), "›");
+        assert_eq!(canopa_ui::direction::forward_chevron(), "‹");
     }
 
     #[test]

@@ -387,7 +387,8 @@ fn panel_menu_preferred_size(
     menu: &super::foreground::PanelMenuRenderState,
     row_extent: f32,
 ) -> PanelPreferredSize {
-    let prompt = menu.prompt.as_deref().unwrap_or("Search");
+    let search = fl!("shell-search");
+    let prompt = menu.prompt.as_deref().unwrap_or(&search);
     let prompt_width = crate::theme::text_width(prompt, crate::theme::body_size()).ceil() as u32;
     let max_entry_width = menu
         .entries

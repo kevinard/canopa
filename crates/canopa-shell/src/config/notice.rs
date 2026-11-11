@@ -85,7 +85,7 @@ impl ConfigNotice {
         Self {
             path,
             position: None,
-            message: "the Shell could not build the configured modules".into(),
+            message: fl!("shell-config-notice-construction"),
             shell_namespace: true,
         }
     }

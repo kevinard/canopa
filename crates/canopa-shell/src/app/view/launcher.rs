@@ -695,7 +695,7 @@ fn scope_buttons(
     let equal_width = width >= 465.0;
     let choices =
         row(scopes.map(|scope| scope_button(model, session, scope, equal_width))).spacing(4);
-    let node = Node::tab_list("Search in").key("launcher-scopes");
+    let node = Node::tab_list(fl!("shell-launcher-search-in")).key("launcher-scopes");
     semantic(node, scope_choices(choices, equal_width))
 }
 
@@ -1071,11 +1071,14 @@ pub(super) fn result_row<'a>(
     let default_selection = default_selection(style);
     let keyboard_focus = selected && model.keyboard_focus;
     let row_height = metrics.extent - metrics.gap - style.margin.vertical();
-    let mut contents = row![].spacing(7).align_y(iced::Alignment::Center);
+    let mut cells = Vec::new();
     if default_selection {
-        contents = contents.push(selection_indicator(selected));
+        cells.push(selection_indicator(selected));
     }
-    contents = contents.push(result_content(model, entry, target));
+    cells.push(result_content(model, entry, target));
+    let contents = canopa_ui::direction::row(cells)
+        .spacing(7)
+        .align_y(iced::Alignment::Center);
     let frame = move |hovered| {
         let mut frame = theme::highlighted_frame(style, selected, hovered, false, keyboard_focus);
         if default_selection {
@@ -1149,15 +1152,13 @@ fn result_content<'a>(
     let is_character = target.provider == crate::launcher::characters::PROVIDER;
     let browsing = !model.can_go_back && model.search_query.trim().is_empty();
     let icon_size = 30.0;
-    let mut content = row![]
-        .spacing(7)
-        .width(Length::Fill)
-        .align_y(iced::Alignment::Center);
+    // Icon then text in reading order (mirrored for right-to-left languages).
+    let mut cells: Vec<Element<'a, Message>> = Vec::new();
     if let Some(thumbnail) = target.thumbnail.as_ref() {
-        content = content.push(result_image(thumbnail, icon_size));
+        cells.push(result_image(thumbnail, icon_size));
     } else if model.show_icons && !is_character {
         let icon = entry.icon.as_deref().and_then(|name| model.icons.get(name));
-        content = content.push(match icon {
+        cells.push(match icon {
             Some(icon) => result_image(icon, icon_size),
             None => result_tile(
                 theme::icon(
@@ -1181,41 +1182,49 @@ fn result_content<'a>(
     let query = query.trim().to_owned();
     let approximate = is_approximate(target);
     let description = result_description(model, target);
-    content = content.push(responsive(move |bounds| {
-        let font = theme::font();
-        let title_font = iced::Font {
-            weight: if approximate {
-                iced::font::Weight::Normal
+    cells.push(
+        responsive(move |bounds| {
+            let font = theme::font();
+            let title_font = iced::Font {
+                weight: if approximate {
+                    iced::font::Weight::Normal
+                } else {
+                    iced::font::Weight::Semibold
+                },
+                ..font
+            };
+            let title_size = theme::body_size() + 2.0;
+            let detail_size = if browsing {
+                theme::label_size() + 1.0
             } else {
-                iced::font::Weight::Semibold
-            },
-            ..font
-        };
-        let title_size = theme::body_size() + 2.0;
-        let detail_size = if browsing {
-            theme::label_size() + 1.0
-        } else {
-            caption_size()
-        };
-        let title = fit_line(&title, bounds.width, title_size, title_font);
-        let mut labels = column![match_title(title, &query, title_size, title_font)]
-            .spacing(if browsing { 3 } else { 2 });
-        if let Some(description) = &description {
-            labels = labels.push(
-                muted_label(fit_line(description, bounds.width, detail_size, font))
-                    .size(detail_size)
-                    .line_height(1.14)
-                    .shaping(iced::widget::text::Shaping::Advanced)
-                    .wrapping(iced::widget::text::Wrapping::None),
-            );
-        }
-        container(labels)
-            .center_y(Length::Fill)
-            .width(Length::Fill)
-            .clip(true)
-            .into()
-    }));
-    content.into()
+                caption_size()
+            };
+            let title = fit_line(&title, bounds.width, title_size, title_font);
+            let mut labels = column![match_title(title, &query, title_size, title_font)]
+                .spacing(if browsing { 3 } else { 2 });
+            if let Some(description) = &description {
+                labels = labels.push(
+                    muted_label(fit_line(description, bounds.width, detail_size, font))
+                        .size(detail_size)
+                        .line_height(1.14)
+                        .shaping(iced::widget::text::Shaping::Advanced)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                );
+            }
+            container(labels)
+                .center_y(Length::Fill)
+                .width(Length::Fill)
+                .align_x(canopa_ui::direction::start())
+                .clip(true)
+                .into()
+        })
+        .into(),
+    );
+    canopa_ui::direction::row(cells)
+        .spacing(7)
+        .width(Length::Fill)
+        .align_y(iced::Alignment::Center)
+        .into()
 }
 
 fn action_description(target: &Target) -> Option<String> {

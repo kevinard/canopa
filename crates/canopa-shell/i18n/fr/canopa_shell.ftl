@@ -606,3 +606,13 @@ shell-history-invalid = L’historique du lanceur n’est pas valide
 shell-history-unsaved = L’historique du lanceur n’a pas pu être enregistré
 shell-history-unavailable = Le service d’historique du lanceur est indisponible
 shell-history-busy = L’historique du lanceur est occupé
+
+## Panel providers
+
+shell-provider-event-timed-out = Le fournisseur « { $provider } » n’a pas répondu à temps
+shell-provider-not-configured = Le fournisseur « { $provider } » n’est pas configuré
+shell-provider-not-available = Le fournisseur « { $provider } » n’est pas disponible
+shell-provider-launch-failed = Impossible de démarrer le fournisseur « { $provider } » : { $error }
+shell-provider-handshake-timed-out = Le fournisseur « { $provider } » n’a pas démarré à temps
+shell-config-notice-construction = Le Shell n’a pas pu construire les modules configurés
+shell-launcher-search-in = Rechercher dans

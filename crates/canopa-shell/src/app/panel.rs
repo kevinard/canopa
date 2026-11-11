@@ -632,7 +632,10 @@ impl App {
                     Err(_) => super::messages::ExternalPanelEvent::ProviderSessionFailed {
                         session_id,
                         provider_name: provider_name.clone(),
-                        message: format!("provider {provider_name:?} event timed out"),
+                        message: fl!(
+                            "shell-provider-event-timed-out",
+                            provider = provider_name.clone()
+                        ),
                     },
                 }
             },
@@ -796,7 +799,10 @@ impl App {
                         origin,
                         provider_name: provider_name.clone(),
                         anchor,
-                        message: format!("provider {provider_name:?} is not configured"),
+                        message: fl!(
+                            "shell-provider-not-configured",
+                            provider = provider_name.clone()
+                        ),
                     },
                 );
             }
@@ -813,7 +819,10 @@ impl App {
                         origin,
                         provider_name: provider_name.clone(),
                         anchor,
-                        message: format!("provider {provider_name:?} is not available"),
+                        message: fl!(
+                            "shell-provider-not-available",
+                            provider = provider_name.clone()
+                        ),
                     },
                 );
             }
@@ -835,7 +844,11 @@ impl App {
                         origin,
                         provider_name: provider_name.clone(),
                         anchor,
-                        message: format!("could not launch provider {provider_name:?}: {err}"),
+                        message: fl!(
+                            "shell-provider-launch-failed",
+                            provider = provider_name.clone(),
+                            error = err.to_string()
+                        ),
                     },
                 );
             }
@@ -883,7 +896,10 @@ impl App {
                         origin,
                         provider_name: provider_name.clone(),
                         anchor,
-                        message: format!("provider {provider_name:?} handshake timed out"),
+                        message: fl!(
+                            "shell-provider-handshake-timed-out",
+                            provider = provider_name.clone()
+                        ),
                     },
                 }
             },

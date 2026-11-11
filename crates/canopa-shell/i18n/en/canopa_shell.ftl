@@ -655,3 +655,16 @@ shell-history-invalid = Launcher history is invalid
 shell-history-unsaved = Launcher history could not be saved
 shell-history-unavailable = Launcher history worker is unavailable
 shell-history-busy = Launcher history is busy
+
+## Panel providers
+
+# $provider is the provider's configured name.
+shell-provider-event-timed-out = Provider “{ $provider }” did not answer in time
+shell-provider-not-configured = Provider “{ $provider }” is not configured
+shell-provider-not-available = Provider “{ $provider }” is not available
+shell-provider-launch-failed = Could not start provider “{ $provider }”: { $error }
+shell-provider-handshake-timed-out = Provider “{ $provider }” did not start in time
+# A configuration notice when the configuration parses but its modules cannot be built.
+shell-config-notice-construction = The Shell could not build the configured modules
+# Accessible name of the launcher's scope tabs.
+shell-launcher-search-in = Search in
