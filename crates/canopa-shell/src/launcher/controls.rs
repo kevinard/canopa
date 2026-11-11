@@ -1,3 +1,5 @@
+//! Panels and controls. Settings pages come from the Settings registry
+//! through [`super::system`].
 use super::{Action, NamedAction, ResultItem};
 use crate::app::panel_search::{SearchField, SearchMatch, SearchText, best_match, rank_matches};
 
@@ -43,51 +45,6 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
             },
         ),
         (
-            "displays",
-            "Display settings",
-            "displays monitor screen resolution scale rotation",
-            "video-display",
-            Action::Launch {
-                argv: vec!["canopa-settings".into(), "--page".into(), "displays".into()],
-            },
-        ),
-        (
-            "input",
-            "Keyboard and pointer settings",
-            "keyboard mouse pointer touchpad input layout",
-            "input-keyboard",
-            Action::Launch {
-                argv: vec!["canopa-settings".into(), "--page".into(), "input".into()],
-            },
-        ),
-        (
-            "appearance",
-            "Personalization settings",
-            "personalization theme appearance dark light wallpaper accent text size accessibility motion",
-            "preferences-desktop-theme",
-            Action::Launch {
-                argv: vec!["canopa-settings".into(), "--page".into(), "personal".into()],
-            },
-        ),
-        (
-            "power",
-            "Power and idle settings",
-            "power idle suspend lock sleep battery",
-            "preferences-system-power",
-            Action::Launch {
-                argv: vec!["canopa-settings".into(), "--page".into(), "power".into()],
-            },
-        ),
-        (
-            "launcher",
-            "Launcher settings",
-            "launcher extensions plugins web search keywords aliases pins clipboard snippets images",
-            "preferences-system",
-            Action::Launch {
-                argv: vec!["canopa-settings".into(), "--page".into(), "launcher".into()],
-            },
-        ),
-        (
             "history",
             "Clear launcher history",
             "clear forget reset launcher history recent frequent ranking",
@@ -110,19 +67,6 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
             "display-brightness",
             Action::Provider {
                 name: "power".into(),
-            },
-        ),
-        (
-            "shortcuts",
-            "Keyboard shortcuts",
-            "shortcuts keybindings hotkeys rebind",
-            "input-keyboard",
-            Action::Launch {
-                argv: vec![
-                    "canopa-settings".into(),
-                    "--page".into(),
-                    "shortcuts".into(),
-                ],
             },
         ),
     ];
@@ -173,7 +117,7 @@ mod tests {
         assert!(
             matches!(&results("dnd",false)[0].actions[0].action,Action::Provider{name} if name=="notifications")
         );
-        assert_eq!(results("", true).len(), 13);
+        assert_eq!(results("", true).len(), 7);
         assert!(results("", false).is_empty());
         assert!(results("foobarxyz", false).is_empty());
     }

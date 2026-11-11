@@ -130,6 +130,16 @@ pub enum Event {
         generation: u64,
         result: Result<(), String>,
     },
+    /// The session rows logind and the configured confirmations offer.
+    SessionRows {
+        session: u64,
+        rows: Arc<Vec<launcher::system::SessionRow>>,
+    },
+    /// The Settings page registry, or why it is unavailable.
+    SettingsPages {
+        session: u64,
+        pages: Result<Arc<Vec<launcher::system::SettingsPage>>, String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -167,8 +177,33 @@ pub(super) struct Session {
     index_revision: u64,
     refreshed: Option<Instant>,
     batches: BTreeMap<usize, Batch>,
+    session_rows: Arc<Vec<launcher::system::SessionRow>>,
+    settings_pages: Option<Arc<Vec<launcher::system::SettingsPage>>>,
     pub action_running: bool,
     action_error: String,
+}
+
+/// Providers of native rows, for result identity.
+const PROVIDER_RECENT: usize = usize::MAX - 6;
+const PROVIDER_SESSION: usize = usize::MAX - 7;
+const PROVIDER_SETTINGS_PAGES: usize = usize::MAX - 8;
+const PROVIDER_DESKTOP_ACTIONS: usize = usize::MAX - 9;
+/// Recently launched apps shown above "All apps" in the empty-query list.
+const RECENT_LIMIT: usize = 5;
+/// The shortest query that lists matching `[Desktop Action]` rows.
+const DESKTOP_ACTION_QUERY_CHARS: usize = 3;
+
+/// The folded names that identify an app besides its title: the desktop-file
+/// id, its last dotted component and the `Exec` program file name.
+fn application_identities(app: &crate::desktop_apps::DesktopApplication) -> Vec<String> {
+    use super::panel_search::fold;
+    let id = app.id.strip_suffix(".desktop").unwrap_or(&app.id);
+    let mut names = vec![fold(id)];
+    if let Some((_, last)) = id.rsplit_once('.') {
+        names.push(fold(last));
+    }
+    names.extend(app.exec_program.as_deref().map(fold));
+    names
 }
 
 pub(super) const APPROXIMATE_KEYWORD_MATCH: &str = "Approximate keyword match";
@@ -187,7 +222,15 @@ fn application_match_summary(app: &crate::desktop_apps::DesktopApplication, quer
             text: &keywords,
         };
         if best_match(&[name, field], query).is_none() {
-            return "Matched app description".into();
+            let identities = application_identities(app);
+            return if super::panel_search::query_tokens(query)
+                .iter()
+                .all(|token| identities.iter().any(|name| name.contains(token)))
+            {
+                "Matched app file or command name".into()
+            } else {
+                "Matched app description".into()
+            };
         }
         let name = app.name.to_ascii_lowercase();
         let keywords = keywords.to_ascii_lowercase();
@@ -255,6 +298,8 @@ impl Session {
             index_revision: 0,
             refreshed: None,
             batches: BTreeMap::new(),
+            session_rows: Arc::default(),
+            settings_pages: None,
             action_running: false,
             action_error: String::new(),
         }
@@ -399,6 +444,12 @@ impl Session {
                 if generation == self.generation {
                     self.action_error = result.err().unwrap_or_default();
                 }
+            }
+            Event::SessionRows { session, rows } if session == self.id => {
+                self.session_rows = rows;
+            }
+            Event::SettingsPages { session, pages } if session == self.id => {
+                self.settings_pages = Some(pages.unwrap_or_default());
             }
             _ => return false,
         }
@@ -571,6 +622,13 @@ impl Session {
                 }
             }
         }
+        if self.open_with.is_none()
+            && matches!(scope, Scope::All | Scope::Apps)
+            && super::panel_search::is_blank_query(text)
+        {
+            entries.extend(self.browse_entries(scope == Scope::All));
+            return entries;
+        }
         let mut native = self.shortcut_entries();
         if matches!(scope, Scope::All | Scope::Windows) {
             native.extend(
@@ -580,53 +638,15 @@ impl Session {
             );
         }
         if matches!(scope, Scope::All | Scope::Apps) {
-            let apps = self
-                .open_with
-                .as_ref()
-                .and_then(|choice| choice.apps.as_deref())
-                .unwrap_or(&self.apps);
-            native.extend(self.app_results.iter().map(|entry| {
+            native.extend(self.app_results.iter().filter_map(|entry| {
                 let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
-                    unreachable!()
+                    return None;
                 };
-                let action = if let Some(choice) = &self.open_with {
-                    Action::OpenWith {
-                        path: choice.path.clone(),
-                        application: id.clone(),
-                    }
-                } else {
-                    Action::Application { id: id.clone() }
-                };
-                let app = entry.path.first().and_then(|&index| apps.get(index));
-                let display_description =
-                    app.map(|app| Arc::<str>::from(application_match_summary(app, text)));
-                let display_detail = app
-                    .and_then(|app| app.comment.as_deref())
-                    .map(str::trim)
-                    .filter(|comment| {
-                        !comment.is_empty() && display_description.as_deref() != Some(*comment)
-                    })
-                    .map(Arc::<str>::from);
-                let description = self.open_with.as_ref().map_or_else(
-                    || "Application".into(),
-                    |choice| format!("Open with · {}", choice.path.display()),
-                );
-                self.entry_with_description(
-                    usize::MAX,
-                    ResultItem {
-                        id: id.clone(),
-                        label: entry.label.clone(),
-                        description,
-                        icon: entry.icon.clone(),
-                        actions: vec![NamedAction {
-                            label: "Open".into(),
-                            action,
-                        }],
-                    },
-                    display_description,
-                    display_detail,
-                )
+                Some(self.installed_row(entry, text, usize::MAX, id.clone(), None))
             }));
+            if self.open_with.is_none() {
+                native.extend(self.desktop_action_entries(text));
+            }
         }
         if self.open_with.is_none() {
             if let Some(batch) = self.batches.get(&1) {
@@ -644,6 +664,20 @@ impl Session {
                         .into_iter()
                         .map(|result| self.entry(usize::MAX - 1, result)),
                 );
+                if let Some(pages) = &self.settings_pages {
+                    native.extend(
+                        launcher::system::page_results(pages, text, scope == Scope::Settings)
+                            .into_iter()
+                            .map(|result| self.entry(PROVIDER_SETTINGS_PAGES, result)),
+                    );
+                }
+            }
+            if scope == Scope::All {
+                native.extend(
+                    launcher::system::session_results(&self.session_rows, text)
+                        .into_iter()
+                        .map(|result| self.entry(PROVIDER_SESSION, result)),
+                );
             }
         }
         let query = super::panel_search::fold(text);
@@ -655,6 +689,11 @@ impl Session {
                     unreachable!()
                 };
                 let mut labels = vec![super::panel_search::fold(&entry.label)];
+                if !target.result.id.starts_with("window:")
+                    && let Some(app) = self.result_application(&target.result)
+                {
+                    labels.extend(application_identities(app));
+                }
                 if let Some(NamedAction {
                     action:
                         Action::FocusWindow {
@@ -727,17 +766,16 @@ impl Session {
                     return false;
                 };
                 let mut fields = vec![entry.label.as_str(), target.result.description.as_str()];
-                if let Some(NamedAction {
-                    action: Action::Application { id },
-                    ..
-                }) = target.result.actions.first()
-                    && let Some(app) = self.apps.iter().find(|app| app.id == *id)
-                {
+                let mut identities = Vec::new();
+                if let Some(app) = self.result_application(&target.result) {
                     fields.extend(app.generic_name.as_deref());
                     fields.extend(app.comment.as_deref());
                     fields.extend(app.keywords.iter().map(String::as_str));
+                    identities = application_identities(app);
                 }
-                let fields: Vec<_> = fields.into_iter().map(super::panel_search::fold).collect();
+                let mut fields: Vec<_> =
+                    fields.into_iter().map(super::panel_search::fold).collect();
+                fields.extend(identities);
                 words
                     .iter()
                     .all(|word| fields.iter().any(|field| field.contains(word)))
@@ -749,10 +787,8 @@ impl Session {
             let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
                 return true;
             };
-            if matches!(
-                target.result.actions.first().map(|a| &a.action),
-                Some(Action::FocusWindow { .. })
-            ) {
+            // Window rows are distinct even for one app; a running app's row is not.
+            if target.result.id.starts_with("window:") {
                 return true;
             }
             target
@@ -788,6 +824,189 @@ impl Session {
             }
         }
         entries
+    }
+
+    /// The installed app a native row launches, switches to or acts on.
+    fn result_application(
+        &self,
+        result: &ResultItem,
+    ) -> Option<&crate::desktop_apps::DesktopApplication> {
+        let id = match &result.actions.first()?.action {
+            Action::Application { id }
+            | Action::AppActionLaunch {
+                application: id, ..
+            }
+            | Action::FocusWindow {
+                application: Some(id),
+                ..
+            } => id,
+            _ => return None,
+        };
+        self.apps.iter().find(|app| &app.id == id)
+    }
+
+    /// One installed-app row. `summary` replaces the match summary.
+    fn installed_row(
+        &self,
+        entry: &PanelMenuEntry,
+        text: &str,
+        provider: usize,
+        id: String,
+        summary: Option<&str>,
+    ) -> PanelMenuEntry {
+        let apps = self
+            .open_with
+            .as_ref()
+            .and_then(|choice| choice.apps.as_deref())
+            .unwrap_or(&self.apps);
+        let PanelMenuEntryTarget::InstalledApp(app_id) = &entry.target else {
+            unreachable!("installed-app rows")
+        };
+        let action = if let Some(choice) = &self.open_with {
+            Action::OpenWith {
+                path: choice.path.clone(),
+                application: app_id.clone(),
+            }
+        } else {
+            Action::Application { id: app_id.clone() }
+        };
+        let app = entry.path.first().and_then(|&index| apps.get(index));
+        let display_description = summary
+            .map(Arc::<str>::from)
+            .or_else(|| app.map(|app| Arc::<str>::from(application_match_summary(app, text))));
+        let display_detail = app
+            .and_then(|app| app.comment.as_deref())
+            .map(str::trim)
+            .filter(|comment| {
+                !comment.is_empty() && display_description.as_deref() != Some(*comment)
+            })
+            .map(Arc::<str>::from);
+        let description = self.open_with.as_ref().map_or_else(
+            || "Application".into(),
+            |choice| format!("Open with · {}", choice.path.display()),
+        );
+        self.entry_with_description(
+            provider,
+            ResultItem {
+                id,
+                label: entry.label.clone(),
+                description,
+                icon: entry.icon.clone(),
+                actions: vec![NamedAction {
+                    label: "Open".into(),
+                    action,
+                }],
+            },
+            display_description,
+            display_detail,
+        )
+    }
+
+    /// The empty-query list: pins and recent apps, then every app A–Z.
+    fn browse_entries(&self, suggestions: bool) -> Vec<PanelMenuEntry> {
+        let mut rows = Vec::new();
+        if suggestions {
+            rows.extend(self.shortcut_entries());
+            let pinned: std::collections::HashSet<_> = self
+                .preferences
+                .shortcuts
+                .iter()
+                .filter(|shortcut| shortcut.pinned)
+                .filter_map(|shortcut| match &shortcut.target {
+                    canopa_launcher::Target::Application { id } => Some(id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let recent = if self.config.history {
+                self.history.recent_applications()
+            } else {
+                Vec::new()
+            };
+            rows.extend(
+                recent
+                    .into_iter()
+                    .filter(|id| !pinned.contains(id))
+                    .filter_map(|id| {
+                        self.app_results.iter().find(|entry| {
+                            matches!(&entry.target, PanelMenuEntryTarget::InstalledApp(app) if app == id)
+                        })
+                    })
+                    .take(RECENT_LIMIT)
+                    .map(|entry| {
+                        let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
+                            unreachable!()
+                        };
+                        self.installed_row(
+                            entry,
+                            "",
+                            PROVIDER_RECENT,
+                            format!("recent:{id}"),
+                            Some("Recent"),
+                        )
+                    }),
+            );
+        }
+        rows.extend(self.app_results.iter().filter_map(|entry| {
+            let PanelMenuEntryTarget::InstalledApp(id) = &entry.target else {
+                return None;
+            };
+            Some(self.installed_row(entry, "", usize::MAX, id.clone(), None))
+        }));
+        rows
+    }
+
+    /// "Firefox — New Private Window" rows for `[Desktop Action]` names that
+    /// the query names literally ("private", or "firefox private").
+    fn desktop_action_entries(&self, text: &str) -> Vec<PanelMenuEntry> {
+        use super::panel_search::{fold, query_tokens};
+        let tokens = query_tokens(text);
+        if tokens
+            .iter()
+            .map(|token| token.chars().count())
+            .sum::<usize>()
+            < DESKTOP_ACTION_QUERY_CHARS
+        {
+            return Vec::new();
+        }
+        let mut rows = Vec::new();
+        for app in &self.apps {
+            let app_name = fold(&app.name);
+            for action in &app.actions {
+                let action_name = fold(&action.name);
+                if !tokens.iter().any(|token| action_name.contains(token))
+                    || !tokens
+                        .iter()
+                        .all(|token| action_name.contains(token) || app_name.contains(token))
+                {
+                    continue;
+                }
+                let icon = action
+                    .icon
+                    .iter()
+                    .chain(app.icon.iter())
+                    .find(|icon| crate::icon_theme::is_valid_icon_reference(icon))
+                    .cloned();
+                rows.push(self.entry_with_description(
+                    PROVIDER_DESKTOP_ACTIONS,
+                    ResultItem {
+                        id: format!("desktop-action:{}:{}", app.id, action.id),
+                        label: format!("{} — {}", app.name, action.name),
+                        description: "Application action".into(),
+                        icon,
+                        actions: vec![NamedAction {
+                            label: action.name.clone(),
+                            action: Action::AppActionLaunch {
+                                application: app.id.clone(),
+                                action: action.id.clone(),
+                            },
+                        }],
+                    },
+                    Some(Arc::from(format!("{} action", app.name))),
+                    None,
+                ));
+            }
+        }
+        rows
     }
 
     fn entry(&self, provider: usize, result: ResultItem) -> PanelMenuEntry {
@@ -940,6 +1159,12 @@ impl Session {
             },
             index_stream,
         )];
+        if self.settings_pages.is_none() {
+            subscriptions.push(iced::Subscription::run_with(
+                PagesKey { session: self.id },
+                pages_stream,
+            ));
+        }
         let (scope, text) = self.query_scope();
         if self.query.len() > launcher::MAX_QUERY_BYTES
             || (text.is_empty() && !matches!(scope, Scope::Extension(_)))
@@ -974,6 +1199,7 @@ impl Session {
                     explicit_calculator: scope == Scope::Calculator,
                     explicit_extension: matches!(scope, Scope::Extension(_)),
                     index: self.index.clone(),
+                    web_template: self.preferences.web_template.clone(),
                 },
                 query_stream,
             ));
@@ -1065,6 +1291,36 @@ fn index_stream(
     ))
 }
 
+/// Waits before a query, so a pause in typing starts a search, not each key.
+const IN_PROCESS_DEBOUNCE: Duration = Duration::from_millis(100);
+const PROCESS_DEBOUNCE: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Hash)]
+struct PagesKey {
+    session: u64,
+}
+
+fn pages_stream(
+    key: &PagesKey,
+) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = Message> + Send + 'static>> {
+    let session = key.session;
+    Box::pin(iced::stream::channel(
+        1,
+        move |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            #[cfg(not(test))]
+            let pages = launcher::system::fetch_pages().await.map(Arc::new);
+            #[cfg(test)]
+            let pages = Err::<Arc<Vec<launcher::system::SettingsPage>>, _>(String::new());
+            let _ = output
+                .send(Message::Panel(PanelEvent::Launcher(Event::SettingsPages {
+                    session,
+                    pages,
+                })))
+                .await;
+        },
+    ))
+}
+
 #[derive(Clone)]
 struct QueryKey {
     session: u64,
@@ -1076,6 +1332,7 @@ struct QueryKey {
     explicit_calculator: bool,
     explicit_extension: bool,
     index: Option<Arc<FileIndex>>,
+    web_template: String,
 }
 impl Hash for QueryKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -1096,7 +1353,21 @@ fn query_stream(
     Box::pin(iced::stream::channel(
         1,
         move |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // Providers that start a process per query (qalc and configured
+            // extensions) wait for a longer pause in typing.
+            let spawns = match key.provider {
+                0 => true,
+                1 => false,
+                provider => !key.config.extensions[provider - 2]
+                    .id
+                    .starts_with("builtin:"),
+            };
+            tokio::time::sleep(if spawns {
+                PROCESS_DEBOUNCE
+            } else {
+                IN_PROCESS_DEBOUNCE
+            })
+            .await;
             let batch = match key.provider {
                 0 => launcher::calculate(&key.query, key.explicit_calculator).await,
                 1 => {
@@ -1119,7 +1390,21 @@ fn query_stream(
                             _ => {}
                         }
                     }
-                    launcher::query_extension(&extension, &key.query).await
+                    if extension.id.starts_with("builtin:")
+                        && let Some(mode) = extension.argv.get(2).cloned()
+                    {
+                        let template = extension.argv.get(3).cloned().unwrap_or(key.web_template);
+                        let query = key.query.clone();
+                        tokio::task::spawn_blocking(move || {
+                            launcher::bundled::answer(&mode, &template, &query)
+                        })
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default()
+                    } else {
+                        launcher::query_extension(&extension, &key.query).await
+                    }
                 }
             };
             let _ = output
@@ -1180,6 +1465,20 @@ impl super::App {
         if active.tracks_history() {
             self.launcher_history.start();
         }
+        let rows = launcher::system::offered_session_rows(
+            &self.config.menus,
+            &self.session.capabilities,
+            launcher::system::installed_lock_command(),
+        );
+        if *active.session_rows != rows {
+            self.foreground.launcher_event(Event::SessionRows {
+                session: active.id,
+                rows: Arc::new(rows),
+            });
+        }
+        let Some(active) = self.foreground.launcher() else {
+            return;
+        };
         let windows = launcher::windows::snapshot(self.niri.state());
         if active.needs_context(
             &windows,
@@ -1276,6 +1575,12 @@ impl super::App {
             }
             event => event,
         };
+        if let Event::SettingsPages {
+            pages: Ok(pages), ..
+        } = &event
+        {
+            self.launcher_settings_pages = Some(pages.clone());
+        }
         if let Event::Indexed {
             session,
             index,
@@ -1312,6 +1617,18 @@ impl super::App {
     }
 
     pub(super) fn seed_launcher_index(&mut self) {
+        if let Some(active) = self
+            .foreground
+            .launcher()
+            .filter(|active| active.settings_pages.is_none())
+            && let Some(pages) = &self.launcher_settings_pages
+        {
+            let event = Event::SettingsPages {
+                session: active.id,
+                pages: Ok(pages.clone()),
+            };
+            self.foreground.launcher_event(event);
+        }
         if let Some(active) = self
             .foreground
             .launcher()
@@ -1370,6 +1687,27 @@ impl super::App {
                 crate::config::PanelAction::OpenProvider(name.clone()),
             );
         }
+        if let Action::Panel(action) = &named.action {
+            let Some(tree) = self.foreground.active_panel_tree().cloned() else {
+                return iced::Task::none();
+            };
+            // A confirmation menu replaces the launcher; anything else closes it.
+            let replaces = matches!(action, crate::config::PanelAction::OpenMenu(_));
+            let task = self.dispatch_panel_action(tree.origin_window, tree.origin, action.clone());
+            if replaces {
+                return task;
+            }
+            return iced::Task::batch([
+                task,
+                iced::Task::done(Message::Panel(PanelEvent::Launcher(
+                    Event::ActionFinished {
+                        session: target.session,
+                        generation: target.generation,
+                        result: Ok(()),
+                    },
+                ))),
+            ]);
+        }
         if matches!(named.action, Action::ClearHistory) {
             return match self
                 .launcher_history
@@ -1397,109 +1735,229 @@ impl super::App {
                 result,
             }))
         };
+        let (request_token, token) = if matches!(
+            named.action,
+            Action::Application { .. }
+                | Action::AppActionLaunch { .. }
+                | Action::OpenWith { .. }
+                | Action::Reveal { .. }
+        ) {
+            self.launcher_activation_token()
+        } else {
+            (iced::Task::none(), None)
+        };
         match named.action {
             Action::Copy { text } => {
                 iced::clipboard::write(text).chain(iced::Task::done(finished(Ok(()))))
             }
-            action => iced::Task::perform(
-                async move {
-                    let result = match action {
-                        Action::OpenUrl { url } => {
-                            if !canopa_launcher::valid_url(&url) {
-                                Err(std::io::Error::other("Invalid web URL"))
-                            } else {
-                                crate::command::launch_application(&[
-                                    "gio".into(),
-                                    "open".into(),
-                                    url,
-                                ])
-                                .await
-                                .map(|_| ())
+            action => iced::Task::batch([
+                request_token,
+                iced::Task::perform(
+                    async move {
+                        let token = receive_token(token).await;
+                        let result = match action {
+                            Action::OpenUrl { url } => {
+                                if !canopa_launcher::valid_url(&url) {
+                                    Err(std::io::Error::other("Invalid web URL"))
+                                } else {
+                                    crate::command::launch_application(&[
+                                        "gio".into(),
+                                        "open".into(),
+                                        url,
+                                    ])
+                                    .await
+                                    .map(|_| ())
+                                }
                             }
-                        }
-                        Action::Application { id } => {
-                            #[cfg(not(test))]
-                            {
-                                let app = tokio::task::spawn_blocking(move || {
-                                    crate::desktop_apps::discover_installed_applications()
-                                        .unwrap_or_default()
-                                        .into_iter()
-                                        .find(|app| app.id == id)
-                                })
-                                .await
-                                .ok()
-                                .flatten();
-                                match app {
+                            Action::Application { id } => {
+                                #[cfg(not(test))]
+                                {
+                                    match installed_application(id).await {
                                     Some(app) => {
                                         crate::command::spawn_desktop_application_fire_and_forget(
-                                            &app,
+                                            &app, token,
                                         )
                                         .await
                                         .map(|_| ())
                                         .map_err(|error| launch_failure(&app.name, &error))
                                     }
-                                    None => Err(std::io::Error::other(LaunchFailure(
-                                        "Application is no longer available".into(),
-                                    ))),
+                                    None => Err(unavailable_application()),
+                                }
+                                }
+                                #[cfg(test)]
+                                {
+                                    let _ = (id, token);
+                                    Ok(())
                                 }
                             }
-                            #[cfg(test)]
-                            {
-                                let _ = id;
-                                Ok(())
+                            Action::AppActionLaunch {
+                                application,
+                                action,
+                            } => {
+                                #[cfg(not(test))]
+                                {
+                                    match installed_application(application).await {
+                                        Some(app) => {
+                                            let name = app
+                                                .actions
+                                                .iter()
+                                                .find(|known| known.id == action)
+                                                .map_or_else(
+                                                    || app.name.clone(),
+                                                    |known| {
+                                                        format!("{} — {}", app.name, known.name)
+                                                    },
+                                                );
+                                            crate::command::launch_desktop_action(
+                                                &app, &action, token,
+                                            )
+                                            .await
+                                            .map(|_| ())
+                                            .map_err(|error| launch_failure(&name, &error))
+                                        }
+                                        None => Err(unavailable_application()),
+                                    }
+                                }
+                                #[cfg(test)]
+                                {
+                                    let _ = (application, action, token);
+                                    Ok(())
+                                }
                             }
-                        }
-                        Action::FocusWindow { id, .. } => crate::command::focus_window(id).await,
-                        Action::Reveal { path } => reveal_file(&path).await,
-                        Action::Preview { path } => crate::command::launch_application(&[
-                            "canopa-files".into(),
-                            "--quick-look".into(),
-                            file_uri(&path),
-                        ])
-                        .await
-                        .map(|_| ()),
-                        Action::OpenWith { path, application } => {
-                            open_with_application(&path, &application).await
-                        }
-                        Action::Open { path } => {
-                            let available = tokio::task::spawn_blocking({
-                                let path = path.clone();
-                                move || path.exists()
-                            })
+                            Action::SettingsPage { id } => {
+                                #[cfg(not(test))]
+                                {
+                                    launcher::system::open_page(&id).await
+                                }
+                                #[cfg(test)]
+                                {
+                                    let _ = id;
+                                    Ok(())
+                                }
+                            }
+                            Action::FocusWindow { id, .. } => {
+                                crate::command::focus_window(id).await
+                            }
+                            Action::Reveal { path } => reveal_file(&path, token).await,
+                            Action::Preview { path } => crate::command::launch_application(&[
+                                "canopa-files".into(),
+                                "--quick-look".into(),
+                                file_uri(&path),
+                            ])
                             .await
-                            .unwrap_or(false);
-                            if !available {
-                                Err(std::io::Error::other(
-                                    "File or folder is no longer available",
-                                ))
-                            } else {
-                                crate::command::launch_application(&[
-                                    "gio".into(),
-                                    "open".into(),
-                                    file_uri(&path),
-                                ])
-                                .await
-                                .map(|_| ())
+                            .map(|_| ()),
+                            Action::OpenWith { path, application } => {
+                                open_with_application(&path, &application, token).await
                             }
-                        }
-                        Action::Launch { argv } => {
-                            crate::command::launch_application(&argv).await.map(|_| ())
-                        }
-                        Action::Clipboard(_)
-                        | Action::Copy { .. }
-                        | Action::ClearHistory
-                        | Action::Provider { .. }
-                        | Action::ChooseApplication { .. }
-                        | Action::TogglePin { .. }
-                        | Action::EditAlias { .. }
-                        | Action::SaveAlias { .. } => unreachable!(),
-                    };
-                    result.map_err(|error| action_error_message(&error))
-                },
-                finished,
-            ),
+                            Action::Open { path } => {
+                                let available = tokio::task::spawn_blocking({
+                                    let path = path.clone();
+                                    move || path.exists()
+                                })
+                                .await
+                                .unwrap_or(false);
+                                if !available {
+                                    Err(std::io::Error::other(
+                                        "File or folder is no longer available",
+                                    ))
+                                } else {
+                                    crate::command::launch_application(&[
+                                        "gio".into(),
+                                        "open".into(),
+                                        file_uri(&path),
+                                    ])
+                                    .await
+                                    .map(|_| ())
+                                }
+                            }
+                            Action::Launch { argv } => {
+                                crate::command::launch_application(&argv).await.map(|_| ())
+                            }
+                            Action::Clipboard(_)
+                            | Action::Copy { .. }
+                            | Action::ClearHistory
+                            | Action::Panel(_)
+                            | Action::Provider { .. }
+                            | Action::ChooseApplication { .. }
+                            | Action::TogglePin { .. }
+                            | Action::EditAlias { .. }
+                            | Action::SaveAlias { .. } => unreachable!(),
+                        };
+                        result.map_err(|error| action_error_message(&error))
+                    },
+                    finished,
+                ),
+            ]),
         }
     }
+
+    /// Asks the compositor for an activation token for the launcher's
+    /// surface. The keyboard serial of the key that chose the result is
+    /// recorded, so keyboard-only selections get one too.
+    fn launcher_activation_token(
+        &self,
+    ) -> (
+        iced::Task<Message>,
+        Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+    ) {
+        use iced_layershell::actions::{
+            ActivationTokenCallback, LayerShellCustomAction, LayerShellCustomActionWithId,
+        };
+        let Some(window) = self.foreground.active_panel_window() else {
+            return (iced::Task::none(), None);
+        };
+        let (complete, received) = tokio::sync::oneshot::channel();
+        let complete = std::sync::Mutex::new(Some(complete));
+        let callback = ActivationTokenCallback::new(move |token| {
+            if let Some(complete) = complete.lock().ok().and_then(|mut slot| slot.take()) {
+                let _ = complete.send(token);
+            }
+        });
+        (
+            iced::Task::done(Message::LayerShell(LayerShellCustomActionWithId::new(
+                Some(window),
+                LayerShellCustomAction::RequestActivationToken {
+                    app_id: String::new(),
+                    callback,
+                },
+            ))),
+            Some(received),
+        )
+    }
+}
+
+/// Bounded activation tokens arrive within a second, or not at all.
+const ACTIVATION_TOKEN_BYTES: usize = 4096;
+
+async fn receive_token(
+    receiver: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+) -> Option<String> {
+    tokio::time::timeout(Duration::from_secs(1), receiver?)
+        .await
+        .ok()?
+        .ok()
+        .flatten()
+        .filter(|token| {
+            !token.is_empty() && token.len() <= ACTIVATION_TOKEN_BYTES && !token.contains('\0')
+        })
+}
+
+#[cfg(not(test))]
+async fn installed_application(id: String) -> Option<crate::desktop_apps::DesktopApplication> {
+    tokio::task::spawn_blocking(move || {
+        crate::desktop_apps::discover_installed_applications()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|app| app.id == id)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+#[cfg(not(test))]
+fn unavailable_application() -> std::io::Error {
+    std::io::Error::other(LaunchFailure("Application is no longer available".into()))
 }
 
 /// An action failure whose text the launcher status shows as is.
@@ -1533,7 +1991,9 @@ fn action_error_message(error: &std::io::Error) -> String {
         )
 }
 
-async fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
+/// `ShowItems` with the activation token as its startup id, so an open
+/// file manager window is raised.
+async fn reveal_file(path: &std::path::Path, token: Option<String>) -> std::io::Result<()> {
     tokio::time::timeout(Duration::from_secs(3), async {
         let connection = zbus::Connection::session()
             .await
@@ -1547,36 +2007,32 @@ async fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
         .await
         .map_err(std::io::Error::other)?;
         proxy
-            .call::<_, _, ()>("ShowItems", &(vec![file_uri(path)], String::new()))
+            .call::<_, _, ()>(
+                "ShowItems",
+                &(vec![file_uri(path)], token.unwrap_or_default()),
+            )
             .await
             .map_err(std::io::Error::other)
     })
     .await
     .map_err(|_| std::io::Error::other("File manager did not respond"))?
 }
-async fn open_with_application(path: &std::path::Path, id: &str) -> std::io::Result<()> {
+async fn open_with_application(
+    path: &std::path::Path,
+    id: &str,
+    token: Option<String>,
+) -> std::io::Result<()> {
     #[cfg(test)]
     {
-        let _ = (path, id);
+        let _ = (path, id, token);
         Ok(())
     }
     #[cfg(not(test))]
     {
-        let id = id.to_string();
-        let path = path.to_path_buf();
-        let application = tokio::task::spawn_blocking(move || {
-            crate::desktop_apps::discover_installed_applications()
-                .unwrap_or_default()
-                .into_iter()
-                .find(|app| app.id == id)
-        })
-        .await
-        .ok()
-        .flatten()
-        .ok_or_else(|| {
-            std::io::Error::other(LaunchFailure("Application is no longer available".into()))
-        })?;
-        crate::command::open_desktop_application(&application, &[file_uri(&path)])
+        let application = installed_application(id.to_owned())
+            .await
+            .ok_or_else(unavailable_application)?;
+        crate::command::open_desktop_application(&application, &[file_uri(path)], token)
             .await
             .map(|_| ())
             .map_err(|error| launch_failure(&application.name, &error))
@@ -1966,5 +2422,259 @@ mod tests {
             b"/tmp/-odd '?#\n\xff".to_vec(),
         ));
         assert_eq!(file_uri(&path), "file:///tmp/-odd%20%27%3F%23%0A%FF");
+    }
+
+    fn firefox() -> crate::desktop_apps::DesktopApplication {
+        let mut app = application("firefox.desktop", "Firefox");
+        app.exec_program = Some("firefox".into());
+        app.actions = vec![
+            crate::desktop_apps::DesktopAction {
+                id: "new-window".into(),
+                name: "New Window".into(),
+                icon: None,
+                exec: Some("firefox --new-window".into()),
+            },
+            crate::desktop_apps::DesktopAction {
+                id: "new-private-window".into(),
+                name: "New Private Window".into(),
+                icon: None,
+                exec: Some("firefox --private-window".into()),
+            },
+        ];
+        app
+    }
+
+    fn primary(entry: &PanelMenuEntry) -> &Action {
+        let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
+            panic!("launcher row")
+        };
+        &target.result.actions[0].action
+    }
+
+    fn action_labels(entry: &PanelMenuEntry) -> Vec<String> {
+        let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
+            panic!("launcher row")
+        };
+        target
+            .result
+            .actions
+            .iter()
+            .map(|a| a.label.clone())
+            .collect()
+    }
+
+    #[test]
+    fn desktop_actions_are_app_actions_and_rows_when_the_query_names_them() {
+        let mut session = Session::new(
+            Config::default(),
+            vec![firefox(), application("editor.desktop", "Private Notes")],
+        );
+        session.search_changed("firefox");
+        let entries = session.entries();
+        assert_eq!(entries[0].label, "Firefox");
+        assert!(!entries.iter().any(|entry| entry.label.contains('—')));
+        assert_eq!(
+            &action_labels(&entries[0])[..3],
+            ["Open", "New Window", "New Private Window"]
+        );
+
+        session.search_changed("private");
+        let labels: Vec<_> = session.entries().iter().map(|e| e.label.clone()).collect();
+        assert!(
+            labels.contains(&"Firefox — New Private Window".to_owned()),
+            "{labels:?}"
+        );
+        // An app whose own name matches still ranks first.
+        assert_eq!(labels[0], "Private Notes");
+        let row = session
+            .entries()
+            .into_iter()
+            .find(|entry| entry.label == "Firefox — New Private Window")
+            .unwrap();
+        assert!(matches!(
+            primary(&row),
+            Action::AppActionLaunch { application, action }
+                if application == "firefox.desktop" && action == "new-private-window"
+        ));
+
+        session.search_changed("firefox private");
+        assert_eq!(session.entries()[0].label, "Firefox — New Private Window");
+        // Short queries do not list every action that contains a letter.
+        session.search_changed("ne");
+        assert!(
+            !session
+                .entries()
+                .iter()
+                .any(|entry| entry.label.contains('—'))
+        );
+    }
+
+    #[test]
+    fn running_apps_switch_to_their_window_and_keep_a_new_window() {
+        let mut single = application("org.example.Single.desktop", "Single");
+        single.single_main_window = true;
+        let mut session = Session::new(Config::default(), vec![firefox(), single]);
+        let window = |id, app: &str| launcher::windows::Window {
+            id,
+            title: "Window".into(),
+            application: Some(app.into()),
+            workspace: "Workspace 1".into(),
+        };
+        session.apply(Event::Context {
+            session: session.id,
+            windows: vec![window(7, "firefox"), window(9, "org.example.Single")],
+            history: Arc::new(Default::default()),
+            error: None,
+        });
+        session.search_changed("apps firefox");
+        let row = session.entries().remove(0);
+        assert!(matches!(
+            primary(&row),
+            Action::FocusWindow { id: 7, application: Some(app) } if app == "firefox.desktop"
+        ));
+        assert_eq!(
+            &action_labels(&row)[..3],
+            ["Switch to", "New Window", "New Private Window"]
+        );
+        session.search_changed("apps single");
+        let row = session.entries().remove(0);
+        assert_eq!(action_labels(&row)[0], "Switch to");
+        assert!(
+            !action_labels(&row)
+                .iter()
+                .any(|label| label == "New window")
+        );
+    }
+
+    #[test]
+    fn empty_query_browses_pins_recents_and_every_app_alphabetically() {
+        let apps: Vec<_> = (0..30)
+            .map(|index| {
+                application(
+                    &format!("app{index:02}.desktop"),
+                    &format!("App {index:02}"),
+                )
+            })
+            .collect();
+        let mut session = Session::new(Config::default(), apps);
+        let mut runtime = launcher::history::Runtime::default();
+        runtime.record("app:app07.desktop".into());
+        runtime.record("app:app03.desktop".into());
+        runtime.record("app:gone.desktop".into());
+        session.apply(Event::Context {
+            session: session.id,
+            windows: vec![],
+            history: runtime.snapshot.clone(),
+            error: None,
+        });
+        let mut preferences = canopa_launcher::Preferences::default();
+        preferences.shortcuts.push(canopa_launcher::Shortcut {
+            target: canopa_launcher::Target::Application {
+                id: "app07.desktop".into(),
+            },
+            label: "App 07".into(),
+            alias: String::new(),
+            pinned: true,
+            icon: None,
+        });
+        session.set_preferences(Arc::new(preferences), None);
+        session.search_changed("");
+        let entries = session.entries();
+        // One pin, one recent (the pinned app is not repeated), then all 30.
+        assert_eq!(entries.len(), 32);
+        assert_eq!(entries[0].label, "App 07");
+        let PanelMenuEntryTarget::Launcher(recent) = &entries[1].target else {
+            panic!()
+        };
+        assert_eq!(entries[1].label, "App 03");
+        assert_eq!(recent.display_description.as_deref(), Some("Recent"));
+        let names: Vec<_> = entries[2..].iter().map(|e| e.label.clone()).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+        assert_eq!(names.len(), 30);
+
+        session.search_changed("apps ");
+        assert_eq!(session.entries().len(), 30);
+        // A search still shows the best 20.
+        session.search_changed("app");
+        assert_eq!(session.entries().len(), launcher::RESULT_LIMIT);
+    }
+
+    #[test]
+    fn apps_match_their_desktop_file_id_and_exec_program() {
+        let mut files = application("org.gnome.Nautilus.desktop", "Files");
+        files.exec_program = Some("nautilus".into());
+        let mut code = application("code-oss.desktop", "Visual Studio Code");
+        code.exec_program = Some("code-oss".into());
+        let mut session = Session::new(
+            Config::default(),
+            vec![files, code, application("notes.desktop", "Notes")],
+        );
+        session.search_changed("nautilus");
+        let entries = session.entries();
+        assert_eq!(entries[0].label, "Files");
+        let PanelMenuEntryTarget::Launcher(target) = &entries[0].target else {
+            panic!()
+        };
+        assert_eq!(
+            target.display_description.as_deref(),
+            Some("Matched app file or command name")
+        );
+        session.search_changed("code-oss");
+        assert_eq!(session.entries()[0].label, "Visual Studio Code");
+    }
+
+    #[test]
+    fn session_rows_and_settings_pages_are_searchable() {
+        use crate::config::PanelAction;
+        let mut session = Session::new(Config::default(), vec![]);
+        session.apply(Event::SessionRows {
+            session: session.id,
+            rows: Arc::new(vec![
+                launcher::system::SessionRow {
+                    command: launcher::system::SessionCommand::Suspend,
+                    action: PanelAction::Session(crate::session::SessionAction::Suspend),
+                },
+                launcher::system::SessionRow {
+                    command: launcher::system::SessionCommand::PowerOff,
+                    action: PanelAction::OpenMenu("Power off?".into()),
+                },
+            ]),
+        });
+        session.search_changed("shut down");
+        let entries = session.entries();
+        assert_eq!(entries[0].label, "Power off…");
+        assert!(
+            matches!(primary(&entries[0]), Action::Panel(PanelAction::OpenMenu(name)) if name == "Power off?")
+        );
+        session.search_changed("suspend");
+        assert_eq!(session.entries()[0].label, "Suspend");
+        // Session rows never appear unasked.
+        session.search_changed("");
+        assert!(session.entries().is_empty());
+
+        session.apply(Event::SettingsPages {
+            session: session.id,
+            pages: Ok(Arc::new(vec![launcher::system::SettingsPage {
+                id: "night-light".into(),
+                title: "Night light".into(),
+                description: String::new(),
+                icon: None,
+                keywords: vec!["blue light".into()],
+            }])),
+        });
+        session.search_changed("blue light");
+        assert!(matches!(
+            primary(&session.entries()[0]),
+            Action::SettingsPage { id } if id == "night-light"
+        ));
+        session.search_changed("settings ");
+        assert!(
+            session
+                .entries()
+                .iter()
+                .any(|entry| entry.label == "Night light settings")
+        );
     }
 }

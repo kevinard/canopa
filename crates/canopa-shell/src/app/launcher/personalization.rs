@@ -217,9 +217,68 @@ impl Session {
             })
             .collect()
     }
+    /// An app row of a running app switches to its window first and keeps a
+    /// "New window" action unless the entry has a single main window. Its
+    /// `[Desktop Action]` groups follow as further actions.
+    fn add_application_actions(&self, result: &mut ResultItem) {
+        let Some(NamedAction {
+            action: Action::Application { id },
+            ..
+        }) = result.actions.first()
+        else {
+            return;
+        };
+        let Some(app) = self.apps.iter().find(|app| &app.id == id) else {
+            return;
+        };
+        let mut desktop: Vec<_> = app
+            .actions
+            .iter()
+            .map(|action| NamedAction {
+                label: action.name.clone(),
+                action: Action::AppActionLaunch {
+                    application: app.id.clone(),
+                    action: action.id.clone(),
+                },
+            })
+            .collect();
+        let mut actions = Vec::new();
+        match launcher::windows::window_for(&self.windows, &self.apps, app) {
+            Some(window) => {
+                actions.push(NamedAction {
+                    label: "Switch to".into(),
+                    action: Action::FocusWindow {
+                        id: window.id,
+                        application: Some(app.id.clone()),
+                    },
+                });
+                if !app.single_main_window {
+                    match app
+                        .actions
+                        .iter()
+                        .position(|action| action.id == "new-window")
+                    {
+                        Some(position) => actions.push(desktop.remove(position)),
+                        None => actions.push(NamedAction {
+                            label: "New window".into(),
+                            action: Action::Application { id: app.id.clone() },
+                        }),
+                    }
+                }
+                result.description = "Running application".into();
+            }
+            None => actions.push(result.actions[0].clone()),
+        }
+        actions.extend(desktop);
+        actions.extend(result.actions.drain(1..));
+        result.actions = actions;
+    }
     pub fn decorate(&self, result: &mut ResultItem) {
         if self.in_child() {
             return;
+        }
+        if !result.id.starts_with("window:") {
+            self.add_application_actions(result);
         }
         let Some(target) = result.actions.first().and_then(|a| saved_target(&a.action)) else {
             return;

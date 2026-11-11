@@ -5,6 +5,8 @@ pub enum Command {
     PrintVersion,
     ClipboardFrame(crate::launcher::clipboard::Kind),
     LauncherExtension(String, Option<String>),
+    /// `--app-scope`: start an application in its own named systemd scope.
+    AppScope(crate::command::app_scope::Request),
     HardwarePanel(String),
     Reload,
     Lock,
@@ -57,6 +59,18 @@ impl Default for DmenuOptions {
 }
 
 pub fn parse() -> Command {
+    let mut args = std::env::args_os().skip(1).peekable();
+    // Application arguments need not be UTF-8, so this mode parses them raw.
+    if args
+        .peek()
+        .is_some_and(|word| word == crate::command::app_scope::FLAG)
+    {
+        args.next();
+        return match crate::command::app_scope::parse(args) {
+            Ok(request) => Command::AppScope(request),
+            Err(message) => Command::UsageError(message),
+        };
+    }
     parse_args(std::env::args().skip(1))
 }
 

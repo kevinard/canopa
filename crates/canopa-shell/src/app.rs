@@ -65,6 +65,8 @@ pub(crate) struct App {
     foreground: foreground::Foreground,
     panel_icons: panel_icons::PanelIcons,
     launcher_files: Option<launcher::CachedIndex>,
+    /// The Settings page registry, read once per Shell process.
+    launcher_settings_pages: Option<std::sync::Arc<Vec<crate::launcher::system::SettingsPage>>>,
     launcher_history: crate::launcher::history::Runtime,
     launcher_clipboard: crate::launcher::clipboard::Runtime,
     launcher_preferences: crate::launcher::preferences::Runtime,
@@ -343,6 +345,7 @@ impl App {
             foreground: foreground::Foreground::default(),
             panel_icons: panel_icons::PanelIcons::default(),
             launcher_files: None,
+            launcher_settings_pages: None,
             launcher_history: Default::default(),
             launcher_clipboard: Default::default(),
             launcher_preferences: Default::default(),

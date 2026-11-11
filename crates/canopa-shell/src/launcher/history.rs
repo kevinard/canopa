@@ -65,6 +65,16 @@ impl Snapshot {
             .sort_by_key(|entry| std::cmp::Reverse(entry.last));
         self.entries.truncate(LIMIT);
     }
+    /// Desktop ids of launched apps, most recent first.
+    pub fn recent_applications(&self) -> Vec<&str> {
+        let mut entries: Vec<_> = self
+            .entries
+            .iter()
+            .filter_map(|entry| Some((entry.last, entry.key.strip_prefix("app:")?)))
+            .collect();
+        entries.sort_by_key(|(last, _)| std::cmp::Reverse(*last));
+        entries.into_iter().map(|(_, id)| id).collect()
+    }
     pub fn boost(&self, key: Option<&str>) -> u64 {
         key.and_then(|key| self.entries.iter().find(|entry| entry.key == key))
             .map(|entry| {
@@ -288,6 +298,9 @@ pub(crate) fn key(action: &super::Action) -> Option<String> {
     use super::Action;
     match action {
         Action::Application { id }
+        | Action::AppActionLaunch {
+            application: id, ..
+        }
         | Action::OpenWith {
             application: id, ..
         } => Some(format!("app:{id}")),

@@ -33,6 +33,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::PrintVersion => "version",
         cli::Command::ClipboardFrame(_) => "clipboard-frame",
         cli::Command::LauncherExtension(..) => "launcher-extension",
+        cli::Command::AppScope(_) => "app-scope",
         cli::Command::HardwarePanel(_) => "hardware-panel",
         cli::Command::Reload => "reload",
         cli::Command::Lock => "lock",
@@ -52,11 +53,15 @@ fn main() {
     if let cli::Command::ClipboardFrame(kind) = command {
         std::process::exit(i32::from(launcher::clipboard::write_frame(kind).is_err()));
     }
+    // Runs once per launch before the application; keep it free of logging setup.
+    if let cli::Command::AppScope(request) = command {
+        std::process::exit(command::app_scope::run(request));
+    }
     let diagnostics = diagnostics::init();
     diagnostics::log_startup(cli_mode_label(&command), &diagnostics);
 
     match command {
-        cli::Command::ClipboardFrame(_) => unreachable!(),
+        cli::Command::ClipboardFrame(_) | cli::Command::AppScope(_) => unreachable!(),
         cli::Command::LauncherExtension(mode, template) => {
             if let Err(error) = launcher::bundled::run(&mode, template.as_deref()) {
                 eprintln!("canopa-shell: {error}");

@@ -11,6 +11,7 @@ pub(crate) mod history;
 mod math;
 pub(crate) mod preferences;
 mod process;
+pub(crate) mod system;
 pub(crate) mod windows;
 
 use serde::{Deserialize, Serialize};
@@ -89,6 +90,20 @@ pub enum Action {
     ClearHistory,
     #[serde(skip)]
     Application {
+        id: String,
+    },
+    /// One `[Desktop Action]` of an installed application.
+    #[serde(skip)]
+    AppActionLaunch {
+        application: String,
+        action: String,
+    },
+    /// A session row: lock, suspend, or a confirmation menu.
+    #[serde(skip)]
+    Panel(crate::config::PanelAction),
+    /// A Settings page id, opened through `org.canopa.Settings.OpenPage`.
+    #[serde(skip)]
+    SettingsPage {
         id: String,
     },
     #[serde(skip)]

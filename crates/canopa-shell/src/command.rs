@@ -247,10 +247,13 @@ pub fn spawn_command_with_timeout_fire_and_forget(
     Ok(SpawnResult::Spawned)
 }
 
+pub(crate) mod app_scope;
 mod applications;
 pub use applications::{focus_window, launch_application};
 #[cfg(not(test))]
-pub use applications::{open_desktop_application, spawn_desktop_application_fire_and_forget};
+pub use applications::{
+    launch_desktop_action, open_desktop_application, spawn_desktop_application_fire_and_forget,
+};
 
 pub fn spawn_configured_command_fire_and_forget(
     command: &crate::config::ConfiguredCommand,

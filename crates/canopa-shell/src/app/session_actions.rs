@@ -104,6 +104,12 @@ impl App {
         if !self.uses_session_actions() {
             return Task::none();
         }
+        self.query_session_capabilities()
+    }
+
+    /// Re-reads `Can*` even when no menu or button offers a session action;
+    /// the launcher's session rows need the answers too.
+    fn query_session_capabilities(&self) -> Task<Message> {
         let connection = self.shared.dbus.system.clone();
         Task::perform(
             async move {
@@ -129,6 +135,12 @@ impl App {
                 let Some(menu) = self.config.menus.iter().find(|menu| &menu.name == name) else {
                     return Task::none();
                 };
+                if matches!(
+                    menu.source.as_ref().map(|source| &source.kind),
+                    Some(crate::config::MenuSourceKind::Launcher(_))
+                ) {
+                    return self.query_session_capabilities();
+                }
                 let mut actions = menu_actions(menu);
                 actions.dedup();
                 let connection = self.shared.dbus.system.clone();

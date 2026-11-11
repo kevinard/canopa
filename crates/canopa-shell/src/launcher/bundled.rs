@@ -292,6 +292,20 @@ struct Request {
     query: String,
     limit: usize,
 }
+/// A bundled extension's answer, computed in the Shell instead of a process
+/// per query. `mode` is the extension's argv mode, such as `web-search`.
+pub fn answer(mode: &str, template: &str, query: &str) -> Option<Batch> {
+    let mut batch = match mode {
+        "web" | "web-search" => web(query, mode == "web-search", template),
+        "date-time" | "date-time-search" => {
+            datetime(query, mode == "date-time-search", Local::now())
+        }
+        _ => return None,
+    };
+    batch.results.truncate(super::RESULT_LIMIT);
+    Some(batch)
+}
+
 pub fn run(mode: &str, template: Option<&str>) -> Result<(), String> {
     let mut input = String::new();
     io::stdin()
@@ -307,17 +321,12 @@ pub fn run(mode: &str, template: Option<&str>) -> Result<(), String> {
     }
     let prefs = Preferences::read(&canopa_launcher::preferences_path().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
-    let mut batch = match mode {
-        "web" | "web-search" => web(
-            &request.query,
-            mode == "web-search",
-            template.unwrap_or(&prefs.web_template),
-        ),
-        "date-time" | "date-time-search" => {
-            datetime(&request.query, mode == "date-time-search", Local::now())
-        }
-        _ => return Err("Unknown bundled extension".into()),
-    };
+    let mut batch = answer(
+        mode,
+        template.unwrap_or(&prefs.web_template),
+        &request.query,
+    )
+    .ok_or("Unknown bundled extension")?;
     batch.results.truncate(request.limit);
     serde_json::to_writer(
         io::stdout(),

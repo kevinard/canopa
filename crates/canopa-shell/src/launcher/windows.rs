@@ -48,11 +48,44 @@ pub(crate) fn snapshot(state: &NiriState) -> Vec<Window> {
     windows
 }
 
+/// Whether a window's app id names `app`: its desktop id, or its
+/// `StartupWMClass`, ignoring case.
+pub(crate) fn belongs_to(app_id: &str, app: &DesktopApplication) -> bool {
+    let app_id = app_id.trim_end_matches(".desktop");
+    app.id
+        .trim_end_matches(".desktop")
+        .eq_ignore_ascii_case(app_id)
+        || app
+            .startup_wm_class
+            .as_deref()
+            .is_some_and(|class| class.eq_ignore_ascii_case(app_id))
+}
+
 fn application<'a>(id: &str, apps: &'a [DesktopApplication]) -> Option<&'a DesktopApplication> {
-    apps.iter().find(|app| {
-        app.id
-            .trim_end_matches(".desktop")
-            .eq_ignore_ascii_case(id.trim_end_matches(".desktop"))
+    // An exact desktop id wins over another entry's StartupWMClass.
+    apps.iter()
+        .find(|app| {
+            app.id
+                .trim_end_matches(".desktop")
+                .eq_ignore_ascii_case(id.trim_end_matches(".desktop"))
+        })
+        .or_else(|| apps.iter().find(|app| belongs_to(id, app)))
+}
+
+/// The window "Switch to" focuses for `app`: the oldest of its windows, which
+/// is usually its main window. Windows of another entry with that exact id
+/// are not counted.
+pub(crate) fn window_for<'a>(
+    windows: &'a [Window],
+    apps: &[DesktopApplication],
+    app: &DesktopApplication,
+) -> Option<&'a Window> {
+    windows.iter().find(|window| {
+        window
+            .application
+            .as_deref()
+            .and_then(|id| application(id, apps))
+            .is_some_and(|owner| owner.id == app.id)
     })
 }
 
@@ -146,5 +179,42 @@ mod tests {
         }
         assert!(results(&[], &[], "editor").is_empty());
         assert!(results(&windows, &[], "missing").is_empty());
+    }
+
+    #[test]
+    fn windows_belong_to_apps_by_desktop_id_or_startup_wm_class() {
+        let app = |id: &str, class: Option<&str>| DesktopApplication {
+            id: id.into(),
+            name: id.into(),
+            startup_wm_class: class.map(Into::into),
+            ..Default::default()
+        };
+        let apps = vec![
+            app("org.example.Editor.desktop", None),
+            app("chromium.desktop", Some("Chromium-browser")),
+            app("chromium-browser.desktop", None),
+        ];
+        let window = |id: u64, app_id: &str| Window {
+            id,
+            title: String::new(),
+            application: Some(app_id.into()),
+            workspace: String::new(),
+        };
+        let windows = vec![
+            window(3, "chromium-browser"),
+            window(5, "org.example.editor"),
+            window(7, "org.example.Editor"),
+        ];
+        assert_eq!(window_for(&windows, &apps, &apps[0]).map(|w| w.id), Some(5));
+        // The exact desktop id claims the window before another StartupWMClass.
+        assert_eq!(window_for(&windows, &apps, &apps[1]).map(|w| w.id), None);
+        assert_eq!(window_for(&windows, &apps, &apps[2]).map(|w| w.id), Some(3));
+        let only = vec![apps[1].clone()];
+        assert_eq!(window_for(&windows, &only, &only[0]).map(|w| w.id), Some(3));
+        assert_eq!(results(&windows[..1], &only, "")[0].icon, None);
+        assert!(matches!(
+            &results(&windows[..1], &only, "")[0].actions[1].action,
+            Action::Application { id } if id == "chromium.desktop"
+        ));
     }
 }

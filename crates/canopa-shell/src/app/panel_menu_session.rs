@@ -792,10 +792,21 @@ pub(super) fn installed_app_entries(
         let generic_name = app.generic_name.as_deref().unwrap_or("");
         let comment = app.comment.as_deref().unwrap_or("");
         let keywords = app.keywords.join(" ");
+        // The desktop-file id and the Exec program find "nautilus" for Files.
+        let id = app.id.strip_suffix(".desktop").unwrap_or(&app.id);
+        let program = app.exec_program.as_deref().unwrap_or("");
         let fields = [
             SearchText {
                 field: SearchField::Label,
                 text: app.name.as_str(),
+            },
+            SearchText {
+                field: SearchField::Breadcrumb,
+                text: id,
+            },
+            SearchText {
+                field: SearchField::Breadcrumb,
+                text: program,
             },
             SearchText {
                 field: SearchField::Secondary,

@@ -140,30 +140,34 @@ fn desktop_launch_argv(app: &crate::desktop_apps::DesktopApplication) -> io::Res
     Ok(vec!["gio".into(), "launch".into(), path.into()])
 }
 
+/// The scoped `gio launch` argv handed to the compositor for an Exec entry.
+fn scoped_launch_argv(
+    app: &crate::desktop_apps::DesktopApplication,
+    uris: &[String],
+) -> io::Result<Vec<String>> {
+    let mut argv = desktop_launch_argv(app)?;
+    argv.extend_from_slice(uris);
+    Ok(super::app_scope::wrap(
+        &super::app_scope::helper(),
+        &app.id,
+        &argv,
+    ))
+}
+
+/// Launch `app`. A D-Bus-activatable app receives `activation_token`, which
+/// lets the compositor focus a window it already has; Exec apps get the token
+/// the compositor creates for its own spawn.
 #[cfg(not(test))]
 pub async fn spawn_desktop_application_fire_and_forget(
     app: &crate::desktop_apps::DesktopApplication,
+    activation_token: Option<String>,
 ) -> io::Result<SpawnResult> {
     check_desktop_launch(app, &crate::desktop_apps::process_search_path())?;
     if app.dbus_activatable {
-        // Auto-activation is owned by the session bus, outside the bar's cgroup.
-        // Await delivery instead of letting a short-lived CLI exit mid-flush.
-        tokio::time::timeout(Duration::from_secs(10), async {
-            let connection = zbus::Connection::session().await.map_err(|_| {
-                io::Error::other("session bus unavailable for application activation")
-            })?;
-            activate_dbus_application(&connection, app).await
-        })
-        .await
-        .map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::TimedOut,
-                "desktop application activation timed out",
-            )
-        })??;
+        bus_request(app, BusRequest::Activate, activation_token.as_deref()).await?;
         Ok(SpawnResult::Spawned)
     } else {
-        launch_application(&desktop_launch_argv(app)?).await
+        launch_application(&scoped_launch_argv(app, &[])?).await
     }
 }
 
@@ -171,35 +175,108 @@ pub async fn spawn_desktop_application_fire_and_forget(
 pub async fn open_desktop_application(
     app: &crate::desktop_apps::DesktopApplication,
     uris: &[String],
+    activation_token: Option<String>,
 ) -> io::Result<SpawnResult> {
     check_desktop_launch(app, &crate::desktop_apps::process_search_path())?;
     if app.dbus_activatable {
-        tokio::time::timeout(Duration::from_secs(10), async {
-            let connection = zbus::Connection::session()
-                .await
-                .map_err(io::Error::other)?;
-            dbus_application_request(&connection, app, Some(uris)).await
-        })
-        .await
-        .map_err(|_| io::Error::other("Application Open timed out"))??;
+        bus_request(app, BusRequest::Open(uris), activation_token.as_deref()).await?;
         Ok(SpawnResult::Spawned)
     } else {
-        let mut argv = desktop_launch_argv(app)?;
-        argv.extend_from_slice(uris);
-        launch_application(&argv).await
+        launch_application(&scoped_launch_argv(app, uris)?).await
     }
 }
 
-async fn activate_dbus_application(
-    connection: &zbus::Connection,
+/// Launch one of `app`'s `[Desktop Action]` groups: `ActivateAction` for a
+/// D-Bus-activatable app, otherwise the helper runs it through GIO in the
+/// app's own scope.
+#[cfg(not(test))]
+pub async fn launch_desktop_action(
     app: &crate::desktop_apps::DesktopApplication,
-) -> io::Result<()> {
-    dbus_application_request(connection, app, None).await
+    action: &str,
+    activation_token: Option<String>,
+) -> io::Result<SpawnResult> {
+    crate::desktop_apps::check_launch_action(
+        app,
+        action,
+        &crate::desktop_apps::process_search_path(),
+    )
+    .map_err(|problem| io::Error::new(io::ErrorKind::NotFound, problem))?;
+    if app.dbus_activatable {
+        bus_request(
+            app,
+            BusRequest::ActivateAction(action),
+            activation_token.as_deref(),
+        )
+        .await?;
+        Ok(SpawnResult::Spawned)
+    } else {
+        let file = std::path::absolute(&app.desktop_file)?;
+        let file = file
+            .to_str()
+            .ok_or_else(|| io::Error::other("desktop entry path is not UTF-8"))?;
+        launch_application(&super::app_scope::desktop_action(
+            &super::app_scope::helper(),
+            &app.id,
+            file,
+            action,
+        ))
+        .await
+    }
 }
+
+#[cfg(not(test))]
+async fn bus_request(
+    app: &crate::desktop_apps::DesktopApplication,
+    request: BusRequest<'_>,
+    activation_token: Option<&str>,
+) -> io::Result<()> {
+    // Auto-activation is owned by the session bus, outside the bar's cgroup.
+    // Await delivery instead of letting a short-lived CLI exit mid-flush.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|_| io::Error::other("session bus unavailable for application activation"))?;
+        dbus_application_request(&connection, app, request, activation_token).await
+    })
+    .await
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            "desktop application activation timed out",
+        )
+    })?
+}
+
+/// One `org.freedesktop.Application` call.
+#[derive(Clone, Copy)]
+enum BusRequest<'a> {
+    Activate,
+    Open(&'a [String]),
+    ActivateAction(&'a str),
+}
+
+/// `platform-data` with the activation token under both names the
+/// specification and GLib read.
+fn platform_data(
+    activation_token: Option<&str>,
+) -> std::collections::HashMap<&'static str, zbus::zvariant::Value<'_>> {
+    activation_token
+        .filter(|token| !token.is_empty())
+        .map(|token| {
+            [
+                ("activation-token", token.into()),
+                ("desktop-startup-id", token.into()),
+            ]
+            .into()
+        })
+        .unwrap_or_default()
+}
+
 async fn dbus_application_request(
     connection: &zbus::Connection,
     app: &crate::desktop_apps::DesktopApplication,
-    uris: Option<&[String]>,
+    request: BusRequest<'_>,
+    activation_token: Option<&str>,
 ) -> io::Result<()> {
     // The specification defines this from the selected filename, not its
     // symlink target or the discovery ID's directory prefix.
@@ -215,10 +292,16 @@ async fn dbus_application_request(
     let result = async {
         let proxy = zbus::Proxy::new(connection, name, path, "org.freedesktop.Application").await?;
         // Default D-Bus call flags allow the bus to start a missing owner.
-        let platform_data = std::collections::HashMap::<String, zbus::zvariant::Value<'_>>::new();
-        match uris {
-            Some(uris) => proxy.call::<_, _, ()>("Open", &(uris, platform_data)).await,
-            None => proxy.call::<_, _, ()>("Activate", &(platform_data,)).await,
+        let platform_data = platform_data(activation_token);
+        match request {
+            BusRequest::Open(uris) => proxy.call::<_, _, ()>("Open", &(uris, platform_data)).await,
+            BusRequest::Activate => proxy.call::<_, _, ()>("Activate", &(platform_data,)).await,
+            BusRequest::ActivateAction(action) => {
+                let parameters: Vec<zbus::zvariant::Value<'_>> = Vec::new();
+                proxy
+                    .call::<_, _, ()>("ActivateAction", &(action, parameters, platform_data))
+                    .await
+            }
         }
     }
     .await;
@@ -380,13 +463,15 @@ mod tests {
         assert!(app.dbus_activatable);
         let client = bus.connect().await;
         for _ in 0..20 {
-            activate_dbus_application(&client, &app).await.unwrap();
+            dbus_application_request(&client, &app, BusRequest::Activate, None)
+                .await
+                .unwrap();
             rx.try_recv()
                 .expect("an acknowledged activation has been delivered");
             assert!(rx.try_recv().is_err(), "exactly one activation per request");
         }
         let uris = vec!["file:///tmp/two%20words%FF.txt".to_owned()];
-        dbus_application_request(&client, &app, Some(&uris))
+        dbus_application_request(&client, &app, BusRequest::Open(&uris), None)
             .await
             .unwrap();
         assert_eq!(opened_rx.try_recv().unwrap(), uris);
@@ -398,21 +483,145 @@ mod tests {
             .unwrap();
         application.get_mut().await.reject = true;
         assert!(
-            dbus_application_request(&client, &app, Some(&uris))
+            dbus_application_request(&client, &app, BusRequest::Open(&uris), None)
                 .await
                 .is_err()
         );
         assert!(opened_rx.try_recv().is_err());
-        let error = activate_dbus_application(&client, &app).await.unwrap_err();
+        let error = dbus_application_request(&client, &app, BusRequest::Activate, None)
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("AccessDenied"));
         assert!(!error.to_string().contains("private fixture diagnostic"));
         service.close().await.unwrap();
         assert!(
-            activate_dbus_application(&client, &app)
+            dbus_application_request(&client, &app, BusRequest::Activate, None)
                 .await
                 .unwrap_err()
                 .to_string()
                 .contains("ServiceUnknown")
+        );
+    }
+
+    /// Records each call's method, action and `platform-data` tokens.
+    struct TokenApplication {
+        calls: tokio::sync::mpsc::UnboundedSender<(String, Option<String>, Option<String>)>,
+    }
+    impl TokenApplication {
+        fn record(
+            &self,
+            method: &str,
+            platform_data: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        ) {
+            let text = |key: &str| {
+                platform_data
+                    .get(key)
+                    .and_then(|value| String::try_from(value.try_clone().ok()?).ok())
+            };
+            let _ = self.calls.send((
+                method.into(),
+                text("activation-token"),
+                text("desktop-startup-id"),
+            ));
+        }
+    }
+    #[zbus::interface(name = "org.freedesktop.Application")]
+    impl TokenApplication {
+        fn activate(
+            &self,
+            platform_data: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        ) {
+            self.record("Activate", &platform_data);
+        }
+        fn activate_action(
+            &self,
+            action: String,
+            parameters: Vec<zbus::zvariant::OwnedValue>,
+            platform_data: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        ) {
+            assert!(parameters.is_empty());
+            self.record(&format!("ActivateAction {action}"), &platform_data);
+        }
+    }
+
+    #[tokio::test]
+    async fn dbus_requests_carry_the_activation_token_and_desktop_actions() {
+        let bus = crate::test_bus::TestBus::new();
+        let service = bus.connect().await;
+        let (calls, mut received) = tokio::sync::mpsc::unbounded_channel();
+        service
+            .object_server()
+            .at("/org/example/Tokens", TokenApplication { calls })
+            .await
+            .unwrap();
+        service.request_name("org.example.Tokens").await.unwrap();
+        let app = crate::desktop_apps::DesktopApplication {
+            id: "org.example.Tokens.desktop".into(),
+            name: "Tokens".into(),
+            desktop_file: "/fixture/org.example.Tokens.desktop".into(),
+            dbus_activatable: true,
+            ..Default::default()
+        };
+        let client = bus.connect().await;
+        dbus_application_request(&client, &app, BusRequest::Activate, Some("token-1"))
+            .await
+            .unwrap();
+        assert_eq!(
+            received.recv().await.unwrap(),
+            (
+                "Activate".into(),
+                Some("token-1".into()),
+                Some("token-1".into())
+            )
+        );
+        dbus_application_request(
+            &client,
+            &app,
+            BusRequest::ActivateAction("new-document"),
+            Some("token-2"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            received.recv().await.unwrap(),
+            (
+                "ActivateAction new-document".into(),
+                Some("token-2".into()),
+                Some("token-2".into())
+            )
+        );
+        // Without a token, platform-data stays empty rather than carrying "".
+        dbus_application_request(&client, &app, BusRequest::Activate, Some(""))
+            .await
+            .unwrap();
+        assert_eq!(
+            received.recv().await.unwrap(),
+            ("Activate".into(), None, None)
+        );
+    }
+
+    #[test]
+    fn exec_launches_go_through_the_scope_helper() {
+        let dir = tempfile::tempdir().unwrap();
+        let desktop_file = dir.path().join("org.example.Fixture.desktop");
+        std::fs::write(
+            &desktop_file,
+            "[Desktop Entry]\nType=Application\nName=F\nExec=true\n",
+        )
+        .unwrap();
+        let app = fixture_app(desktop_file.clone());
+        let argv = scoped_launch_argv(&app, &["file:///a".into()]).unwrap();
+        assert_eq!(
+            &argv[1..],
+            [
+                "--app-scope",
+                "org.example.Fixture.desktop",
+                "--",
+                "gio",
+                "launch",
+                desktop_file.to_str().unwrap(),
+                "file:///a"
+            ]
         );
     }
 
