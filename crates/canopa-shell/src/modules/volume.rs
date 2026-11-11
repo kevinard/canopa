@@ -289,8 +289,10 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                 footer: false,
                 paired_toggle: false,
                 opens_provider: false,
+                key: context.key.clone(),
             },
         );
+        use canopa_ui::accessibility::{Node, semantic};
         let adjust = |label, message| {
             crate::theme::action(
                 iced::widget::container(crate::theme::strong_text(label).size(18))
@@ -304,28 +306,46 @@ impl crate::modules::render::ModuleRender for VolumeModule {
             .padding(0)
         };
         let level = volume.map_or_else(|| "—".to_owned(), |v| format!("{:.0}%", v.volume));
+        let group = Node::group(format!("Output level, {level}"))
+            .key(format!("{}/level", context.key))
+            .hide_text();
         Some(
             column![
                 heading,
-                row![
-                    iced::widget::container(
-                        crate::theme::text("Output level")
-                            .size(crate::theme::label_size())
-                            .style(canopa_ui::muted)
-                    )
-                    .padding([0, 6])
-                    .width(iced::Length::Fill),
+                semantic(
+                    group,
                     row![
-                        adjust("−", volume.and(context.scroll_down)),
-                        iced::widget::container(crate::theme::strong_text(level).size(16))
-                            .center_x(58),
-                        adjust("+", volume.and(context.scroll_up)),
+                        iced::widget::container(
+                            crate::theme::text("Output level")
+                                .size(crate::theme::label_size())
+                                .style(canopa_ui::muted)
+                        )
+                        .padding([0, 6])
+                        .width(iced::Length::Fill),
+                        row![
+                            semantic(
+                                Node::button("Decrease volume")
+                                    .key(format!("{}/decrease", context.key))
+                                    .disabled(volume.is_none())
+                                    .on_click(volume.and(context.scroll_down.clone())),
+                                adjust("−", volume.and(context.scroll_down)),
+                            ),
+                            iced::widget::container(crate::theme::strong_text(level).size(16))
+                                .center_x(58),
+                            semantic(
+                                Node::button("Increase volume")
+                                    .key(format!("{}/increase", context.key))
+                                    .disabled(volume.is_none())
+                                    .on_click(volume.and(context.scroll_up.clone())),
+                                adjust("+", volume.and(context.scroll_up)),
+                            ),
+                        ]
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center),
                     ]
-                    .spacing(4)
-                    .align_y(iced::Alignment::Center),
-                ]
-                .spacing(12)
-                .align_y(iced::Alignment::Center),
+                    .spacing(12)
+                    .align_y(iced::Alignment::Center)
+                ),
             ]
             .spacing(8)
             .into(),

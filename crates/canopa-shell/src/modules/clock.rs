@@ -86,6 +86,18 @@ pub(super) struct CalendarMonth {
     pub(super) today: Option<u32>,
 }
 
+/// The full date a calendar cell reads as, such as "Today, Wednesday 11 November 2026".
+pub(super) fn calendar_day_label(year: i32, month: u32, day: u32, today: bool) -> String {
+    let date = chrono::NaiveDate::from_ymd_opt(year, month, day)
+        .map(|date| date.format("%A %-d %B %Y").to_string())
+        .unwrap_or_else(|| day.to_string());
+    if today {
+        format!("Today, {date}")
+    } else {
+        date
+    }
+}
+
 pub(super) fn calendar_month_for(today: chrono::NaiveDate, month_offset: i32) -> CalendarMonth {
     use chrono::{Datelike, NaiveDate};
 
@@ -214,6 +226,7 @@ impl ClockModule {
         bar_style: &crate::config::Style,
         month_offset: i32,
     ) -> iced::Element<'_, crate::app::Message> {
+        use canopa_ui::accessibility::{Live, Node, Role, semantic};
         use iced::widget::{column, container, row};
         use iced::{Alignment, Length};
 
@@ -240,27 +253,51 @@ impl ClockModule {
             .expect("calendar month is valid");
         let title = first.format("%B %Y").to_string();
 
-        let action = |label, event| {
-            crate::theme::action(
-                container(crate::theme::strong_text(label).size(crate::theme::label_size()))
-                    .center(Length::Fill),
-                Some(crate::app::Message::Modules(
-                    crate::app::messages::ModuleRuntimeEvent::Detail {
-                        target: self.id.clone(),
-                        message: crate::modules::ModuleDetailMessage::new(event),
-                    },
-                )),
-                canopa_ui::Action::Normal,
-                false,
+        let action = |label, name: &str, key: &str, event: ClockDetailMessage, width: f32| {
+            let message =
+                crate::app::Message::Modules(crate::app::messages::ModuleRuntimeEvent::Detail {
+                    target: self.id.clone(),
+                    message: crate::modules::ModuleDetailMessage::new(event),
+                });
+            semantic(
+                Node::button(name)
+                    .key(format!("calendar-{key}"))
+                    .on_click(Some(message.clone())),
+                crate::theme::action(
+                    container(crate::theme::strong_text(label).size(crate::theme::label_size()))
+                        .center(Length::Fill),
+                    Some(message),
+                    canopa_ui::Action::Normal,
+                    false,
+                )
+                .height(34)
+                .padding(0)
+                .width(width),
             )
-            .height(34)
-            .padding(0)
         };
         let controls = row![
-            crate::theme::strong_text(title).width(Length::Fill),
-            action("Today", ClockDetailMessage::Today).width(54),
-            action("‹", ClockDetailMessage::PreviousMonth).width(32),
-            action("›", ClockDetailMessage::NextMonth).width(32),
+            // The month is announced as it changes.
+            semantic(
+                Node::heading(title.clone(), 2)
+                    .key("calendar-month")
+                    .live(Live::Polite),
+                crate::theme::strong_text(title.clone()).width(Length::Fill),
+            ),
+            action("Today", "Today", "today", ClockDetailMessage::Today, 54.0),
+            action(
+                "‹",
+                "Previous month",
+                "previous",
+                ClockDetailMessage::PreviousMonth,
+                32.0
+            ),
+            action(
+                "›",
+                "Next month",
+                "next",
+                ClockDetailMessage::NextMonth,
+                32.0
+            ),
         ]
         .spacing(5)
         .align_y(Alignment::Center)
@@ -270,8 +307,17 @@ impl ClockModule {
             .spacing(10)
             .width(Length::Fill);
         let mut weekdays = row![].spacing(4).width(Length::Fill);
-        for label in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
-            weekdays = weekdays.push(
+        for (label, name) in [
+            ("Mon", "Monday"),
+            ("Tue", "Tuesday"),
+            ("Wed", "Wednesday"),
+            ("Thu", "Thursday"),
+            ("Fri", "Friday"),
+            ("Sat", "Saturday"),
+            ("Sun", "Sunday"),
+        ] {
+            weekdays = weekdays.push(semantic(
+                Node::new(Role::ColumnHeader).label(name).hide_text(),
                 container(
                     crate::theme::strong_text(label)
                         .size(crate::theme::label_size())
@@ -279,11 +325,16 @@ impl ClockModule {
                 )
                 .width(Length::FillPortion(1))
                 .center_x(Length::Fill),
-            );
+            ));
         }
-        calendar = calendar.push(weekdays);
+        let mut grid = column![semantic(
+            Node::new(Role::Row).key("calendar-weekdays"),
+            weekdays
+        )]
+        .spacing(10)
+        .width(Length::Fill);
 
-        for week in month.weeks {
+        for (index, week) in month.weeks.into_iter().enumerate() {
             let mut row = row![].spacing(4).width(Length::Fill);
             for day in week {
                 let is_today = day.is_some() && day == month.today;
@@ -304,10 +355,21 @@ impl ClockModule {
                             container::Style::default()
                         }
                     });
-                row = row.push(cell);
+                // Blank cells keep each day in its weekday's column.
+                let node = match day {
+                    Some(day) => Node::new(Role::GridCell)
+                        .label(calendar_day_label(month.year, month.month, day, is_today))
+                        .selected(is_today),
+                    None => Node::new(Role::GridCell),
+                };
+                row = row.push(semantic(node, cell));
             }
-            calendar = calendar.push(row);
+            grid = grid.push(semantic(
+                Node::new(Role::Row).key(format!("calendar-week-{index}")),
+                row,
+            ));
         }
+        calendar = calendar.push(semantic(Node::grid(title).key("calendar-grid"), grid));
 
         column![
             container(summary)
@@ -587,6 +649,19 @@ mod tests {
             collapsed: Some(template),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn calendar_cells_read_as_full_dates() {
+        assert_eq!(
+            calendar_day_label(2026, 11, 11, true),
+            "Today, Wednesday 11 November 2026"
+        );
+        assert_eq!(
+            calendar_day_label(2026, 2, 1, false),
+            "Sunday 1 February 2026"
+        );
+        assert_eq!(calendar_day_label(2026, 2, 30, false), "30");
     }
 
     #[test]

@@ -232,6 +232,9 @@ fn render_confirmation<'a>(
     model: PanelRenderModel<'a>,
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
+    let dialog = Node::alert_dialog(model.title.clone())
+        .key("confirmation")
+        .description(model.menu_prompt.clone().unwrap_or_default());
     let palette = crate::theme::palette();
     let message = row![
         container(crate::theme::icon(
@@ -252,17 +255,27 @@ fn render_confirmation<'a>(
         if index > 0 {
             label = label.color(palette.danger);
         }
-        crate::theme::action(
-            container(label).center(Length::Fill),
-            Some(Message::Panel(super::messages::PanelEvent::ActivateIndex(
-                index,
-            ))),
-            canopa_ui::Action::Normal,
-            model.focused_index == Some(index),
+        let activate = Message::Panel(super::messages::PanelEvent::ActivateIndex(index));
+        let focused = model.focused_index == Some(index);
+        semantic(
+            // Cancel comes first and holds the initial focus.
+            Node::button(entry.label.clone())
+                .key(if index == 0 {
+                    "confirmation-cancel"
+                } else {
+                    "confirmation-confirm"
+                })
+                .focused(focused)
+                .on_click(Some(activate.clone())),
+            crate::theme::action(
+                container(label).center(Length::Fill),
+                Some(activate),
+                canopa_ui::Action::Normal,
+                focused,
+            )
+            .width(Length::FillPortion(1))
+            .height(44),
         )
-        .width(Length::FillPortion(1))
-        .height(44)
-        .into()
     }))
     .spacing(8);
     let content = column![message, crate::theme::divider(), actions]
@@ -281,7 +294,7 @@ fn render_confirmation<'a>(
         false,
         Length::Shrink,
     );
-    panel_surface(frame, true, model.drawer)
+    panel_surface(semantic(dialog, frame), true, model.drawer)
 }
 
 fn panel_frame<'a>(

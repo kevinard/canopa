@@ -134,6 +134,11 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         } else {
             content
         };
+        let node = canopa_ui::accessibility::Node::button(self.label.clone())
+            .key(context.key.clone())
+            .disabled(context.primary.is_none())
+            .focused(context.focused)
+            .on_click(context.primary.clone());
         let mut button = crate::theme::action(
             container(content)
                 .height(iced::Length::Fill)
@@ -152,7 +157,7 @@ impl crate::modules::render::ModuleRender for ButtonModule {
         {
             button = button.padding([8, 4]);
         }
-        Some(button.into())
+        Some(canopa_ui::accessibility::semantic(node, button))
     }
 
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {

@@ -483,13 +483,26 @@ impl ModuleRuntime {
                 self.action_for(&request.detail.id, &crate::config::ActionTrigger::Click),
                 Some(crate::config::PanelAction::OpenProvider(_))
             ),
+            key: format!("quick-settings:{}", request.detail.id.accessibility_key()),
         };
+        let key = context.key.clone();
         if let Some(element) =
             module.render_bar_panel_with_style(state, request.detail.style, context)
         {
             return Some(element);
         }
-        self.render_module_detail(request.detail)
+        // Modules without a compact control show their detail as a named group.
+        let summary = super::shell_accessibility::module_summary(
+            module.kind(),
+            request.detail.id.configured_name(),
+            &module.accessible_values(state),
+        );
+        self.render_module_detail(request.detail).map(|detail| {
+            canopa_ui::accessibility::semantic(
+                canopa_ui::accessibility::Node::group(summary.label).key(key),
+                detail,
+            )
+        })
     }
 
     pub(super) fn bar_panel_activation(

@@ -258,6 +258,148 @@ async fn native_bar_module_follows_bar_focus_and_activates_like_a_click() {
     publish(&app, bar, &mut bridge, &renderer);
     testing::named_role(&connection, "Clock, 12:01, Wed 23 Sep", "push button").await;
 
+    // The calendar is a grid with today selected and month navigation.
+    let _ = app.update(Message::Panel(PanelEvent::Open {
+        origin_window: bar,
+        origin: crate::surface::panel::PanelOrigin::Module(ModuleId::new("clock")),
+        content: crate::surface::panel::PanelContent::ModulePanel(ModuleId::new("clock")),
+        anchor: None,
+    }));
+    let panel = app
+        .foreground
+        .active_panel_window()
+        .expect("calendar window");
+    let calendar = window_key(Surface::Panel, panel);
+    bridge.open(calendar.clone(), "Calendar", Some(panel));
+    bridge.set_window_focused(&calendar, true);
+    publish(&app, panel, &mut bridge, &renderer);
+    let window = testing::named(&connection, "Calendar").await;
+    if std::env::var_os("CANOPA_ACCESSIBILITY_DUMP").is_some() {
+        testing::dump(&window).await;
+    }
+    let today = chrono::Local::now().date_naive();
+    let month = today.format("%B %Y").to_string();
+    testing::named_role(&connection, &month, "heading").await;
+    testing::named_role(&connection, &month, "table").await;
+    let cell = testing::named(
+        &connection,
+        &format!("Today, {}", today.format("%A %-d %B %Y")),
+    )
+    .await;
+    assert!(cell.has_state(atspi::STATE_SELECTED).await);
+    let next_month = testing::named_role(&connection, "Next month", "push button").await;
+    assert!(next_month.do_action(0).await);
+    assert!(matches!(
+        action(&bridge).await,
+        Message::Modules(ModuleRuntimeEvent::Detail { .. })
+    ));
+
     drop(bridge);
     testing::gone(&connection, "Canopa bar").await;
+}
+
+#[tokio::test]
+async fn native_quick_settings_toggles_and_power_confirmation_focus_cancel_first() {
+    if !testing::isolated(
+        "app::shell_accessibility::native_tests::native_quick_settings_toggles_and_power_confirmation_focus_cancel_first",
+    ) {
+        return;
+    }
+    use crate::modules::ModuleState;
+    let connection = testing::connect().await;
+    let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+    let bar_name = config.bars[0].name.clone();
+    let (mut app, _) = App::boot(config, vec![]);
+    app.modules.set_state(
+        ModuleId::new("notifications"),
+        ModuleState::Notifications(canopa_notify_client::Summary {
+            do_not_disturb: true,
+            ..Default::default()
+        }),
+    );
+    let bar = iced::window::Id::unique();
+    {
+        let surface = app.surface_mut(bar);
+        surface.bar_name = bar_name;
+        surface.screen_size = (1280, 800);
+    }
+    let _ = app.update(Message::Panel(PanelEvent::Open {
+        origin_window: bar,
+        origin: crate::surface::panel::PanelOrigin::Bar,
+        content: crate::surface::panel::PanelContent::BarPanel,
+        anchor: None,
+    }));
+    let panel = app
+        .foreground
+        .active_panel_window()
+        .expect("Quick settings window");
+    let key = window_key(Surface::Panel, panel);
+    let mut bridge = Bridge::new("shell-quick-settings-test");
+    bridge.open(key.clone(), "Quick settings", Some(panel));
+    bridge.set_window_focused(&key, true);
+    assert!(matches!(next(&bridge).await, Event::Activated));
+    let renderer = renderer().await;
+    publish(&app, panel, &mut bridge, &renderer);
+    let window = testing::named(&connection, "Quick settings").await;
+    if std::env::var_os("CANOPA_ACCESSIBILITY_DUMP").is_some() {
+        testing::dump(&window).await;
+    }
+
+    // Toggles are toggle buttons whose pressed state follows the setting,
+    // and act like a click.
+    const STATE_PRESSED: u32 = 20;
+    let dnd = testing::named_role(&connection, "Do Not Disturb", "toggle button").await;
+    assert!(dnd.has_state(STATE_PRESSED).await);
+    assert!(dnd.description().await.starts_with("Banners are paused"));
+    assert!(dnd.do_action(0).await);
+    assert!(matches!(
+        action(&bridge).await,
+        Message::Panel(PanelEvent::ModuleInteraction { target, .. })
+            if target == ModuleId::new("notifications")
+    ));
+    app.modules.set_state(
+        ModuleId::new("notifications"),
+        ModuleState::Notifications(canopa_notify_client::Summary::default()),
+    );
+    publish(&app, panel, &mut bridge, &renderer);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while dnd.has_state(STATE_PRESSED).await {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("Do Not Disturb stays pressed");
+
+    // A power action asks first: an alert dialog with Cancel focused.
+    let _ = app.update(Message::Panel(PanelEvent::Open {
+        origin_window: bar,
+        origin: crate::surface::panel::PanelOrigin::Bar,
+        content: crate::surface::panel::PanelContent::Menu("Power off?".into()),
+        anchor: None,
+    }));
+    let panel = app
+        .foreground
+        .active_panel_window()
+        .expect("confirmation window");
+    let confirmation = window_key(Surface::Panel, panel);
+    if confirmation != key {
+        bridge.close(&key);
+        bridge.open(confirmation.clone(), "Power off?", Some(panel));
+        bridge.set_window_focused(&confirmation, true);
+    }
+    publish(&app, panel, &mut bridge, &renderer);
+    let window = testing::named(&connection, "Power off?").await;
+    if std::env::var_os("CANOPA_ACCESSIBILITY_DUMP").is_some() {
+        testing::dump(&window).await;
+    }
+    let cancel = testing::named_role(&connection, "Cancel", "push button").await;
+    cancel.wait_for_state(atspi::STATE_FOCUSED).await;
+    let confirm = testing::named_role(&connection, "Power off", "push button").await;
+    assert!(!confirm.has_state(atspi::STATE_FOCUSED).await);
+    assert!(cancel.do_action(0).await);
+    assert!(matches!(
+        action(&bridge).await,
+        Message::Panel(PanelEvent::ActivateIndex(0))
+    ));
+    drop(bridge);
 }

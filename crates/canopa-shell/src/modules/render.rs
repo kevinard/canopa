@@ -14,6 +14,8 @@ pub struct PanelModuleContext {
     pub footer: bool,
     pub paired_toggle: bool,
     pub opens_provider: bool,
+    /// The stable key of the card's accessible node.
+    pub key: String,
 }
 
 pub trait ModuleRender: Send + Sync {

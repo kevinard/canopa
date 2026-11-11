@@ -844,6 +844,7 @@ fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) 
 }
 
 /// A compact, full-width control within the host's Bar Panel card frame.
+#[derive(Clone, Copy)]
 pub(super) enum PanelControlEnd {
     Navigate,
     Toggle(bool),
@@ -857,7 +858,23 @@ pub(super) fn panel_control<'a>(
     end: PanelControlEnd,
     context: super::render::PanelModuleContext,
 ) -> iced::Element<'a, crate::app::Message> {
+    use canopa_ui::accessibility::{Node, semantic};
     use iced::widget::{column, row};
+    let (title, description): (String, String) = (title.into(), description.into());
+    // A switch for toggles, otherwise a button; focus is the panel's own selection.
+    let node = match end {
+        PanelControlEnd::Toggle(on) => Node::switch(title.clone(), on),
+        PanelControlEnd::Navigate | PanelControlEnd::Status(_) => Node::button(title.clone()),
+    };
+    let node = node
+        .key(context.key.clone())
+        .description(match end {
+            PanelControlEnd::Status(status) => format!("{description}, {status}"),
+            _ => description.clone(),
+        })
+        .disabled(context.primary.is_none())
+        .focused(context.focused)
+        .on_click(context.primary.clone());
     let palette = crate::theme::palette();
     let toggle = matches!(end, PanelControlEnd::Toggle(_));
     let (icon_color, icon_fill) = if toggle {
@@ -921,8 +938,8 @@ pub(super) fn panel_control<'a>(
                 .background(icon_fill)
                 .border(iced::Border::default().rounded(9))
         });
-    let title = crate::theme::strong_text(title.into());
-    let description = crate::theme::text(description.into())
+    let title = crate::theme::strong_text(title);
+    let description = crate::theme::text(description)
         .size(crate::theme::label_size())
         .style(canopa_ui::muted);
     let content: Element<'_, Message> = if context.paired_toggle {
@@ -951,19 +968,21 @@ pub(super) fn panel_control<'a>(
         .align_y(Alignment::Center)
         .into()
     };
-    crate::theme::action(
-        content,
-        context.primary,
-        canopa_ui::Action::Quiet,
-        context.focused,
+    semantic(
+        node,
+        crate::theme::action(
+            content,
+            context.primary,
+            canopa_ui::Action::Quiet,
+            context.focused,
+        )
+        .padding(if context.paired_toggle {
+            [2, 3]
+        } else {
+            [8, 6]
+        })
+        .width(iced::Length::Fill),
     )
-    .padding(if context.paired_toggle {
-        [2, 3]
-    } else {
-        [8, 6]
-    })
-    .width(iced::Length::Fill)
-    .into()
 }
 
 #[cfg(test)]
