@@ -1,6 +1,7 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod focus;
 mod launcher;
+mod navigation;
 mod profiles;
 mod shortcuts;
 mod widget_layouts;
@@ -24,7 +25,10 @@ use iced::{
 use niri_ipc::{Output, Transform};
 use std::{collections::HashMap, process::Stdio, time::Duration};
 
-use crate::Page;
+use crate::{
+    Page,
+    registry::{self, Apply, Kind},
+};
 /// The footer action reloads only the selected page; other drafts remain.
 const RELOAD_PAGE: &str = "Reload this page and discard its edits";
 #[derive(Clone, Debug)]
@@ -53,6 +57,11 @@ enum Message {
     BackendChanged,
     ReloadSaved,
     Page(Page),
+    /// Move through the sidebar order (Ctrl+Page Down / Page Up).
+    StepPage(isize),
+    Search(String),
+    /// Open the best search match.
+    SearchSubmit,
     Refresh,
     Outputs(std::result::Result<HashMap<String, Output>, String>),
     DisplayProfiles(profiles::Action),
@@ -97,6 +106,7 @@ struct State {
     shortcut_query: String,
     compositor_motion: Option<bool>,
     page: Page,
+    search: String,
     notice: String,
     busy: bool,
     refreshing: bool,
@@ -227,6 +237,7 @@ impl State {
             shortcut_query: String::new(),
             compositor_motion,
             page: Page::Displays,
+            search: String::new(),
             notice,
             busy: false,
             refreshing: true,
@@ -400,6 +411,19 @@ impl State {
                 self.widget_layouts.lock = true;
                 self.widget_layouts.widget = None;
                 return self.update(Message::Page(Page::Widgets));
+            }
+            Message::Search(query) => self.search = query.chars().take(100).collect(),
+            Message::SearchSubmit => {
+                if let Some(entry) = registry::search(&self.search).first()
+                    && !self.busy
+                    && self.trial.is_none()
+                {
+                    self.search.clear();
+                    return self.update(Message::Page(entry.page));
+                }
+            }
+            Message::StepPage(offset) => {
+                return self.update(Message::Page(registry::step(self.page, offset)));
             }
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 self.page = page;
@@ -640,6 +664,8 @@ impl State {
                 self.busy = true;
                 let paths = self.paths.clone();
                 match self.page {
+                    #[cfg(debug_assertions)]
+                    Page::LiveExample => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -879,6 +905,8 @@ impl State {
                 self.widget_layouts.editor = None;
                 widget_layouts::View::load(&paths)
             }
+            #[cfg(debug_assertions)]
+            Page::LiveExample => Task::none(),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -899,49 +927,11 @@ impl State {
         Subscription::batch(subscriptions)
     }
     fn view(&self) -> Element<'_, Message> {
-        let mut links = column![].spacing(5);
-        for page in Page::ALL {
-            links = links.push(button(
-                page.label(),
-                (!self.busy && self.trial.is_none()).then_some(Message::Page(page)),
-                if page == self.page {
-                    canopa_ui::Action::Normal
-                } else {
-                    canopa_ui::Action::Quiet
-                },
-                Length::Fill,
-                self.busy,
-            ));
-        }
-        let navigation = container(
-            column![
-                column![
-                    text("Canopa").size(13).style(canopa_ui::muted),
-                    heading("Settings", 24)
-                ]
-                .spacing(3)
-                .padding([8, 8]),
-                links
-            ]
-            .spacing(18),
-        )
-        .width(200)
-        .height(Length::Fill)
-        .padding(14)
-        .style(|theme| container::Style::default().background(canopa_ui::colors(theme).surface));
-
-        let description = match self.page {
-            Page::Displays => "Manage connected monitors and save display layouts.",
-            Page::Input => "Adjust keyboard, mouse, and touchpad behavior.",
-            Page::Personal => "Choose how your desktop and lock screen look and feel.",
-            Page::Power => "Set how your desktop responds when you step away.",
-            Page::Launcher => "Choose search providers and manage clipboard history.",
-            Page::Shortcuts => "Find and edit keyboard shortcuts for your desktop.",
-            Page::Widgets => "Arrange widgets on your desktop and lock screen.",
-        };
+        let navigation = self.navigation();
+        let entry = self.page.entry();
         let title = column![
-            heading(self.page.label(), 28),
-            text(description).size(14).style(canopa_ui::muted)
+            heading(entry.title, 28),
+            text(entry.description).size(14).style(canopa_ui::muted)
         ]
         .spacing(5);
         // Keep this child present so asynchronous notices do not replace the
@@ -996,39 +986,9 @@ impl State {
             Page::Launcher => self.launcher_view(),
             Page::Shortcuts => self.shortcuts_view(),
             Page::Widgets => self.widget_layouts_view(),
+            #[cfg(debug_assertions)]
+            Page::LiveExample => text("").into(),
         });
-        let available = (self.page != Page::Launcher || self.launcher.loaded)
-            && !self.busy
-            && self.trial.is_none()
-            && (self.page != Page::Power || self.idle_available)
-            && (self.page != Page::Shortcuts
-                || (matches!(self.shortcuts, Some(Ok(_))) && self.paths.active()))
-            && (self.page != Page::Widgets || self.widget_layouts.dirty())
-            && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input));
-        let footer = row![
-            space().width(Length::Fill),
-            self.action(
-                RELOAD_PAGE,
-                (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
-                false
-            ),
-            button(
-                if self.busy {
-                    "Applying…"
-                } else if self.page == Page::Displays {
-                    "Test display changes"
-                } else {
-                    "Save changes"
-                },
-                available.then_some(Message::Save),
-                canopa_ui::Action::Primary,
-                Length::Shrink,
-                self.busy,
-            )
-        ]
-        .align_y(Alignment::Center)
-        .spacing(12)
-        .padding([10, 20]);
         let content = column![
             container(title).padding([19, 20]).width(Length::Fill),
             rule::horizontal(1).style(settings_rule),
@@ -1037,10 +997,15 @@ impl State {
                     .id("settings-page-scroll")
                     .height(Length::Fill)
             ),
-            rule::horizontal(1).style(settings_rule),
-            footer
         ]
         .width(Length::Fill);
+        // Live pages apply each change at once and have no footer.
+        let content = match self.file_footer() {
+            Some(footer) => content
+                .push(rule::horizontal(1).style(settings_rule))
+                .push(footer),
+            None => content,
+        };
         focus::group(
             row![navigation, rule::vertical(1).style(settings_rule), content],
             self.trial.as_ref().map(|_| Message::Decision(false)),
@@ -1060,9 +1025,53 @@ impl State {
             if self.trial.is_some() {
                 "settings-button-Revert".into()
             } else {
-                format!("settings-button-{}", self.page.label())
+                navigation::link_id(entry)
             },
             self.busy,
+        )
+    }
+    /// Whether the selected file-backed page can save its draft now.
+    fn can_save(&self) -> bool {
+        (self.page != Page::Launcher || self.launcher.loaded)
+            && !self.busy
+            && self.trial.is_none()
+            && (self.page != Page::Power || self.idle_available)
+            && (self.page != Page::Shortcuts
+                || (matches!(self.shortcuts, Some(Ok(_))) && self.paths.active()))
+            && (self.page != Page::Widgets || self.widget_layouts.dirty())
+            && (self.paths.active() || !matches!(self.page, Page::Displays | Page::Input))
+    }
+    /// The file-backed pattern's footer: reload this page, and save or test.
+    fn file_footer(&self) -> Option<Element<'_, Message>> {
+        let Kind::File { apply, .. } = self.page.kind() else {
+            return None;
+        };
+        Some(
+            row![
+                space().width(Length::Fill),
+                self.action(
+                    RELOAD_PAGE,
+                    (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
+                    false
+                ),
+                button(
+                    if self.busy {
+                        "Applying…"
+                    } else if apply == Apply::Trial {
+                        "Test display changes"
+                    } else {
+                        "Save changes"
+                    },
+                    self.can_save().then_some(Message::Save),
+                    canopa_ui::Action::Primary,
+                    Length::Shrink,
+                    self.busy,
+                )
+            ]
+            .align_y(Alignment::Center)
+            .spacing(12)
+            .padding([10, 20])
+            .into(),
         )
     }
     fn displays(&self) -> Element<'_, Message> {

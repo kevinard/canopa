@@ -1,6 +1,9 @@
 use anyhow::Result;
-use canopa_settings::{session::Paths, storage::Snapshot};
-use clap::{Parser, Subcommand};
+use canopa_settings::{Page, registry, session::Paths, storage::Snapshot};
+use clap::{
+    Parser, Subcommand,
+    builder::{PossibleValue, PossibleValuesParser, TypedValueParser},
+};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -11,14 +14,26 @@ use std::path::PathBuf;
     args_conflicts_with_subcommands = true
 )]
 struct Cli {
-    /// Open the settings window at this page.
-    #[arg(long, value_enum)]
-    page: Option<canopa_settings::Page>,
+    /// Open the settings window at this page. A running window switches to it.
+    #[arg(value_name = "PAGE", value_parser = page_parser())]
+    target: Option<Page>,
+    /// The same as PAGE.
+    #[arg(long, value_name = "PAGE", value_parser = page_parser(), conflicts_with = "target")]
+    page: Option<Page>,
     /// Open Displays with a saved layout selected for review.
     #[arg(long, value_name = "NAME")]
     display_profile: Option<String>,
     #[command(subcommand)]
     command: Option<Operation>,
+}
+/// Page ids from the registry; hidden pages are accepted but not listed.
+fn page_parser() -> impl TypedValueParser<Value = Page> {
+    PossibleValuesParser::new(
+        registry::PAGES
+            .iter()
+            .map(|entry| PossibleValue::new(entry.id).hide(entry.hidden)),
+    )
+    .map(|id| Page::from_id(&id).expect("the parser lists registry ids"))
 }
 #[derive(Subcommand)]
 enum Operation {
@@ -58,16 +73,14 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    let page = cli.target.take().or(cli.page);
     anyhow::ensure!(
-        cli.page.is_none() || cli.command.is_none(),
-        "--page is only available when opening the settings window"
+        page.is_none() || cli.command.is_none(),
+        "a page is only available when opening the settings window"
     );
     anyhow::ensure!(
-        cli.display_profile.is_none()
-            || cli
-                .page
-                .is_none_or(|page| page == canopa_settings::Page::Displays),
+        cli.display_profile.is_none() || page.is_none_or(|page| page == Page::Displays),
         "--display-profile opens the Displays page"
     );
     match cli.command {
@@ -129,7 +142,7 @@ fn run() -> Result<()> {
         None => {
             #[cfg(feature = "desktop")]
             canopa_settings::ui::run_with_profile(
-                cli.page.unwrap_or(canopa_settings::Page::Displays),
+                page.unwrap_or(Page::Displays),
                 cli.display_profile,
             )?;
             #[cfg(not(feature = "desktop"))]
@@ -144,13 +157,26 @@ mod tests {
     use super::*;
     #[test]
     fn requested_page_is_explicit_and_does_not_mix_with_operations() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(std::iter::once("canopa-settings").chain(args.iter().copied()))
+        };
+        assert_eq!(parse(&["--page", "input"]).unwrap().page, Some(Page::Input));
+        assert_eq!(parse(&["power"]).unwrap().target, Some(Page::Power));
         assert_eq!(
-            Cli::try_parse_from(["canopa-settings", "--page", "input"])
+            parse(&["widgets", "--display-profile", "Desk"])
                 .unwrap()
-                .page,
-            Some(canopa_settings::Page::Input)
+                .target,
+            Some(Page::Widgets)
         );
-        assert!(Cli::try_parse_from(["canopa-settings", "--page", "unknown"]).is_err());
-        assert!(Cli::try_parse_from(["canopa-settings", "--page", "power", "outputs"]).is_err());
+        assert!(parse(&["--page", "unknown"]).is_err());
+        assert!(parse(&["unknown"]).is_err());
+        assert!(parse(&["power", "--page", "input"]).is_err());
+        assert!(parse(&["--page", "power", "outputs"]).is_err());
+        // Operations remain subcommands, not page ids.
+        assert!(matches!(
+            parse(&["outputs"]).unwrap().command,
+            Some(Operation::Outputs)
+        ));
+        assert!(parse(&["check", "power"]).is_err());
     }
 }

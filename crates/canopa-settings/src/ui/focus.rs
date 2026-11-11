@@ -1,5 +1,6 @@
 //! Focus traversal happens inside the keyboard event, before queued text input.
-use super::{Message, Page};
+use super::{Message, navigation};
+use crate::registry;
 use iced::{
     Color, Element, Event, Length, Rectangle, Renderer, Size, Theme, Vector,
     advanced::{
@@ -93,7 +94,8 @@ struct Scan {
     order: Vec<Id>,
     focused: Option<Id>,
     bounds: Vec<(Id, Rectangle)>,
-    scroll: Option<(Id, Rectangle, Vector)>,
+    /// Named scrollables, in tree order: the sidebar, then the page.
+    scrolls: Vec<(Id, Rectangle, Vector)>,
 }
 impl Operation for Scan {
     fn traverse(&mut self, apply: &mut dyn FnMut(&mut dyn Operation)) {
@@ -122,7 +124,7 @@ impl Operation for Scan {
         _: &mut dyn operation::Scrollable,
     ) {
         if let Some(id) = id {
-            self.scroll = Some((id.clone(), bounds, translation));
+            self.scrolls.push((id.clone(), bounds, translation));
         }
     }
 }
@@ -229,21 +231,52 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
                 }
             }
             if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+                // Ctrl+1–9 open the first nine pages in sidebar order.
                 let page = match key.as_ref() {
-                    keyboard::Key::Character("1") => Some(Page::Displays),
-                    keyboard::Key::Character("2") => Some(Page::Input),
-                    keyboard::Key::Character("3") => Some(Page::Personal),
-                    keyboard::Key::Character("4") => Some(Page::Power),
-                    keyboard::Key::Character("5") => Some(Page::Launcher),
-                    keyboard::Key::Character("6") => Some(Page::Shortcuts),
-                    keyboard::Key::Character("7") => Some(Page::Widgets),
+                    keyboard::Key::Character(digit) => digit
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|number| (1..=9).contains(number))
+                        .and_then(|number| registry::navigation().get(number - 1).copied()),
                     _ => None,
                 };
+                if modifiers.control()
+                    && !modifiers.shift()
+                    && !modifiers.alt()
+                    && key.as_ref() == keyboard::Key::Character("f")
+                {
+                    self.content.as_widget_mut().operate(
+                        &mut tree.children[0],
+                        layout,
+                        renderer,
+                        &mut operation::focusable::focus::<()>(Id::from(navigation::SEARCH)),
+                    );
+                    shell.capture_event();
+                    shell.invalidate_widgets();
+                    shell.request_redraw();
+                    return;
+                }
                 let shortcut = if modifiers.control()
                     && self.dismiss.is_none()
                     && let Some(page) = page
                 {
-                    Some(Message::Page(page))
+                    Some(Message::Page(page.page))
+                } else if modifiers.control()
+                    && self.dismiss.is_none()
+                    && matches!(
+                        key.as_ref(),
+                        keyboard::Key::Named(
+                            keyboard::key::Named::PageDown | keyboard::key::Named::PageUp
+                        )
+                    )
+                {
+                    Some(Message::StepPage(
+                        if key.as_ref() == keyboard::Key::Named(keyboard::key::Named::PageDown) {
+                            1
+                        } else {
+                            -1
+                        },
+                    ))
                 } else if modifiers.control()
                     && self.dismiss.is_some()
                     && *key == keyboard::Key::Named(keyboard::key::Named::Enter)
@@ -262,9 +295,8 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
                             &mut tree.children[0],
                             layout,
                             renderer,
-                            &mut operation::focusable::focus::<()>(Id::from(format!(
-                                "settings-button-{}",
-                                page.label()
+                            &mut operation::focusable::focus::<()>(Id::from(navigation::link_id(
+                                page.entry(),
                             ))),
                         );
                     }
@@ -304,10 +336,20 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
                             renderer,
                             &mut operation::focusable::focus::<()>(target.clone()),
                         );
-                        if let (Some((scroll, view, offset)), Some((_, bounds))) = (
-                            scan.scroll,
-                            scan.bounds.iter().find(|(id, _)| *id == target),
-                        ) {
+                        let target_bounds = scan.bounds.iter().find(|(id, _)| *id == target);
+                        // The scrollable holding the target: side-by-side areas
+                        // are told apart horizontally.
+                        let scroll = target_bounds.and_then(|(_, bounds)| {
+                            let x = bounds.center_x();
+                            scan.scrolls
+                                .iter()
+                                .rev()
+                                .find(|(_, view, _)| view.x <= x && x < view.x + view.width)
+                                .cloned()
+                        });
+                        if let (Some((scroll, view, offset)), Some((_, bounds))) =
+                            (scroll, target_bounds)
+                        {
                             let y = if bounds.y - offset.y < view.y {
                                 Some((bounds.y - view.y).max(0.))
                             } else if bounds.y + bounds.height - offset.y > view.y + view.height {
