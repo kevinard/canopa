@@ -8,9 +8,10 @@ use crate::{
     live::{Event, LiveAction},
 };
 use canopa_services::bluetooth::{Device, Question};
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type BluetoothPage = LivePage<BluetoothService>;
@@ -28,9 +29,9 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
-fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
-        canopa_ui::accessibility::Node::button(label)
+        canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
             .disabled(message.is_none())
             .on_click(message.clone()),
@@ -75,15 +76,15 @@ impl State {
 
     fn pairing_section<'a>(&'a self, pairing: &'a Pairing) -> Element<'a, Message> {
         let page = &self.bluetooth;
-        let name = &pairing.label;
+        let name = pairing.label.as_str();
         let cancel = || {
             row_button(
                 "bluetooth-pairing-cancel".into(),
-                "Cancel",
+                fl!("settings-cancel"),
                 Some(apply(BluetoothAction::CancelPairing)),
             )
         };
-        let answer = |label: &'static str| {
+        let answer = |label: String| {
             row_button(
                 "bluetooth-pairing-answer".into(),
                 label,
@@ -91,42 +92,51 @@ impl State {
             )
         };
         let body: Element<'_, Message> = match &pairing.question {
-            None => column![text(format!("Pairing with {name}…")), cancel()]
-                .spacing(10)
-                .into(),
+            None => column![
+                text(fl!("settings-bluetooth-pairing-with", name = name)),
+                cancel()
+            ]
+            .spacing(10)
+            .into(),
             Some(Question::Confirm(code)) => column![
-                text(format!("Does {name} show this code?")),
+                text(fl!("settings-bluetooth-confirm-code", name = name)),
                 text(format!("{code:06}")).size(28),
-                row![answer("Pair"), cancel()].spacing(10),
+                direction::row([answer(fl!("settings-bluetooth-pair")), cancel()]).spacing(10),
             ]
             .spacing(10)
             .into(),
             Some(Question::Authorize) => column![
-                text(format!("{name} wants to pair with this computer.")),
-                row![answer("Allow"), cancel()].spacing(10),
+                text(fl!("settings-bluetooth-authorize", name = name)),
+                direction::row([answer(fl!("settings-bluetooth-allow")), cancel()]).spacing(10),
             ]
             .spacing(10)
             .into(),
             Some(Question::Service) => column![
-                text(format!("{name} wants to use a service on this computer.")),
-                row![answer("Allow"), cancel()].spacing(10),
+                text(fl!("settings-bluetooth-service", name = name)),
+                direction::row([answer(fl!("settings-bluetooth-allow")), cancel()]).spacing(10),
             ]
             .spacing(10)
             .into(),
             Some(question @ (Question::Pin | Question::Passkey)) => {
-                let (label, hint) = if *question == Question::Pin {
+                let pin = *question == Question::Pin;
+                let (label, ask, hint) = if pin {
                     (
-                        "PIN",
-                        "Enter the PIN shown on the device or in its manual. Devices without a screen often use 0000.",
+                        fl!("settings-bluetooth-pin"),
+                        fl!("settings-bluetooth-asks-pin", name = name),
+                        fl!("settings-bluetooth-pin-hint"),
                     )
                 } else {
-                    ("Passkey", "Enter the six digits the device shows.")
+                    (
+                        fl!("settings-bluetooth-passkey"),
+                        fl!("settings-bluetooth-asks-passkey", name = name),
+                        fl!("settings-bluetooth-passkey-hint"),
+                    )
                 };
                 let submit = question
                     .accepts(self.bluetooth_entry.trim())
                     .map(|_| Message::BluetoothForm(Edit::Submit));
                 column![
-                    text(format!("{name} asks for a {}.", label.to_lowercase())),
+                    text(ask),
                     field(
                         "bluetooth-pairing-entry",
                         label,
@@ -134,54 +144,66 @@ impl State {
                         |value| { Message::BluetoothForm(Edit::Entry(value)) }
                     ),
                     muted(hint),
-                    row![
-                        row_button("bluetooth-pairing-answer".into(), "Pair", submit),
-                        cancel()
-                    ]
+                    direction::row([
+                        row_button(
+                            "bluetooth-pairing-answer".into(),
+                            fl!("settings-bluetooth-pair"),
+                            submit,
+                        ),
+                        cancel(),
+                    ])
                     .spacing(10),
                 ]
                 .spacing(10)
                 .into()
             }
             Some(Question::DisplayPinCode(pin)) => column![
-                text(format!("Type this PIN on {name}, then press Enter on it.")),
+                text(fl!("settings-bluetooth-type-pin", name = name)),
                 text(pin.clone()).size(28),
                 cancel(),
             ]
             .spacing(10)
             .into(),
             Some(Question::DisplayPasskey { passkey, entered }) => column![
-                text(format!("Type this code on {name}, then press Enter on it.")),
+                text(fl!("settings-bluetooth-type-code", name = name)),
                 text(format!("{passkey:06}")).size(28),
-                muted(format!("{entered} of 6 digits typed")),
+                muted({
+                    let (entered, total) = (u64::from(*entered), 6u64);
+                    fl!(
+                        "settings-bluetooth-digits-typed",
+                        entered = entered,
+                        total = total
+                    )
+                }),
                 cancel(),
             ]
             .spacing(10)
             .into(),
         };
         settings_group(
-            "Pairing",
+            fl!("settings-bluetooth-pairing"),
             column![body, page.control_status("pairing", message)].spacing(8),
         )
     }
 
     fn device_status(device: &Device) -> String {
-        let mut parts = vec![kind_label(device.kind).to_owned()];
+        // A list of short facts joined by " · ", each a message of its own.
+        let mut parts = vec![kind_label(device.kind)];
         if device.paired {
-            parts.push(
-                if device.connected {
-                    "Connected"
-                } else {
-                    "Not connected"
-                }
-                .into(),
-            );
+            parts.push(if device.connected {
+                fl!("settings-bluetooth-connected")
+            } else {
+                fl!("settings-bluetooth-not-connected")
+            });
         }
         if let Some(battery) = device.battery {
-            parts.push(format!("Battery {battery}%"));
+            parts.push(fl!(
+                "settings-bluetooth-battery",
+                level = canopa_i18n::format::percent(f64::from(battery))
+            ));
         }
         if device.blocked {
-            parts.push("Blocked".into());
+            parts.push(fl!("settings-bluetooth-blocked"));
         }
         parts.join(" · ")
     }
@@ -197,15 +219,23 @@ impl State {
             _ => device.trusted,
         };
         let connect = if device.connected {
-            ("Disconnect", BluetoothAction::Disconnect(path.into()))
+            (
+                fl!("settings-bluetooth-disconnect"),
+                BluetoothAction::Disconnect(path.into()),
+            )
         } else {
-            ("Connect", BluetoothAction::Connect(path.into()))
+            (
+                fl!("settings-bluetooth-connect"),
+                BluetoothAction::Connect(path.into()),
+            )
         };
         column![
-            row![
+            direction::row([
                 column![text(&device.label), muted(Self::device_status(device))]
                     .spacing(2)
-                    .width(Length::Fill),
+                    .align_x(direction::start())
+                    .width(Length::Fill)
+                    .into(),
                 row_button(
                     format!("bluetooth-{id}-connect"),
                     connect.0,
@@ -213,15 +243,15 @@ impl State {
                 ),
                 row_button(
                     format!("bluetooth-{id}-forget"),
-                    "Forget",
+                    fl!("settings-bluetooth-forget"),
                     Some(apply(BluetoothAction::Forget(path.into()))),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
             toggle(
                 format!("bluetooth-{id}-trusted"),
-                "Allow it to connect without asking",
+                fl!("settings-bluetooth-trust"),
                 trusted,
                 apply(BluetoothAction::Trusted(path.into(), !trusted)),
             ),
@@ -236,16 +266,18 @@ impl State {
         let path = device.path.as_str();
         let control = BluetoothAction::Pair(path.into()).control();
         column![
-            row![
+            direction::row([
                 column![text(&device.label), muted(Self::device_status(device))]
                     .spacing(2)
-                    .width(Length::Fill),
+                    .align_x(direction::start())
+                    .width(Length::Fill)
+                    .into(),
                 row_button(
                     format!("bluetooth-{}-pair", key(path)),
-                    "Pair",
+                    fl!("settings-bluetooth-pair"),
                     (!pairing).then(|| apply(BluetoothAction::Pair(path.into()))),
                 ),
-            ]
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
             self.bluetooth.control_status(&control, message),
@@ -265,7 +297,7 @@ impl State {
             return body
                 .push(settings_group(
                     "Bluetooth",
-                    muted("No Bluetooth adapter found. Check that it is not switched off with a hardware key or blocked by rfkill."),
+                    muted(fl!("settings-bluetooth-no-adapter")),
                 ))
                 .into();
         }
@@ -297,28 +329,30 @@ impl State {
                 group = group
                     .push(toggle(
                         format!("bluetooth-{id}-visible"),
-                        format!("Visible to nearby devices as “{}”", adapter.label),
+                        fl!("settings-bluetooth-visible", name = adapter.label.as_str()),
                         discoverable,
                         apply(BluetoothAction::Discoverable(path.into(), !discoverable)),
                     ))
                     .push(page.control_status(&visible, message));
                 if adapter.discovering {
-                    group = group.push(muted("Searching for nearby devices…"));
+                    group = group.push(muted(fl!("settings-bluetooth-searching")));
                 }
             } else {
-                group = group.push(muted(
-                    "Turn Bluetooth on to connect headphones, keyboards and other devices.",
-                ));
+                group = group.push(muted(fl!("settings-bluetooth-off-hint")));
             }
             if !adapter.address.is_empty() {
-                group = group.push(muted(format!("Adapter address: {}", adapter.address)));
+                group = group.push(muted(fl!(
+                    "settings-bluetooth-address",
+                    address = adapter.address.as_str()
+                )));
             }
             body = body.push(settings_group(
                 if several {
                     adapter.label.as_str()
                 } else {
                     "Bluetooth"
-                },
+                }
+                .to_owned(),
                 group,
             ));
         }
@@ -339,22 +373,22 @@ impl State {
             }
         }
         body.push(settings_group(
-            "My devices",
+            fl!("settings-bluetooth-mine"),
             if any_paired {
                 paired.into()
             } else {
-                muted("No paired devices yet.")
+                muted(fl!("settings-bluetooth-none-paired"))
             },
         ))
         .push(settings_group(
-            "Nearby devices",
+            fl!("settings-bluetooth-nearby"),
             column![
                 if any_nearby {
                     nearby.into()
                 } else {
-                    muted("No devices found yet. Put the device in pairing mode and keep it close.")
+                    muted(fl!("settings-bluetooth-none-nearby"))
                 },
-                muted("Audio profiles of headsets are chosen on the Sound page."),
+                muted(fl!("settings-bluetooth-profiles-hint")),
             ]
             .spacing(10),
         ))

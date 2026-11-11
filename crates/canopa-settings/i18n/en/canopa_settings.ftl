@@ -778,3 +778,171 @@ settings-notifications-lock-hide = Hide
 settings-notifications-lock-name = Name only
 settings-notifications-lock-content = Show content
 settings-notifications-configured = config.kdl also sets rules for this application.
+
+## Bluetooth. $name is a device's name.
+
+settings-bluetooth-not-running = BlueZ is not running.
+settings-bluetooth-timed-out = The device did not answer in time. Make sure it is on and nearby.
+settings-bluetooth-pairing-failed = Pairing did not complete. Check the code on the device and try again.
+settings-bluetooth-no-answer = The device did not answer. Make sure it is on and nearby.
+settings-bluetooth-already-paired = The device is already paired.
+settings-bluetooth-unknown-device = The device is no longer known to BlueZ.
+settings-bluetooth-busy = BlueZ is already doing this. Wait a moment and try again.
+# $reason is BlueZ's own message.
+settings-bluetooth-refused = BlueZ refused: { $reason }
+settings-bluetooth-gone = The device is no longer nearby.
+settings-bluetooth-other-pairing = Another device is pairing. Finish or cancel it first.
+settings-bluetooth-question-gone = The device no longer asks this.
+settings-bluetooth-pin-rules = Enter up to 16 letters or digits.
+settings-bluetooth-no-answer-needed = This question takes no answer.
+settings-bluetooth-kind-headphones = Headphones
+settings-bluetooth-kind-headset = Headset
+settings-bluetooth-kind-audio = Audio device
+settings-bluetooth-kind-keyboard = Keyboard
+settings-bluetooth-kind-mouse = Mouse
+settings-bluetooth-kind-gamepad = Game controller
+settings-bluetooth-kind-tablet = Drawing tablet
+settings-bluetooth-kind-phone = Phone
+settings-bluetooth-kind-computer = Computer
+settings-bluetooth-kind-camera = Camera
+settings-bluetooth-kind-printer = Printer
+settings-bluetooth-kind-network = Network device
+settings-bluetooth-kind-other = Device
+settings-bluetooth-pairing = Pairing
+settings-bluetooth-pairing-with = Pairing with { $name }…
+settings-bluetooth-confirm-code = Does { $name } show this code?
+settings-bluetooth-authorize = { $name } wants to pair with this computer.
+settings-bluetooth-service = { $name } wants to use a service on this computer.
+settings-bluetooth-pair = Pair
+settings-bluetooth-allow = Allow
+settings-bluetooth-pin = PIN
+settings-bluetooth-passkey = Passkey
+settings-bluetooth-asks-pin = { $name } asks for a PIN.
+settings-bluetooth-asks-passkey = { $name } asks for a passkey.
+settings-bluetooth-pin-hint = Enter the PIN shown on the device or in its manual. Devices without a screen often use 0000.
+settings-bluetooth-passkey-hint = Enter the six digits the device shows.
+settings-bluetooth-type-pin = Type this PIN on { $name }, then press Enter on it.
+settings-bluetooth-type-code = Type this code on { $name }, then press Enter on it.
+settings-bluetooth-digits-typed = { $entered } of { $total } digits typed
+settings-bluetooth-connected = Connected
+settings-bluetooth-not-connected = Not connected
+# $level is a formatted percentage.
+settings-bluetooth-battery = Battery { $level }
+settings-bluetooth-blocked = Blocked
+settings-bluetooth-connect = Connect
+settings-bluetooth-disconnect = Disconnect
+settings-bluetooth-forget = Forget
+settings-bluetooth-trust = Allow it to connect without asking
+settings-bluetooth-no-adapter = No Bluetooth adapter found. Check that it is not switched off with a hardware key or blocked by rfkill.
+# $name is this computer's Bluetooth name.
+settings-bluetooth-visible = Visible to nearby devices as “{ $name }”
+settings-bluetooth-searching = Searching for nearby devices…
+settings-bluetooth-off-hint = Turn Bluetooth on to connect headphones, keyboards and other devices.
+settings-bluetooth-address = Adapter address: { $address }
+settings-bluetooth-mine = My devices
+settings-bluetooth-none-paired = No paired devices yet.
+settings-bluetooth-nearby = Nearby devices
+settings-bluetooth-none-nearby = No devices found yet. Put the device in pairing mode and keep it close.
+settings-bluetooth-profiles-hint = Audio profiles of headsets are chosen on the Sound page.
+
+## Sound
+
+settings-sound-no-server = No audio server answers (PipeWire or PulseAudio).
+settings-sound-output = Output
+settings-sound-input = Input
+settings-sound-applications = Applications
+settings-sound-profiles = Profiles
+settings-sound-no-outputs = No output devices.
+settings-sound-no-inputs = No input devices.
+settings-sound-in-use = In use
+settings-sound-use-device = Use this device
+# $volume is a formatted percentage.
+settings-sound-volume = Volume: { $volume }
+settings-sound-mute = Mute
+settings-sound-balance-center = Balance: centered
+settings-sound-balance-left = Balance: { $value } left
+settings-sound-balance-right = Balance: { $value } right
+settings-sound-input-level = Input level
+# $recording is yes or no; $title is what the application plays.
+settings-sound-stream = { $recording ->
+    [yes] Recording
+   *[no] Playing
+}
+settings-sound-stream-titled = { $recording ->
+    [yes] Recording: { $title }
+   *[no] Playing: { $title }
+}
+settings-sound-no-streams = No applications are playing or recording.
+settings-sound-no-cards = No sound cards with profiles.
+settings-sound-profiles-hint = Choose HDMI or analog output, or for a Bluetooth headset, high-fidelity playback (A2DP) or the headset profile with its microphone (HFP).
+settings-sound-alerts = Alert sounds
+settings-sound-alerts-toggle = Play notification sounds
+settings-sound-alerts-unreadable = Notification sounds are set in config.kdl, which could not be read.
+settings-sound-alerts-hint = Applies at once. Canopa Notify plays these sounds.
+
+## Printers
+
+settings-printers = Printers
+settings-printers-not-running = The CUPS scheduler is not running.
+settings-printers-timed-out = CUPS did not answer in time.
+# $program is a command such as lpstat.
+settings-printers-tool-missing = { $program } is not installed (the CUPS client tools).
+settings-printers-no-helper = cups-pk-helper is not available.
+settings-printers-changed = The printer changed. Try again.
+# $reason is CUPS's own message.
+settings-printers-refused = CUPS refused: { $reason }
+settings-printers-needs-ippfind = Searching needs ippfind, from CUPS.
+settings-printers-needs-avahi = Searching for printers needs Avahi (avahi-daemon) running.
+settings-printers-no-test-page = CUPS’s test page is not installed.
+# The title of the test page's print job.
+settings-printers-test-job = Test page
+# $task is what was tried: add, remove, default, cancel or test.
+settings-printers-needs-permission = { $task ->
+    [add] Adding the printer
+    [remove] Removing the printer
+    [default] Choosing the default printer
+    [cancel] Cancelling the job
+   *[test] Printing the test page
+} needs permission. Install cups-pk-helper to ask an administrator, or join CUPS’s system group.
+settings-printers-task-failed = { $task ->
+    [add] Adding the printer
+    [remove] Removing the printer
+    [default] Choosing the default printer
+    [cancel] Cancelling the job
+   *[test] Printing the test page
+} failed.
+# $error is the CUPS tool's English message.
+settings-printers-task-failed-because = { $task ->
+    [add] Adding the printer
+    [remove] Removing the printer
+    [default] Choosing the default printer
+    [cancel] Cancelling the job
+   *[test] Printing the test page
+} failed: { $error }
+settings-printers-ready = Ready
+# $job is a job name.
+settings-printers-printing = Printing { $job }
+settings-printers-paused = Paused
+settings-printers-paused-because = Paused: { $reason }
+# $status is the printer's state above.
+settings-printers-default-status = Your default · { $status }
+settings-printers-location = Location: { $location }
+settings-printers-make-default = Make default
+settings-printers-test-page = Print test page
+settings-printers-remove = Remove
+settings-printers-none = No printers are set up.
+settings-printers-jobs = Print jobs
+settings-printers-no-jobs = Nothing is waiting to print.
+# $number is the job number, $queue the printer.
+settings-printers-job = Job { $number } on { $queue }
+# $size is a formatted size.
+settings-printers-job-mine = Yours · { $size }
+settings-printers-job-of = { $user } · { $size }
+settings-printers-add-title = Add a printer
+settings-printers-search = Search the network
+settings-printers-searching = Searching…
+settings-printers-search-hint = Finds printers that work without a driver (IPP Everywhere, AirPrint).
+settings-printers-none-found = No new printers found. Check that the printer is on and on this network.
+settings-printers-add = Add
+settings-printers-helper-hint = Adding and removing printers asks for an administrator’s permission.
+settings-printers-no-helper-hint = Adding and removing printers needs cups-pk-helper, or membership in CUPS’s system group.

@@ -64,7 +64,9 @@ impl SoundAction {
     }
 }
 
-const NO_SERVER: &str = "No audio server answers (PipeWire or PulseAudio).";
+fn no_server() -> String {
+    fl!("settings-sound-no-server")
+}
 
 struct Mixer {
     control: AudioControl,
@@ -95,6 +97,7 @@ impl SoundService {
 
     fn mixer(&self) -> &Mixer {
         self.mixer.get_or_init(|| {
+            // The client's name in audio tools, like the application name.
             audio::set_client_name("Canopa Settings");
             let (control, state) = audio::mixer(self.server.clone());
             Mixer { control, state }
@@ -107,7 +110,7 @@ impl SoundService {
         let wait = state.wait_for(Option::is_some);
         match tokio::time::timeout(Duration::from_secs(3), wait).await {
             Ok(Ok(snapshot)) => Ok(snapshot.clone().expect("waited for a snapshot")),
-            _ => Err(ServiceError::Unavailable(NO_SERVER.into())),
+            _ => Err(ServiceError::Unavailable(no_server())),
         }
     }
 }
@@ -115,7 +118,7 @@ impl SoundService {
 fn failure(error: AudioError) -> ServiceError {
     match error {
         AudioError::Unavailable | AudioError::ControlsUnavailable => {
-            ServiceError::Unavailable(NO_SERVER.into())
+            ServiceError::Unavailable(no_server())
         }
         other => ServiceError::Failed(other.to_string()),
     }
@@ -143,7 +146,7 @@ impl LiveService for SoundService {
             Some(match current {
                 Some(snapshot) => (Ok(snapshot), Some(state)),
                 // The monitor reconnects; the page waits and reads again.
-                None => (Err(ServiceError::Unavailable(NO_SERVER.into())), None),
+                None => (Err(ServiceError::Unavailable(no_server())), None),
             })
         })
         .boxed()

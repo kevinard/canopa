@@ -714,3 +714,157 @@ settings-notifications-lock-hide = Masquer
 settings-notifications-lock-name = Nom seulement
 settings-notifications-lock-content = Afficher le contenu
 settings-notifications-configured = config.kdl définit aussi des règles pour cette application.
+
+## Bluetooth
+
+settings-bluetooth-not-running = BlueZ ne fonctionne pas.
+settings-bluetooth-timed-out = L’appareil n’a pas répondu à temps. Vérifiez qu’il est allumé et à proximité.
+settings-bluetooth-pairing-failed = L’association n’a pas abouti. Vérifiez le code sur l’appareil et réessayez.
+settings-bluetooth-no-answer = L’appareil n’a pas répondu. Vérifiez qu’il est allumé et à proximité.
+settings-bluetooth-already-paired = L’appareil est déjà associé.
+settings-bluetooth-unknown-device = BlueZ ne connaît plus cet appareil.
+settings-bluetooth-busy = BlueZ s’en occupe déjà. Patientez un instant et réessayez.
+settings-bluetooth-refused = BlueZ a refusé : { $reason }
+settings-bluetooth-gone = L’appareil n’est plus à proximité.
+settings-bluetooth-other-pairing = Un autre appareil est en cours d’association. Terminez-la ou annulez-la d’abord.
+settings-bluetooth-question-gone = L’appareil ne pose plus cette question.
+settings-bluetooth-pin-rules = Saisissez jusqu’à 16 lettres ou chiffres.
+settings-bluetooth-no-answer-needed = Cette question n’attend pas de réponse.
+settings-bluetooth-kind-headphones = Casque
+settings-bluetooth-kind-headset = Casque micro
+settings-bluetooth-kind-audio = Appareil audio
+settings-bluetooth-kind-keyboard = Clavier
+settings-bluetooth-kind-mouse = Souris
+settings-bluetooth-kind-gamepad = Manette de jeu
+settings-bluetooth-kind-tablet = Tablette graphique
+settings-bluetooth-kind-phone = Téléphone
+settings-bluetooth-kind-computer = Ordinateur
+settings-bluetooth-kind-camera = Appareil photo
+settings-bluetooth-kind-printer = Imprimante
+settings-bluetooth-kind-network = Appareil réseau
+settings-bluetooth-kind-other = Appareil
+settings-bluetooth-pairing = Association
+settings-bluetooth-pairing-with = Association avec { $name }…
+settings-bluetooth-confirm-code = { $name } affiche-t-il ce code ?
+settings-bluetooth-authorize = { $name } veut s’associer à cet ordinateur.
+settings-bluetooth-service = { $name } veut utiliser un service de cet ordinateur.
+settings-bluetooth-pair = Associer
+settings-bluetooth-allow = Autoriser
+settings-bluetooth-pin = Code PIN
+settings-bluetooth-passkey = Clé d’accès
+settings-bluetooth-asks-pin = { $name } demande un code PIN.
+settings-bluetooth-asks-passkey = { $name } demande une clé d’accès.
+settings-bluetooth-pin-hint = Saisissez le code PIN affiché sur l’appareil ou dans son manuel. Les appareils sans écran utilisent souvent 0000.
+settings-bluetooth-passkey-hint = Saisissez les six chiffres affichés par l’appareil.
+settings-bluetooth-type-pin = Tapez ce code PIN sur { $name }, puis appuyez sur Entrée sur l’appareil.
+settings-bluetooth-type-code = Tapez ce code sur { $name }, puis appuyez sur Entrée sur l’appareil.
+settings-bluetooth-digits-typed = { $entered } chiffres sur { $total } saisis
+settings-bluetooth-connected = Connecté
+settings-bluetooth-not-connected = Non connecté
+settings-bluetooth-battery = Batterie { $level }
+settings-bluetooth-blocked = Bloqué
+settings-bluetooth-connect = Connecter
+settings-bluetooth-disconnect = Déconnecter
+settings-bluetooth-forget = Oublier
+settings-bluetooth-trust = L’autoriser à se connecter sans demander
+settings-bluetooth-no-adapter = Aucun adaptateur Bluetooth trouvé. Vérifiez qu’il n’est pas désactivé par une touche matérielle ou bloqué par rfkill.
+settings-bluetooth-visible = Visible des appareils à proximité sous le nom « { $name } »
+settings-bluetooth-searching = Recherche d’appareils à proximité…
+settings-bluetooth-off-hint = Activez le Bluetooth pour connecter des casques, des claviers et d’autres appareils.
+settings-bluetooth-address = Adresse de l’adaptateur : { $address }
+settings-bluetooth-mine = Mes appareils
+settings-bluetooth-none-paired = Aucun appareil associé pour l’instant.
+settings-bluetooth-nearby = Appareils à proximité
+settings-bluetooth-none-nearby = Aucun appareil trouvé pour l’instant. Mettez l’appareil en mode association et gardez-le près de l’ordinateur.
+settings-bluetooth-profiles-hint = Les profils audio des casques se choisissent sur la page Son.
+
+## Sound
+
+settings-sound-no-server = Aucun serveur audio ne répond (PipeWire ou PulseAudio).
+settings-sound-output = Sortie
+settings-sound-input = Entrée
+settings-sound-applications = Applications
+settings-sound-profiles = Profils
+settings-sound-no-outputs = Aucun périphérique de sortie.
+settings-sound-no-inputs = Aucun périphérique d’entrée.
+settings-sound-in-use = Utilisé
+settings-sound-use-device = Utiliser ce périphérique
+settings-sound-volume = Volume : { $volume }
+settings-sound-mute = Couper le son
+settings-sound-balance-center = Balance : centrée
+settings-sound-balance-left = Balance : { $value } à gauche
+settings-sound-balance-right = Balance : { $value } à droite
+settings-sound-input-level = Niveau d’entrée
+settings-sound-stream = { $recording ->
+    [yes] Enregistrement
+   *[no] Lecture
+}
+settings-sound-stream-titled = { $recording ->
+    [yes] Enregistrement : { $title }
+   *[no] Lecture : { $title }
+}
+settings-sound-no-streams = Aucune application ne lit ni n’enregistre de son.
+settings-sound-no-cards = Aucune carte son avec des profils.
+settings-sound-profiles-hint = Choisissez la sortie HDMI ou analogique, ou pour un casque Bluetooth, la lecture haute fidélité (A2DP) ou le profil casque avec son micro (HFP).
+settings-sound-alerts = Sons d’alerte
+settings-sound-alerts-toggle = Jouer les sons de notification
+settings-sound-alerts-unreadable = Les sons de notification sont définis dans config.kdl, qui n’a pas pu être lu.
+settings-sound-alerts-hint = S’applique immédiatement. Canopa Notify joue ces sons.
+
+## Printers
+
+settings-printers = Imprimantes
+settings-printers-not-running = Le planificateur CUPS ne fonctionne pas.
+settings-printers-timed-out = CUPS n’a pas répondu à temps.
+settings-printers-tool-missing = { $program } n’est pas installé (les outils clients de CUPS).
+settings-printers-no-helper = cups-pk-helper n’est pas disponible.
+settings-printers-changed = L’imprimante a changé. Réessayez.
+settings-printers-refused = CUPS a refusé : { $reason }
+settings-printers-needs-ippfind = La recherche nécessite ippfind, fourni par CUPS.
+settings-printers-needs-avahi = La recherche d’imprimantes nécessite qu’Avahi (avahi-daemon) fonctionne.
+settings-printers-no-test-page = La page de test de CUPS n’est pas installée.
+settings-printers-test-job = Page de test
+settings-printers-needs-permission = { $task ->
+    [add] L’ajout de l’imprimante
+    [remove] La suppression de l’imprimante
+    [default] Le choix de l’imprimante par défaut
+    [cancel] L’annulation de l’impression
+   *[test] L’impression de la page de test
+} nécessite une autorisation. Installez cups-pk-helper pour la demander à un administrateur, ou rejoignez le groupe système de CUPS.
+settings-printers-task-failed = { $task ->
+    [add] L’ajout de l’imprimante a échoué.
+    [remove] La suppression de l’imprimante a échoué.
+    [default] Le choix de l’imprimante par défaut a échoué.
+    [cancel] L’annulation de l’impression a échoué.
+   *[test] L’impression de la page de test a échoué.
+}
+settings-printers-task-failed-because = { $task ->
+    [add] L’ajout de l’imprimante a échoué
+    [remove] La suppression de l’imprimante a échoué
+    [default] Le choix de l’imprimante par défaut a échoué
+    [cancel] L’annulation de l’impression a échoué
+   *[test] L’impression de la page de test a échoué
+} : { $error }
+settings-printers-ready = Prête
+settings-printers-printing = Impression de { $job }
+settings-printers-paused = En pause
+settings-printers-paused-because = En pause : { $reason }
+settings-printers-default-status = Votre imprimante par défaut · { $status }
+settings-printers-location = Emplacement : { $location }
+settings-printers-make-default = Définir par défaut
+settings-printers-test-page = Imprimer une page de test
+settings-printers-remove = Supprimer
+settings-printers-none = Aucune imprimante n’est configurée.
+settings-printers-jobs = Impressions
+settings-printers-no-jobs = Rien n’attend d’être imprimé.
+settings-printers-job = Impression { $number } sur { $queue }
+settings-printers-job-mine = La vôtre · { $size }
+settings-printers-job-of = { $user } · { $size }
+settings-printers-add-title = Ajouter une imprimante
+settings-printers-search = Rechercher sur le réseau
+settings-printers-searching = Recherche…
+settings-printers-search-hint = Trouve les imprimantes qui fonctionnent sans pilote (IPP Everywhere, AirPrint).
+settings-printers-none-found = Aucune nouvelle imprimante trouvée. Vérifiez que l’imprimante est allumée et sur ce réseau.
+settings-printers-add = Ajouter
+settings-printers-helper-hint = L’ajout et la suppression d’imprimantes demandent l’autorisation d’un administrateur.
+settings-printers-no-helper-hint = L’ajout et la suppression d’imprimantes nécessitent cups-pk-helper, ou l’appartenance au groupe système de CUPS.

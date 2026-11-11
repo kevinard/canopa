@@ -24,8 +24,12 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 use zbus::{Connection, names::OwnedUniqueName};
 
-const NO_SERVICE: &str = "BlueZ is not running.";
-const NO_BUS: &str = "The system bus is not reachable.";
+fn no_service() -> String {
+    fl!("settings-bluetooth-not-running")
+}
+fn no_bus() -> String {
+    fl!("settings-error-bus")
+}
 const READ_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A pairing attempt in progress, as the page shows it.
@@ -99,15 +103,11 @@ impl LiveAction for BluetoothAction {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     match error {
-        Error::Unavailable => ServiceError::Unavailable(NO_SERVICE.into()),
-        Error::NotAuthorized => {
-            ServiceError::Failed("The system did not allow this change.".into())
-        }
-        Error::Changed => ServiceError::Failed("The device changed. Try again.".into()),
-        Error::TimedOut => ServiceError::Failed(
-            "The device did not answer in time. Make sure it is on and nearby.".into(),
-        ),
-        Error::Invalid(message) => ServiceError::Failed(message.into()),
+        Error::Unavailable => ServiceError::Unavailable(no_service()),
+        Error::NotAuthorized => ServiceError::Failed(fl!("settings-error-not-authorized")),
+        Error::Changed => ServiceError::Failed(fl!("settings-error-device-changed")),
+        Error::TimedOut => ServiceError::Failed(fl!("settings-bluetooth-timed-out")),
+        Error::Invalid(message) => ServiceError::Failed(crate::service_text::invalid(message)),
         Error::Refused(message) => ServiceError::Failed(refusal(&message)),
     }
 }
@@ -116,22 +116,22 @@ fn failure(error: canopa_services::Error) -> ServiceError {
 fn refusal(message: &str) -> String {
     let lower = message.to_ascii_lowercase();
     if lower.contains("authentication") {
-        "Pairing did not complete. Check the code on the device and try again.".into()
+        fl!("settings-bluetooth-pairing-failed")
     } else if lower.contains("page timeout")
         || lower.contains("connection attempt failed")
         || lower.contains("connectionattemptfailed")
         || lower.contains("host is down")
         || lower.contains("abort-by-local")
     {
-        "The device did not answer. Make sure it is on and nearby.".into()
+        fl!("settings-bluetooth-no-answer")
     } else if lower.contains("alreadyexists") || lower.contains("already exists") {
-        "The device is already paired.".into()
+        fl!("settings-bluetooth-already-paired")
     } else if lower.contains("doesnotexist") || lower.contains("does not exist") {
-        "The device is no longer known to BlueZ.".into()
+        fl!("settings-bluetooth-unknown-device")
     } else if lower.contains("inprogress") || lower.contains("in progress") {
-        "BlueZ is already doing this. Wait a moment and try again.".into()
+        fl!("settings-bluetooth-busy")
     } else {
-        format!("BlueZ refused: {message}")
+        fl!("settings-bluetooth-refused", reason = message)
     }
 }
 
@@ -181,17 +181,17 @@ impl BluetoothService {
             .get_or_try_init(canopa_services::bus::system)
             .await
             .cloned()
-            .map_err(|_| ServiceError::Unavailable(NO_BUS.into()))
+            .map_err(|_| ServiceError::Unavailable(no_bus()))
     }
 
     async fn read(&self) -> Result<BluetoothState, ServiceError> {
         let system = self.connection().await?;
         let snapshot = tokio::time::timeout(READ_TIMEOUT, Snapshot::query(&system))
             .await
-            .map_err(|_| ServiceError::Unavailable(NO_SERVICE.into()))?
+            .map_err(|_| ServiceError::Unavailable(no_service()))?
             .map_err(|error| match error {
                 canopa_services::Error::Refused(_) | canopa_services::Error::Unavailable => {
-                    ServiceError::Unavailable(NO_SERVICE.into())
+                    ServiceError::Unavailable(no_service())
                 }
                 other => failure(other),
             })?;
@@ -216,12 +216,12 @@ impl BluetoothService {
         let owner = snapshot
             .owner
             .clone()
-            .ok_or_else(|| ServiceError::Unavailable(NO_SERVICE.into()))?;
+            .ok_or_else(|| ServiceError::Unavailable(no_service()))?;
         let device = snapshot
             .devices
             .into_iter()
             .find(|device| device.path.as_str() == path)
-            .ok_or_else(|| ServiceError::Failed("The device is no longer nearby.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-bluetooth-gone")))?;
         Ok((owner, device))
     }
 
@@ -230,7 +230,7 @@ impl BluetoothService {
             .await?
             .snapshot
             .owner
-            .ok_or_else(|| ServiceError::Unavailable(NO_SERVICE.into()))
+            .ok_or_else(|| ServiceError::Unavailable(no_service()))
     }
 
     fn relay(&self, serial: u64, event: AgentEvent) {
@@ -258,9 +258,9 @@ impl BluetoothService {
     async fn pair(&self, path: &str) -> Result<(), ServiceError> {
         let (owner, device) = self.target(path).await?;
         if self.lock().is_some() {
-            return Err(ServiceError::Failed(
-                "Another device is pairing. Finish or cancel it first.".into(),
-            ));
+            return Err(ServiceError::Failed(fl!(
+                "settings-bluetooth-other-pairing"
+            )));
         }
         let serial = self.serial.fetch_add(1, Ordering::Relaxed) + 1;
         let (events, mut requests) = mpsc::channel(8);
@@ -317,22 +317,22 @@ impl BluetoothService {
             .borrow()
             .as_ref()
             .and_then(|pairing| pairing.question.clone())
-            .ok_or_else(|| ServiceError::Failed("The device no longer asks this.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-bluetooth-question-gone")))?;
         let reply = question.accepts(value.trim()).ok_or_else(|| {
             ServiceError::Failed(match question {
-                Question::Passkey => "Enter the six digits the device shows.".into(),
-                Question::Pin => "Enter up to 16 letters or digits.".into(),
-                _ => "This question takes no answer.".into(),
+                Question::Passkey => fl!("settings-bluetooth-passkey-hint"),
+                Question::Pin => fl!("settings-bluetooth-pin-rules"),
+                _ => fl!("settings-bluetooth-no-answer-needed"),
             })
         })?;
         let sender = self
             .lock()
             .as_mut()
             .and_then(|attempt| attempt.reply.take())
-            .ok_or_else(|| ServiceError::Failed("The device no longer asks this.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-bluetooth-question-gone")))?;
         sender
             .send(reply)
-            .map_err(|_| ServiceError::Failed("The device no longer asks this.".into()))?;
+            .map_err(|_| ServiceError::Failed(fl!("settings-bluetooth-question-gone")))?;
         self.pairing.send_modify(|pairing| {
             if let Some(pairing) = pairing {
                 pairing.question = None;
@@ -484,7 +484,7 @@ impl LiveService for BluetoothService {
         let service = self.clone();
         futures_util::stream::once(async move {
             let Ok(system) = service.connection().await else {
-                return futures_util::stream::iter([Err(ServiceError::Unavailable(NO_BUS.into()))])
+                return futures_util::stream::iter([Err(ServiceError::Unavailable(no_bus()))])
                     .boxed();
             };
             let mut pairing = service.pairing.subscribe();
@@ -512,7 +512,7 @@ impl LiveService for BluetoothService {
                                 snapshot = Some(value);
                             }
                             Part::Snapshot(ServiceState::Unavailable) => {
-                                let item = Err(ServiceError::Unavailable(NO_SERVICE.into()));
+                                let item = Err(ServiceError::Unavailable(no_service()));
                                 return Some((item, (parts, discovery, None, pairing)));
                             }
                             Part::Pairing(value) => pairing = value,
@@ -548,22 +548,22 @@ impl LiveService for BluetoothService {
 }
 
 /// A short description of a device's kind.
-pub fn kind_label(kind: bluetooth::DeviceKind) -> &'static str {
+pub fn kind_label(kind: bluetooth::DeviceKind) -> String {
     use bluetooth::DeviceKind as Kind;
     match kind {
-        Kind::Headphones => "Headphones",
-        Kind::Headset => "Headset",
-        Kind::Speaker => "Audio device",
-        Kind::Keyboard => "Keyboard",
-        Kind::Mouse => "Mouse",
-        Kind::Gamepad => "Game controller",
-        Kind::Tablet => "Drawing tablet",
-        Kind::Phone => "Phone",
-        Kind::Computer => "Computer",
-        Kind::Camera => "Camera",
-        Kind::Printer => "Printer",
-        Kind::Network => "Network device",
-        Kind::Other => "Device",
+        Kind::Headphones => fl!("settings-bluetooth-kind-headphones"),
+        Kind::Headset => fl!("settings-bluetooth-kind-headset"),
+        Kind::Speaker => fl!("settings-bluetooth-kind-audio"),
+        Kind::Keyboard => fl!("settings-bluetooth-kind-keyboard"),
+        Kind::Mouse => fl!("settings-bluetooth-kind-mouse"),
+        Kind::Gamepad => fl!("settings-bluetooth-kind-gamepad"),
+        Kind::Tablet => fl!("settings-bluetooth-kind-tablet"),
+        Kind::Phone => fl!("settings-bluetooth-kind-phone"),
+        Kind::Computer => fl!("settings-bluetooth-kind-computer"),
+        Kind::Camera => fl!("settings-bluetooth-kind-camera"),
+        Kind::Printer => fl!("settings-bluetooth-kind-printer"),
+        Kind::Network => fl!("settings-bluetooth-kind-network"),
+        Kind::Other => fl!("settings-bluetooth-kind-other"),
     }
 }
 
@@ -591,7 +591,7 @@ mod tests {
         let service = BluetoothService::with(bus.connect().await, bus.address.clone());
         assert!(matches!(
             service.snapshot().await,
-            Err(ServiceError::Unavailable(message)) if message == NO_SERVICE
+            Err(ServiceError::Unavailable(message)) if message == no_service()
         ));
         let bluez = FakeBluez::serve(&bus, true).await;
         let state = service.snapshot().await.unwrap();

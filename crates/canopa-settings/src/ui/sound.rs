@@ -1,15 +1,16 @@
 //! The Sound page: outputs and inputs with default, volume, mute and balance,
 //! application streams, card profiles, a microphone level meter while the
 //! page is shown, and the notification sound switch.
-use super::{Message, State, adjust, choice, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, adjust, live_page::LivePage, pick, settings_group, toggle};
 use crate::{
     live::Event,
     sound::{SoundAction, SoundService},
 };
 use canopa_services::audio::{AudioDevice, AudioSnapshot, DeviceKind, StreamKind};
+use canopa_ui::direction;
 use iced::{
     Element, Length, Subscription,
-    widget::{column, progress_bar, row, text},
+    widget::{column, progress_bar, text},
 };
 
 pub(super) type SoundPage = LivePage<SoundService>;
@@ -73,21 +74,27 @@ impl State {
         };
         let key = |kind: &str| SoundAction::device_control(kind, id);
         let mut card = column![
-            row![
-                text(&device.description).width(Length::Fill),
+            direction::row([
+                text(&device.description)
+                    .width(Length::Fill)
+                    .align_x(direction::text_start())
+                    .into(),
                 if device.is_default {
-                    muted("In use")
+                    muted(fl!("settings-sound-in-use"))
                 } else {
                     self.action(
                         "settings-button-use-this-device",
-                        "Use this device",
+                        fl!("settings-sound-use-device"),
                         Some(message(Event::Apply(SoundAction::Default(id.clone())))),
                         false,
                     )
                 },
-            ]
+            ])
             .spacing(12),
-            text(format!("Volume: {volume}%")),
+            text(fl!(
+                "settings-sound-volume",
+                volume = canopa_i18n::format::percent(f64::from(volume))
+            )),
             adjust(
                 format!("sound-{}", key("volume")),
                 0.0..=100.,
@@ -106,7 +113,7 @@ impl State {
             page.control_status(&key("volume"), message),
             toggle(
                 format!("sound-{}", key("mute")),
-                "Mute",
+                fl!("settings-sound-mute"),
                 device.muted,
                 message(Event::Apply(SoundAction::Mute(id.clone(), !device.muted))),
             ),
@@ -120,9 +127,15 @@ impl State {
             };
             card = card
                 .push(text(match balance {
-                    0 => "Balance: centered".to_owned(),
-                    value if value < 0 => format!("Balance: {}% left", -value),
-                    value => format!("Balance: {value}% right"),
+                    0 => fl!("settings-sound-balance-center"),
+                    value if value < 0 => fl!(
+                        "settings-sound-balance-left",
+                        value = canopa_i18n::format::percent(-f64::from(value))
+                    ),
+                    value => fl!(
+                        "settings-sound-balance-right",
+                        value = canopa_i18n::format::percent(f64::from(value))
+                    ),
                 }))
                 .push(adjust(
                     format!("sound-{}", key("balance")),
@@ -143,7 +156,7 @@ impl State {
         }
         if id.kind == DeviceKind::Input && device.is_default {
             card = card
-                .push(text("Input level"))
+                .push(text(fl!("settings-sound-input-level")))
                 .push(progress_bar(0.0..=1.0, self.input_level.unwrap_or(0.0)).girth(8));
         }
         card = card
@@ -157,7 +170,7 @@ impl State {
 
     fn sound_sections<'a>(&'a self, snapshot: &'a AudioSnapshot) -> Element<'a, Message> {
         let page = &self.sound;
-        let devices = |kind: DeviceKind, empty: &'static str| -> Element<'a, Message> {
+        let devices = |kind: DeviceKind, empty: String| -> Element<'a, Message> {
             let mut list = column![].spacing(10);
             let mut any = false;
             for device in snapshot
@@ -178,22 +191,29 @@ impl State {
                 Some(SoundAction::StreamVolume(_, value)) => *value,
                 _ => stream.volume.round().min(100.) as u8,
             };
-            let what = match id.kind {
-                StreamKind::Playback => "Playing",
-                StreamKind::Recording => "Recording",
+            let recording = match id.kind {
+                StreamKind::Playback => "no",
+                StreamKind::Recording => "yes",
             };
             let mut card = column![
                 text(&stream.application),
                 muted(if stream.title.is_empty() {
-                    what.to_owned()
+                    fl!("settings-sound-stream", recording = recording)
                 } else {
-                    format!("{what}: {}", stream.title)
+                    fl!(
+                        "settings-sound-stream-titled",
+                        recording = recording,
+                        title = stream.title.as_str()
+                    )
                 }),
             ]
             .spacing(6);
             if stream.volume_writable {
                 card = card
-                    .push(text(format!("Volume: {volume}%")))
+                    .push(text(fl!(
+                        "settings-sound-volume",
+                        volume = canopa_i18n::format::percent(f64::from(volume))
+                    )))
                     .push(adjust(
                         format!("sound-{}", key("volume")),
                         0.0..=100.,
@@ -214,7 +234,7 @@ impl State {
             card = card
                 .push(toggle(
                     format!("sound-{}", key("mute")),
-                    "Mute",
+                    fl!("settings-sound-mute"),
                     stream.muted,
                     message(Event::Apply(SoundAction::StreamMute(
                         id.clone(),
@@ -230,7 +250,7 @@ impl State {
             );
         }
         let streams: Element<'_, Message> = if snapshot.streams.is_empty() {
-            muted("No applications are playing or recording.")
+            muted(fl!("settings-sound-no-streams"))
         } else {
             streams.into()
         };
@@ -241,56 +261,55 @@ impl State {
                 .iter()
                 .filter(|profile| profile.available || card.active.as_ref() == Some(&profile.name))
                 .collect();
-            let labels: Vec<String> = available.iter().map(|p| p.description.clone()).collect();
             let control = format!("profile-{}", card.name);
             let selected = match page.live.pending(&control) {
                 Some(SoundAction::Profile(_, _, profile)) => Some(profile.clone()),
                 _ => card.active.clone(),
-            }
-            .and_then(|name| available.iter().find(|p| p.name == name))
-            .map(|profile| profile.description.clone());
+            };
             let (index, name) = (card.index, card.name.clone());
+            // The audio server's own profile names and descriptions.
             let profiles: Vec<(String, String)> = available
                 .iter()
-                .map(|p| (p.description.clone(), p.name.clone()))
+                .map(|p| (p.name.clone(), p.description.clone()))
                 .collect();
             cards = cards.push(
                 column![
                     text(&card.description),
-                    choice(format!("sound-{control}"), labels, selected, move |label| {
-                        let profile = profiles
-                            .iter()
-                            .find(|(description, _)| *description == label)
-                            .map(|(_, name)| name.clone())
-                            .unwrap_or_default();
-                        message(Event::Apply(SoundAction::Profile(
-                            index,
-                            name.clone(),
-                            profile,
-                        )))
-                    }),
+                    pick(
+                        format!("sound-{control}"),
+                        profiles,
+                        selected,
+                        move |profile| {
+                            message(Event::Apply(SoundAction::Profile(
+                                index,
+                                name.clone(),
+                                profile,
+                            )))
+                        }
+                    ),
                     page.control_status(&control, message),
                 ]
                 .spacing(6),
             );
         }
         let cards: Element<'_, Message> = if snapshot.cards.is_empty() {
-            muted("No sound cards with profiles.")
+            muted(fl!("settings-sound-no-cards"))
         } else {
-            column![
-                muted(
-                    "Choose HDMI or analog output, or for a Bluetooth headset, high-fidelity playback (A2DP) or the headset profile with its microphone (HFP).",
-                ),
-                cards,
-            ]
-            .spacing(10)
-            .into()
+            column![muted(fl!("settings-sound-profiles-hint")), cards,]
+                .spacing(10)
+                .into()
         };
         column![
-            settings_group("Output", devices(DeviceKind::Output, "No output devices.")),
-            settings_group("Input", devices(DeviceKind::Input, "No input devices.")),
-            settings_group("Applications", streams),
-            settings_group("Profiles", cards),
+            settings_group(
+                fl!("settings-sound-output"),
+                devices(DeviceKind::Output, fl!("settings-sound-no-outputs"))
+            ),
+            settings_group(
+                fl!("settings-sound-input"),
+                devices(DeviceKind::Input, fl!("settings-sound-no-inputs"))
+            ),
+            settings_group(fl!("settings-sound-applications"), streams),
+            settings_group(fl!("settings-sound-profiles"), cards),
         ]
         .spacing(14)
         .into()
@@ -300,22 +319,18 @@ impl State {
         let alerts: Element<'_, Message> = match self.alert_sounds {
             Some(enabled) => toggle(
                 "sound-alerts",
-                "Play notification sounds",
+                fl!("settings-sound-alerts-toggle"),
                 enabled,
                 Message::AlertSounds(!enabled),
             ),
-            None => muted("Notification sounds are set in config.kdl, which could not be read."),
+            None => muted(fl!("settings-sound-alerts-unreadable")),
         };
         column![
             self.sound
                 .view(message, |snapshot| self.sound_sections(snapshot)),
             settings_group(
-                "Alert sounds",
-                column![
-                    alerts,
-                    muted("Applies at once. Canopa Notify plays these sounds."),
-                ]
-                .spacing(8),
+                fl!("settings-sound-alerts"),
+                column![alerts, muted(fl!("settings-sound-alerts-hint")),].spacing(8),
             ),
         ]
         .spacing(14)

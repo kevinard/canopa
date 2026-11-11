@@ -6,9 +6,10 @@ use crate::{
     live::{Event, LiveAction},
     printers::{PrinterAction, PrintersService, PrintersState, Queue, QueueState},
 };
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type PrintersPage = LivePage<PrintersService>;
@@ -25,9 +26,9 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
     text(label).size(14).style(canopa_ui::muted).into()
 }
 
-fn row_button<'a>(id: String, label: &'a str, message: Option<Message>) -> Element<'a, Message> {
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
-        canopa_ui::accessibility::Node::button(label)
+        canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
             .disabled(message.is_none())
             .on_click(message.clone()),
@@ -60,13 +61,16 @@ impl State {
         let page = &self.printers;
         let id = key(&queue.name);
         let mut status = match &queue.state {
-            QueueState::Idle => "Ready".to_owned(),
-            QueueState::Printing(job) => format!("Printing {job}"),
-            QueueState::Stopped(reason) if reason.is_empty() => "Paused".to_owned(),
-            QueueState::Stopped(reason) => format!("Paused: {reason}"),
+            QueueState::Idle => fl!("settings-printers-ready"),
+            QueueState::Printing(job) => fl!("settings-printers-printing", job = job.as_str()),
+            QueueState::Stopped(reason) if reason.is_empty() => fl!("settings-printers-paused"),
+            // CUPS's own reason.
+            QueueState::Stopped(reason) => {
+                fl!("settings-printers-paused-because", reason = reason.as_str())
+            }
         };
         if queue.default {
-            status = format!("Your default · {status}");
+            status = fl!("settings-printers-default-status", status = status);
         }
         let mut details = column![
             text(if queue.description.is_empty() {
@@ -77,32 +81,36 @@ impl State {
             muted(status),
         ]
         .spacing(2)
+        .align_x(direction::start())
         .width(Length::Fill);
         if !queue.location.is_empty() {
-            details = details.push(muted(format!("Location: {}", queue.location)));
+            details = details.push(muted(fl!(
+                "settings-printers-location",
+                location = queue.location.as_str()
+            )));
         }
         if !queue.uri.is_empty() {
             details = details.push(muted(queue.uri.clone()));
         }
         column![
-            row![
-                details,
+            direction::row([
+                details.into(),
                 row_button(
                     format!("printers-{id}-default"),
-                    "Make default",
+                    fl!("settings-printers-make-default"),
                     (!queue.default).then(|| apply(PrinterAction::Default(queue.name.clone()))),
                 ),
                 row_button(
                     format!("printers-{id}-test"),
-                    "Print test page",
+                    fl!("settings-printers-test-page"),
                     Some(apply(PrinterAction::TestPage(queue.name.clone()))),
                 ),
                 row_button(
                     format!("printers-{id}-remove"),
-                    "Remove",
+                    fl!("settings-printers-remove"),
                     Some(apply(PrinterAction::Remove(queue.name.clone()))),
                 ),
-            ]
+            ])
             .spacing(8)
             .align_y(Alignment::Center),
             page.control_status(
@@ -118,7 +126,7 @@ impl State {
         let page = &self.printers;
         let mut queues = column![].spacing(12);
         if state.queues.is_empty() {
-            queues = queues.push(muted("No printers are set up."));
+            queues = queues.push(muted(fl!("settings-printers-none")));
         }
         for queue in &state.queues {
             queues = queues.push(self.queue_card(queue));
@@ -127,34 +135,43 @@ impl State {
 
         let mut jobs = column![].spacing(8);
         if state.jobs.is_empty() {
-            jobs = jobs.push(muted("Nothing is waiting to print."));
+            jobs = jobs.push(muted(fl!("settings-printers-no-jobs")));
         }
         for job in &state.jobs {
             let mine = job.user == state.user;
             jobs = jobs.push(
                 column![
-                    row![
+                    direction::row([
                         column![
-                            text(format!("Job {} on {}", job.number, job.queue)),
-                            muted(format!(
-                                "{} · {} kB",
-                                if mine {
-                                    "Yours".to_owned()
-                                } else {
-                                    job.user.clone()
-                                },
-                                job.size.div_ceil(1024)
+                            text(fl!(
+                                "settings-printers-job",
+                                number = job.number.to_string(),
+                                queue = job.queue.as_str()
                             )),
+                            muted(if mine {
+                                fl!(
+                                    "settings-printers-job-mine",
+                                    size = canopa_i18n::format::size(job.size)
+                                )
+                            } else {
+                                fl!(
+                                    "settings-printers-job-of",
+                                    user = job.user.as_str(),
+                                    size = canopa_i18n::format::size(job.size)
+                                )
+                            }),
                         ]
                         .spacing(2)
-                        .width(Length::Fill),
+                        .align_x(direction::start())
+                        .width(Length::Fill)
+                        .into(),
                         row_button(
                             format!("printers-job-{}", key(&job.id)),
-                            "Cancel",
+                            fl!("settings-cancel"),
                             (mine || state.helper)
                                 .then(|| apply(PrinterAction::Cancel(job.clone()))),
                         ),
-                    ]
+                    ])
                     .spacing(10)
                     .align_y(Alignment::Center),
                     page.control_status(&PrinterAction::Cancel(job.clone()).control(), message),
@@ -164,18 +181,18 @@ impl State {
         }
 
         let mut add = column![
-            row![
+            direction::row([
                 row_button(
                     "printers-search".into(),
                     if page.live.control("search") == crate::live::ControlStatus::Applying {
-                        "Searching…"
+                        fl!("settings-printers-searching")
                     } else {
-                        "Search the network"
+                        fl!("settings-printers-search")
                     },
                     Some(apply(PrinterAction::Search)),
                 ),
-                muted("Finds printers that work without a driver (IPP Everywhere, AirPrint)."),
-            ]
+                muted(fl!("settings-printers-search-hint")),
+            ])
             .spacing(10)
             .align_y(Alignment::Center),
             page.control_status("search", message),
@@ -183,24 +200,24 @@ impl State {
         .spacing(10);
         match &state.found {
             Some(found) if found.is_empty() => {
-                add = add.push(muted(
-                    "No new printers found. Check that the printer is on and on this network.",
-                ));
+                add = add.push(muted(fl!("settings-printers-none-found")));
             }
             Some(found) => {
                 for printer in found {
                     add = add.push(
                         column![
-                            row![
+                            direction::row([
                                 column![text(printer.name.clone()), muted(printer.uri.clone())]
                                     .spacing(2)
-                                    .width(Length::Fill),
+                                    .align_x(direction::start())
+                                    .width(Length::Fill)
+                                    .into(),
                                 row_button(
                                     format!("printers-add-{}", key(&printer.uri)),
-                                    "Add",
+                                    fl!("settings-printers-add"),
                                     Some(apply(PrinterAction::Add(printer.clone()))),
                                 ),
-                            ]
+                            ])
                             .spacing(10)
                             .align_y(Alignment::Center),
                             page.control_status(
@@ -215,14 +232,14 @@ impl State {
             None => {}
         }
         add = add.push(muted(if state.helper {
-            "Adding and removing printers asks for an administrator's permission."
+            fl!("settings-printers-helper-hint")
         } else {
-            "Adding and removing printers needs cups-pk-helper, or membership in CUPS's system group."
+            fl!("settings-printers-no-helper-hint")
         }));
         column![
-            settings_group("Printers", queues),
-            settings_group("Print jobs", jobs),
-            settings_group("Add a printer", add),
+            settings_group(fl!("settings-printers"), queues),
+            settings_group(fl!("settings-printers-jobs"), jobs),
+            settings_group(fl!("settings-printers-add-title"), add),
         ]
         .spacing(14)
         .into()

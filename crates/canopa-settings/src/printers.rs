@@ -18,7 +18,9 @@ use std::{
     time::Duration,
 };
 
-const NOT_RUNNING: &str = "The CUPS scheduler is not running.";
+fn not_running() -> String {
+    fl!("settings-printers-not-running")
+}
 const TEST_PAGES: [&str; 2] = [
     "/usr/share/cups/data/default-testpage.pdf",
     "/usr/share/cups/data/testprint",
@@ -268,11 +270,11 @@ async fn run(
             .output(),
     )
     .await
-    .map_err(|_| ServiceError::Failed("CUPS did not answer in time.".into()))?
+    .map_err(|_| ServiceError::Failed(fl!("settings-printers-timed-out")))?
     .map_err(|_| {
-        ServiceError::Unavailable(format!(
-            "{} is not installed (the CUPS client tools).",
-            program.display()
+        ServiceError::Unavailable(fl!(
+            "settings-printers-tool-missing",
+            program = program.display().to_string()
         ))
     })?;
     let text = |bytes: Vec<u8>| {
@@ -287,7 +289,9 @@ async fn run(
     ))
 }
 
-fn refusal(stderr: &str, what: &str) -> ServiceError {
+/// A CUPS tool's refusal. `task` names what was tried: `add`, `remove`,
+/// `default`, `cancel` or `test`.
+fn refusal(stderr: &str, task: &str) -> ServiceError {
     let line = stderr
         .lines()
         .map(str::trim)
@@ -302,13 +306,16 @@ fn refusal(stderr: &str, what: &str) -> ServiceError {
             || lower.contains("not authorized")
             || lower.contains("unauthorized")
         {
-            format!(
-                "{what} needs permission. Install cups-pk-helper to ask an administrator, or join CUPS's system group."
-            )
+            fl!("settings-printers-needs-permission", task = task)
         } else if line.is_empty() {
-            format!("{what} failed.")
+            fl!("settings-printers-task-failed", task = task)
         } else {
-            format!("{what} failed: {line}")
+            // CUPS tools run in the C locale: `line` is English.
+            fl!(
+                "settings-printers-task-failed-because",
+                task = task,
+                error = line
+            )
         },
     )
 }
@@ -336,12 +343,12 @@ impl Default for PrintersService {
 fn helper_failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     ServiceError::Failed(match error {
-        Error::NotAuthorized => "The system did not allow this change.".into(),
-        Error::Unavailable => "cups-pk-helper is not available.".into(),
-        Error::TimedOut => "CUPS did not answer in time.".into(),
-        Error::Invalid(what) => format!("That is not a valid {what}."),
-        Error::Changed => "The printer changed. Try again.".into(),
-        Error::Refused(message) => format!("CUPS refused: {message}"),
+        Error::NotAuthorized => fl!("settings-error-not-authorized"),
+        Error::Unavailable => fl!("settings-printers-no-helper"),
+        Error::TimedOut => fl!("settings-printers-timed-out"),
+        Error::Invalid(what) => crate::service_text::invalid(what),
+        Error::Changed => fl!("settings-printers-changed"),
+        Error::Refused(message) => fl!("settings-printers-refused", reason = message),
     })
 }
 
@@ -370,7 +377,7 @@ impl PrintersService {
         let deadline = Duration::from_secs(5);
         let (_, scheduler, _) = run(&tools.lpstat, &["-r"], deadline).await?;
         if !scheduler.contains("scheduler is running") {
-            return Err(ServiceError::Unavailable(NOT_RUNNING.into()));
+            return Err(ServiceError::Unavailable(not_running()));
         }
         let (queues, devices, default, jobs) = tokio::join!(
             run(&tools.lpstat, &["-l", "-p"], deadline),
@@ -431,11 +438,10 @@ impl PrintersService {
                     Duration::from_secs(15),
                 )
                 .await
-                .map_err(|_| ServiceError::Failed("Searching needs ippfind, from CUPS.".into()))?;
+                .map_err(|_| ServiceError::Failed(fl!("settings-printers-needs-ippfind")))?;
+                // ippfind's own (C locale) messages.
                 if err.contains("Daemon not running") || err.contains("Unable to use Bonjour") {
-                    return Err(ServiceError::Failed(
-                        "Searching for printers needs Avahi (avahi-daemon) running.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-printers-needs-avahi")));
                 }
                 // printf in ippfind's -x gets a literal \t; accept both.
                 let text = out.replace("\\t", "\t").replace("\\n", "\n");
@@ -472,7 +478,7 @@ impl PrintersService {
                 if ok {
                     Ok(())
                 } else {
-                    Err(refusal(&err, "Adding the printer"))
+                    Err(refusal(&err, "add"))
                 }
             }
             PrinterAction::Remove(name) => {
@@ -485,7 +491,7 @@ impl PrintersService {
                 if ok {
                     Ok(())
                 } else {
-                    Err(refusal(&err, "Removing the printer"))
+                    Err(refusal(&err, "remove"))
                 }
             }
             PrinterAction::Default(name) => {
@@ -493,7 +499,7 @@ impl PrintersService {
                 if ok {
                     Ok(())
                 } else {
-                    Err(refusal(&err, "Choosing the default printer"))
+                    Err(refusal(&err, "default"))
                 }
             }
             PrinterAction::Cancel(job) => {
@@ -505,22 +511,22 @@ impl PrintersService {
                     Some(system) => helper::job_cancel(&system, job.number)
                         .await
                         .map_err(helper_failure),
-                    None => Err(refusal(&err, "Cancelling the job")),
+                    None => Err(refusal(&err, "cancel")),
                 }
             }
             PrinterAction::TestPage(name) => {
                 let page = TEST_PAGES
                     .iter()
                     .find(|path| Path::new(path).is_file())
-                    .ok_or_else(|| {
-                        ServiceError::Failed("CUPS's test page is not installed.".into())
-                    })?;
+                    .ok_or_else(|| ServiceError::Failed(fl!("settings-printers-no-test-page")))?;
+                // The job's title in print queues.
+                let title = fl!("settings-printers-test-job");
                 let (ok, _, err) =
-                    run(&tools.lp, &["-d", &name, "-t", "Test page", page], deadline).await?;
+                    run(&tools.lp, &["-d", &name, "-t", &title, page], deadline).await?;
                 if ok {
                     Ok(())
                 } else {
-                    Err(refusal(&err, "Printing the test page"))
+                    Err(refusal(&err, "test"))
                 }
             }
         }
@@ -735,7 +741,7 @@ esac"#,
 
         std::fs::write(dir.path().join("stopped"), "").unwrap();
         assert!(
-            matches!(service.snapshot().await, Err(ServiceError::Unavailable(m)) if m == NOT_RUNNING)
+            matches!(service.snapshot().await, Err(ServiceError::Unavailable(m)) if m == not_running())
         );
     }
 }
