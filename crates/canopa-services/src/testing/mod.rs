@@ -91,6 +91,7 @@ pub mod accounts;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod bluez;
+pub mod cups_pk_helper;
 pub mod geoclue;
 pub mod hostname;
 pub mod locale;

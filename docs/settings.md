@@ -12,9 +12,9 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Date & time, Region & language, Users, Privacy,
-About, Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
-When the service behind a page (NetworkManager, BlueZ, the audio server,
+Network, Bluetooth, Printers, Sound, Date & time, Region & language, Users,
+Privacy, About, Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
+When the service behind a page (NetworkManager, BlueZ, CUPS, the audio server,
 systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
 it returns.
 
@@ -149,6 +149,21 @@ shown by the device, or type the code Settings shows on the device's keyboard.
 **Cancel** stops the attempt. Settings answers only BlueZ's questions about
 the device you chose, through its own agent for that attempt. A headset's audio
 profile is chosen on the Sound page.
+
+## Printers
+
+The Printers page follows CUPS. **Printers** lists each queue with its state,
+location and address: **Make default** sets your default printer (in your
+`lpoptions`), **Print test page** prints CUPS's test page, and **Remove**
+deletes the queue. **Print jobs** lists what is waiting; you can cancel your
+own jobs, and an administrator can cancel others'.
+
+**Search the network** finds printers that work without a driver (IPP
+Everywhere and AirPrint, through DNS-SD with `ippfind`; Avahi must be
+running). **Add** sets one up as a driverless queue. Adding and removing
+printers ask for permission through cups-pk-helper and the polkit agent; without
+cups-pk-helper they work only for members of CUPS's system group. The page is
+separate from Canopa's optional print dialog backend.
 
 ## Sound
 

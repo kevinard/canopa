@@ -20,6 +20,7 @@
 //! | [`locale`] | systemd-localed | [`locale::SystemLocale`] (locale, X11 and console keyboard) | [`locale::watch`] | [`locale::set_locale`], [`locale::set_x11_keyboard`] (polkit) |
 //! | [`accounts`] | AccountsService | [`accounts::Accounts`] ([`accounts::User`]: name, type, language, picture, automatic login) | [`accounts::watch`] | add, remove, rename, account type, language, formats, picture, automatic login, password at next login (polkit) |
 //! | [`permission_store`] | the portal permission store (session bus) | [`permission_store::Permissions`] per entry | [`permission_store::changes`] | set, revoke, delete |
+//! | [`cups_pk_helper`] | cups-pk-helper (CUPS administration through polkit) | – | – | add, remove, default printer, cancel any job |
 //! | [`geoclue`] | GeoClue | [`geoclue::Place`] | – | [`geoclue::locate`] (once, city accuracy) |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
@@ -37,6 +38,7 @@ pub mod audio;
 pub mod backlight;
 pub mod bluetooth;
 pub mod bus;
+pub mod cups_pk_helper;
 mod error;
 pub mod geoclue;
 pub mod hostname;

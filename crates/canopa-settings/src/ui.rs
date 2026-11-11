@@ -12,6 +12,7 @@ mod navigation;
 mod network;
 mod notifications;
 mod power;
+mod printers;
 mod privacy;
 mod profiles;
 mod region;
@@ -143,6 +144,7 @@ enum Message {
     Users(crate::live::Event<crate::users::UsersService>),
     UsersForm(users::Edit),
     Privacy(crate::live::Event<crate::privacy::PrivacyService>),
+    Printers(crate::live::Event<crate::printers::PrintersService>),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -204,6 +206,7 @@ struct State {
     users: users::UsersPage,
     users_forms: users::UsersForms,
     privacy: privacy::PrivacyPage,
+    printers: printers::PrintersPage,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -315,6 +318,7 @@ impl State {
             users: live_page::LivePage::new(Default::default()),
             users_forms: Default::default(),
             privacy: live_page::LivePage::new(Default::default()),
+            printers: live_page::LivePage::new(Default::default()),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -759,7 +763,8 @@ impl State {
                     | Page::About
                     | Page::Region
                     | Page::Users
-                    | Page::Privacy => self.busy = false,
+                    | Page::Privacy
+                    | Page::Printers => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -905,6 +910,7 @@ impl State {
             Message::Users(event) => return self.users.update(event, users::message),
             Message::UsersForm(edit) => return self.users_edit(edit),
             Message::Privacy(event) => return self.privacy.update(event, privacy::message),
+            Message::Printers(event) => return self.printers.update(event, printers::message),
             Message::DefaultAppsSearch(query) => {
                 self.default_apps_query = query.chars().take(100).collect();
             }
@@ -1148,6 +1154,9 @@ impl State {
             Page::Privacy => self
                 .privacy
                 .update(crate::live::Event::Reload, privacy::message),
+            Page::Printers => self
+                .printers
+                .update(crate::live::Event::Reload, printers::message),
             Page::Users => {
                 self.users_forms.clear_secrets();
                 self.users
@@ -1204,6 +1213,9 @@ impl State {
         }
         if self.page == Page::Privacy {
             subscriptions.push(self.privacy.subscription(Message::Privacy));
+        }
+        if self.page == Page::Printers {
+            subscriptions.push(self.printers.subscription(Message::Printers));
         }
         if self.page == Page::DateTime {
             subscriptions.push(self.date_time.subscription(Message::DateTime));
@@ -1289,6 +1301,7 @@ impl State {
             Page::Region => self.region_view(),
             Page::Users => self.users_view(),
             Page::Privacy => self.privacy_view(),
+            Page::Printers => self.printers_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

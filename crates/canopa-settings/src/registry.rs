@@ -25,6 +25,7 @@ pub enum Page {
     Region,
     Users,
     Privacy,
+    Printers,
     /// The live-page pattern on a fake service; debug builds only.
     #[cfg(debug_assertions)]
     LiveExample,
@@ -244,6 +245,28 @@ pub static PAGES: &[Entry] = &[
             "trust",
             "forget",
             "pin",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
+        page: Page::Printers,
+        id: "printers",
+        title: "Printers",
+        description: "Add printers, choose your default and manage print jobs.",
+        icon: "printer",
+        group: Group::Devices,
+        keywords: &[
+            "print",
+            "printing",
+            "cups",
+            "queue",
+            "jobs",
+            "test page",
+            "ipp",
+            "airprint",
+            "driverless",
+            "scanner",
         ],
         kind: Kind::Live,
         hidden: false,
@@ -773,6 +796,7 @@ mod tests {
             "region",
             "users",
             "privacy",
+            "printers",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -789,6 +813,7 @@ mod tests {
                 Page::Input,
                 Page::Network,
                 Page::Bluetooth,
+                Page::Printers,
                 Page::Sound,
                 Page::Personal,
                 Page::Power,
@@ -841,6 +866,7 @@ mod tests {
         assert_eq!(pages("password")[0], Page::Users);
         assert_eq!(pages("camera"), [Page::Privacy]);
         assert_eq!(pages("autostart"), [Page::Privacy]);
+        assert_eq!(pages("cups"), [Page::Printers]);
         assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
