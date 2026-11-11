@@ -4,7 +4,9 @@ Status: accepted; physical installation acceptance remains separate.
 
 The shortcut materialization below is superseded by
 [ADR 0135](0135-shortcut-changes-over-shipped-defaults.md), which stores shortcut
-changes as a delta over the shipped defaults.
+changes as a delta over the shipped defaults. The page registry, page patterns
+and the single-window D-Bus contract are in
+[ADR 0136](0136-settings-pages-patterns-and-activation.md).
 
 Canopa Settings is an ordinary independently launched Iced application, sharing
 appearance and controls. It does not own compositor, wallpaper, authentication or

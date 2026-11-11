@@ -2,9 +2,21 @@
 
 Open **Canopa Settings** from the launcher, press Super+Comma in the packaged
 session, or run `canopa settings`. The window uses the shared Canopa appearance.
-Tab/Shift+Tab navigate controls. Ctrl+1 through Ctrl+7 select pages, and Ctrl+S
-applies the selected page. Closing the
-window leaves the independent desktop services running.
+Closing the window leaves the independent desktop services running.
+
+The sidebar groups pages under Devices, Appearance, System and Desktop. Type in
+**Search settings** to list the pages whose name or keywords match, for example
+`touchpad`, `wallpaper` or `suspend`; Enter opens the best match. Ctrl+F moves to
+the search field. Tab/Shift+Tab navigate controls. On a sidebar page, Up and Down
+move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
+from anywhere. Ctrl+1 through Ctrl+9 open the pages in sidebar order (currently
+Ctrl+1 Displays to Ctrl+7 Widgets), and Ctrl+S saves the selected page.
+
+Only one Settings window runs at a time. Opening Settings again, from the
+launcher, a notification or the command line, brings the existing window
+forward at the requested page, keeping unsaved edits on other pages. A page
+request that arrives while a change is being applied or a display test is
+running only brings the window forward.
 
 ## Displays
 
@@ -202,11 +214,32 @@ configuration must be explicitly migrated before creating a common Canopa file,
 so a new appearance file cannot silently hide existing shell/notification settings.
 See [configuration](configuration.md) and [installation](installation.md).
 
-The launcher can open a particular page with `canopa-settings --page displays`,
-`--page input`, `--page personal`, `--page power`, `--page launcher`,
-`--page shortcuts`, or `--page widgets`. The option selects the initial
-page only; normal Apply controls remain responsible for writes. It cannot be
-combined with command-line operations such as `outputs` or `check`.
+## Opening a page
+
+`canopa-settings PAGE` opens a page; `--page PAGE` is the same. The page ids are
+`displays`, `input` (Keyboard & pointer), `personal` (Personalization), `power`,
+`launcher`, `shortcuts` and `widgets`. When Settings is already open, the window
+switches to the page and the command exits. Opening a page never saves
+anything; the page's own controls remain responsible for writes. A page cannot
+be combined with command-line operations such as `outputs` or `check`.
+
+Programs can do the same on the session bus. Settings owns `org.canopa.Settings`
+and serves the `org.canopa.Settings` interface at `/org/canopa/Settings`:
+
+```sh
+busctl --user call org.canopa.Settings /org/canopa/Settings org.canopa.Settings OpenPage 'sa{sv}' power 0
+busctl --user call org.canopa.Settings /org/canopa/Settings org.canopa.Settings Activate
+busctl --user get-property org.canopa.Settings /org/canopa/Settings org.canopa.Settings Pages
+```
+
+`OpenPage` takes a page id and options; `display-profile` (a string) selects a
+saved layout on `displays`. `Activate` only brings the window forward, and
+`Pages` lists the page ids. The installed D-Bus service file starts Settings
+when no window is open. Without a session bus each launch opens its own window.
+
+The Shell's configuration-error notification opens Widgets for a problem in its
+`shell` section and Personalization for syntax, schema-version and appearance
+problems.
 
 The Launcher page manages extension enablement/keywords and web search templates,
 and shows extension actions and last status. Save applies preferences to the
