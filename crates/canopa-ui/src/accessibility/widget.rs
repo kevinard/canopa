@@ -8,6 +8,10 @@ use iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, overlay, r
 use iced::{Element, Event, Length, Rectangle, Size, Vector};
 
 /// Describe `content` with `node`.
+///
+/// For a node with nothing to draw (a live region announcing a count), wrap a
+/// plain `space()`: `Row`/`Column::push` drops a child with a fixed zero width
+/// or height, and the node with it.
 pub fn semantic<'a, M, Theme, Renderer>(
     node: Node<M>,
     content: impl Into<Element<'a, M, Theme, Renderer>>,

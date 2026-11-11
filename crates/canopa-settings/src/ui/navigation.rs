@@ -39,7 +39,9 @@ impl State {
                     n => format!("{n} matching pages"),
                 })
                 .key("settings-search-status"),
-                iced::widget::space().height(0),
+                // A plain space lays out as 0×0 and stays; a fixed zero height
+                // would be dropped by Column::push, and the status with it.
+                iced::widget::space(),
             ));
             if found.is_empty() {
                 list = list.push(

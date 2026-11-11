@@ -76,7 +76,18 @@ async fn native_settings_tree_follows_pages_focus_and_live_controls() {
         .role_name()
         .await;
 
-    // AT focus requests move keyboard focus; collected focus follows it.
+    // Searching announces the number of matching pages.
+    let _ = state.update(Message::Search("sound".into()));
+    publish(&state, &mut bridge);
+    let matches = match crate::registry::search("sound").len() {
+        1 => "1 matching page".to_owned(),
+        n => format!("{n} matching pages"),
+    };
+    testing::named_role(&connection, &matches, "status bar").await;
+    let _ = state.update(Message::Search(String::new()));
+    publish(&state, &mut bridge);
+
+        // AT focus requests move keyboard focus; collected focus follows it.
     let search = testing::named_role(&connection, "Search settings", "entry").await;
     assert!(search.grab_focus().await);
     let Event::Focus(id) = next(&bridge).await else {
