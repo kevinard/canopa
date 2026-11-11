@@ -1,4 +1,7 @@
-//! Shared Iced visual treatment. Callers retain events, focus, identity and accessibility trees.
+//! Shared Iced visual treatment and, with the `accessibility` feature, AT-SPI
+//! trees. Callers retain events, focus, identity and action validation.
+#[cfg(feature = "accessibility")]
+pub mod accessibility;
 mod customization;
 #[cfg(feature = "icons")]
 pub mod icons;

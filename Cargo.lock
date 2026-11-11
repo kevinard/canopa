@@ -1301,9 +1301,14 @@ version = "0.1.0"
 name = "canopa-ui"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
+ "accesskit_unix",
  "canopa-assets",
  "canopa-theme",
  "iced",
+ "tempfile",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]

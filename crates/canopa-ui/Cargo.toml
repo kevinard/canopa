@@ -8,8 +8,17 @@ license.workspace = true
 [features]
 # Iced handles for icons prepared by canopa-assets.
 icons = ["dep:canopa-assets"]
+# Native AT-SPI trees for Iced windows (AccessKit).
+accessibility = ["dep:accesskit", "dep:accesskit_unix"]
+# Private-bus acceptance helpers for consumers' native accessibility tests.
+accessibility-testing = ["accessibility", "dep:tempfile", "dep:tokio", "dep:zbus"]
 
 [dependencies]
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-theme.workspace = true
 iced.workspace = true
+accesskit = { workspace = true, optional = true }
+accesskit_unix = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["time"] }
+zbus = { workspace = true, optional = true }
