@@ -1227,6 +1227,7 @@ dependencies = [
  "canopa-config",
  "canopa-file",
  "canopa-launcher",
+ "canopa-services",
  "canopa-session-ui",
  "canopa-theme",
  "canopa-ui",

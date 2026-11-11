@@ -12,6 +12,7 @@ desktop = ["dep:iced", "dep:canopa-ui"]
 
 [dependencies]
 canopa-launcher.workspace = true
+canopa-services = { workspace = true, features = ["audio"] }
 anyhow.workspace = true
 canopa-config.workspace = true
 canopa-file.workspace = true
@@ -35,6 +36,7 @@ zbus.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+canopa-services = { workspace = true, features = ["audio", "test-support"] }
 
 [[test]]
 name = "integration"
