@@ -11,7 +11,9 @@ default = ["desktop"]
 desktop = ["dep:iced", "dep:canopa-ui"]
 
 [dependencies]
+canopa-apps.workspace = true
 canopa-launcher.workspace = true
+canopa-notify-client.workspace = true
 canopa-services = { workspace = true, features = ["audio"] }
 anyhow.workspace = true
 canopa-config.workspace = true
