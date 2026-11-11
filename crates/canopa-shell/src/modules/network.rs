@@ -2,6 +2,7 @@ use crate::theme;
 
 /// Connectivity level reported by the active backend.
 pub use canopa_services::network::Connectivity as NetworkConnectivity;
+pub use canopa_services::network::NetworkKind;
 
 /// Runtime state for the network module.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -9,6 +10,10 @@ pub struct NetworkState {
     pub connectivity: NetworkConnectivity,
     /// Connection label: NM profile name or networkd's sorted usable link names.
     pub label: Option<String>,
+    /// What carries the primary connection (NetworkManager only).
+    pub kind: Option<NetworkKind>,
+    /// Active VPN connections (NetworkManager only).
+    pub vpn: Vec<String>,
 }
 
 /// Events emitted by the network D-Bus subscription.
@@ -17,6 +22,8 @@ pub enum NetworkEvent {
     StateChanged {
         connectivity: NetworkConnectivity,
         label: Option<String>,
+        kind: Option<NetworkKind>,
+        vpn: Vec<String>,
     },
     Unavailable,
 }
@@ -82,6 +89,16 @@ impl NetworkModule {
             icons,
             format,
             content_rotation,
+        }
+    }
+
+    /// The Quick settings card's title: what carries the connection.
+    fn card_title(state: &NetworkState) -> &'static str {
+        match state.kind {
+            Some(NetworkKind::Wireless) => "Wi-Fi",
+            Some(NetworkKind::Wired) => "Wired",
+            Some(NetworkKind::Vpn) => "VPN",
+            Some(NetworkKind::Other) | None => "Network",
         }
     }
 
@@ -210,6 +227,8 @@ impl crate::modules::data_source::ModuleDataSourceMapper for NetworkModule {
             crate::modules::ModuleState::Network(NetworkState {
                 connectivity: reading.connectivity.clone(),
                 label: reading.label.clone(),
+                kind: reading.kind,
+                vpn: reading.vpn.clone(),
             }),
         )
     }
@@ -226,13 +245,19 @@ impl crate::modules::render::ModuleRender for NetworkModule {
         _: &crate::config::Style,
         context: crate::modules::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        let description = match state {
-            crate::modules::ModuleState::Network(network) => Self::default_label(network),
-            _ => "Network status unavailable".to_owned(),
+        let (title, description) = match state {
+            crate::modules::ModuleState::Network(network) => {
+                let mut description = Self::default_label(network);
+                if !network.vpn.is_empty() {
+                    description = format!("{description} · VPN: {}", network.vpn.join(", "));
+                }
+                (Self::card_title(network), description)
+            }
+            _ => ("Network", "Network status unavailable".to_owned()),
         };
         Some(crate::modules::view::panel_control(
             include_bytes!("../../assets/wifi.svg"),
-            "Wi-Fi",
+            title,
             description,
             super::view::PanelControlEnd::Navigate,
             context,
@@ -356,6 +381,7 @@ mod tests {
                 crate::modules::data_source::NetworkReading {
                     connectivity: NetworkConnectivity::Limited,
                     label: Some("captive".into()),
+                    ..Default::default()
                 },
             ),
         );
@@ -366,6 +392,7 @@ mod tests {
                 crate::modules::ModuleState::Network(NetworkState {
                     connectivity: NetworkConnectivity::Limited,
                     label: Some("captive".into()),
+                    ..Default::default()
                 })
             )
         );
@@ -389,6 +416,7 @@ mod tests {
         let s = NetworkState {
             connectivity: NetworkConnectivity::Full,
             label: Some("Home WiFi".to_string()),
+            ..Default::default()
         };
         assert_eq!(s.label.as_deref(), Some("Home WiFi"));
     }
@@ -408,6 +436,7 @@ mod tests {
         let state = crate::modules::ModuleState::Network(NetworkState {
             connectivity: NetworkConnectivity::Full,
             label: None,
+            ..Default::default()
         });
 
         assert_eq!(m.icon(&state), "ok");
@@ -428,6 +457,7 @@ mod tests {
         let state = crate::modules::ModuleState::Network(NetworkState {
             connectivity: NetworkConnectivity::Full,
             label: None,
+            ..Default::default()
         });
 
         assert_eq!(m.icon(&state), "◆");
@@ -443,6 +473,7 @@ mod tests {
         let state = NetworkState {
             connectivity: NetworkConnectivity::Full,
             label: Some("wifi".to_string()),
+            ..Default::default()
         };
 
         let rendered = m
@@ -465,10 +496,12 @@ mod tests {
         let limited = NetworkState {
             connectivity: NetworkConnectivity::Limited,
             label: None,
+            ..Default::default()
         };
         let none = NetworkState {
             connectivity: NetworkConnectivity::None,
             label: None,
+            ..Default::default()
         };
 
         assert_eq!(
@@ -493,5 +526,31 @@ mod tests {
                 .color,
             Some(crate::theme::palette().danger)
         );
+    }
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn the_card_names_what_carries_the_connection() {
+        let state = |kind| NetworkState {
+            kind,
+            ..Default::default()
+        };
+        assert_eq!(
+            NetworkModule::card_title(&state(Some(NetworkKind::Wired))),
+            "Wired"
+        );
+        assert_eq!(
+            NetworkModule::card_title(&state(Some(NetworkKind::Wireless))),
+            "Wi-Fi"
+        );
+        assert_eq!(
+            NetworkModule::card_title(&state(Some(NetworkKind::Vpn))),
+            "VPN"
+        );
+        assert_eq!(NetworkModule::card_title(&state(None)), "Network");
     }
 }

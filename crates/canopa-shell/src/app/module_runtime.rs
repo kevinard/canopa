@@ -2674,6 +2674,8 @@ mod tests {
             NetworkEvent::StateChanged {
                 connectivity: NetworkConnectivity::Full,
                 label: Some("Home".into()),
+                kind: None,
+                vpn: Vec::new(),
             },
         )));
         let id = ModuleId::new("network");
@@ -2706,6 +2708,8 @@ mod tests {
             NetworkEvent::StateChanged {
                 connectivity: NetworkConnectivity::Full,
                 label: None,
+                kind: None,
+                vpn: Vec::new(),
             },
         )));
         let id = ModuleId::new("network");

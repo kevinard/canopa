@@ -586,11 +586,151 @@ async fn unknown_enterprise_wifi_row_reports_unsupported_without_connecting() {
     assert!(matches!(
         &documents[0].elements[1],
         ExternalPanelElement::Status {
-            severity: ExternalPanelSeverity::Error,
+            severity: ExternalPanelSeverity::Info,
             message,
             ..
-        } if message.contains("not supported")
+        } if message.contains("Settings")
     ));
+}
+
+/// A backend with a radio, disconnect and forget.
+struct ManagedBackend {
+    radio: bool,
+    calls: Arc<Mutex<Vec<String>>>,
+    snapshot: WifiSnapshot,
+}
+
+type Future<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, WifiBackendError>> + Send + 'a>>;
+
+impl WifiControlBackend for ManagedBackend {
+    fn name(&self) -> BackendName {
+        BackendName::NetworkManager
+    }
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            can_scan_while_connecting: false,
+        }
+    }
+    fn initial_snapshot<'a>(&'a mut self) -> Future<'a, WifiSnapshot> {
+        let snapshot = self.snapshot.clone();
+        Box::pin(async move { Ok(snapshot) })
+    }
+    fn scan<'a>(&'a mut self) -> Future<'a, WifiSnapshot> {
+        self.initial_snapshot()
+    }
+    fn connect<'a>(&'a mut self, _: WifiConnectRequest) -> Future<'a, WifiSnapshot> {
+        self.initial_snapshot()
+    }
+    fn radio<'a>(&'a mut self) -> Future<'a, Option<bool>> {
+        let radio = self.radio;
+        Box::pin(async move { Ok(Some(radio)) })
+    }
+    fn set_radio<'a>(&'a mut self, enabled: bool) -> Future<'a, WifiSnapshot> {
+        self.radio = enabled;
+        self.calls.lock().unwrap().push(format!("radio {enabled}"));
+        self.initial_snapshot()
+    }
+    fn disconnect<'a>(&'a mut self, device: String) -> Future<'a, WifiSnapshot> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("disconnect {device}"));
+        for network in &mut self.snapshot.networks {
+            network.active = false;
+        }
+        self.initial_snapshot()
+    }
+    fn forget<'a>(&'a mut self, request: WifiConnectRequest) -> Future<'a, WifiSnapshot> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("forget {}", request.network_id.unwrap_or_default()));
+        self.snapshot.networks.clear();
+        self.initial_snapshot()
+    }
+}
+
+fn buttons(document: &canopa_panel_protocol::v1::ExternalPanelDocument) -> Vec<String> {
+    document
+        .elements
+        .iter()
+        .filter_map(|element| match element {
+            ExternalPanelElement::Button { label, .. } => Some(label.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn wifi_can_be_turned_off_disconnected_and_forgotten() {
+    use canopa_panel_protocol::v1::ProviderEvent;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut provider = WifiPanelProvider::new(ManagedBackend {
+        radio: true,
+        calls: calls.clone(),
+        snapshot: WifiSnapshot {
+            device_id: Some("device".into()),
+            networks: vec![WifiNetwork {
+                id: "home".into(),
+                label: "Home".into(),
+                signal_strength: 80,
+                security: WifiSecurity::Personal,
+                known: true,
+                active: true,
+            }],
+            scanning: false,
+        },
+    });
+    let document = provider.initial_content().await.unwrap();
+    assert_eq!(
+        buttons(&document),
+        ["Refresh", "Disconnect", "Forget Home", "Turn Wi-Fi off"]
+    );
+    let press = |id: &str| ProviderEvent::ButtonActivated {
+        element_id: id.into(),
+    };
+    let document = provider.handle_event(press("disconnect")).await.unwrap();
+    assert_eq!(buttons(&document[0]), ["Refresh", "Turn Wi-Fi off"]);
+    let document = provider.handle_event(press("radio")).await.unwrap();
+    assert_eq!(buttons(&document[0]), ["Turn Wi-Fi on"]);
+    let document = provider.handle_event(press("radio")).await.unwrap();
+    assert!(buttons(&document[0]).contains(&"Turn Wi-Fi off".to_string()));
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["disconnect device", "radio false", "radio true"]
+    );
+}
+
+#[tokio::test]
+async fn a_connected_network_can_be_forgotten() {
+    use canopa_panel_protocol::v1::ProviderEvent;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut provider = WifiPanelProvider::new(ManagedBackend {
+        radio: true,
+        calls: calls.clone(),
+        snapshot: WifiSnapshot {
+            device_id: Some("device".into()),
+            networks: vec![WifiNetwork {
+                id: "home".into(),
+                label: "Home".into(),
+                signal_strength: 80,
+                security: WifiSecurity::Personal,
+                known: true,
+                active: true,
+            }],
+            scanning: false,
+        },
+    });
+    provider.initial_content().await.unwrap();
+    let document = provider
+        .handle_event(ProviderEvent::ButtonActivated {
+            element_id: "forget".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(*calls.lock().unwrap(), ["forget home"]);
+    assert_eq!(buttons(&document[0]), ["Refresh", "Turn Wi-Fi off"]);
 }
 
 #[tokio::test]

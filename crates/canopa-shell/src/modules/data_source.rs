@@ -36,10 +36,12 @@ pub struct BatteryReading {
     pub present: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct NetworkReading {
     pub connectivity: crate::modules::network::NetworkConnectivity,
     pub label: Option<String>,
+    pub kind: Option<crate::modules::network::NetworkKind>,
+    pub vpn: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +111,7 @@ mod tests {
             ModuleDataSourceState::Network(NetworkReading {
                 connectivity: crate::modules::network::NetworkConnectivity::Full,
                 label: Some("wifi".into()),
+                ..Default::default()
             })
             .identity(),
             ModuleDataSourceIdentity::Network

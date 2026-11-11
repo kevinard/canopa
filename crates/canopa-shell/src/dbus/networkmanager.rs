@@ -21,6 +21,8 @@ fn build_network_stream(
             ServiceState::Available(status) => NetworkEvent::StateChanged {
                 connectivity: status.connectivity,
                 label: status.label,
+                kind: status.kind,
+                vpn: status.vpn,
             },
             ServiceState::Unavailable => NetworkEvent::Unavailable,
         };

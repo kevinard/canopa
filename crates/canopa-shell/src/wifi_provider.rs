@@ -36,6 +36,8 @@ pub struct WifiPanelProvider<B> {
     failed_network_id: Option<String>,
     credential_prompt: Option<CredentialPrompt>,
     progress: Option<tokio::sync::mpsc::UnboundedSender<ExternalPanelDocument>>,
+    /// Whether the radio is on; `None` when the backend cannot tell.
+    radio: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +67,7 @@ where
             failed_network_id: None,
             credential_prompt: None,
             progress: None,
+            radio: None,
         }
     }
 
@@ -95,6 +98,7 @@ where
     }
 
     pub async fn synchronize(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
+        self.radio = self.backend.radio().await.unwrap_or(None);
         self.snapshot = match self.backend.initial_snapshot().await {
             Ok(snapshot) => normalize_snapshot(snapshot),
             Err(error) => {
@@ -123,6 +127,7 @@ where
     }
 
     pub async fn initial_content(&mut self) -> Result<ExternalPanelDocument, WifiBackendError> {
+        self.radio = self.backend.radio().await.unwrap_or(None);
         self.snapshot = normalize_snapshot(self.backend.initial_snapshot().await?);
         Ok(self.render())
     }
@@ -176,6 +181,52 @@ where
             }
             ProviderEvent::ButtonActivated { element_id } if element_id == "refresh" => {
                 self.refresh().await.map(|document| vec![document])
+            }
+            ProviderEvent::ButtonActivated { element_id } if element_id == "radio" => {
+                let enable = self.radio == Some(false);
+                self.credential_prompt = None;
+                Ok(vec![match self.backend.set_radio(enable).await {
+                    Ok(snapshot) => {
+                        self.radio = Some(enable);
+                        self.snapshot = normalize_snapshot(snapshot);
+                        self.render()
+                    }
+                    Err(error) => self.render_error(error.category()),
+                }])
+            }
+            ProviderEvent::ButtonActivated { element_id } if element_id == "disconnect" => {
+                let Some(device) = self.snapshot.device_id.clone() else {
+                    return Ok(Vec::new());
+                };
+                Ok(vec![match self.backend.disconnect(device).await {
+                    Ok(snapshot) => {
+                        self.snapshot = normalize_snapshot(snapshot);
+                        self.render()
+                    }
+                    Err(error) => self.render_error(error.category()),
+                }])
+            }
+            ProviderEvent::ButtonActivated { element_id } if element_id == "forget" => {
+                let (Some(device), Some(network)) =
+                    (self.snapshot.device_id.clone(), self.forgettable().cloned())
+                else {
+                    return Ok(Vec::new());
+                };
+                let request = WifiConnectRequest {
+                    device_id: device,
+                    network_id: Some(network.id.clone()),
+                    label: network.label.clone(),
+                    credential: None,
+                    hidden: false,
+                };
+                Ok(vec![match self.backend.forget(request).await {
+                    Ok(snapshot) => {
+                        self.failed_network_id = None;
+                        self.snapshot = normalize_snapshot(snapshot);
+                        self.render()
+                    }
+                    Err(error) => self.render_error(error.category()),
+                }])
             }
             _ => Ok(Vec::new()),
         }
@@ -250,9 +301,17 @@ where
         }
         if network.security == WifiSecurity::Enterprise && !network.known {
             self.failed_network_id = Some(network.id);
-            return Ok(vec![
-                self.render_error(WifiBackendErrorCategory::UnsupportedNetwork),
-            ]);
+            let mut document = self.render();
+            document.elements.insert(
+                1,
+                ExternalPanelElement::Status {
+                    title: "Set up in Settings".into(),
+                    message: "Join WPA-Enterprise networks in Settings, on the Network page."
+                        .into(),
+                    severity: ExternalPanelSeverity::Info,
+                },
+            );
+            return Ok(vec![document]);
         }
         if network.security == WifiSecurity::Personal && !network.known {
             self.credential_prompt = Some(CredentialPrompt {
@@ -368,9 +427,40 @@ where
         }
     }
 
+    /// The network "Forget" applies to: the connected one, or a known one
+    /// that just failed.
+    fn forgettable(&self) -> Option<&WifiNetwork> {
+        self.snapshot
+            .networks
+            .iter()
+            .find(|network| network.active)
+            .or_else(|| {
+                let failed = self.failed_network_id.as_deref()?;
+                self.snapshot
+                    .networks
+                    .iter()
+                    .find(|network| network.id == failed && network.known)
+            })
+    }
+
     fn render(&self) -> ExternalPanelDocument {
         if self.backend.name() == BackendName::Unavailable {
             return no_control_document();
+        }
+        if self.radio == Some(false) {
+            return ExternalPanelDocument {
+                elements: vec![
+                    ExternalPanelElement::Status {
+                        title: "Wi-Fi".into(),
+                        message: "Wi-Fi is off".into(),
+                        severity: ExternalPanelSeverity::Info,
+                    },
+                    ExternalPanelElement::Button {
+                        id: "radio".into(),
+                        label: "Turn Wi-Fi on".into(),
+                    },
+                ],
+            };
         }
         let active = self.snapshot.networks.iter().find(|network| network.active);
         let connecting = self.connecting_network();
@@ -407,6 +497,28 @@ where
                 },
             ],
         };
+        // Backends that manage the radio also disconnect and forget.
+        if self.connecting_network_id.is_none() && self.radio.is_some() {
+            let mut buttons = Vec::new();
+            if active.is_some() {
+                buttons.push(("disconnect", "Disconnect".to_owned()));
+            }
+            if let Some(network) = self.forgettable() {
+                buttons.push(("forget", format!("Forget {}", network.label)));
+            }
+            if self.radio == Some(true) {
+                buttons.push(("radio", "Turn Wi-Fi off".to_owned()));
+            }
+            for (index, (id, label)) in buttons.into_iter().enumerate() {
+                document.elements.insert(
+                    2 + index,
+                    ExternalPanelElement::Button {
+                        id: id.into(),
+                        label,
+                    },
+                );
+            }
+        }
         if self.connecting_network_id.is_some() && !self.capabilities.can_scan_while_connecting {
             document.elements.retain(|element| !matches!(element, ExternalPanelElement::Button { id, .. } if id == "refresh"));
         }

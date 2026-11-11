@@ -209,9 +209,13 @@ impl ModuleDataSourceRuntime {
             NetworkEvent::StateChanged {
                 connectivity,
                 label,
+                kind,
+                vpn,
             } => self.apply_source_state(ModuleDataSourceState::Network(NetworkReading {
                 connectivity,
                 label,
+                kind,
+                vpn,
             })),
             NetworkEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Network),
         }
