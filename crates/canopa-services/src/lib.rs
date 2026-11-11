@@ -9,6 +9,7 @@ pub mod bus;
 mod error;
 pub mod logind;
 pub mod network;
+pub mod power_profiles;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod upower;

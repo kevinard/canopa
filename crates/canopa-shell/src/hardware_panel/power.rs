@@ -1,28 +1,14 @@
 use super::*;
 use crate::provider_io::Input;
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use canopa_panel_protocol::{PanelAction, PanelSlider};
 use canopa_services::{
     backlight::{self, Backlight},
     logind,
+    power_profiles::PowerProfiles,
 };
-use std::{collections::HashMap, path::Path, time::Duration};
-use zbus::{Connection, Proxy, zvariant::OwnedValue};
-
-const PROFILE_SERVICES: [(&str, &str); 2] = [
-    (
-        "org.freedesktop.UPower.PowerProfiles",
-        "/org/freedesktop/UPower/PowerProfiles",
-    ),
-    ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles"),
-];
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Profiles {
-    service: usize,
-    active: String,
-    supported: Vec<&'static str>,
-}
+use std::{path::Path, time::Duration};
+use zbus::Connection;
 
 fn profile_label(profile: &str) -> &str {
     match profile {
@@ -33,66 +19,10 @@ fn profile_label(profile: &str) -> &str {
     }
 }
 
-impl Profiles {
-    async fn proxy(connection: &Connection, service: usize) -> zbus::Result<Proxy<'_>> {
-        let (name, path) = PROFILE_SERVICES[service];
-        Proxy::new(connection, name, path, name).await
-    }
-
-    async fn read(connection: &Connection, service: usize) -> zbus::Result<Self> {
-        let proxy = Self::proxy(connection, service).await?;
-        let (active, profiles) = tokio::try_join!(
-            proxy.get_property("ActiveProfile"),
-            proxy.get_property::<Vec<HashMap<String, OwnedValue>>>("Profiles"),
-        )?;
-        let supported = ["power-saver", "balanced", "performance"]
-            .into_iter()
-            .filter(|name| {
-                profiles.iter().any(|profile| {
-                    profile
-                        .get("Profile")
-                        .and_then(|value| <&str>::try_from(value).ok())
-                        == Some(*name)
-                })
-            })
-            .collect();
-        Ok(Self {
-            service,
-            active,
-            supported,
-        })
-    }
-
-    async fn discover(connection: &Connection) -> Option<Self> {
-        for service in 0..PROFILE_SERVICES.len() {
-            if let Ok(Ok(profiles)) =
-                tokio::time::timeout(Duration::from_millis(800), Self::read(connection, service))
-                    .await
-            {
-                return Some(profiles);
-            }
-        }
-        None
-    }
-
-    async fn set(&self, connection: &Connection, profile: &str) -> Result<()> {
-        let current = Self::read(connection, self.service).await?;
-        ensure!(
-            current.supported.contains(&profile),
-            "Power profile is no longer available."
-        );
-        Self::proxy(connection, self.service)
-            .await?
-            .set_property("ActiveProfile", profile)
-            .await?;
-        Ok(())
-    }
-}
-
 #[derive(Default, PartialEq, Eq)]
 struct Snapshot {
     light: Option<Backlight>,
-    profiles: Option<Profiles>,
+    profiles: Option<PowerProfiles>,
 }
 
 impl Snapshot {
@@ -102,7 +32,7 @@ impl Snapshot {
             return Self::default();
         };
         let (profiles, session) = tokio::join!(
-            Profiles::discover(connection),
+            PowerProfiles::discover(connection),
             tokio::time::timeout(
                 Duration::from_millis(800),
                 logind::Session::find(connection)
@@ -187,7 +117,7 @@ pub(super) async fn run(
                 let result = match (id, key, value) {
                     ("display", "brightness", Some(value)) if let Some(light) = &snapshot.light => {
                         let Ok(percent) = value.parse::<u16>() else { continue; };
-                        tokio::time::timeout(Duration::from_secs(2), async { Ok(light.set(connection, percent).await?) }).await
+                        tokio::time::timeout(Duration::from_secs(2), light.set(connection, percent)).await
                     }
                     ("profiles", profile, None) if let Some(profiles) = &snapshot.profiles && profiles.supported.contains(&profile) => {
                         tokio::time::timeout(Duration::from_secs(2), profiles.set(connection, profile)).await
