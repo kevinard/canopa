@@ -7,8 +7,8 @@ pub(crate) const CHANGE_PASSWORD: usize = usize::MAX - 2;
 pub fn configure(ui: &mut LockUi) {
     ui.authentication_panel = Some(AuthenticationPanel {
         height_reserve: 408.,
-        heading: "Unlock session".into(),
-        eyebrow: "SESSION LOCKED".into(),
+        heading: fl!("lock-heading"),
+        eyebrow: fl!("lock-eyebrow"),
         emblem: Emblem::Lock,
         dialog: false,
         choices: &[],
@@ -29,9 +29,9 @@ pub fn update_actions(ui: &mut LockUi, can_retry: bool) {
         ui.controls.push(Control::new(
             UNLOCK,
             if ui.prompt.is_some() {
-                "Unlock"
+                fl!("lock-unlock")
             } else {
-                "Try again"
+                fl!("lock-try-again")
             },
         ));
         Some(UNLOCK)

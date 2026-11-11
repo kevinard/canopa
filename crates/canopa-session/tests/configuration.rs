@@ -46,6 +46,7 @@ fn malformed_owner_settings_do_not_poison_other_namespaces() {
 fn check_and_preview_never_require_a_compositor_or_authentication() {
     let output = tempfile::tempdir().unwrap();
     let mut check = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-lock"));
+    check.env("CANOPA_LANGUAGE", "en");
     check
         .args(["--defaults", "check-config"])
         .env_remove("WAYLAND_DISPLAY")
@@ -53,6 +54,7 @@ fn check_and_preview_never_require_a_compositor_or_authentication() {
         .assert()
         .success();
     let mut preview = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-lock"));
+    preview.env("CANOPA_LANGUAGE", "en");
     preview
         .args(["--defaults", "preview"])
         .arg(output.path().join("preview.png"))
@@ -107,6 +109,7 @@ lockscreen {{
     let preview = dir.path().join("preview.png");
     for command in ["check-config", "preview"] {
         let mut executable = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-lock"));
+        executable.env("CANOPA_LANGUAGE", "en");
         executable.arg("--canopa-config").arg(&file).arg(command);
         if command == "preview" {
             executable.arg(&preview);

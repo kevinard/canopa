@@ -94,7 +94,7 @@ pub fn run(mut settings: Settings, images: Vec<PathBuf>) -> Result<()> {
         &qh,
     );
     window.set_app_id("org.canopa.WallpaperPicker");
-    window.set_title("Canopa Wallpaper");
+    window.set_title(fl!("wallpaper-title"));
     window.set_min_size(Some((800, 800)));
     window.commit();
     let (sender, receiver) = channel::channel();
@@ -107,7 +107,7 @@ pub fn run(mut settings: Settings, images: Vec<PathBuf>) -> Result<()> {
         let _ = source_sender.send(Update::Sources);
     });
     let action_sender = sender.clone();
-    let accessibility = Accessibility::new("Canopa Wallpaper", move |request| {
+    let accessibility = Accessibility::new(&fl!("wallpaper-title"), move |request| {
         let _ = action_sender.send(Update::Accessibility(request));
     });
     let mut app = App {
@@ -261,7 +261,7 @@ impl App {
         let c = self.controller.as_mut().unwrap();
         c.refresh();
         self.accessibility
-            .update("Canopa Wallpaper", &c.ui, &c.settings, self.focused);
+            .update(&fl!("wallpaper-title"), &c.ui, &c.settings, self.focused);
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
         let (image, hits) = c.render(width, height)?;

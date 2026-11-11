@@ -98,7 +98,7 @@ impl Controller {
         let mut ui = SessionView::new(&settings, String::new())?;
         ui.hide_input = true;
         ui.pair_controls = true;
-        ui.action_labels = Some(("Apply wallpaper".into(), "Close".into()));
+        ui.action_labels = Some((fl!("wallpaper-apply"), fl!("wallpaper-close")));
         let fit = outputs[0].background.fit;
         let mut value = Self {
             ui,
@@ -128,29 +128,38 @@ impl Controller {
             .filter(|c| !c.is_control())
             .take(52)
             .collect::<String>();
+        let (position, count) = ((self.image + 1) as u64, self.images.len() as u64);
         self.ui.custom.insert(
             "selection".into(),
-            format!(
-                "Wallpaper  ·  {}  ·  {} of {}",
-                filename,
-                self.image + 1,
-                self.images.len()
+            fl!(
+                "wallpaper-selection",
+                name = filename,
+                position = position,
+                count = count
             ),
         );
-        let output = self.output_name().unwrap_or("All monitors").to_owned();
+        let output = self
+            .output_name()
+            .map_or_else(|| fl!("wallpaper-all-monitors"), str::to_owned);
+        let fit = match self.fit {
+            Fit::Fill => fl!("wallpaper-fit-fill"),
+            Fit::Fit => fl!("wallpaper-fit-fit"),
+            Fit::Stretch => fl!("wallpaper-fit-stretch"),
+            Fit::Center => fl!("wallpaper-fit-center"),
+        };
         self.ui.primary_control = (self.ready && !self.applying).then_some(0);
         self.ui.controls = vec![
-            Control::new(1, "Previous image   · ←"),
-            Control::new(2, "Next image   · →"),
-            Control::new(3, format!("Monitor: {output}   · ↑/↓")),
-            Control::new(4, format!("Fit: {:?}   · F", self.fit)),
-            Control::new(5, "Close   · Escape"),
+            Control::new(1, fl!("wallpaper-previous-image")),
+            Control::new(2, fl!("wallpaper-next-image")),
+            Control::new(3, fl!("wallpaper-monitor", output = output)),
+            Control::new(4, fl!("wallpaper-fit", fit = fit)),
+            Control::new(5, fl!("wallpaper-close-shortcut")),
             Control::new(
                 0,
                 if self.applying {
-                    "Applying…"
+                    fl!("wallpaper-applying")
                 } else {
-                    "Apply wallpaper"
+                    fl!("wallpaper-apply")
                 },
             ),
         ];
@@ -190,7 +199,7 @@ impl Controller {
         match id {
             0 if self.ready => {
                 self.applying = true;
-                self.ui.message = "Applying the wallpaper…".into();
+                self.ui.message = fl!("wallpaper-applying-message");
                 self.refresh();
                 return Action::Apply(ipc::Request::Set {
                     image: self.images[self.image].clone(),
@@ -240,7 +249,7 @@ impl Controller {
         self.generation = self.generation.wrapping_add(1);
         self.ready = false;
         self.ui.failed = false;
-        self.ui.message = "Preparing monitor preview…".into();
+        self.ui.message = fl!("wallpaper-preparing-preview");
         self.refresh();
         let outputs = self
             .output
@@ -266,11 +275,11 @@ impl Controller {
         match preview {
             Ok(preview) => {
                 self.preview = Some(preview);
-                self.ui.message = "Enter applies and saves · Tab selects · F5 refreshes".into();
+                self.ui.message = fl!("wallpaper-preview-hint");
             }
             Err(_) => {
                 self.preview = None;
-                self.ui.message = "This image could not be previewed. Choose another image.".into();
+                self.ui.message = fl!("wallpaper-preview-failed");
             }
         }
         self.refresh();
@@ -279,11 +288,10 @@ impl Controller {
         self.applying = false;
         self.ui.failed = result.is_err();
         self.ui.message = if result.is_ok() {
-            "Wallpaper applied and saved"
+            fl!("wallpaper-applied")
         } else {
-            "Wallpaper change failed; the previous assignment was retained"
-        }
-        .into();
+            fl!("wallpaper-apply-failed")
+        };
         self.refresh();
     }
     pub fn render(&self, width: u32, height: u32) -> Result<(RgbImage, Vec<(usize, Rect)>)> {

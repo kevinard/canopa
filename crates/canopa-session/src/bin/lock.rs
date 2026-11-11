@@ -55,6 +55,7 @@ enum Command {
     },
 }
 fn main() {
+    canopa_i18n::init();
     if let Err(error) = run() {
         eprintln!("canopa-lock: {error:#}");
         std::process::exit(1);

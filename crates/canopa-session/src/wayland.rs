@@ -153,6 +153,8 @@ struct App {
     authentication: Option<auth::Worker>,
     auth_generation: u64,
     auth_timeout: Option<calloop::RegistrationToken>,
+    /// The status still shows "Starting authentication…".
+    starting: bool,
     retry_after: Instant,
     logind: Option<crate::logind::Tracker>,
     widgets: Option<WidgetRuntime>,
@@ -240,7 +242,7 @@ fn initialize(
     };
     let accessibility = ui.as_ref().map(|_| {
         let sender = updates.clone();
-        canopa_session_ui::accessibility::Accessibility::new("Canopa Lock", move |request| {
+        canopa_session_ui::accessibility::Accessibility::new(&fl!("lock-title"), move |request| {
             let _ = sender.send(Update::Accessibility(request));
         })
     });
@@ -273,6 +275,7 @@ fn initialize(
         authentication: None,
         auth_generation: 0,
         auth_timeout: None,
+        starting: false,
         retry_after: Instant::now(),
         logind: None,
         widgets: None,
@@ -438,7 +441,7 @@ impl App {
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         use canopa_session_ui::accessibility::{Operation, select};
         if let (Some(a), Some(ui)) = (&mut self.accessibility, &self.ui) {
-            a.update("Canopa Lock", ui, &self.settings, self.confirmed);
+            a.update(&fl!("lock-title"), ui, &self.settings, self.confirmed);
         }
         if !self.confirmed
             || !self
@@ -535,7 +538,7 @@ impl App {
     }
     fn paint(&mut self) {
         if let (Some(a), Some(ui)) = (&mut self.accessibility, &self.ui) {
-            a.update("Canopa Lock", ui, &self.settings, self.confirmed);
+            a.update(&fl!("lock-title"), ui, &self.settings, self.confirmed);
         }
 
         let mut prepared = false;
@@ -1044,7 +1047,8 @@ impl App {
                     ui.failed = false;
                     ui.prompt = None;
                     ui.secret.clear();
-                    ui.message = "Starting authentication…".into();
+                    ui.message = fl!("lock-starting-authentication");
+                    self.starting = true;
                 }
                 let duration = Duration::from_secs(self.settings.auth_timeout);
                 match self.handle.insert_source(
@@ -1052,19 +1056,18 @@ impl App {
                     move |_, _, app: &mut App| {
                         app.auth_timeout = None;
                         if generation == app.auth_generation && app.authentication.is_some() {
-                            app.cancel_authentication("Authentication timed out. Enter to retry.");
+                            app.cancel_authentication(&fl!("lock-timed-out"));
                         }
                         TimeoutAction::Drop
                     },
                 ) {
                     Ok(token) => self.auth_timeout = Some(token),
-                    Err(_) => self
-                        .cancel_authentication("Authentication could not start. Enter to retry."),
+                    Err(_) => self.cancel_authentication(&fl!("lock-could-not-start")),
                 }
             }
             Err(error) => {
                 eprintln!("authentication worker could not start: {error:#}");
-                self.cancel_authentication("Authentication could not start. Enter to retry.");
+                self.cancel_authentication(&fl!("lock-could-not-start"));
             }
         }
         self.redraw();
@@ -1081,6 +1084,7 @@ impl App {
         self.authentication.take();
     }
     fn cancel_authentication(&mut self, message: &str) {
+        self.starting = false;
         self.auth_generation = self.auth_generation.wrapping_add(1);
         self.stop_authentication();
         if let Some(ui) = &mut self.ui {
@@ -1095,6 +1099,8 @@ impl App {
         if generation != self.auth_generation || self.authentication.is_none() {
             return;
         }
+        // Every event replaces the "Starting authentication…" status.
+        let starting = std::mem::take(&mut self.starting);
         match event {
             auth::Event::Prompt { id, text, echo } => {
                 if let Some(ui) = &mut self.ui {
@@ -1102,7 +1108,7 @@ impl App {
                     ui.hide_input = false;
                     ui.controls.clear();
                     ui.action_labels = None;
-                    if ui.message == "Starting authentication…" {
+                    if starting {
                         ui.message.clear();
                     }
                     ui.prompt = Some(crate::lock_ui::Prompt { id, text, echo });
@@ -1114,18 +1120,23 @@ impl App {
                     ui.hide_input = true;
                     ui.prompt = Some(crate::lock_ui::Prompt {
                         id,
-                        text: "Password change required".into(),
+                        text: fl!("lock-password-change-required"),
                         echo: false,
                     });
-                    ui.message = "Your password has expired. Change it to unlock, or cancel to remain locked.".into();
-                    ui.action_labels =
-                        Some(("Change password".into(), "Cancel password change".into()));
+                    ui.message = fl!("lock-password-expired");
+                    ui.action_labels = Some((
+                        fl!("lock-change-password"),
+                        fl!("lock-cancel-password-change"),
+                    ));
                     ui.controls = vec![
                         canopa_session_ui::view::Control::new(
                             CHANGE_PASSWORD,
-                            "Change password · Enter",
+                            fl!("lock-change-password-shortcut"),
                         ),
-                        canopa_session_ui::view::Control::new(CANCEL_CHANGE, "Cancel · Escape"),
+                        canopa_session_ui::view::Control::new(
+                            CANCEL_CHANGE,
+                            fl!("lock-cancel-shortcut"),
+                        ),
                     ];
                 }
             }
@@ -1146,7 +1157,7 @@ impl App {
                         ui.failed = true;
                         ui.prompt = None;
                         ui.secret.clear();
-                        ui.message = "Authentication failed. Enter to retry.".into();
+                        ui.message = fl!("lock-failed");
                     }
                 } else if self.confirmed {
                     self.stop_authentication();
@@ -1181,9 +1192,7 @@ impl App {
         {
             match id {
                 UNLOCK | CHANGE_PASSWORD => self.submit_authentication(),
-                CANCEL_CHANGE => {
-                    self.cancel_authentication("Authentication cancelled. Enter to retry.")
-                }
+                CANCEL_CHANGE => self.cancel_authentication(&fl!("lock-cancelled")),
                 _ => return,
             }
         }
@@ -1205,7 +1214,7 @@ impl App {
                 .respond(prompt.id, answer)
                 .is_err()
             {
-                self.cancel_authentication("Authentication failed. Enter to retry.");
+                self.cancel_authentication(&fl!("lock-failed"));
             }
         }
     }
@@ -1226,7 +1235,7 @@ impl App {
             if self.ui.as_ref().is_some_and(|ui| !ui.secret.is_empty()) {
                 self.ui.as_mut().unwrap().secret.clear();
             } else {
-                self.cancel_authentication("Authentication cancelled. Enter to retry.");
+                self.cancel_authentication(&fl!("lock-cancelled"));
             }
         } else if matches!(event.keysym, Keysym::Return | Keysym::KP_Enter) {
             self.submit_authentication();
