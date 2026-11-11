@@ -6,8 +6,16 @@ use iced::{Element, Length, Padding, Size};
 use super::super::launcher::{APPROXIMATE_KEYWORD_MATCH, QuickScope, Target};
 use super::super::messages::PanelEvent;
 use super::super::panel_menu_session::{PanelMenuEntry, PanelMenuEntryTarget};
-use super::{Message, PanelRenderModel, panel_surface, render_menu_scroll, styled_panel_frame};
+use super::super::shell_accessibility::{launcher_announcements, menu_entry_key};
+use super::{
+    Message, PanelRenderModel, panel_surface, render_menu_scroll, selected_menu_key,
+    styled_panel_frame,
+};
 use crate::{launcher::Action, theme};
+use canopa_ui::accessibility::{Node, semantic};
+
+/// The results list, which the search field controls.
+const RESULTS: &str = "launcher-results";
 
 const CLOSE_ICON: &[u8] = include_bytes!("../../../assets/close.svg");
 const SEARCH_ICON: &[u8] = include_bytes!("../../../assets/search.svg");
@@ -64,19 +72,29 @@ fn contents<'a>(
     } else {
         container(close_icon).center(20).into()
     };
-    let close = control_hint(
-        theme::action(
-            close_label,
-            Some(Message::Panel(PanelEvent::Close)),
-            canopa_ui::Action::Quiet,
-            false,
-        )
-        .padding([6, 9]),
-        if !child && model.search_query.is_empty() {
-            "Close launcher · Esc"
-        } else {
-            "Close launcher"
-        },
+    let close_shortcut = !child && model.search_query.is_empty();
+    let mut close_node = Node::button("Close launcher")
+        .key("launcher-close")
+        .on_click(Some(Message::Panel(PanelEvent::Close)));
+    if close_shortcut {
+        close_node = close_node.shortcut("Escape");
+    }
+    let close = semantic(
+        close_node,
+        control_hint(
+            theme::action(
+                close_label,
+                Some(Message::Panel(PanelEvent::Close)),
+                canopa_ui::Action::Quiet,
+                false,
+            )
+            .padding([6, 9]),
+            if close_shortcut {
+                "Close launcher · Esc"
+            } else {
+                "Close launcher"
+            },
+        ),
     );
     let chrome = 208.0 + ui.margin.vertical() + ui.padding.vertical();
     let metrics = model.menu_metrics;
@@ -124,9 +142,12 @@ fn contents<'a>(
         controls = controls.push(
             row![
                 back_button(model.search_query.is_empty()),
-                theme::strong_text(title)
-                    .size(theme::body_size() + 2.0)
-                    .wrapping(iced::widget::text::Wrapping::None),
+                semantic(
+                    Node::heading(title.clone(), 2).key("launcher-heading"),
+                    theme::strong_text(title)
+                        .size(theme::body_size() + 2.0)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                ),
             ]
             .align_y(iced::Alignment::Center)
             .spacing(12),
@@ -135,14 +156,20 @@ fn contents<'a>(
         controls = controls.push(
             row![
                 theme::icon(CALC_ICON, 18.0, theme::palette().accent),
-                theme::strong_text("Calculator").size(caption_size()),
+                semantic(
+                    Node::heading("Calculator", 2).key("launcher-heading"),
+                    theme::strong_text("Calculator").size(caption_size()),
+                ),
             ]
             .align_y(iced::Alignment::Center)
             .spacing(6),
         );
     } else if browsing && count > 0 {
         let mut header = row![
-            theme::strong_text(browse_heading(model)).size(theme::body_size() + 1.0),
+            semantic(
+                Node::heading(browse_heading(model), 2).key("launcher-heading"),
+                theme::strong_text(browse_heading(model)).size(theme::body_size() + 1.0),
+            ),
             Space::new().width(Length::Fill),
         ]
         .align_y(iced::Alignment::Center)
@@ -244,8 +271,21 @@ fn contents<'a>(
             })
         });
     }
-    let content = column![
+    let matches =
+        (count > 0 && !visible_query(model).trim().is_empty()).then(|| result_count(model));
+    let (polite, assertive) = launcher_announcements(
+        &model.launcher_status,
+        model.launcher_error.as_deref(),
+        matches.as_deref(),
+    );
+    // Always present, so each change of their text is announced.
+    let controls = stack![
         container(controls).padding(horizontal.top(top)),
+        semantic(Node::status(polite).key("launcher-status"), Space::new()),
+        semantic(Node::alert(assertive).key("launcher-alert"), Space::new()),
+    ];
+    let content = column![
+        controls,
         container(results).padding(horizontal.bottom(bottom)),
     ]
     .spacing(12)
@@ -284,6 +324,12 @@ fn calculator_result<'a>(
     height: f32,
 ) -> Element<'a, Message> {
     let entry = &model.menu_entries[0];
+    let activate = Message::Panel(PanelEvent::ActivateLauncher(target.clone(), 0));
+    let node = Node::option(entry.label.clone(), true)
+        .key(menu_entry_key(entry, 0))
+        .description(target.result.description.clone())
+        .position(1, 1)
+        .on_click(Some(activate));
     let expression = model.search_query.trim().trim_start_matches('=').trim();
     let labels = column![
         theme::text(expression.to_owned())
@@ -300,7 +346,7 @@ fn calculator_result<'a>(
     .spacing(8)
     .align_x(iced::Alignment::Center)
     .width(Length::Fill);
-    theme::action(
+    let result = theme::action(
         container(labels)
             .padding([8, 28])
             .center(Length::Fill)
@@ -320,8 +366,23 @@ fn calculator_result<'a>(
         style.background = Some(palette.accent.scale_alpha(0.11).into());
         style.border.radius = 11.0.into();
         style
-    })
-    .into()
+    });
+    semantic(results_node(model), semantic(node, result))
+}
+
+/// The results list: what the search found, or the browse-all list.
+fn results_node(model: &PanelRenderModel<'_>) -> Node<Message> {
+    let label = if model.can_go_back {
+        model
+            .menu_prompt
+            .clone()
+            .unwrap_or_else(|| model.title.clone())
+    } else if model.search_query.trim().is_empty() {
+        browse_heading(model).to_owned()
+    } else {
+        "Results".to_owned()
+    };
+    Node::list(label).key(RESULTS)
 }
 
 fn command_controls(
@@ -341,9 +402,15 @@ fn command_controls(
             false,
         )
         .padding([5, 9]);
-        toolbar = toolbar.push(control_hint(
-            action,
-            format!("Actions for {}", target.result.label),
+        let name = format!("Actions for {}", target.result.label);
+        toolbar = toolbar.push(semantic(
+            Node::button(name.clone())
+                .key("launcher-actions")
+                .shortcut("Tab")
+                .on_click(Some(Message::Panel(PanelEvent::LauncherActions(Some(
+                    target.clone(),
+                ))))),
+            control_hint(action, name),
         ));
     }
     if let Some(primary) = target.result.actions.first() {
@@ -354,13 +421,21 @@ fn command_controls(
         } else {
             primary.label.clone()
         };
+        let node = Node::button(label.clone())
+            .key("launcher-primary")
+            .shortcut("Enter")
+            .on_click(Some(Message::Panel(PanelEvent::ActivateLauncher(
+                target.clone(),
+                0,
+            ))));
         let label = fit_line(
             &label,
             if width >= 465.0 { 170.0 } else { 92.0 },
             caption_size(),
             theme::font(),
         );
-        toolbar = toolbar.push(
+        toolbar = toolbar.push(semantic(
+            node,
             theme::action(
                 row![
                     theme::strong_text(label).size(caption_size()),
@@ -376,7 +451,7 @@ fn command_controls(
                 false,
             )
             .padding([6, 10]),
-        );
+        ));
     }
     toolbar.into()
 }
@@ -397,18 +472,27 @@ fn control_hint<'a>(
 }
 
 fn back_button(escape: bool) -> Element<'static, Message> {
+    let node = Node::button("Back")
+        .key("launcher-back")
+        .on_click(Some(Message::Panel(PanelEvent::Back)));
     if escape {
-        return command_button("‹ Back", "Esc", PanelEvent::Back).into();
+        return semantic(
+            node.shortcut("Escape"),
+            command_button("‹ Back", "Esc", PanelEvent::Back),
+        );
     }
-    control_hint(
-        theme::action(
-            theme::strong_text("‹ Back").size(caption_size()),
-            Some(Message::Panel(PanelEvent::Back)),
-            canopa_ui::Action::Normal,
-            false,
-        )
-        .padding([6, 10]),
-        "Back",
+    semantic(
+        node,
+        control_hint(
+            theme::action(
+                theme::strong_text("‹ Back").size(caption_size()),
+                Some(Message::Panel(PanelEvent::Back)),
+                canopa_ui::Action::Normal,
+                false,
+            )
+            .padding([6, 10]),
+            "Back",
+        ),
     )
 }
 
@@ -424,10 +508,12 @@ fn padded_results<'a>(
         render_menu_scroll(model, height),
     )])
     .height(height);
-    container(list)
-        .padding(Padding::default().right(inset))
-        .width(Length::Fill)
-        .into()
+    semantic(
+        results_node(model),
+        container(list)
+            .padding(Padding::default().right(inset))
+            .width(Length::Fill),
+    )
 }
 
 fn visible_query<'a>(model: &'a PanelRenderModel<'_>) -> &'a str {
@@ -490,17 +576,33 @@ fn search<'a>(
     }
     let icon_inset = padding.left;
     padding.left += 28.0;
-    let input = theme::input_with_style(placeholder, query, input_ui)
-        .id(model.search_input_id.clone())
-        .on_input(move |query| {
+    // The field keeps keyboard focus; the highlighted result is its active
+    // descendant, so moving the selection announces the row.
+    let node = Node::search_input(placeholder, query)
+        .key("launcher-search")
+        .placeholder(placeholder)
+        .controls(RESULTS)
+        .active_descendant(selected_menu_key(model))
+        .on_text(move |query| {
             Message::Panel(PanelEvent::LauncherSearchChanged {
                 session,
                 query: format!("{prefix}{query}"),
             })
-        })
-        .size(theme::body_size() + 2.0)
-        .padding(padding)
-        .width(Length::Fill);
+        });
+    let input = semantic(
+        node,
+        theme::input_with_style(placeholder, query, input_ui)
+            .id(model.search_input_id.clone())
+            .on_input(move |query| {
+                Message::Panel(PanelEvent::LauncherSearchChanged {
+                    session,
+                    query: format!("{prefix}{query}"),
+                })
+            })
+            .size(theme::body_size() + 2.0)
+            .padding(padding)
+            .width(Length::Fill),
+    );
     let glyph = container(theme::icon(SEARCH_ICON, 20.0, theme::palette().accent))
         .height(Length::Fill)
         .align_y(iced::Alignment::Center)
@@ -519,6 +621,14 @@ fn search<'a>(
     if show_clear_shortcut {
         clear_label = clear_label.push(keycap("Esc"));
     }
+    let clear_node = Node::button("Clear search")
+        .key("launcher-clear")
+        .on_click(Some(Message::Panel(clear_query(session))));
+    let clear_node = if show_clear_shortcut {
+        clear_node.shortcut("Escape")
+    } else {
+        clear_node
+    };
     let clear = control_hint(
         theme::action(
             clear_label,
@@ -543,7 +653,7 @@ fn search<'a>(
     stack![
         input,
         glyph,
-        container(clear)
+        container(semantic(clear_node, clear))
             .height(Length::Fill)
             .width(Length::Fill)
             .align_x(iced::alignment::Horizontal::Right)
@@ -562,6 +672,14 @@ fn scope_buttons(
     let equal_width = width >= 465.0;
     let choices =
         row(scopes.map(|scope| scope_button(model, session, scope, equal_width))).spacing(4);
+    let node = Node::tab_list("Search in").key("launcher-scopes");
+    semantic(node, scope_choices(choices, equal_width))
+}
+
+fn scope_choices(
+    choices: iced::widget::Row<'static, Message>,
+    equal_width: bool,
+) -> Element<'static, Message> {
     if equal_width {
         container(choices)
             .padding(4)
@@ -614,7 +732,20 @@ fn scope_button(
     } else {
         Length::Shrink
     };
-    iced::widget::button(container(content).center_x(width))
+    let key = match scope {
+        None => "all",
+        Some(QuickScope::Apps) => "apps",
+        Some(QuickScope::Files) => "files",
+        Some(QuickScope::Windows) => "windows",
+        Some(QuickScope::Settings) => "settings",
+    };
+    let node = Node::tab(label, selected)
+        .key(format!("launcher-scope-{key}"))
+        .on_click(Some(Message::Panel(PanelEvent::LauncherSelectScope {
+            session,
+            scope,
+        })));
+    let button = iced::widget::button(container(content).center_x(width))
         .on_press(Message::Panel(PanelEvent::LauncherSelectScope {
             session,
             scope,
@@ -634,8 +765,8 @@ fn scope_button(
                 style.background = Some(palette.text.scale_alpha(0.09).into());
             }
             style
-        })
-        .into()
+        });
+    semantic(node, button)
 }
 
 fn empty<'a>(
@@ -670,7 +801,13 @@ fn empty<'a>(
     .spacing(12)
     .align_y(iced::Alignment::Center);
     let contents: Element<'_, Message> = if recovery {
-        let clear = command_button("Clear search", "Esc", clear_query(session));
+        let clear = semantic(
+            Node::button("Clear search")
+                .key("launcher-clear-empty")
+                .shortcut("Escape")
+                .on_click(Some(Message::Panel(clear_query(session)))),
+            command_button("Clear search", "Esc", clear_query(session)),
+        );
         if width >= 445.0 {
             row![message, Space::new().width(Length::Fill), clear]
                 .spacing(8)
@@ -736,12 +873,21 @@ fn secondary_commands(target: &Target) -> Vec<Element<'static, Message>> {
             )
         })
         .map(|(position, named)| {
-            command_button(
-                &named.label,
-                format!("Ctrl+{}", position + 1),
-                PanelEvent::ActivateLauncher(target.clone(), position),
+            let shortcut = format!("Ctrl+{}", position + 1);
+            semantic(
+                Node::button(named.label.clone())
+                    .key(format!("launcher-command-{position}"))
+                    .shortcut(shortcut.clone())
+                    .on_click(Some(Message::Panel(PanelEvent::ActivateLauncher(
+                        target.clone(),
+                        position,
+                    )))),
+                command_button(
+                    &named.label,
+                    shortcut,
+                    PanelEvent::ActivateLauncher(target.clone(), position),
+                ),
             )
-            .into()
         })
         .collect()
 }
@@ -866,10 +1012,21 @@ fn selection_indicator(selected: bool) -> Element<'static, Message> {
 
 pub(super) fn result_row<'a>(
     model: &PanelRenderModel<'a>,
+    index: usize,
     entry: &PanelMenuEntry,
     target: &Target,
     selected: bool,
 ) -> Element<'a, Message> {
+    let mut node = Node::option(entry.label.clone(), selected)
+        .key(menu_entry_key(entry, index))
+        .position(index + 1, model.menu_entries.len())
+        .on_click(Some(Message::Panel(PanelEvent::ActivateLauncher(
+            target.clone(),
+            0,
+        ))));
+    if let Some(description) = result_description(model, target) {
+        node = node.description(description);
+    }
     let metrics = model.menu_metrics;
     let style = metrics.row;
     let padding = if style.custom_padding {
@@ -921,10 +1078,36 @@ pub(super) fn result_row<'a>(
         }
     });
 
-    crate::surface::pointer_focus::pointer_focus(
-        container(label).padding(canopa_ui::padding(style.margin)),
-        Message::Panel(PanelEvent::FocusLauncher(target.clone())),
+    semantic(
+        node,
+        crate::surface::pointer_focus::pointer_focus(
+            container(label).padding(canopa_ui::padding(style.margin)),
+            Message::Panel(PanelEvent::FocusLauncher(target.clone())),
+        ),
     )
+}
+
+/// The secondary line a result shows, which also describes it to assistive technologies.
+fn result_description(model: &PanelRenderModel<'_>, target: &Target) -> Option<String> {
+    let result = &target.result;
+    let is_action = result.id.starts_with("action:") && model.can_go_back;
+    let browsing = !model.can_go_back && model.search_query.trim().is_empty();
+    let description = target
+        .display_description
+        .as_deref()
+        .unwrap_or(&result.description);
+    let description = if !model.can_go_back && model.menu_entries.len() == 1 {
+        target.display_detail.as_deref().unwrap_or(description)
+    } else {
+        description
+    };
+    if is_action {
+        action_description(target)
+    } else if (!browsing || description != "Application") && !description.is_empty() {
+        Some(description.to_owned())
+    } else {
+        None
+    }
 }
 
 fn result_content<'a>(
@@ -932,8 +1115,6 @@ fn result_content<'a>(
     entry: &PanelMenuEntry,
     target: &Target,
 ) -> Element<'a, Message> {
-    let result = &target.result;
-    let is_action = result.id.starts_with("action:") && model.can_go_back;
     let is_character = target.provider == crate::launcher::characters::PROVIDER;
     let browsing = !model.can_go_back && model.search_query.trim().is_empty();
     let icon_size = 30.0;
@@ -968,22 +1149,7 @@ fn result_content<'a>(
     };
     let query = query.trim().to_owned();
     let approximate = is_approximate(target);
-    let description = target
-        .display_description
-        .as_deref()
-        .unwrap_or(&result.description);
-    let description = if !model.can_go_back && model.menu_entries.len() == 1 {
-        target.display_detail.as_deref().unwrap_or(description)
-    } else {
-        description
-    };
-    let description = if is_action {
-        action_description(target)
-    } else if (!browsing || description != "Application") && !description.is_empty() {
-        Some(description.to_owned())
-    } else {
-        None
-    };
+    let description = result_description(model, target);
     content = content.push(responsive(move |bounds| {
         let font = theme::font();
         let title_font = iced::Font {

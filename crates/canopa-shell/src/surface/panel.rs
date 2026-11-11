@@ -218,39 +218,45 @@ pub fn panel_header_with_back<'a>(
     title: String,
     back: bool,
 ) -> iced::Element<'a, crate::app::Message> {
+    use canopa_ui::accessibility::{Node, semantic};
     use iced::widget::row;
 
+    let panel = |event| Some(crate::app::Message::Panel(event));
     let mut header = row![];
     if back {
-        header = header.push(
+        header = header.push(semantic(
+            Node::button("Back")
+                .key("panel-back")
+                .on_click(panel(crate::app::messages::PanelEvent::Back)),
             crate::theme::action(
                 crate::theme::text("‹ Back").size(crate::theme::label_size()),
-                Some(crate::app::Message::Panel(
-                    crate::app::messages::PanelEvent::Back,
-                )),
+                panel(crate::app::messages::PanelEvent::Back),
                 canopa_ui::Action::Normal,
                 false,
             )
             .height((crate::theme::panel_header_height() - 24) as f32),
-        );
+        ));
     }
     header
-        .push(
+        .push(semantic(
+            Node::heading(title.clone(), 1).key("panel-title"),
             crate::theme::strong_text(title)
                 .size(crate::theme::title_size())
                 .width(iced::Length::Fill),
-        )
-        .push(
+        ))
+        .push(semantic(
+            Node::button("Close")
+                .key("panel-close")
+                .shortcut("Escape")
+                .on_click(panel(crate::app::messages::PanelEvent::Close)),
             crate::theme::action(
                 crate::theme::text("Close").size(crate::theme::label_size()),
-                Some(crate::app::Message::Panel(
-                    crate::app::messages::PanelEvent::Close,
-                )),
+                panel(crate::app::messages::PanelEvent::Close),
                 canopa_ui::Action::Normal,
                 false,
             )
             .height((crate::theme::panel_header_height() - 24) as f32),
-        )
+        ))
         .spacing(canopa_ui::metrics::GAP)
         .align_y(iced::Alignment::Center)
         .into()

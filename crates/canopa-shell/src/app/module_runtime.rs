@@ -519,6 +519,17 @@ impl ModuleRuntime {
         module.detail_preferred_size(state, request.style, request.session)
     }
 
+    /// What an assistive technology reads for `id` shown with `state`.
+    pub(super) fn accessible_values_for(
+        &self,
+        id: &ModuleId,
+        state: &ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        self.get(id)
+            .map(|module| module.accessible_values(state))
+            .unwrap_or_default()
+    }
+
     pub(super) fn tooltip_values_for(&self, id: &ModuleId) -> Vec<(&'static str, String)> {
         let Some(module) = self.get(id) else {
             return Vec::new();

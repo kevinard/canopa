@@ -465,6 +465,17 @@ impl crate::modules::dynamic::DynamicModuleInstance for WorkspaceItemModule {
 }
 
 impl crate::modules::render::ModuleRender for WorkspaceItemModule {
+    fn accessible_values(
+        &self,
+        _state: &crate::modules::ModuleState,
+    ) -> Vec<(&'static str, String)> {
+        let mut values = self.format_values();
+        if self.workspace.is_urgent {
+            values.push(("urgent", "true".into()));
+        }
+        values
+    }
+
     fn has_content(
         &self,
         state: &crate::modules::ModuleState,

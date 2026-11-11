@@ -158,6 +158,10 @@ impl App {
                 iced::Subscription::none,
                 super::canopa_accessibility::PanelAccessibility::subscription,
             ),
+            self.accessibility.as_ref().map_or_else(
+                iced::Subscription::none,
+                super::shell_accessibility::ShellAccessibility::subscription,
+            ),
             module_subs,
             niri_sub,
             dbus_sub,

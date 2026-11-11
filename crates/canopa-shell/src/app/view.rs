@@ -2,9 +2,11 @@ use iced::widget::{Space, column, container, mouse_area, row};
 use iced::{Element, Length};
 
 use super::render::{BarRenderModel, PanelRenderModel, PopupRenderModel};
+use super::shell_accessibility::{Surface, menu_entry_key, shows_canopa_provider, window_node};
 use super::{App, Message};
 use crate::config::Edge;
 use crate::surface::layout::zone_layout;
+use canopa_ui::accessibility::{Node, Role, semantic};
 
 mod launcher;
 
@@ -48,11 +50,18 @@ impl App {
         }
 
         if let Some(model) = self.panel_render_model(window) {
-            return crate::surface::panel_motion::wrap(
+            // Canopa provider documents are published by their own adapter.
+            let root = (!shows_canopa_provider(&model.tree.content))
+                .then(|| window_node(Surface::Panel, window, model.title.clone()));
+            let panel = crate::surface::panel_motion::wrap(
                 canopa_ui::scroll_speed(render_panel_model(model)),
                 window,
                 self.foreground.panel_presentation(window),
             );
+            return match root {
+                Some(root) => semantic(root, panel),
+                None => panel,
+            };
         }
 
         // Logical close precedes the asynchronous Wayland window removal. A
@@ -62,7 +71,19 @@ impl App {
             return Space::new().width(Length::Fill).height(Length::Fill).into();
         }
 
-        let bar = render_bar_model(self.bar_render_model(window), window);
+        let output = self
+            .surface(window)
+            .map(|surface| surface.output_name.as_str())
+            .unwrap_or_default();
+        let title = if output.is_empty() {
+            "Canopa bar".to_owned()
+        } else {
+            format!("Canopa bar on {output}")
+        };
+        let bar = semantic(
+            window_node(Surface::Bar, window, title),
+            render_bar_model(self.bar_render_model(window), window),
+        );
         if let Some(panel) = self.foreground.active_panel_window() {
             // Bars configured on the Overlay layer sit above the dismissal
             // surface. Consume their click before a module can activate.
@@ -413,7 +434,7 @@ fn render_external_panel_model<'a>(
         Length::Fill
     };
     let mut body = column![].spacing(ui.gap.px()).padding(padding);
-    for element in content.elements() {
+    for (position, element) in content.elements().iter().enumerate() {
         let rendered: Element<'_, Message> = match element {
             crate::surface::panel::ExternalPanelElement::Text { text: value } => {
                 crate::theme::text(value.clone()).into()
@@ -519,7 +540,12 @@ fn render_external_panel_model<'a>(
             }
             _ => rendered,
         };
-        body = body.push(rendered);
+        body = body.push(external_element_semantics(
+            &content.provider_name,
+            position,
+            element,
+            rendered,
+        ));
     }
 
     let frame = panel_frame(
@@ -532,6 +558,68 @@ fn render_external_panel_model<'a>(
         height,
     );
     panel_surface(frame, compact, at_end)
+}
+
+/// Roles and actions for one v1 provider element. Statuses are live regions,
+/// so a provider failure is announced when the panel shows it.
+fn external_element_semantics<'a>(
+    provider: &str,
+    position: usize,
+    element: &crate::surface::panel::ExternalPanelElement,
+    rendered: Element<'a, Message>,
+) -> Element<'a, Message> {
+    use crate::surface::panel::{ExternalPanelElement, ExternalPanelSeverity};
+    let node = match element {
+        ExternalPanelElement::Text { .. } | ExternalPanelElement::SelectableList { .. } => {
+            return rendered;
+        }
+        ExternalPanelElement::Button { id, label } => Node::button(label.clone())
+            .key(format!("provider-{provider}-{id}"))
+            .on_click(Some(Message::ExternalPanel(
+                super::messages::ExternalPanelEvent::ButtonActivated {
+                    provider_name: provider.to_owned(),
+                    element_id: id.clone(),
+                },
+            ))),
+        ExternalPanelElement::TextInput {
+            id,
+            label,
+            value,
+            secret,
+            error,
+        } => {
+            let node = if *secret {
+                Node::new(Role::PasswordInput).label(label.clone())
+            } else {
+                Node::text_input(label.clone(), value.clone())
+            };
+            let (provider_name, element_id) = (provider.to_owned(), id.clone());
+            node.key(format!("provider-{provider}-{id}"))
+                .invalid(error.is_some())
+                .description(error.clone().unwrap_or_default())
+                .on_text(move |value| {
+                    Message::ExternalPanel(super::messages::ExternalPanelEvent::TextInputChanged {
+                        provider_name: provider_name.clone(),
+                        element_id: element_id.clone(),
+                        value,
+                    })
+                })
+        }
+        ExternalPanelElement::Status {
+            title,
+            message,
+            severity,
+        } => {
+            let text = format!("{title}. {message}");
+            if *severity == ExternalPanelSeverity::Error {
+                Node::alert(text)
+            } else {
+                Node::status(text)
+            }
+            .key(format!("provider-{provider}-status-{position}"))
+        }
+    };
+    semantic(node, rendered)
 }
 
 fn render_external_text_input<'a>(
@@ -582,15 +670,32 @@ fn render_external_selectable_list<'a>(
 ) -> Element<'a, Message> {
     let provider_for_search = provider_name.to_string();
     let list_for_search = list_id.to_string();
-    let search = crate::theme::input("Search", search_query)
-        .on_input(move |query| {
+    let list_key = format!("provider-{provider_name}-{list_id}");
+    let search_change = {
+        let (provider_name, list_id) = (provider_for_search.clone(), list_for_search.clone());
+        move |query| {
             Message::ExternalPanel(super::messages::ExternalPanelEvent::ListSearchChanged {
-                provider_name: provider_for_search.clone(),
-                list_id: list_for_search.clone(),
+                provider_name: provider_name.clone(),
+                list_id: list_id.clone(),
                 query,
             })
-        })
-        .width(Length::Fill);
+        }
+    };
+    let search = semantic(
+        Node::search_input("Search", search_query)
+            .key(format!("{list_key}-search"))
+            .controls(list_key.clone())
+            .on_text(search_change),
+        crate::theme::input("Search", search_query)
+            .on_input(move |query| {
+                Message::ExternalPanel(super::messages::ExternalPanelEvent::ListSearchChanged {
+                    provider_name: provider_for_search.clone(),
+                    list_id: list_for_search.clone(),
+                    query,
+                })
+            })
+            .width(Length::Fill),
+    );
 
     let mut rows = column![].spacing(6);
     for item in external_selectable_list_items_with_custom(entries, search_query, allow_custom) {
@@ -615,16 +720,26 @@ fn render_external_selectable_list<'a>(
                     crate::theme::palette().border
                 };
                 let row = external_selectable_row(row_content, border_color);
+                let mut node = Node::option(entry.label.clone(), entry.active)
+                    .key(format!("{list_key}-{entry_id}"))
+                    .disabled(entry.disabled);
+                if let Some(description) = &entry.description {
+                    node = node.description(description.clone());
+                }
                 if entry.disabled {
-                    rows = rows.push(row);
+                    rows = rows.push(semantic(node, row));
                 } else {
-                    rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
+                    let activate = Message::ExternalPanel(
                         super::messages::ExternalPanelEvent::ListEntryActivated {
                             provider_name: provider,
                             list_id,
                             entry_id,
                         },
-                    )));
+                    );
+                    rows = rows.push(semantic(
+                        node.on_click(Some(activate.clone())),
+                        mouse_area(row).on_press(activate),
+                    ));
                 }
             }
             ExternalSelectableListItem::CustomValue(value) => {
@@ -637,21 +752,32 @@ fn render_external_selectable_list<'a>(
                 ]
                 .spacing(2);
                 let row = external_selectable_row(row_content, crate::theme::palette().accent);
-                rows = rows.push(mouse_area(row).on_press(Message::ExternalPanel(
+                let custom_label = format!("Use custom value {submitted_value}");
+                let submit = Message::ExternalPanel(
                     super::messages::ExternalPanelEvent::ListCustomValueSubmitted {
                         provider_name: provider,
                         list_id,
                         value: submitted_value,
                     },
-                )));
+                );
+                rows = rows.push(semantic(
+                    Node::option(custom_label, false)
+                        .key(format!("{list_key}-custom"))
+                        .on_click(Some(submit.clone())),
+                    mouse_area(row).on_press(submit),
+                ));
             }
         }
     }
 
     let mut block = column![search].spacing(8);
     if let Some(error) = error {
-        block = block.push(crate::theme::text(error.to_owned()).size(crate::theme::label_size()));
+        block = block.push(semantic(
+            Node::alert(error.to_owned()).key(format!("{list_key}-error")),
+            crate::theme::text(error.to_owned()).size(crate::theme::label_size()),
+        ));
     }
+    let rows = semantic(Node::list("Choices").key(list_key), rows);
     container(block.push(rows)).width(Length::Fill).into()
 }
 
@@ -745,15 +871,26 @@ fn render_panel_menu_model<'a>(
     text_color: Option<iced::Color>,
 ) -> Element<'a, Message> {
     let placeholder = model.menu_prompt.as_deref().unwrap_or("Search");
-    let search = crate::theme::input(placeholder, &model.search_query)
-        .id(model.search_input_id.clone())
-        .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
-        .width(Length::Fill);
+    let search = semantic(
+        Node::search_input(placeholder, model.search_query.clone())
+            .key("menu-search")
+            .controls(MENU_ITEMS)
+            .active_descendant(selected_menu_key(&model))
+            .on_text(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query))),
+        crate::theme::input(placeholder, &model.search_query)
+            .id(model.search_input_id.clone())
+            .on_input(|query| Message::Panel(super::messages::PanelEvent::SearchChanged(query)))
+            .width(Length::Fill),
+    );
     let back_slot: Element<'_, Message> = if model.can_go_back {
-        crate::theme::button(crate::theme::text("‹ Back").size(crate::theme::label_size()))
-            .on_press(Message::Panel(super::messages::PanelEvent::Back))
-            .height(38)
-            .into()
+        semantic(
+            Node::button("Back")
+                .key("menu-back")
+                .on_click(Some(Message::Panel(super::messages::PanelEvent::Back))),
+            crate::theme::button(crate::theme::text("‹ Back").size(crate::theme::label_size()))
+                .on_press(Message::Panel(super::messages::PanelEvent::Back))
+                .height(38),
+        )
     } else {
         Space::new().width(0).height(38).into()
     };
@@ -767,7 +904,11 @@ fn render_panel_menu_model<'a>(
         right: model.ui.padding.right.px(),
         ..Default::default()
     });
-    let content = column![header, render_menu_scroll(&model, Length::Fill)];
+    let items = semantic(
+        Node::list(model.title.clone()).key(MENU_ITEMS),
+        render_menu_scroll(&model, Length::Fill),
+    );
+    let content = column![header, items];
     let frame = panel_frame(
         content.into(),
         text_color,
@@ -870,13 +1011,34 @@ fn render_menu_scroll<'a>(model: &PanelRenderModel<'a>, height: Length) -> Eleme
         .into()
 }
 
+/// The list a menu's search field filters.
+const MENU_ITEMS: &str = "menu-items";
+
+/// The key of the highlighted row, which a search field points at.
+pub(super) fn selected_menu_key(model: &PanelRenderModel<'_>) -> Option<String> {
+    let index = model.focused_index?;
+    model
+        .menu_entries
+        .get(index)
+        .map(|entry| menu_entry_key(entry, index))
+}
+
 fn render_menu_row<'a>(model: &PanelRenderModel<'a>, index: usize) -> Element<'a, Message> {
     let metrics = model.menu_metrics;
     let menu_row_gap = metrics.gap;
     let entry = &model.menu_entries[index];
     let focused = model.focused_index == Some(index);
     if let super::panel_menu_session::PanelMenuEntryTarget::Launcher(target) = &entry.target {
-        return launcher::result_row(model, entry, target, focused);
+        return launcher::result_row(model, index, entry, target, focused);
+    }
+    let mut node = Node::option(entry.label.clone(), focused)
+        .key(menu_entry_key(entry, index))
+        .position(index + 1, model.menu_entries.len())
+        .on_click(Some(Message::Panel(
+            super::messages::PanelEvent::ActivateIndex(index),
+        )));
+    if entry.is_submenu {
+        node = node.expanded(false);
     }
 
     let mut row_content = row![]
@@ -930,9 +1092,12 @@ fn render_menu_row<'a>(model: &PanelRenderModel<'a>, index: usize) -> Element<'a
         }
     });
     let row = container(row).padding(canopa_ui::padding(metrics.row.margin));
-    crate::surface::pointer_focus::pointer_focus(
-        row,
-        Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
+    semantic(
+        node,
+        crate::surface::pointer_focus::pointer_focus(
+            row,
+            Message::Panel(super::messages::PanelEvent::FocusIndex(index)),
+        ),
     )
 }
 
@@ -1193,6 +1358,10 @@ fn config_alert<'a>(
     } else {
         container(badge).center_x(Length::Fill)
     };
+    let node = Node::button("Configuration error")
+        .key("bar-config-alert")
+        .description("The Shell configuration was rejected")
+        .on_click(primary.clone().map(Message::Notice));
     let mut area = mouse_area(badge).interaction(iced::mouse::Interaction::Pointer);
     if let Some(action) = primary {
         area = area.on_press(Message::Notice(action));
@@ -1200,7 +1369,7 @@ fn config_alert<'a>(
     if let Some(action) = settings {
         area = area.on_right_press(Message::Notice(action));
     }
-    area.into()
+    semantic(node, area)
 }
 
 #[cfg(test)]

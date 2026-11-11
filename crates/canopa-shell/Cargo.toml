@@ -19,6 +19,7 @@ desktop = [
     "dep:canopa-theme",
     "dep:canopa-ui",
     "canopa-ui/icons",
+    "canopa-ui/accessibility",
     "dep:accesskit",
     "dep:accesskit_unix",
     "dep:image",
@@ -83,4 +84,5 @@ tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 canopa-services = { workspace = true, features = ["audio", "test-support"] }
+canopa-ui = { workspace = true, features = ["accessibility-testing"] }
 tempfile.workspace = true

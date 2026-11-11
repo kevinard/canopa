@@ -120,6 +120,21 @@ impl ModuleId {
         }
     }
 
+    /// A stable accessibility key: configuration names and runtime IDs, never labels.
+    pub(crate) fn accessibility_key(&self) -> String {
+        match self.0.as_ref() {
+            ModuleIdentity::Configured(name) => format!("module:{name}"),
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Workspace(id),
+            } => format!("module:{parent}:workspace:{id}"),
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Tray(id),
+            } => format!("module:{parent}:tray:{id}"),
+        }
+    }
+
     // Historical human-readable labels are useful in display assertions, never as identity.
     #[cfg(test)]
     pub(crate) fn display_name(&self) -> String {

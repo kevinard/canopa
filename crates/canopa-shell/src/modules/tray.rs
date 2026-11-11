@@ -322,6 +322,15 @@ impl crate::modules::render::ModuleRender for TrayIconModule {
         mode != crate::config::FormatMode::Expanded
     }
 
+    fn accessible_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
+        let mut values = self.tooltip_values(state);
+        if let TrayIcon::Named(name) = &self.item.icon {
+            values.push(("icon-name", name.clone()));
+        }
+        values.push(("service", self.item.service.clone()));
+        values
+    }
+
     fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
         match self.item.tooltip.as_ref() {
             Some(t) => vec![

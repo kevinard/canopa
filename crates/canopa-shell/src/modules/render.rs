@@ -186,6 +186,11 @@ pub trait ModuleRender: Send + Sync {
     fn tooltip_values(&self, _state: &ModuleState) -> Vec<(&'static str, String)> {
         Vec::new()
     }
+
+    /// The values an assistive technology reads; tooltip values by default.
+    fn accessible_values(&self, state: &ModuleState) -> Vec<(&'static str, String)> {
+        self.tooltip_values(state)
+    }
 }
 
 #[cfg(test)]

@@ -39,6 +39,7 @@ mod render;
 mod selectable_menu_session;
 mod session_actions;
 mod shared;
+mod shell_accessibility;
 mod subscriptions;
 mod surface_input_router;
 mod surfaces;
@@ -77,6 +78,8 @@ pub(crate) struct App {
     perf: Option<perf::PerfTracker>,
     external_panel_session: external_panel_session::ExternalPanelSessionRuntime,
     canopa_accessibility: Option<canopa_accessibility::PanelAccessibility>,
+    /// The shared AT-SPI bridge for the Shell's own surfaces; absent in unit tests.
+    accessibility: Option<shell_accessibility::ShellAccessibility>,
     accessibility_focused_window: Option<iced::window::Id>,
     notices: crate::notice::Outbox,
     session: session_actions::SessionRuntime,
@@ -142,6 +145,8 @@ pub enum Message {
         provider: String,
         action_id: String,
     },
+    /// The shared AT-SPI bridge of bars, Quick settings, menus and the launcher.
+    Accessibility(canopa_ui::accessibility::Event<Message>),
     Ipc(messages::IpcEvent),
     ExternalPanel(messages::ExternalPanelEvent),
     Surface(messages::SurfaceEvent),
@@ -193,6 +198,7 @@ impl Message {
             Message::DbusReady(_) => "DbusReady",
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
+            Message::Accessibility(_) => "Accessibility",
             _ => "LayerShell",
         }
     }
@@ -356,6 +362,7 @@ impl App {
             perf: perf::PerfTracker::from_env(),
             external_panel_session: external_panel_session::ExternalPanelSessionRuntime::default(),
             canopa_accessibility: None,
+            accessibility: (!cfg!(test)).then(shell_accessibility::ShellAccessibility::new),
             accessibility_focused_window: None,
             notices: Default::default(),
             session: Default::default(),
@@ -385,7 +392,16 @@ impl App {
         String::from("canopa-shell")
     }
 
+    /// Handle a message, then refresh the accessibility tree if one is read.
     pub(crate) fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return self.handle_accessibility_event(event);
+        }
+        let task = self.apply(message);
+        Task::batch([task, self.sync_accessibility()])
+    }
+
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if let Message::ConfiguredModule {
             id,
             generation,
@@ -393,7 +409,7 @@ impl App {
         } = message
         {
             return if self.modules.accepts_subscription_event(&id, generation) {
-                self.update(*message)
+                self.apply(*message)
             } else {
                 Task::none()
             };

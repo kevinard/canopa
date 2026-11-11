@@ -1039,6 +1039,21 @@ impl Session {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn index_revision(&self) -> u64 {
+        self.index_revision
+    }
+
+    /// The failure the status line reports, announced assertively.
+    pub fn error(&self) -> Option<&str> {
+        (!self.action_error.is_empty())
+            .then_some(self.action_error.as_str())
+            .or(self.preferences_error.as_deref())
+            .or(self.configuration_error.as_deref())
+            .or(self.history_error.as_deref())
+            .filter(|error| !error.is_empty())
+    }
+
     pub fn status(&self) -> String {
         if self.action_running {
             return "Applying action…".into();

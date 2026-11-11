@@ -63,6 +63,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) launcher_session: Option<u64>,
     pub(super) launcher_generation: u64,
     pub(super) launcher_status: String,
+    pub(super) launcher_error: Option<String>,
     pub(super) launcher_scopes: Vec<super::launcher::QuickScope>,
     pub(super) launcher_scope: Option<super::launcher::QuickScope>,
     pub(super) launcher_input_scope: Option<super::launcher::QuickScope>,
@@ -374,6 +375,7 @@ impl App {
             launcher_session: menu.launcher_session,
             launcher_generation: launcher.map_or(0, |session| session.generation),
             launcher_status: menu.launcher_status,
+            launcher_error: launcher.and_then(|session| session.error().map(str::to_owned)),
             launcher_scopes: launcher
                 .filter(|session| !session.in_child())
                 .map(|session| session.quick_scopes())
@@ -508,6 +510,26 @@ impl App {
                     }
                 })
                 .into();
+            // A button named after the module and its value; keyboard focus
+            // follows the Shell's own bar selection.
+            let summary = super::shell_accessibility::module_summary(
+                kind,
+                id.configured_name(),
+                &self.modules.accessible_values_for(&id, &state),
+            );
+            let element = canopa_ui::accessibility::semantic(
+                super::shell_accessibility::bar_module_node(
+                    &id,
+                    summary,
+                    focused,
+                    active,
+                    Message::Modules(super::messages::ModuleRuntimeEvent::ModuleClick(
+                        id.clone(),
+                        window,
+                    )),
+                ),
+                element,
+            );
 
             let entry = ModuleRenderEntry {
                 id,
