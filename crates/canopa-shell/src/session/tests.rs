@@ -64,7 +64,7 @@ fn failure_notices_are_translated() {
     assert_eq!(french_notice.summary, "Impossible d’éteindre");
     assert_eq!(
         french_notice.body,
-        "Bloqué par Firefox: Téléchargement. Terminez ou fermez cette application, puis réessayez."
+        "Bloqué par Firefox\u{a0}: Téléchargement. Terminez ou fermez cette application, puis réessayez."
     );
 }
 
