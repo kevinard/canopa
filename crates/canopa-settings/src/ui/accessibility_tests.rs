@@ -87,7 +87,7 @@ async fn native_settings_tree_follows_pages_focus_and_live_controls() {
     let _ = state.update(Message::Search(String::new()));
     publish(&state, &mut bridge);
 
-        // AT focus requests move keyboard focus; collected focus follows it.
+    // AT focus requests move keyboard focus; collected focus follows it.
     let search = testing::named_role(&connection, "Search settings", "entry").await;
     assert!(search.grab_focus().await);
     let Event::Focus(id) = next(&bridge).await else {
