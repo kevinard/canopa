@@ -122,7 +122,8 @@ gdbus call --session --dest org.freedesktop.portal.Desktop \
 ```
 
 Dark is unsigned integer 1 and light is 2. `accent-color` returns three doubles in
-[0,1]. Canopa does not currently publish contrast or reduced-motion preferences.
+[0,1]. `contrast` is 1 with `high-contrast #true` and 0 (no preference) otherwise;
+`reduced-motion` is 1 with `reduced-motion #true` and 0 otherwise.
 The backend's interface version is 1; the frontend supplies public Settings version
 2 and `ReadOne`. This distinction follows the separate upstream interfaces.
 

@@ -120,6 +120,16 @@ impl Settings {
                 .try_into()
                 .expect("RGB value"),
             ),
+            // 0 means no preference; Canopa's high-contrast palette is 1 (high).
+            (
+                "contrast",
+                OwnedValue::from(u32::from(self.appearance.high_contrast())),
+            ),
+            // 0 means no preference, 1 asks applications to reduce motion.
+            (
+                "reduced-motion",
+                OwnedValue::from(u32::from(self.appearance.reduced_motion())),
+            ),
         ])
     }
 

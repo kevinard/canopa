@@ -130,7 +130,67 @@ impl Appearance {
                 }
             }
         }
+        if self.high_contrast() {
+            palette = palette.high_contrast(self.color_scheme);
+        }
         palette
+    }
+}
+
+impl Palette {
+    /// Black and white surfaces, full-strength text and borders, and an
+    /// accent kept only when it reads at 7:1 on the background.
+    fn high_contrast(self, scheme: ColorScheme) -> Self {
+        let (background, raised, text, muted, disabled, fallback) = match scheme {
+            ColorScheme::Dark => (
+                Rgb(0x00, 0x00, 0x00),
+                Rgb(0x1a, 0x1a, 0x1a),
+                Rgb(0xff, 0xff, 0xff),
+                Rgb(0xe6, 0xe6, 0xe6),
+                Rgb(0xb3, 0xb3, 0xb3),
+                Rgb(0xff, 0xe0, 0x66),
+            ),
+            ColorScheme::Light => (
+                Rgb(0xff, 0xff, 0xff),
+                Rgb(0xec, 0xec, 0xec),
+                Rgb(0x00, 0x00, 0x00),
+                Rgb(0x1f, 0x1f, 0x1f),
+                Rgb(0x4d, 0x4d, 0x4d),
+                Rgb(0x00, 0x3d, 0x8f),
+            ),
+        };
+        let strong = |color: Rgb, fallback: Rgb| {
+            if color.contrast(background) >= 7.0 && color.contrast(raised) >= 4.5 {
+                color
+            } else {
+                fallback
+            }
+        };
+        let (danger, warning, success) = match scheme {
+            ColorScheme::Dark => (
+                Rgb(0xff, 0x9e, 0xb5),
+                Rgb(0xff, 0xe0, 0x66),
+                Rgb(0x9c, 0xf5, 0x9c),
+            ),
+            ColorScheme::Light => (
+                Rgb(0x8f, 0x00, 0x2b),
+                Rgb(0x5c, 0x3d, 0x00),
+                Rgb(0x1d, 0x4d, 0x0d),
+            ),
+        };
+        Self {
+            background,
+            surface: background,
+            raised,
+            text,
+            muted,
+            disabled,
+            border: text,
+            accent: strong(self.accent, fallback),
+            danger: strong(self.danger, danger),
+            warning: strong(self.warning, warning),
+            success: strong(self.success, success),
+        }
     }
 }
 
@@ -216,6 +276,39 @@ mod tests {
                 ..Default::default()
             };
             assert!(appearance.role(ColorRole::OnAccent).contrast(accent) >= 4.5);
+        }
+    }
+
+    #[test]
+    fn high_contrast_reaches_seven_to_one_even_over_custom_colors() {
+        for color_scheme in [ColorScheme::Dark, ColorScheme::Light] {
+            for accent in [
+                None,
+                Some(Rgb(0x80, 0x80, 0x80)),
+                Some(Rgb(0xff, 0xff, 0xff)),
+            ] {
+                let mut customization = Customization {
+                    high_contrast: true,
+                    ..Default::default()
+                };
+                customization.palette[ColorRole::Muted as usize] = Some(Rgb(0x77, 0x77, 0x77));
+                let appearance = Appearance {
+                    color_scheme,
+                    accent,
+                    customization: std::sync::Arc::new(customization),
+                };
+                let p = appearance.palette();
+                for background in [p.background, p.surface, appearance.role(ColorRole::Spine)] {
+                    for foreground in [p.text, p.muted, p.accent, p.border] {
+                        assert!(
+                            foreground.contrast(background) >= 7.0,
+                            "{color_scheme:?}: {foreground:?} on {background:?}"
+                        );
+                    }
+                }
+                assert!(p.text.contrast(p.raised) >= 7.0);
+                assert!(appearance.role(ColorRole::OnAccent).contrast(p.accent) >= 4.5);
+            }
         }
     }
 }

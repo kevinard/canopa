@@ -311,6 +311,8 @@ pub struct Customization {
     pub typography: Typography,
     pub text_scale: Option<u16>,
     pub reduced_motion: bool,
+    /// Maximum-contrast surfaces, text and borders (see `Palette`).
+    pub high_contrast: bool,
     pub ui: [UiStyle; 10],
 }
 
@@ -322,6 +324,9 @@ impl Appearance {
     }
     pub fn reduced_motion(&self) -> bool {
         self.customization.reduced_motion
+    }
+    pub fn high_contrast(&self) -> bool {
+        self.customization.high_contrast
     }
     pub fn typography(&self) -> &Typography {
         &self.customization.typography
@@ -343,6 +348,9 @@ impl Appearance {
             ColorRole::Danger => p.danger,
             ColorRole::Warning => p.warning,
             ColorRole::Success => p.success,
+            ColorRole::OnAccent if self.high_contrast() => p.accent.contrasting_text(),
+            ColorRole::Spine if self.high_contrast() => p.background,
+            ColorRole::AccentSurface if self.high_contrast() => p.raised,
             ColorRole::OnAccent => {
                 if self.accent.is_some()
                     || self.customization.palette[ColorRole::Accent as usize].is_some()

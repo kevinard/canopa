@@ -139,7 +139,9 @@ async fn backend_wire_reload_discovery_and_restart_contract() {
         let all: HashMap<String, HashMap<String, OwnedValue>> =
             proxy.call("ReadAll", &(filter,)).await.unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[NAMESPACE].len(), 2);
+        assert_eq!(all[NAMESPACE].len(), 4);
+        assert_eq!(u32::try_from(&all[NAMESPACE]["contrast"]).unwrap(), 0);
+        assert_eq!(u32::try_from(&all[NAMESPACE]["reduced-motion"]).unwrap(), 0);
         assert_eq!(u32::try_from(&all[NAMESPACE]["color-scheme"]).unwrap(), 1);
     }
     for filter in [
@@ -155,7 +157,6 @@ async fn backend_wire_reload_discovery_and_restart_contract() {
     for (namespace, key) in [
         ("private-namespace", "color-scheme"),
         (NAMESPACE, "private-key"),
-        (NAMESPACE, "contrast"),
     ] {
         let error = proxy
             .call::<_, _, OwnedValue>("Read", &(namespace, key))
@@ -169,10 +170,10 @@ async fn backend_wire_reload_discovery_and_restart_contract() {
     let mut signals = proxy.receive_signal("SettingChanged").await.unwrap();
     std::fs::create_dir(config.join("canopa")).unwrap();
     let file = config.join("canopa/config.kdl");
-    std::fs::write(&file, "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; }\nshell { private-unrelated 1; }").unwrap();
+    std::fs::write(&file, "schema-version 1\nappearance { color-scheme \"light\"; accent \"#123456\"; high-contrast #true; reduced-motion #true; }\nshell { private-unrelated 1; }").unwrap();
     reload(&child, &log, "event=reloaded").await;
     let mut changed = HashMap::new();
-    for _ in 0..2 {
+    for _ in 0..4 {
         let signal = tokio::time::timeout(Duration::from_secs(2), signals.next())
             .await
             .unwrap()
@@ -183,6 +184,8 @@ async fn backend_wire_reload_discovery_and_restart_contract() {
         changed.insert(key, value);
     }
     assert_eq!(u32::try_from(&changed["color-scheme"]).unwrap(), 2);
+    assert_eq!(u32::try_from(&changed["contrast"]).unwrap(), 1);
+    assert_eq!(u32::try_from(&changed["reduced-motion"]).unwrap(), 1);
     let accent: (f64, f64, f64) = changed.remove("accent-color").unwrap().try_into().unwrap();
     assert_eq!(accent, (18.0 / 255.0, 52.0 / 255.0, 86.0 / 255.0));
     assert_eq!(

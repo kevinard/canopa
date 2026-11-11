@@ -66,7 +66,10 @@ Existing explicit module/segment text sizes, weights and colors remain supported
 In the main configuration's `appearance` block, `text-scale 125` applies a
 125% multiplier to the resolved typography sizes. The supported range is 100
 to 150, with a default of 100. `reduced-motion #true` disables Shell panel
-transitions. Canopa Settings exposes both options on the Personalization page.
+transitions. `high-contrast #true` replaces the palette with black and white
+surfaces, full-strength text and borders, and status colors of at least 7:1; it
+applies over theme-file and inline colors. Canopa Settings exposes these options
+on the Personalization and Accessibility pages.
 
 ## UI properties
 

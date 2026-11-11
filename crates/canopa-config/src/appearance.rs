@@ -278,6 +278,14 @@ fn apply(
                     .ok_or_else(|| fail(node))?;
                 std::sync::Arc::make_mut(&mut appearance.customization).text_scale = Some(scale);
             }
+            "high-contrast" if allow_theme => {
+                values(node)?;
+                let [entry] = node.entries() else {
+                    return Err(fail(node));
+                };
+                let enabled = entry.value().as_bool().ok_or_else(|| fail(node))?;
+                std::sync::Arc::make_mut(&mut appearance.customization).high_contrast = enabled;
+            }
             "reduced-motion" if allow_theme => {
                 values(node)?;
                 let [entry] = node.entries() else {

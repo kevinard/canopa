@@ -19,11 +19,13 @@ backend implements version 1, `Read`, filtered `ReadAll`, and `SettingChanged`.
 The frontend owns the public interface, including its version-2 `ReadOne` method;
 Canopa does not claim the frontend's bus name or duplicate its routing.
 
-Only two keys are published in `org.freedesktop.appearance`: `color-scheme` is an
+Four keys are published in `org.freedesktop.appearance` (contrast and reduced motion
+since [ADR 0144](0144-shared-accesskit-layer.md)): `color-scheme` is an
 unsigned integer (dark 1, light 2); `accent-color` is the effective palette RGB
 normalized to three doubles in [0,1]. When the user has no explicit accent, this
-reports the same preset accent used by the shell and banners. Contrast and reduced
-motion are absent until Canopa has settings and consumers that honor them. Unknown
+reports the same preset accent used by the shell and banners. `contrast` is 1 for
+the high-contrast palette and `reduced-motion` is 1 when motion is reduced; both are
+0 (no preference) otherwise. Unknown
 keys and namespaces produce `org.freedesktop.portal.Error.NotFound` with a constant
 message. `ReadAll` supports empty filters, exact names, `*`, and trailing namespace
 sections such as `org.freedesktop.*`.
