@@ -99,7 +99,7 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | | High contrast, cursor size, sticky/slow keys, screen reader, magnifier, OSK | missing | – | none | |
 | | Settings itself usable with Orca | missing | – | no `accesskit` dependency in Settings or `canopa-ui`. Only Shell, Notify and session-ui have one | A screen-reader user can't use Settings |
 | Printers | Queues, jobs, discovery | missing | – | Print portal is opt-in and unrelated (ADR 0070–0072) | |
-| About | Hostname, OS, hardware, firmware | missing | – | none | |
+| About | Hostname, OS, hardware, firmware | missing | – | none | **Fixed in f1abe0d:** Settings About page: device name through hostnamed and polkit, model, CPU, memory, GPU, disks, firmware version, OS, kernel, Canopa version (fwupd updates still open). |
 | Extra (not in baseline) | Launcher extensions, web search, clipboard | works | S | `ui/launcher.rs`, `launcher.rs` | Clipboard has its own Save button |
 | | Bar / lock-screen widget layout | works | S | `ui/widget_layouts.rs`, ADR 0134 | |
 
