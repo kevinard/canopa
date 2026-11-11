@@ -128,9 +128,11 @@ impl BannerAccessibility {
             let mut group = Node::new(Role::Alert);
             // One announcement per new revision, including image alternative text.
             // Critical notifications interrupt; others wait for the current speech.
-            group.set_label(format!(
-                "{}: {}. {}",
-                banner.app_name, banner.summary, banner.body
+            group.set_label(fl!(
+                "notify-banner-announcement",
+                app = banner.app_name.as_str(),
+                summary = banner.summary.as_str(),
+                body = banner.body.as_str()
             ));
             group.set_live(if banner.urgency == crate::Urgency::Critical {
                 Live::Assertive
@@ -182,14 +184,14 @@ impl BannerAccessibility {
             }
             add_action(
                 2,
-                "Dismiss notification".into(),
+                fl!("notify-banner-dismiss"),
                 Role::Button,
                 BannerInteraction::Dismiss(target),
             );
             if banner.default_action_key.is_some() {
                 add_action(
                     3,
-                    "Open notification".into(),
+                    fl!("notify-banner-open"),
                     Role::Button,
                     BannerInteraction::Activate {
                         target,
@@ -286,7 +288,7 @@ fn apply_bounds(
 
 fn tree(mut nodes: Vec<(NodeId, Node)>, groups: Vec<NodeId>) -> TreeUpdate {
     let mut root = Node::new(Role::Window);
-    root.set_label("Canopa Notify notifications");
+    root.set_label(fl!("notify-banner-region"));
     root.set_children(groups);
     root.set_live(Live::Off);
     nodes.push((ROOT, root));

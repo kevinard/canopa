@@ -584,11 +584,12 @@ impl AppPermissionControl {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    /// The option's name in the person's language.
+    pub fn label(self) -> String {
         match self {
-            Self::Allow => "Allow",
-            Self::Silence => "Silence",
-            Self::Drop => "Drop",
+            Self::Allow => fl!("notify-permission-allow"),
+            Self::Silence => fl!("notify-permission-silence"),
+            Self::Drop => fl!("notify-permission-drop"),
         }
     }
 

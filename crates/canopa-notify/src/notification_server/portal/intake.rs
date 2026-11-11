@@ -24,14 +24,15 @@ pub(crate) const SUPPORTED_PURPOSES: &[&str] = &[
 ];
 const REPLY_PURPOSE: &str = "im.reply-with-text";
 
-fn purpose_label(purpose: &str) -> Option<&'static str> {
+/// Notify's label for a button the sender left unlabelled, in the person's language.
+fn purpose_label(purpose: &str) -> Option<String> {
     Some(match purpose {
-        REPLY_PURPOSE => "Reply",
-        "call.accept" => "Answer",
-        "call.decline" => "Decline",
-        "call.hang-up" => "Hang up",
-        "call.enable-speakerphone" => "Speaker on",
-        "call.disable-speakerphone" => "Speaker off",
+        REPLY_PURPOSE => fl!("notify-portal-reply"),
+        "call.accept" => fl!("notify-portal-answer"),
+        "call.decline" => fl!("notify-portal-decline"),
+        "call.hang-up" => fl!("notify-portal-hang-up"),
+        "call.enable-speakerphone" => fl!("notify-portal-speaker-on"),
+        "call.disable-speakerphone" => fl!("notify-portal-speaker-off"),
         _ => return None,
     })
 }
@@ -225,12 +226,7 @@ pub(super) fn prepare_at(
             // A known purpose supplies a label; an unknown one degrades to the label.
             let label = text(&button, "label", 4096)?
                 .filter(|label| !label.trim().is_empty())
-                .or_else(|| {
-                    purpose
-                        .as_deref()
-                        .and_then(purpose_label)
-                        .map(str::to_owned)
-                });
+                .or_else(|| purpose.as_deref().and_then(purpose_label));
             let Some(label) = label else {
                 continue;
             };

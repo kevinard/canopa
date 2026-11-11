@@ -531,7 +531,7 @@ fn run_banner_ui(
             let task = open_banner_surface(&mut state.surface, window);
             (state, task)
         },
-        || "Canopa Notify Notification Banners".to_string(),
+        || fl!("notify-banner-window-title"),
         banner_ui_update,
         banner_ui_view,
     )
@@ -2170,29 +2170,30 @@ fn reply_composer_widget<'a>(
         .reply
         .as_ref()
         .and_then(|reply| reply.placeholder.as_deref())
-        .unwrap_or("Reply…");
-    let label = |value: &'static str| {
+        .map(str::to_owned)
+        .unwrap_or_else(|| fl!("notify-reply-placeholder"));
+    let label = |value: String| {
         text(value)
             .font(canopa_ui::font(appearance))
             .size(appearance.typography().body_size.px())
     };
     let can_send = !draft.text.trim().is_empty();
     row![
-        text_input(placeholder, &draft.text)
+        text_input(&placeholder, &draft.text)
             .id(REPLY_INPUT_ID)
             .on_input(BannerUiMessage::ReplyChanged)
             .on_submit(BannerUiMessage::ReplySubmitted)
             .size(appearance.typography().body_size.px())
             .width(Length::Fill),
         canopa_ui::styled_action(
-            label("Send"),
+            label(fl!("notify-reply-send")),
             can_send.then_some(BannerUiMessage::ReplySubmitted),
             canopa_ui::Action::Normal,
             false,
             appearance,
         ),
         canopa_ui::styled_action(
-            label("Cancel"),
+            label(fl!("notify-reply-cancel")),
             Some(BannerUiMessage::ReplyCancelled),
             canopa_ui::Action::Quiet,
             false,

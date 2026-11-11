@@ -131,12 +131,13 @@ pub(crate) fn run_panel_provider(socket: &Path, protocol: PanelProtocol) -> anyh
     let mut stream = match StdUnixStream::connect(socket) {
         Ok(stream) => stream,
         Err(source) => {
-            let message = format!(
-                "Canopa Notify daemon unavailable at {}: {source}",
-                socket.display()
+            let message = fl!(
+                "notify-center-daemon-unavailable",
+                socket = socket.display().to_string(),
+                error = source.to_string()
             );
             let mut stdout = std::io::stdout().lock();
-            stdout.write_all(&wire.content(PanelContent::error("Canopa Notify", message))?)?;
+            stdout.write_all(&wire.content(PanelContent::error(super::PRODUCT_NAME, message))?)?;
             stdout.flush()?;
             return Ok(());
         }
@@ -155,8 +156,8 @@ pub(crate) fn run_panel_provider(socket: &Path, protocol: PanelProtocol) -> anyh
             Ok(None) => break,
             Err(_) => {
                 stdout.write_all(&wire.content(PanelContent::error(
-                    "Canopa Notify",
-                    "Notification Center stream ended with an invalid or incomplete frame; reopen the panel.",
+                    super::PRODUCT_NAME,
+                    fl!("notify-center-stream-invalid"),
                 ))?)?;
                 stdout.flush()?;
                 break;
@@ -364,8 +365,8 @@ impl ControlSocket {
         ) {
             let Ok(_permit) = self.panel_subscriptions.try_acquire() else {
                 let response = panel_response_line(PanelContent::error(
-                    "Canopa Notify",
-                    "Too many Notification Center subscriptions; close a panel and retry.",
+                    super::PRODUCT_NAME,
+                    fl!("notify-center-too-many-subscriptions"),
                 ))?;
                 write_socket_frame(stream.get_mut(), response.as_bytes()).await?;
                 stream.get_mut().shutdown().await?;
@@ -482,8 +483,8 @@ pub(super) fn panel_response_line(content: PanelContent) -> anyhow::Result<Strin
     } else {
         Ok(
             serde_json::to_string(&ProviderResponse::replace_content(PanelContent::error(
-                "Canopa Notify",
-                "Notification Center exceeds the 1 MiB display limit; use notification history controls.",
+                super::PRODUCT_NAME,
+                fl!("notify-center-too-large"),
             )))? + "\n",
         )
     }

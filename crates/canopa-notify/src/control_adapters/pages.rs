@@ -160,7 +160,7 @@ impl Session {
                 content.actions.push(PanelAction {
                     request_activation_token: false,
                     key: PANEL_UNDO_CLEAR_KEY.into(),
-                    label: "Undo clear".into(),
+                    label: fl!("notify-center-undo-clear"),
                     value: Some(token.to_string()),
                 });
             }
@@ -179,12 +179,15 @@ impl Session {
         if self.settings {
             content.sections.insert(0, header);
         } else if status.active {
-            content.title = format!(
-                "Notifications · Do Not Disturb {}",
-                header.controls[0].label
+            content.title = fl!(
+                "notify-center-title-dnd",
+                state = header.controls[0].label.as_str()
             );
-        } else if let Some((_, suppression)) = header.controls[0].label.split_once(" · ") {
-            content.title = format!("Notifications · {suppression}");
+        } else if let Some(suppression) = suppression {
+            content.title = fl!(
+                "notify-center-title-suppressed",
+                suppression = suppression_text(suppression)
+            );
         }
         if self.current.after.is_some() || self.current.action_offset > 0 {
             content
@@ -212,31 +215,22 @@ fn do_not_disturb_section(
     status: &canopa_notify::DoNotDisturbStatus,
     suppression: Option<canopa_notify::Suppression>,
 ) -> PanelSection {
-    let state = super::dnd_status_text(status);
-    let mut label = if status.active {
-        format!(
-            "On{}",
-            state.trim_end().strip_prefix("on").unwrap_or_default()
-        )
-    } else {
-        "Off".to_owned()
+    let state = dnd_state_text(status, chrono::Local::now().naive_local());
+    let label = match suppression {
+        Some(suppression) => fl!(
+            "notify-dnd-with-suppression",
+            state = state.as_str(),
+            suppression = suppression_text(suppression)
+        ),
+        None => state,
     };
-    match suppression {
-        Some(canopa_notify::Suppression::Fullscreen) => {
-            label.push_str(" · Fullscreen: banners are saved quietly")
-        }
-        Some(canopa_notify::Suppression::ScreenSharing) => {
-            label.push_str(" · Screen sharing: banners are hidden")
-        }
-        None => {}
-    }
-    let option = |value: &str, label: &str| PanelControlOption {
+    let option = |value: &str, label: String| PanelControlOption {
         value: value.into(),
-        label: label.into(),
+        label,
     };
     PanelSection {
         id: DND_SECTION_ID.into(),
-        title: "Do Not Disturb".into(),
+        title: fl!("notify-dnd-title"),
         icon: None,
         items: Vec::new(),
         controls: vec![PanelControl {
@@ -244,12 +238,43 @@ fn do_not_disturb_section(
             label,
             value: if status.active { "on" } else { "off" }.into(),
             options: vec![
-                option("off", "Off"),
-                option("on", "On"),
-                option("for-60", "For 1 hour"),
-                option("until-tomorrow", "Until tomorrow"),
+                option("off", fl!("notify-dnd-off")),
+                option("on", fl!("notify-dnd-on")),
+                option("for-60", fl!("notify-dnd-for-hour")),
+                option("until-tomorrow", fl!("notify-dnd-until-tomorrow")),
             ],
         }],
+    }
+}
+
+/// `Off`, `On`, `On until 21:00` or `On (schedule) until 07:00`, in local time.
+pub(super) fn dnd_state_text(
+    status: &canopa_notify::DoNotDisturbStatus,
+    now: chrono::NaiveDateTime,
+) -> String {
+    if !status.active {
+        return fl!("notify-dnd-off");
+    }
+    let scheduled = matches!(
+        status.reason,
+        Some(canopa_notify::DoNotDisturbReason::Schedule)
+    );
+    let until = status
+        .until
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|until| super::moment_text(until.with_timezone(&chrono::Local).naive_local(), now));
+    match (scheduled, until) {
+        (false, None) => fl!("notify-dnd-on"),
+        (false, Some(until)) => fl!("notify-dnd-on-until", until = until),
+        (true, None) => fl!("notify-dnd-scheduled"),
+        (true, Some(until)) => fl!("notify-dnd-scheduled-until", until = until),
+    }
+}
+
+fn suppression_text(suppression: canopa_notify::Suppression) -> String {
+    match suppression {
+        canopa_notify::Suppression::Fullscreen => fl!("notify-suppression-fullscreen"),
+        canopa_notify::Suppression::ScreenSharing => fl!("notify-suppression-sharing"),
     }
 }
 
@@ -274,10 +299,15 @@ fn group_sections(
                 .count();
             let count = section.items.len();
             let is_collapsed = collapsed.contains(&app) && count > 0;
-            let mut label = format!("{count} notification{}", if count == 1 { "" } else { "s" });
-            if unread > 0 {
-                label.push_str(&format!(" · {unread} unread"));
-            }
+            let label = if unread > 0 {
+                fl!(
+                    "notify-group-summary-unread",
+                    count = count,
+                    unread = unread
+                )
+            } else {
+                fl!("notify-group-summary", count = count)
+            };
             section.controls = vec![PanelControl {
                 key: GROUP_KEY.into(),
                 label,
@@ -290,11 +320,11 @@ fn group_sections(
                 options: vec![
                     PanelControlOption {
                         value: "expanded".into(),
-                        label: "Show".into(),
+                        label: fl!("notify-group-show"),
                     },
                     PanelControlOption {
                         value: "collapsed".into(),
-                        label: "Collapse".into(),
+                        label: fl!("notify-group-collapse"),
                     },
                 ],
             }];
@@ -304,7 +334,10 @@ fn group_sections(
                     id: format!("group/{}", section.id),
                     title: newest.title,
                     attribution: newest.attribution,
-                    body: (count > 1).then(|| format!("and {} more", count - 1)),
+                    body: (count > 1).then(|| {
+                        let others = count - 1;
+                        fl!("notify-group-more", count = others)
+                    }),
                     styled_body: None,
                     rich_body: None,
                     metadata: newest
@@ -334,11 +367,10 @@ fn present(
         mut content, order, ..
     } = page;
     content.title = if settings {
-        "Notification settings"
+        fl!("notify-center-settings-title")
     } else {
-        "Notifications"
-    }
-    .into();
+        fl!("notify-center-title")
+    };
     content.actions.retain(|action| {
         if settings {
             action.key == PANEL_DELETE_HISTORY_KEY
@@ -351,16 +383,15 @@ fn present(
             section.items.clear();
             for control in &mut section.controls {
                 if control.key == PANEL_APP_PERMISSION_KEY {
-                    control.label = "Delivery".into();
+                    control.label = fl!("notify-delivery");
                 }
                 for option in &mut control.options {
                     option.label = match option.value.as_str() {
-                        "allow" => "Show banners",
-                        "silence" => "Save quietly",
-                        "drop" => "Block",
+                        "allow" => fl!("notify-delivery-allow"),
+                        "silence" => fl!("notify-delivery-silence"),
+                        "drop" => fl!("notify-delivery-drop"),
                         _ => continue,
-                    }
-                    .into();
+                    };
                 }
             }
         }
@@ -393,15 +424,14 @@ fn navigation(generation: u64, direction: Direction) -> PanelAction {
         request_activation_token: false,
         key: PAGE_KEY.into(),
         label: match direction {
-            Direction::First => "First page",
-            Direction::Next => "Next page",
-            Direction::Previous => "Previous page",
-            Direction::Settings => "Settings",
-            Direction::Notifications => "Back to notifications",
-            Direction::Grouped => "Group by app",
-            Direction::Timeline => "Show timeline",
-        }
-        .into(),
+            Direction::First => fl!("notify-center-first-page"),
+            Direction::Next => fl!("notify-center-next-page"),
+            Direction::Previous => fl!("notify-center-previous-page"),
+            Direction::Settings => fl!("notify-center-settings"),
+            Direction::Notifications => fl!("notify-center-back"),
+            Direction::Grouped => fl!("notify-center-group-by-app"),
+            Direction::Timeline => fl!("notify-center-timeline"),
+        },
         value: Some(
             serde_json::to_string(&Navigation {
                 generation,
@@ -448,11 +478,11 @@ async fn page(control: &NotifyControl, mut position: Position) -> anyhow::Result
                 Insert::Full { action } => {
                     if page.items == 0 {
                         page.content = PanelContent::error(
-                            "Canopa Notify",
+                            PRODUCT_NAME,
                             if action {
-                                "One stored notification action exceeds the display budget."
+                                fl!("notify-center-action-too-large")
                             } else {
-                                "One stored notification exceeds the display budget."
+                                fl!("notify-center-item-too-large")
                             },
                         );
                         return Ok(page.finish(None));

@@ -359,8 +359,11 @@ pub enum BannerFocusBehavior {
     DoesNotTakeFocus,
 }
 
-/// The summary shown instead of content while content is hidden.
-pub const HIDDEN_CONTENT_SUMMARY: &str = "New notification";
+/// The summary shown instead of content while content is hidden, in the
+/// person's language.
+pub fn hidden_content_summary() -> String {
+    fl!("notify-hidden-summary")
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerView {
@@ -555,7 +558,7 @@ impl BannerView {
 
     /// Screen-sharing presentation: application identity and actions only.
     pub fn with_hidden_content(mut self) -> Self {
-        self.summary = HIDDEN_CONTENT_SUMMARY.into();
+        self.summary = hidden_content_summary();
         self.body.clear();
         self.body_content = NotificationBodyContent::default();
         self.body_segments.clear();

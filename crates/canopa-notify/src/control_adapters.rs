@@ -454,22 +454,43 @@ fn receipt_time(received_at: i64) -> Option<PanelMetadata> {
     if received_at <= 0 {
         return None;
     }
-    let now = chrono::Local::now();
-    let format = if time.date_naive() == now.date_naive() {
-        "%H:%M"
-    } else {
-        "%Y-%m-%d · %H:%M"
-    };
     Some(PanelMetadata {
         key: "received".into(),
-        label: "Received".into(),
-        value: time.format(format).to_string(),
+        label: fl!("notify-center-received"),
+        value: received_text(time.naive_local(), chrono::Local::now().naive_local()),
     })
 }
 
+/// When a notification arrived, in the formats locale: how long ago within
+/// the last hour (`5 minutes ago`), the time earlier today (`14:30`), then
+/// the date and time (`Nov 11, 2026, 2:30 PM`). Stored times are unchanged.
+fn received_text(time: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> String {
+    let elapsed = now.signed_duration_since(time).num_seconds();
+    if (0..3_600).contains(&elapsed) {
+        canopa_i18n::format::relative(elapsed)
+    } else if time.date() == now.date() {
+        canopa_i18n::format::time(time.time())
+    } else {
+        canopa_i18n::format::date_time(time)
+    }
+}
+
+/// Wherever a moment is shown in the Center: the time today, else date and time.
+pub(crate) fn moment_text(time: chrono::NaiveDateTime, now: chrono::NaiveDateTime) -> String {
+    if time.date() == now.date() {
+        canopa_i18n::format::time(time.time())
+    } else {
+        canopa_i18n::format::date_time(time)
+    }
+}
+
+/// The product name, used as the title of provider-visible errors.
+const PRODUCT_NAME: &str = "Canopa Notify";
+
 fn panel_content_from_projection(projection: NotificationCenterProjection) -> PanelContent {
+    let unknown_application = fl!("notify-center-unknown-app");
     PanelContent {
-        title: "Canopa Notify".to_string(),
+        title: PRODUCT_NAME.to_string(),
         sections: projection
             .groups
             .into_iter()
@@ -480,7 +501,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                     .map(|item| item.app_name.trim())
                     .filter(|name| !name.is_empty())
                     .unwrap_or(if group.app_identity.is_empty() {
-                        "Unknown application"
+                        &unknown_application
                     } else {
                         &group.app_identity
                     })
@@ -521,7 +542,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                             metadata: (item.requires_attention && !item.transient)
                                 .then(|| PanelMetadata {
                                     key: "attention".into(),
-                                    label: "Unread".into(),
+                                    label: fl!("notify-center-unread"),
                                     value: String::new(),
                                 })
                                 .into_iter()
@@ -533,7 +554,7 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                     panel_center_action(
                                         item.target.clone(),
                                         NotificationCenterAction::Reply,
-                                        "Reply…".to_string(),
+                                        fl!("notify-center-reply"),
                                     )
                                 })
                                 .into_iter()
@@ -553,11 +574,10 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                                 item.target.clone(),
                                                 NotificationCenterAction::Activate,
                                                 if item.has_default_action {
-                                                    "Open notification"
+                                                    fl!("notify-center-open")
                                                 } else {
-                                                    "Dismiss"
-                                                }
-                                                .to_string(),
+                                                    fl!("notify-center-dismiss")
+                                                },
                                             )
                                         }),
                                 )
@@ -575,11 +595,10 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                                 if item.status
                                                     == canopa_notify::NotificationStatus::Active
                                                 {
-                                                    "Dismiss"
+                                                    fl!("notify-center-dismiss")
                                                 } else {
-                                                    "Mark as read"
-                                                }
-                                                .to_string(),
+                                                    fl!("notify-center-mark-read")
+                                                },
                                             )
                                         }),
                                 )
@@ -599,10 +618,13 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
             })
             .collect(),
         actions: vec![
-            PanelAction::new(PANEL_CLEAR_ACTIVE_KEY, "Clear active notifications"),
-            PanelAction::new(PANEL_DELETE_HISTORY_KEY, "Delete notification history"),
-            PanelAction::new(PANEL_MARK_ALL_READ_KEY, "Mark all read"),
-            PanelAction::new(PANEL_CLEAR_ALL_KEY, "Clear all"),
+            PanelAction::new(PANEL_CLEAR_ACTIVE_KEY, fl!("notify-center-clear-active")),
+            PanelAction::new(
+                PANEL_DELETE_HISTORY_KEY,
+                fl!("notify-center-delete-history"),
+            ),
+            PanelAction::new(PANEL_MARK_ALL_READ_KEY, fl!("notify-center-mark-all-read")),
+            PanelAction::new(PANEL_CLEAR_ALL_KEY, fl!("notify-center-clear-all")),
         ],
         error: None,
     }
@@ -806,14 +828,14 @@ fn rich_body_image_source_from_notification_source(
 fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
     PanelControl {
         key: PANEL_APP_PERMISSION_KEY.to_string(),
-        label: "App permission".to_string(),
+        label: fl!("notify-center-app-permission"),
         value: permission.as_str().to_string(),
         options: AppPermissionControl::options()
             .iter()
             .copied()
             .map(|permission| PanelControlOption {
                 value: permission.as_str().to_string(),
-                label: permission.label().to_string(),
+                label: permission.label(),
             })
             .collect(),
     }
@@ -822,14 +844,17 @@ fn app_permission_control(permission: AppPermissionControl) -> PanelControl {
 fn category_permission_control(category: String, permission: AppPermissionControl) -> PanelControl {
     PanelControl {
         key: format!("{PANEL_CATEGORY_PERMISSION_KEY_PREFIX}{category}"),
-        label: format!("Category: {category}"),
+        label: fl!(
+            "notify-center-category-permission",
+            category = category.as_str()
+        ),
         value: permission.as_str().to_string(),
         options: AppPermissionControl::options()
             .iter()
             .copied()
             .map(|permission| PanelControlOption {
                 value: permission.as_str().to_string(),
-                label: permission.label().to_string(),
+                label: permission.label(),
             })
             .collect(),
     }
@@ -919,6 +944,91 @@ fn app_permission_from_panel_value(value: &str) -> Option<AppPermissionControl> 
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// French until dropped; the binary's own lock, as its tests share a process.
+    struct French(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+    impl French {
+        fn select() -> Self {
+            static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
+            canopa_i18n::select(canopa_i18n::Selection {
+                languages: canopa_i18n::negotiate(&["fr".parse().unwrap()]),
+                time: "fr".parse().unwrap(),
+                numbers: "fr".parse().unwrap(),
+                pseudo: false,
+            });
+            Self(guard)
+        }
+    }
+
+    impl Drop for French {
+        fn drop(&mut self) {
+            canopa_i18n::select(canopa_i18n::Selection::default());
+        }
+    }
+
+    fn local(text: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    #[test]
+    fn received_times_are_relative_then_local_times_then_dates() {
+        let now = local("2026-11-11 15:00");
+        assert_eq!(received_text(local("2026-11-11 15:00"), now), "now");
+        assert_eq!(
+            received_text(local("2026-11-11 14:55"), now),
+            "5 minutes ago"
+        );
+        assert_eq!(
+            received_text(local("2026-11-11 09:05"), now),
+            "9:05\u{202f}AM"
+        );
+        assert_eq!(
+            received_text(local("2026-11-02 14:30"), now),
+            "Nov 2, 2026, 2:30\u{202f}PM"
+        );
+        let french = {
+            let _french = French::select();
+            [
+                received_text(local("2026-11-11 14:55"), now),
+                received_text(local("2026-11-11 09:05"), now),
+                received_text(local("2026-11-02 14:30"), now),
+                fl!("notify-center-clear-all"),
+            ]
+        };
+        assert_eq!(french[0], "il y a 5\u{a0}minutes");
+        assert_eq!(french[1], "09:05");
+        assert!(french[2].starts_with("2 nov. 2026"), "{}", french[2]);
+        assert!(french[2].ends_with("14:30"), "{}", french[2]);
+        assert_eq!(french[3], "Tout effacer");
+    }
+
+    #[test]
+    fn do_not_disturb_state_is_composed_from_data() {
+        use chrono::TimeZone;
+        let now = local("2026-11-11 15:00");
+        let until = chrono::Local
+            .from_local_datetime(&local("2026-11-11 21:00"))
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        let status = canopa_notify::DoNotDisturbStatus {
+            active: true,
+            reason: Some(canopa_notify::DoNotDisturbReason::Schedule),
+            until: Some(until),
+            next_change: None,
+        };
+        assert_eq!(
+            pages::dnd_state_text(&status, now),
+            "On (schedule) until 9:00\u{202f}PM"
+        );
+        let french = {
+            let _french = French::select();
+            pages::dnd_state_text(&status, now)
+        };
+        assert_eq!(french, "Activé (planification) jusqu’à 21:00");
+    }
 
     fn center_target_fixture() -> NotificationCenterTarget {
         serde_json::from_value(serde_json::json!({

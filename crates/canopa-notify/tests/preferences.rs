@@ -441,7 +441,7 @@ async fn sharing_hides_content_of_visible_and_critical_banners() {
         screen_sharing: true,
     });
     let hidden = &daemon.visible_banners().await[0];
-    assert_eq!(hidden.summary, canopa_notify::HIDDEN_CONTENT_SUMMARY);
+    assert_eq!(hidden.summary, canopa_notify::hidden_content_summary());
     assert!(hidden.body.is_empty() && hidden.body_segments.is_empty() && hidden.image.is_none());
     assert_eq!(
         hidden.app_name, "Chat",
@@ -459,7 +459,7 @@ async fn sharing_hides_content_of_visible_and_critical_banners() {
             .visible_banners()
             .await
             .iter()
-            .all(|banner| banner.summary == canopa_notify::HIDDEN_CONTENT_SUMMARY)
+            .all(|banner| banner.summary == canopa_notify::hidden_content_summary())
     );
     daemon.set_suppression(SuppressionState::default());
     assert!(

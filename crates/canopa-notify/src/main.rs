@@ -9,6 +9,13 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
+/// The binary's modules share the library's messages (`i18n/<language>/canopa_notify.ftl`).
+macro_rules! fl {
+    ($($args:tt)*) => {
+        canopa_i18n::checked_fl!(canopa_notify::i18n::LOADER.get(), $($args)*)
+    };
+}
+
 mod banner_interactions;
 #[cfg(feature = "gui")]
 mod compositor_suppression;
@@ -237,6 +244,7 @@ fn check_config(args: CheckConfigArgs) -> anyhow::Result<()> {
 }
 
 fn main() {
+    canopa_i18n::init();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

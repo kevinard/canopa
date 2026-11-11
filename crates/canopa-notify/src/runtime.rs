@@ -1308,19 +1308,21 @@ impl NotificationRuntime {
                 snapshot.more = snapshot.more.saturating_add(1);
                 continue;
             }
+            let unnamed = fl!("notify-lock-unnamed-app");
             let app = [
                 notification.app_name.trim(),
                 notification.app_identity.trim(),
             ]
             .into_iter()
             .find(|name| !name.is_empty())
-            .unwrap_or("Application");
+            .unwrap_or(&unnamed);
+            let hidden = crate::hidden_content_summary();
             let text = if visibility == crate::LockScreenVisibility::Content
                 && !notification.summary.trim().is_empty()
             {
                 notification.summary.trim()
             } else {
-                crate::HIDDEN_CONTENT_SUMMARY
+                &hidden
             };
             let bounded = |value: &str, limit: usize| {
                 value

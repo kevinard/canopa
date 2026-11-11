@@ -79,9 +79,9 @@ pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
     BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerRendererState,
-    BannerReply, BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, HIDDEN_CONTENT_SUMMARY,
-    NoopBannerPresenter, NotificationBannerState, StructuredLogBannerPresenter,
-    app_identity_icon_name_candidates,
+    BannerReply, BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, NoopBannerPresenter,
+    NotificationBannerState, StructuredLogBannerPresenter, app_identity_icon_name_candidates,
+    hidden_content_summary,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sender_events::{SenderEventPublication, SenderEventPublisher};
