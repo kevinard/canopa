@@ -65,6 +65,10 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Thumbnails in a sandbox](adr/0167-sandboxed-thumbnails.md).
+
+- [Open With, programs and desktop-entry trust](adr/0166-open-with-and-launch-trust.md).
+
 - [Permanent deletion and Empty Trash](adr/0164-permanent-deletion-and-empty-trash.md).
 
 - [Displayed folders follow outside changes](adr/0163-watched-browser-folders.md).

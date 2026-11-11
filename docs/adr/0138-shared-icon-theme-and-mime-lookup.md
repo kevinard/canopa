@@ -116,4 +116,4 @@ replaced by `-`, then `generic-icon` or `media-x-generic`.
 - Per-output scale for the Shell and Files: they use fixed source scales.
 - The FileChooser portal's own `globs2` filter parsing: it could move to
   `canopa_file::mime`.
-- Thumbnails.
+- Thumbnails: done in Files [ADR 0167](../files/adr/0167-sandboxed-thumbnails.md) over the shared cache of [ADR 0141](0141-mime-applications-and-thumbnail-cache.md).
