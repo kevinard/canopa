@@ -33,13 +33,15 @@ cargo test --locked -p canopa-config --test integration themes::
 
 Use the same feature selection and incremental debug cache between edits. Direct
 `cargo test FILTER` still selects every enabled target before applying the filter.
-The workspace has at most 17 integration executables, including the five
+The workspace has at most 18 integration executables, including the six
 standalone Files targets. Library unit tests and programs launched by process-level
 tests build separately. The first build links the new suites.
 
 Files keeps `uutils_copy`, `local_actions`, `local_operation_attention`,
-`file_clipboard_wayland`, and the custom `device_runtime` executable separate for
-focused development and feature-specific native fixtures. Continue using the
+`file_clipboard_wayland`, and the custom `device_runtime` and `network_runtime`
+executables separate for focused development and feature-specific native
+fixtures. The two custom executables host the pinned GIO helper entrypoint
+themselves, so they cannot share the ordinary `integration` harness. Continue using the
 maintained native verification scripts for these workflows.
 
 When adding a test source, register its module in that crate's

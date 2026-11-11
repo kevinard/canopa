@@ -29,7 +29,9 @@ class TestLayout(unittest.TestCase):
         targets = [(package["name"], target["name"])
                    for package in self.metadata["packages"]
                    for target in package["targets"] if "test" in target["kind"]]
-        self.assertLessEqual(len(targets), 17, targets)
+        # Includes the custom-harness Files native fixtures, which host the GIO
+        # helper entrypoint themselves (see docs/testing.md).
+        self.assertLessEqual(len(targets), 18, targets)
 
     def test_every_test_file_is_registered_exactly_once(self):
         for package in self.metadata["packages"]:
