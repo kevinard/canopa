@@ -2,7 +2,7 @@
 
 Prepared 2026-09-10 for baseline `d3f12df1888acbeb1cf05fd81baa00fb500e6a89`.
 
-Status: selected W01–W14 profile implemented and verified on 2026-09-16; W15 remains optional and unselected. Supported-format and environment limits are explicit in [the release record](../../../docs/notify/notification-release-verification.md). Current progress is recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md). Supporting documents: [review and evidence](REVIEW.md), [authoritative standards research](standards-research.md).
+Status: selected W01–W14 profile implemented and verified on 2026-09-16; W15 selected 2026-11-11 (Tier 3 item 5, Notify ADR 0055) and implemented at the backend level, with real-frontend and native acceptance open. Supported-format and environment limits are explicit in [the release record](../../../docs/notify/notification-release-verification.md). Current progress is recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md). Supporting documents: [review and evidence](REVIEW.md), [authoritative standards research](standards-research.md).
 
 ## Recommended target
 
@@ -305,9 +305,13 @@ Inline reply additionally requires a keyboard-interactive host control and the v
 Acceptance:
 
 - [ ] Real frontend → selected Canopa backend → notification UI → application round trips validate all selected v2 features.
-- [ ] Version/SupportedOptions negotiation, duplicate IDs across applications, FD cleanup, replacement races, and action routing are covered.
+  2026-11-11: backend wire round trips pass on a private bus (`notification_server::portal::tests`, 19 tests): typed targets, exported `ActivateAction` and the `ActionInvoked` signal, display hints, purposes and replies. The private public-frontend fixture from ADR 0031 predates display hints and replies and was not rerun; no native session was used. Still open.
+- [x] Version/SupportedOptions negotiation, duplicate IDs across applications, FD cleanup, replacement races, and action routing are covered.
+  2026-11-11 (`37c919a`): `supported_options_advertise_categories_and_purposes` reads the backend property (categories `im.received`, `alarm.ringing`, `call.incoming`; purposes `im.reply-with-text` and the call controls). App-scoped IDs, dropped replacements, sealed descriptors, frozen targets across replacement/close and activation routing are covered by the existing adapter tests, which still pass. This is backend-level evidence; the frontend negotiation itself is the open item above.
 - [ ] Inline replies are tested on the actual host, including cancellation, residency, target data, and activation context.
-- [ ] Existing freedesktop and bridge interoperability continue to pass independently.
+  2026-11-11 (`37c919a`): automated coverage only. `inline_replies_reach_the_signal_and_exported_actions_after_their_target` checks target, platform `activation-token` and response order for both delivery paths, trimming, empty-text rejection and that diagnostics/history never keep the text. `reply_composer_holds_the_timer_and_sends_the_text_once` (renderer state) and `composing_holds_the_banner_and_sender_lock_hints_apply` cover cancellation, the held banner timer and the Center route; `persistent` maps to residency. The live keyboard-focus and compositor checks are hands-on check 24 in `.scratch/core-audit/notify.md`.
+- [x] Existing freedesktop and bridge interoperability continue to pass independently.
+  2026-11-11: `bash scripts/test-notify.sh --no-fail-fast` — lib 172 + 1 run alone, binary 55, integration 294 (after updating one Settings-view section count for the new Do Not Disturb header), panel protocol 11/19/1. Freedesktop `ReplyText` events are never published to D-Bus; capabilities are unchanged.
 
 Reuse portal issue [24](../canopa-notify/issues/24-verify-xdg-notification-portal-v2.md) as bridge evidence, not as v2 feature completion; expand reply issue [32](../canopa-notify/issues/32-support-portal-inline-replies.md) with its missing native-backend/transport dependency. See [public](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Notification.html) and [backend](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.Notification.html) contracts.
 

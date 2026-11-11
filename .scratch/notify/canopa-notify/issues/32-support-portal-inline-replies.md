@@ -1,6 +1,6 @@
 # Support portal inline replies through Notification Center
 
-Status: ready-for-human
+Status: implemented at the backend level in 37c919a (Notify ADR 0055); native-session and real-frontend acceptance pending
 Type: HITL
 
 ## Parent

@@ -38,6 +38,7 @@ The supported system installation has a dedicated session.
 - [MPRIS media controls](docs/shell/adr/0018-mpris-media-controls.md)
 - [Shell language and ownership](docs/shell/CONTEXT.md)
 - [Notification language and ownership](docs/notify/CONTEXT.md)
+- [Notification everyday controls, lock-screen feed and portal v2 presentation](docs/notify/adr/0055-everyday-controls-lock-screen-and-portal-v2-presentation.md); [preferences control API](docs/notify/settings-control-api.md)
 - [File manager language and ownership](docs/files/CONTEXT.md)
 - [File manager Iced and shared controls](docs/adr/0018-files-iced-and-shared-controls.md)
 - [Iced transient toplevel windows](docs/adr/0019-iced-transient-toplevels.md)

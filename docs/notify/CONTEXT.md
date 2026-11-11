@@ -101,7 +101,24 @@ A sender-requested notification that participates in runtime presentation, the l
 _Avoid_: Dropped notification, short-timeout notification
 
 **Do Not Disturb**:
-A user-controlled global mode that suppresses notification banners without deleting notification state.
+A user-controlled global mode that suppresses notification banners without deleting notification state. It is on manually, for a timer, or inside a daily schedule; critical notifications and enabled break-through categories (alarms, incoming calls) still show ([ADR 0055](adr/0055-everyday-controls-lock-screen-and-portal-v2-presentation.md)).
+
+**Automatic Suppression**:
+Banner suppression while an application is fullscreen on the focused output or while the screen is shared or recorded, from Niri's compositor state. Suppressed notifications are saved quietly; while sharing, every banner hides its content.
+_Avoid_: Do Not Disturb when the user did not turn it on
+
+**App Preferences**:
+Per-App Identity sound and lock-screen visibility, beside the app's delivery Notification Rule. Configuration and UI-managed layers are separate; the UI layer wins.
+
+**Lock-Screen Feed**:
+A read-only, policy-filtered list of display lines for the session locker: critical (and break-through) notifications that are live or unread, without content unless the app allows it. It carries no IDs or actions.
+
+**Banner-Hide Timer**:
+A display timeout that hides a banner while its sender lifecycle stays active, so callbacks and Center actions remain live (portal notifications).
+_Avoid_: Notification Timeout when the notification does not expire
+
+**Reply Composer**:
+A Notify-owned banner text field for an `im.reply-with-text` action. Reply text is sent only with its committed action and is never persisted.
 _Avoid_: Drop all, mute when the notification should still be retained
 
 **Notification Urgency**:

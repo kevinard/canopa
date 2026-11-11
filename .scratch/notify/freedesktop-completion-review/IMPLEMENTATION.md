@@ -3,7 +3,7 @@
 Baseline: `d3f12df1888acbeb1cf05fd81baa00fb500e6a89`.
 
 Status: complete for the selected static Desktop Notifications 1.3 profile.
-Implements [PLAN.md](PLAN.md). Native portal v2 (W15) remains optional and unselected.
+Implements [PLAN.md](PLAN.md). Native portal v2 (W15) was selected on 2026-11-11 and is implemented at the backend level (see the W15 row).
 The [release record](../../../docs/notify/notification-release-verification.md) is the current
 verification summary; older continuation records below retain their historical
 scope and open-work wording.
@@ -33,7 +33,7 @@ configuration was replaced.
 | W12 | Complete | Typed safe HTTP(S), bounded portal OpenURI, opaque guarded links in both surfaces, native Hyperlink metadata and availability-based capability. |
 | W13 | Complete | Durable pending attention independent of sender lifecycle, protected pruning/admission, deliberate acknowledgement/recall/removal, migration/restart and advertised persistence. |
 | W14 | Complete | README/man/example/licenses, module/provenance/attribution docs, feature gates, CI/harnesses, full checks, source-export release build, staged installation and runtime baseline. |
-| W15 | Optional, not selected | Native portal v2 backend and replies remain separate product work. |
+| W15 | Backend complete; frontend/native acceptance open | 2026-11-11 `37c919a` (Notify ADR 0055): display hints, SupportedOptions categories and purposes, default purpose labels, inline replies (banner composer, Center "Reply…", v2 response position, never persisted) and a banner-hide timer that keeps portal callbacks live. Private-bus backend tests pass; the real-frontend fixture and a native session were not run. |
 
 Explicit verification limits (compositors/devices/locales, power-loss certification,
 portal/host availability and additional formats) are listed in the release record.

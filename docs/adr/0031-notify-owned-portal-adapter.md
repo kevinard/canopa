@@ -1,6 +1,6 @@
 # ADR0031: Keep the Notification portal adapter inside Notify
 
-Status: implemented with scoped wire/native acceptance; shared validation pending, 2026-10-29.
+Status: implemented with scoped wire/native acceptance; shared validation pending, 2026-10-29. Display hints, purposes, replies and the banner-hide timer added 2026-11-11 (Notify ADR 0055); backend-level checks only.
 
 ## Context
 
@@ -73,21 +73,23 @@ and [Notify's domain context](../notify/CONTEXT.md).
 
 ## Current boundary
 
-Ordinary portal notifications use Notify's server-default timeout policy, as a
-freedesktop request with `expire_timeout = -1` does: low and normal priority
-expire after their banner is displayed (Notify ADR 0028), and `urgent` stays
-until explicit user action/dismissal or sender withdrawal. Until then callbacks
-remain live independently of application exit. Expiry retires the registration,
-so the notification stays in Center history without sender actions, and a later
-`AddNotification` with the same portal ID starts a new notification. The first
-version requested no expiry at all, so every portal banner stayed on screen
-until clicked or dismissed. A banner-hiding timer that keeps callbacks live
-after the banner hides remains future presentation work. Timed
+Ordinary portal notifications use Notify's server-default display timeout as a
+banner-hide timer (Notify ADR 0055): low, normal and high priority banners hide
+after display, but the sender lifecycle stays active, so the registration,
+callbacks and Center actions remain live until the user acts or dismisses, or the
+application withdraws the notification. `urgent` banners stay on screen. Sending
+application exit still does not withdraw a notification. (Until 2026-11-11 the
+timeout expired the notification and retired its registration; before that the
+first version requested no expiry and every banner stayed on screen.) Timed
 `org.canopa.request-timeout-ms` requests keep their own withdrawal deadline and
 no display timeout.
 Priority low/normal/high/urgent maps to existing Notify low/normal/normal/critical
-urgency. Optional display hints and category/purpose-specific presentation are
-not advertised; labelled buttons retain ordinary presentation. Full (sv)
+urgency. `display-hint` is honoured (`transient`, `tray`, `persistent`, both
+lock-screen hints and `show-as-new`). SupportedOptions advertises the categories
+and button purposes Notify presents: `im.received`, `alarm.ringing`,
+`call.incoming`, and `im.reply-with-text` plus the call-control purposes, which
+get default labels. Inline replies use a Notify-owned banner composer and the v2
+response position. Full (sv)
 resource shape is validated before conversion; descriptor content must be
 WRITE/GROW/SHRINK sealed. Typed action targets exclude descriptors and retain
 their original variant type.

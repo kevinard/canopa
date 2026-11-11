@@ -238,7 +238,7 @@ lockscreen {
     clock-size 80                 // 8..160; scales with the available viewport
     text-size 19                  // 8..160
     auth-timeout 120               // total PAM transaction timeout, seconds
-    widgets "username" "keyboard" "battery" "media" "weather" "avatar"
+    widgets "username" "keyboard" "battery" "media" "weather" "avatar" "notifications"
     avatar "avatar.png"
     weather-file "weather.json"
 }
@@ -246,6 +246,12 @@ lockscreen {
 
 Widgets are passive and independently selectable; `widgets;` hides them all.
 Media displays the shell's selected/pinned player's label, without playback controls.
+Notifications (on by default for the lockscreen) shows Canopa Notify's read-only
+lock-screen feed: only critical notifications, and alarms or incoming calls when
+they break through Do Not Disturb, as "App — New notification" unless the app's
+rule allows its summary (`canopa-notify ctl app ID --lock-screen content`), at most
+three lines plus "+N more". It has no actions; Notify applies the policy before any
+text reaches the locker (Notify ADR 0055).
 Battery uses UPower changes. Unavailable data is hidden. Avatar is a local raster.
 Weather reads a local UTF-8 JSON snapshot on redraw (normally once per minute):
 
@@ -256,7 +262,7 @@ Weather reads a local UTF-8 JSON snapshot on redraw (normally once per minute):
 A provider must write the current Unix timestamp, preferably via atomic replacement.
 Files above 16 KiB, invalid temperatures, timestamps more than five minutes in the
 future, and snapshots older than two hours are ignored. No location/network request
-is made by the lockscreen. Disable `media`, `weather`, `avatar` or `username` if those
+is made by the lockscreen. Disable `media`, `weather`, `avatar`, `notifications` or `username` if those
 fields should not be visible while locked.
 
 ## Layout and custom widgets

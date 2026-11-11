@@ -1,6 +1,6 @@
 # Core-experience audit
 
-Status: in-progress (Tier 1 and Tier 2 done 2026-11-11; Tier 3 open)
+Status: in-progress (Tier 1 and Tier 2 done 2026-11-11; Tier 3 open, item 5 done at the code level)
 
 Code-reading audit, 2026-11-11, of the five components Canopa owns: Shell,
 launcher, Settings, Files and Notify. Nothing was run in a desktop session;
@@ -48,6 +48,7 @@ its commit. Commits by area:
 | C | `6c4d1f3`..`5675085` | Shared icon-theme and MIME lookup (ADR 0138) |
 | D | `b33521c`..`9825b5b` | On-screen indicators and brightness, media and keyboard-backlight keys (Shell ADR 0025) |
 | E | `e489cad` | Fork `kevinard/exwlshelleventloop` `fecb4f1a`: keyboard serial for activation tokens |
+| Tier 3 #5 Notify | `77cc95e`, `a46341e`, `e9251c3`, `b238418`, `37c919a`, `0c7ba7c` | DND timer/schedule/break-through, fullscreen and sharing suppression, per-app rules and control API, Center bulk controls and grouping, lock-screen feed, portal v2 hints/purposes/replies/banner-hide timer (Notify ADR 0055) |
 | Tier 3.1 Network | `50a3626`, `77f2b41`, `3861301` | Settings Network page, NetworkManager settings client and secret agent (ADR 0139), Shell Wi-Fi off/disconnect/forget and wired/VPN state |
 | Tier 3.2 Sound | `43b9907`, `1e58759` | Settings Sound page: devices, balance, applications, card profiles, level meter, notification sounds |
 | Tier 3.3 Power | `53776d4`, `101c4ba` | Settings Power page: battery health, power modes, perceptual brightness, lid and power button (ADR 0140), idle timeouts without Stasis |
@@ -93,7 +94,7 @@ been run in a live session yet; use the hands-on checks in each report.
 2. **Settings Sound** (M): per-app volume, card profiles, microphone meter, using `libpulse-binding`.
 3. **Settings Power** (M): battery, profiles, lid and power-button actions. Decide whether Stasis is a hard dependency.
 4. **Files Open With and executables** (M), **thumbnails** (M–L, after C), **copy throughput and ETA** (L engine, S UI).
-5. **Notify everyday controls:** DND schedule and timer, suppression over fullscreen and screen sharing, a Settings Notifications page, "mark all read", lock-screen policy. Also finish W15: portal v2 inline replies, `display-hint`, banner timer.
+5. **Notify everyday controls:** DND schedule and timer, suppression over fullscreen and screen sharing, a Settings Notifications page, "mark all read", lock-screen policy. Also finish W15: portal v2 inline replies, `display-hint`, banner timer. **Done in Notify** (ADR 0055, commits above); the Settings page uses [the control API](../../docs/notify/settings-control-api.md) and is still to build. Not yet run in a live session.
 6. **Launcher:** desktop actions (M), browse all apps (the empty query shows 20 rows), session actions searchable. **Done in 15fed5b, f286c32 and d768cb9**, with running-app switching, per-app scopes, Settings pages from the registry and in-process bundled providers.
 7. **Settings:** default applications and date/time, then users, region, privacy and printers.
 8. **Cross-cutting:**

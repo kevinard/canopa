@@ -15,7 +15,7 @@ Tests run (focused, no desktop):
 ## Summary
 
 - The freedesktop 1.3 wire contract is solid and well tested. That covers the four methods, the signals, the close reasons, ordered `ActivationToken` → `ActionInvoked` → `NotificationClosed`, safe IDs, bounded input, markup, links, raw images and persistence. All 278 integration tests pass.
-- Day-to-day use is weaker than the protocol layer. There is no DND schedule, no fullscreen or screen-share suppression, no lock-screen presentation, no Notifications page in Settings, no inline reply, no grouping and no translation.
+- Day-to-day use is weaker than the protocol layer. There is no DND schedule, no fullscreen or screen-share suppression, no lock-screen presentation, no Notifications page in Settings, no inline reply, no grouping and no translation. **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c): DND timer/schedule/break-through, fullscreen and sharing suppression, per-app sound and lock-screen rules, the lock-screen feed, portal inline replies and app grouping exist, with a control API for Settings. The Settings page itself and translation remain open.
 - **Flatpak/GNotification banners never hide by themselves.** **Fixed in 4459406.** The portal backend sets `expire_timeout: Never` (`notification_server/portal/intake.rs:229`).
 - **Notifications that never expire can exhaust fixed caps, and after that new notifications are refused.** **Fixed in 0bfe3e7.** Silenced, DND and overflow notifications stay live, and the live cap is 1,024 (`runtime_resources.rs:13`). Expired-but-unread notifications stay pending, and the pending cap is 4,096 (`sqlite_persisted_state.rs:846`). Past either cap, apps get `LimitsExceeded` errors.
 - Visual interop gaps that users will see:
@@ -51,23 +51,23 @@ Statuses: **works**, **partial**, **missing**, **broken**, **rough**.
 | `sound-file`/`sound-name`/`suppress-sound` | works | `notification_server_intake.rs:56,106-110`, `runtime.rs:224` | Plays theme sounds. `suppress-sound` is honoured only as a boolean. |
 | `x`/`y` | partial (by design) | `notification_server_intake.rs:113-120`, decoded and ignored | Fine on Wayland. |
 | `action-icons` | works | `notification_server_intake.rs:39` | Only PNG/JPEG icons render (same limit as above). |
-| Portal Notification v2 (Flatpak) | partial / rough (banner timeout **Fixed in 4459406**) | Backend `org.freedesktop.impl.portal.desktop.canopa.notify`, `notification_server/portal.rs:424-468`, `packaging/system/canopa-portals.conf:3`. Gaps: `expire_timeout: Never` (`portal/intake.rs:229`); `display-hint` and button `purpose` ignored; `high` priority mapped to Normal (`:132`); SupportedOptions advertises no categories or purposes (`portal.rs:466`) | GTK4/libadwaita Flatpaks deliver with typed actions and survive app exit. **Every portal banner stays on screen until clicked or dismissed.** |
+| Portal Notification v2 (Flatpak) | partial / rough (banner timeout **Fixed in 4459406**; display hints, purposes, SupportedOptions, replies and a banner-hide timer that keeps callbacks live **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | Backend `org.freedesktop.impl.portal.desktop.canopa.notify`, `notification_server/portal.rs:424-468`, `packaging/system/canopa-portals.conf:3`. Gaps: `expire_timeout: Never` (`portal/intake.rs:229`); `display-hint` and button `purpose` ignored; `high` priority mapped to Normal (`:132`); SupportedOptions advertises no categories or purposes (`portal.rs:466`) | GTK4/libadwaita Flatpaks deliver with typed actions and survive app exit. **Every portal banner stays on screen until clicked or dismissed.** |
 | GNotification (unsandboxed GTK) | works | GLib uses its freedesktop backend (no `org.gtk.Notifications` owner) | Ordinary freedesktop path. |
 | KDE extras (`inline-reply` cap, `NotificationReplied`, `x-kde-*`, JobView) | missing | No matches in `crates/canopa-notify/src`; the compliance doc says `inline-reply` is not advertised | KDE apps fall back to plain notifications. No job-progress view. The SNI tray exists in the Shell (`crates/canopa-shell/src/dbus/sni_watcher.rs`). |
-| Inline reply | missing | Issue `.scratch/notify/canopa-notify/issues/32-…` is ready-for-human; no reply widget; banner `KeyboardInteractivity::None` (`renderer.rs:105`) | Chat apps cannot offer reply-from-notification. |
-| Notification Center and history | works / rough | Provider `control_adapters.rs:415-545`, paging `control_adapters/pages.rs`; Shell launches it (`canopa-shell/src/app/module_graph.rs:115-130`); launcher entry `launcher/controls.rs:28` | Chronological reading list with unread dots, actions and links. No "mark all read"; "Clear active notifications" (`control_adapters.rs:540`) does **not** clear expired unread items. The badge (`modules/notifications.rs:65-85`) keeps growing. The only bulk fix is "Delete notification history". The title reads "Canopa Notify" (`:417`). |
-| Do-not-disturb | works | `delivery_policy.rs:210`; Shell right-click toggle and quick-settings panel (`module_graph.rs:121-127`, `modules/notifications.rs:176-200`); persisted | Toggle only. |
-| DND schedules / timed DND | missing | No schedule or "until" anywhere in `configuration.rs`/`control.rs` | No "for 1 hour" option and no night schedule. |
-| Per-app rules | partial | Center Settings view: Show banners / Save quietly / Block (`control_adapters/pages.rs:177-179`), only for apps on the current page; KDL `rule` nodes (`examples/config.kdl`); no Notifications page in Settings (`canopa-settings/src/lib.rs:3-11`) | An app cannot be configured before it notifies. There is no per-app sound toggle and no per-app "hide content". |
+| Inline reply | missing (**Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c) for portal `im.reply-with-text`: banner composer, Center "Reply…"; KDE `inline-reply` still missing) | Issue `.scratch/notify/canopa-notify/issues/32-…` is ready-for-human; no reply widget; banner `KeyboardInteractivity::None` (`renderer.rs:105`) | Chat apps cannot offer reply-from-notification. |
+| Notification Center and history | works / rough (Mark all read, Clear all with undo, grouping by app with collapse **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | Provider `control_adapters.rs:415-545`, paging `control_adapters/pages.rs`; Shell launches it (`canopa-shell/src/app/module_graph.rs:115-130`); launcher entry `launcher/controls.rs:28` | Chronological reading list with unread dots, actions and links. No "mark all read"; "Clear active notifications" (`control_adapters.rs:540`) does **not** clear expired unread items. The badge (`modules/notifications.rs:65-85`) keeps growing. The only bulk fix is "Delete notification history". The title reads "Canopa Notify" (`:417`). |
+| Do-not-disturb | works (timer, schedule, break-through, state in bar and Center **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | `delivery_policy.rs:210`; Shell right-click toggle and quick-settings panel (`module_graph.rs:121-127`, `modules/notifications.rs:176-200`); persisted | Toggle only. |
+| DND schedules / timed DND | missing (**Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c): `for`, `until`, `until-tomorrow`, daily schedule with DST-safe edges) | No schedule or "until" anywhere in `configuration.rs`/`control.rs` | No "for 1 hour" option and no night schedule. |
+| Per-app rules | partial (mute/Center-only/sound/lock-screen per App Identity, configurable before an app notifies, control API **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); the Settings page is pending) | Center Settings view: Show banners / Save quietly / Block (`control_adapters/pages.rs:177-179`), only for apps on the current page; KDL `rule` nodes (`examples/config.kdl`); no Notifications page in Settings (`canopa-settings/src/lib.rs:3-11`) | An app cannot be configured before it notifies. There is no per-app sound toggle and no per-app "hide content". |
 | Critical in DND | works | `delivery_policy.rs:210`; sound plays (`tests/sound.rs:176`) | — |
-| Critical on lock screen | missing | No notification code in `crates/canopa-session` (canopa-lock) | Alarms and calls are invisible while locked. |
-| Lock-screen privacy | missing (private by omission) | ext-session-lock hides overlay banners; no `hide-content` policy | Nothing leaks, and nothing shows either. The timeout behaviour across a lock is unverified (see the hands-on checks). |
-| Grouping / stacking | partial | At most 3 banners (`presentation.rs:739`), critical first, then a "+N more" pill (`renderer.rs:2120-2170`). No app or conversation grouping (issues 30/31 open; ADR 0052 is a flat list) | The pill is not clickable. Demoted or never-shown overflow notifications never get a banner later and never expire (ADR 0028). |
+| Critical on lock screen | missing (**Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c): read-only lock-screen feed rendered by Canopa Lock's `notifications` widget) | No notification code in `crates/canopa-session` (canopa-lock) | Alarms and calls are invisible while locked. |
+| Lock-screen privacy | missing (private by omission; "App — New notification" by default, per-app `content`/`hidden`, portal lock hints **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | ext-session-lock hides overlay banners; no `hide-content` policy | Nothing leaks, and nothing shows either. The timeout behaviour across a lock is unverified (see the hands-on checks). |
+| Grouping / stacking | partial (Center grouping by app with collapse **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); conversation grouping open) | At most 3 banners (`presentation.rs:739`), critical first, then a "+N more" pill (`renderer.rs:2120-2170`). No app or conversation grouping (issues 30/31 open; ADR 0052 is a flat list) | The pill is not clickable. Demoted or never-shown overflow notifications never get a banner later and never expire (ADR 0028). |
 | Flood / rate limiting | rough (cap refusal **Fixed in 0bfe3e7**; no per-app cooldown) | No per-app cooldown (issue 29 open). Global live cap of 1,024 (`runtime_resources.rs:13-48`) includes silenced/DND/overflow threads, which never expire | A day of DND or a "Save quietly" app can exhaust the cap. **All** apps then get `LimitsExceeded`. |
 | Long text | works | Summary/action wrapping (`renderer.rs:1745,1895`); 120 px body preview (`renderer.rs:14,2029`); internally scrollable oversized cards (ADR 0046) | — |
 | Multi-monitor placement | partial | Compositor-selected output per new stack (`renderer.rs:85-108`, ADR 0047); fallback on output loss; evidence on Sway; not verified on physical multi-output Niri | Position is fixed top-right with no setting. |
-| Fullscreen apps | missing | Always on `Layer::Overlay` (`renderer.rs:99`); no fullscreen or screencast check | Banners cover fullscreen video, games and presentations, including during screen sharing. |
-| Sounds | partial / rough | Bounded rodio playback; default `message-new-instant`. A sound plays on **every** shown receipt, including replacements (`runtime.rs:224`, `tests/sound.rs:203` `shown_replacement_plays_sound_again`) | Progress or download updates chime repeatedly. The only control is a global KDL `sound enabled`. No volume or per-app setting. |
+| Fullscreen apps | missing (fullscreen and screen-sharing suppression through Niri IPC; content hidden while sharing **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | Always on `Layer::Overlay` (`renderer.rs:99`); no fullscreen or screencast check | Banners cover fullscreen video, games and presentations, including during screen sharing. |
+| Sounds | partial / rough (per-app sound off, quiet portal replacements **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c)) | Bounded rodio playback; default `message-new-instant`. A sound plays on **every** shown receipt, including replacements (`runtime.rs:224`, `tests/sound.rs:203` `shown_replacement_plays_sound_again`) | Progress or download updates chime repeatedly. The only control is a global KDL `sound enabled`. No volume or per-app setting. |
 | Persistence across restarts | works | ADR 0049; pending attention survives; old sender actions are disabled (`tests/dbus_restart.rs`, `tests/history.rs`) | Transient notifications vanish as designed. |
 | Crash recovery | partial | `Restart=on-failure` (`packaging/systemd/canopa-notify.service`). Renderer death is terminal until a manual restart (`presentation.rs:659`, ADR 0043) and is not exposed in the Shell summary (`canopa-notify-client/src/lib.rs:14-19`). No D-Bus activation file for `org.freedesktop.Notifications` (only for the portal) | If the renderer dies, banners stop silently and timeouts never start. |
 | AccessKit / Orca | works / partial | Native AT-SPI tree; Alert role, Polite live region (`renderer/accessibility.rs:128-134`); Orca pass recorded in `docs/notify/notification-desktop-acceptance.md` | Critical notifications are announced politely, not assertively. |
@@ -83,11 +83,11 @@ Source: `.scratch/notify/freedesktop-completion-review/PLAN.md` and `IMPLEMENTAT
 - **W15 (native portal v2 + inline replies): all four acceptance boxes unchecked** (PLAN.md:307-310). The plan calls it "optional, not selected". The PRD still says "Native portal v2 is not selected".
   - **The code has moved past this.** Root ADR 0031 added a Notify-owned v2 backend (`notification_server/portal.rs`, `version = 2`). It is advertised in `packaging/system/canopa-portals.conf`. ADR 0031's status is "shared validation pending".
   - What remains of W15 in code:
-    - (a) inline replies (`im.reply-with-text` purpose, reply UI, reply parameter, never persisted);
-    - (b) `display-hint` handling (`transient`, `tray`, `persistent`, `hide-on-lock-screen`, `hide-content-on-lock-screen`, `show-as-new`);
-    - (c) advertising categories and button purposes in `SupportedOptions` (`portal.rs:466` lists only a Canopa extension key);
-    - (d) a banner-hiding timer for portal notifications (ADR 0031 "Current boundary");
-    - (e) the final "full consumer, shared and core validation" that ADR 0031 records as pending.
+    - (a) inline replies (`im.reply-with-text` purpose, reply UI, reply parameter, never persisted); **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c).
+    - (b) `display-hint` handling (`transient`, `tray`, `persistent`, `hide-on-lock-screen`, `hide-content-on-lock-screen`, `show-as-new`); **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c).
+    - (c) advertising categories and button purposes in `SupportedOptions` (`portal.rs:466` lists only a Canopa extension key); **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c).
+    - (d) a banner-hiding timer for portal notifications (ADR 0031 "Current boundary"); **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); Center actions stay live after the banner hides.
+    - (e) the final "full consumer, shared and core validation" that ADR 0031 records as pending. Still open: no real-frontend or native-session run.
 - **Verification limits listed as not done** (PLAN.md:345-347, `notification-release-verification.md` "Explicit profile limits"):
   - abrupt migration/import interruption and SQLite busy injection (partly addressed later in `project-completion-verification.md`);
   - power-loss certification;
@@ -144,7 +144,7 @@ Proposed fix (not applied), in `crates/canopa-notify/src/presentation/renderer/t
 
 Ranked by impact on a distro default where users bring their own apps.
 
-1. **Portal banners never auto-hide** (`portal/intake.rs:229`, ADR 0031). **Fixed in 4459406** (server-default timeout; urgent stays; `display-hint` and `high` → sound remain open). Every GTK4/libadwaita Flatpak notification stays on screen. *Approach:* keep sender callbacks live, but give portal banners the server-default banner timeout through a banner-visibility timer separate from the sender lifecycle. Honour `display-hint` `persistent`/`transient` and map `high` → Normal + sound. **M**
+1. **Portal banners never auto-hide** (`portal/intake.rs:229`, ADR 0031). **Fixed in 4459406** (server-default timeout; urgent stays). `display-hint` and the banner-hide timer that keeps callbacks live **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); `high` → sound remains open. Every GTK4/libadwaita Flatpak notification stays on screen. *Approach:* keep sender callbacks live, but give portal banners the server-default banner timeout through a banner-visibility timer separate from the sender lifecycle. Honour `display-hint` `persistent`/`transient` and map `high` → Normal + sound. **M**
 2. **Never-expiring notifications exhaust the caps and new notifications are then refused** (`runtime_resources.rs:13,47`; `sqlite_persisted_state.rs:842-853`). **Fixed in 0bfe3e7** (ADR 0054; no Center warning yet). *Approach:*
    - Let silenced, DND and overflow threads finish their sender lifecycle after the default timeout, or stop counting them as live (convert them to retained-only), while preserving attention.
    - At the 4,096 pending cap, auto-acknowledge or archive the oldest pending item instead of rejecting new receipts.
@@ -158,7 +158,7 @@ Ranked by impact on a distro default where users bring their own apps.
    - Resolve `Icon=`/`Name=` from the desktop entry through `canopa-apps`.
 
    **S–M**
-4. **No everyday notification controls:**
+4. **No everyday notification controls:** **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c), except the Settings page, which another agent builds on the documented control API.
    - DND schedule or timer;
    - automatic DND while fullscreen or screen sharing;
    - a Settings → Notifications page (app list incl. not-yet-seen apps, banners/sound/lock-screen per app, banner position);
@@ -166,11 +166,11 @@ Ranked by impact on a distro default where users bring their own apps.
 
    *Approach:* add a Settings page that writes the existing user-rule store and KDL. Add DND `until`/schedule to the policy state. Get fullscreen state from Niri IPC (or the portal's screencast state). **M–L**
 5. **`replaces_id` on a retired ID returns an error** (`ids.rs:160`). **Fixed in 78cd3b6** (the closed token is reused). This breaks OSD scripts and clients that keep stale IDs. *Approach:* treat a retired or unknown ID as a new notification. Return a fresh ID, or reuse the token while it is not live, matching dunst/mako/GNOME. Keep the collision protections. **S**
-6. **Inline reply missing** (portal `im.reply-with-text` and KDE `inline-reply`/`NotificationReplied`). *Approach:* on demand, give the banner a keyboard-interactive text field (`OnDemand` interactivity), route the reply through portal ActionInvoked / KDE signal, and never persist it. Issue 32 decision first. **L**
+6. **Inline reply missing** (portal `im.reply-with-text` and KDE `inline-reply`/`NotificationReplied`). Portal replies **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); KDE remains open. *Approach:* on demand, give the banner a keyboard-interactive text field (`OnDemand` interactivity), route the reply through portal ActionInvoked / KDE signal, and never persist it. Issue 32 decision first. **L**
 7. **Lenient hint types** (`notification_server_intake.rs:77-104`). **Fixed in 78cd3b6.** *Approach:* accept any integer type for urgency and `value`, and int or boolean for `transient`/`resident`/`suppress-sound`. **S**
-8. **Sound on every replacement** (`runtime.rs:224`). *Approach:* play only for a new thread, or for a replacement that explicitly carries `sound-*` or a changed urgency. Add a per-app mute and a volume setting. **S**
-9. **Unread badge grows forever; "Clear active" does not clear it** (`control_adapters.rs:540`, `lifecycle.rs:505-512`). *Approach:* add "Mark all as read" and per-item "Remove". Make "Clear" acknowledge everything visible. **S**
-10. **No lock-screen story** (critical/alarm/call on the lock screen, privacy options). *Approach:* a minimal lock-screen list in canopa-lock that reads Notify's bounded summary, with a content-hiding option. **M–L**
+8. **Sound on every replacement** (`runtime.rs:224`). Per-app mute and quiet portal replacements **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c); freedesktop replacements still chime, and there is no volume setting. *Approach:* play only for a new thread, or for a replacement that explicitly carries `sound-*` or a changed urgency. Add a per-app mute and a volume setting. **S**
+9. **Unread badge grows forever; "Clear active" does not clear it** (`control_adapters.rs:540`, `lifecycle.rs:505-512`). **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c): Mark all read and Clear all with undo. *Approach:* add "Mark all as read" and per-item "Remove". Make "Clear" acknowledge everything visible. **S**
+10. **No lock-screen story** (critical/alarm/call on the lock screen, privacy options). **Fixed in Tier 3 item 5** (ADR 0055; 77cc95e…0c7ba7c): read-only feed and Canopa Lock widget. *Approach:* a minimal lock-screen list in canopa-lock that reads Notify's bounded summary, with a content-hiding option. **M–L**
 11. **Overflow UX**: the 4th and later notifications never get a banner and never expire, and the pill is inert (`presentation.rs:735-747`, `renderer.rs:2120`). **Expiry fixed in 0bfe3e7**; the pill is still inert. *Approach:* promote overflow notifications when a slot frees, or expire them silently. Make the pill open the Center. **S–M**
 12. **Translatability** is missing workspace-wide. *Approach:* adopt gettext or fluent across the workspace and use locale-aware time formatting (relative times in the Center). **L**
 13. **Renderer death is silent and terminal** (`presentation.rs:659`). *Approach:* exit non-zero (systemd restarts the service) or reconnect in-process. Expose renderer health in `canopa-notify-client::Summary` so the bar shows a warning. **S–M**
@@ -255,3 +255,45 @@ Run these in a Canopa session. `ctl` means `canopa-notify ctl`.
     ```
     Open the Center: the item should be present with no stale action buttons. Then run `systemctl --user kill -s KILL canopa-notify` and confirm systemd restarts the service. Also check `ls /usr/share/dbus-1/services | grep -i notif` for competing daemons.
 16. Orca: start `orca` and send a normal and a critical notification. Note whether each is announced and whether the critical one interrupts. Navigate the Center by keyboard (Tab/arrows/Enter/Escape).
+
+## Tier 3 item 5 hands-on checks (ADR 0055)
+
+Not yet run in a live session. `ctl` means `canopa-notify ctl`.
+
+17. Timer: `ctl dnd on --for 1`, then `notify-send "Quiet" "x"` (no banner) and
+    `notify-send -u critical "Loud" "x"` (banner). The bar tooltip says "Until HH:MM";
+    after a minute it returns to "DND off" without a command.
+18. Schedule: `ctl dnd-schedule 22:00 07:00 --alarms --calls`, `ctl preferences`.
+    Then `notify-send -h string:category:alarm.ringing "Alarm" "x"` during the window
+    shows a banner; `-h string:category:im.received` does not.
+19. Fullscreen: `mpv --fs <video>` and `notify-send "Hidden" "x"` (no banner, in the
+    Center); `notify-send -u critical "Shown" "x"` shows. Repeat with a maximized,
+    non-fullscreen window: banners show.
+20. Sharing: start a screencast (OBS, or a browser's screen share through the Canopa
+    portal). Visible banners switch to "New notification"; normal ones go to the
+    Center quietly; critical ones show without content. Check `ctl status --json`
+    has no error, and `niri msg casts` lists the stream.
+21. Per-app: `ctl app notify-send --delivery silence`, `ctl app Firefox --sound false`;
+    send from each.
+22. Center: send three notifications from two apps, open the Center, press
+    "Group by app", collapse one, then "Mark all read" (badge 0, live items stay),
+    "Clear all" and "Undo clear" within 30 s.
+23. Lock screen: `notify-send -u critical "Bank" "Code 1234"`, lock (Mod+L): the lock
+    screen shows "notify-send — New notification". `ctl app notify-send
+    --lock-screen content` shows the summary; `hidden` shows nothing.
+24. Portal reply (needs Canopa's Notification backend selected): from a GNOME-runtime
+    Flatpak shell,
+    ```
+    gdbus call --session --dest org.freedesktop.portal.Desktop \
+      --object-path /org/freedesktop/portal/desktop \
+      --method org.freedesktop.portal.Notification.AddNotification chat \
+      "{'title': <'Alice'>, 'category': <'im.received'>, 'buttons': <[{'purpose': <'im.reply-with-text'>, 'action': <'reply'>}]>}"
+    gdbus monitor --session --dest org.freedesktop.portal.Desktop
+    ```
+    Click Reply, type, press Enter: `ActionInvoked` carries `('chat', 'reply',
+    [<{'activation-token': …}>, <'text'>])`. Let the banner hide, then use "Reply…" in
+    the Center. Check `SupportedOptions` with `busctl --user get-property
+    org.freedesktop.impl.portal.desktop.canopa.notify /org/freedesktop/portal/desktop
+    org.freedesktop.impl.portal.Notification SupportedOptions`.
+25. Banner-hide timer: a portal notification hides after about 5 s but stays in the
+    Center with its buttons; clicking one still reaches the application.
