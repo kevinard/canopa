@@ -9,5 +9,6 @@ mod error;
 pub mod network;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod upower;
 
 pub use error::{Error, ServiceState};

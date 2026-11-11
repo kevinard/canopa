@@ -4,8 +4,6 @@ use iced::futures::{Stream, StreamExt};
 use std::pin::Pin;
 use tokio::sync::mpsc;
 
-pub(super) use canopa_services::bus::while_service_owned;
-
 /// Map [`canopa_services::bus::recovering`] states to messages: each reading
 /// through `on_ok`, each outage once through `on_err`.
 pub(super) fn build<T, M, Spawn, OnOk, OnErr>(
