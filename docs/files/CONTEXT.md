@@ -62,6 +62,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Displayed folders follow outside changes](adr/0163-watched-browser-folders.md).
+
 - [Reuse pure journal computations while checking current authority, including the verified 500-item Undo budget](adr/0159-reuse-pure-journal-computations.md).
 
 - [Bounded transfer completion records, workspace regression verified](adr/0158-bounded-transfer-completion-records.md).

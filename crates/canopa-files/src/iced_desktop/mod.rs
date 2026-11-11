@@ -17,6 +17,9 @@ mod file_operation_rows;
 mod file_operations;
 mod focus;
 mod folder_views;
+mod folder_watch_ui;
+#[cfg(test)]
+mod folder_watch_tests;
 mod icons_ui;
 mod jobs_ui;
 mod listing_ui;
@@ -146,6 +149,7 @@ pub fn run(
             desktop.media = media_ui::Host::attach(playback_frontend.clone());
             let mut tasks = vec![task];
             desktop.file_clipboard = clipboard_ui::State::start();
+            desktop.folder_watch = folder_watch_ui::State::start();
             desktop.jobs = jobs_ui::Jobs::attach(actions_frontend.clone());
             tasks.push(desktop.attach_file_operations(operations_frontend.clone()));
             tasks.push(desktop.open_requested(first));
@@ -207,6 +211,7 @@ struct Desktop {
     icons: icons_ui::Icons,
     folder_writer: folder_views::Writer,
     folder_options: Option<folder_views::Target>,
+    folder_watch: folder_watch_ui::State,
     file_operations: file_operations::State,
     file_clipboard: clipboard_ui::State,
     drag: drag_ui::State,
@@ -250,6 +255,13 @@ struct Tab {
     search_worker: Option<search_ui::Worker>,
     menu_after_load: Option<u64>,
     needs_refresh: bool,
+    /// Outside changes arrived while this tab could not rescan.
+    watch_stale: bool,
+    watch_scanning: bool,
+    watch_request: u64,
+    watch_cancel: Cancellation,
+    /// The displayed error came from a watch rescan and clears on success.
+    watch_error: bool,
 }
 
 impl Tab {
@@ -281,6 +293,19 @@ impl Tab {
 impl Drop for Tab {
     fn drop(&mut self) {
         self.scan_cancel.cancel();
+        self.watch_cancel.cancel();
+    }
+}
+
+impl Tab {
+    /// A full scan supersedes outstanding watch rescans of this tab.
+    fn supersede_watch(&mut self) {
+        self.watch_cancel.cancel();
+        self.watch_scanning = false;
+        self.watch_stale = false;
+        if std::mem::take(&mut self.watch_error) {
+            self.error = None;
+        }
     }
 }
 
@@ -335,6 +360,14 @@ enum Message {
         path: PathBuf,
         request: u64,
         result: Arc<Result<Directory, String>>,
+    },
+    FoldersChanged,
+    WatchLoaded {
+        window: window::Id,
+        tab: u64,
+        revision: u64,
+        request: u64,
+        result: Arc<Result<Directory, (bool, String)>>,
     },
     Select(window::Id, PathBuf),
     Activate(window::Id, PathBuf),
@@ -409,6 +442,7 @@ impl Desktop {
             icons: icons_ui::Icons::default(),
             folder_writer: folder_views::Writer::new(preference_path),
             folder_options: None,
+            folder_watch: folder_watch_ui::State::default(),
             file_operations: file_operations::State::default(),
             file_clipboard: clipboard_ui::State::default(),
             drag: drag_ui::State::default(),
@@ -457,6 +491,11 @@ impl Desktop {
             search_worker: None,
             menu_after_load: None,
             needs_refresh: false,
+            watch_stale: false,
+            watch_scanning: false,
+            watch_request: 0,
+            watch_cancel: Cancellation::default(),
+            watch_error: false,
         }
     }
 
@@ -571,6 +610,7 @@ impl Desktop {
         tab.menu_after_load = None;
         tab.target = target.clone();
         tab.needs_refresh = false;
+        tab.supersede_watch();
         tab.prefix.clear();
         let (tab_id, revision) = (tab.id, tab.revision);
         let base = tab
@@ -923,6 +963,7 @@ impl Desktop {
         };
         self.sync_action_menu();
         self.sync_folder_options();
+        self.sync_folder_watch();
         let drag = self.poll_drag();
         Task::batch([task, self.sync_previews(), drag])
     }
@@ -1073,12 +1114,15 @@ impl Desktop {
                         } else {
                             Task::none()
                         };
-                        let refresh =
-                            if active_tab && self.active(id).is_some_and(|tab| tab.needs_refresh) {
-                                self.refresh_operation_browser(id, None)
-                            } else {
-                                Task::none()
-                            };
+                        let refresh = if active_tab
+                            && self.active(id).is_some_and(|tab| tab.needs_refresh)
+                        {
+                            self.refresh_operation_browser(id, None)
+                        } else if active_tab && self.active(id).is_some_and(|tab| tab.watch_stale) {
+                            self.watch_rescan(id, tab_id)
+                        } else {
+                            Task::none()
+                        };
                         return Task::batch([
                             scroll,
                             self.load_columns(id),
@@ -1105,6 +1149,14 @@ impl Desktop {
             } => {
                 self.finish_column(window, tab, revision, path, request, result);
             }
+            Message::FoldersChanged => return self.folders_changed(),
+            Message::WatchLoaded {
+                window,
+                tab,
+                revision,
+                request,
+                result,
+            } => return self.finish_watch_rescan(window, tab, revision, request, result),
             Message::Select(id, path) => {
                 if self.drag.suppress_select(id, &path) {
                     return Task::none();
@@ -1149,7 +1201,13 @@ impl Desktop {
                     let target = tab.target.clone();
                     return self.navigate(id, target, Navigation::Visit, None);
                 }
-                return Task::batch([self.restore_scroll(id), self.load_columns(id)]);
+                let stale = if tab.watch_stale && !tab.watch_scanning {
+                    let tab = tab.id;
+                    self.watch_rescan(id, tab)
+                } else {
+                    Task::none()
+                };
+                return Task::batch([self.restore_scroll(id), self.load_columns(id), stale]);
             }
             Message::Location(id, value) => {
                 if let Some(tab) = self.active_mut(id) {
@@ -1872,6 +1930,7 @@ impl Desktop {
                     notices.subscription().map(|()| Message::ActivityPoll)
                 }),
             self.file_operations.subscription(),
+            self.folder_watch.subscription(),
             self.trash_window
                 .as_ref()
                 .map_or_else(Subscription::none, trash_ui::TrashWindow::subscription),

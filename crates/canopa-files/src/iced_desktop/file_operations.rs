@@ -912,6 +912,7 @@ impl Desktop {
         };
         let path = tab.path().to_owned();
         tab.needs_refresh = false;
+        tab.supersede_watch();
         tab.revision += 1;
         tab.scan_cancel.cancel();
         tab.scan_cancel = Cancellation::default();

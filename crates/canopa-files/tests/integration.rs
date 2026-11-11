@@ -15,6 +15,7 @@ mod cases {
     mod file_clipboard;
     mod file_manager;
     mod file_properties;
+    mod folder_watch;
     mod history_readers;
     mod history_upgrade;
     mod identity_context;
