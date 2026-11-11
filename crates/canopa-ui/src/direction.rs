@@ -174,26 +174,52 @@ mod tests {
 
     #[test]
     fn directional_icons_swap_for_rtl() {
-        assert_eq!(icon_for(Direction::Ltr, "go-next-symbolic"), "go-next-symbolic");
-        assert_eq!(icon_for(Direction::Rtl, "go-next-symbolic"), "go-previous-symbolic");
-        assert_eq!(icon_for(Direction::Rtl, "go-previous-symbolic"), "go-next-symbolic");
-        assert_eq!(icon_for(Direction::Rtl, "pan-end-symbolic"), "pan-start-symbolic");
-        assert_eq!(icon_for(Direction::Rtl, "edit-undo-symbolic-ltr"), "edit-undo-symbolic-rtl");
-        assert_eq!(icon_for(Direction::Rtl, "folder-symbolic"), "folder-symbolic");
+        assert_eq!(
+            icon_for(Direction::Ltr, "go-next-symbolic"),
+            "go-next-symbolic"
+        );
+        assert_eq!(
+            icon_for(Direction::Rtl, "go-next-symbolic"),
+            "go-previous-symbolic"
+        );
+        assert_eq!(
+            icon_for(Direction::Rtl, "go-previous-symbolic"),
+            "go-next-symbolic"
+        );
+        assert_eq!(
+            icon_for(Direction::Rtl, "pan-end-symbolic"),
+            "pan-start-symbolic"
+        );
+        assert_eq!(
+            icon_for(Direction::Rtl, "edit-undo-symbolic-ltr"),
+            "edit-undo-symbolic-rtl"
+        );
+        assert_eq!(
+            icon_for(Direction::Rtl, "folder-symbolic"),
+            "folder-symbolic"
+        );
     }
 
     #[test]
     fn the_pseudo_locale_mirrors_chevrons_and_labels() {
-        let _guard = crate::tests::SELECTION.lock().unwrap_or_else(|p| p.into_inner());
+        let _guard = crate::tests::SELECTION
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         canopa_i18n::select(canopa_i18n::Selection::default());
-        assert_eq!((forward_chevron(), back_chevron(), back_arrow()), ("›", "‹", "←"));
+        assert_eq!(
+            (forward_chevron(), back_chevron(), back_arrow()),
+            ("›", "‹", "←")
+        );
         assert_eq!(back_label(), "‹ Back");
         assert_eq!(start(), Horizontal::Left);
         canopa_i18n::select(canopa_i18n::Selection {
             pseudo: true,
             ..Default::default()
         });
-        assert_eq!((forward_chevron(), back_chevron(), back_arrow()), ("‹", "›", "→"));
+        assert_eq!(
+            (forward_chevron(), back_chevron(), back_arrow()),
+            ("‹", "›", "→")
+        );
         assert_eq!(start(), Horizontal::Right);
         assert_eq!(text_start(), text::Alignment::Right);
         assert_eq!(icon("go-previous-symbolic"), "go-next-symbolic");
