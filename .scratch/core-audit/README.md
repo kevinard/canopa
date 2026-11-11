@@ -1,6 +1,6 @@
 # Core-experience audit
 
-Status: needs-triage
+Status: in-progress (Tier 1 and Tier 2 done 2026-11-11; Tier 3 open)
 
 Code-reading audit, 2026-11-11, of the five components Canopa owns: Shell,
 launcher, Settings, Files and Notify. Nothing was run in a desktop session;
@@ -29,6 +29,30 @@ detail, `file:line` evidence and sizes:
   - Accessibility trees cover only the Shell provider panels and Notify.
   - Icon lookup is hicolor-only in both the launcher and Notify, and Files has 8
     extension-based icons.
+
+## Progress (2026-11-11)
+
+Tier 1 and Tier 2 are done. The per-component reports mark each fixed row with
+its commit. Commits by area:
+
+| Area | Commits | What changed |
+| --- | --- | --- |
+| Tier 1 Shell | `174ef4d`, `6c1a838`, `f703c23` | Config errors keep the Shell running; logind session actions; default bar |
+| Tier 1 launcher | `ce15a6d`, `e48a85b`, `40bbd51` | Unicode and accent matching; terminal apps and `TryExec`; launch errors |
+| Tier 1 Files | `de6c744`, `14291e6`, `c3b9ad5` | Live folder refresh; Delete permanently and Empty Trash |
+| Tier 1 Settings | `2ac9fc7`, `bc71302` | Shortcut deltas over the shipped defaults; page-scoped reload and shared drafts |
+| Tier 1 Notify | `7f5eddb`, `78cd3b6`, `4459406`, `0bfe3e7` | Layout tests; `replaces_id` and hint types; portal timeouts; bounded retention |
+| Packaging | `c6ebeed` | Restart limits on the Shell and Notify units; depend on `xdg-terminal-exec` |
+| A | `ebb5471`..`c285d03` | `canopa-services` crate (ADR 0137) |
+| B | `a0e07dd`..`28272f8` | Settings page registry, file and live page patterns, single instance and D-Bus (ADR 0136) |
+| C | `6c4d1f3`..`5675085` | Shared icon-theme and MIME lookup (ADR 0138) |
+| D | `b33521c`..`9825b5b` | On-screen indicators and brightness, media and keyboard-backlight keys (Shell ADR 0025) |
+| E | `e489cad` | Fork `kevinard/exwlshelleventloop` `fecb4f1a`: keyboard serial for activation tokens |
+
+Workspace gate after both tiers: only Files `device_runtime` ("private device
+runtime did not settle", pre-existing) and the flaky Files video playback test
+(1 in 3 runs alone) fail. The 3 Notify layout tests now pass. None of this has
+been run in a live session yet; use the hands-on checks in each report.
 
 ## Ranked plan
 
