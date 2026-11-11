@@ -65,11 +65,11 @@ impl Drop for TestBus {
     }
 }
 
+#[cfg(feature = "audio")]
+pub mod audio;
+pub mod bluez;
 pub mod logind;
+pub mod mpris;
 pub mod power_profiles;
 pub mod upower;
 pub mod wifi;
-pub mod bluez;
-#[cfg(feature = "audio")]
-pub mod audio;
-pub mod mpris;
