@@ -1,8 +1,12 @@
 # Canopa Settings
 
-An ordinary Iced window for display/input configuration, network, sound and
-power, shared appearance and lockscreen preferences, the existing wallpaper
-picker and Stasis idle controls.
+An ordinary Iced window for display/input configuration, network, Bluetooth,
+printers, sound and power, date and time, region and language, users,
+privacy, notifications, default applications and system information, shared
+appearance and lockscreen preferences, the existing wallpaper picker and
+Stasis idle controls. System services own the state (NetworkManager, BlueZ,
+CUPS, timedated, localed, hostnamed, AccountsService, the portal permission
+store, Canopa Notify); privileged changes ask polkit.
 Run `canopa-settings [PAGE]` or `canopa settings`; a running window switches to
 the page instead of opening another. See [the settings guide](../../docs/settings.md).
 
