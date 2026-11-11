@@ -16,6 +16,7 @@ pub enum Page {
     Personal,
     Power,
     Notifications,
+    DefaultApps,
     Launcher,
     Shortcuts,
     Widgets,
@@ -365,6 +366,34 @@ pub static PAGES: &[Entry] = &[
         hidden: false,
     },
     Entry {
+        page: Page::DefaultApps,
+        id: "default-apps",
+        title: "Default applications",
+        description: "Choose which applications open web links, mail, music, files and more.",
+        icon: "preferences-desktop-default-applications",
+        group: Group::Desktop,
+        keywords: &[
+            "browser",
+            "web",
+            "mail",
+            "email",
+            "calendar",
+            "music",
+            "video",
+            "photos",
+            "images",
+            "text editor",
+            "file manager",
+            "terminal",
+            "file types",
+            "mime",
+            "open with",
+            "mimeapps",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
         page: Page::Launcher,
         id: "launcher",
         title: "Launcher",
@@ -602,6 +631,7 @@ mod tests {
             "sound",
             "bluetooth",
             "notifications",
+            "default-apps",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -622,6 +652,7 @@ mod tests {
                 Page::Personal,
                 Page::Power,
                 Page::Notifications,
+                Page::DefaultApps,
                 Page::Launcher,
                 Page::Shortcuts,
                 Page::Widgets,
@@ -657,6 +688,8 @@ mod tests {
         assert_eq!(pages("lid"), [Page::Power]);
         assert_eq!(pages("pair")[0], Page::Bluetooth);
         assert_eq!(pages("do not disturb"), [Page::Notifications]);
+        assert_eq!(pages("browser"), [Page::DefaultApps]);
+        assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
         // A title match ranks above keyword matches on other pages.

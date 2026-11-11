@@ -1,5 +1,6 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod bluetooth;
+mod default_apps;
 mod focus;
 mod launcher;
 #[cfg(debug_assertions)]
@@ -127,6 +128,8 @@ enum Message {
     BluetoothForm(bluetooth::Edit),
     Notifications(crate::live::Event<crate::notifications::NotificationService>),
     NotificationsForm(notifications::Edit),
+    DefaultApps(crate::live::Event<crate::default_apps::DefaultAppsService>),
+    DefaultAppsSearch(String),
     NetworkForm(network::Edit),
     /// The default input's peak level, while the Sound page is shown.
     Level(Option<f32>),
@@ -177,6 +180,8 @@ struct State {
     /// Installed applications, read when the Notifications page opens.
     notification_apps: Option<Vec<notifications::App>>,
     notification_query: String,
+    default_apps: default_apps::DefaultAppsPage,
+    default_apps_query: String,
     input_level: Option<f32>,
     alert_sounds: Option<bool>,
     profile: String,
@@ -278,6 +283,8 @@ impl State {
             notifications: live_page::LivePage::new(Default::default()),
             notification_apps: None,
             notification_query: String::new(),
+            default_apps: live_page::LivePage::new(Default::default()),
+            default_apps_query: String::new(),
             input_level: None,
             alert_sounds: None,
             profile: "none".into(),
@@ -706,9 +713,11 @@ impl State {
                 match self.page {
                     #[cfg(debug_assertions)]
                     Page::LiveExample => self.busy = false,
-                    Page::Sound | Page::Network | Page::Bluetooth | Page::Notifications => {
-                        self.busy = false
-                    }
+                    Page::Sound
+                    | Page::Network
+                    | Page::Bluetooth
+                    | Page::Notifications
+                    | Page::DefaultApps => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -843,6 +852,12 @@ impl State {
                 return self.notifications.update(event, notifications::message);
             }
             Message::NotificationsForm(edit) => return self.notifications_edit(edit),
+            Message::DefaultApps(event) => {
+                return self.default_apps.update(event, default_apps::message);
+            }
+            Message::DefaultAppsSearch(query) => {
+                self.default_apps_query = query.chars().take(100).collect();
+            }
             Message::Level(level) if self.page == Page::Sound => self.input_level = level,
             Message::AlertSounds(enabled) if !self.busy && self.trial.is_none() => {
                 self.busy = true;
@@ -1074,6 +1089,9 @@ impl State {
             Page::Notifications => self
                 .notifications
                 .update(crate::live::Event::Reload, notifications::message),
+            Page::DefaultApps => self
+                .default_apps
+                .update(crate::live::Event::Reload, default_apps::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -1100,6 +1118,9 @@ impl State {
         }
         if self.page == Page::Notifications {
             subscriptions.push(self.notifications.subscription(Message::Notifications));
+        }
+        if self.page == Page::DefaultApps {
+            subscriptions.push(self.default_apps.subscription(Message::DefaultApps));
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1172,6 +1193,7 @@ impl State {
             Page::Network => self.network_view(),
             Page::Bluetooth => self.bluetooth_view(),
             Page::Notifications => self.notifications_view(),
+            Page::DefaultApps => self.default_apps_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

@@ -12,8 +12,8 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound and Notifications are live pages: each change
-applies at once, without Save, and shows its own progress or error with Retry.
+Network, Bluetooth, Sound, Notifications and Default applications are live
+pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
 Canopa Notify) is not running, the page says so and reconnects by itself when
 it returns.
@@ -186,6 +186,23 @@ preferences and applies them.
 Settings made here override the `notifications` section of `config.kdl`; when
 the Do not disturb settings come from Settings, **Use the settings from
 config.kdl** returns to the file.
+
+## Default applications
+
+Choose the **Web browser**, **Mail**, **Calendar**, **Music**, **Video**,
+**Photos**, **Text editor**, **File manager** and **Terminal**. Each list
+offers the installed applications that open that kind of file or link, and the
+choice is saved at once. A browser becomes the default for web links and HTML
+pages; a music or video player for every listed format it declares. Under
+**Other file types**, type a type such as `application/pdf` or an extension
+such as `pdf` to choose the application for it.
+
+Choices are written to `~/.config/mimeapps.list` the way GLib records them, so
+other desktops, toolkits and `xdg-open` follow them; comments and other entries
+are kept. The terminal goes first in `~/.config/xdg-terminals.list` (and in a
+`canopa-xdg-terminals.list` there, if one exists), which `xdg-terminal-exec`
+reads; Canopa runs programs that need a terminal through it. Edits made
+elsewhere appear within a few seconds.
 
 ## Keyboard and pointer
 
