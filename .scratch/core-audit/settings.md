@@ -34,7 +34,7 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
   and a single-instance D-Bus entry point.
 - There is an upgrade trap in the shortcut editor. Once a user saves one shortcut,
   later changes to the shipped bindings never reach them, and the editor becomes
-  read-only.
+  read-only. Fixed in 2ac9fc7.
 
 ## Page/capability table
 
@@ -216,13 +216,19 @@ desktop. M1/M2 refer to the PRD milestones.
    OSD keys, for example), users who changed one shortcut never get the new
    bindings, and the Shortcuts page fails with "Custom top-level binding blocks
    are read-only." A mismatched `/usr/share/canopa/niri-defaults.kdl` during an
-   upgrade is also read as a custom include.
+   upgrade is also read as a custom include. Fixed in 2ac9fc7: Settings stores
+   only the changes, in `shortcuts.kdl`, and regenerates `niri-shortcuts.kdl` from
+   the current shipped defaults at login. Legacy copies migrate with a backup
+   (ADR 0135).
 2. **"Reload and discard edits" discards every page.** It re-runs `State::boot()`
    (`ui.rs:371-377`), which drops drafts on all pages and the selected display profile.
+   Fixed in bc71302: it reloads only the selected page.
 3. **Pages that edit the same file conflict with each other.** Personalization and
    Widgets both edit `config.kdl` with separate snapshots. `ui.rs:729-731` clears
    the widget editor only when it isn't dirty. Saving one page makes the other's
    save fail as "changed outside this editor". The only fix offered is risk 2.
+   Fixed in bc71302: each page rebases its pending edits on the other's save, and
+   external edits are still detected.
 4. **Power page can't save without Stasis.** `Save` requires `idle_available`
    (`ui.rs:618-622`, `:915-918`), and every page change resets that flag
    (`ui.rs:391`). If Stasis isn't installed or is stopped, the timeouts can't be
@@ -259,7 +265,7 @@ desktop. M1/M2 refer to the PRD milestones.
     `--test backend`, but the only test target is `integration` (Cargo reports
     "no test target named `backend`"). `crates/canopa-notify/README.md` says the
     Shell applies appearance after a restart, while Shell ADR 0021 describes a
-    live reload.
+    live reload. The Settings README part is fixed in c992030.
 16. **Thin default bindings.** `packaging/niri/defaults.kdl` has no brightness or
     media-player keys and no `Mod+1…9` workspace keys. `Mod+Return` runs `foot`
     and the focus-ring colors are hard-coded, not taken from the accent.
