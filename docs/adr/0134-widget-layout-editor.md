@@ -9,6 +9,12 @@ edit materializes the existing embedded Shell defaults if the common file
 omits the Shell namespace. Existing bar actions, styles, module declarations,
 panel layouts and unrelated configuration remain with their owners.
 
+Personalization and Widgets edit the same file with separate drafts. When one
+page saves, the other keeps its pending edits on top of the new file, provided
+both drafts came from the same version and the save left the other page's
+sections unchanged. Any other difference is an external edit and still requires
+reloading that page.
+
 Each bar can be placed on all outputs or use an exact connector inclusion or
 exclusion list. Duplicating a bar creates a separate layout and starts with an
 empty inclusion list. Shell applies accepted configuration with its current

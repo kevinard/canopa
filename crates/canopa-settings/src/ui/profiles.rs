@@ -45,6 +45,12 @@ impl Editor {
         )
     }
 
+    /// Drop the profile drafts before reloading the saved profiles.
+    pub(super) fn discard(&mut self) {
+        self.book = None;
+        self.title.clear();
+    }
+
     fn set_book(&mut self, book: Result<Book, String>) {
         if let Ok(book) = &book {
             self.switching = book.switching;

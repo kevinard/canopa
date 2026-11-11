@@ -25,6 +25,8 @@ use niri_ipc::{Output, Transform};
 use std::{collections::HashMap, process::Stdio, time::Duration};
 
 use crate::Page;
+/// The footer action reloads only the selected page; other drafts remain.
+const RELOAD_PAGE: &str = "Reload this page and discard its edits";
 #[derive(Clone, Debug)]
 enum Message {
     LauncherLoaded(Result<crate::launcher::Model, String>),
@@ -153,51 +155,68 @@ impl State {
     }
 
     fn boot() -> (Self, Task<Message>) {
-        let paths = Paths::discover().expect("settings require a configuration home");
-        let input_source = Snapshot::load(paths.input()).ok();
-        let common_source = Snapshot::load(paths.common()).ok();
-        let idle_source = Snapshot::load(paths.idle()).ok();
-        let compositor_motion = paths
+        Self::boot_with(Paths::discover().expect("settings require a configuration home"))
+    }
+
+    fn load_input(paths: &Paths) -> (Option<Snapshot>, Input, Option<String>) {
+        let source = Snapshot::load(paths.input()).ok();
+        let (input, error) = match source.as_ref().map(|s| Input::parse(&s.text)).transpose() {
+            Ok(input) => (input.unwrap_or_default(), None),
+            Err(error) => (Input::default(), Some(error.to_string())),
+        };
+        (source, input, error)
+    }
+
+    fn load_personal(paths: &Paths) -> (Option<Snapshot>, Personal, String, Option<String>) {
+        let source = Snapshot::load(paths.common()).ok();
+        let (personal, error) = match source.as_ref().map(Personal::load).transpose() {
+            Ok(Some(personal)) => (personal, None),
+            result => {
+                let (lock, _) = canopa_session_ui::settings::Settings::load(
+                    &canopa_config::Request::Defaults,
+                    canopa_config::Component::Lockscreen,
+                )
+                .expect("embedded lock settings are valid");
+                (
+                    Personal::from_lock(lock),
+                    result.err().map(|error| error.to_string()),
+                )
+            }
+        };
+        let accent = personal
+            .appearance
+            .accent
+            .map(|canopa_theme::Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+            .unwrap_or_default();
+        (source, personal, accent, error)
+    }
+
+    fn load_idle(paths: &Paths) -> (Option<Snapshot>, IdleTimes) {
+        let source = Snapshot::load(paths.idle()).ok();
+        let idle = source
+            .as_ref()
+            .and_then(|s| IdleTimes::parse(&s.text).ok())
+            .unwrap_or_default();
+        (source, idle)
+    }
+
+    fn load_motion(paths: &Paths) -> Option<bool> {
+        paths
             .active()
             .then(|| {
                 Snapshot::load(paths.niri())
                     .and_then(|source| crate::niri::reduced_motion(&source))
                     .ok()
             })
-            .flatten();
-        let (lock, _) = canopa_session_ui::settings::Settings::load(
-            &canopa_config::Request::Defaults,
-            canopa_config::Component::Lockscreen,
-        )
-        .expect("embedded lock settings are valid");
-        let mut notice = String::new();
-        let input = input_source
-            .as_ref()
-            .map(|s| Input::parse(&s.text))
-            .transpose()
-            .unwrap_or_else(|error| {
-                notice = error.to_string();
-                None
-            })
-            .unwrap_or_default();
-        let personal = common_source
-            .as_ref()
-            .map(Personal::load)
-            .transpose()
-            .unwrap_or_else(|error| {
-                notice = error.to_string();
-                None
-            })
-            .unwrap_or_else(|| Personal::from_lock(lock));
-        let idle = idle_source
-            .as_ref()
-            .and_then(|s| IdleTimes::parse(&s.text).ok())
-            .unwrap_or_default();
-        let accent = personal
-            .appearance
-            .accent
-            .map(|canopa_theme::Rgb(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
-            .unwrap_or_default();
+            .flatten()
+    }
+
+    fn boot_with(paths: Paths) -> (Self, Task<Message>) {
+        let (input_source, input, input_error) = Self::load_input(&paths);
+        let (common_source, personal, accent, personal_error) = Self::load_personal(&paths);
+        let (idle_source, idle) = Self::load_idle(&paths);
+        let compositor_motion = Self::load_motion(&paths);
+        let notice = personal_error.or(input_error).unwrap_or_default();
         let profile_task = profiles::Editor::load(&paths);
         let state = Self {
             paths,
@@ -369,11 +388,7 @@ impl State {
                 })
             }
             Message::ReloadSaved if !self.busy && self.trial.is_none() => {
-                let page = self.page;
-                let (mut reloaded, work) = Self::boot();
-                let page_work = reloaded.update(Message::Page(page));
-                *self = reloaded;
-                return Task::batch([work, page_work]);
+                return self.reload_page();
             }
             Message::BackendChanged if !self.busy && !self.refreshing && self.trial.is_none() => {
                 self.refreshing = true;
@@ -725,10 +740,17 @@ impl State {
                                 if let Ok(personal) = Personal::load(&snapshot) {
                                     self.personal = personal;
                                 }
-                                self.common_source = Some(snapshot);
+                                let previous = self.common_source.replace(snapshot.clone());
+                                self.notice = "Settings saved.".into();
                                 if !self.widget_layouts.dirty() {
                                     self.widget_layouts.editor = None;
+                                } else if let (Some(previous), Some(Ok(editor))) =
+                                    (previous, &mut self.widget_layouts.editor)
+                                    && let Err(error) = editor.rebase(&previous, &snapshot)
+                                {
+                                    self.notice = format!("Settings saved. {error}");
                                 }
+                                return Task::none();
                             }
                             Page::Power => self.idle_source = Some(snapshot),
                             _ => {}
@@ -795,6 +817,69 @@ impl State {
             _ => {}
         }
         Task::none()
+    }
+    /// Reload the current page's sources, discarding only its drafts.
+    fn reload_page(&mut self) -> Task<Message> {
+        self.notice.clear();
+        let paths = self.paths.clone();
+        match self.page {
+            Page::Displays => {
+                self.display_dirty = false;
+                self.refreshing = true;
+                self.display_profiles.discard();
+                Task::batch([
+                    task(|| Client::discover()?.outputs(), Message::Outputs),
+                    profiles::Editor::load(&paths),
+                ])
+            }
+            Page::Input => {
+                let (source, input, error) = Self::load_input(&paths);
+                self.input_source = source;
+                self.input = input;
+                self.notice = error.unwrap_or_default();
+                Task::none()
+            }
+            Page::Personal => {
+                let (source, personal, accent, error) = Self::load_personal(&paths);
+                self.common_source = source;
+                self.personal = personal;
+                self.accent = accent;
+                self.compositor_motion = Self::load_motion(&paths);
+                self.notice = error.unwrap_or_default();
+                Task::none()
+            }
+            Page::Power => {
+                let (source, idle) = Self::load_idle(&paths);
+                self.idle_source = source;
+                self.idle_ac = idle.ac.map(|v| v.to_string());
+                self.idle_battery = idle.battery.map(|v| v.to_string());
+                self.profile = "none".into();
+                Task::none()
+            }
+            Page::Launcher => {
+                self.launcher = Default::default();
+                self.clipboard = None;
+                self.clipboard_notice.clear();
+                Task::batch([
+                    task(crate::launcher::Model::load, Message::LauncherLoaded),
+                    task(
+                        crate::launcher::ClipboardEditor::load,
+                        Message::ClipboardLoaded,
+                    ),
+                ])
+            }
+            Page::Shortcuts => {
+                self.shortcuts = None;
+                task(
+                    move || crate::shortcuts::Editor::load(&paths),
+                    Message::ShortcutsLoaded,
+                )
+            }
+            Page::Widgets => {
+                self.widget_layouts.editor = None;
+                widget_layouts::View::load(&paths)
+            }
+        }
     }
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = Vec::new();
@@ -923,7 +1008,7 @@ impl State {
         let footer = row![
             space().width(Length::Fill),
             self.action(
-                "Reload and discard edits",
+                RELOAD_PAGE,
                 (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
                 false
             ),
@@ -1649,4 +1734,152 @@ pub fn run_with_profile(page: Page, profile: Option<String>) -> Result<()> {
     })
     .run()
     .map_err(anyhow::Error::msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widget_layouts::Editor as Widgets;
+
+    fn fresh() -> (tempfile::TempDir, State) {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            directory: root.path().join("canopa"),
+        };
+        let defaults = root.path().join("niri-defaults.kdl");
+        std::fs::write(
+            &defaults,
+            include_str!("../../../packaging/niri/defaults.kdl"),
+        )
+        .unwrap();
+        paths.initialize(Some(&defaults)).unwrap();
+        std::fs::write(paths.common(), "schema-version 1\n// keep this note\n").unwrap();
+        let (state, _) = State::boot_with(paths);
+        (root, state)
+    }
+
+    fn open_widgets(state: &mut State) {
+        let source = Snapshot::load(state.paths.common()).unwrap();
+        state.widget_layouts.editor = Some(Ok(Widgets::load(source).unwrap()));
+        let _ = state.update(Message::WidgetLayouts(widget_layouts::Action::Edge(
+            "bottom".into(),
+        )));
+        assert!(state.widget_layouts.dirty());
+    }
+
+    /// Save Personalization as Settings does, without the owner's validator.
+    fn save_personal(state: &mut State) -> Snapshot {
+        let source = state.common_source.clone().unwrap();
+        state.personal.appearance.accent = Some(canopa_theme::Rgb(0x12, 0x34, 0x56));
+        let saved = source
+            .save(&state.personal.text(&source).unwrap(), |_| Ok(()))
+            .unwrap();
+        let _ = state.update(Message::Stored(Ok((Page::Personal, saved.clone()))));
+        saved
+    }
+
+    fn widget_editor(state: &State) -> &Widgets {
+        state
+            .widget_layouts
+            .editor
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+    }
+
+    /// Save Widgets as Settings does, without the owner's validator.
+    fn save_widgets(state: &mut State) -> Snapshot {
+        let editor = widget_editor(state);
+        let saved = editor
+            .source
+            .save(&editor.candidate().unwrap(), |_| Ok(()))
+            .unwrap();
+        let reloaded = Widgets::load(saved.clone()).map(Box::new);
+        let _ = state.update(Message::WidgetLayouts(widget_layouts::Action::Stored(
+            reloaded.map_err(|error| error.to_string()),
+        )));
+        saved
+    }
+
+    #[test]
+    fn reload_discards_only_the_current_page() {
+        let (_root, mut state) = fresh();
+        let _ = state.update(Message::Page(Page::Input));
+        let _ = state.update(Message::InputText(0, "fr".into()));
+        let _ = state.update(Message::PersonalText(0, "#123456".into()));
+        let _ = state.update(Message::ReloadSaved);
+        assert_eq!(state.input.layouts, Input::default().layouts);
+        assert_eq!(state.accent, "#123456");
+
+        let _ = state.update(Message::InputText(0, "de".into()));
+        let _ = state.update(Message::Page(Page::Personal));
+        let _ = state.update(Message::ReloadSaved);
+        assert_eq!(state.accent, "");
+        assert_eq!(state.input.layouts, "de");
+    }
+
+    #[test]
+    fn saving_personalization_keeps_pending_widget_edits() {
+        let (_root, mut state) = fresh();
+        open_widgets(&mut state);
+        let saved = save_personal(&mut state);
+        assert!(state.widget_layouts.dirty());
+        let editor = widget_editor(&state);
+        assert!(editor.source.same(&saved));
+        let candidate = editor.candidate().unwrap();
+        assert!(candidate.contains("#123456") && candidate.contains("bottom"));
+        assert!(candidate.contains("// keep this note"));
+        let after = save_widgets(&mut state);
+        // Personalization adopts the Widgets save in turn.
+        assert!(state.common_source.as_ref().unwrap().same(&after));
+    }
+
+    #[test]
+    fn saving_widgets_keeps_pending_personalization_edits() {
+        let (_root, mut state) = fresh();
+        let _ = state.update(Message::PersonalText(0, "#abcdef".into()));
+        open_widgets(&mut state);
+        let saved = save_widgets(&mut state);
+        let common = state.common_source.clone().unwrap();
+        assert!(common.same(&saved));
+        assert_eq!(state.accent, "#abcdef");
+        assert!(common.unchanged().is_ok());
+        assert!(state.personal.text(&common).unwrap().contains("bottom"));
+    }
+
+    #[test]
+    fn external_edits_are_still_detected_across_pages() {
+        let (_root, mut state) = fresh();
+        // Changed by hand after Personalization loaded, before Widgets loaded.
+        std::fs::write(
+            state.paths.common(),
+            "schema-version 1\nappearance { accent \"#ff0000\"; }\n",
+        )
+        .unwrap();
+        open_widgets(&mut state);
+        let saved = save_widgets(&mut state);
+        let common = state.common_source.clone().unwrap();
+        assert!(!common.same(&saved));
+        assert!(common.unchanged().is_err());
+
+        // Nor does a Personalization save rebase widget edits made on that version.
+        let (_root, mut state) = fresh();
+        let previous = state.common_source.clone().unwrap();
+        std::fs::write(state.paths.common(), "schema-version 1\n// external\n").unwrap();
+        open_widgets(&mut state);
+        let saved = previous
+            .save(&state.personal.text(&previous).unwrap(), |_| Ok(()))
+            .unwrap_err();
+        assert!(saved.to_string().contains("outside this editor"));
+        let widgets = state
+            .widget_layouts
+            .editor
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .unwrap();
+        let current = widgets.source.clone();
+        assert!(widgets.rebase(&previous, &current).is_err());
+    }
 }

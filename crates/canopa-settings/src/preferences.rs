@@ -99,6 +99,56 @@ impl Personal {
     }
 }
 
+/// Lockscreen fields that Personalization writes. Widgets writes the others.
+#[cfg(feature = "desktop")]
+const PERSONAL_LOCK_FIELDS: [&str; 5] = ["clock-format", "date-format", "dim", "font", "avatar"];
+
+/// The parts of the shared configuration written by Personalization and by
+/// Widgets, without formatting. Both pages edit `config.kdl`; each rebases its
+/// pending edits on the other's save only if the save left its part unchanged.
+#[cfg(feature = "desktop")]
+pub(crate) fn common_sections(text: &str) -> Result<(String, String)> {
+    let document: kdl::KdlDocument = if text.trim().is_empty() {
+        kdl::KdlDocument::new()
+    } else {
+        text.parse()?
+    };
+    let plain = |node: &kdl::KdlNode| {
+        let mut node = node.clone();
+        node.clear_format_recursive();
+        node.to_string().trim().to_owned()
+    };
+    let mut personal = document.get("appearance").map(plain).unwrap_or_default();
+    let mut widgets = document.get("shell").map(plain).unwrap_or_default();
+    for node in document
+        .get("lockscreen")
+        .and_then(kdl::KdlNode::children)
+        .map(kdl::KdlDocument::nodes)
+        .unwrap_or_default()
+    {
+        let part = if PERSONAL_LOCK_FIELDS.contains(&node.name().value()) {
+            &mut personal
+        } else {
+            &mut widgets
+        };
+        part.push('\n');
+        part.push_str(&plain(node));
+    }
+    Ok((personal, widgets))
+}
+
+/// Whether Personalization, still based on `current`, can adopt `saved`: the
+/// Widgets page saved it from that same version and left Personalization's
+/// part unchanged. Any other difference is an external edit.
+#[cfg(feature = "desktop")]
+pub(crate) fn personal_rebase(current: &Snapshot, previous: &Snapshot, saved: &Snapshot) -> bool {
+    current.same(previous)
+        && matches!(
+            (common_sections(&previous.text), common_sections(&saved.text)),
+            (Ok((before, _)), Ok((after, _))) if before == after
+        )
+}
+
 pub(crate) fn save_common(snapshot: &Snapshot, text: &str) -> Result<Snapshot> {
     if snapshot.text.is_empty() {
         for component in [

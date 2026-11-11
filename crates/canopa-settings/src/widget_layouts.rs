@@ -352,6 +352,20 @@ impl Editor {
         save_common(&self.source, &self.candidate()?)
     }
 
+    /// Keep pending edits on top of `saved`, written by Personalization from
+    /// `previous`. External edits, or a save that touched the widget layout,
+    /// still require a reload.
+    pub(crate) fn rebase(&mut self, previous: &Snapshot, saved: &Snapshot) -> Result<()> {
+        ensure!(
+            self.source.same(previous)
+                && crate::preferences::common_sections(&previous.text)?.1
+                    == crate::preferences::common_sections(&saved.text)?.1,
+            "The shared configuration changed outside the Widgets page. Reload Widgets before saving."
+        );
+        self.source = saved.clone();
+        Ok(())
+    }
+
     pub(crate) fn candidate(&self) -> Result<String> {
         let mut document: KdlDocument = source_text(&self.source).parse()?;
         if self.shell_changed() {

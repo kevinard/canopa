@@ -106,7 +106,22 @@ impl State {
                 self.busy = false;
                 match result {
                     Ok(editor) => {
-                        self.common_source = Some(editor.source.clone());
+                        // Personalization adopts this save only if it saw the
+                        // same version; otherwise its save reports the change.
+                        let previous = view
+                            .editor
+                            .as_ref()
+                            .and_then(|result| result.as_ref().ok())
+                            .map(|editor| editor.source.clone());
+                        if let (Some(current), Some(previous)) = (&self.common_source, previous)
+                            && crate::preferences::personal_rebase(
+                                current,
+                                &previous,
+                                &editor.source,
+                            )
+                        {
+                            self.common_source = Some(editor.source.clone());
+                        }
                         view.bar = view.bar.min(editor.bars.len() - 1);
                         view.editor = Some(Ok(*editor));
                         self.notice = "Widget layouts saved.".into();
