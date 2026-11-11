@@ -22,6 +22,7 @@ pub enum Page {
     Shortcuts,
     Widgets,
     About,
+    Region,
     /// The live-page pattern on a fake service; debug builds only.
     #[cfg(debug_assertions)]
     LiveExample,
@@ -366,6 +367,30 @@ pub static PAGES: &[Entry] = &[
         hidden: false,
     },
     Entry {
+        page: Page::Region,
+        id: "region",
+        title: "Region & language",
+        description: "Choose your language and formats, and the system's language and keyboard.",
+        icon: "preferences-desktop-locale",
+        group: Group::System,
+        keywords: &[
+            "language",
+            "locale",
+            "formats",
+            "date format",
+            "number format",
+            "currency",
+            "measurement",
+            "metric",
+            "country",
+            "keyboard layout",
+            "login screen",
+            "translation",
+        ],
+        kind: Kind::Live,
+        hidden: false,
+    },
+    Entry {
         page: Page::Notifications,
         id: "notifications",
         title: "Notifications",
@@ -692,6 +717,7 @@ mod tests {
             "default-apps",
             "date-time",
             "about",
+            "region",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -712,6 +738,7 @@ mod tests {
                 Page::Personal,
                 Page::Power,
                 Page::DateTime,
+                Page::Region,
                 Page::About,
                 Page::Notifications,
                 Page::DefaultApps,
@@ -753,6 +780,7 @@ mod tests {
         assert_eq!(pages("browser"), [Page::DefaultApps]);
         assert_eq!(pages("timezone"), [Page::DateTime]);
         assert_eq!(pages("hostname"), [Page::About]);
+        assert_eq!(pages("language")[0], Page::Region);
         assert_eq!(pages("terminal"), [Page::DefaultApps]);
         assert_eq!(pages("bluetooth")[0], Page::Bluetooth);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);

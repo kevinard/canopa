@@ -17,6 +17,8 @@
 //! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level`, `set_perceptual` |
 //! | [`timedate`] | systemd-timedated | [`timedate::Clock`] | [`timedate::watch`] | time zone, network time, system clock (polkit) |
 //! | [`hostname`] | systemd-hostnamed | [`hostname::Host`] (names, hardware, OS) | [`hostname::watch`] | [`hostname::rename`] (polkit) |
+//! | [`locale`] | systemd-localed | [`locale::SystemLocale`] (locale, X11 and console keyboard) | [`locale::watch`] | [`locale::set_locale`], [`locale::set_x11_keyboard`] (polkit) |
+//! | [`accounts`] | AccountsService | [`accounts::Accounts`] ([`accounts::User`]: name, type, language, picture, automatic login) | [`accounts::watch`] | add, remove, rename, account type, language, formats, picture, automatic login, password at next login (polkit) |
 //! | [`geoclue`] | GeoClue | [`geoclue::Place`] | – | [`geoclue::locate`] (once, city accuracy) |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
@@ -28,6 +30,7 @@
 //! Each module starts with an example. Tests use the fakes in `testing`,
 //! enabled by the `test-support` feature.
 
+pub mod accounts;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod backlight;
@@ -36,6 +39,7 @@ pub mod bus;
 mod error;
 pub mod geoclue;
 pub mod hostname;
+pub mod locale;
 pub mod logind;
 pub mod mpris;
 pub mod network;

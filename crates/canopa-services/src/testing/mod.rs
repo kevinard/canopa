@@ -65,11 +65,13 @@ impl Drop for TestBus {
     }
 }
 
+pub mod accounts;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod bluez;
 pub mod geoclue;
 pub mod hostname;
+pub mod locale;
 pub mod logind;
 pub mod mpris;
 pub mod network;

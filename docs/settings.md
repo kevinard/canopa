@@ -12,8 +12,8 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Date & time, About, Notifications and Default
-applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
+Network, Bluetooth, Sound, Date & time, Region & language, About,
+Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
 systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
 it returns.
@@ -178,6 +178,24 @@ for permission through the polkit agent.
   applied at once to `config.kdl`. A clock with a pattern of your own (for
   example `%a %H:%M`) keeps it; see
   [ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md).
+
+## Region & language
+
+**Language** and **Formats** (dates, numbers, money, measurement and paper)
+are yours: they are saved in `~/.config/locale.conf` (`LANG` and the `LC_*`
+format variables) and apply the next time you log in; the login shell profile
+reads that file when the Canopa session starts. AccountsService records the
+same language, and the formats where it supports them, for other display
+managers. A preview shows the chosen formats.
+
+**Login screen and new users** sets the system language through
+systemd-localed. The system keyboard shows the login screen's and console's
+layout; **Use my layouts for the login screen and console** copies the layouts,
+variants and options from the Keyboard & pointer page, where your own layouts
+are chosen. System changes ask for permission through the polkit agent.
+
+Only installed locales are offered. An administrator adds one by enabling it
+in `/etc/locale.gen` and running `locale-gen`.
 
 ## About
 
