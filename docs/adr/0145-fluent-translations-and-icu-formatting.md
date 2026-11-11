@@ -67,8 +67,15 @@ Monday, and no layout mirrored for right-to-left languages.
   directional icon names. cosmic-text already shapes bidi text, in Iced and
   in `canopa-session-ui`'s CPU renderer.
 - **Clocks.** An explicit Chrono pattern is kept as the person's own. Without
-  one, clocks use the locale's time and date styles. ADR 0142's 12/24-hour
-  switch writes the explicit pattern for the chosen cycle.
+  one (an absent `time-format`, or an empty `lockscreen { clock-format }`),
+  the Shell clock, its calendar and the lock screen use the locale's time and
+  date styles, and the calendar starts weeks on the region's first weekday.
+  The Date & time page offers Automatic, 24-hour and 12-hour: Automatic
+  removes the patterns it recognizes, the other two write them (ADR 0142,
+  amended).
+- **Shipped Shell labels.** `default.kdl` names its built-in labels with
+  `label-id`, `tooltip-id`, `title-id` and `prompt-id` message IDs, so the
+  defaults are translated while a person's own `label "…"` stays literal.
 - **Lint.** `scripts/check-i18n.py` rejects word-like literals passed to
   text, label, button, tooltip and placeholder calls and to label, title,
   summary and body fields in UI crates, with `scripts/i18n-allowlist.txt` for
