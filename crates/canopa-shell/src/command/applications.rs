@@ -491,6 +491,7 @@ mod tests {
             icon: None,
             desktop_file,
             dbus_activatable: false,
+            ..Default::default()
         }
     }
 
@@ -598,6 +599,7 @@ mod tests {
             icon: Some("fixture-icon".into()),
             desktop_file: desktop_file.clone(),
             dbus_activatable: false,
+            ..Default::default()
         };
         let argv = desktop_launch_argv(&app).unwrap();
         assert!(

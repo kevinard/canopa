@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub mod mime_apps;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DesktopApplication {
     pub id: String,
     pub name: String,
@@ -13,7 +15,30 @@ pub struct DesktopApplication {
     pub icon: Option<String>,
     pub desktop_file: PathBuf,
     pub dbus_activatable: bool,
+    /// `[Desktop Action]` groups named by `Actions=`, in that order.
+    pub actions: Vec<DesktopAction>,
+    /// The file name of the `Exec` program, such as `nautilus`, for matching.
+    pub exec_program: Option<String>,
+    /// `StartupWMClass`: the window class or app id the application maps.
+    pub startup_wm_class: Option<String>,
+    /// `SingleMainWindow=true`: the application cannot open a second main window.
+    pub single_main_window: bool,
 }
+
+/// One `[Desktop Action ID]` group, such as "New Private Window".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DesktopAction {
+    /// The id from `Actions=`, also the argument of D-Bus `ActivateAction`.
+    pub id: String,
+    /// The localized `Name`.
+    pub name: String,
+    pub icon: Option<String>,
+    /// Absent only for D-Bus-activatable applications.
+    pub exec: Option<String>,
+}
+
+/// The `[Desktop Action]` ids an entry offers, at most this many.
+const MAX_ACTIONS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawDesktopEntry {
@@ -284,6 +309,8 @@ pub enum LaunchProblem {
     MissingProgram(String),
     /// A `Terminal=true` entry, and none of [`TERMINAL_LAUNCHERS`] is installed.
     NoTerminal,
+    /// The entry no longer lists the requested `[Desktop Action]`, or it has no command.
+    ActionUnavailable,
 }
 
 impl std::fmt::Display for LaunchProblem {
@@ -295,6 +322,9 @@ impl std::fmt::Display for LaunchProblem {
             Self::NoTerminal => formatter.write_str(
                 "it runs in a terminal and no terminal launcher is installed; install xdg-terminal-exec",
             ),
+            Self::ActionUnavailable => {
+                formatter.write_str("its desktop entry no longer offers that action")
+            }
         }
     }
 }
@@ -317,6 +347,53 @@ pub fn check_launch(
 
 /// [`check_launch`] for an entry body that is already in memory.
 pub fn check_launch_entry(body: &str, search_path: &[PathBuf]) -> Result<(), LaunchProblem> {
+    let fields = launchable_fields(body, search_path)?;
+    if bool_field(&fields, "DBusActivatable") {
+        return Ok(());
+    }
+    let exec = optional_non_empty_field(&fields, "Exec").ok_or(LaunchProblem::EntryUnavailable)?;
+    check_exec(&exec, &fields, search_path)
+}
+
+/// [`check_launch`] for one of the entry's `[Desktop Action]` groups.
+pub fn check_launch_action(
+    app: &DesktopApplication,
+    action: &str,
+    search_path: &[PathBuf],
+) -> Result<(), LaunchProblem> {
+    let body = canopa_file::read_bounded(&app.desktop_file, MAX_ENTRY_BYTES)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or(LaunchProblem::EntryUnavailable)?;
+    check_launch_action_entry(&body, action, search_path)
+}
+
+/// [`check_launch_action`] for an entry body that is already in memory.
+pub fn check_launch_action_entry(
+    body: &str,
+    action: &str,
+    search_path: &[PathBuf],
+) -> Result<(), LaunchProblem> {
+    let fields = launchable_fields(body, search_path)?;
+    let listed = fields
+        .get("Actions")
+        .is_some_and(|list| semicolon_list(list).contains(&action));
+    let group = parse_group(body, &format!("Desktop Action {action}"));
+    if !listed || !valid_action_id(action) || optional_non_empty_field(&group, "Name").is_none() {
+        return Err(LaunchProblem::ActionUnavailable);
+    }
+    if bool_field(&fields, "DBusActivatable") {
+        return Ok(());
+    }
+    let exec = optional_non_empty_field(&group, "Exec").ok_or(LaunchProblem::ActionUnavailable)?;
+    check_exec(&exec, &fields, search_path)
+}
+
+/// The `[Desktop Entry]` of an application whose `TryExec` program exists.
+fn launchable_fields(
+    body: &str,
+    search_path: &[PathBuf],
+) -> Result<HashMap<String, String>, LaunchProblem> {
     let fields = parse_desktop_entry_fields(body);
     if fields.get("Type").map(String::as_str) != Some("Application") {
         return Err(LaunchProblem::EntryUnavailable);
@@ -327,15 +404,20 @@ pub fn check_launch_entry(body: &str, search_path: &[PathBuf]) -> Result<(), Lau
             return Err(LaunchProblem::MissingProgram(try_exec));
         }
     }
-    if bool_field(&fields, "DBusActivatable") {
-        return Ok(());
-    }
-    let exec = optional_non_empty_field(&fields, "Exec").ok_or(LaunchProblem::EntryUnavailable)?;
-    let program = exec_program(&unescape_string(&exec)).ok_or(LaunchProblem::InvalidCommand)?;
+    Ok(fields)
+}
+
+/// The `Exec` program is installed, and so is a terminal for `Terminal=true`.
+fn check_exec(
+    exec: &str,
+    fields: &HashMap<String, String>,
+    search_path: &[PathBuf],
+) -> Result<(), LaunchProblem> {
+    let program = exec_program(&unescape_string(exec)).ok_or(LaunchProblem::InvalidCommand)?;
     if find_program(&program, search_path).is_none() {
         return Err(LaunchProblem::MissingProgram(program));
     }
-    if bool_field(&fields, "Terminal") && terminal_launcher(search_path).is_none() {
+    if bool_field(fields, "Terminal") && terminal_launcher(search_path).is_none() {
         return Err(LaunchProblem::NoTerminal);
     }
     Ok(())
@@ -441,9 +523,19 @@ fn application_from_entry(
         }
     }
     let name = localized_field(&fields, "Name", &env.locales)?;
-    if non_empty_field(&fields, "Exec").is_none() && !bool_field(&fields, "DBusActivatable") {
+    let dbus_activatable = bool_field(&fields, "DBusActivatable");
+    let exec = non_empty_field(&fields, "Exec");
+    if exec.is_none() && !dbus_activatable {
         return None;
     }
+    let exec_program = exec
+        .and_then(|exec| exec_program(&unescape_string(&exec)))
+        .and_then(|program| {
+            Path::new(&program)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+        });
     Some(DesktopApplication {
         id: entry.id,
         name,
@@ -459,9 +551,58 @@ fn application_from_entry(
             })
             .unwrap_or_default(),
         icon: optional_non_empty_field(&fields, "Icon"),
+        actions: desktop_actions(&entry.body, &fields, &env.locales, dbus_activatable),
+        exec_program,
+        startup_wm_class: optional_non_empty_field(&fields, "StartupWMClass")
+            .map(|class| unescape_string(&class)),
+        single_main_window: bool_field(&fields, "SingleMainWindow"),
         desktop_file: entry.path,
-        dbus_activatable: bool_field(&fields, "DBusActivatable"),
+        dbus_activatable,
     })
+}
+
+/// The `[Desktop Action]` groups `Actions=` names, in its order. A group
+/// without a `Name`, or without an `Exec` in an entry that is not
+/// D-Bus-activatable, is skipped, as the specification asks.
+fn desktop_actions(
+    body: &str,
+    fields: &HashMap<String, String>,
+    locales: &[String],
+    dbus_activatable: bool,
+) -> Vec<DesktopAction> {
+    let Some(list) = fields.get("Actions") else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    semicolon_list(list)
+        .into_iter()
+        .filter(|id| valid_action_id(id) && seen.insert(*id))
+        .take(MAX_ACTIONS)
+        .filter_map(|id| {
+            let group = parse_group(body, &format!("Desktop Action {id}"));
+            let name = localized_field(&group, "Name", locales)?;
+            let exec = optional_non_empty_field(&group, "Exec");
+            if exec.is_none() && !dbus_activatable {
+                return None;
+            }
+            Some(DesktopAction {
+                id: id.to_owned(),
+                name,
+                icon: optional_non_empty_field(&group, "Icon"),
+                exec,
+            })
+        })
+        .collect()
+}
+
+/// Action ids the specification allows (`[A-Za-z0-9-]`), plus `_` and `.`
+/// that some entries use; anything else could not be a group header.
+fn valid_action_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 255
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 fn localized_field(
@@ -520,22 +661,27 @@ fn unescape_string(value: &str) -> String {
 }
 
 fn parse_desktop_entry_fields(body: &str) -> HashMap<String, String> {
+    parse_group(body, "Desktop Entry")
+}
+
+/// The keys of the `[name]` group. Spaces around `=` are ignored.
+fn parse_group(body: &str, name: &str) -> HashMap<String, String> {
     let mut fields = HashMap::new();
-    let mut in_desktop_entry = false;
+    let mut in_group = false;
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if line.starts_with('[') && line.ends_with(']') {
-            in_desktop_entry = line == "[Desktop Entry]";
+        if let Some(header) = line.strip_prefix('[').and_then(|line| line.strip_suffix(']')) {
+            in_group = header == name;
             continue;
         }
-        if !in_desktop_entry {
+        if !in_group {
             continue;
         }
         if let Some((key, value)) = line.split_once('=') {
-            fields.insert(key.to_string(), value.to_string());
+            fields.insert(key.trim_end().to_string(), value.to_string());
         }
     }
     fields
@@ -929,9 +1075,8 @@ mod tests {
             generic_name: None,
             comment: None,
             keywords: Vec::new(),
-            icon: None,
             desktop_file: file.clone(),
-            dbus_activatable: false,
+            ..Default::default()
         };
 
         assert_eq!(
@@ -1005,5 +1150,113 @@ mod tests {
         );
         assert_eq!(desktop_entry_icon_in_data_dirs("../escape", &dirs), None);
         assert_eq!(desktop_entry_icon_in_data_dirs("missing", &dirs), None);
+    }
+
+    const BROWSER: &str = concat!(
+        "[Desktop Entry]\nType=Application\nName=Browser\nExec=/usr/lib/browser/run %u\n",
+        "Actions=new-window;new-private-window;missing;no-name;bad id;new-window;\n",
+        "StartupWMClass=browser-main\nSingleMainWindow=false\n\n",
+        "[Desktop Action new-window]\nName=New Window\nName[fr]=Nouvelle fenêtre\n",
+        "Exec=/usr/lib/browser/run --new-window %u\n\n",
+        "[Desktop Action new-private-window]\nName = New Private Window\n",
+        "Name[fr_CA]=Nouvelle fenêtre privée\nIcon=private-browsing\n",
+        "Exec=/usr/lib/browser/run --private-window %u\n\n",
+        "[Desktop Action no-name]\nExec=/usr/lib/browser/run\n\n",
+        "[Desktop Action unlisted]\nName=Unlisted\nExec=/usr/lib/browser/run\n",
+    );
+
+    #[test]
+    fn desktop_actions_follow_actions_order_and_skip_incomplete_groups() {
+        let apps = applications_from_entries(
+            vec![entry("browser.desktop", BROWSER)],
+            &DesktopEnvironment::unknown(),
+        );
+        let app = &apps[0];
+        assert_eq!(
+            app.actions
+                .iter()
+                .map(|action| (action.id.as_str(), action.name.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("new-window", "New Window"),
+                ("new-private-window", "New Private Window")
+            ]
+        );
+        assert_eq!(app.actions[1].icon.as_deref(), Some("private-browsing"));
+        assert_eq!(
+            app.actions[0].exec.as_deref(),
+            Some("/usr/lib/browser/run --new-window %u")
+        );
+        assert_eq!(app.exec_program.as_deref(), Some("run"));
+        assert_eq!(app.startup_wm_class.as_deref(), Some("browser-main"));
+        assert!(!app.single_main_window);
+        // A `[Desktop Action]` group never leaks keys into the entry itself.
+        assert_eq!(app.name, "Browser");
+    }
+
+    #[test]
+    fn desktop_action_names_are_localized_with_the_entry_fallbacks() {
+        let mut env = DesktopEnvironment::unknown();
+        env.locales = vec!["fr_CA.UTF-8".into()];
+        let apps = applications_from_entries(vec![entry("browser.desktop", BROWSER)], &env);
+        assert_eq!(
+            apps[0]
+                .actions
+                .iter()
+                .map(|action| action.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Nouvelle fenêtre", "Nouvelle fenêtre privée"]
+        );
+    }
+
+    #[test]
+    fn dbus_activatable_actions_need_no_exec_and_others_do() {
+        let body = concat!(
+            "[Desktop Entry]\nType=Application\nName=Bus\nDBusActivatable=true\n",
+            "Actions=new-document;\n[Desktop Action new-document]\nName=New Document\n",
+        );
+        let bus = applications_from_entries(
+            vec![entry("org.example.Bus.desktop", body)],
+            &DesktopEnvironment::unknown(),
+        );
+        assert_eq!(bus[0].actions[0].id, "new-document");
+        assert_eq!(bus[0].actions[0].exec, None);
+        assert_eq!(bus[0].exec_program, None);
+        let exec = body.replace("DBusActivatable=true", "Exec=bus");
+        let plain = applications_from_entries(
+            vec![entry("bus.desktop", &exec)],
+            &DesktopEnvironment::unknown(),
+        );
+        assert!(plain[0].actions.is_empty());
+        assert_eq!(plain[0].exec_program.as_deref(), Some("bus"));
+    }
+
+    #[test]
+    fn launch_check_for_an_action_reads_its_group() {
+        let bin = tempfile::tempdir().unwrap();
+        program(bin.path(), "editor", 0o755);
+        let path = [bin.path().to_path_buf()];
+        let body = concat!(
+            "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n",
+            "Actions=new;broken;unnamed;\n",
+            "[Desktop Action new]\nName=New\nExec=editor --new\n",
+            "[Desktop Action broken]\nName=Broken\nExec=helper --new\n",
+            "[Desktop Action unnamed]\nExec=editor\n",
+            "[Desktop Action unlisted]\nName=Unlisted\nExec=editor\n",
+        );
+        assert_eq!(check_launch_action_entry(body, "new", &path), Ok(()));
+        assert_eq!(
+            check_launch_action_entry(body, "broken", &path),
+            Err(LaunchProblem::MissingProgram("helper".into()))
+        );
+        for action in ["unnamed", "unlisted", "gone", "[Desktop Entry"] {
+            assert_eq!(
+                check_launch_action_entry(body, action, &path),
+                Err(LaunchProblem::ActionUnavailable),
+                "{action}"
+            );
+        }
+        let bus = "[Desktop Entry]\nType=Application\nName=B\nDBusActivatable=true\nActions=a;\n[Desktop Action a]\nName=A\n";
+        assert_eq!(check_launch_action_entry(bus, "a", &path), Ok(()));
     }
 }

@@ -1769,6 +1769,7 @@ mod tests {
             icon: None,
             desktop_file: format!("/tmp/{id}").into(),
             dbus_activatable: false,
+            ..Default::default()
         }
     }
 

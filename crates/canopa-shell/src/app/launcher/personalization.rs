@@ -294,6 +294,7 @@ mod tests {
                 icon: None,
                 desktop_file: "/tmp/editor.desktop".into(),
                 dbus_activatable: false,
+                ..Default::default()
             }],
         )
     }
