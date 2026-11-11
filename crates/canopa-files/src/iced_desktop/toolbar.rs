@@ -134,7 +134,9 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
                 && !browser.selected().is_empty()
         }
         Command::NewFolder => desktop.file_operations.ready(),
-        Command::Trash => desktop.file_operations.ready() && !browser.selected().is_empty(),
+        Command::Trash | Command::DeletePermanently => {
+            desktop.file_operations.ready() && !browser.selected().is_empty()
+        }
         Command::Paste => desktop.file_operations.ready() && desktop.file_clipboard.can_paste(),
         Command::Recovery => desktop.file_operations.service.is_some(),
         Command::Rename => desktop.file_operations.ready() && browser.selected().len() == 1,

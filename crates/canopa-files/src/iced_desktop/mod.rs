@@ -7,6 +7,9 @@ mod catalog_notices;
 mod chrome;
 mod clipboard_ui;
 mod configuration_ui;
+mod delete_dialog;
+#[cfg(test)]
+mod delete_tests;
 mod destination_browser;
 mod device_question;
 mod devices_ui;
@@ -219,6 +222,7 @@ struct Desktop {
     focused_window: Option<window::Id>,
     trash_window: Option<trash_ui::TrashWindow>,
     trash_restore: Option<trash_restore::Dialog>,
+    delete_dialog: Option<delete_dialog::Dialog>,
     recovery_window: Option<recovery_ui::RecoveryWindow>,
     recovery_destination: Option<recovery_destination::Dialog>,
 }
@@ -393,6 +397,7 @@ enum Message {
     Recovery(recovery_ui::Event),
     RecoveryDestination(recovery_destination::Event),
     TrashRestore(trash_restore::Event),
+    DeleteDialog(delete_dialog::Event),
 }
 
 impl Desktop {
@@ -450,6 +455,7 @@ impl Desktop {
             focused_window: None,
             trash_window: None,
             trash_restore: None,
+            delete_dialog: None,
             recovery_window: None,
             recovery_destination: None,
         };
@@ -710,6 +716,23 @@ impl Desktop {
                     .is_some_and(|w| w.window == id) =>
             {
                 self.close_recovery(id)
+            }
+            Message::DeleteDialog(event) => self.delete_dialog_event(event),
+            Message::Key(id, key, modifiers, _) | Message::CapturedKey(id, key, modifiers)
+                if self
+                    .delete_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.window == id) =>
+            {
+                self.delete_dialog_key(id, key, modifiers)
+            }
+            Message::Close(id) | Message::Closed(id)
+                if self
+                    .delete_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.window == id) =>
+            {
+                self.close_delete_dialog(id)
             }
             Message::Trash(event) => self.trash_event(event),
             Message::TrashRestore(event) => self.trash_restore_event(event),
@@ -980,6 +1003,7 @@ impl Desktop {
             | Message::RecoveryDestination(_)
             | Message::Trash(_)
             | Message::TrashRestore(_)
+            | Message::DeleteDialog(_)
             | Message::FileClipboard(_)
             | Message::Properties(_)
             | Message::Drag(_) => {}
@@ -1327,6 +1351,7 @@ impl Desktop {
             && self.trash_window.is_none()
             && self.recovery_window.is_none()
             && self.trash_restore.is_none()
+            && self.delete_dialog.is_none()
             && self.recovery_destination.is_none()
             && self.action_editor.is_none()
             && self.preferences_editor.is_none()
@@ -1456,6 +1481,7 @@ impl Desktop {
             Command::Recovery => return self.show_recovery(),
             Command::ShowTrash => return self.show_trash(),
             Command::Trash => return self.trash_selection(id),
+            Command::DeletePermanently => return self.confirm_delete_selection(id),
             Command::Copy | Command::Cut => return self.copy_files(id, command == Command::Cut),
             Command::Paste => return self.paste_files(id),
             Command::NewFolder => return self.show_name_dialog(id, false),
@@ -1827,6 +1853,13 @@ impl Desktop {
             return "Trash — Canopa Files".into();
         }
         if let Some(dialog) = self
+            .delete_dialog
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return format!("{} — Canopa Files", dialog.title());
+        }
+        if let Some(dialog) = self
             .trash_restore
             .as_ref()
             .filter(|dialog| dialog.window == id)
@@ -2010,6 +2043,13 @@ impl Desktop {
             .filter(|dialog| dialog.window == id)
         {
             return trash_restore::view(self, dialog);
+        }
+        if let Some(dialog) = self
+            .delete_dialog
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return delete_dialog::view(self, dialog);
         }
         if let Some(dialog) = self
             .file_operations

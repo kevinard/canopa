@@ -20,6 +20,10 @@ pub(super) enum Event {
     Select(window::Id, u64, PathBuf),
     Refresh(window::Id),
     Restore(window::Id, bool),
+    /// Permanently delete the selected item, after confirmation.
+    Delete(window::Id),
+    /// Permanently delete every listed item in the current scope.
+    Empty(window::Id),
     Copy(window::Id),
     Scroll(window::Id, u64, f32, f32),
     Viewport(window::Id, u64, Size),
@@ -188,6 +192,8 @@ impl Desktop {
             | Event::Select(id, ..)
             | Event::Refresh(id)
             | Event::Restore(id, _)
+            | Event::Delete(id)
+            | Event::Empty(id)
             | Event::Copy(id)
             | Event::Scroll(id, ..)
             | Event::Viewport(id, ..)
@@ -269,6 +275,20 @@ impl Desktop {
             }
             Event::OpenFailed(_, error) => trash.error = Some(error),
             Event::Copy(_) => return self.copy_trash(id),
+            Event::Delete(_) | Event::Empty(_) => {
+                if trash.snapshot.loading {
+                    return Task::none();
+                }
+                let empty = matches!(event, Event::Empty(_));
+                let items: Vec<_> = if empty {
+                    trash.snapshot.catalog.items.clone()
+                } else {
+                    trash.selected().cloned().into_iter().collect()
+                };
+                let main = trash.snapshot.scope == Scope::Main;
+                trash.error = None;
+                return self.confirm_delete_trash(id, items, empty, main);
+            }
             Event::Restore(_, elsewhere) => {
                 let Some(item) = trash
                     .selected()
@@ -318,9 +338,15 @@ impl Desktop {
                 return self.trash_event(event);
             }
         }
+        if modifiers == keyboard::Modifiers::SHIFT && key == keyboard::Key::Named(Named::Delete) {
+            return self.trash_event(Event::Delete(id));
+        }
         if modifiers.is_empty() {
             if key == keyboard::Key::Named(Named::F5) {
                 return self.trash_event(Event::Refresh(id));
+            }
+            if key == keyboard::Key::Named(Named::Delete) {
+                return self.trash_event(Event::Delete(id));
             }
             if key == keyboard::Key::Named(Named::Space)
                 || key.as_ref() == keyboard::Key::Character(" ")
@@ -416,6 +442,8 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             message.clone(),
             if name == "restore" {
                 canopa_ui::Action::Primary
+            } else if matches!(name, "delete" | "empty") && enabled {
+                canopa_ui::Action::Destructive
             } else if matches!(name, "refresh" | "operations")
                 || (matches!(name, "restore-to" | "copy") && enabled)
             {
@@ -462,17 +490,33 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         Message::Trash(Event::Copy(id)),
         selected.is_some() && !trash.snapshot.loading && desktop.file_clipboard.ready(),
     );
+    let delete = action(
+        "Delete permanently…",
+        "delete",
+        Message::Trash(Event::Delete(id)),
+        ready && selected.is_some(),
+    );
     let buttons: Element<'a, Message> = if wide {
-        column![restore_button, row![alternate, copy].spacing(6).wrap()]
-            .spacing(6)
-            .into()
+        column![
+            restore_button,
+            row![alternate, copy].spacing(6).wrap(),
+            delete
+        ]
+        .spacing(6)
+        .into()
     } else {
-        row![restore_button, alternate, copy]
+        row![restore_button, alternate, copy, delete]
             .spacing(6)
             .wrap()
             .into()
     };
     let tools = row![
+        action(
+            "Empty Trash…",
+            "empty",
+            Message::Trash(Event::Empty(id)),
+            ready && !trash.snapshot.catalog.items.is_empty(),
+        ),
         action(
             "Refresh",
             "refresh",
@@ -646,7 +690,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     } else {
         listing.into()
     };
-    let subtitle = "Restore deleted files to their original location or another folder.";
+    let subtitle = "Restore deleted files to their original location or another folder, or delete them permanently.";
     let heading: Element<'a, Message> = if wide {
         chrome::heading_with_action(
             desktop,
@@ -745,7 +789,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         .push(footer);
     order.push(chrome::dismiss_id(id));
     let reveal = if wide {
-        ["restore", "restore-to", "copy"]
+        ["restore", "restore-to", "copy", "delete"]
             .into_iter()
             .map(|name| (control(id, name), control(id, "details-scroll")))
             .collect()

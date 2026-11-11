@@ -40,6 +40,7 @@ commands! {
     NewFolder => ("new-folder", "New folder", "folder-new-symbolic", ["<Control><Shift>n"]),
     Rename => ("rename", "Rename", "document-edit-symbolic", ["F2"]),
     Trash => ("trash", "Move to Trash", "user-trash-symbolic", ["Delete"]),
+    DeletePermanently => ("delete-permanently", "Delete permanently", "edit-delete-symbolic", ["<Shift>Delete"]),
     ShowTrash => ("show-trash", "Open Trash", "user-trash-symbolic", []),
     Undo => ("undo", "Undo", "edit-undo-symbolic", ["<Control>z"]),
     Copy => ("copy", "Copy", "edit-copy-symbolic", ["<Control>c"]),

@@ -793,7 +793,11 @@ impl Desktop {
                 if submission.owner == trash.window {
                     trash.error = job.error.clone();
                 }
-                if job.trash.is_some() || job.restore.is_some() || submission.refresh_all {
+                if job.trash.is_some()
+                    || job.restore.is_some()
+                    || job.delete.is_some()
+                    || submission.refresh_all
+                {
                     trash.refresh();
                 }
             }
@@ -802,6 +806,11 @@ impl Desktop {
                 refreshed.reveal = report.destinations.first().cloned();
             }
             tasks.push(self.refresh_after_operation(&refreshed));
+            if let Some(report) = &job.trash
+                && !report.unavailable.is_empty()
+            {
+                tasks.push(self.offer_permanent_deletion(&submission, report.unavailable.clone()));
+            }
             if let Some(error) = &job.error
                 && let Some(origin) = &submission.origin
                 && let Some(tab) = self
@@ -929,6 +938,9 @@ impl Desktop {
 
     pub(super) fn close_operation_source(&mut self, source: window::Id) -> Task<Message> {
         let mut tasks = Vec::new();
+        if let Some(dialog) = self.delete_dialog.take_if(|dialog| dialog.owner == source) {
+            tasks.push(window::close(dialog.window));
+        }
         if let Some(dialog) = self
             .file_operations
             .name

@@ -20,6 +20,9 @@ Shell and Notify retain their established ownership and lifetimes.
   independently of focus in other Browser Windows. The auxiliary Trash window
   and Recovery windows own their previews through the same source interface.
 - An Operation is a user request such as a batch copy, move, rename, or trash.
+- A Permanent Deletion is a confirmed, non-undoable Operation that removes a
+  selection or Trash items through the same queue. Empty Trash is one over the
+  listed Trash items.
 - A Transfer is the asynchronous execution of an Operation. It can outlive all
   Browser Windows and exposes progress, conflicts, failures, and cancellation.
 - A Source Lease protects catalogued retained data while an owned clipboard
@@ -61,6 +64,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 [application decisions](adr/0001-application-and-state.md).
 
 ## Decision index
+
+- [Permanent deletion and Empty Trash](adr/0164-permanent-deletion-and-empty-trash.md).
 
 - [Displayed folders follow outside changes](adr/0163-watched-browser-folders.md).
 

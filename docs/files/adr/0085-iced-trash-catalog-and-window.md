@@ -21,7 +21,9 @@ scope clears rows and selection before loading. Refresh preserves the selected
 raw stored path when it still exists. Restore captures the actual TrashItem;
 it does not rebuild metadata or a target from a display label. A chosen folder
 is joined with the original raw basename. Occupied destinations remain ordinary
-engine refusals. No implicit overwrite or permanent deletion is added.
+engine refusals. No implicit overwrite or permanent deletion is added. The
+window later gained confirmed Delete permanently and Empty Trash
+([ADR0164](0164-permanent-deletion-and-empty-trash.md)).
 The destination dialog uses an editable local folder path or file URI, including
 byte-safe escaped URIs. It retains the draft if durable admission is refused.
 

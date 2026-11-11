@@ -170,6 +170,10 @@ impl Desktop {
                     }
                     if !source.paths.is_empty() {
                         items.push(("Move to Trash".into(), Item::Command(Command::Trash)));
+                        items.push((
+                            "Delete permanently…".into(),
+                            Item::Command(Command::DeletePermanently),
+                        ));
                     }
                     if !self.file_operations.has_active()
                         && let Some(undo) = &self.file_operations.snapshot.undo

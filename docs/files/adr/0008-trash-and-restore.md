@@ -12,7 +12,9 @@ escaped original path and local deletion time. Volume paths are relative to the
 mount root. Storage names are opaque and short, so long original names still fit.
 
 Delete and the visible Move to Trash command initiate recoverable operations.
-There is no implicit permanent-delete fallback. Trashing is an atomic rename on
+There is no implicit permanent-delete fallback. Explicit, confirmed permanent
+deletion and Empty Trash were added later; see
+[ADR0164](0164-permanent-deletion-and-empty-trash.md). Trashing is an atomic rename on
 the source filesystem; if suitable storage is unavailable, the source stays put
 and the operation reports failure. Mount identifiers from `statx` and
 `/proc/self/mountinfo` distinguish mounts, including bind mounts that share a
