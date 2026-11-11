@@ -14,6 +14,7 @@ fn image(path: &Path, width: u32, height: u32, color: [u8; 4]) {
 }
 fn decode(paths: &[PathBuf]) -> Vec<u8> {
     let mut command = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+    command.env("CANOPA_LANGUAGE", "en");
     command
         .arg("internal-avatar")
         .arg("--")
@@ -126,6 +127,7 @@ fn preview_renders_only_explicit_user_assets_without_discovery_or_commands() {
     )
     .unwrap();
     let mut app = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+    app.env("CANOPA_LANGUAGE", "en");
     app.arg("--canopa-config")
         .arg(config)
         .arg("preview")

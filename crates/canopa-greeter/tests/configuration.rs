@@ -26,6 +26,7 @@ greeter {{
     assert_eq!(cfg.sessions[0].argv, ["niri-session"]);
     for command in ["check-config", "preview"] {
         let mut app = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+        app.env("CANOPA_LANGUAGE", "en");
         app.arg("--canopa-config").arg(&file).arg(command);
         if command == "preview" {
             app.arg(dir.path().join("preview.png"));
@@ -68,6 +69,7 @@ greeter {{
     std::fs::create_dir_all(&home).unwrap();
     std::fs::write(home.join("config.kdl"), "invalid").unwrap();
     let mut app = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+    app.env("CANOPA_LANGUAGE", "en");
     app.arg("--defaults")
         .arg("check-config")
         .env("XDG_CONFIG_HOME", home.parent().unwrap())

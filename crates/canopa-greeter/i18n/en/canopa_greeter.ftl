@@ -1,1 +1,58 @@
 # Canopa Login screen. English is the source language.
+
+## Login screen
+
+# Window title and screen-reader name of the login screen.
+greeter-title = Canopa Login
+greeter-sign-in = Sign in
+greeter-username-prompt = Username:
+greeter-choose-an-account = Choose an account
+greeter-choose-a-desktop = Choose a desktop
+greeter-power-options = Power options
+greeter-previous-choices = Previous choices
+greeter-more-choices = More choices
+# Leaves the account or desktop list (drawn after a back arrow).
+greeter-back-to-sign-in = Back to sign in
+greeter-back = Back
+# Row that opens the account list.
+greeter-choose-account = Choose account
+greeter-change-account = Change account
+# Screen-reader names of that row. $account is a name and username, or a username.
+greeter-choose-account-for = Choose account · { $account }
+greeter-change-account-for = Change account · { $account }
+# Stands in for the account while no username is typed.
+greeter-enter-username-placeholder = enter username
+# Screen-reader name of the desktop row. $session is the desktop's name.
+greeter-desktop = Desktop: { $session }
+greeter-no-sessions = No desktop sessions available
+greeter-no-sessions-help = No desktop sessions available. Install a session or configure one.
+greeter-continue = Continue
+greeter-submit-response = Submit response
+greeter-retry = Retry
+greeter-starting-session = Starting session…
+greeter-cancelling = Cancelling…
+greeter-authenticating = Authenticating…
+# Power button; F10 opens the same menu.
+greeter-power-control = Power   · F10
+greeter-power-choose-hint = Choose a power action · ↑/↓ selects · Enter continues · Escape returns
+greeter-power-pending = Requesting system power action…
+greeter-power-accepted = Power request accepted by the system
+greeter-power-denied = Power action unavailable or denied by system policy
+greeter-shut-down = Shut down
+greeter-restart = Restart
+greeter-confirm-shut-down = Confirm shut down
+greeter-confirm-restart = Confirm restart
+greeter-shut-down-warning = Shut down this computer? Unsaved work in other sessions may be lost.
+greeter-restart-warning = Restart this computer? Unsaved work in other sessions may be lost.
+greeter-invalid-username = Enter a valid username
+greeter-enter-username = Enter a username
+greeter-starting-authentication = Starting authentication…
+greeter-cancelling-authentication = Cancelling authentication…
+greeter-choice-unavailable = This choice is no longer available.
+greeter-service-unavailable = Login service unavailable
+greeter-authentication-cancelled = Authentication cancelled
+greeter-authentication-timed-out = Authentication timed out
+greeter-authentication-cancelled-or-timed-out = Authentication cancelled or timed out
+greeter-authentication-failed = Authentication failed. Enter to retry.
+# A keyboard layout without a name. $number counts from 1.
+greeter-layout-number = Layout { $number }

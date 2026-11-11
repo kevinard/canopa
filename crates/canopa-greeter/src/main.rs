@@ -69,6 +69,8 @@ enum Operation {
     },
 }
 fn main() {
+    // The greeter runs before login: its language is the system locale.
+    canopa_i18n::init();
     if let Err(error) = run() {
         eprintln!("canopa-greeter: {error:#}");
         std::process::exit(1);

@@ -11,6 +11,7 @@ fn query(root: &Path, library: &Path, mode: &str, settings: &str) -> assert_cmd:
     let config = root.join("greeter.kdl");
     fs::write(&config, format!("schema-version 1\ngreeter {{ user-source \"nss\"; nss-uid-min 1000; nss-uid-max 300000; {settings} }}\n")).unwrap();
     let mut command = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+    command.env("CANOPA_LANGUAGE", "en");
     command
         .args(["--canopa-config"])
         .arg(config)
@@ -125,6 +126,7 @@ fn helper_dies_if_its_frontend_disappears() {
     let root = tempfile::tempdir().unwrap();
     let lib = support::fixture(root.path());
     let mut parent = Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .args(["--defaults", "list-users", "--source", "nss"])
         .env("LD_PRELOAD", lib)
         .env("CANOPA_NSS_FIXTURE", "block")

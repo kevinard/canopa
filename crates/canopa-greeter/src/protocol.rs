@@ -189,8 +189,8 @@ async fn pending_response(
     let response = read(stream);
     tokio::pin!(response);
     let cancelled = tokio::select! {biased;
-        command=commands.recv()=>match command {Some(Command::Cancel{generation})=>Some((generation,"Authentication cancelled")),None=>None,_=>bail!("unexpected login command while awaiting service")},
-        _=tokio::time::sleep_until(deadline)=>Some((generation,"Authentication timed out")),
+        command=commands.recv()=>match command {Some(Command::Cancel{generation})=>Some((generation,fl!("greeter-authentication-cancelled"))),None=>None,_=>bail!("unexpected login command while awaiting service")},
+        _=tokio::time::sleep_until(deadline)=>Some((generation,fl!("greeter-authentication-timed-out"))),
         reply=&mut response=>return Ok(Reply::Response(reply?)),
     };
     // greetd accepts concurrent clients. Cancel on a separate connection, then
@@ -202,7 +202,7 @@ async fn pending_response(
     Ok(match cancelled {
         Some((generation, message)) => Reply::Cancelled {
             generation,
-            message: message.into(),
+            message,
         },
         None => Reply::Closed,
     })
@@ -228,7 +228,7 @@ async fn run(
                 reset(&mut stream).await?;
                 notify(Event {
                     generation,
-                    kind: Kind::Cancelled("Authentication cancelled".into()),
+                    kind: Kind::Cancelled(fl!("greeter-authentication-cancelled")),
                 });
                 continue;
             }
@@ -268,7 +268,7 @@ async fn run(
                     // Even auth_error may leave an allocated configuring session.
                     reset_after_failure(&mut stream).await?;
                     let text = if error_type == "auth_error" {
-                        "Authentication failed. Enter to retry.".into()
+                        fl!("greeter-authentication-failed")
                     } else {
                         clean(description)
                     };
@@ -338,9 +338,9 @@ async fn run(
                                     reset(&mut stream).await?;
                                     notify(Event {
                                         generation: g,
-                                        kind: Kind::Cancelled(
-                                            "Authentication cancelled or timed out".into(),
-                                        ),
+                                        kind: Kind::Cancelled(fl!(
+                                            "greeter-authentication-cancelled-or-timed-out"
+                                        )),
                                     });
                                     break;
                                 }
@@ -373,7 +373,7 @@ async fn run(
                         };
                         notify(Event {
                             generation,
-                            kind: Kind::Cancelled("Authentication timed out".into()),
+                            kind: Kind::Cancelled(fl!("greeter-authentication-timed-out")),
                         });
                         break;
                     }
@@ -414,7 +414,7 @@ async fn run(
                             reset(&mut stream).await?;
                             notify(Event {
                                 generation: g,
-                                kind: Kind::Cancelled("Authentication cancelled".into()),
+                                kind: Kind::Cancelled(fl!("greeter-authentication-cancelled")),
                             });
                             break;
                         }

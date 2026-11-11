@@ -63,6 +63,8 @@ pub struct Controller {
     session_edited: bool,
     accounts: Vec<Account>,
     user_edited: bool,
+    /// The status still shows "Starting authentication…".
+    starting: bool,
 }
 impl Controller {
     pub fn new(config: &Config) -> Result<Self> {
@@ -74,7 +76,7 @@ impl Controller {
         let mut ui = SessionView::new(&config.view, user.clone())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 408.,
-            heading: "Sign in".into(),
+            heading: fl!("greeter-sign-in"),
             eyebrow: "CANOPA".into(),
             emblem: Emblem::Canopa,
             dialog: false,
@@ -103,11 +105,12 @@ impl Controller {
             session_edited: false,
             accounts: accounts::merge(&config.users, Vec::new()),
             user_edited: false,
+            starting: false,
         };
-        this.choose_user(if config.sessions.is_empty() {
-            "No desktop sessions available. Install a session or configure one."
+        this.choose_user(&if config.sessions.is_empty() {
+            fl!("greeter-no-sessions-help")
         } else {
-            ""
+            String::new()
         });
         this.refresh(config);
         Ok(this)
@@ -201,20 +204,21 @@ impl Controller {
     pub fn power_finished(&mut self, success: bool) {
         if matches!(self.power_menu, crate::power::Menu::Pending(_)) {
             self.power_menu = crate::power::Menu::Closed;
-            self.choose_user(if success {
-                "Power request accepted by the system"
+            self.choose_user(&if success {
+                fl!("greeter-power-accepted")
             } else {
-                "Power action unavailable or denied by system policy"
+                fl!("greeter-power-denied")
             });
         }
     }
     fn choose_user(&mut self, message: &str) {
         self.phase = Phase::User;
+        self.starting = false;
         self.ui.secret.clear();
         self.ui.secret.push(&self.user);
         self.ui.prompt = Some(Prompt {
             id: 0,
-            text: "Username:".into(),
+            text: fl!("greeter-username-prompt"),
             echo: true,
         });
         self.ui.busy = false;
@@ -237,13 +241,12 @@ impl Controller {
             .as_ref()
             .and_then(|chooser| chooser.current)
             .map(|index| FIRST_OPTION + index);
-        let (heading, emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
-            Some(Choice::Account) => ("Choose an account", Emblem::Accounts),
-            Some(Choice::Desktop) => ("Choose a desktop", Emblem::Display),
-            None if self.ui.hide_input => ("Power options", Emblem::Canopa),
-            None => ("Sign in", Emblem::Canopa),
+        (panel.heading, panel.emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
+            Some(Choice::Account) => (fl!("greeter-choose-an-account"), Emblem::Accounts),
+            Some(Choice::Desktop) => (fl!("greeter-choose-a-desktop"), Emblem::Display),
+            None if self.ui.hide_input => (fl!("greeter-power-options"), Emblem::Canopa),
+            None => (fl!("greeter-sign-in"), Emblem::Canopa),
         };
-        (panel.heading, panel.emblem) = (heading.into(), emblem);
         if let Some(chooser) = &self.chooser {
             let start = chooser.selected / OPTIONS_PER_PAGE * OPTIONS_PER_PAGE;
             let end = (start + OPTIONS_PER_PAGE).min(chooser.options.len());
@@ -264,16 +267,17 @@ impl Controller {
             if start > 0 {
                 self.ui
                     .controls
-                    .push(Control::new(PREVIOUS_PAGE, "Previous choices"));
+                    .push(Control::new(PREVIOUS_PAGE, fl!("greeter-previous-choices")));
             }
             if end < chooser.options.len() {
                 self.ui
                     .controls
-                    .push(Control::new(NEXT_PAGE, "More choices"));
+                    .push(Control::new(NEXT_PAGE, fl!("greeter-more-choices")));
             }
-            self.ui
-                .controls
-                .push(Control::new(CLOSE_CHOOSER, "Back to sign in").with_kind(ControlKind::Back));
+            self.ui.controls.push(
+                Control::new(CLOSE_CHOOSER, fl!("greeter-back-to-sign-in"))
+                    .with_kind(ControlKind::Back),
+            );
             return;
         }
         if let Menu::Choose(action) | Menu::Confirm(action) | Menu::Pending(action) =
@@ -284,9 +288,7 @@ impl Controller {
             self.ui.controls.clear();
             match self.power_menu {
                 Menu::Choose(_) => {
-                    self.ui.message =
-                        "Choose a power action · ↑/↓ selects · Enter continues · Escape returns"
-                            .into();
+                    self.ui.message = fl!("greeter-power-choose-hint");
                     for (id, value) in [(21, Action::Shutdown), (22, Action::Restart)] {
                         if self.power_capabilities.allows(value) {
                             let mut control = Control::new(id, value.label());
@@ -296,20 +298,16 @@ impl Controller {
                     }
                 }
                 Menu::Confirm(_) => {
-                    self.ui.message = format!(
-                        "{} this computer? Unsaved work in other sessions may be lost.",
-                        action.label()
-                    );
-                    self.ui.controls.push(Control::new(
-                        24,
-                        format!("Confirm {}", action.label().to_lowercase()),
-                    ));
+                    self.ui.message = action.warning();
+                    self.ui
+                        .controls
+                        .push(Control::new(24, action.confirm_label()));
                 }
-                Menu::Pending(_) => self.ui.message = "Requesting system power action…".into(),
+                Menu::Pending(_) => self.ui.message = fl!("greeter-power-pending"),
                 Menu::Closed => {}
             }
             if !self.ui.busy {
-                self.ui.controls.push(Control::new(23, "Back"));
+                self.ui.controls.push(Control::new(23, fl!("greeter-back")));
             }
             return;
         }
@@ -321,7 +319,7 @@ impl Controller {
         };
         let account = self.accounts.iter().find(|a| a.username == displayed_user);
         let chooser_label = if displayed_user.is_empty() {
-            "enter username".into()
+            fl!("greeter-enter-username-placeholder")
         } else {
             account
                 .map(Account::chooser_label)
@@ -336,41 +334,45 @@ impl Controller {
                 .then(|| crate::avatars::initials(&self.ui.username)),
         );
         let (account_label, account_text) = if self.phase == Phase::User && account_is_username {
-            ("Choose account".to_owned(), "Choose account")
+            (fl!("greeter-choose-account"), fl!("greeter-choose-account"))
         } else if self.phase == Phase::User {
             (
-                format!("Choose account · {chooser_label}"),
-                "Choose account",
+                fl!(
+                    "greeter-choose-account-for",
+                    account = chooser_label.as_str()
+                ),
+                fl!("greeter-choose-account"),
             )
         } else {
             (
-                format!("Change account · {chooser_label}"),
-                "Change account",
+                fl!(
+                    "greeter-change-account-for",
+                    account = chooser_label.as_str()
+                ),
+                fl!("greeter-change-account"),
             )
         };
         self.ui.controls = vec![
-            Control::new(1, account_label).with_kind(ControlKind::AccountChooser {
-                text: account_text.into(),
-            }),
+            Control::new(1, account_label)
+                .with_kind(ControlKind::AccountChooser { text: account_text }),
             config.sessions.get(self.session).map_or_else(
-                || Control::new(2, "No desktop sessions available"),
+                || Control::new(2, fl!("greeter-no-sessions")),
                 |session| {
-                    Control::new(2, format!("Desktop: {}", session.label)).with_kind(
-                        ControlKind::DesktopChooser {
+                    Control::new(2, fl!("greeter-desktop", session = session.label.as_str()))
+                        .with_kind(ControlKind::DesktopChooser {
                             session: session.label.clone(),
-                        },
-                    )
+                        })
                 },
             ),
             Control::new(
                 3,
                 match self.phase {
-                    Phase::User => "Continue",
-                    Phase::Prompt => "Submit response",
-                    Phase::Failed => "Retry",
-                    Phase::Starting => "Starting session…",
-                    Phase::Canceling => "Cancelling…",
-                    _ => "Authenticating…",
+                    Phase::User => fl!("greeter-continue"),
+                    Phase::Prompt => fl!("greeter-submit-response"),
+                    Phase::Failed => fl!("greeter-retry"),
+                    Phase::Starting => fl!("greeter-starting-session"),
+                    Phase::Canceling => fl!("greeter-cancelling"),
+                    _ => fl!("greeter-authenticating"),
                 },
             ),
         ];
@@ -381,7 +383,9 @@ impl Controller {
             && matches!(self.phase, Phase::User | Phase::Failed)
             && (self.power_capabilities.shutdown || self.power_capabilities.restart)
         {
-            self.ui.controls.push(Control::new(20, "Power   · F10"));
+            self.ui
+                .controls
+                .push(Control::new(20, fl!("greeter-power-control")));
         }
     }
     pub fn avatar_request(&self, config: &Config) -> (String, Vec<std::path::PathBuf>) {
@@ -404,8 +408,7 @@ impl Controller {
         match self.phase {
             Phase::User | Phase::Failed => {
                 if self.sessions.is_empty() {
-                    self.ui.message =
-                        "No desktop sessions available. Install a session or configure one.".into();
+                    self.ui.message = fl!("greeter-no-sessions-help");
                     return None;
                 }
                 if Instant::now() < self.retry_after {
@@ -418,7 +421,7 @@ impl Controller {
                 self.ui.secret.clear();
                 if !valid_user(&self.user) {
                     self.ui.failed = true;
-                    self.ui.message = "Enter a valid username".into();
+                    self.ui.message = fl!("greeter-invalid-username");
                     return None;
                 }
                 if !self.session_edited {
@@ -431,7 +434,8 @@ impl Controller {
                 self.ui.prompt = None;
                 self.ui.busy = true;
                 self.ui.failed = false;
-                self.ui.message = "Starting authentication…".into();
+                self.ui.message = fl!("greeter-starting-authentication");
+                self.starting = true;
                 Some(Command::Begin {
                     generation: self.generation,
                     user: self.user.clone(),
@@ -454,7 +458,7 @@ impl Controller {
             Phase::User | Phase::Failed => {
                 self.user_edited = true;
                 self.user.clear();
-                self.choose_user("Enter a username");
+                self.choose_user(&fl!("greeter-enter-username"));
                 None
             }
             _ => {
@@ -463,7 +467,8 @@ impl Controller {
                 self.ui.secret.clear();
                 self.ui.prompt = None;
                 self.ui.busy = true;
-                self.ui.message = "Cancelling authentication…".into();
+                self.ui.message = fl!("greeter-cancelling-authentication");
+                self.starting = false;
                 Some(Command::Cancel {
                     generation: self.generation,
                 })
@@ -618,7 +623,7 @@ impl Controller {
                         self.session = index;
                         self.session_edited = true;
                     }
-                    _ => self.ui.message = "This choice is no longer available.".into(),
+                    _ => self.ui.message = fl!("greeter-choice-unavailable"),
                 }
             }
             _ => {}
@@ -668,12 +673,14 @@ impl Controller {
             self.phase = Phase::Fatal;
             self.ui.secret.clear();
             self.ui.prompt = None;
-            self.ui.message = "Login service unavailable".into();
+            self.ui.message = fl!("greeter-service-unavailable");
             return None;
         }
         if event.generation != self.generation {
             return None;
         }
+        // Any event of this attempt replaces "Starting authentication…".
+        let starting = std::mem::take(&mut self.starting);
         match event.kind {
             Kind::Prompt { text, echo } if self.phase == Phase::Waiting => {
                 self.ui.secret.clear();
@@ -683,7 +690,7 @@ impl Controller {
                     echo,
                 });
                 self.phase = Phase::Prompt;
-                if self.ui.message == "Starting authentication…" {
+                if starting {
                     self.ui.message.clear();
                 }
             }
@@ -695,7 +702,7 @@ impl Controller {
                 self.phase = Phase::Starting;
                 self.ui.secret.clear();
                 self.ui.prompt = None;
-                self.ui.message = "Starting session…".into();
+                self.ui.message = fl!("greeter-starting-session");
                 let Some(session) = self.auth_session.clone() else {
                     self.phase = Phase::Fatal;
                     return None;
@@ -792,6 +799,7 @@ mod tests {
     }
     #[test]
     fn power_requires_a_permitted_choice_and_separate_confirmation_and_blocks_login_submission() {
+        let _english = crate::i18n::english();
         use crate::power::{Action, Capabilities, Menu};
         let config = configured();
         let mut c = Controller::new(&config).unwrap();
@@ -814,6 +822,37 @@ mod tests {
         c.power_finished(false);
         assert_eq!(c.power_menu, Menu::Closed);
         assert!(c.ui.message.contains("denied"));
+    }
+    #[test]
+    fn sign_in_screen_is_translated_and_rows_carry_their_meaning() {
+        let _french = crate::i18n::French::select();
+        let config = configured();
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_accounts(&config, vec![alice()]);
+        c.refresh(&config);
+        let panel = c.ui.authentication_panel.as_ref().unwrap();
+        assert_eq!(panel.heading, "Se connecter");
+        assert_eq!(
+            c.ui.prompt.as_ref().unwrap().text,
+            "Nom d\u{2019}utilisateur\u{a0}:"
+        );
+        assert_eq!(c.ui.controls[1].label, "Bureau\u{a0}: Test");
+        assert_eq!(
+            c.ui.controls[1].kind,
+            ControlKind::DesktopChooser {
+                session: "Test".into()
+            }
+        );
+        assert!(matches!(
+            &c.ui.controls[0].kind,
+            ControlKind::AccountChooser { text } if text == "Choisir un compte"
+        ));
+        c.open_chooser(Choice::Account);
+        c.refresh(&config);
+        let back = c.ui.controls.last().unwrap();
+        assert_eq!(back.kind, ControlKind::Back);
+        assert_eq!(back.label, "Retour à la connexion");
+        assert!(c.ui.controls[0].selected);
     }
     fn configured() -> Config {
         let (mut config, _) = Config::load(&canopa_config::Request::Defaults).unwrap();

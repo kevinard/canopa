@@ -8,3 +8,4 @@ crates/canopa-services/src/hostname.rs: "Chassis"  # systemd-hostnamed D-Bus pro
 crates/canopa-services/src/upower.rs: "Vendor"  # UPower D-Bus property name read by a local `text` closure
 crates/canopa-services/src/upower.rs: "Model"  # UPower D-Bus property name read by a local `text` closure
 crates/canopa-services/src/testing/*.rs: *  # fake services for consumers' tests (feature test-support), never shown to people
+crates/canopa-greeter/src/config.rs: "X11 wrapper"  # label of a throwaway Session built only to validate the configured x11-wrapper argv; never shown

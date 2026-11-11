@@ -100,7 +100,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         &qh,
     );
     window.set_app_id("org.canopa.Greeter");
-    window.set_title("Canopa Login");
+    window.set_title(fl!("greeter-title"));
     window.set_fullscreen(None);
     window.commit();
     let (sender, receiver) = channel::channel();
@@ -199,7 +199,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
     };
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
-        "Canopa Login",
+        &fl!("greeter-title"),
         move |request| {
             let _ = a11y_sender.send(request);
         },
@@ -313,7 +313,12 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
 impl App {
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         if let Some(a) = &mut self.accessibility {
-            a.update("Canopa Login", &self.controller.ui, &self.config.view, true);
+            a.update(
+                &fl!("greeter-title"),
+                &self.controller.ui,
+                &self.config.view,
+                true,
+            );
         }
         use canopa_session_ui::accessibility::{Operation, select};
         if !self
@@ -525,7 +530,12 @@ impl App {
 
         self.controller.refresh(&self.config);
         if let Some(a) = &mut self.accessibility {
-            a.update("Canopa Login", &self.controller.ui, &self.config.view, true);
+            a.update(
+                &fl!("greeter-title"),
+                &self.controller.ui,
+                &self.config.view,
+                true,
+            );
         }
 
         if let Some(worker) = &self.avatars {
@@ -825,7 +835,10 @@ impl KeyboardHandler for App {
             .layout_names
             .get(layout as usize)
             .cloned()
-            .unwrap_or_else(|| format!("Layout {}", layout + 1));
+            .unwrap_or_else(|| {
+                let number = u64::from(layout) + 1;
+                fl!("greeter-layout-number", number = number)
+            });
         self.dirty = true;
     }
     fn update_keymap(

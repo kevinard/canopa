@@ -183,6 +183,7 @@ fn manual_override_curated_mode_and_empty_catalog_are_host_independent() {
     assert!(controller.phase == Phase::User);
     assert!(controller.ui.message.contains("No desktop sessions"));
     assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .arg("--canopa-config")
         .arg(&file)
         .arg("list-sessions")
@@ -190,6 +191,7 @@ fn manual_override_curated_mode_and_empty_catalog_are_host_independent() {
         .success()
         .stdout("[]\n");
     assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .arg("--canopa-config")
         .arg(&file)
         .arg("preview")
@@ -242,6 +244,7 @@ fn user_xdg_directories_are_not_part_of_default_login_session_discovery() {
     fs::create_dir(&dir).unwrap();
     entry(&dir, "canopa-untrusted-user-only", "");
     let output = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .args(["--defaults", "list-sessions"])
         .env("XDG_DATA_HOME", root.path())
         .env("XDG_DATA_DIRS", root.path())
@@ -287,6 +290,7 @@ fn absolute_path_search_components_support_nonstandard_system_prefixes_without_e
     )
     .unwrap();
     let data = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .arg("--canopa-config")
         .arg(&config)
         .arg("list-sessions")

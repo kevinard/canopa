@@ -43,6 +43,7 @@ fn compositor_argv_preserves_configuration_and_never_uses_a_shell() {
 fn selection_is_inspectable_without_greetd_wayland_or_executing_the_compositor() {
     for compositor in ["cage", "weston"] {
         let result = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+            .env("CANOPA_LANGUAGE", "en")
             .args([
                 "--defaults",
                 "session",
@@ -67,6 +68,7 @@ fn selection_is_inspectable_without_greetd_wayland_or_executing_the_compositor()
         );
     }
     assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"))
+        .env("CANOPA_LANGUAGE", "en")
         .args(["session", "--compositor", "invalid", "--print-command"])
         .assert()
         .failure();

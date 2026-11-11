@@ -72,6 +72,7 @@ fn query(config: &Path, bus: &Bus) -> assert_cmd::Command {
 }
 fn query_source(config: &Path, bus: &Bus, source: &str) -> assert_cmd::Command {
     let mut command = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+    command.env("CANOPA_LANGUAGE", "en");
     command
         .arg("--canopa-config")
         .arg(config)
@@ -289,6 +290,7 @@ fn disabled_discovery_and_schema_preview_do_not_contact_the_service() {
     .unwrap();
     for action in ["check-config", "preview"] {
         let mut command = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("canopa-greeter"));
+        command.env("CANOPA_LANGUAGE", "en");
         command
             .arg("--canopa-config")
             .arg(&config)

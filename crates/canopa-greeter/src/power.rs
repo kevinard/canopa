@@ -7,10 +7,24 @@ pub enum Action {
     Restart,
 }
 impl Action {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Shutdown => "Shut down",
-            Self::Restart => "Restart",
+            Self::Shutdown => fl!("greeter-shut-down"),
+            Self::Restart => fl!("greeter-restart"),
+        }
+    }
+    /// The confirmation button.
+    pub fn confirm_label(self) -> String {
+        match self {
+            Self::Shutdown => fl!("greeter-confirm-shut-down"),
+            Self::Restart => fl!("greeter-confirm-restart"),
+        }
+    }
+    /// The question asked before the action.
+    pub fn warning(self) -> String {
+        match self {
+            Self::Shutdown => fl!("greeter-shut-down-warning"),
+            Self::Restart => fl!("greeter-restart-warning"),
         }
     }
     fn can(self) -> &'static str {
