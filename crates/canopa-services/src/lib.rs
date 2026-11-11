@@ -10,10 +10,11 @@
 //! | [`network`] | NetworkManager, systemd-networkd, iwd | [`network::NetworkStatus`], [`network::wifi::WifiSnapshot`] | [`network::status::watch`], `RuntimeBackend::changes` | Wi-Fi scan and connect |
 //! | [`bluetooth`] | BlueZ | [`bluetooth::Snapshot`] | [`bluetooth::watch`] | power, discovery, connect, [`bluetooth::pair`] |
 //! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot`, `audio::Defaults` | `audio::monitor`, `audio::watch_defaults` | volume, mute, default device, `audio::change_default` |
-//! | [`upower`] | UPower | [`upower::DisplayDevice`] | [`upower::watch`] | – |
+//! | [`upower`] | UPower | [`upower::DisplayDevice`], [`upower::PowerSupply`] (batteries, health, lid) | [`upower::watch`], [`upower::watch_power_supply`] | – |
 //! | [`power_profiles`] | power-profiles-daemon | [`power_profiles::PowerProfiles`] | [`power_profiles::watch`] | [`power_profiles::PowerProfiles::set`] |
+//! | [`power_switches`] | logind's lid switch | [`power_switches::LidAction`] | – | [`power_switches::handle_lid`] |
 //! | [`logind`] | systemd-logind | [`logind::Capabilities`], [`logind::InhibitorLock`] | [`logind::watch_capabilities`] | [`logind::request`], [`logind::inhibit`], [`logind::Session::set_brightness`] |
-//! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level` |
+//! | [`backlight`] | sysfs display and keyboard backlights through logind | [`backlight::Backlight`], [`backlight::KeyboardBacklight`] | [`backlight::watch`] (polling), [`backlight::hardware_changes`] | [`backlight::Backlight::set`], `set_level`, `set_perceptual` |
 //! | [`mpris`] | MPRIS 2 players | [`mpris::Player`] | [`mpris::Registry`] building blocks | [`mpris::control`] |
 //!
 //! Observers yield [`ServiceState`]: a missing service is `Unavailable`, not an
@@ -34,6 +35,7 @@ pub mod logind;
 pub mod mpris;
 pub mod network;
 pub mod power_profiles;
+pub mod power_switches;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod upower;

@@ -105,6 +105,38 @@ impl Backlight {
         (perceived(self.value, self.max) * 100.0).round() as u16
     }
 
+    /// The hardware level that looks like `percent` (1–100) on the same
+    /// curve as [`Backlight::perceptual`], so a slider moves evenly. Never 0.
+    pub fn perceptual_level(&self, percent: u16) -> u32 {
+        let fraction = f64::from(percent.min(100)) / 100.0;
+        ((f64::from(self.max) * fraction.powf(GAMMA)).round() as u32).clamp(1, self.max.max(1))
+    }
+
+    /// Set a perceived brightness, 1–100, as a slider shows it
+    /// ([`Backlight::perceptual`]), revalidating the device first.
+    pub async fn set_perceptual(
+        &self,
+        connection: &zbus::Connection,
+        percent: u16,
+    ) -> Result<(), Error> {
+        self.set_perceptual_at(Path::new(ROOT), connection, percent)
+            .await
+    }
+
+    /// [`Backlight::set_perceptual`] revalidating against the devices under `root`.
+    pub async fn set_perceptual_at(
+        &self,
+        root: &Path,
+        connection: &zbus::Connection,
+        percent: u16,
+    ) -> Result<(), Error> {
+        if !(1..=100).contains(&percent) {
+            return Err(Error::Invalid("Brightness must be between 1% and 100%."));
+        }
+        self.set_level_at(root, connection, self.perceptual_level(percent))
+            .await
+    }
+
     /// The lowest level a key press reaches: 1 % of the range and at least 1,
     /// so the panel never goes dark by accident.
     pub fn minimum(&self) -> u32 {
@@ -433,6 +465,41 @@ mod tests {
         // Something else set 0: a press down leaves it alone.
         assert_eq!(light(100, 0).stepped(5, false), 0);
         assert!(light(100, 0).stepped(5, true) >= 1);
+    }
+
+    #[tokio::test]
+    async fn sliders_use_the_perceptual_curve_both_ways() {
+        let light = |value| Backlight {
+            name: "acpi".into(),
+            max: 400,
+            value,
+        };
+        // Half of the perceived range is a quarter of the hardware range.
+        assert_eq!(light(0).perceptual_level(50), 100);
+        assert_eq!(light(100).perceptual(), 50);
+        assert_eq!(light(0).perceptual_level(100), 400);
+        assert_eq!(light(0).perceptual_level(1), 1);
+        for percent in [5, 20, 50, 73, 100] {
+            assert_eq!(
+                light(light(0).perceptual_level(percent)).perceptual(),
+                percent
+            );
+        }
+        let root = tempfile::tempdir().unwrap();
+        device(root.path(), "acpi", "firmware", "400", "100");
+        let bus = TestBus::new();
+        let logind = FakeLogind::default();
+        let _server = logind.serve(&bus).await;
+        let client = bus.connect().await;
+        light(100)
+            .set_perceptual_at(root.path(), &client, 50)
+            .await
+            .unwrap();
+        assert!(matches!(
+            light(100).set_perceptual_at(root.path(), &client, 0).await,
+            Err(Error::Invalid(_))
+        ));
+        assert_eq!(logind.brightness.lock().unwrap()[0].2, 100);
     }
 
     #[tokio::test]

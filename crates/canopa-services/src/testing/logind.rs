@@ -25,6 +25,13 @@ pub struct FakeLogind {
     pub brightness: Arc<Mutex<Vec<(String, String, u32)>>>,
     /// The session's `Type`; Canopa requires `wayland`.
     pub session_type: &'static str,
+    /// The Manager's `Docked` and `LidClosed` properties.
+    pub docked: Arc<std::sync::atomic::AtomicBool>,
+    pub lid_closed: Arc<std::sync::atomic::AtomicBool>,
+    /// `Inhibit` calls (what, mode), each with logind's end of the descriptor.
+    pub inhibitors_taken: Arc<Mutex<Vec<(String, String, std::os::unix::net::UnixStream)>>>,
+    /// `Lock` calls on the session.
+    pub locks: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Default for FakeLogind {
@@ -36,6 +43,10 @@ impl Default for FakeLogind {
             inhibitors: Vec::new(),
             brightness: Arc::default(),
             session_type: "wayland",
+            docked: Arc::default(),
+            lid_closed: Arc::default(),
+            inhibitors_taken: Arc::default(),
+            locks: Arc::default(),
         }
     }
 }
@@ -46,6 +57,28 @@ pub fn inhibitor(what: &str, who: &str, why: &str, mode: &str) -> InhibitorEntry
 }
 
 impl FakeLogind {
+    /// The lock types of the inhibitors clients still hold.
+    pub fn held(&self) -> Vec<String> {
+        use std::io::Read;
+        let mut taken = self.inhibitors_taken.lock().unwrap();
+        taken.retain_mut(|(_, _, end)| {
+            end.set_nonblocking(true).unwrap();
+            // A closed client end reads as end of file.
+            !matches!(end.read(&mut [0; 1]), Ok(0))
+        });
+        taken.iter().map(|(what, _, _)| what.clone()).collect()
+    }
+
+    /// Requested methods, in order, without the interactive flag.
+    pub fn requested(&self) -> Vec<String> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(method, _)| method.clone())
+            .collect()
+    }
+
     fn record(&self, method: &str, interactive: bool) -> zbus::fdo::Result<()> {
         self.calls
             .lock()
@@ -108,6 +141,29 @@ impl FakeLogind {
     fn power_off(&self, interactive: bool) -> zbus::fdo::Result<()> {
         self.record("PowerOff", interactive)
     }
+    fn inhibit(
+        &self,
+        what: &str,
+        _who: &str,
+        _why: &str,
+        mode: &str,
+    ) -> zbus::fdo::Result<zbus::zvariant::OwnedFd> {
+        let (client, logind) = std::os::unix::net::UnixStream::pair()
+            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
+        self.inhibitors_taken
+            .lock()
+            .unwrap()
+            .push((what.into(), mode.into(), logind));
+        Ok(std::os::fd::OwnedFd::from(client).into())
+    }
+    #[zbus(property)]
+    fn docked(&self) -> bool {
+        self.docked.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    #[zbus(property)]
+    fn lid_closed(&self) -> bool {
+        self.lid_closed.load(std::sync::atomic::Ordering::SeqCst)
+    }
     fn list_inhibitors(&self) -> Vec<InhibitorEntry> {
         self.inhibitors.clone()
     }
@@ -135,6 +191,11 @@ impl FakeSession {
     #[zbus(property, name = "Type")]
     fn session_type(&self) -> &str {
         self.0.session_type
+    }
+    fn lock(&self) {
+        self.0
+            .locks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
     fn set_brightness(&self, subsystem: &str, name: &str, level: u32) {
         self.0

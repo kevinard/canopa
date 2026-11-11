@@ -184,6 +184,130 @@ async fn read_state(proxy: &UPowerDeviceProxy<'_>) -> zbus::Result<DisplayDevice
     })
 }
 
+/// UPower's manager object, with the lid and the device list.
+pub const MANAGER_PATH: &str = "/org/freedesktop/UPower";
+const DEVICE: &str = "org.freedesktop.UPower.Device";
+
+/// One battery that powers the computer, with its health where UPower knows it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Battery {
+    /// The UPower object path, a stable id while the battery is present.
+    pub path: String,
+    pub vendor: String,
+    pub model: String,
+    /// 0.0 to 100.0.
+    pub percentage: f64,
+    pub state: PowerState,
+    /// Full capacity as a percentage of the design capacity.
+    pub capacity: Option<f64>,
+    /// Watt-hours when full now, and when new.
+    pub energy_full: Option<f64>,
+    pub energy_full_design: Option<f64>,
+    /// Charge cycles, when the firmware reports them.
+    pub cycles: Option<u32>,
+    /// Seconds until empty or full, when UPower has an estimate.
+    pub time_to_empty: Option<u64>,
+    pub time_to_full: Option<u64>,
+}
+
+/// The computer's power supply: AC or battery, the lid and each battery.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PowerSupply {
+    pub on_battery: bool,
+    pub lid_present: bool,
+    pub lid_closed: bool,
+    pub batteries: Vec<Battery>,
+}
+
+fn property<T: TryFrom<zbus::zvariant::OwnedValue>>(
+    properties: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+    name: &str,
+) -> Option<T> {
+    properties
+        .get(name)
+        .and_then(|value| value.try_clone().ok())
+        .and_then(|value| T::try_from(value).ok())
+}
+
+async fn properties(
+    conn: &zbus::Connection,
+    path: &str,
+    interface: &'static str,
+) -> Result<std::collections::HashMap<String, zbus::zvariant::OwnedValue>, Error> {
+    let proxy = zbus::fdo::PropertiesProxy::builder(conn)
+        .destination(SERVICE)?
+        .path(path.to_owned())?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    let interface = zbus::names::InterfaceName::from_static_str(interface)
+        .map_err(|_| Error::Invalid("interface name"))?;
+    Ok(tokio::time::timeout(crate::bus::DEADLINE, proxy.get_all(interface)).await??)
+}
+
+/// Read the lid, the power source and every present system battery.
+pub async fn read_power_supply(conn: &zbus::Connection) -> Result<PowerSupply, Error> {
+    let manager = properties(conn, MANAGER_PATH, "org.freedesktop.UPower").await?;
+    let proxy = zbus::Proxy::new(conn, SERVICE, MANAGER_PATH, "org.freedesktop.UPower").await?;
+    let paths: Vec<zbus::zvariant::OwnedObjectPath> =
+        tokio::time::timeout(crate::bus::DEADLINE, proxy.call("EnumerateDevices", &())).await??;
+    let mut batteries = Vec::new();
+    // A laptop has one or two batteries; bound what another process can send.
+    for path in paths.into_iter().take(16) {
+        let Ok(device) = properties(conn, path.as_str(), DEVICE).await else {
+            continue;
+        };
+        // Type 2 is a battery; PowerSupply excludes mice and headsets.
+        if property::<u32>(&device, "Type") != Some(2)
+            || property::<bool>(&device, "PowerSupply") != Some(true)
+            || property::<bool>(&device, "IsPresent") == Some(false)
+        {
+            continue;
+        }
+        let positive = |name| property::<f64>(&device, name).filter(|value| *value > 0.0);
+        let seconds = |name| {
+            property::<i64>(&device, name)
+                .filter(|value| *value > 0)
+                .map(|value| value as u64)
+        };
+        let text = |name| {
+            crate::bus::bounded_text(
+                property::<String>(&device, name).unwrap_or_default().trim(),
+                80,
+            )
+        };
+        batteries.push(Battery {
+            path: path.to_string(),
+            vendor: text("Vendor"),
+            model: text("Model"),
+            percentage: property(&device, "Percentage").unwrap_or(0.0),
+            state: PowerState::from_upower(property(&device, "State").unwrap_or(0)),
+            capacity: positive("Capacity").map(|value| value.min(100.0)),
+            energy_full: positive("EnergyFull"),
+            energy_full_design: positive("EnergyFullDesign"),
+            cycles: property::<i32>(&device, "ChargeCycles")
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value > 0),
+            time_to_empty: seconds("TimeToEmpty"),
+            time_to_full: seconds("TimeToFull"),
+        });
+    }
+    Ok(PowerSupply {
+        on_battery: property(&manager, "OnBattery").unwrap_or(false),
+        lid_present: property(&manager, "LidIsPresent").unwrap_or(false),
+        lid_closed: property(&manager, "LidIsClosed").unwrap_or(false),
+        batteries,
+    })
+}
+
+/// [`read_power_supply`] again after each UPower signal (property changes,
+/// devices added or removed), as a recovering stream.
+pub fn watch_power_supply(conn: zbus::Connection) -> StateStream<PowerSupply> {
+    crate::bus::watch_service(conn, SERVICE, |conn| async move {
+        read_power_supply(&conn).await
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +398,48 @@ mod tests {
         assert!(!PowerState::from_upower(4).is_charging());
         assert!(!PowerState::from_upower(5).is_charging());
         assert!(PowerState::from_upower(1).is_charging());
+    }
+
+    #[tokio::test]
+    async fn batteries_lid_and_health_are_read_and_followed() {
+        use crate::testing::upower::FakeUPower;
+        let bus = TestBus::new();
+        let client = bus.connect().await;
+        let mut states = watch_power_supply(client.clone());
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(3), states.next())
+                .await
+                .unwrap(),
+            Some(ServiceState::Unavailable)
+        );
+        let upower = FakeUPower::serve(&bus).await;
+        let supply = read_power_supply(&client).await.unwrap();
+        assert!(supply.lid_present && !supply.lid_closed && supply.on_battery);
+        // The mouse battery is not a power supply.
+        assert_eq!(supply.batteries.len(), 1);
+        let battery = &supply.batteries[0];
+        assert_eq!(
+            (battery.vendor.as_str(), battery.model.as_str()),
+            ("ACME", "BAT0")
+        );
+        assert_eq!(battery.capacity, Some(87.5));
+        assert_eq!(battery.cycles, Some(312));
+        assert_eq!(battery.time_to_empty, Some(5400));
+        assert_eq!(battery.time_to_full, None);
+        assert_eq!(battery.state, PowerState::Discharging);
+        let ServiceState::Available(first) = states.next().await.unwrap() else {
+            panic!("power supply expected");
+        };
+        assert!(!first.lid_closed);
+        upower.set_lid(true).await;
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while let Some(state) = states.next().await {
+                if state.available().is_some_and(|supply| supply.lid_closed) {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
     }
 }

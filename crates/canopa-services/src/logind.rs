@@ -295,6 +295,12 @@ pub async fn inhibit(
     Ok(fd.into())
 }
 
+/// A boolean Manager property, such as `Docked` or `LidClosed`.
+pub async fn manager_flag(connection: &zbus::Connection, name: &str) -> Result<bool, Error> {
+    let manager = manager(connection).await?;
+    Ok(tokio::time::timeout(DEADLINE, manager.get_property::<bool>(name)).await??)
+}
+
 /// Request the action. Success means logind accepted it, not that it finished.
 pub async fn request(connection: &zbus::Connection, action: SessionAction) -> Result<(), Failure> {
     let manager = manager(connection)
@@ -397,6 +403,12 @@ impl Session {
 
     pub fn path(&self) -> &zbus::zvariant::ObjectPath<'_> {
         self.proxy.path()
+    }
+
+    /// Ask logind to lock this session; the session's locker answers its
+    /// `Lock` signal.
+    pub async fn lock(&self) -> Result<(), Error> {
+        Ok(tokio::time::timeout(DEADLINE, self.proxy.call::<_, _, ()>("Lock", &())).await??)
     }
 
     /// Set a device's brightness through logind, which owns the permission:
