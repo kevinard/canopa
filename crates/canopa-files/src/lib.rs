@@ -24,6 +24,7 @@ pub mod local_activity;
 #[cfg(feature = "local-runtime")]
 pub mod local_volumes;
 pub mod mounts;
+pub mod network;
 pub mod opening;
 #[cfg(feature = "background-operations")]
 pub mod operation_attention;
