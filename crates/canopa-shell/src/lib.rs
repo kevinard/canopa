@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod i18n;
 #[cfg(test)]
 mod test_bus;
 pub mod external_panel {

@@ -20,6 +20,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-apps.workspace = true
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-notify-client.workspace = true

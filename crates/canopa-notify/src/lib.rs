@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod i18n;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

@@ -23,6 +23,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
+canopa-i18n.workspace = true
 anyhow.workspace = true
 canopa-config.workspace = true
 canopa-theme.workspace = true

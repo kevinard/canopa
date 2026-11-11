@@ -11,6 +11,7 @@ default = ["desktop"]
 desktop = ["dep:iced", "dep:canopa-ui"]
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-apps.workspace = true
 canopa-launcher.workspace = true
 canopa-notify-client.workspace = true

@@ -57,6 +57,7 @@ name = "uutils_copy"
 path = "tests/uutils_copy.rs"
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-apps.workspace = true
 canopa-file.workspace = true
 chrono.workspace = true

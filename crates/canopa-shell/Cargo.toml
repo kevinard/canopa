@@ -46,6 +46,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-apps = { workspace = true, optional = true }
 canopa-launcher = { workspace = true, optional = true }
 gio = { workspace = true, optional = true }

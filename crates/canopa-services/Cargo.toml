@@ -13,6 +13,7 @@ audio = ["dep:libpulse-binding"]
 test-support = ["dep:tempfile", "tokio/process"]
 
 [dependencies]
+canopa-i18n.workspace = true
 futures-util.workspace = true
 libpulse-binding = { workspace = true, optional = true }
 serde.workspace = true

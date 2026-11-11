@@ -1,4 +1,6 @@
 //! Launcher-owned preferences and read-only discovery shared with Settings.
+#[macro_use]
+pub mod i18n;
 pub mod clipboard;
 
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,6 @@
 //! Canopa's desktop portal backends. The frontend owns sandbox/document grants.
+#[macro_use]
+pub mod i18n;
 pub mod access;
 #[cfg(feature = "desktop")]
 pub mod access_ui;

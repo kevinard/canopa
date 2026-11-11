@@ -19,6 +19,7 @@ name = "canopa-idle"
 path = "src/bin/idle.rs"
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-session-ui.workspace = true
 canopa-widgets.workspace = true
 futures-util.workspace = true

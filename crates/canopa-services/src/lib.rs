@@ -32,6 +32,8 @@
 //! Each module starts with an example. Tests use the fakes in `testing`,
 //! enabled by the `test-support` feature.
 
+#[macro_use]
+pub mod i18n;
 pub mod accounts;
 #[cfg(feature = "audio")]
 pub mod audio;

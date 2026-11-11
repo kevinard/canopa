@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+canopa-i18n.workspace = true
 tokio.workspace = true
 zbus.workspace = true
 canopa-widgets.workspace = true

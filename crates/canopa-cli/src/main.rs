@@ -1,4 +1,6 @@
 //! Product configuration operations delegate schema checks to the owning executables.
+#[macro_use]
+mod i18n;
 use canopa_config::{Component, Format, MAX_BYTES, Request};
 use clap::{Parser, Subcommand};
 use std::{

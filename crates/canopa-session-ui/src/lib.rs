@@ -1,4 +1,6 @@
 //! Software session presentation, independent of authentication and surface protocols.
+#[macro_use]
+pub mod i18n;
 pub mod accessibility;
 pub mod background;
 pub mod helper;

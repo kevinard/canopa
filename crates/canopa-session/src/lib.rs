@@ -1,4 +1,6 @@
 //! Independent software-rendered wallpaper and secure session-lock applications.
+#[macro_use]
+pub mod i18n;
 pub mod auth;
 pub mod background;
 pub mod control;

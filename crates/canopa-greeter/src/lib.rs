@@ -1,4 +1,6 @@
 //! Unprivileged Canopa greeter. Greetd owns PAM, credentials and session lifetime.
+#[macro_use]
+pub mod i18n;
 pub mod accounts;
 pub mod avatars;
 pub mod catalog;

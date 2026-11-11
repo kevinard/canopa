@@ -1,4 +1,6 @@
 //! Canopa Files owns browsing, local file operations, previews, and user preferences.
+#[macro_use]
+pub mod i18n;
 pub mod action_jobs;
 pub mod actions;
 pub mod activation;
