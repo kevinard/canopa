@@ -687,3 +687,6 @@ portal-shortcuts-stale = Available shortcuts changed. Review your choices and tr
 portal-shortcuts-unresolved = A selected key combination is unavailable in the current keyboard layout.
 portal-shortcuts-failed = These shortcuts could not be applied. Review the selected keys and try again.
 portal-shortcuts-missing-key = Choose a key for every selected shortcut.
+
+# Document title shown when signing in to check unresolved printer jobs.
+portal-printer-recovery-title = Printer recovery

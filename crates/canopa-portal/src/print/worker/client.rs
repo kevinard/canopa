@@ -152,7 +152,7 @@ impl Client {
             crate::print::Context {
                 app_id: "org.canopa.Portal".into(),
                 parent_window: String::new(),
-                title: fl!("portal-recovery-title"),
+                title: fl!("portal-printer-recovery-title"),
                 modal: false,
             },
         );
@@ -749,7 +749,7 @@ print(json.dumps(dict(event='retired_printer_jobs',report=dict(retired=0,unresol
                 crate::print::Context {
                     app_id: "org.canopa.Portal".into(),
                     parent_window: String::new(),
-                    title: fl!("portal-recovery-title"),
+                    title: fl!("portal-printer-recovery-title"),
                     modal: false,
                 },
             );

@@ -613,3 +613,5 @@ portal-shortcuts-stale = Les raccourcis disponibles ont changé. Vérifiez vos c
 portal-shortcuts-unresolved = Une combinaison de touches sélectionnée n’est pas disponible avec la disposition de clavier actuelle.
 portal-shortcuts-failed = Ces raccourcis n’ont pas pu être appliqués. Vérifiez les touches sélectionnées et réessayez.
 portal-shortcuts-missing-key = Choisissez une touche pour chaque raccourci sélectionné.
+
+portal-printer-recovery-title = Récupération des travaux d’impression
