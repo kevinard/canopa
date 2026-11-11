@@ -87,7 +87,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | Keyboard | Full flow | works | Arrows, Enter, Tab for actions, Ctrl+Enter, Ctrl+1–5, Backspace (`surface/input.rs:91-151`). Escape clears, then closes. Default bind `Mod+Space` (`packaging/niri/defaults.kdl:14`) | Good |
 | Keyboard | Multi-monitor | works | Opens on the bar of Niri's focused output; falls back to the first bar (`app/surfaces.rs:278-304`, `app/panel.rs:1587`) | Correct. Needs a bar on some output |
 | Input methods | fcitx5 / text-input-v3 | partial (unverified) | layershellev binds `zwp_text_input_v3` (`forks/exwlshelleventloop/layershellev/src/lib.rs:1233-1270`). iced_layershell forwards IME requests (`iced_layershell/src/multi_window.rs:1088-1106`). `ime_allowed` is one global flag for all of Shell's surfaces. No Canopa test | Unknown. PRD W5 still lists it |
-| Accessibility | AccessKit tree | missing | The Shell bridge publishes only `PanelContent::ExternalProvider` (`app/canopa_accessibility.rs:574-577`). The launcher is a Menu panel | Orca says nothing in the launcher. This blocks the W6 exit criterion "launch apps" |
+| Accessibility | AccessKit tree | missing | The Shell bridge publishes only `PanelContent::ExternalProvider` (`app/canopa_accessibility.rs:574-577`). The launcher is a Menu panel | Orca says nothing in the launcher. This blocks the W6 exit criterion "launch apps" **Fixed in 76c0460:** the launcher publishes a search field controlling the results list, the selected row as active descendant (announced as you move), action rows, the browse view and an error live region (ADR 0144). |
 | Translations | Strings | missing | No i18n crate in the workspace. About 220 capitalized string literals in launcher files. Scope keywords are hard-coded (`launcher.rs:160-205`, `app/launcher.rs:32-48`) | English only |
 | Performance | Cold open | rough (unmeasured) | Desktop entries are rescanned before the panel opens (`app/overlay_adapter.rs:183-200`). The file index builds on first open. There is no recorded latency figure in `.scratch/unified-launcher/` | Fine with 78 entries on this host. Not measured with a large Flatpak set |
 | Performance | Per-keystroke cost | rough (**Fixed in d768cb9**: `web` and `date` answer in-process; qalc and configured extensions wait 250 ms) | `web` and `date` are `global=true` and run `canopa-shell --launcher-extension` (`launcher/bundled.rs:15-26`). `qalc` runs for math-like queries. All of this follows a 100 ms debounce (`app/launcher.rs:1101`) | Each pause in typing forks up to 3 processes. Matters on low-end and battery hardware |
@@ -103,7 +103,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    Helix matcher, which handles Unicode case and normalization) inside
    `panel_search`. Also match on the desktop ID and the `Exec` basename as a
    third field. *Size:* S.
-2. **Accessibility tree for the launcher.** *Impact:* a blind user can't start
+2. **Accessibility tree for the launcher.** (**Done** in 76c0460.) *Impact:* a blind user can't start
    an app. *Approach:* extend `PanelAccessibility` to Menu panels. Expose the
    search field as `Role::SearchInput`, results as `ListBox`/`ListBoxItem`
    with the active descendant tracking the selection, and status as a live

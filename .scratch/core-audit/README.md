@@ -27,6 +27,7 @@ detail, `file:line` evidence and sizes:
 - **Cross-cutting:**
   - No component is translatable.
   - Accessibility trees cover only the Shell provider panels and Notify.
+    **Fixed (Tier 3.8 accessibility):** shared AccessKit layer, ADR 0144.
   - Icon lookup is hicolor-only in both the launcher and Notify, and Files has 8
     extension-based icons.
 
@@ -52,6 +53,7 @@ its commit. Commits by area:
 | Tier 3.1 Network | `50a3626`, `77f2b41`, `3861301` | Settings Network page, NetworkManager settings client and secret agent (ADR 0139), Shell Wi-Fi off/disconnect/forget and wired/VPN state |
 | Tier 3.2 Sound | `43b9907`, `1e58759` | Settings Sound page: devices, balance, applications, card profiles, level meter, notification sounds |
 | Tier 3.3 Power | `53776d4`, `101c4ba` | Settings Power page: battery health, power modes, perceptual brightness, lid and power button (ADR 0140), idle timeouts without Stasis |
+| Tier 3.8 Accessibility | `924d5ed`, `c1cdf06`, `78eb2d7`, `e2dd8a7`, `e04192e`, `099c90a`, `76c0460`…`e70f99d`, `1bea6f7`…`64137dc`, `7cc930a`…`3ba710c` | Shared AccessKit layer in `canopa-ui` (ADR 0144): Settings with stable IDs, launcher, Shell bar/Quick settings/menus/tray, Files, portal FileChooser/AppChooser/Access and five more dialogs; high-contrast palette, portal `contrast`/`reduced-motion`, Settings Accessibility page with cursor size; assertive critical banners. Not yet run with Orca |
 | Tier 3.7 Settings pages | `c8d9e06`, `f82cffa`, `e7c5f15`, `ef645c5`, `f1abe0d`, `53a8820`, `27fa4ad`, `97cbb3f`, `03a9256` | Bluetooth, Notifications, Default applications, Date & time (ADR 0142), About, Region & language, Users (ADR 0143), Privacy, Printers; not yet run in a live session |
 
 Workspace gate after both tiers: only Files `device_runtime` ("private device
@@ -100,6 +102,7 @@ been run in a live session yet; use the hands-on checks in each report.
 7. **Settings:** default applications and date/time, then users, region, privacy and printers. **Done** (with Bluetooth, Notifications and About): see the Tier 3.7 row above and the Settings audit rows.
 8. **Cross-cutting:**
    - AccessKit in `canopa-ui`, so Settings, the launcher and the bar get trees.
+     **Done:** see the Tier 3.8 row in Progress.
    - Fluent translations.
    - Network locations in Files through GVFS.
 
