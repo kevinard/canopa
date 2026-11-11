@@ -52,6 +52,7 @@ its commit. Commits by area:
 | Tier 3.1 Network | `50a3626`, `77f2b41`, `3861301` | Settings Network page, NetworkManager settings client and secret agent (ADR 0139), Shell Wi-Fi off/disconnect/forget and wired/VPN state |
 | Tier 3.2 Sound | `43b9907`, `1e58759` | Settings Sound page: devices, balance, applications, card profiles, level meter, notification sounds |
 | Tier 3.3 Power | `53776d4`, `101c4ba` | Settings Power page: battery health, power modes, perceptual brightness, lid and power button (ADR 0140), idle timeouts without Stasis |
+| Tier 3.7 Settings pages | `c8d9e06`, `f82cffa`, `e7c5f15`, `ef645c5`, `f1abe0d`, `53a8820`, `27fa4ad`, `97cbb3f`, `03a9256` | Bluetooth, Notifications, Default applications, Date & time (ADR 0142), About, Region & language, Users (ADR 0143), Privacy, Printers; not yet run in a live session |
 
 Workspace gate after both tiers: only Files `device_runtime` ("private device
 runtime did not settle", pre-existing) and the flaky Files video playback test
@@ -96,7 +97,7 @@ been run in a live session yet; use the hands-on checks in each report.
 4. **Files Open With and executables** (M), **thumbnails** (M–L, after C), **copy throughput and ETA** (L engine, S UI).
 5. **Notify everyday controls:** DND schedule and timer, suppression over fullscreen and screen sharing, a Settings Notifications page, "mark all read", lock-screen policy. Also finish W15: portal v2 inline replies, `display-hint`, banner timer. **Done in Notify** (ADR 0055, commits above); the Settings page over [the control API](../../docs/notify/settings-control-api.md) is in f82cffa. Not yet run in a live session.
 6. **Launcher:** desktop actions (M), browse all apps (the empty query shows 20 rows), session actions searchable. **Done in 15fed5b, f286c32 and d768cb9**, with running-app switching, per-app scopes, Settings pages from the registry and in-process bundled providers.
-7. **Settings:** default applications and date/time, then users, region, privacy and printers.
+7. **Settings:** default applications and date/time, then users, region, privacy and printers. **Done** (with Bluetooth, Notifications and About): see the Tier 3.7 row above and the Settings audit rows.
 8. **Cross-cutting:**
    - AccessKit in `canopa-ui`, so Settings, the launcher and the bar get trees.
    - Fluent translations.
