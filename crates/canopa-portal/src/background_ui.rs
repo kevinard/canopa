@@ -1,4 +1,5 @@
 //! Opened only by an explicit review action on the background notification.
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::background::{BackgroundRequest, Decision};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
@@ -28,7 +29,7 @@ pub fn run(
                 },
                 ..Default::default()
             };
-            let (_, open) = window::open_dialog_with_activation(
+            let (window, open) = window::open_dialog_with_activation(
                 String::new(),
                 false,
                 activation_token.clone(),
@@ -40,6 +41,8 @@ pub fn run(
                     theme: theme.clone(),
                     output: output.clone(),
                     completed: false,
+                    window,
+                    accessibility: Some(a11y::Accessibility::new("canopa-background", WINDOW_KEY)),
                 },
                 open.map(|_| Message::Opened),
             )
@@ -47,7 +50,7 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| "Background activity — Canopa".to_owned())
+    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -56,11 +59,17 @@ pub fn run(
     Ok(result.lock().expect("background result").take())
 }
 
+/// The AT-SPI window of the background question and its title.
+const WINDOW_KEY: &str = "background";
+const WINDOW_TITLE: &str = "Background activity — Canopa";
+
 struct Dialog {
     request: BackgroundRequest,
     theme: Theme,
     output: Arc<Mutex<Option<Decision>>>,
     completed: bool,
+    window: window::Id,
+    accessibility: Option<a11y::Accessibility<Message>>,
 }
 #[derive(Clone, Debug)]
 enum Message {
@@ -68,10 +77,18 @@ enum Message {
     Decide(Decision),
     Cancel,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
 }
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
+}
+
 impl Dialog {
     fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(|event, status, _| {
+        let input = iced::event::listen_with(|event, status, _| {
             let escape = matches!(
                 &event,
                 Event::Keyboard(keyboard::Event::KeyPressed {
@@ -80,27 +97,50 @@ impl Dialog {
                 })
             );
             (escape || status == iced::event::Status::Ignored).then_some(Message::Event(event))
-        })
+        });
+        match &self.accessibility {
+            Some(state) => Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
     }
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+    fn exit(&mut self) -> Task<Message> {
+        self.completed = true;
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if self.completed {
             return Task::none();
         }
         match message {
+            Message::Opened => {
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(WINDOW_TITLE, window);
+                }
+            }
             Message::Decide(decision) => {
                 *self.output.lock().expect("background result") = Some(decision);
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Cancel | Message::Event(Event::Window(window::Event::CloseRequested)) => {
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key, modifiers, ..
             })) => {
                 if key == keyboard::Key::Named(keyboard::key::Named::Escape) {
-                    return self.update(Message::Cancel);
+                    return self.apply(Message::Cancel);
                 }
                 if key == keyboard::Key::Named(keyboard::key::Named::Tab) {
                     return if modifiers.shift() {
@@ -115,54 +155,69 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
+        const QUESTION: &str = "Allow background activity?";
+        const EXPLANATION: &str = "This app is running without open windows. Allow once applies only to its current run. Block stops the current run.";
         let content = column![
-            text("Allow background activity?").size(22),
+            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(22)),
             text(&self.request.name).size(18),
             text(&self.request.app_id).style(canopa_ui::muted),
-            text("This app is running without open windows. Allow once applies only to its current run. Block stops the current run."),
-            text("Closing this question keeps the current run without changing its permission.").style(canopa_ui::muted),
-        ].spacing(14).width(Length::Fill);
+            text(EXPLANATION),
+            text("Closing this question keeps the current run without changing its permission.")
+                .style(canopa_ui::muted),
+        ]
+        .spacing(14)
+        .width(Length::Fill);
+        let choice = |key: &'static str, label: &'static str, message: Message, treatment| {
+            a11y::button(
+                key,
+                label,
+                Some(message.clone()),
+                canopa_ui::action(text(label), Some(message), treatment, false).width(Length::Fill),
+            )
+        };
         let choices = row![
-            canopa_ui::action(
-                text("Block"),
-                Some(Message::Decide(Decision::Forbid)),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill),
-            canopa_ui::action(
-                text("Allow once"),
-                Some(Message::Decide(Decision::AllowOnce)),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill),
-            canopa_ui::action(
-                text("Allow"),
-                Some(Message::Decide(Decision::Allow)),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill),
+            choice(
+                "background-block",
+                "Block",
+                Message::Decide(Decision::Forbid),
+                canopa_ui::Action::Normal
+            ),
+            choice(
+                "background-allow-once",
+                "Allow once",
+                Message::Decide(Decision::AllowOnce),
+                canopa_ui::Action::Normal
+            ),
+            choice(
+                "background-allow",
+                "Allow",
+                Message::Decide(Decision::Allow),
+                canopa_ui::Action::Normal
+            ),
         ]
         .spacing(12);
         let footer = column![
             choices,
-            canopa_ui::action(
-                text("Cancel"),
-                Some(Message::Cancel),
-                canopa_ui::Action::Quiet,
-                false
+            choice(
+                "background-cancel",
+                "Cancel",
+                Message::Cancel,
+                canopa_ui::Action::Quiet
             )
-            .width(Length::Fill)
         ]
         .spacing(8);
-        container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        a11y::dialog_window(
+            WINDOW_KEY,
+            WINDOW_TITLE,
+            Node::alert_dialog(QUESTION)
+                .key("background-dialog")
+                .description(format!("{}. {EXPLANATION}", self.request.name)),
+            container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
+                .padding(20)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(canopa_ui::surface),
+        )
     }
 }
 
@@ -176,6 +231,8 @@ mod tests {
             theme: Theme::Dark,
             output: Arc::default(),
             completed: false,
+            window: window::Id::unique(),
+            accessibility: None,
         }
     }
     #[test]
