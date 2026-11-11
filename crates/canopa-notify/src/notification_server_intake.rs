@@ -74,11 +74,30 @@ fn string_hint(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<String>
         .and_then(|value| value.downcast_ref::<String>().ok())
 }
 
+/// The specification types `urgency` as a byte and `value` as int32, but common
+/// clients send any integer width (`notify-send -h int:urgency:2`). Accept every
+/// D-Bus integer type so such requests keep their meaning.
+fn integer_hint(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<i64> {
+    let value = hints.get(key)?;
+    value
+        .downcast_ref::<u8>()
+        .map(i64::from)
+        .or_else(|_| value.downcast_ref::<i16>().map(i64::from))
+        .or_else(|_| value.downcast_ref::<u16>().map(i64::from))
+        .or_else(|_| value.downcast_ref::<i32>().map(i64::from))
+        .or_else(|_| value.downcast_ref::<u32>().map(i64::from))
+        .or_else(|_| value.downcast_ref::<i64>())
+        .ok()
+        .or_else(|| {
+            value
+                .downcast_ref::<u64>()
+                .ok()
+                .and_then(|value| i64::try_from(value).ok())
+        })
+}
+
 fn urgency_hint(hints: &HashMap<String, OwnedValue>) -> Urgency {
-    match hints
-        .get("urgency")
-        .and_then(|value| value.downcast_ref::<u8>().ok())
-    {
+    match integer_hint(hints, "urgency") {
         Some(0) => Urgency::Low,
         Some(2) => Urgency::Critical,
         _ => Urgency::Normal,
@@ -86,20 +105,20 @@ fn urgency_hint(hints: &HashMap<String, OwnedValue>) -> Urgency {
 }
 
 fn progress_hint(hints: &HashMap<String, OwnedValue>) -> Option<i64> {
-    hints
-        .get("value")
-        .and_then(|value| value.downcast_ref::<i32>().ok())
-        .map(i64::from)
+    integer_hint(hints, "value")
 }
 
 fn resident_hint(hints: &HashMap<String, OwnedValue>) -> bool {
     bool_hint(hints, "resident")
 }
 
+/// Boolean hints also accept integers, nonzero meaning true, because
+/// `notify-send -h int:transient:1` is the common spelling.
 fn bool_hint(hints: &HashMap<String, OwnedValue>, key: &str) -> bool {
     hints
         .get(key)
         .and_then(|value| value.downcast_ref::<bool>().ok())
+        .or_else(|| integer_hint(hints, key).map(|value| value != 0))
         .unwrap_or(false)
 }
 
@@ -350,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_only_boolean_true_resident_hint() {
+    fn decodes_boolean_or_integer_resident_hint() {
         assert!(
             request_with_hints(HashMap::from([(
                 "resident".to_string(),
@@ -373,6 +392,59 @@ mod tests {
             )]))
             .resident
         );
+        assert!(
+            request_with_hints(HashMap::from([(
+                "resident".to_string(),
+                OwnedValue::from(1_i32)
+            )]))
+            .resident
+        );
+    }
+
+    // Mirrors `notify-send -h int:transient:1` and `-h byte:transient:1`.
+    #[test]
+    fn decodes_integer_transient_hint_like_notify_send() {
+        for (value, expected) in [
+            (OwnedValue::from(1_i32), true),
+            (OwnedValue::from(1_u8), true),
+            (OwnedValue::from(1_u32), true),
+            (OwnedValue::from(0_i32), false),
+            (OwnedValue::from(true), true),
+            (OwnedValue::from(false), false),
+        ] {
+            let input = request_with_hints(HashMap::from([("transient".to_string(), value)]));
+            assert_eq!(input.transient, expected);
+        }
+        assert!(
+            request_with_hints(HashMap::from([(
+                "suppress-sound".to_string(),
+                OwnedValue::from(1_i32)
+            )]))
+            .suppress_sound
+        );
+    }
+
+    // Mirrors `notify-send -u critical` (byte) and `-h int:urgency:2` (int32).
+    #[test]
+    fn decodes_urgency_from_byte_or_wider_integers() {
+        for (value, expected) in [
+            (OwnedValue::from(2_u8), Urgency::Critical),
+            (OwnedValue::from(2_i32), Urgency::Critical),
+            (OwnedValue::from(2_u32), Urgency::Critical),
+            (OwnedValue::from(0_i32), Urgency::Low),
+            (OwnedValue::from(1_i32), Urgency::Normal),
+            (OwnedValue::from(7_i32), Urgency::Normal),
+            (OwnedValue::from(-1_i32), Urgency::Normal),
+            (string_value("critical"), Urgency::Normal),
+        ] {
+            let input = request_with_hints(HashMap::from([("urgency".to_string(), value)]));
+            assert_eq!(input.urgency, expected);
+        }
+        let input = request_with_hints(HashMap::from([(
+            "value".to_string(),
+            OwnedValue::from(40_u32),
+        )]));
+        assert_eq!(input.progress, Some(40));
     }
 
     #[test]

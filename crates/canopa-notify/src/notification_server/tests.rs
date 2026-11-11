@@ -231,30 +231,114 @@ async fn live_resource_exhaustion_returns_limits_exceeded_without_consuming_wire
 }
 
 #[tokio::test]
-async fn automatic_ids_skip_retired_caller_tokens() {
+async fn automatic_ids_skip_closed_caller_tokens_that_callers_may_reuse() {
     let fixture = ServerFixture::new("RetiredAllocation", NotificationSenderIds::new()).await;
     assert_eq!(fixture.notify(2, "Caller token").await.unwrap(), 2);
     fixture.close(2).await;
     assert_eq!(fixture.notify(0, "Generated").await.unwrap(), 1);
     fixture.close(1).await;
     assert_eq!(fixture.notify(0, "Unrelated").await.unwrap(), 3);
-    assert_dbus_error(
-        fixture.notify(2, "Retired").await,
-        "org.freedesktop.DBus.Error.InvalidArgs",
-    );
     assert!(
         fixture
             .proxy
             .call::<_, _, ()>("CloseNotification", &(2u32,))
             .await
-            .is_err()
+            .is_err(),
+        "a closed token is not live until it is reused"
     );
+    assert_eq!(fixture.notify(2, "Reused").await.unwrap(), 2);
     let snapshot = fixture.daemon.snapshot().await.unwrap();
-    assert_eq!(snapshot.active.len(), 1);
-    assert_eq!(
-        snapshot.active[0].accepted_notification.summary,
-        "Unrelated"
+    let mut summaries: Vec<_> = snapshot
+        .active
+        .iter()
+        .map(|thread| thread.accepted_notification.summary.as_str())
+        .collect();
+    summaries.sort_unstable();
+    assert_eq!(summaries, ["Reused", "Unrelated"]);
+    assert!(
+        snapshot.history.iter().any(|thread| {
+            thread.accepted_notification.summary == "Caller token"
+                && thread.status == canopa_notify::NotificationStatus::Closed
+        }),
+        "reuse starts a new thread instead of reviving closed history"
     );
+    assert_eq!(fixture.notify(0, "Next generated").await.unwrap(), 4);
+    fixture.close(2).await;
+    fixture.close(3).await;
+}
+
+// Mirrors `notify-send -r 4242` OSD scripts: the fixed token keeps working
+// after the previous notification expired, and replaces while it is live.
+#[tokio::test]
+async fn notify_send_replace_reuses_an_expired_fixed_token() {
+    let temp = tempfile::tempdir().unwrap();
+    let bus_name = test_bus_name("ExpiredToken");
+    let presenter = RecordingBannerPresenter::default();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        presenter.clone(),
+    ))
+    .await
+    .unwrap();
+    let _server_connection = start_notification_server(bus_name.clone(), daemon.clone())
+        .await
+        .unwrap();
+    let connection = zbus::Connection::session().await.unwrap();
+    let proxy = zbus::Proxy::new(
+        &connection,
+        bus_name.as_str(),
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await
+    .unwrap();
+    let mut closed_signals = proxy.receive_signal("NotificationClosed").await.unwrap();
+    let notify = |body: &'static str, timeout: i32| {
+        let proxy = proxy.clone();
+        async move {
+            proxy
+                .call::<_, _, u32>(
+                    "Notify",
+                    &(
+                        "notify-send",
+                        4242u32,
+                        "",
+                        "Volume",
+                        body,
+                        Vec::<String>::new(),
+                        HashMap::<String, OwnedValue>::new(),
+                        timeout,
+                    ),
+                )
+                .await
+        }
+    };
+
+    assert_eq!(notify("10%", 100).await.unwrap(), 4242);
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(1), closed_signals.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        signal.body().deserialize::<(u32, u32)>().unwrap(),
+        (4242, 1),
+        "the first OSD notification expired"
+    );
+
+    assert_eq!(notify("20%", -1).await.unwrap(), 4242);
+    assert_eq!(notify("30%", -1).await.unwrap(), 4242);
+    let snapshot = daemon.snapshot().await.unwrap();
+    assert_eq!(snapshot.active.len(), 1, "a live reuse replaces in place");
+    assert_eq!(snapshot.active[0].accepted_notification.body, "30%");
+    assert_eq!(snapshot.active[0].revision, 2);
+    assert!(snapshot.history.iter().any(|thread| {
+        thread.accepted_notification.body == "10%"
+            && thread.status == canopa_notify::NotificationStatus::Expired
+    }));
+    proxy
+        .call::<_, _, ()>("CloseNotification", &(4242u32,))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -279,9 +363,10 @@ async fn exhausted_id_space_fails_promptly_without_wrapping_or_blocking_live_rep
     assert_eq!(snapshot.active.len(), 1);
     assert_eq!(snapshot.active[0].revision, 2);
     fixture.close(2).await;
-    assert_dbus_error(
-        fixture.notify(2, "Retired").await,
-        "org.freedesktop.DBus.Error.InvalidArgs",
+    assert_eq!(
+        fixture.notify(2, "Reused").await.unwrap(),
+        2,
+        "reusing a closed token needs no new ID space"
     );
 }
 
@@ -305,11 +390,9 @@ async fn sparse_id_budget_merges_ranges_and_keeps_automatic_allocation_available
     assert_eq!(fixture.notify(0, "").await.unwrap(), 2);
     assert_eq!(fixture.notify(0, "").await.unwrap(), 7);
     assert_eq!(fixture.notify(0, "").await.unwrap(), 8);
+    // Reusing closed tokens consumes no sparse budget and no automatic IDs.
     for id in 1..=9 {
-        assert_dbus_error(
-            fixture.notify(id, "Retired").await,
-            "org.freedesktop.DBus.Error.InvalidArgs",
-        );
+        assert_eq!(fixture.notify(id, "").await.unwrap(), id);
     }
     assert_eq!(fixture.notify(0, "Next").await.unwrap(), 10);
 }
@@ -330,10 +413,7 @@ async fn upper_boundary_caller_ids_merge_without_overflow_or_reuse() {
         assert_eq!(fixture.notify(id, "").await.unwrap(), id);
     }
     for id in [u32::MAX - 2, u32::MAX - 1, u32::MAX] {
-        assert_dbus_error(
-            fixture.notify(id, "Retired").await,
-            "org.freedesktop.DBus.Error.InvalidArgs",
-        );
+        assert_eq!(fixture.notify(id, "").await.unwrap(), id);
     }
     assert_eq!(fixture.notify(0, "First automatic").await.unwrap(), 1);
 }
@@ -368,10 +448,7 @@ async fn failed_storage_receipts_do_not_consume_generated_or_caller_ids() {
     assert_eq!(fixture.notify(0, "Retry automatic").await.unwrap(), 1);
     assert_eq!(fixture.daemon.snapshot().await.unwrap().active.len(), 2);
     fixture.close(9).await;
-    assert_dbus_error(
-        fixture.notify(9, "Retired").await,
-        "org.freedesktop.DBus.Error.InvalidArgs",
-    );
+    assert_eq!(fixture.notify(9, "Reused").await.unwrap(), 9);
     pool.close().await;
 }
 

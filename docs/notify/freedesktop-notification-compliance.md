@@ -63,11 +63,11 @@ The static profile excludes `icon-multi`; Wayland placement may ignore `x`/`y`. 
 
 The binary test `notification_server_emits_activation_token_before_action_invoked` checks token → action → closure, signatures, path/interface and service-owner identity on one stream through the public activation-provider seam. `notification_server_expires_notification_after_banner_display` covers reason 1 after display acknowledgement. A headless executable cannot obtain a real compositor token or prove display timing/rendering.
 
-Error conventions are intentionally distinguished from standards requirements: missing closure IDs use `org.freedesktop.DBus.Error.Failed` with an empty string description; “empty D-Bus error” in §9.1.3 does not unambiguously prescribe a zero-byte body. Malformed-call rejection uses binding-generated errors without pinning their names. Both discovery methods enable generated empty-argument validation; previously the binding skipped validation for parameterless handlers. Sequential allocation and unchanged allocation on rejection, retired-ID policy and `LimitsExceeded` admission errors are Canopa policies, not specification-defined allocation algorithms or limits.
+Error conventions are intentionally distinguished from standards requirements: missing closure IDs use `org.freedesktop.DBus.Error.Failed` with an empty string description; “empty D-Bus error” in §9.1.3 does not unambiguously prescribe a zero-byte body. Malformed-call rejection uses binding-generated errors without pinning their names. Both discovery methods enable generated empty-argument validation; previously the binding skipped validation for parameterless handlers. Sequential allocation and unchanged allocation on rejection, closed-token reuse and `LimitsExceeded` admission errors are Canopa policies, not specification-defined allocation algorithms or limits.
 
 ## Sender ID lifetime and compatibility
 
-[ADR 0029](adr/0029-live-notification-id-boundary.md) defines a daemon-lifetime wire namespace, independent of retained history. Successful live replacements preserve their wire ID. A never-issued nonzero token still creates a new notification for compatibility; an issued but closed token now returns `InvalidArgs`. Clients that reused closed fixed tokens must submit `replaces_id = 0` to start a new notification.
+[ADR 0029](adr/0029-live-notification-id-boundary.md) defines a daemon-lifetime wire namespace, independent of retained history. Successful live replacements preserve their wire ID. A nonzero token that is not live, whether never issued or already closed, creates a new notification under that same token, as dunst does and as `notify-send -r` OSD scripts expect. Reuse never revives closed history, and automatic allocation still never returns an issued ID.
 
 Generated IDs never wrap or reuse committed IDs, including immediately dropped notifications. Exhaustion returns `LimitsExceeded` without a notification mutation. Issued-ID memory uses a contiguous prefix plus at most 4,096 sparse ranges: a caller token requiring another range is rejected, but automatic IDs can still extend the prefix. Receipts that fail before commitment consume no ID. This budget bounds retirement bookkeeping, independently of the live-resource admission limits below.
 
@@ -243,8 +243,10 @@ This table is the complete capability vocabulary defined by Desktop Notification
 | `sound-file`, `sound-name` | Implemented | Shown notifications play requested local files or themed sound names, with `sound-file` taking precedence. Missing/undecodable sounds may use the default; explicit theme disable markers and unsafe/exhausted lookup stop without fallback. |
 | `suppress-sound` | Implemented | Suppresses default, named, and file-backed notification sounds for the request. |
 | `transient` | Implemented | New transient notifications retain runtime presentation, actions, timeouts, sound, and sender lifecycle without entering persisted Notification History. Live center items are marked runtime-only and disappear after termination/restart under ADR 0041. A thread's initial request fixes retention across replacements. |
-| `urgency` | Implemented | Maps `0`, `1`, and `2` into low, normal, and critical behavior. |
+| `urgency` | Implemented | Maps `0`, `1`, and `2` into low, normal, and critical behavior. The specified byte and any other D-Bus integer width (`notify-send -h int:urgency:2`) are accepted; other values mean normal. |
 | `x`, `y` | Decoded, ignored | Wayland banner placement is daemon-owned; sender coordinates are not honored. |
+
+The boolean hints `transient`, `resident`, `suppress-sound` and `action-icons` also accept any D-Bus integer, nonzero meaning true, because `notify-send -h int:transient:1` is the common spelling. `value` accepts any integer width.
 
 ## Compatibility extensions
 

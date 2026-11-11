@@ -285,7 +285,7 @@ The sender-visible lifecycle of a notification after it has been submitted to th
 _Avoid_: Notification History state when referring to what the sender observes
 
 **Sender Notification ID**:
-A nonzero unsigned wire ID issued by the **Notification Server API**, usable for replacement and closure only while its registration is live in the current daemon lifetime. Its numeric value never identifies retained history.
+A nonzero unsigned wire ID issued by the **Notification Server API**, usable for replacement and closure only while its registration is live in the current daemon lifetime. A caller that names a closed ID starts a new notification under it. Its numeric value never identifies retained history.
 _Avoid_: History ID, application identity, replacement alias for a retired ID
 
 **Internal Notification ID**:

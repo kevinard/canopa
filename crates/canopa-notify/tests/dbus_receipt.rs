@@ -1161,7 +1161,7 @@ fn control_socket_round_trip(socket: &std::path::Path, request: &str) -> String 
 }
 
 #[tokio::test]
-async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
+async fn dev_dbus_reused_closed_wire_id_starts_a_new_thread_without_aliasing_history() {
     let temp = tempfile::tempdir().unwrap();
     let socket = temp.path().join("control.sock");
     let bus_name = test_bus_name("IdIsolation");
@@ -1220,7 +1220,8 @@ async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
         )
         .await
         .unwrap();
-    // A retired wire ID must not fall through to SQLite's row ID namespace.
+    // A closed wire ID starts a new thread; it must not fall through to SQLite's
+    // row ID namespace and replace an unrelated retained thread.
     let retired_result: zbus::Result<u32> = proxy
         .call(
             "Notify",
@@ -1238,11 +1239,20 @@ async fn dev_dbus_closed_wire_id_cannot_replace_an_unrelated_history_thread() {
         .await;
     let snapshot = control_socket_round_trip(&socket, "active-json\n");
     let preserved = snapshot.contains("Preserve AppA");
+    let reused = snapshot.contains("Foreign replacement");
     let close_result: zbus::Result<()> = proxy.call("CloseNotification", &(active,)).await;
     daemon.kill().ok();
     daemon.wait().ok();
-    assert!(retired_result.is_err(), "a retired sender ID was revived");
+    assert_eq!(
+        retired_result.unwrap(),
+        retired,
+        "a closed sender ID is reused for a new notification"
+    );
     assert!(preserved, "replacement aliased a retained row: {snapshot}");
+    assert!(
+        reused,
+        "the reused ID did not start a new thread: {snapshot}"
+    );
     assert!(
         close_result.is_ok(),
         "replacement invalidated the unrelated sender ID"

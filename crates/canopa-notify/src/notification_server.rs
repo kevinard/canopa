@@ -127,7 +127,6 @@ impl NotificationServer {
             )
             .await
             .map_err(|error| match error.downcast_ref::<IdError>() {
-                Some(IdError::Retired) => zbus::fdo::Error::InvalidArgs(error.to_string()),
                 Some(IdError::Exhausted | IdError::Fragmented) => {
                     zbus::fdo::Error::LimitsExceeded(error.to_string())
                 }

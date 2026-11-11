@@ -21,7 +21,6 @@ pub(super) struct ResolvedRequest {
 
 #[derive(Debug)]
 pub(super) enum IdError {
-    Retired,
     Exhausted,
     Fragmented,
 }
@@ -29,7 +28,6 @@ pub(super) enum IdError {
 impl std::fmt::Display for IdError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
-            Self::Retired => "notification ID is retired; use replaces_id 0 for a new notification",
             Self::Exhausted => "notification ID space exhausted",
             Self::Fragmented => "caller-supplied notification ID range limit reached",
         })
@@ -157,7 +155,10 @@ impl IssuedIds {
     fn admit(&self, id: u32) -> Result<(), IdError> {
         let left = self.sparse.range(..=id).next_back();
         if id <= self.prefix || left.is_some_and(|(_, &end)| id <= end) {
-            return Err(IdError::Retired);
+            // A closed caller token starts a new live thread under the same token,
+            // as freedesktop OSD scripts (`notify-send -r`) expect. It is already
+            // remembered, so reuse needs no extra range budget.
+            return Ok(());
         }
         let joins_prefix = self.prefix.checked_add(1) == Some(id);
         let joins_left = left.is_some_and(|(_, &end)| end.checked_add(1) == Some(id));
