@@ -18,6 +18,8 @@ pub mod format;
 mod negotiate;
 pub mod pseudo;
 
+/// The date and time types `format` takes, for crates without their own Chrono.
+pub use chrono;
 pub use i18n_embed;
 pub use i18n_embed_fl::fl as checked_fl;
 pub use negotiate::{LocaleSources, SHIPPED, language_of, negotiate};
@@ -31,7 +33,7 @@ use std::{
     collections::HashMap,
     sync::{
         Mutex, OnceLock, RwLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -117,6 +119,8 @@ pub fn is_rtl_language(language: &LanguageIdentifier) -> bool {
 static SELECTION: RwLock<Option<Selection>> = RwLock::new(None);
 /// Bumped on every selection change; loaders and formatter caches compare it.
 static GENERATION: AtomicU64 = AtomicU64::new(1);
+/// The selection's direction, read on every layout without locking.
+static RTL: AtomicBool = AtomicBool::new(false);
 
 /// The current selection (English and `en` formats before [`init`]).
 pub fn selection() -> Selection {
@@ -146,7 +150,8 @@ pub fn init() -> Selection {
 pub fn select(selection: Selection) {
     *SELECTION
         .write()
-        .unwrap_or_else(|poison| poison.into_inner()) = Some(selection);
+        .unwrap_or_else(|poison| poison.into_inner()) = Some(selection.clone());
+    RTL.store(selection.direction().is_rtl(), Ordering::Release);
     GENERATION.fetch_add(1, Ordering::AcqRel);
 }
 
@@ -170,7 +175,11 @@ pub fn select_locale(locale: &str, formats: Option<&str>) {
 
 /// The writing direction of the current selection.
 pub fn direction() -> Direction {
-    selection().direction()
+    if RTL.load(Ordering::Acquire) {
+        Direction::Rtl
+    } else {
+        Direction::Ltr
+    }
 }
 
 /// One crate's messages. Declared by [`localization!`]; look messages up with

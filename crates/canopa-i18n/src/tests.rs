@@ -28,6 +28,7 @@ fn afternoon() -> NaiveTime {
 fn english_is_the_default_before_init() {
     let _guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
     *SELECTION.write().unwrap() = None;
+    RTL.store(false, std::sync::atomic::Ordering::Release);
     GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     assert_eq!(selection(), Selection::default());
     assert_eq!(fl!("format-relative-now"), "now");
