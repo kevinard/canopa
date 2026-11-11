@@ -16,16 +16,16 @@ Tests run (focused, no desktop):
 
 - The freedesktop 1.3 wire contract is solid and well tested. That covers the four methods, the signals, the close reasons, ordered `ActivationToken` → `ActionInvoked` → `NotificationClosed`, safe IDs, bounded input, markup, links, raw images and persistence. All 278 integration tests pass.
 - Day-to-day use is weaker than the protocol layer. There is no DND schedule, no fullscreen or screen-share suppression, no lock-screen presentation, no Notifications page in Settings, no inline reply, no grouping and no translation.
-- **Flatpak/GNotification banners never hide by themselves.** The portal backend sets `expire_timeout: Never` (`notification_server/portal/intake.rs:229`).
-- **Notifications that never expire can exhaust fixed caps, and after that new notifications are refused.** Silenced, DND and overflow notifications stay live, and the live cap is 1,024 (`runtime_resources.rs:13`). Expired-but-unread notifications stay pending, and the pending cap is 4,096 (`sqlite_persisted_state.rs:846`). Past either cap, apps get `LimitsExceeded` errors.
+- **Flatpak/GNotification banners never hide by themselves.** **Fixed in 4459406.** The portal backend sets `expire_timeout: Never` (`notification_server/portal/intake.rs:229`).
+- **Notifications that never expire can exhaust fixed caps, and after that new notifications are refused.** **Fixed in 0bfe3e7.** Silenced, DND and overflow notifications stay live, and the live cap is 1,024 (`runtime_resources.rs:13`). Expired-but-unread notifications stay pending, and the pending cap is 4,096 (`sqlite_persisted_state.rs:846`). Past either cap, apps get `LimitsExceeded` errors.
 - Visual interop gaps that users will see:
   - Only PNG/JPEG files that have a file extension are accepted (`presentation.rs:581`). SVG app icons and Chromium/Electron's extension-less temp images are probably lost.
   - The icon theme is fixed to `hicolor` (`configuration.rs:301`).
 - Compatibility gaps with real clients:
-  - Reusing a closed ID through `replaces_id` returns `InvalidArgs` (`notification_server/ids.rs:160`), which breaks `notify-send -r`/`dunstify -r` OSD scripts.
-  - `int:transient:1` and int32 urgency are silently ignored (`notification_server_intake.rs:77-104`).
+  - Reusing a closed ID through `replaces_id` returns `InvalidArgs` (`notification_server/ids.rs:160`), which breaks `notify-send -r`/`dunstify -r` OSD scripts. **Fixed in 78cd3b6.**
+  - `int:transient:1` and int32 urgency are silently ignored (`notification_server_intake.rs:77-104`). **Fixed in 78cd3b6.**
 - The freedesktop-completion plan is complete for its selected static profile. Only W15 is open (native portal v2 and inline replies). Code has since moved past the plan: a v2 portal backend now exists, without replies, display hints or categories.
-- The 3 failing layout tests are stale fixtures. Commit `2345fc5` deliberately shrank banners without updating these unit tests. Fix the tests, not the code.
+- The 3 failing layout tests are stale fixtures. Commit `2345fc5` deliberately shrank banners without updating these unit tests. Fix the tests, not the code. **Fixed in 7f5eddb.**
 
 ## Feature table
 
@@ -40,18 +40,18 @@ Statuses: **works**, **partial**, **missing**, **broken**, **rough**.
 | `image-path`, `app_icon`, body `<img>` | partial | `presentation.rs:412-425`, `:581-583` (absolute path **and** `.png/.jpg/.jpeg` extension), `renderer/images.rs:99,117` (PNG/JPEG only) | SVG icons (most `hicolor/scalable/apps`) fall back to an initial badge. Extension-less temp files (Chromium/Electron) are probably dropped. Needs a hands-on check. |
 | Themed icon names | partial | `configuration.rs:301` defaults to `hicolor`; no desktop icon-theme tracking | Generic names (`dialog-information`, `mail-unread`, …) rarely exist in hicolor, so they show badges. |
 | App icon/name fallback | rough | `presentation.rs:544-570`: uses the app identity as the icon name; never reads the `.desktop` file's `Icon=`/`Name=` | Portal apps show their reverse-DNS ID (e.g. `org.gnome.Fractal`) as the app label (`portal/intake.rs:213`). |
-| Urgency levels | partial | `notification_server_intake.rs:77-86`: only a `u8` urgency is honoured | `-u critical` works. Clients that send urgency as int32/uint32 get Normal, so their critical alerts time out and DND silences them. |
+| Urgency levels | partial (**Fixed in 78cd3b6**: any integer width) | `notification_server_intake.rs:77-86`: only a `u8` urgency is honoured | `-u critical` works. Clients that send urgency as int32/uint32 get Normal, so their critical alerts time out and DND silences them. |
 | `expire_timeout` -1/0/n | works | `domain.rs:175-193`; 5 s default for low/normal, critical never (`domain.rs:41-47`); timer starts at display (ADR 0028) | Behaves as expected. There is no hover-to-pause (no hover handling in `renderer.rs`). |
-| `replaces_id` | rough | `notification_server/ids.rs:156-161`: an issued-but-closed ID → `InvalidArgs` | In-place replacement while the notification is live works. `notify-send -r 4242` volume/brightness scripts fail on the second call after the first one expires. |
+| `replaces_id` | rough (**Fixed in 78cd3b6**) | `notification_server/ids.rs:156-161`: an issued-but-closed ID → `InvalidArgs` | In-place replacement while the notification is live works. `notify-send -r 4242` volume/brightness scripts fail on the second call after the first one expires. |
 | `CloseNotification`, reasons | works | `notification_server.rs:144-153`; reasons 1–4 tested in `tests/dbus_contract.rs` | — |
 | `ActionInvoked`, `ActivationToken` | works | xdg-activation token from the click serial with fallback provider (compliance "Compatibility rules"); ordered publisher | Apps raise themselves correctly on Wayland. |
 | `category` | partial | `notification_server_intake.rs:52`; only drives per-app/category rules (`delivery_policy.rs:45-56`) | No category-specific presentation (calls, alarms, im). |
 | `desktop-entry` | works | `intake.rs:88-96` | Preferred source for app identity and rules. |
-| `resident`, `transient` | partial | `notification_server_intake.rs:55,96-104`: boolean only | `notify-send -e` works. The common `-h int:transient:1` is ignored, so the notification lands in history. |
+| `resident`, `transient` | partial (**Fixed in 78cd3b6**: integer or boolean) | `notification_server_intake.rs:55,96-104`: boolean only | `notify-send -e` works. The common `-h int:transient:1` is ignored, so the notification lands in history. |
 | `sound-file`/`sound-name`/`suppress-sound` | works | `notification_server_intake.rs:56,106-110`, `runtime.rs:224` | Plays theme sounds. `suppress-sound` is honoured only as a boolean. |
 | `x`/`y` | partial (by design) | `notification_server_intake.rs:113-120`, decoded and ignored | Fine on Wayland. |
 | `action-icons` | works | `notification_server_intake.rs:39` | Only PNG/JPEG icons render (same limit as above). |
-| Portal Notification v2 (Flatpak) | partial / rough | Backend `org.freedesktop.impl.portal.desktop.canopa.notify`, `notification_server/portal.rs:424-468`, `packaging/system/canopa-portals.conf:3`. Gaps: `expire_timeout: Never` (`portal/intake.rs:229`); `display-hint` and button `purpose` ignored; `high` priority mapped to Normal (`:132`); SupportedOptions advertises no categories or purposes (`portal.rs:466`) | GTK4/libadwaita Flatpaks deliver with typed actions and survive app exit. **Every portal banner stays on screen until clicked or dismissed.** |
+| Portal Notification v2 (Flatpak) | partial / rough (banner timeout **Fixed in 4459406**) | Backend `org.freedesktop.impl.portal.desktop.canopa.notify`, `notification_server/portal.rs:424-468`, `packaging/system/canopa-portals.conf:3`. Gaps: `expire_timeout: Never` (`portal/intake.rs:229`); `display-hint` and button `purpose` ignored; `high` priority mapped to Normal (`:132`); SupportedOptions advertises no categories or purposes (`portal.rs:466`) | GTK4/libadwaita Flatpaks deliver with typed actions and survive app exit. **Every portal banner stays on screen until clicked or dismissed.** |
 | GNotification (unsandboxed GTK) | works | GLib uses its freedesktop backend (no `org.gtk.Notifications` owner) | Ordinary freedesktop path. |
 | KDE extras (`inline-reply` cap, `NotificationReplied`, `x-kde-*`, JobView) | missing | No matches in `crates/canopa-notify/src`; the compliance doc says `inline-reply` is not advertised | KDE apps fall back to plain notifications. No job-progress view. The SNI tray exists in the Shell (`crates/canopa-shell/src/dbus/sni_watcher.rs`). |
 | Inline reply | missing | Issue `.scratch/notify/canopa-notify/issues/32-…` is ready-for-human; no reply widget; banner `KeyboardInteractivity::None` (`renderer.rs:105`) | Chat apps cannot offer reply-from-notification. |
@@ -63,7 +63,7 @@ Statuses: **works**, **partial**, **missing**, **broken**, **rough**.
 | Critical on lock screen | missing | No notification code in `crates/canopa-session` (canopa-lock) | Alarms and calls are invisible while locked. |
 | Lock-screen privacy | missing (private by omission) | ext-session-lock hides overlay banners; no `hide-content` policy | Nothing leaks, and nothing shows either. The timeout behaviour across a lock is unverified (see the hands-on checks). |
 | Grouping / stacking | partial | At most 3 banners (`presentation.rs:739`), critical first, then a "+N more" pill (`renderer.rs:2120-2170`). No app or conversation grouping (issues 30/31 open; ADR 0052 is a flat list) | The pill is not clickable. Demoted or never-shown overflow notifications never get a banner later and never expire (ADR 0028). |
-| Flood / rate limiting | rough | No per-app cooldown (issue 29 open). Global live cap of 1,024 (`runtime_resources.rs:13-48`) includes silenced/DND/overflow threads, which never expire | A day of DND or a "Save quietly" app can exhaust the cap. **All** apps then get `LimitsExceeded`. |
+| Flood / rate limiting | rough (cap refusal **Fixed in 0bfe3e7**; no per-app cooldown) | No per-app cooldown (issue 29 open). Global live cap of 1,024 (`runtime_resources.rs:13-48`) includes silenced/DND/overflow threads, which never expire | A day of DND or a "Save quietly" app can exhaust the cap. **All** apps then get `LimitsExceeded`. |
 | Long text | works | Summary/action wrapping (`renderer.rs:1745,1895`); 120 px body preview (`renderer.rs:14,2029`); internally scrollable oversized cards (ADR 0046) | — |
 | Multi-monitor placement | partial | Compositor-selected output per new stack (`renderer.rs:85-108`, ADR 0047); fallback on output loss; evidence on Sway; not verified on physical multi-output Niri | Position is fixed top-right with no setting. |
 | Fullscreen apps | missing | Always on `Layer::Overlay` (`renderer.rs:99`); no fullscreen or screencast check | Banners cover fullscreen video, games and presentations, including during screen sharing. |
@@ -109,7 +109,7 @@ Source: `.scratch/notify/freedesktop-completion-review/PLAN.md` and `IMPLEMENTAT
 
 ## Layout test diagnosis
 
-**Verdict: the tests are wrong (stale fixtures). The code change was intentional.**
+**Verdict: the tests are wrong (stale fixtures). The code change was intentional.** **Fixed in 7f5eddb** (tests measure natural heights; the oversized card measured 324 px).
 
 Commit `2345fc5` ("Polish Canopa desktop components", 2026-11-08) changed `notification_banner_content` in `presentation/renderer.rs` (around lines 1721-1806):
 - It dropped the fixed 28 px placeholder action row for banners without actions, which also removes one 8 px card gap (Notification `gap` = 8, `canopa-theme/src/customization.rs:383`).
@@ -144,8 +144,8 @@ Proposed fix (not applied), in `crates/canopa-notify/src/presentation/renderer/t
 
 Ranked by impact on a distro default where users bring their own apps.
 
-1. **Portal banners never auto-hide** (`portal/intake.rs:229`, ADR 0031). Every GTK4/libadwaita Flatpak notification stays on screen. *Approach:* keep sender callbacks live, but give portal banners the server-default banner timeout through a banner-visibility timer separate from the sender lifecycle. Honour `display-hint` `persistent`/`transient` and map `high` → Normal + sound. **M**
-2. **Never-expiring notifications exhaust the caps and new notifications are then refused** (`runtime_resources.rs:13,47`; `sqlite_persisted_state.rs:842-853`). *Approach:*
+1. **Portal banners never auto-hide** (`portal/intake.rs:229`, ADR 0031). **Fixed in 4459406** (server-default timeout; urgent stays; `display-hint` and `high` → sound remain open). Every GTK4/libadwaita Flatpak notification stays on screen. *Approach:* keep sender callbacks live, but give portal banners the server-default banner timeout through a banner-visibility timer separate from the sender lifecycle. Honour `display-hint` `persistent`/`transient` and map `high` → Normal + sound. **M**
+2. **Never-expiring notifications exhaust the caps and new notifications are then refused** (`runtime_resources.rs:13,47`; `sqlite_persisted_state.rs:842-853`). **Fixed in 0bfe3e7** (ADR 0054; no Center warning yet). *Approach:*
    - Let silenced, DND and overflow threads finish their sender lifecycle after the default timeout, or stop counting them as live (convert them to retained-only), while preserving attention.
    - At the 4,096 pending cap, auto-acknowledge or archive the oldest pending item instead of rejecting new receipts.
    - Show a warning in the Center.
@@ -165,13 +165,13 @@ Ranked by impact on a distro default where users bring their own apps.
    - "mark all read".
 
    *Approach:* add a Settings page that writes the existing user-rule store and KDL. Add DND `until`/schedule to the policy state. Get fullscreen state from Niri IPC (or the portal's screencast state). **M–L**
-5. **`replaces_id` on a retired ID returns an error** (`ids.rs:160`). This breaks OSD scripts and clients that keep stale IDs. *Approach:* treat a retired or unknown ID as a new notification. Return a fresh ID, or reuse the token while it is not live, matching dunst/mako/GNOME. Keep the collision protections. **S**
+5. **`replaces_id` on a retired ID returns an error** (`ids.rs:160`). **Fixed in 78cd3b6** (the closed token is reused). This breaks OSD scripts and clients that keep stale IDs. *Approach:* treat a retired or unknown ID as a new notification. Return a fresh ID, or reuse the token while it is not live, matching dunst/mako/GNOME. Keep the collision protections. **S**
 6. **Inline reply missing** (portal `im.reply-with-text` and KDE `inline-reply`/`NotificationReplied`). *Approach:* on demand, give the banner a keyboard-interactive text field (`OnDemand` interactivity), route the reply through portal ActionInvoked / KDE signal, and never persist it. Issue 32 decision first. **L**
-7. **Lenient hint types** (`notification_server_intake.rs:77-104`). *Approach:* accept any integer type for urgency and `value`, and int or boolean for `transient`/`resident`/`suppress-sound`. **S**
+7. **Lenient hint types** (`notification_server_intake.rs:77-104`). **Fixed in 78cd3b6.** *Approach:* accept any integer type for urgency and `value`, and int or boolean for `transient`/`resident`/`suppress-sound`. **S**
 8. **Sound on every replacement** (`runtime.rs:224`). *Approach:* play only for a new thread, or for a replacement that explicitly carries `sound-*` or a changed urgency. Add a per-app mute and a volume setting. **S**
 9. **Unread badge grows forever; "Clear active" does not clear it** (`control_adapters.rs:540`, `lifecycle.rs:505-512`). *Approach:* add "Mark all as read" and per-item "Remove". Make "Clear" acknowledge everything visible. **S**
 10. **No lock-screen story** (critical/alarm/call on the lock screen, privacy options). *Approach:* a minimal lock-screen list in canopa-lock that reads Notify's bounded summary, with a content-hiding option. **M–L**
-11. **Overflow UX**: the 4th and later notifications never get a banner and never expire, and the pill is inert (`presentation.rs:735-747`, `renderer.rs:2120`). *Approach:* promote overflow notifications when a slot frees, or expire them silently. Make the pill open the Center. **S–M**
+11. **Overflow UX**: the 4th and later notifications never get a banner and never expire, and the pill is inert (`presentation.rs:735-747`, `renderer.rs:2120`). **Expiry fixed in 0bfe3e7**; the pill is still inert. *Approach:* promote overflow notifications when a slot frees, or expire them silently. Make the pill open the Center. **S–M**
 12. **Translatability** is missing workspace-wide. *Approach:* adopt gettext or fluent across the workspace and use locale-aware time formatting (relative times in the Center). **L**
 13. **Renderer death is silent and terminal** (`presentation.rs:659`). *Approach:* exit non-zero (systemd restarts the service) or reconnect in-process. Expose renderer health in `canopa-notify-client::Summary` so the bar shows a warning. **S–M**
 14. **No grouping or burst cooldown** (issues 29–31). **M**
@@ -186,11 +186,11 @@ Ranked by impact on a distro default where users bring their own apps.
 
 ## Bugs or risks found
 
-- **Hard failure mode by policy:** `LimitsExceeded` after 1,024 live or 4,096 pending notifications applies to every app, not just the noisy one (see gap 2). DND, "Save quietly" and overflow threads never expire (ADR 0028). This is probably the most likely way a long-running session ends up with "notifications stopped working".
-- **Stale unit tests on main** (layout diagnosis above). `cargo test -p canopa-notify --lib` is red, so CI-style checks fail until the fixtures are updated.
+- **Hard failure mode by policy:** **Fixed in 0bfe3e7.** `LimitsExceeded` after 1,024 live or 4,096 pending notifications applies to every app, not just the noisy one (see gap 2). DND, "Save quietly" and overflow threads never expire (ADR 0028). This is probably the most likely way a long-running session ends up with "notifications stopped working".
+- **Stale unit tests on main** (layout diagnosis above). **Fixed in 7f5eddb.** `cargo test -p canopa-notify --lib` is red, so CI-style checks fail until the fixtures are updated.
 - **Probable Chromium/Electron image loss.** Chromium writes notification images to extension-less temp files. The extension check at `presentation.rs:581-583` rejects them, even though the decoder could sniff the content. Needs a hands-on check.
-- **`replaces_id` reuse error** (`ids.rs:160`) deviates from what other servers do. The spec leaves the case open, but users experience it as "the notification didn't appear".
-- **Urgency sent as int32 silently becomes Normal.** For a client that does this, a "critical" alert expires and DND suppresses it.
+- **`replaces_id` reuse error** **Fixed in 78cd3b6** (`ids.rs:160`) deviates from what other servers do. The spec leaves the case open, but users experience it as "the notification didn't appear".
+- **Urgency sent as int32 silently becomes Normal.** **Fixed in 78cd3b6.** For a client that does this, a "critical" alert expires and DND suppresses it.
 - **Portal `bytes` icons are rejected** (`portal/intake.rs:296-304` accepts only `themed`/`file-descriptor`). If the frontend fork passes deprecated `bytes` icons through to the backend instead of converting them to a sealed fd, the whole `AddNotification` call fails with InvalidArgs. Verify with a v1-style GNotification Flatpak.
 - **No D-Bus activation for `org.freedesktop.Notifications`.** Notifications sent before the unit is up, or during a restart, fail. If another daemon (mako/dunst) is installed, it can win the name through its own activation file. Ship `org.freedesktop.Notifications.service` with `SystemdService=canopa-notify.service`. Size S.
 - **Timeouts across a lock or screen-off depend on compositor frame callbacks** (display-based timers). This is untested. Banners may silently expire behind the lock surface, or wait correctly until unlock.
