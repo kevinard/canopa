@@ -452,10 +452,13 @@ pub(super) enum Icon {
     Terminal,
     Info,
     Question,
+    Network,
+    Phone,
+    Camera,
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 28] = [
+    pub(super) const ALL: [Self; 31] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -484,6 +487,9 @@ impl Icon {
         Self::Terminal,
         Self::Info,
         Self::Question,
+        Self::Network,
+        Self::Phone,
+        Self::Camera,
     ];
 
     pub(super) fn svg(self) -> String {
@@ -522,6 +528,9 @@ impl Icon {
             Self::Question => {
                 "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM9 9a3 3 0 1 1 4 3c-1 1-1 1-1 2m0 3h.01"
             }
+            Self::Network => "M4 4h16v6H4Zm0 10h16v6H4ZM8 7h.01M8 17h.01",
+            Self::Phone => "M7 2h10v20H7Zm4 16h2",
+            Self::Camera => "M3 7h4l2-3h6l2 3h4v13H3Zm12 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
         };
         let weight = if self == Self::More { 3.5 } else { 1.9 };
         format!(

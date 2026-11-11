@@ -19,6 +19,8 @@ pub struct QuestionToken {
 pub enum Operation {
     Mount,
     Remove(Removal),
+    /// Mount a server address (Connect to Server).
+    Connect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,7 +39,10 @@ pub struct Prompt {
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub id: RequestId,
-    pub device: DeviceToken,
+    /// The catalog device; none for a server address.
+    pub device: Option<DeviceToken>,
+    /// The server address a Connect request mounts.
+    pub uri: Option<String>,
     pub name: String,
     pub operation: Operation,
     pub phase: Phase,
@@ -56,7 +61,30 @@ struct Job {
     hold: Option<Hold>,
     serial: u64,
     mounted: Option<catalog::MountToken>,
+    /// The device instance whose mount this request produced or targets.
+    instance: Option<u64>,
 }
+
+/// A read-only GIO listing of a location without a local folder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ListingId(u64);
+
+#[derive(Clone, Debug)]
+pub struct Listing {
+    pub id: ListingId,
+    pub uri: String,
+    /// None while the helper is still listing.
+    pub result: Option<Result<Listed, String>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Listed {
+    pub entries: Vec<wire::RemoteEntry>,
+    /// More entries exist than one listing returns.
+    pub truncated: bool,
+}
+
+const LISTINGS: usize = 8;
 
 #[derive(Default)]
 struct State {
@@ -64,6 +92,7 @@ struct State {
     closing: bool,
     lost: bool,
     jobs: VecDeque<Job>,
+    listings: VecDeque<Listing>,
     attention: attention::Inbox,
 }
 
@@ -143,8 +172,10 @@ impl DeviceRequests {
             .iter()
             .find(|job| job.snapshot.id == id)
             .ok_or_else(root_changed)?;
-        let Some(wire::Outcome::Mounted { root }) = &job.snapshot.outcome else {
-            return Err(root_changed());
+        let (root, location) = match &job.snapshot.outcome {
+            Some(wire::Outcome::Mounted { root }) => (root, root),
+            Some(wire::Outcome::Connected { root, location }) => (root, location),
+            _ => return Err(root_changed()),
         };
         let catalog = self.0.catalog.lock().unwrap_or_else(|e| e.into_inner());
         catalog
@@ -152,13 +183,62 @@ impl DeviceRequests {
             .iter()
             .find(|device| {
                 catalog.status == DeviceStatus::Ready
-                    && device.token.instance == job.snapshot.device.instance
+                    && job.instance == Some(device.token.instance)
                     && device.mount.is_some()
                     && device.mount == job.mounted
                     && device.root.as_ref() == Some(root)
             })
-            .map(|_| root.clone())
+            .map(|_| location.clone())
             .ok_or_else(root_changed)
+    }
+
+    /// Mount a validated server address. Credentials and server questions use
+    /// the same question flow as devices; the result names its local folder.
+    pub fn connect(&self, address: &crate::network::ServerAddress) -> io::Result<RequestId> {
+        self.0.submit_connect(address)
+    }
+
+    /// Ask the helper to list a GVFS location (network discovery, or a mount
+    /// without a local folder). Results arrive with the ordinary notices.
+    pub fn enumerate(&self, uri: &str) -> io::Result<ListingId> {
+        let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.closing || self.0.control.stopped.load(Ordering::Acquire) {
+            return Err(io::Error::other("The device runtime is shutting down."));
+        }
+        if uri.len() > 4096 || uri.chars().any(char::is_control) {
+            return Err(io::Error::other("This location cannot be listed."));
+        }
+        let id = state
+            .last
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("Device request counter exhausted."))?;
+        self.0.send(
+            RequestId(id),
+            wire::Command::Enumerate {
+                uri: uri.to_owned(),
+            },
+        )?;
+        state.last = id;
+        state.listings.push_back(Listing {
+            id: ListingId(id),
+            uri: uri.to_owned(),
+            result: None,
+        });
+        while state.listings.len() > LISTINGS {
+            state.listings.pop_front();
+        }
+        Ok(ListingId(id))
+    }
+
+    pub fn listing(&self, id: ListingId) -> Option<Listing> {
+        self.0
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .listings
+            .iter()
+            .find(|listing| listing.id == id)
+            .cloned()
     }
 
     pub fn snapshot(&self) -> Vec<Snapshot> {
@@ -293,9 +373,8 @@ impl Requests {
             .map_err(|_| io::Error::other("The device helper cannot accept more requests."))
     }
 
-    fn submit(&self, token: DeviceToken, intent: Intent) -> io::Result<RequestId> {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if state.closing || self.control.stopped.load(Ordering::Acquire) {
+    fn admission(state: &State, stopped: bool) -> io::Result<()> {
+        if state.closing || stopped {
             return Err(io::Error::other("The device runtime is shutting down."));
         }
         if state.jobs.iter().any(|job| job.hold.is_some()) {
@@ -308,6 +387,60 @@ impl Requests {
                 "Device notifications are still pending. Wait for their delivery before starting more device work.",
             ));
         }
+        Ok(())
+    }
+
+    fn submit_connect(&self, address: &crate::network::ServerAddress) -> io::Result<RequestId> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        Self::admission(&state, self.control.stopped.load(Ordering::Acquire))?;
+        let work = self.activity.work();
+        if !work.ready() {
+            return Err(io::Error::other("A device removal is still in progress."));
+        }
+        let id = RequestId(
+            state
+                .last
+                .checked_add(1)
+                .ok_or_else(|| io::Error::other("Device request counter exhausted."))?,
+        );
+        state.last = id.0;
+        state.jobs.push_back(Job {
+            snapshot: Snapshot {
+                id,
+                device: None,
+                uri: Some(address.uri.clone()),
+                name: address.label(),
+                operation: Operation::Connect,
+                phase: Phase::Running,
+                question: None,
+                outcome: None,
+                error: None,
+            },
+            hold: Some(Hold::Work { _hold: work }),
+            serial: 0,
+            mounted: None,
+            instance: None,
+        });
+        if let Err(error) = self.send(
+            id,
+            wire::Command::Connect {
+                uri: address.uri.clone(),
+            },
+        ) {
+            state.jobs.pop_back();
+            return Err(error);
+        }
+        while state.jobs.len() > 32 {
+            state.jobs.pop_front();
+        }
+        drop(state);
+        self.publish();
+        Ok(id)
+    }
+
+    fn submit(&self, token: DeviceToken, intent: Intent) -> io::Result<RequestId> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        Self::admission(&state, self.control.stopped.load(Ordering::Acquire))?;
         let catalog = self.catalog.lock().unwrap_or_else(|e| e.into_inner());
         let device = catalog
             .devices
@@ -346,7 +479,7 @@ impl Requests {
             Operation::Remove(_) => Hold::Removal {
                 _hold: self.activity.try_remove()?,
             },
-            Operation::Mount => {
+            Operation::Mount | Operation::Connect => {
                 let work = self.activity.work();
                 if !work.ready() {
                     return Err(io::Error::other("A device removal is still in progress."));
@@ -366,7 +499,8 @@ impl Requests {
         state.jobs.push_back(Job {
             snapshot: Snapshot {
                 id,
-                device: token,
+                device: Some(token),
+                uri: None,
                 name: device.name,
                 operation,
                 phase: Phase::Running,
@@ -377,6 +511,7 @@ impl Requests {
             hold: Some(hold),
             serial: 0,
             mounted: None,
+            instance: Some(token.instance),
         });
         if let Err(error) = self.send(id, command) {
             state.jobs.pop_back();
@@ -395,6 +530,9 @@ impl Requests {
             return Err(protocol_error());
         }
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if !state.jobs.iter().any(|job| job.snapshot.id.0 == event.id) {
+            return self.update_listing(state, event);
+        }
         let Some(job) = state
             .jobs
             .iter_mut()
@@ -445,6 +583,7 @@ impl Requests {
                     attention_changed = false;
                 }
             }
+            wire::Update::Enumerated { .. } => return Err(protocol_error()),
             wire::Update::Finished { outcome } => {
                 match (&job.snapshot.operation, &outcome) {
                     (Operation::Mount, wire::Outcome::Mounted { root }) => {
@@ -452,7 +591,7 @@ impl Requests {
                         let device = catalog.devices.iter().find(|d| {
                             catalog.status == DeviceStatus::Ready
                                 && d.mount.is_some()
-                                && d.token.instance == job.snapshot.device.instance
+                                && job.instance == Some(d.token.instance)
                                 && d.root.as_ref() == Some(root)
                         });
                         if !root.is_absolute() || device.is_none() {
@@ -460,6 +599,25 @@ impl Requests {
                         }
                         job.mounted = device.and_then(|device| device.mount);
                     }
+                    (Operation::Connect, wire::Outcome::Connected { root, location }) => {
+                        if !root.is_absolute() || !location.starts_with(root) {
+                            return Err(protocol_error());
+                        }
+                        let catalog = self.catalog.lock().unwrap_or_else(|e| e.into_inner());
+                        // The helper publishes the new mount before its result;
+                        // a provider that never lists it leaves no navigable
+                        // proof, and the folder is opened from the sidebar.
+                        if let Some(device) = catalog.devices.iter().find(|d| {
+                            catalog.status == DeviceStatus::Ready
+                                && d.mount.is_some()
+                                && d.root.as_ref() == Some(root)
+                        }) {
+                            job.mounted = device.mount;
+                            job.instance = Some(device.token.instance);
+                        }
+                    }
+                    (Operation::Connect, wire::Outcome::ConnectedRemote { uri })
+                        if uri.len() <= 4096 && !uri.chars().any(char::is_control) => {}
                     (Operation::Remove(_), wire::Outcome::Removed)
                     | (_, wire::Outcome::Cancelled) => {}
                     (_, wire::Outcome::Failed { message }) if message.len() <= 16384 => {}
@@ -479,11 +637,62 @@ impl Requests {
         Ok(())
     }
 
+    fn update_listing(
+        &self,
+        mut state: std::sync::MutexGuard<'_, State>,
+        event: wire::Event,
+    ) -> io::Result<()> {
+        let id = ListingId(event.id);
+        let result = match event.event {
+            wire::Update::Enumerated {
+                entries,
+                error,
+                truncated,
+            } => {
+                if entries.len() > wire::ENUMERATION_LIMIT
+                    || !entries.iter().all(wire::valid_entry)
+                    || error.as_ref().is_some_and(|error| error.len() > 16384)
+                {
+                    return Err(protocol_error());
+                }
+                match error {
+                    Some(error) => Err(error),
+                    None => Ok(Listed { entries, truncated }),
+                }
+            }
+            wire::Update::Refused { message, .. } if message.len() <= 16384 => Err(message),
+            _ => return Err(protocol_error()),
+        };
+        if id.0 == 0 || id.0 > state.last {
+            return Err(protocol_error());
+        }
+        // A listing evicted from the bounded history is simply forgotten.
+        if let Some(listing) = state
+            .listings
+            .iter_mut()
+            .find(|listing| listing.id == id && listing.result.is_none())
+        {
+            listing.result = Some(result);
+        }
+        drop(state);
+        let _ = self
+            .notice
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .try_send(());
+        Ok(())
+    }
+
     /// Call only after the exact helper and its input writer have retired.
     pub fn lost(&self, message: &str) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.closing = true;
         state.lost = true;
+        for listing in &mut state.listings {
+            if listing.result.is_none() {
+                listing.result = Some(Err("The device helper stopped.".into()));
+            }
+        }
         let mut retired = Vec::new();
         let mut completed = Vec::new();
         for job in &mut state.jobs {
@@ -583,6 +792,7 @@ fn validate_answer(question: &wire::Question, answer: &wire::Answer) -> io::Resu
                 pim,
                 hidden_volume,
                 system_volume,
+                save,
             },
         ) => {
             [username, domain, password]
@@ -591,6 +801,8 @@ fn validate_answer(question: &wire::Question, answer: &wire::Answer) -> io::Resu
                 && (!anonymous || flags & gio::AskPasswordFlags::ANONYMOUS_SUPPORTED.bits() != 0)
                 && (*pim == 0 && !hidden_volume && !system_volume
                     || flags & gio::AskPasswordFlags::TCRYPT.bits() != 0)
+                && (*save == wire::Remember::Never
+                    || flags & gio::AskPasswordFlags::SAVING_SUPPORTED.bits() != 0)
         }
         (wire::Question::Choice { choices, .. }, wire::Answer::Choice { choice }) => {
             *choice < choices.len()

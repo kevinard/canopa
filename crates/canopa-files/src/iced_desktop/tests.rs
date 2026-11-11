@@ -40,6 +40,7 @@ pub(super) fn loaded(
         Arc::new(Ok(Scan {
             directory: Directory::read(path).unwrap(),
             selected: Vec::new(),
+            remote: false,
         })),
     ));
 }
@@ -537,6 +538,7 @@ fn requested_quick_look_waits_for_source_size_and_never_previews_a_neighbor() {
             Arc::new(Ok(Scan {
                 directory: Directory::read(root.path()).unwrap(),
                 selected: vec![requested],
+                remote: false,
             })),
         ));
         assert!(desktop.previews.is_empty());

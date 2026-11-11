@@ -171,6 +171,7 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
         | Command::BookmarkFolder
         | Command::Operations
         | Command::ShowTrash
+        | Command::ConnectToServer
         | Command::Columns
         | Command::List
         | Command::Icons => true,

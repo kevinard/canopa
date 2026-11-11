@@ -29,6 +29,9 @@ mod listing_ui;
 mod loading;
 mod media_ui;
 mod name_dialog;
+#[cfg(test)]
+mod network_tests;
+mod network_ui;
 mod open_with_ui;
 mod operation_details;
 #[cfg(test)]
@@ -155,6 +158,8 @@ pub fn run(
             let mut tasks = vec![task];
             desktop.file_clipboard = clipboard_ui::State::start();
             desktop.folder_watch = folder_watch_ui::State::start();
+            desktop.network = network_ui::State::start();
+            tasks.push(desktop.load_gtk_bookmarks());
             desktop.jobs = jobs_ui::Jobs::attach(actions_frontend.clone());
             tasks.push(desktop.attach_file_operations(operations_frontend.clone()));
             tasks.push(desktop.open_requested(first));
@@ -221,6 +226,7 @@ struct Desktop {
     file_clipboard: clipboard_ui::State,
     drag: drag_ui::State,
     devices: devices_ui::State,
+    network: network_ui::State,
     focused_window: Option<window::Id>,
     trash_window: Option<trash_ui::TrashWindow>,
     trash_restore: Option<trash_restore::Dialog>,
@@ -269,6 +275,9 @@ struct Tab {
     watch_cancel: Cancellation,
     /// The displayed error came from a watch rescan and clears on success.
     watch_error: bool,
+    /// The folder is on a network share or GVFS location: inotify sees no
+    /// server-side changes, so it is polled instead (ADR0168).
+    remote: bool,
 }
 
 impl Tab {
@@ -327,6 +336,8 @@ enum Navigation {
 struct Scan {
     directory: Directory,
     selected: Vec<PathBuf>,
+    /// On a network filesystem, read from the mount table on the worker.
+    remote: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -404,6 +415,7 @@ enum Message {
     TrashRestore(trash_restore::Event),
     DeleteDialog(delete_dialog::Event),
     OpenWith(open_with_ui::Event),
+    Network(network_ui::Event),
 }
 
 impl Desktop {
@@ -458,6 +470,7 @@ impl Desktop {
             file_clipboard: clipboard_ui::State::default(),
             drag: drag_ui::State::default(),
             devices: devices_ui::State::default(),
+            network: network_ui::State::default(),
             focused_window: None,
             trash_window: None,
             trash_restore: None,
@@ -509,6 +522,7 @@ impl Desktop {
             watch_request: 0,
             watch_cancel: Cancellation::default(),
             watch_error: false,
+            remote: false,
         }
     }
 
@@ -725,6 +739,15 @@ impl Desktop {
                 self.close_recovery(id)
             }
             Message::DeleteDialog(event) => self.delete_dialog_event(event),
+            Message::Network(event) => self.network_event(event),
+            Message::Key(id, key, modifiers, _) | Message::CapturedKey(id, key, modifiers)
+                if self.network.owns(id) =>
+            {
+                self.network_key(id, key, modifiers)
+            }
+            Message::Close(id) | Message::Closed(id) if self.network.owns(id) => {
+                self.close_network(id)
+            }
             Message::OpenWith(event) => self.open_with_event(event),
             Message::Key(id, key, modifiers, _) | Message::CapturedKey(id, key, modifiers)
                 if self
@@ -1003,11 +1026,19 @@ impl Desktop {
                 let close = self.close_source_previews(id);
                 let files = self.close_operation_source(id);
                 let device_question = self.close_device_parent(id);
+                let network = match self.network.window.as_ref() {
+                    Some(dialog) if dialog.owner == id => {
+                        let window = dialog.window;
+                        self.close_network(window)
+                    }
+                    _ => Task::none(),
+                };
                 Task::batch([
                     drop,
                     close,
                     files,
                     device_question,
+                    network,
                     self.update_browser(message),
                 ])
             }
@@ -1063,6 +1094,7 @@ impl Desktop {
             | Message::Trash(_)
             | Message::TrashRestore(_)
             | Message::DeleteDialog(_)
+            | Message::Network(_)
             | Message::OpenWith(_)
             | Message::FileClipboard(_)
             | Message::Properties(_)
@@ -1179,6 +1211,7 @@ impl Desktop {
                             browser.reveal_selection(scan.selected);
                         }
                         tab.target = browser.path().to_owned();
+                        tab.remote = scan.remote;
                         tab.columns.clear();
                         tab.reveal_on_show = reveal;
                         if reveal {
@@ -1306,6 +1339,19 @@ impl Desktop {
             }
             Message::SubmitLocation(id) => {
                 if let Some(value) = self.active(id).and_then(|tab| tab.location.clone()) {
+                    // A server address mounts through GVFS and then opens its
+                    // folder; other URIs and paths stay local navigation.
+                    if let Some(address) = network_location(&value) {
+                        return match address {
+                            Ok(address) => self.connect_server(id, &address, false),
+                            Err(error) => {
+                                if let Some(tab) = self.active_mut(id) {
+                                    tab.error = Some(error.to_string());
+                                }
+                                Task::none()
+                            }
+                        };
+                    }
                     return self.navigate(id, PathBuf::from(value), Navigation::Visit, None);
                 }
             }
@@ -1426,6 +1472,7 @@ impl Desktop {
             && self.recovery_window.is_none()
             && self.trash_restore.is_none()
             && self.delete_dialog.is_none()
+            && self.network.window.is_none()
             && self.open_dialog.is_none()
             && self.recovery_destination.is_none()
             && self.action_editor.is_none()
@@ -1530,6 +1577,7 @@ impl Desktop {
         match command {
             Command::Recovery => return self.show_recovery(),
             Command::ShowTrash => return self.show_trash(),
+            Command::ConnectToServer => return self.show_network(id, None, None),
             Command::Trash => return self.trash_selection(id),
             Command::DeletePermanently => return self.confirm_delete_selection(id),
             Command::Copy | Command::Cut => return self.copy_files(id, command == Command::Cut),
@@ -1910,6 +1958,14 @@ impl Desktop {
             return format!("{} — Canopa Files", dialog.title());
         }
         if let Some(dialog) = self
+            .network
+            .window
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return format!("{} — Canopa Files", dialog.title());
+        }
+        if let Some(dialog) = self
             .open_dialog
             .as_ref()
             .filter(|dialog| dialog.window == id)
@@ -2021,6 +2077,7 @@ impl Desktop {
                 }),
             self.file_operations.subscription(),
             self.folder_watch.subscription(),
+            self.remote_poll_subscription(),
             self.trash_window
                 .as_ref()
                 .map_or_else(Subscription::none, trash_ui::TrashWindow::subscription),
@@ -2107,6 +2164,14 @@ impl Desktop {
             .filter(|dialog| dialog.window == id)
         {
             return delete_dialog::view(self, dialog);
+        }
+        if let Some(dialog) = self
+            .network
+            .window
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return network_ui::view(self, dialog);
         }
         if let Some(dialog) = self
             .open_dialog
@@ -2207,10 +2272,25 @@ fn scan(
         vec![file]
     };
     let directory = Directory::read_cancellable(&target, cancellation)?;
+    let remote = crate::mounts::Mounts::read().remote(&target);
     Ok(Scan {
         directory,
         selected,
+        remote,
     })
+}
+
+/// A typed server address (smb://, sftp://, ...) or another non-file URI.
+/// Paths and file:// URIs return None and stay local navigation.
+fn network_location(
+    value: &str,
+) -> Option<Result<crate::network::ServerAddress, crate::network::AddressError>> {
+    let trimmed = value.trim();
+    let scheme = trimmed.split_once("://")?.0;
+    if scheme.eq_ignore_ascii_case("file") || scheme.contains('/') {
+        return None;
+    }
+    Some(crate::network::ServerAddress::parse(trimmed))
 }
 
 fn local_path(path: &Path, home: &Path, base: Option<&Path>) -> io::Result<PathBuf> {

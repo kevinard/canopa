@@ -8,16 +8,19 @@ mod interaction;
 mod observation_tests;
 mod requests;
 use crate::storage::Storage;
-pub use catalog::{Device, DeviceId, DeviceSnapshot, DeviceStatus, DeviceToken, Removal};
+pub use catalog::{
+    Device, DeviceId, DeviceSnapshot, DeviceStatus, DeviceToken, LocationKind, Removal,
+};
 pub use command_wire::{
     Answer as DeviceAnswer, Outcome as DeviceOutcome, PasswordFields, Question as DeviceQuestion,
+    Remember, RemoteEntry,
 };
 use futures_channel::mpsc;
 use futures_util::FutureExt;
 use gio::prelude::*;
 pub use requests::{
-    AttentionSnapshot as DeviceAttentionSnapshot, DeviceRequests, Open as DeviceOpen,
-    Operation as DeviceOperation, Phase as DevicePhase, Prompt as DevicePrompt,
+    AttentionSnapshot as DeviceAttentionSnapshot, DeviceRequests, Listed, Listing, ListingId,
+    Open as DeviceOpen, Operation as DeviceOperation, Phase as DevicePhase, Prompt as DevicePrompt,
     QuestionToken as DeviceQuestionToken, RequestId as DeviceRequestId,
     Snapshot as DeviceRequestSnapshot,
 };
@@ -436,7 +439,7 @@ fn read_observations(
         let frame: Frame = serde_json::from_value(value).map_err(io::Error::other)?;
         let mut instances = BTreeSet::new();
         let mut paths = BTreeSet::new();
-        if frame.version != 2
+        if frame.version != 3
             || frame.generation <= generation
             || frame.mounts.len() > 1024
             || frame.devices.len() > 1024
@@ -458,6 +461,11 @@ fn read_observations(
         if frame.devices.iter().any(|device| {
             device.instance == 0
                 || device.name.len() > 16 * 1024
+                || device
+                    .uri
+                    .as_ref()
+                    .is_some_and(|uri| uri.len() > 4096 || uri.chars().any(char::is_control))
+                || device.remote_only && (device.mount.is_some() || device.uri.is_none())
                 || !devices.insert(device.instance)
                 || device.mount.is_some_and(|instance| {
                     !instances.contains(&instance) || !device_mounts.insert(instance)
@@ -722,7 +730,7 @@ fn publish(
         ));
     }
     let mut bytes = serde_json::to_vec(&Frame {
-        version: 2,
+        version: 3,
         generation,
         mounts,
         devices,

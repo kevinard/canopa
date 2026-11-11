@@ -32,6 +32,12 @@ name = "integration"
 path = "tests/integration.rs"
 
 [[test]]
+name = "network_runtime"
+path = "tests/network_runtime.rs"
+harness = false
+required-features = ["local-runtime"]
+
+[[test]]
 name = "file_clipboard_wayland"
 path = "tests/file_clipboard_wayland.rs"
 

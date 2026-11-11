@@ -47,9 +47,14 @@ impl Inbox {
             let title = match job.operation {
                 Operation::Mount => format!("Mount {}", job.name),
                 Operation::Remove(_) => format!("Remove {}", job.name),
+                Operation::Connect => format!("Connect to {}", job.name),
             };
             let body = match outcome {
                 wire::Outcome::Mounted { .. } => "Device mounted.".into(),
+                wire::Outcome::Connected { .. } => "Connected.".into(),
+                wire::Outcome::ConnectedRemote { .. } => {
+                    "Connected, but GVFS offers no local folder for it.".into()
+                }
                 wire::Outcome::Removed => match job.operation {
                     Operation::Remove(Removal::PowerOff) => "Device powered off.",
                     Operation::Remove(Removal::Eject) => "Device ejected.",

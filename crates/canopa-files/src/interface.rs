@@ -42,6 +42,7 @@ commands! {
     Trash => ("trash", "Move to Trash", "user-trash-symbolic", ["Delete"]),
     DeletePermanently => ("delete-permanently", "Delete permanently", "edit-delete-symbolic", ["<Shift>Delete"]),
     ShowTrash => ("show-trash", "Open Trash", "user-trash-symbolic", []),
+    ConnectToServer => ("connect-to-server", "Connect to Server…", "network-server-symbolic", []),
     Undo => ("undo", "Undo", "edit-undo-symbolic", ["<Control>z"]),
     Copy => ("copy", "Copy", "edit-copy-symbolic", ["<Control>c"]),
     Cut => ("cut", "Cut", "edit-cut-symbolic", ["<Control>x"]),

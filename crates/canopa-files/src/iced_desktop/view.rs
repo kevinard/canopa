@@ -1018,7 +1018,54 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         };
         places = places.push(button);
     }
-    if !desktop.devices.catalog.devices.is_empty()
+    let configured: Vec<_> = desktop
+        .configuration
+        .settings
+        .places
+        .iter()
+        .filter_map(|place| desktop.place_path(place))
+        .collect();
+    // GTK bookmarks are shared with file choosers and other file managers.
+    for (name, path) in super::network_ui::local_bookmarks(&desktop.network.bookmarks, &configured)
+    {
+        let active = tab.path() == path;
+        let mut font = canopa_ui::font(appearance);
+        if active {
+            font.weight = Weight::Semibold;
+        }
+        let button = canopa_ui::styled_action(
+            row![
+                desktop
+                    .icons
+                    .chrome(Icon::Folder, 18.0, if active { 1.0 } else { 0.86 }),
+                chrome::single_line(
+                    name,
+                    font,
+                    appearance.typography().body_size.px(),
+                    None,
+                    tab.location.is_none() && desktop.action_menu.is_none(),
+                )
+            ]
+            .spacing(9)
+            .align_y(Alignment::Center),
+            Some(Message::Go(id, path.clone())),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        )
+        .width(Length::Fill);
+        places = places.push(super::drag_ui::target_region(
+            desktop,
+            id,
+            tab,
+            path,
+            None,
+            2,
+            button.into(),
+        ));
+    }
+    let model = super::network_ui::sidebar(&desktop.devices.catalog, &desktop.network.bookmarks);
+    if !model.devices.is_empty()
         || matches!(
             desktop.devices.catalog.status,
             crate::local_volumes::DeviceStatus::Failed(_)
@@ -1029,6 +1076,9 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
             .push(super::devices_ui::places(desktop, id));
     }
+    places = places
+        .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
+        .push(super::network_ui::places(desktop, id));
     container(scrollable(places))
         .width(chrome::SIDEBAR_WIDTH)
         .height(Length::Fill)

@@ -83,11 +83,27 @@ pub(super) fn displayed(windows: &BTreeMap<window::Id, BrowserWindow>) -> BTreeS
 }
 
 impl Desktop {
+    /// The displayed folders inotify should observe: not network shares or
+    /// GVFS locations, where it reports only this machine's own changes. Those
+    /// are polled instead (ADR0168).
+    pub(super) fn watched_folders(&self) -> BTreeSet<PathBuf> {
+        let mut folders = displayed(&self.windows);
+        let remote: BTreeSet<_> = self
+            .windows
+            .values()
+            .flat_map(|window| &window.tabs)
+            .filter(|tab| tab.remote)
+            .map(|tab| tab.path().to_owned())
+            .collect();
+        folders.retain(|folder| !remote.contains(folder) && !self.remote_path(folder));
+        folders
+    }
+
     pub(super) fn sync_folder_watch(&mut self) {
         let Some(watch) = &self.folder_watch.watch else {
             return;
         };
-        let folders = displayed(&self.windows);
+        let folders = self.watched_folders();
         if folders != self.folder_watch.watched {
             watch.watch(folders.iter().cloned());
             self.folder_watch.watched = folders;

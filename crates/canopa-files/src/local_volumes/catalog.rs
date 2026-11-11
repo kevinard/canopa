@@ -1,5 +1,6 @@
 //! Plain device observations; GIO discovery remains inside the owning helper.
 use super::*;
+pub use crate::network::LocationKind;
 
 /// An observed device in this helper lifetime. Neither labels nor paths are IDs.
 /// The revision expires on the next platform observation; it is not persisted.
@@ -38,6 +39,14 @@ pub struct Device {
     pub root: Option<PathBuf>,
     pub can_mount: bool,
     pub removal: Option<Removal>,
+    /// Local storage, a network location, a phone or a camera.
+    pub kind: LocationKind,
+    /// The GIO location, for display, bookmarks and the GIO listing fallback.
+    /// Never a request target and never holds a password.
+    pub uri: Option<String>,
+    /// Mounted by GVFS, but without a local folder: its FUSE daemon is not
+    /// running. Only the read-only GIO listing can show it.
+    pub remote_only: bool,
     pub(super) mount: Option<MountToken>,
     pub(super) id: DeviceId,
 }
@@ -79,6 +88,12 @@ pub(super) struct WireDevice {
     pub mount: Option<u64>,
     pub can_mount: bool,
     pub removal: Option<Removal>,
+    #[serde(default)]
+    pub kind: LocationKind,
+    #[serde(default)]
+    pub uri: Option<String>,
+    #[serde(default)]
+    pub remote_only: bool,
 }
 
 impl WireDevice {
@@ -95,6 +110,9 @@ impl WireDevice {
                 .and_then(|instance| roots.get(&instance).map(|mount| mount.path.clone())),
             can_mount: self.can_mount,
             removal: self.removal,
+            kind: self.kind,
+            uri: self.uri,
+            remote_only: self.remote_only,
             mount: self.mount.and_then(|instance| {
                 roots.get(&instance).map(|mount| MountToken {
                     instance,
@@ -105,33 +123,59 @@ impl WireDevice {
     }
 }
 
+/// Mounts the parent observes as Storage roots: unshadowed, with a local folder
+/// (for GVFS locations, the FUSE path).
+pub(super) fn observed_mounts(monitor: &gio::VolumeMonitor) -> BTreeSet<u64> {
+    monitor
+        .mounts()
+        .into_iter()
+        .filter(|m| !m.is_shadowed() && m.root().path().is_some())
+        .map(|m| m.as_ptr() as usize as u64)
+        .collect()
+}
+
+/// A URI worth showing: bounded, single-line and without user information
+/// beyond a user name (GVFS never puts passwords in mount URIs).
+fn shown_uri(uri: glib::GString) -> Option<String> {
+    let uri = uri.to_string();
+    (uri.len() <= 4096 && !uri.chars().any(char::is_control)).then_some(uri)
+}
+
 pub(super) fn collect(monitor: &gio::VolumeMonitor, observed: &BTreeSet<u64>) -> Vec<WireDevice> {
     let volumes: Vec<_> = monitor
         .volumes()
         .into_iter()
-        .filter(|volume| {
-            volume.identifier("class").as_deref() != Some("network")
-                && volume
-                    .activation_root()
-                    .is_none_or(|root| root.path().is_some())
-                && volume
-                    .get_mount()
-                    .is_none_or(|mount| !mount.is_shadowed() && mount.root().path().is_some())
-        })
+        .filter(|volume| volume.get_mount().is_none_or(|mount| !mount.is_shadowed()))
         .collect();
     let mut devices: Vec<_> = volumes
         .iter()
         .map(|volume| {
             let mount = volume.get_mount();
+            let uri = mount
+                .as_ref()
+                .map(|mount| mount.root().uri())
+                .or_else(|| volume.activation_root().map(|root| root.uri()))
+                .and_then(shown_uri);
+            let kind = match uri.as_deref().map(LocationKind::of_uri) {
+                Some(kind) if kind.remote() => kind,
+                _ if volume.identifier("class").as_deref() == Some("network") => {
+                    LocationKind::Network
+                }
+                _ => LocationKind::Local,
+            };
+            let observed_mount = mount
+                .as_ref()
+                .map(|mount| mount.as_ptr() as usize as u64)
+                .filter(|instance| observed.contains(instance));
             WireDevice {
                 instance: volume.as_ptr() as usize as u64,
                 name: volume.name().into(),
-                mount: mount
-                    .as_ref()
-                    .map(|mount| mount.as_ptr() as usize as u64)
-                    .filter(|instance| observed.contains(instance)),
+                mount: observed_mount,
                 can_mount: mount.is_none() && volume.can_mount(),
                 removal: removal(volume.drive(), volume.can_eject(), mount.as_ref()),
+                kind,
+                remote_only: mount.is_some() && observed_mount.is_none(),
+                uri,
             }
         })
         .collect();
@@ -141,18 +185,32 @@ pub(super) fn collect(monitor: &gio::VolumeMonitor, observed: &BTreeSet<u64>) ->
             .into_iter()
             .filter(|mount| {
                 !mount.is_shadowed()
-                    && observed.contains(&(mount.as_ptr() as usize as u64))
-                    && mount.root().path().is_some()
                     && mount
                         .volume()
                         .is_none_or(|volume| !volumes.contains(&volume))
             })
-            .map(|mount| WireDevice {
-                instance: mount.as_ptr() as usize as u64,
-                name: mount.name().into(),
-                mount: Some(mount.as_ptr() as usize as u64),
-                can_mount: false,
-                removal: removal(mount.drive(), false, Some(&mount)),
+            .filter_map(|mount| {
+                let instance = mount.as_ptr() as usize as u64;
+                let uri = shown_uri(mount.root().uri());
+                let kind = uri
+                    .as_deref()
+                    .map_or(LocationKind::Local, LocationKind::of_uri);
+                let local = observed.contains(&instance);
+                // A mount without a local folder is only useful when it is a
+                // GVFS location the read-only GIO listing can still show.
+                if !local && (!kind.remote() || uri.is_none()) {
+                    return None;
+                }
+                Some(WireDevice {
+                    instance,
+                    name: mount.name().into(),
+                    mount: local.then_some(instance),
+                    can_mount: false,
+                    removal: removal(mount.drive(), false, Some(&mount)),
+                    kind,
+                    uri,
+                    remote_only: !local,
+                })
             }),
     );
     devices.sort_by(|a, b| {

@@ -422,6 +422,7 @@ fn exercise(root: &Path) {
                 pim: 0,
                 hidden_volume: false,
                 system_volume: false,
+                save: local_volumes::Remember::Never,
             },
         )
         .unwrap();
@@ -658,6 +659,7 @@ fn exercise_attention(root: &Path, fixture: &Path) {
                 pim: 0,
                 hidden_volume: false,
                 system_volume: false,
+                save: local_volumes::Remember::Never,
             },
         )
         .unwrap();

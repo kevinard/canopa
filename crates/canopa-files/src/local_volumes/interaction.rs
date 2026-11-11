@@ -1,6 +1,6 @@
 //! Helper-main-context interaction. Answers apply only to the latest question.
 use super::{
-    command_wire::{Answer, Question},
+    command_wire::{Answer, Question, Remember},
     *,
 };
 
@@ -100,6 +100,7 @@ impl Interaction {
                     pim,
                     hidden_volume,
                     system_volume,
+                    save,
                 },
             ) => {
                 if [&username, &domain, &password]
@@ -108,6 +109,8 @@ impl Interaction {
                     || anonymous && flags & gio::AskPasswordFlags::ANONYMOUS_SUPPORTED.bits() == 0
                     || (pim != 0 || hidden_volume || system_volume)
                         && flags & gio::AskPasswordFlags::TCRYPT.bits() == 0
+                    || save != Remember::Never
+                        && flags & gio::AskPasswordFlags::SAVING_SUPPORTED.bits() == 0
                 {
                     return Err(io::Error::other("Invalid device credentials."));
                 }
@@ -120,7 +123,13 @@ impl Interaction {
                 self.operation
                     .set_password((!anonymous).then_some(password.as_str()));
                 self.operation.set_anonymous(anonymous);
-                self.operation.set_password_save(gio::PasswordSave::Never);
+                // GVFS stores a kept password in the Secret Service itself
+                // (G_PASSWORD_SAVE_PERMANENTLY); Files never writes it anywhere.
+                self.operation.set_password_save(if anonymous {
+                    gio::PasswordSave::Never
+                } else {
+                    save.platform()
+                });
                 self.operation.set_pim(pim);
                 self.operation.set_is_tcrypt_hidden_volume(hidden_volume);
                 self.operation.set_is_tcrypt_system_volume(system_volume);
@@ -254,6 +263,7 @@ mod tests {
             pim: 0,
             hidden_volume: false,
             system_volume: false,
+            save: Remember::Never,
         }
     }
 
@@ -336,6 +346,52 @@ mod tests {
         );
         interaction.answer(1, credentials(true)).unwrap();
         assert!(replied.get());
+    }
+
+    #[test]
+    fn remembered_passwords_are_left_to_gio_only_when_the_backend_can_keep_them() {
+        let ask = |interaction: &Interaction, flags: gio::AskPasswordFlags| {
+            interaction.operation.emit_by_name::<()>(
+                "ask-password",
+                &[&"Password for me on box", &"me", &"", &flags],
+            );
+        };
+        let remember = |save| Answer::Password {
+            username: "me".into(),
+            domain: String::new(),
+            password: "private-secret".into(),
+            anonymous: false,
+            pim: 0,
+            hidden_volume: false,
+            system_volume: false,
+            save,
+        };
+        let unsupported = Interaction::new(|_, _| {});
+        ask(&unsupported, gio::AskPasswordFlags::NEED_PASSWORD);
+        assert!(
+            unsupported
+                .answer(1, remember(Remember::Permanently))
+                .is_err(),
+            "a backend that cannot keep it never receives a save request"
+        );
+        for (save, expected) in [
+            (Remember::Permanently, gio::PasswordSave::Permanently),
+            (Remember::ForSession, gio::PasswordSave::ForSession),
+            (Remember::Never, gio::PasswordSave::Never),
+        ] {
+            let interaction = Interaction::new(|_, _| {});
+            let saved = Rc::new(Cell::new(None));
+            let observed = saved.clone();
+            interaction
+                .operation
+                .connect_reply(move |op, _| observed.set(Some(op.password_save())));
+            ask(
+                &interaction,
+                gio::AskPasswordFlags::NEED_PASSWORD | gio::AskPasswordFlags::SAVING_SUPPORTED,
+            );
+            interaction.answer(1, remember(save)).unwrap();
+            assert_eq!(saved.get(), Some(expected));
+        }
     }
 
     #[test]

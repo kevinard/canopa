@@ -61,6 +61,8 @@ pub(super) enum Toggle {
     Anonymous,
     Hidden,
     System,
+    /// How long GIO may keep the password (server logins only).
+    Remember(crate::local_volumes::Remember),
 }
 
 #[derive(Clone)]
@@ -135,10 +137,15 @@ pub(super) fn status(job: &DeviceRequestSnapshot) -> String {
         return match job.operation {
             crate::local_volumes::DeviceOperation::Mount => "Mounting…".into(),
             crate::local_volumes::DeviceOperation::Remove(kind) => format!("{}…", kind.label()),
+            crate::local_volumes::DeviceOperation::Connect => "Connecting…".into(),
         };
     }
     match &job.outcome {
         Some(DeviceOutcome::Mounted { .. }) => "Mounted".into(),
+        Some(DeviceOutcome::Connected { .. }) => "Connected".into(),
+        Some(DeviceOutcome::ConnectedRemote { .. }) => {
+            "Connected without a local folder: GVFS's FUSE daemon (gvfsd-fuse) is not running, so only a read-only listing is available".into()
+        }
         Some(DeviceOutcome::Removed) => "Removed".into(),
         Some(DeviceOutcome::Cancelled) => "Cancelled".into(),
         Some(DeviceOutcome::Failed { message }) => format!("Could not finish: {message}"),
@@ -272,7 +279,12 @@ impl Desktop {
                     .map(|job| {
                         (
                             job.id,
-                            matches!(job.outcome, Some(DeviceOutcome::Mounted { .. })),
+                            matches!(
+                                job.outcome,
+                                Some(
+                                    DeviceOutcome::Mounted { .. } | DeviceOutcome::Connected { .. }
+                                )
+                            ),
                         )
                     })
             })
@@ -300,6 +312,7 @@ impl Desktop {
         self.devices
             .intents
             .retain(|window, _| self.windows.contains_key(window));
+        tasks.push(self.poll_network());
         tasks.push(self.sync_device_question());
         tasks.push(self.auto_device_question());
         tasks.push(self.exit_if_empty());
@@ -328,13 +341,21 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     let mut body = column![chrome::section(appearance, "Devices")].spacing(2);
     let ready = desktop.devices.catalog.status == DeviceStatus::Ready;
     let origin = Origin::capture(desktop, window);
-    for device in &desktop.devices.catalog.devices {
-        let open = origin
-            .as_ref()
-            .filter(|_| {
-                ready && !desktop.devices.busy() && (device.root.is_some() || device.can_mount)
-            })
-            .map(|origin| Message::Device(Event::Open(origin.clone(), device.token)));
+    let model = super::network_ui::sidebar(&desktop.devices.catalog, &desktop.network.bookmarks);
+    for device in model.devices {
+        let open = if device.remote_only {
+            Some(Message::Network(super::network_ui::Event::ShowRemote(
+                window,
+                device.token,
+            )))
+        } else {
+            origin
+                .as_ref()
+                .filter(|_| {
+                    ready && !desktop.devices.busy() && (device.root.is_some() || device.can_mount)
+                })
+                .map(|origin| Message::Device(Event::Open(origin.clone(), device.token)))
+        };
         let active = device
             .root
             .as_deref()
@@ -342,9 +363,11 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
         let label = chrome::single_line(device.name.as_str(), font, size, None, true);
         let open = canopa_ui::styled_action(
             row![
-                desktop
-                    .icons
-                    .chrome(Icon::Drive, 17.0, if open.is_some() { 0.74 } else { 0.35 }),
+                desktop.icons.chrome(
+                    super::network_ui::kind_icon(device.kind),
+                    17.0,
+                    if open.is_some() { 0.74 } else { 0.35 }
+                ),
                 label
             ]
             .spacing(9)
@@ -448,10 +471,12 @@ pub(super) fn rows(
                 controls = controls.push(button("Review", "review", Some(Event::Review(job.id))));
             }
         }
-        let available = matches!(job.outcome, Some(DeviceOutcome::Mounted { .. }))
-            && desktop
-                .device_runtime()
-                .is_some_and(|runtime| runtime.device_requests().mounted_root(job.id).is_ok());
+        let available = matches!(
+            job.outcome,
+            Some(DeviceOutcome::Mounted { .. } | DeviceOutcome::Connected { .. })
+        ) && desktop
+            .device_runtime()
+            .is_some_and(|runtime| runtime.device_requests().mounted_root(job.id).is_ok());
         if available {
             controls = controls.push(button(
                 "Open folder",

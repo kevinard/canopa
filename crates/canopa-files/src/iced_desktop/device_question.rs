@@ -2,8 +2,8 @@
 use super::devices_ui::{Edited, Event, Field, Toggle};
 use super::*;
 use crate::local_volumes::{
-    DeviceAnswer, DevicePhase, DevicePrompt, DeviceQuestion, DeviceQuestionToken, DeviceRequestId,
-    DeviceRequestSnapshot,
+    DeviceAnswer, DeviceOperation, DevicePhase, DevicePrompt, DeviceQuestion, DeviceQuestionToken,
+    DeviceRequestId, DeviceRequestSnapshot, Remember,
 };
 use canopa_theme::UiKind;
 use iced::{
@@ -25,6 +25,9 @@ pub(super) struct Dialog {
     anonymous: bool,
     hidden: bool,
     system: bool,
+    remember: Remember,
+    /// A server login or question, not a local device.
+    network: bool,
     error: Option<String>,
 }
 
@@ -55,15 +58,32 @@ impl Dialog {
             anonymous: false,
             hidden: false,
             system: false,
+            remember: Remember::Never,
+            network: job.operation == DeviceOperation::Connect || job.uri.is_some(),
             error: None,
         }
     }
     pub fn title(&self) -> &'static str {
         match &self.question {
+            DeviceQuestion::Password { .. } if self.network => "Connect to server",
             DeviceQuestion::Password { .. } => "Unlock device",
             DeviceQuestion::Choice { blocked: true, .. } => "Device is busy",
+            DeviceQuestion::Choice { .. } if self.host_identity() => "Check the server's identity",
+            DeviceQuestion::Choice { .. } if self.network => "Server question",
             DeviceQuestion::Choice { .. } => "Device question",
         }
+    }
+
+    /// SSH asks to confirm an unknown or changed host key.
+    fn host_identity(&self) -> bool {
+        let DeviceQuestion::Choice { message, .. } = &self.question else {
+            return false;
+        };
+        let message = message.to_lowercase();
+        self.network
+            && (message.contains("identity")
+                || message.contains("host key")
+                || message.contains("fingerprint"))
     }
 }
 
@@ -129,23 +149,34 @@ impl Desktop {
         let Some(parent) = parent else {
             return Task::none();
         };
-        let short = matches!(&prompt.question, DeviceQuestion::Choice { blocked: false, choices, .. } if choices.len() <= 3);
-        let height =
-            prompt
-                .question
-                .password_fields()
-                .map_or(if short { 205.0 } else { 240.0 }, |fields| {
-                    let count = [
-                        fields.username,
-                        fields.domain,
-                        fields.password,
-                        fields.anonymous,
-                    ]
-                    .into_iter()
-                    .filter(|shown| *shown)
-                    .count();
-                    205.0 + count as f32 * 68.0 + if fields.tcrypt { 115.0 } else { 0.0 }
-                });
+        // Server questions (SSH host keys) carry long explanations.
+        let network = job.operation == crate::local_volumes::DeviceOperation::Connect;
+        let short = !network
+            && matches!(&prompt.question, DeviceQuestion::Choice { blocked: false, choices, .. } if choices.len() <= 3);
+        let height = prompt.question.password_fields().map_or(
+            if short {
+                205.0
+            } else if network {
+                330.0
+            } else {
+                240.0
+            },
+            |fields| {
+                let count = [
+                    fields.username,
+                    fields.domain,
+                    fields.password,
+                    fields.anonymous,
+                ]
+                .into_iter()
+                .filter(|shown| *shown)
+                .count();
+                205.0
+                    + count as f32 * 68.0
+                    + if fields.tcrypt { 115.0 } else { 0.0 }
+                    + if fields.save { 132.0 } else { 0.0 }
+            },
+        );
         let (window, opened) = window::open_transient(
             parent,
             window::Settings {
@@ -259,6 +290,7 @@ impl Desktop {
                         }
                         Toggle::Hidden => dialog.hidden = !dialog.hidden,
                         Toggle::System => dialog.system = !dialog.system,
+                        Toggle::Remember(remember) => dialog.remember = remember,
                     }
                 }
             }
@@ -290,6 +322,16 @@ impl Desktop {
                     pim,
                     hidden_volume: dialog.hidden,
                     system_volume: dialog.system,
+                    save: if dialog
+                        .question
+                        .password_fields()
+                        .is_some_and(|fields| fields.save)
+                        && !dialog.anonymous
+                    {
+                        dialog.remember
+                    } else {
+                        Remember::Never
+                    },
                 };
                 return self.answer_device_question(id, token, answer);
             }
@@ -530,15 +572,42 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 ));
             }
         }
-        body = body.push(
-            text("Files uses these credentials for this request only.")
-                .size(small)
-                .font(font)
-                .style(canopa_ui::muted),
-        );
+        if fields.save && !dialog.anonymous {
+            // GVFS keeps a remembered password in the Secret Service keyring;
+            // Files only passes the choice on and never stores it.
+            for remember in [Remember::Never, Remember::ForSession, Remember::Permanently] {
+                let event = Event::Toggle(id, dialog.token, Toggle::Remember(remember));
+                let name = format!("remember-{remember:?}");
+                order.push(control(id, name.clone()));
+                body = body.push(super::focus::control(
+                    control(id, name),
+                    Some(Message::Device(event.clone())),
+                    appearance,
+                    checkbox(dialog.remember == remember)
+                        .label(remember.label())
+                        .font(font)
+                        .text_size(size)
+                        .style(canopa_ui::checkbox_style)
+                        .on_toggle(move |_| Message::Device(event.clone())),
+                ));
+            }
+            body = body.push(
+                text("A remembered password is kept in your keyring by GVFS, not by Files.")
+                    .size(small)
+                    .font(font)
+                    .style(canopa_ui::muted),
+            );
+        } else {
+            body = body.push(
+                text("Files uses these credentials for this request only.")
+                    .size(small)
+                    .font(font)
+                    .style(canopa_ui::muted),
+            );
+        }
         order.push(control(id, "submit"));
         actions = actions.push(button(
-            "Unlock".into(),
+            if dialog.network { "Connect" } else { "Unlock" }.into(),
             "submit".into(),
             Event::Submit(id, dialog.token),
         ));
@@ -553,12 +622,20 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                     .font(font),
             );
         }
+        if dialog.host_identity() {
+            body = body.push(
+                text("Continue only if you expect to connect to this server, for example on your own network. SSH remembers its identity for next time; if it changes later, Files cannot connect until it is checked.")
+                    .size(small)
+                    .font(font)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            );
+        }
         // The shared Cancel already cancels this request. Keep provider indices
         // for every other action without showing two identical Cancel buttons.
         for (index, choice) in choices
             .iter()
             .enumerate()
-            .filter(|(_, choice)| choice.as_str() != "Cancel")
+            .filter(|(_, choice)| !is_cancel(choice))
         {
             let name = format!("choice-{index}");
             order.push(control(id, name.clone()));
@@ -607,4 +684,21 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .height(Length::Fill)
         .style(move |_| canopa_ui::frame(appearance, appearance.style(UiKind::Panel)));
     super::focus::group(content, order, reveal, Some(control(id, "cancel")))
+}
+
+/// The provider's own cancel choice ("Cancel", or SSH's "Cancel Login"): the
+/// shared Cancel button already cancels the request.
+fn is_cancel(choice: &str) -> bool {
+    choice == "Cancel" || choice.starts_with("Cancel ")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn provider_cancel_choices_are_folded_into_the_shared_cancel() {
+        assert!(super::is_cancel("Cancel"));
+        assert!(super::is_cancel("Cancel Login"));
+        assert!(!super::is_cancel("Log In Anyway"));
+        assert!(!super::is_cancel("Cancellation policy"));
+    }
 }

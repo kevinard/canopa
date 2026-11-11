@@ -209,7 +209,7 @@ impl ServerAddress {
         }
         let user = Some(url.username())
             .filter(|user| !user.is_empty())
-            .map(|user| percent_decode(user));
+            .map(percent_decode);
         let path = match url.path() {
             "" => "/".to_owned(),
             path => percent_decode(path),
@@ -314,7 +314,20 @@ pub fn gvfs_fuse_root(runtime: Option<&Path>) -> PathBuf {
 }
 
 /// The kind of location a URI scheme names, for sidebars and policies.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum LocationKind {
     #[default]
     Local,

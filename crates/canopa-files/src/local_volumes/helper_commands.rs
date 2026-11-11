@@ -30,6 +30,14 @@ impl Target {
             Self::Mount(m) => monitor.mounts().contains(m),
         }
     }
+    /// The location's URI scheme, to name a missing GVFS backend.
+    fn scheme(&self) -> Option<String> {
+        let root = match self {
+            Self::Volume(v) => v.activation_root(),
+            Self::Mount(m) => Some(m.root()),
+        }?;
+        root.uri_scheme().map(|scheme| scheme.to_string())
+    }
 }
 
 struct Active {
@@ -47,7 +55,12 @@ pub(super) struct Commands {
     active: RefCell<Option<Active>>,
     last: Cell<u64>,
     stopping: Cell<bool>,
+    listings: Cell<usize>,
 }
+
+/// Concurrent read-only GIO listings; further ones are refused.
+const LISTINGS: usize = 4;
+const LISTING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl Commands {
     pub fn new(
@@ -66,6 +79,7 @@ impl Commands {
             active: RefCell::new(None),
             last: Cell::new(0),
             stopping: Cell::new(false),
+            listings: Cell::new(0),
         })
     }
 
@@ -116,6 +130,8 @@ impl Commands {
                 generation,
                 removal,
             } => self.start(request.id, instance, generation, Some(removal)),
+            Command::Connect { uri } => self.connect(request.id, uri),
+            Command::Enumerate { uri } => self.enumerate(request.id, uri),
             Command::Cancel => {
                 let active = self
                     .active
@@ -172,13 +188,7 @@ impl Commands {
                 "The device observation has changed. Refresh and try again.",
             ));
         }
-        let observed = self
-            .monitor
-            .mounts()
-            .into_iter()
-            .filter(|m| !m.is_shadowed() && m.root().path().is_some())
-            .map(|m| m.as_ptr() as usize as u64)
-            .collect();
+        let observed = catalog::observed_mounts(&self.monitor);
         let device = catalog::collect(&self.monitor, &observed)
             .into_iter()
             .find(|d| d.instance == instance)
@@ -204,23 +214,21 @@ impl Commands {
             .ok_or_else(|| io::Error::other("The device is no longer available."))
     }
 
-    fn start(self: &Rc<Self>, id: u64, instance: u64, generation: u64, removal: Option<Removal>) {
+    /// A fresh request ID while nothing else is active, else a terminal refusal.
+    fn admit(&self, id: u64) -> bool {
         if id <= self.last.get() {
             self.refuse(id, "This device request ID has already been used.");
-            return;
+            return false;
         }
         self.last.set(id);
         if self.active.borrow().is_some() {
             self.refuse(id, "Another device request is still in progress.");
-            return;
+            return false;
         }
-        let target = match self.target(instance, generation, removal) {
-            Ok(target) => target,
-            Err(error) => {
-                self.refuse(id, &error.to_string());
-                return;
-            }
-        };
+        true
+    }
+
+    fn activate(self: &Rc<Self>, id: u64) -> (gio::Cancellable, Rc<Interaction>) {
         let weak = Rc::downgrade(self);
         let interaction = Rc::new(Interaction::new(move |question, prompt| {
             if let Some(owner) = weak.upgrade() {
@@ -233,6 +241,21 @@ impl Commands {
             cancel: cancel.clone(),
             interaction: interaction.clone(),
         });
+        (cancel, interaction)
+    }
+
+    fn start(self: &Rc<Self>, id: u64, instance: u64, generation: u64, removal: Option<Removal>) {
+        if !self.admit(id) {
+            return;
+        }
+        let target = match self.target(instance, generation, removal) {
+            Ok(target) => target,
+            Err(error) => {
+                self.refuse(id, &error.to_string());
+                return;
+            }
+        };
+        let (cancel, interaction) = self.activate(id);
         let owner = self.clone();
         let completed_target = target.clone();
         let callback = move |result| owner.finish(id, completed_target, removal.is_none(), result);
@@ -302,7 +325,7 @@ impl Commands {
         }
     }
 
-    fn finish(&self, id: u64, target: Target, mounting: bool, result: Result<(), glib::Error>) {
+    fn retire(&self, id: u64) {
         let active = self
             .active
             .borrow_mut()
@@ -310,23 +333,10 @@ impl Commands {
             .expect("one outstanding device callback");
         assert_eq!(active.id, id);
         active.interaction.retire();
-        let outcome = match result {
-            Ok(()) if mounting => match target
-                .mount()
-                .filter(|_| target.present(&self.monitor))
-                .and_then(|m| m.root().path())
-            {
-                Some(root) => Outcome::Mounted { root },
-                None => Outcome::Failed {
-                    message: "The device is no longer available as a local folder.".into(),
-                },
-            },
-            Ok(()) => Outcome::Removed,
-            Err(error) if error.matches(gio::IOErrorEnum::Cancelled) => Outcome::Cancelled,
-            Err(error) => Outcome::Failed {
-                message: error.to_string(),
-            },
-        };
+    }
+
+    /// Publish the completed platform state, then the request's outcome.
+    fn settle(&self, id: u64, outcome: Outcome) {
         // Even providers that omit a signal must publish their completed state
         // before the parent can expose a successful mounted root to a browser.
         let refreshed = self
@@ -347,6 +357,338 @@ impl Commands {
             self.main_loop.quit();
         }
     }
+
+    fn finish(&self, id: u64, target: Target, mounting: bool, result: Result<(), glib::Error>) {
+        self.retire(id);
+        let outcome = match result {
+            Ok(()) if mounting => match target
+                .mount()
+                .filter(|_| target.present(&self.monitor))
+                .and_then(|m| m.root().path())
+            {
+                Some(root) => Outcome::Mounted { root },
+                None => Outcome::Failed {
+                    message: "The device is no longer available as a local folder.".into(),
+                },
+            },
+            Ok(()) => Outcome::Removed,
+            Err(error) if error.matches(gio::IOErrorEnum::Cancelled) => Outcome::Cancelled,
+            Err(error) if mounting && error.matches(gio::IOErrorEnum::NotSupported) => {
+                Outcome::Failed {
+                    message: target
+                        .scheme()
+                        .map(|scheme| crate::network::missing_backend(&scheme))
+                        .unwrap_or_else(|| error.to_string()),
+                }
+            }
+            Err(error) if error.matches(gio::IOErrorEnum::FailedHandled) => Outcome::Cancelled,
+            Err(error) => Outcome::Failed {
+                message: error.to_string(),
+            },
+        };
+        self.settle(id, outcome);
+    }
+
+    /// Mount the enclosing volume of a server address with this request's
+    /// mount operation, so credentials and host-key questions reach the user.
+    fn connect(self: &Rc<Self>, id: u64, uri: String) {
+        if !self.admit(id) {
+            return;
+        }
+        // Never trust the parent's validation: reparse and require the exact
+        // normalized URI, so no password or query can reach GVFS from here.
+        let address = match crate::network::ServerAddress::parse(&uri) {
+            Ok(address) if address.uri == uri => address,
+            _ => {
+                self.refuse(id, "The server address is not valid.");
+                return;
+            }
+        };
+        if !supported(address.scheme.id()) {
+            self.refuse(id, &crate::network::missing_backend(address.scheme.id()));
+            return;
+        }
+        let (cancel, interaction) = self.activate(id);
+        let file = gio::File::for_uri(&address.uri);
+        let owner = self.clone();
+        let mounted = file.clone();
+        file.mount_enclosing_volume(
+            gio::MountMountFlags::NONE,
+            Some(&interaction.operation),
+            Some(&cancel),
+            move |result| owner.finish_connect(id, mounted, result, 0),
+        );
+    }
+
+    fn finish_connect(
+        self: &Rc<Self>,
+        id: u64,
+        file: gio::File,
+        result: Result<(), glib::Error>,
+        attempt: u32,
+    ) {
+        let uri = file.uri().to_string();
+        let result = match result {
+            Err(error) if error.matches(gio::IOErrorEnum::AlreadyMounted) => Ok(()),
+            result => result,
+        };
+        let outcome = match result {
+            Ok(()) => match file.find_enclosing_mount(gio::Cancellable::NONE) {
+                Ok(mount) => match (mount.root().path(), file.path()) {
+                    (Some(root), Some(location)) if location.starts_with(&root) => {
+                        // The volume monitor learns of a new GVFS mount by a
+                        // separate signal. Wait briefly for it, so the parent
+                        // sees the mount among its prepared observations.
+                        let listed =
+                            self.monitor.mounts().iter().any(|known| {
+                                known.root().path().as_deref() == Some(root.as_path())
+                            });
+                        if !listed && attempt < 40 {
+                            let owner = self.clone();
+                            glib::timeout_add_local_once(
+                                std::time::Duration::from_millis(50),
+                                move || owner.finish_connect(id, file, Ok(()), attempt + 1),
+                            );
+                            return;
+                        }
+                        Outcome::Connected { root, location }
+                    }
+                    (Some(_), Some(_)) => Outcome::Failed {
+                        message: "The mounted location is outside its mount.".into(),
+                    },
+                    _ => Outcome::ConnectedRemote { uri: uri.clone() },
+                },
+                Err(error) => Outcome::Failed {
+                    message: crate::network::describe_failure(
+                        &uri,
+                        crate::network::Failure::Other,
+                        error.message(),
+                    ),
+                },
+            },
+            Err(error)
+                if error.matches(gio::IOErrorEnum::Cancelled)
+                    || error.matches(gio::IOErrorEnum::FailedHandled) =>
+            {
+                Outcome::Cancelled
+            }
+            Err(error) => Outcome::Failed {
+                message: crate::network::describe_failure(&uri, classify(&error), error.message()),
+            },
+        };
+        self.retire(id);
+        self.settle(id, outcome);
+    }
+
+    /// List a GVFS location's children: network discovery, or a mount whose
+    /// local folder is missing. It never changes anything on the server.
+    fn enumerate(self: &Rc<Self>, id: u64, uri: String) {
+        let scheme = uri
+            .split_once(':')
+            .map_or(String::new(), |(scheme, _)| scheme.to_ascii_lowercase());
+        let allowed = uri.len() <= 4096
+            && !uri.chars().any(char::is_control)
+            && (scheme == "network"
+                || scheme == "dns-sd"
+                || crate::network::LocationKind::of_scheme(&scheme).remote());
+        let reply = |entries, error, truncated| Update::Enumerated {
+            entries,
+            error,
+            truncated,
+        };
+        if !allowed {
+            self.send(
+                id,
+                reply(
+                    Vec::new(),
+                    Some("This location cannot be listed.".into()),
+                    false,
+                ),
+            );
+            return;
+        }
+        if !supported(&scheme) {
+            self.send(
+                id,
+                reply(
+                    Vec::new(),
+                    Some(crate::network::missing_backend(&scheme)),
+                    false,
+                ),
+            );
+            return;
+        }
+        if self.listings.get() >= LISTINGS || self.stopping.get() {
+            self.send(
+                id,
+                reply(
+                    Vec::new(),
+                    Some("Files is still listing other locations. Try again shortly.".into()),
+                    false,
+                ),
+            );
+            return;
+        }
+        self.listings.set(self.listings.get() + 1);
+        let owner = self.clone();
+        glib::MainContext::default().spawn_local(async move {
+            let file = gio::File::for_uri(&uri);
+            let listed = glib::future_with_timeout(LISTING_TIMEOUT, list(file)).await;
+            owner.listings.set(owner.listings.get() - 1);
+            let update = match listed {
+                Ok(Ok((entries, truncated))) => reply(entries, None, truncated),
+                Ok(Err(error)) => reply(
+                    Vec::new(),
+                    Some(crate::network::describe_failure(
+                        &uri,
+                        classify(&error),
+                        error.message(),
+                    )),
+                    false,
+                ),
+                Err(_) => reply(
+                    Vec::new(),
+                    Some("Listing this location took too long.".into()),
+                    false,
+                ),
+            };
+            owner.send(id, update);
+        });
+    }
+}
+
+/// Whether GIO's VFS (GVFS, when installed) handles a URI scheme.
+fn supported(scheme: &str) -> bool {
+    gio::Vfs::default()
+        .supported_uri_schemes()
+        .iter()
+        .any(|known| known.as_str() == scheme)
+}
+
+/// Readable failure class of a GIO mount or listing error.
+fn classify(error: &glib::Error) -> crate::network::Failure {
+    use crate::network::Failure;
+    let code = error.kind::<gio::IOErrorEnum>();
+    match code {
+        Some(
+            gio::IOErrorEnum::HostNotFound
+            | gio::IOErrorEnum::HostUnreachable
+            | gio::IOErrorEnum::NetworkUnreachable
+            | gio::IOErrorEnum::ConnectionRefused
+            | gio::IOErrorEnum::TimedOut
+            | gio::IOErrorEnum::NotConnected
+            | gio::IOErrorEnum::BrokenPipe,
+        ) => return Failure::Unreachable,
+        Some(gio::IOErrorEnum::PermissionDenied) => return Failure::Credentials,
+        Some(gio::IOErrorEnum::NotSupported) => return Failure::Unsupported,
+        _ => {}
+    }
+    // Several backends report network trouble as a generic failure.
+    let message = error.message().to_ascii_lowercase();
+    if [
+        "timed out",
+        "no route to host",
+        "connection refused",
+        "name or service not known",
+        "could not resolve",
+        "unable to resolve",
+        "network is unreachable",
+        "host is down",
+        "connection reset",
+    ]
+    .iter()
+    .any(|text| message.contains(text))
+    {
+        Failure::Unreachable
+    } else if [
+        "permission denied",
+        "authentication",
+        "logon failure",
+        "login",
+    ]
+    .iter()
+    .any(|text| message.contains(text))
+    {
+        Failure::Credentials
+    } else {
+        Failure::Other
+    }
+}
+
+/// Children of a location, mounting it first when GIO says it is not mounted
+/// (network:/// mounts itself without credentials).
+async fn list(file: gio::File) -> Result<(Vec<wire::RemoteEntry>, bool), glib::Error> {
+    const ATTRIBUTES: &str = "standard::name,standard::display-name,standard::type,standard::size,standard::target-uri,standard::is-hidden";
+    let enumerator = match file
+        .enumerate_children_future(
+            ATTRIBUTES,
+            gio::FileQueryInfoFlags::NONE,
+            glib::Priority::DEFAULT,
+        )
+        .await
+    {
+        Err(error) if error.matches(gio::IOErrorEnum::NotMounted) => {
+            file.mount_enclosing_volume_future(
+                gio::MountMountFlags::NONE,
+                gio::MountOperation::NONE,
+            )
+            .await?;
+            file.enumerate_children_future(
+                ATTRIBUTES,
+                gio::FileQueryInfoFlags::NONE,
+                glib::Priority::DEFAULT,
+            )
+            .await?
+        }
+        result => result?,
+    };
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    loop {
+        let infos = enumerator
+            .next_files_future(64, glib::Priority::DEFAULT)
+            .await?;
+        if infos.is_empty() {
+            break;
+        }
+        for info in infos {
+            if info.is_hidden() {
+                continue;
+            }
+            if entries.len() >= wire::ENUMERATION_LIMIT {
+                truncated = true;
+                break;
+            }
+            let uri = info
+                .attribute_string(gio::FILE_ATTRIBUTE_STANDARD_TARGET_URI)
+                .map(|uri| uri.to_string())
+                .unwrap_or_else(|| file.child(info.name()).uri().to_string());
+            let kind = info.file_type();
+            let entry = wire::RemoteEntry {
+                name: info.display_name().to_string(),
+                uri,
+                directory: matches!(
+                    kind,
+                    gio::FileType::Directory | gio::FileType::Mountable | gio::FileType::Shortcut
+                ),
+                size: (kind == gio::FileType::Regular)
+                    .then(|| u64::try_from(info.size()).unwrap_or(0)),
+            };
+            if wire::valid_entry(&entry) {
+                entries.push(entry);
+            }
+        }
+        if truncated {
+            break;
+        }
+    }
+    let _ = enumerator.close_future(glib::Priority::DEFAULT).await;
+    entries.sort_by(|a, b| {
+        b.directory
+            .cmp(&a.directory)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok((entries, truncated))
 }
 
 fn unavailable() -> glib::Error {
