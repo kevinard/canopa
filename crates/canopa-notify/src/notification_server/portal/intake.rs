@@ -224,9 +224,15 @@ pub(super) fn prepare_at(
         // Request questions remain runtime-only. This is transport withdrawal,
         // not Notify's display-based attention timeout.
         transient: deadline.is_some(),
-        // Portal has no sender timeout. Keep callbacks alive until explicit
-        // action, dismissal or withdrawal, independently of the sending process.
-        expire_timeout: NotificationTimeout::Never,
+        // Portal has no sender timeout, so ordinary portal notifications follow
+        // the server default banner policy like freedesktop requests with -1:
+        // low/normal expire after display and critical (`urgent`) stays. Timed
+        // requests keep their own withdrawal deadline instead.
+        expire_timeout: if deadline.is_some() {
+            NotificationTimeout::Never
+        } else {
+            NotificationTimeout::ServerDefault
+        },
         ..Default::default()
     };
     Ok((

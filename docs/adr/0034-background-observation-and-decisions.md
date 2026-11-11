@@ -100,7 +100,7 @@ anchors it at transport admission and keeps the resulting thread transient.
 One adapter timer owns weak expiry records under the registration cap and sends
 withdrawal through the existing owned queue. Replacement retires the old expiry;
 queued expiry checks binding identity before touching a later replacement.
-Ordinary portal notifications keep their existing sender-exit/no-expiry contract.
+Ordinary portal notifications survive sender exit and follow Notify's default display timeout (root ADR 0031); timed questions do not.
 This gives questions an independent lifetime even if their portal process exits.
 
 ## Verification

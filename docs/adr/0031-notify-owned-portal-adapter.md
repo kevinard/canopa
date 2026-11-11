@@ -73,10 +73,18 @@ and [Notify's domain context](../notify/CONTEXT.md).
 
 ## Current boundary
 
-The adapter requests no automatic sender expiry: portal callbacks remain live
-until explicit user action/dismissal or sender withdrawal, independently of
-application exit. This first version also leaves the banner visible until those
-operations; a separate timed banner-hiding policy is future presentation work.
+Ordinary portal notifications use Notify's server-default timeout policy, as a
+freedesktop request with `expire_timeout = -1` does: low and normal priority
+expire after their banner is displayed (Notify ADR 0028), and `urgent` stays
+until explicit user action/dismissal or sender withdrawal. Until then callbacks
+remain live independently of application exit. Expiry retires the registration,
+so the notification stays in Center history without sender actions, and a later
+`AddNotification` with the same portal ID starts a new notification. The first
+version requested no expiry at all, so every portal banner stayed on screen
+until clicked or dismissed. A banner-hiding timer that keeps callbacks live
+after the banner hides remains future presentation work. Timed
+`org.canopa.request-timeout-ms` requests keep their own withdrawal deadline and
+no display timeout.
 Priority low/normal/high/urgent maps to existing Notify low/normal/normal/critical
 urgency. Optional display hints and category/purpose-specific presentation are
 not advertised; labelled buttons retain ordinary presentation. Full (sv)

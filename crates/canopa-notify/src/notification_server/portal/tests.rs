@@ -15,12 +15,17 @@ struct Fixture {
 
 impl Fixture {
     async fn new(suffix: &str) -> Self {
+        Self::with_options(suffix, canopa_notify::DaemonOptions::headless).await
+    }
+
+    async fn with_options(
+        suffix: &str,
+        options: impl FnOnce(std::path::PathBuf) -> canopa_notify::DaemonOptions,
+    ) -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let daemon = Daemon::open(canopa_notify::DaemonOptions::headless(
-            temp.path().join("history.db"),
-        ))
-        .await
-        .unwrap();
+        let daemon = Daemon::open(options(temp.path().join("history.db")))
+            .await
+            .unwrap();
         let name = format!(
             "org.canopa.NotificationPortal.p{}.{}",
             std::process::id(),
@@ -266,6 +271,81 @@ fn request_expiry_is_bounded_transient_and_anchored_at_admission() {
             intake::prepare(identity(), HashMap::from([(EXPIRY_OPTION.into(), invalid)])).is_err()
         );
     }
+}
+
+#[test]
+fn ordinary_portal_notifications_use_the_server_default_timeout_policy() {
+    let identity = || Identity {
+        app_id: "org.canopa.Chat".into(),
+        id: "message".into(),
+    };
+    for (priority, urgency) in [
+        (None, canopa_notify::Urgency::Normal),
+        (Some("low"), canopa_notify::Urgency::Low),
+        (Some("high"), canopa_notify::Urgency::Normal),
+        (Some("urgent"), canopa_notify::Urgency::Critical),
+    ] {
+        let mut values = values_for("Message");
+        if let Some(priority) = priority {
+            values.insert("priority".into(), owned(priority));
+        }
+        let (input, binding) = intake::prepare(identity(), values).unwrap();
+        assert_eq!(input.urgency, urgency);
+        assert_eq!(
+            input.expire_timeout,
+            canopa_notify::NotificationTimeout::ServerDefault,
+            "{priority:?} follows the ordinary banner timeout policy"
+        );
+        assert!(!input.transient);
+        assert_eq!(binding.deadline, None);
+    }
+}
+
+#[tokio::test]
+async fn displayed_portal_banners_expire_unless_urgent() {
+    let fixture = Fixture::with_options("BannerTimeout", |path| {
+        canopa_notify::DaemonOptions::graphical(path, canopa_notify::NoopBannerPresenter)
+            .with_notification_timeout_defaults(canopa_notify::NotificationTimeoutDefaults {
+                low: Some(std::time::Duration::from_millis(50)),
+                normal: Some(std::time::Duration::from_millis(50)),
+                critical: None,
+            })
+    })
+    .await;
+    fixture
+        .add("org.canopa.Chat", "normal", values_for("Hides by itself"))
+        .await
+        .unwrap();
+    let mut urgent = values_for("Stays on screen");
+    urgent.insert("priority".into(), owned("urgent"));
+    fixture
+        .add("org.canopa.Chat", "urgent", urgent)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while fixture.daemon.snapshot().await.unwrap().active.len() != 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the normal portal banner never expired");
+    let snapshot = fixture.daemon.snapshot().await.unwrap();
+    assert_eq!(
+        snapshot.active[0].accepted_notification.summary,
+        "Stays on screen"
+    );
+    assert!(snapshot.history.iter().any(|thread| {
+        thread.accepted_notification.summary == "Hides by itself"
+            && thread.status == canopa_notify::NotificationStatus::Expired
+    }));
+    // The expired registration is retired, so the same portal ID starts anew.
+    fixture
+        .add("org.canopa.Chat", "normal", values_for("Again"))
+        .await
+        .unwrap();
+    fixture.remove("org.canopa.Chat", "urgent").await;
+    fixture.remove("org.canopa.Chat", "normal").await;
+    fixture.finish().await;
 }
 
 #[tokio::test]
