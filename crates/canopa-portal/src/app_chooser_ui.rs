@@ -1,4 +1,5 @@
 //! Iced application selection. The frontend retains launch and MIME policy.
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::icons;
 use crate::{
     app_chooser::{AppRequest, AppSelection},
@@ -135,6 +136,8 @@ pub fn run(
                 initial: true,
                 error: None,
                 last_click: None,
+                list_focus: true,
+                accessibility: Some(a11y::Accessibility::new("canopa-app-chooser", WINDOW_KEY)),
                 output: output.clone(),
             };
             let load = app.load();
@@ -159,13 +162,24 @@ pub fn run(
         Chooser::update,
         Chooser::view,
     )
-    .title(|_: &Chooser, _| "Open with — Canopa".to_owned())
+    .title(|_: &Chooser, _| WINDOW_TITLE.to_owned())
     .theme(|app: &Chooser, _| app.theme.clone())
     .subscription(Chooser::subscription)
     .default_font(font)
     .run()
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     Ok(result.lock().expect("app chooser output").take())
+}
+
+/// The AT-SPI window of the application chooser and its title.
+const WINDOW_KEY: &str = "app-chooser";
+const WINDOW_TITLE: &str = "Open with — Canopa";
+/// The application list, controlled by the search field.
+const APPLICATIONS_KEY: &str = "app-chooser-applications";
+
+/// A row's identity: the offered application ID, never its display name.
+fn application_key(id: &str) -> String {
+    format!("app-chooser-application-{}", id.escape_default())
 }
 
 struct Chooser {
@@ -184,6 +198,11 @@ struct Chooser {
     initial: bool,
     error: Option<String>,
     last_click: Option<(String, Instant)>,
+    /// Keyboard input drives the list: the search field has not been typed
+    /// into or focused since the last arrow key or row click. The selected
+    /// row then holds accessibility focus.
+    list_focus: bool,
+    accessibility: Option<a11y::Accessibility<Message>>,
     output: Arc<Mutex<Option<AppSelection>>>,
 }
 
@@ -198,11 +217,18 @@ enum Message {
     Token(u64, Option<String>),
     Cancel,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
+}
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
 }
 
 impl Chooser {
     fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(|event, status, _| {
+        let input = iced::event::listen_with(|event, status, _| {
             let cancel = matches!(
                 &event,
                 Event::Keyboard(keyboard::Event::KeyPressed {
@@ -211,7 +237,11 @@ impl Chooser {
                 })
             );
             (cancel || status == iced::event::Status::Ignored).then_some(Message::Event(event))
-        })
+        });
+        match &self.accessibility {
+            Some(state) => Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
     }
     fn load(&mut self) -> Task<Message> {
         if self.loading {
@@ -248,10 +278,34 @@ impl Chooser {
         }
         self.last_click = None;
     }
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            if matches!(event, canopa_ui::accessibility::Event::Focus(_)) {
+                // An assistive technology moved focus to the search field.
+                self.list_focus = false;
+            }
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+    fn exit(&mut self) -> Task<Message> {
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Opened => {}
-            Message::Cancel => return iced::exit(),
+            Message::Opened => {
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(WINDOW_TITLE, window);
+                }
+            }
+            Message::Accessibility(_) => {}
+            Message::Cancel => return self.exit(),
             Message::Loaded(result) => {
                 self.loading = false;
                 match result {
@@ -283,6 +337,7 @@ impl Chooser {
             }
             Message::Search(value) => {
                 self.pending = None;
+                self.list_focus = false;
                 self.search = value;
                 self.selected = self.visible().first().map(|row| row.id.clone());
                 self.last_click = None;
@@ -298,8 +353,9 @@ impl Chooser {
                 });
                 self.last_click = Some((id.clone(), now));
                 self.selected = Some(id);
+                self.list_focus = true;
                 if double {
-                    return self.update(Message::Accept);
+                    return self.apply(Message::Accept);
                 }
             }
             Message::Accept => {
@@ -341,23 +397,24 @@ impl Chooser {
                                     && at.elapsed() < std::time::Duration::from_secs(1)
                             }),
                         });
-                        return iced::exit();
+                        return self.exit();
                     }
                 }
             }
             Message::Event(Event::Window(window::Event::CloseRequested)) => {
-                return self.update(Message::Cancel);
+                return self.apply(Message::Cancel);
             }
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key, modifiers, ..
             })) => {
                 use keyboard::{Key, key::Named};
                 match key.as_ref() {
-                    Key::Named(Named::Escape) => return self.update(Message::Cancel),
+                    Key::Named(Named::Escape) => return self.apply(Message::Cancel),
                     Key::Character("f") if modifiers.control() => {
+                        self.list_focus = false;
                         return iced::widget::operation::focus("applications-search");
                     }
-                    Key::Named(Named::Enter) => return self.update(Message::Accept),
+                    Key::Named(Named::Enter) => return self.apply(Message::Accept),
                     Key::Named(Named::ArrowDown | Named::ArrowUp) => {
                         let rows = self.visible();
                         if !rows.is_empty() {
@@ -372,6 +429,7 @@ impl Chooser {
                             };
                             self.selected = Some(rows[index].id.clone());
                             self.last_click = None;
+                            self.list_focus = true;
                         }
                     }
                     _ => {}
@@ -388,14 +446,32 @@ impl Chooser {
             .as_deref()
             .or(self.request.content_type.as_deref())
             .unwrap_or("this item");
+        let heading = format!("Choose an application for {context}");
+        let visible = self.visible();
+        let total = visible.len();
+        // Arrow keys move the selection even while the search field has
+        // keyboard focus, so the field points at the row they move.
+        let focused_row = self
+            .selected
+            .as_deref()
+            .filter(|id| self.list_focus && visible.iter().any(|row| row.id == *id))
+            .map(application_key);
         let mut listing = column![].spacing(4);
-        for application in self.visible() {
+        for (index, application) in visible.into_iter().enumerate() {
             let icon: Element<'_, Message> = application.icon.as_ref().map_or_else(
                 || container(text("◇")).width(32).height(32).center(32).into(),
                 |handle| image(handle.clone()).width(32).height(32).into(),
             );
             let selected = self.selected.as_deref() == Some(&application.id);
-            listing = listing.push(
+            let key = application_key(&application.id);
+            let select = Message::Select(application.id.clone());
+            listing = listing.push(semantic(
+                Node::option(&application.name, selected)
+                    .key(key.clone())
+                    .description(&application.caption)
+                    .position(index + 1, total)
+                    .focused(focused_row.as_ref() == Some(&key))
+                    .on_click(Some(select.clone())),
                 button(
                     row![
                         icon,
@@ -416,7 +492,7 @@ impl Chooser {
                 )
                 .padding(8)
                 .width(Length::Fill)
-                .on_press(Message::Select(application.id.clone()))
+                .on_press(select)
                 .style(move |theme: &Theme, status| {
                     if selected {
                         button::primary(theme, status)
@@ -424,7 +500,7 @@ impl Chooser {
                         button::text(theme, status)
                     }
                 }),
-            );
+            ));
         }
         if self.rows.is_empty() {
             listing = listing.push(text(if self.loading {
@@ -433,48 +509,92 @@ impl Chooser {
                 "No applications available"
             }));
         }
+        let status = if self.rows.is_empty() && self.loading {
+            "Loading applications…".to_owned()
+        } else if self.rows.is_empty() {
+            "No applications available".to_owned()
+        } else if total == 0 {
+            "No matching applications".to_owned()
+        } else if total == 1 {
+            "1 application".to_owned()
+        } else {
+            format!("{total} applications")
+        };
         let mut content = column![
-            text(format!("Choose an application for {context}")).size(20),
-            text_input("Search applications", &self.search)
-                .id("applications-search")
-                .on_input(Message::Search)
-                .on_submit(Message::Accept),
-            scrollable(listing).height(Length::Fill)
+            semantic(Node::heading(&heading, 1), text(heading.clone()).size(20)),
+            semantic(
+                Node::search_input("Search applications", &self.search)
+                    .key("app-chooser-search")
+                    .placeholder("Search applications")
+                    .controls(APPLICATIONS_KEY)
+                    .active_descendant(focused_row.clone())
+                    .on_text(Message::Search),
+                text_input("Search applications", &self.search)
+                    .id("applications-search")
+                    .on_input(Message::Search)
+                    .on_submit(Message::Accept),
+            ),
+            semantic(
+                Node::list("Applications")
+                    .key(APPLICATIONS_KEY)
+                    .busy(self.loading)
+                    .active_descendant(focused_row),
+                scrollable(listing).height(Length::Fill),
+            ),
+            a11y::announcer("app-chooser-status", status, false),
         ]
         .spacing(12);
         if let Some(error) = &self.error {
-            content = content.push(text(error).style(text::danger));
+            content = content.push(semantic(
+                Node::alert(error).key("app-chooser-error"),
+                text(error).style(text::danger),
+            ));
         }
+        let open = (!self.initial && self.pending.is_none() && self.selected.is_some())
+            .then_some(Message::Accept);
         let footer = row![
             iced::widget::space().width(Length::Fill),
-            canopa_ui::action(
-                text("Cancel"),
+            a11y::button(
+                "app-chooser-cancel",
+                "Cancel",
                 Some(Message::Cancel),
-                canopa_ui::Action::Normal,
-                false
+                canopa_ui::action(
+                    text("Cancel"),
+                    Some(Message::Cancel),
+                    canopa_ui::Action::Normal,
+                    false
+                )
             ),
-            canopa_ui::action(
-                text("Open"),
-                (!self.initial && self.pending.is_none() && self.selected.is_some())
-                    .then_some(Message::Accept),
-                canopa_ui::Action::Normal,
-                false
+            a11y::button(
+                "app-chooser-open",
+                "Open",
+                open.clone(),
+                canopa_ui::action(text("Open"), open, canopa_ui::Action::Normal, false)
             )
         ]
         .spacing(10);
-        container(content.push(footer))
-            .padding(16)
-            .style(canopa_ui::surface)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        a11y::dialog_window(
+            WINDOW_KEY,
+            WINDOW_TITLE,
+            Node::dialog("Open with")
+                .key("app-chooser-dialog")
+                .description(heading)
+                .busy(self.loading || self.pending.is_some()),
+            container(content.push(footer))
+                .padding(16)
+                .style(canopa_ui::surface)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
     }
 }
 
+#[cfg(all(test, feature = "accessibility-testing"))]
+mod accessibility_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn app(id: &str, name: &str) -> Application {
+    pub(super) fn app(id: &str, name: &str) -> Application {
         Application {
             id: id.into(),
             name: name.into(),
@@ -507,7 +627,7 @@ mod tests {
             ]
         );
     }
-    fn chooser() -> Chooser {
+    pub(super) fn chooser() -> Chooser {
         Chooser {
             request: AppRequest::parse(
                 String::new(),
@@ -530,6 +650,8 @@ mod tests {
             initial: false,
             error: None,
             last_click: None,
+            list_focus: true,
+            accessibility: None,
             output: Arc::default(),
         }
     }
