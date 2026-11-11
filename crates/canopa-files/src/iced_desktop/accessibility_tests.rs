@@ -31,7 +31,7 @@ fn rows_describe_type_size_and_hidden_state() {
     );
     assert_eq!(
         a11y::describe(&Entry::read(&hidden).unwrap(), &settings),
-        "File, 1 B, hidden"
+        "File, 1 byte, hidden"
     );
     assert_eq!(
         a11y::describe(&Entry::read(&folder).unwrap(), &settings),
@@ -209,7 +209,7 @@ async fn native_rows_expose_selection_focus_and_the_delete_confirmation() {
     assert!(
         row.description()
             .await
-            .starts_with("TXT file, 5 B, modified ")
+            .starts_with("TXT file, 5 bytes, modified ")
     );
     assert!(!row.has_state(atspi::STATE_SELECTED).await);
     let (_, _, width, height) = row.extents().await;

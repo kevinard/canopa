@@ -241,12 +241,17 @@ pub(super) fn dialog<'a>(
 /// What a row's type and state sound like: "PDF file, 1.2 KiB, hidden".
 pub(super) fn describe(entry: &Entry, settings: &ViewSettings) -> String {
     let mut parts = vec![match entry.kind {
-        EntryKind::Symlink if entry.is_directory() => "Link to folder".to_owned(),
-        EntryKind::Symlink => "Link".to_owned(),
-        EntryKind::Directory => "Folder".to_owned(),
+        EntryKind::Symlink if entry.is_directory() => fl!("files-kind-link-to-folder"),
+        EntryKind::Symlink => fl!("files-kind-link"),
+        EntryKind::Directory => fl!("files-kind-folder"),
         _ => entry.path.extension().map_or_else(
-            || "File".into(),
-            |extension| format!("{} file", extension.to_string_lossy().to_uppercase()),
+            || fl!("files-kind-file"),
+            |extension| {
+                fl!(
+                    "files-kind-extension",
+                    extension = extension.to_string_lossy().to_uppercase()
+                )
+            },
         ),
     }];
     if !entry.is_directory() {
@@ -255,10 +260,10 @@ pub(super) fn describe(entry: &Entry, settings: &ViewSettings) -> String {
     if settings.details.contains(&Detail::Modified)
         && let Some(modified) = super::listing_ui::modified(entry)
     {
-        parts.push(format!("modified {modified}"));
+        parts.push(fl!("files-row-modified", date = modified));
     }
     if entry.is_hidden() {
-        parts.push("hidden".into());
+        parts.push(fl!("files-row-hidden"));
     }
     parts.join(", ")
 }

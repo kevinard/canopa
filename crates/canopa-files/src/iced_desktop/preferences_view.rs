@@ -60,7 +60,7 @@ impl<'a> Form<'a> {
             .font(canopa_ui::font(self.appearance))
             .size(self.appearance.typography().label_size.px() + if tab { 1.0 } else { 0.0 });
         let label: Element<'a, Message> = if let Some(icon) = icon {
-            row![self.desktop.icons.chrome(icon, 16.0, 0.9), label]
+            canopa_ui::direction::row([self.desktop.icons.chrome(icon, 16.0, 0.9), label.into()])
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
                 .into()
@@ -217,12 +217,11 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         ));
     }
     let notice = if !editor.base.is_editable() {
-        "Built-in defaults are read-only. Start Files with a writable configuration to save preferences.".into()
+        fl!("files-preferences-read-only")
     } else if let Some(error) = &desktop.configuration_error {
-        format!("Configuration was not applied: {error}")
+        fl!("files-configuration-not-applied", error = error.to_string())
     } else if !editor.base.same_source(&desktop.configuration) {
-        "Configuration changed outside this editor. Your draft is kept; Reload before saving."
-            .into()
+        fl!("files-preferences-changed-outside")
     } else {
         String::new()
     };
@@ -248,13 +247,13 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     let prompt: Element<'a, Message> = if let Some(confirmation) = editor.confirmation {
         column![
             form.note(if confirmation == Confirmation::Close {
-                "Discard unsaved preference changes?"
+                fl!("files-preferences-discard-question")
             } else {
-                "Reload and discard unsaved preference changes?"
+                fl!("files-preferences-reload-question")
             }),
             row![
                 form.button(
-                    "Keep editing",
+                    fl!("files-preferences-keep-editing"),
                     "keep",
                     Some(Event::Confirm(id, false)),
                     false,
@@ -262,9 +261,9 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
                 ),
                 form.button(
                     if confirmation == Confirmation::Close {
-                        "Discard"
+                        fl!("files-preferences-discard")
                     } else {
-                        "Reload"
+                        fl!("files-preferences-reload")
                     },
                     "discard",
                     Some(Event::Confirm(id, true)),
@@ -313,7 +312,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     };
     body = body.push(page);
     let reload = form.button(
-        "Reload",
+        fl!("files-preferences-reload"),
         "reload",
         editor.enabled().then_some(Event::Reload(id)),
         false,
@@ -324,7 +323,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         row![
             column![
                 form.note(&editor.status),
-                text("Alt+1–4 pages · Ctrl+S Save · Ctrl+R Reload")
+                text(fl!("files-preferences-keys"))
                     .font(canopa_ui::font(appearance))
                     .size(appearance.typography().label_size.px() + 1.0)
                     .style(canopa_ui::muted),
@@ -332,7 +331,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             .spacing(3)
             .width(Length::Fill),
             form.button(
-                "Save preferences",
+                fl!("files-preferences-save"),
                 "save",
                 (editor.enabled() && editor.base.is_editable()).then_some(Event::Save(id)),
                 true,
@@ -350,8 +349,8 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             chrome::heading_with_action(
                 desktop,
                 chrome::Icon::Settings,
-                "Preferences",
-                "Choose how Files looks and behaves.",
+                fl!("files-command-preferences"),
+                fl!("files-preferences-subtitle"),
                 Some(
                     row![reload, chrome::dismiss(desktop, id)]
                         .spacing(4)
@@ -387,23 +386,28 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
 fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
     let v = &form.editor.draft.view;
     let mut modes = row![].spacing(4);
-    for (mode, label) in [
-        (ViewMode::Columns, "Columns"),
-        (ViewMode::List, "List"),
-        (ViewMode::Icons, "Icons"),
+    // The second item names the control's focus ID, which stays in English.
+    for (mode, name, label) in [
+        (ViewMode::Columns, "Columns", fl!("files-view-columns")),
+        (ViewMode::List, "List", fl!("files-view-list")),
+        (ViewMode::Icons, "Icons", fl!("files-view-icons")),
     ] {
-        modes = modes.push(form.change(label, label, Change::Mode(mode), v.mode == mode, true));
+        modes = modes.push(form.change(label, name, Change::Mode(mode), v.mode == mode, true));
     }
     let mut sorts = row![].spacing(4);
-    for (sort, label) in [
-        (SortField::Name, "Name"),
-        (SortField::Size, "Size"),
-        (SortField::Modified, "Modified"),
-        (SortField::Kind, "Kind"),
+    for (sort, name, label) in [
+        (SortField::Name, "Name", fl!("files-column-name")),
+        (SortField::Size, "Size", fl!("files-column-size")),
+        (
+            SortField::Modified,
+            "Modified",
+            fl!("files-column-modified"),
+        ),
+        (SortField::Kind, "Kind", fl!("files-column-kind")),
     ] {
         sorts = sorts.push(form.change(
             label,
-            &format!("sort-{label}"),
+            &format!("sort-{name}"),
             Change::Sort(sort),
             v.sort == sort,
             true,
@@ -416,12 +420,12 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine))
     };
     let ordering = column![
-        chrome::section_title(appearance, "Default view"),
+        chrome::section_title(appearance, fl!("files-preferences-default-view")),
         segment(modes.wrap().into()),
-        chrome::section_title(appearance, "Sort by"),
+        chrome::section_title(appearance, fl!("files-preferences-sort-by")),
         segment(sorts.wrap().into()),
         form.toggle(
-            "Descending order",
+            &fl!("files-preferences-descending"),
             "descending",
             v.descending,
             Change::Descending(!v.descending)
@@ -429,24 +433,29 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
     ]
     .spacing(10);
     let mut details = column![
-        chrome::section_title(form.appearance, "Column layout"),
-        container(form.field("Column width", "width", &form.editor.width, Field::Width))
-            .max_width(220),
-        text("160–640 pixels")
+        chrome::section_title(form.appearance, fl!("files-preferences-column-layout")),
+        container(form.field(
+            &fl!("files-preferences-column-width"),
+            "width",
+            &form.editor.width,
+            Field::Width
+        ))
+        .max_width(220),
+        text(fl!("files-preferences-column-width-range"))
             .font(canopa_ui::font(form.appearance))
             .size(form.appearance.typography().label_size.px())
             .style(canopa_ui::muted),
-        chrome::section_title(form.appearance, "Details in List view")
+        chrome::section_title(form.appearance, fl!("files-preferences-list-details"))
     ]
     .spacing(10);
     for (detail, label) in [
-        (Detail::Size, "Size"),
-        (Detail::Modified, "Modified date"),
-        (Detail::Kind, "Kind"),
+        (Detail::Size, fl!("files-column-size")),
+        (Detail::Modified, fl!("files-preferences-modified-date")),
+        (Detail::Kind, fl!("files-column-kind")),
     ] {
         let checked = v.details.contains(&detail);
         details = details.push(form.toggle(
-            label,
+            &label,
             &format!("detail-{detail:?}"),
             checked,
             Change::Detail(detail, !checked),
@@ -474,9 +483,15 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         ));
     }
     let ordering = ordering
-        .push(chrome::section_title(appearance, "Thumbnails"))
+        .push(chrome::section_title(
+            appearance,
+            fl!("files-preferences-thumbnails"),
+        ))
         .push(segment(show.wrap().into()))
-        .push(chrome::section_title(appearance, "Icon size"))
+        .push(chrome::section_title(
+            appearance,
+            fl!("files-preferences-icon-size"),
+        ))
         .push(segment(sizes.wrap().into()));
     let settings: Element<'a, Message> = if wide {
         row![
@@ -497,10 +512,7 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
     column![
         container(settings).padding([6, 4]).width(Length::Fill),
         iced::widget::rule::horizontal(1).style(chrome::divider),
-        container(
-            form.note("Folders inherit these settings unless they have their own view options. “Local files only” skips network shares and removable media.")
-        )
-        .padding([4, 4])
+        container(form.note(fl!("files-preferences-views-note"))).padding([4, 4])
     ]
     .spacing(10)
     .into()
@@ -508,19 +520,19 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
 
 fn item_label(editor: &Editor, id: &str) -> String {
     if id == "location" {
-        "Location field".into()
+        fl!("files-preferences-location-field")
     } else if let Some(command) = Command::from_id(id) {
-        command.label().into()
+        command.label()
     } else {
         id.strip_prefix("action:")
             .and_then(|id| editor.base.actions.iter().find(|a| a.id == id))
-            .map(|a| format!("Action: {}", a.name))
+            .map(|a| fl!("files-preferences-toolbar-action", name = a.name.clone()))
             .unwrap_or_else(|| id.to_owned())
     }
 }
 fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
-    let mut body = column![form.note("Select a toolbar item to move or remove it.")].spacing(8);
+    let mut body = column![form.note(fl!("files-preferences-toolbar-note"))].spacing(8);
     for (i, id) in editor.draft.toolbar.iter().enumerate() {
         body = body.push(form.change(
             item_label(editor, id),
@@ -534,21 +546,21 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     body = body.push(
         row![
             form.change(
-                "Earlier",
+                fl!("files-preferences-earlier"),
                 "earlier",
                 Change::MoveToolbar(-1),
                 false,
                 index.is_some_and(|i| i > 0)
             ),
             form.change(
-                "Later",
+                fl!("files-preferences-later"),
                 "later",
                 Change::MoveToolbar(1),
                 false,
                 index.is_some_and(|i| i + 1 < editor.draft.toolbar.len())
             ),
             form.change(
-                "Remove",
+                fl!("files-preferences-remove"),
                 "remove",
                 Change::RemoveToolbar,
                 false,
@@ -559,7 +571,7 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
         .wrap(),
     );
     body = body.push(form.field(
-        "Find a command to add",
+        &fl!("files-preferences-find-command-to-add"),
         "filter",
         &editor.filter,
         Field::Filter,
@@ -582,22 +594,23 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     }) {
         let name = format!("add-{id}");
         body = body.push(form.change(
-            format!("Add {}", item_label(editor, &id)),
+            fl!("files-preferences-add-item", item = item_label(editor, &id)),
             &name,
             Change::AddToolbar(id),
             false,
             editor.draft.toolbar.len() < 64,
         ));
     }
-    body.push(form.note("The location field stays available. Explicitly placed custom actions appear once; unpositioned toolbar actions keep their separate row.")).into()
+    body.push(form.note(fl!("files-preferences-toolbar-footer")))
+        .into()
 }
 fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
     let mut sidebar = row![].spacing(4);
     for (mode, label) in [
-        (SidebarMode::Auto, "Automatic"),
-        (SidebarMode::Always, "When there is room"),
-        (SidebarMode::Never, "Hidden"),
+        (SidebarMode::Auto, fl!("files-preferences-sidebar-auto")),
+        (SidebarMode::Always, fl!("files-preferences-sidebar-always")),
+        (SidebarMode::Never, fl!("files-preferences-sidebar-never")),
     ] {
         sidebar = sidebar.push(form.change(
             label,
@@ -608,9 +621,9 @@ fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
         ));
     }
     let mut body = column![
-        form.note("Sidebar"),
+        form.note(fl!("files-sidebar")),
         sidebar.wrap(),
-        form.note("Locations and bookmarks")
+        form.note(fl!("files-preferences-locations-and-bookmarks"))
     ]
     .spacing(8);
     for (i, place) in editor.locations.iter().enumerate() {
@@ -626,21 +639,21 @@ fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     body = body.push(
         row![
             form.change(
-                "Earlier",
+                fl!("files-preferences-earlier"),
                 "earlier",
                 Change::MovePlace(-1),
                 false,
                 index.is_some_and(|i| i > 0)
             ),
             form.change(
-                "Later",
+                fl!("files-preferences-later"),
                 "later",
                 Change::MovePlace(1),
                 false,
                 index.is_some_and(|i| i + 1 < editor.locations.len())
             ),
             form.change(
-                "Remove",
+                fl!("files-preferences-remove"),
                 "remove",
                 Change::RemovePlace,
                 false,
@@ -652,16 +665,21 @@ fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     );
     if let Some(Location::Bookmark { name, path }) = index.and_then(|i| editor.locations.get(i)) {
         body = body
-            .push(form.field("Bookmark name", "bookmark-name", name, Field::BookmarkName))
             .push(form.field(
-                "Folder (absolute path, ~/ path or local file URI)",
+                &fl!("files-preferences-bookmark-name"),
+                "bookmark-name",
+                name,
+                Field::BookmarkName,
+            ))
+            .push(form.field(
+                &fl!("files-preferences-bookmark-folder"),
                 "bookmark-path",
                 path,
                 Field::BookmarkPath,
             ));
     }
     body = body.push(form.change(
-        "Add bookmark…",
+        fl!("files-preferences-add-bookmark"),
         "add-bookmark",
         Change::AddBookmark,
         false,
@@ -674,19 +692,25 @@ fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
             .any(|p| matches!(p,Location::Builtin(k)if k==*kind))
     }) {
         body = body.push(form.change(
-            format!("Add {}", kind.label()),
+            fl!("files-preferences-add-item", item = kind.label()),
             &format!("add-{}", kind.id()),
             Change::AddPlace(*kind),
             false,
             editor.locations.len() < 256,
         ));
     }
-    body.push(form.note("Missing folders remain bookmarked. Narrow tiles retain location navigation in the folder menu.")).into()
+    body.push(form.note(fl!("files-preferences-locations-footer")))
+        .into()
 }
 fn shortcuts<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
-    let mut body =
-        column![form.field("Find a command", "filter", &editor.filter, Field::Filter)].spacing(8);
+    let mut body = column![form.field(
+        &fl!("files-preferences-find-command"),
+        "filter",
+        &editor.filter,
+        Field::Filter
+    )]
+    .spacing(8);
     let filter = editor.filter.to_lowercase();
     for command in Command::ALL
         .iter()
@@ -700,19 +724,35 @@ fn shortcuts<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
             true,
         ));
     }
-    body = body.push(form.note(format!("{} shortcuts", editor.selected_command.label())));
+    body = body.push(form.note(fl!(
+        "files-preferences-command-shortcuts",
+        command = editor.selected_command.label()
+    )));
     body = body.push(form.field(
-        "Shortcuts (separated by ;, empty disables)",
+        &fl!("files-preferences-shortcuts-field"),
         "shortcut",
         &editor.shortcuts[&editor.selected_command],
         Field::Shortcut,
     ));
     body = body.push(
         row![
-            form.change("Record…", "record", Change::Record(false), false, true),
-            form.change("Use defaults", "reset", Change::ResetShortcut, false, true)
+            form.change(
+                fl!("files-preferences-record"),
+                "record",
+                Change::Record(false),
+                false,
+                true
+            ),
+            form.change(
+                fl!("files-preferences-use-defaults"),
+                "reset",
+                Change::ResetShortcut,
+                false,
+                true
+            )
         ]
         .spacing(8),
     );
-    body.push(form.note("Selection, focus and typing keys stay available. Save checks conflicts with every command and custom action.")).into()
+    body.push(form.note(fl!("files-preferences-shortcuts-footer")))
+        .into()
 }

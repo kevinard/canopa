@@ -941,8 +941,7 @@ impl Desktop {
                         .iter()
                         .any(|job| job.phase.needs_save()) =>
             {
-                self.file_operations.error =
-                    Some("Save the operation result before closing the last window.".into());
+                self.file_operations.error = Some(fl!("files-operations-save-before-closing"));
                 Task::none()
             }
             Message::Closed(id)
@@ -1942,40 +1941,42 @@ impl Desktop {
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if self
             .recovery_window
             .as_ref()
             .is_some_and(|w| w.window == id)
         {
-            return "Recovery — Canopa Files".into();
+            return fl!("files-window-title", title = fl!("files-command-recovery"));
         }
         if let Some(dialog) = self
             .recovery_destination
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return if dialog.browser.open() {
-                "Choose a folder — Canopa Files"
-            } else {
-                "Recover a copy — Canopa Files"
-            }
-            .into();
+            return fl!(
+                "files-window-title",
+                title = if dialog.browser.open() {
+                    fl!("files-choose-folder")
+                } else {
+                    fl!("files-recover-copy-title")
+                }
+            );
         }
         if self
             .trash_window
             .as_ref()
             .is_some_and(|trash| trash.window == id)
         {
-            return "Trash — Canopa Files".into();
+            return fl!("files-window-title", title = fl!("files-place-trash"));
         }
         if let Some(dialog) = self
             .delete_dialog
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if let Some(dialog) = self
             .network
@@ -1983,26 +1984,28 @@ impl Desktop {
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if let Some(dialog) = self
             .open_dialog
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if let Some(dialog) = self
             .trash_restore
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return if dialog.browser.open() {
-                "Choose a folder — Canopa Files"
-            } else {
-                "Restore to folder — Canopa Files"
-            }
-            .into();
+            return fl!(
+                "files-window-title",
+                title = if dialog.browser.open() {
+                    fl!("files-choose-folder")
+                } else {
+                    fl!("files-restore-to-folder-title")
+                }
+            );
         }
         if let Some(dialog) = self
             .file_operations
@@ -2010,7 +2013,7 @@ impl Desktop {
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if let Some(dialog) = self
             .file_operations
@@ -2018,17 +2021,23 @@ impl Desktop {
             .as_ref()
             .filter(|dialog| dialog.window == id)
         {
-            return format!("{} — Canopa Files", dialog.title());
+            return fl!("files-window-title", title = dialog.title());
         }
         if self
             .preferences_editor
             .as_ref()
             .is_some_and(|editor| editor.window == id)
         {
-            return "Preferences — Canopa Files".into();
+            return fl!(
+                "files-window-title",
+                title = fl!("files-command-preferences")
+            );
         }
         if self.operations_window == Some(id) {
-            return "Operations — Canopa Files".into();
+            return fl!(
+                "files-window-title",
+                title = fl!("files-command-operations")
+            );
         }
         if self
             .file_operations
@@ -2036,14 +2045,20 @@ impl Desktop {
             .as_ref()
             .is_some_and(|dialog| dialog.window == id)
         {
-            return "Transfer details — Canopa Files".into();
+            return fl!(
+                "files-window-title",
+                title = fl!("files-transfer-details-title")
+            );
         }
         if self
             .action_editor
             .as_ref()
             .is_some_and(|editor| editor.window == id)
         {
-            return "Custom Actions — Canopa Files".into();
+            return fl!(
+                "files-window-title",
+                title = fl!("files-custom-actions-title")
+            );
         }
         if let Some(preview) = self.previews.get(&id) {
             return preview_ui::title(preview);
@@ -2063,23 +2078,29 @@ impl Desktop {
                 .as_ref()
                 .filter(|search| !search.query.is_empty())
         {
-            let state = if search.stopping {
-                "Stopping search"
+            let query = search.query.clone();
+            let folder = name.into_owned();
+            let title = if search.stopping {
+                fl!(
+                    "files-title-search-stopping",
+                    query = query,
+                    folder = folder
+                )
             } else if search.running {
-                "Searching"
+                fl!("files-title-searching", query = query, folder = folder)
             } else if tab
                 .browser
                 .as_ref()
                 .and_then(Browser::search)
                 .is_some_and(|results| results.cancelled)
             {
-                "Stopped search"
+                fl!("files-title-search-stopped", query = query, folder = folder)
             } else {
-                "Search"
+                fl!("files-title-search", query = query, folder = folder)
             };
-            return format!("{state}: {} — {name} — Canopa Files", search.query);
+            return fl!("files-window-title", title = title);
         }
-        format!("{name} — Canopa Files")
+        fl!("files-window-title", title = name.into_owned())
     }
 
     fn subscription(&self) -> Subscription<Message> {

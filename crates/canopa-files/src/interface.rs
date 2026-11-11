@@ -13,7 +13,8 @@ macro_rules! commands {
         impl Command {
             pub const ALL: &'static [Self] = &[$(Self::$name),*];
             pub fn id(self) -> &'static str { match self { $(Self::$name => $id),* } }
-            pub fn label(self) -> &'static str { match self { $(Self::$name => $label),* } }
+            /// The translated label; `$label` is its Fluent message ID.
+            pub fn label(self) -> String { match self { $(Self::$name => fl!($label)),* } }
             pub fn icon(self) -> &'static str { match self { $(Self::$name => $icon),* } }
             pub fn defaults(self) -> &'static [&'static str] { match self { $(Self::$name => &[$($key),*]),* } }
             pub fn from_id(id: &str) -> Option<Self> { Self::ALL.iter().copied().find(|command| command.id() == id) }
@@ -21,45 +22,45 @@ macro_rules! commands {
     }
 }
 commands! {
-    Back => ("back", "Back", "go-previous-symbolic", ["<Alt>Left"]),
-    Forward => ("forward", "Forward", "go-next-symbolic", ["<Alt>Right"]),
-    Parent => ("parent", "Parent folder", "go-up-symbolic", ["Left", "BackSpace", "<Alt>Up"]),
-    EnterFolder => ("enter-folder", "Enter folder", "go-next-symbolic", ["Right"]),
-    Open => ("open", "Open selection", "document-open-symbolic", ["Return"]),
-    QuickLook => ("quick-look", "Quick Look", "view-reveal-symbolic", ["space"]),
-    Search => ("search", "Search filenames", "system-search-symbolic", ["<Control>f"]),
-    SearchSubfolders => ("search-subfolders", "Include subfolders in search", "folder-open-symbolic", []),
-    StopSearch => ("stop-search", "Stop search", "process-stop-symbolic", []),
-    MoreSearchResults => ("more-search-results", "More search results", "list-add-symbolic", []),
-    RevealSearchResult => ("reveal-search-result", "Show in containing folder", "folder-open-symbolic", []),
-    SearchProblems => ("search-problems", "Unreadable search locations", "dialog-warning-symbolic", []),
-    Location => ("location-focus", "Edit location", "folder-open-symbolic", ["<Control>l"]),
-    Refresh => ("refresh", "Refresh", "view-refresh-symbolic", ["F5"]),
-    ShowHidden => ("show-hidden", "Show hidden files", "view-reveal-symbolic", ["<Control>h"]),
-    SelectAll => ("select-all", "Select all", "edit-select-all-symbolic", ["<Control>a"]),
-    NewFolder => ("new-folder", "New folder", "folder-new-symbolic", ["<Control><Shift>n"]),
-    Rename => ("rename", "Rename", "document-edit-symbolic", ["F2"]),
-    Trash => ("trash", "Move to Trash", "user-trash-symbolic", ["Delete"]),
-    DeletePermanently => ("delete-permanently", "Delete permanently", "edit-delete-symbolic", ["<Shift>Delete"]),
-    ShowTrash => ("show-trash", "Open Trash", "user-trash-symbolic", []),
-    ConnectToServer => ("connect-to-server", "Connect to Server…", "network-server-symbolic", []),
-    Undo => ("undo", "Undo", "edit-undo-symbolic", ["<Control>z"]),
-    Copy => ("copy", "Copy", "edit-copy-symbolic", ["<Control>c"]),
-    Cut => ("cut", "Cut", "edit-cut-symbolic", ["<Control>x"]),
-    Paste => ("paste", "Paste", "edit-paste-symbolic", ["<Control>v"]),
-    Columns => ("columns", "Columns view", "view-dual-symbolic", ["<Control>1"]),
-    List => ("list", "List view", "view-list-symbolic", ["<Control>2"]),
-    Icons => ("icons", "Icons view", "view-grid-symbolic", ["<Control>3"]),
-    NewTab => ("new-tab", "New tab", "tab-new-symbolic", ["<Control>t"]),
-    NewWindow => ("new-window", "New window", "window-new-symbolic", ["<Control>n"]),
-    CloseTab => ("close-tab", "Close tab", "window-close-symbolic", ["<Control>w"]),
-    NextTab => ("next-tab", "Next tab", "go-next-symbolic", ["<Control>Tab"]),
-    PreviousTab => ("previous-tab", "Previous tab", "go-previous-symbolic", ["<Control><Shift>Tab"]),
-    Operations => ("operations", "Operations", "view-list-symbolic", ["<Control>j"]),
-    Recovery => ("recovery", "Recovery", "document-revert-symbolic", []),
-    CustomActions => ("custom-actions", "Custom actions", "system-run-symbolic", ["<Control><Shift>a"]),
-    Preferences => ("preferences", "Preferences", "preferences-system-symbolic", ["<Control>comma"]),
-    BookmarkFolder => ("bookmark-folder", "Bookmark this folder", "bookmark-new-symbolic", ["<Control>d"]),
+    Back => ("back", "files-command-back", "go-previous-symbolic", ["<Alt>Left"]),
+    Forward => ("forward", "files-command-forward", "go-next-symbolic", ["<Alt>Right"]),
+    Parent => ("parent", "files-command-parent", "go-up-symbolic", ["Left", "BackSpace", "<Alt>Up"]),
+    EnterFolder => ("enter-folder", "files-command-enter-folder", "go-next-symbolic", ["Right"]),
+    Open => ("open", "files-command-open", "document-open-symbolic", ["Return"]),
+    QuickLook => ("quick-look", "files-command-quick-look", "view-reveal-symbolic", ["space"]),
+    Search => ("search", "files-command-search", "system-search-symbolic", ["<Control>f"]),
+    SearchSubfolders => ("search-subfolders", "files-command-search-subfolders", "folder-open-symbolic", []),
+    StopSearch => ("stop-search", "files-command-stop-search", "process-stop-symbolic", []),
+    MoreSearchResults => ("more-search-results", "files-command-more-search-results", "list-add-symbolic", []),
+    RevealSearchResult => ("reveal-search-result", "files-command-reveal-search-result", "folder-open-symbolic", []),
+    SearchProblems => ("search-problems", "files-command-search-problems", "dialog-warning-symbolic", []),
+    Location => ("location-focus", "files-command-location-focus", "folder-open-symbolic", ["<Control>l"]),
+    Refresh => ("refresh", "files-command-refresh", "view-refresh-symbolic", ["F5"]),
+    ShowHidden => ("show-hidden", "files-command-show-hidden", "view-reveal-symbolic", ["<Control>h"]),
+    SelectAll => ("select-all", "files-command-select-all", "edit-select-all-symbolic", ["<Control>a"]),
+    NewFolder => ("new-folder", "files-command-new-folder", "folder-new-symbolic", ["<Control><Shift>n"]),
+    Rename => ("rename", "files-command-rename", "document-edit-symbolic", ["F2"]),
+    Trash => ("trash", "files-command-trash", "user-trash-symbolic", ["Delete"]),
+    DeletePermanently => ("delete-permanently", "files-command-delete-permanently", "edit-delete-symbolic", ["<Shift>Delete"]),
+    ShowTrash => ("show-trash", "files-command-show-trash", "user-trash-symbolic", []),
+    ConnectToServer => ("connect-to-server", "files-command-connect-to-server", "network-server-symbolic", []),
+    Undo => ("undo", "files-command-undo", "edit-undo-symbolic", ["<Control>z"]),
+    Copy => ("copy", "files-command-copy", "edit-copy-symbolic", ["<Control>c"]),
+    Cut => ("cut", "files-command-cut", "edit-cut-symbolic", ["<Control>x"]),
+    Paste => ("paste", "files-command-paste", "edit-paste-symbolic", ["<Control>v"]),
+    Columns => ("columns", "files-command-columns", "view-dual-symbolic", ["<Control>1"]),
+    List => ("list", "files-command-list", "view-list-symbolic", ["<Control>2"]),
+    Icons => ("icons", "files-command-icons", "view-grid-symbolic", ["<Control>3"]),
+    NewTab => ("new-tab", "files-command-new-tab", "tab-new-symbolic", ["<Control>t"]),
+    NewWindow => ("new-window", "files-command-new-window", "window-new-symbolic", ["<Control>n"]),
+    CloseTab => ("close-tab", "files-command-close-tab", "window-close-symbolic", ["<Control>w"]),
+    NextTab => ("next-tab", "files-command-next-tab", "go-next-symbolic", ["<Control>Tab"]),
+    PreviousTab => ("previous-tab", "files-command-previous-tab", "go-previous-symbolic", ["<Control><Shift>Tab"]),
+    Operations => ("operations", "files-command-operations", "view-list-symbolic", ["<Control>j"]),
+    Recovery => ("recovery", "files-command-recovery", "document-revert-symbolic", []),
+    CustomActions => ("custom-actions", "files-command-custom-actions", "system-run-symbolic", ["<Control><Shift>a"]),
+    Preferences => ("preferences", "files-command-preferences", "preferences-system-symbolic", ["<Control>comma"]),
+    BookmarkFolder => ("bookmark-folder", "files-command-bookmark-folder", "bookmark-new-symbolic", ["<Control>d"]),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -121,16 +122,16 @@ impl PlaceKind {
             Self::Recovery => "recovery",
         }
     }
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Home => "Home",
-            Self::Desktop => "Desktop",
-            Self::Documents => "Documents",
-            Self::Downloads => "Downloads",
-            Self::Pictures => "Pictures",
-            Self::Filesystem => "Filesystem",
-            Self::Trash => "Trash",
-            Self::Recovery => "Recovery",
+            Self::Home => fl!("files-place-home"),
+            Self::Desktop => fl!("files-place-desktop"),
+            Self::Documents => fl!("files-place-documents"),
+            Self::Downloads => fl!("files-place-downloads"),
+            Self::Pictures => fl!("files-place-pictures"),
+            Self::Filesystem => fl!("files-place-filesystem"),
+            Self::Trash => fl!("files-place-trash"),
+            Self::Recovery => fl!("files-place-recovery"),
         }
     }
     pub fn from_id(id: &str) -> Option<Self> {
@@ -143,10 +144,10 @@ pub enum Place {
     Bookmark { name: String, path: PathBuf },
 }
 impl Place {
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> String {
         match self {
             Self::Builtin(place) => place.label(),
-            Self::Bookmark { name, .. } => name,
+            Self::Bookmark { name, .. } => name.clone(),
         }
     }
 }
@@ -176,11 +177,11 @@ impl ThumbnailPolicy {
         Self::ALL.into_iter().find(|policy| policy.id() == id)
     }
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Local => "Local files only",
-            Self::Always => "All files",
-            Self::Never => "Never",
+            Self::Local => fl!("files-thumbnails-local"),
+            Self::Always => fl!("files-thumbnails-always"),
+            Self::Never => fl!("files-thumbnails-never"),
         }
     }
 }
@@ -211,12 +212,12 @@ impl IconSize {
         Self::ALL.into_iter().find(|size| size.id() == id)
     }
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Small => "Small",
-            Self::Medium => "Medium",
-            Self::Large => "Large",
-            Self::Huge => "Huge",
+            Self::Small => fl!("files-icon-size-small"),
+            Self::Medium => fl!("files-icon-size-medium"),
+            Self::Large => fl!("files-icon-size-large"),
+            Self::Huge => fl!("files-icon-size-huge"),
         }
     }
 
@@ -333,7 +334,7 @@ impl InterfaceSettings {
                 return Err(invalid("at most eight shortcuts per command are supported"));
             }
             for binding in bindings {
-                register(&mut shortcuts, &binding, command.label())?;
+                register(&mut shortcuts, &binding, &command.label())?;
             }
         }
         for action in actions {

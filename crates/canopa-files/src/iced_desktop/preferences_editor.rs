@@ -16,12 +16,12 @@ pub(super) enum Page {
 }
 impl Page {
     pub const ALL: [Self; 4] = [Self::Views, Self::Toolbar, Self::Locations, Self::Shortcuts];
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Views => "Views",
-            Self::Toolbar => "Toolbar",
-            Self::Locations => "Locations",
-            Self::Shortcuts => "Shortcuts",
+            Self::Views => fl!("files-preferences-page-views"),
+            Self::Toolbar => fl!("files-preferences-page-toolbar"),
+            Self::Locations => fl!("files-preferences-page-locations"),
+            Self::Shortcuts => fl!("files-preferences-page-shortcuts"),
         }
     }
 }
@@ -81,10 +81,10 @@ pub(super) enum Location {
     Bookmark { name: String, path: String },
 }
 impl Location {
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> String {
         match self {
             Self::Builtin(kind) => kind.label(),
-            Self::Bookmark { name, .. } => name,
+            Self::Bookmark { name, .. } => name.clone(),
         }
     }
 }
@@ -145,7 +145,7 @@ impl Editor {
             recording: false,
             recording_activation: false,
             confirmation: None,
-            status: "Changes apply to all Files windows when saved.".into(),
+            status: fl!("files-preferences-status-initial"),
             revision: 0,
             folder,
         }
@@ -169,7 +169,7 @@ impl Editor {
     }
     fn add_bookmark(&mut self, folder: PathBuf) {
         if self.locations.len() >= 256 {
-            self.status = "At most 256 locations are supported.".into();
+            self.status = fl!("files-preferences-too-many-locations");
             return;
         }
         self.select_page(Page::Locations);
@@ -199,7 +199,7 @@ impl Editor {
             .parse()
             .ok()
             .filter(|width| (160..=640).contains(width))
-            .ok_or("Column width must be a whole number from 160 to 640.")?;
+            .ok_or_else(|| fl!("files-preferences-column-width-invalid"))?;
         settings.places = self
             .locations
             .iter()
@@ -212,10 +212,7 @@ impl Editor {
                         && path != "~"
                         && !path.starts_with("~/")
                     {
-                        return Err(
-                            "A bookmark needs an absolute local path, ~/ path or local file URI."
-                                .into(),
-                        );
+                        return Err(fl!("files-preferences-bookmark-path-invalid"));
                     }
                     let path =
                         local_path(Path::new(path), home, None).map_err(|e| e.to_string())?;
@@ -233,9 +230,13 @@ impl Editor {
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
                 .map(|v| {
-                    KeyChord::parse(v)
-                        .map(|c| c.accelerator())
-                        .map_err(|e| format!("{}: {e}", command.label()))
+                    KeyChord::parse(v).map(|c| c.accelerator()).map_err(|e| {
+                        fl!(
+                            "files-preferences-shortcut-invalid",
+                            command = command.label(),
+                            error = e.to_string()
+                        )
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let defaults = command
@@ -275,7 +276,7 @@ impl Editor {
                     Field::Shortcut => 1040,
                 };
                 if value.len() > max {
-                    self.status = format!("This field is limited to {max} bytes.");
+                    self.status = fl!("files-preferences-field-too-long", max = max);
                     return;
                 }
                 match field {
@@ -325,7 +326,7 @@ impl Editor {
                     .filter(|i| *i < self.draft.toolbar.len())
                 {
                     if self.draft.toolbar[index] == "location" {
-                        self.status = "The location field must remain available.".into();
+                        self.status = fl!("files-preferences-location-required");
                         return;
                     }
                     self.draft.toolbar.remove(index);
@@ -403,8 +404,7 @@ impl Editor {
             Change::Record(keyboard) => {
                 self.recording_activation = keyboard;
                 self.recording = true;
-                self.status =
-                    "Press a shortcut. Escape cancels; Backspace disables this command.".into();
+                self.status = fl!("files-preferences-recording");
                 return;
             }
             _ => return,
@@ -443,7 +443,7 @@ impl Desktop {
             return Task::none();
         };
         if !forced && editor.busy {
-            editor.status = "Wait for the configuration change to finish.".into();
+            editor.status = fl!("files-preferences-wait");
             return Task::none();
         }
         if !forced && editor.dirty {
@@ -463,11 +463,11 @@ impl Desktop {
             return Task::none();
         };
         if self.configuration_pending.is_some() {
-            editor.status = "Another configuration change is still in progress.".into();
+            editor.status = fl!("files-preferences-another-change");
             return Task::none();
         }
         let Some(worker) = &self.configuration_worker else {
-            editor.status = "The configuration worker is unavailable.".into();
+            editor.status = fl!("files-preferences-worker-unavailable");
             return Task::none();
         };
         let receiver = match operation {
@@ -492,11 +492,10 @@ impl Desktop {
         self.configuration_pending = Some((request, id, operation));
         editor.busy = true;
         editor.status = if operation == Operation::Save {
-            "Saving…"
+            fl!("files-preferences-saving")
         } else {
-            "Reloading…"
-        }
-        .into();
+            fl!("files-preferences-reloading")
+        };
         Task::perform(
             async move { receiver.await.ok().map(Arc::new) },
             move |result| Message::Preferences(Event::Finished(request, result)),
@@ -514,7 +513,7 @@ impl Desktop {
             let result = result
                 .as_deref()
                 .cloned()
-                .unwrap_or_else(|| Err("The configuration worker stopped before replying.".into()));
+                .unwrap_or_else(|| Err(fl!("files-preferences-worker-stopped")));
             let install = if let Ok(event) = &result {
                 self.install_configuration(event.clone())
             } else {
@@ -532,11 +531,10 @@ impl Desktop {
                         editor.page = page;
                         editor.revision = revision;
                         editor.status = if operation == Operation::Save {
-                            "Saved. Preferences apply to all Files windows."
+                            fl!("files-preferences-saved")
                         } else {
-                            "Reloaded shared Files preferences."
-                        }
-                        .into();
+                            fl!("files-preferences-reloaded")
+                        };
                     }
                     Err(e) => editor.status = e,
                 }
@@ -604,7 +602,7 @@ impl Desktop {
             match &key {
                 keyboard::Key::Named(keyboard::key::Named::Escape) => {
                     editor.recording = false;
-                    editor.status = "Shortcut recording cancelled.".into();
+                    editor.status = fl!("files-preferences-recording-cancelled");
                 }
                 keyboard::Key::Named(keyboard::key::Named::Backspace) if modifiers.is_empty() => {
                     editor.recording = false;

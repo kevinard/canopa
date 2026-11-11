@@ -121,25 +121,28 @@ fn heading<'a>(
     let symbol = container(desktop.icons.chrome(icon, 21.0, 1.0))
         .padding(9)
         .style(move |_| highlight(appearance, ColorRole::AccentSurface));
-    let mut content = row![symbol, labels]
-        .spacing(12)
-        .align_y(iced::Alignment::Center);
+    let mut content: Vec<Element<'a, Message>> = vec![symbol.into(), labels.into()];
     if let Some(action) = action {
-        content = content.push(action);
+        content.push(action);
     }
-    container(content)
-        .width(Length::Fill)
-        .padding([4, 0])
-        .into()
+    container(
+        canopa_ui::direction::row(content)
+            .spacing(12)
+            .align_y(iced::Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([4, 0])
+    .into()
 }
 
 pub(super) fn empty_state<'a>(
     desktop: &'a Desktop,
     icon: Icon,
-    title: &'static str,
-    subtitle: &'static str,
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
     action: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
+    let (title, subtitle) = (title.into(), subtitle.into());
     let appearance = &desktop.configuration.appearance;
     let symbol = container(desktop.icons.chrome(icon, 25.0, 0.9))
         .padding(12)
@@ -190,11 +193,11 @@ pub(super) fn dismiss(desktop: &Desktop, window: iced::window::Id) -> Element<'_
     tooltip(
         super::accessibility_ui::named_button(
             super::accessibility_ui::focus_key(&dismiss_id(window)),
-            "Close window",
+            fl!("files-close-window"),
             message.clone(),
             super::focus::control(dismiss_id(window), message, appearance, button),
         ),
-        text("Close window")
+        text(fl!("files-close-window"))
             .font(font)
             .size(appearance.typography().label_size.px()),
         tooltip::Position::Bottom,
@@ -418,7 +421,11 @@ pub(super) fn single_line<'a>(
     .into()
 }
 
-pub(super) fn section<'a>(appearance: &Appearance, label: &'a str) -> Element<'a, Message> {
+pub(super) fn section<'a>(
+    appearance: &Appearance,
+    label: impl Into<String>,
+) -> Element<'a, Message> {
+    let label = label.into();
     let mut font = canopa_ui::font(appearance);
     font.weight = Weight::Semibold;
     container(
@@ -436,6 +443,7 @@ pub(super) enum Icon {
     Back,
     Forward,
     ActiveForward,
+    ActiveBack,
     Up,
     Search,
     Eye,
@@ -467,10 +475,11 @@ pub(super) enum Icon {
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 31] = [
+    pub(super) const ALL: [Self; 32] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
+        Self::ActiveBack,
         Self::Up,
         Self::Search,
         Self::Eye,
@@ -501,9 +510,24 @@ impl Icon {
         Self::Camera,
     ];
 
+    /// The icon drawn for `self` in the current writing direction: arrows and
+    /// chevrons point the other way in right-to-left languages.
+    pub(super) fn directional(self) -> Self {
+        if !canopa_ui::direction::is_rtl() {
+            return self;
+        }
+        match self {
+            Self::Back => Self::Forward,
+            Self::Forward => Self::Back,
+            Self::ActiveForward => Self::ActiveBack,
+            Self::ActiveBack => Self::ActiveForward,
+            other => other,
+        }
+    }
+
     pub(super) fn svg(self) -> String {
         let path = match self {
-            Self::Back => "m14 6-6 6 6 6",
+            Self::Back | Self::ActiveBack => "m14 6-6 6 6 6",
             Self::Forward | Self::ActiveForward => "m10 6 6 6-6 6",
             Self::Up => "M12 19V5m-6 6 6-6 6 6",
             Self::Search => "M16.2 16.2 21 21M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",

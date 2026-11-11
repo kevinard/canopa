@@ -356,7 +356,7 @@ impl Icons {
     }
 
     pub(super) fn chrome(&self, icon: Icon, size: f32, opacity: f32) -> Element<'_, Message> {
-        match self.chrome_handles.get(&icon) {
+        match self.chrome_handles.get(&icon.directional()) {
             Some(handle) => image(handle.clone())
                 .width(size)
                 .height(size)
@@ -533,7 +533,7 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         .take_while(|_| !cancelled())
         .filter_map(|icon| {
             let ink = match icon {
-                Icon::ActiveFolder | Icon::ActiveForward => request.on_accent,
+                Icon::ActiveFolder | Icon::ActiveForward | Icon::ActiveBack => request.on_accent,
                 _ => request.foreground,
             };
             let raster = svg(icon.svg().as_bytes(), ink)?;

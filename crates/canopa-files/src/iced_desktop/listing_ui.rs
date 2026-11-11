@@ -106,28 +106,35 @@ pub(super) fn geometry(desktop: &Desktop, tab: &Tab) -> Geometry {
 
 fn kind(entry: &Entry) -> String {
     if entry.kind == EntryKind::Symlink {
-        "Link".into()
+        fl!("files-kind-link")
     } else if entry.is_directory() {
-        "Folder".into()
+        fl!("files-kind-folder")
     } else {
         entry.path.extension().map_or_else(
-            || "File".into(),
-            |extension| format!("{} file", extension.to_string_lossy().to_uppercase()),
+            || fl!("files-kind-file"),
+            |extension| {
+                fl!(
+                    "files-kind-extension",
+                    extension = extension.to_string_lossy().to_uppercase()
+                )
+            },
         )
     }
 }
+/// A size in binary units, in the person's number format (`1.5 KiB`).
 pub(super) fn size(bytes: u64) -> String {
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let (amount, unit) = if bytes < 1024 * 1024 {
-        (bytes as f64 / 1024.0, "KiB")
-    } else if bytes < 1024 * 1024 * 1024 {
-        (bytes as f64 / (1024.0 * 1024.0), "MiB")
-    } else {
-        (bytes as f64 / (1024.0 * 1024.0 * 1024.0), "GiB")
+    canopa_i18n::format::size(bytes)
+}
+/// `time` in the local time zone, for locale formatting.
+pub(super) fn local_time(time: std::time::SystemTime) -> Option<chrono::NaiveDateTime> {
+    let milliseconds = match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => i64::try_from(duration.as_millis()).ok()?,
+        Err(error) => i64::try_from(error.duration().as_millis())
+            .ok()?
+            .checked_neg()?,
     };
-    format!("{amount:.1} {unit}")
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(milliseconds)
+        .map(|time| time.with_timezone(&chrono::Local).naive_local())
 }
 fn detail_value(entry: &Entry, detail: Detail) -> Option<String> {
     match detail {
@@ -138,18 +145,8 @@ fn detail_value(entry: &Entry, detail: Detail) -> Option<String> {
 }
 /// The local modification time as the Modified detail shows it.
 pub(super) fn modified(entry: &Entry) -> Option<String> {
-    entry.modified.and_then(|time| {
-        let milliseconds = match time.duration_since(std::time::UNIX_EPOCH) {
-            Ok(duration) => i64::try_from(duration.as_millis()).ok()?,
-            Err(error) => i64::try_from(error.duration().as_millis())
-                .ok()?
-                .checked_neg()?,
-        };
-        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(milliseconds).map(|time| {
-            time.with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
-        })
+    entry.modified.and_then(local_time).map(|time| {
+        canopa_i18n::format::date_time_with(time, canopa_i18n::format::DateStyle::Short)
     })
 }
 
@@ -172,28 +169,30 @@ pub(super) fn inline_details(
     settings.mode == ViewMode::List && width >= minimum.max(620.0)
 }
 
-fn sort_heading(settings: &ViewSettings, field: SortField, label: &str) -> String {
+fn sort_heading(settings: &ViewSettings, field: SortField, label: String) -> String {
     if settings.sort == field {
         let arrow = if settings.descending { "↓" } else { "↑" };
         format!("{label}  {arrow}")
     } else {
-        label.to_owned()
+        label
     }
 }
 
 pub(super) fn name_heading(settings: &ViewSettings) -> String {
     let (detail, label) = match settings.sort {
-        SortField::Name => return sort_heading(settings, SortField::Name, "Name"),
-        SortField::Size => (Detail::Size, "Size"),
-        SortField::Modified => (Detail::Modified, "Modified"),
-        SortField::Kind => (Detail::Kind, "Kind"),
+        SortField::Name => {
+            return sort_heading(settings, SortField::Name, fl!("files-column-name"));
+        }
+        SortField::Size => (Detail::Size, fl!("files-column-size")),
+        SortField::Modified => (Detail::Modified, fl!("files-column-modified")),
+        SortField::Kind => (Detail::Kind, fl!("files-column-kind")),
     };
     if settings.details.contains(&detail) {
-        "Name".into()
+        fl!("files-column-name")
     } else {
-        format!(
-            "Name  ·  Sorted by {}",
-            sort_heading(settings, settings.sort, label),
+        fl!(
+            "files-column-name-sorted-by",
+            field = sort_heading(settings, settings.sort, label)
         )
     }
 }
@@ -208,9 +207,9 @@ pub(super) fn detail_cells<'a>(
     let mut cells = row![].spacing(14).align_y(Alignment::Center);
     for &detail in &settings.details {
         let (label, field, units) = match detail {
-            Detail::Size => ("Size", SortField::Size, 6.0),
-            Detail::Modified => ("Modified", SortField::Modified, 12.5),
-            Detail::Kind => ("Kind", SortField::Kind, 9.0),
+            Detail::Size => (fl!("files-column-size"), SortField::Size, 6.0),
+            Detail::Modified => (fl!("files-column-modified"), SortField::Modified, 12.5),
+            Detail::Kind => (fl!("files-column-kind"), SortField::Kind, 9.0),
         };
         let value = entry.map_or_else(
             || sort_heading(settings, field, label),
@@ -531,7 +530,7 @@ pub(super) fn icons<'a>(
         if visible.is_empty() {
             items = items.push(keyed_row(
                 RowKey::Notice,
-                container(text("Empty folder")).padding(12),
+                container(text(fl!("files-empty-folder"))).padding(12),
             ));
         }
         for index in range.clone() {
