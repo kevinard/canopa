@@ -27,6 +27,8 @@ fresh output folder that is removed afterwards. No caches are dropped. Tools:
 
 With --probe, Canopa also runs once under an LD_PRELOAD shim that counts and
 times fsync/fdatasync/renameat2/openat calls (scripts/fixtures/copy-sync-probe.c).
+It sees libc calls only: std's sync_all and SQLite's syncs, not the raw
+syscalls rustix issues (its syncfs, fdatasync, renameat2 and openat).
 Outputs are JSON lines; a median summary is printed at the end.
 """
 import argparse
