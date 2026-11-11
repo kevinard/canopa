@@ -291,8 +291,16 @@ impl State {
         let padding = canopa_ui::content_padding(appearance.style(canopa_theme::UiKind::Button));
         let play_width =
             chrome::text_width("Pause", font, label_size) + padding.left + padding.right + 2.0;
-        let button = |label, control| {
-            canopa_ui::styled_action(
+        let button = |label: &'static str, control| {
+            let message = controls.contains(&control).then_some(Message::Preview(
+                preview_ui::Event::Activate(id, revision, control),
+            ));
+            let node = super::accessibility_ui::Node::button(label)
+                .key(format!("files-media-{control:?}"))
+                .focused(focused == Some(control))
+                .disabled(message.is_none())
+                .on_click(message);
+            let button = canopa_ui::styled_action(
                 text(label).font(font).size(label_size),
                 controls.contains(&control).then_some(Message::Preview(
                     preview_ui::Event::Activate(id, revision, control),
@@ -309,7 +317,20 @@ impl State {
                 Length::Fixed(play_width)
             } else {
                 Length::Shrink
-            })
+            });
+            super::accessibility_ui::semantic(node, button)
+        };
+        // Sliders are named by the caption drawn before them.
+        let slider_node = |control: Control, value: f64, max: f64, step: f64| {
+            super::accessibility_ui::Node::new(super::accessibility_ui::Role::Slider)
+                .key(format!("files-media-{control:?}"))
+                .range(canopa_ui::accessibility::Range {
+                    value,
+                    min: 0.0,
+                    max,
+                    step: Some(step),
+                })
+                .focused(focused == Some(control))
         };
         let message = move |event| Message::Preview(preview_ui::Event::Media(id, revision, event));
         let position = self
@@ -334,16 +355,19 @@ impl State {
             transport = transport.push(
                 row![
                     text("Seek").font(font).size(label_size),
-                    focus_frame(
-                        slider(0.0..=self.duration(), position, move |v| message(
-                            Event::SeekDraft(v)
-                        ))
-                        .step(0.1)
-                        .on_release(message(Event::SeekCommit))
-                        .into(),
-                        focused == Some(Control::Seek),
-                    )
-                    .width(Length::Fill),
+                    super::accessibility_ui::semantic(
+                        slider_node(Control::Seek, position, self.duration(), 0.1),
+                        focus_frame(
+                            slider(0.0..=self.duration(), position, move |v| message(
+                                Event::SeekDraft(v)
+                            ))
+                            .step(0.1)
+                            .on_release(message(Event::SeekCommit))
+                            .into(),
+                            focused == Some(Control::Seek),
+                        )
+                        .width(Length::Fill)
+                    ),
                     time,
                 ]
                 .spacing(8)
@@ -389,7 +413,8 @@ impl State {
         .spacing(7)
         .align_y(iced::Alignment::Center);
         if controls.contains(&Control::Volume) {
-            actions = actions.push(
+            actions = actions.push(super::accessibility_ui::semantic(
+                slider_node(Control::Volume, self.snapshot.volume, 1.0, 0.05),
                 focus_frame(
                     slider(0.0..=1.0, self.snapshot.volume, move |v| {
                         message(Event::Volume(v))
@@ -401,11 +426,14 @@ impl State {
                 )
                 .width(Length::Fill)
                 .max_width(220),
-            );
+            ));
         }
         transport = transport.push(actions);
         if let Some(notice) = self.error.as_ref().or(self.snapshot.notice.as_ref()) {
-            transport = transport.push(text(notice).size(body_size));
+            transport = transport.push(super::accessibility_ui::semantic(
+                super::accessibility_ui::Node::status(notice.clone()).key("files-media-notice"),
+                text(notice).size(body_size),
+            ));
         }
         container(transport)
             .padding(8)

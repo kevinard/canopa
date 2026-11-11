@@ -767,7 +767,7 @@ pub(super) fn view<'a>(
     let appearance = &desktop.configuration.appearance;
     let body_size = appearance.typography().body_size.px();
     let controls = preview.controls();
-    let button = |label: &'static str, control: Control| {
+    let raw = |label: &'static str, control: Control| {
         canopa_ui::styled_action(
             text(label).font(canopa_ui::font(appearance)).size(
                 appearance.typography().label_size.px() + if label == "×" { 5.0 } else { 0.0 },
@@ -787,6 +787,35 @@ pub(super) fn view<'a>(
             preview.focused == Some(control),
             appearance,
         )
+    };
+    // Symbols and abbreviations get spoken names; focus is held in the model.
+    let semantics = |control: Control| {
+        let name = match control {
+            Control::Open => "Open",
+            Control::Close => "Close preview",
+            Control::ZoomOut => "Zoom out",
+            Control::Fit => "Fit to window",
+            Control::Actual => "Actual size",
+            Control::ZoomIn => "Zoom in",
+            Control::Previous => "Previous page",
+            Control::Next => "Next page",
+            _ => "",
+        };
+        let message = controls
+            .contains(&control)
+            .then_some(Message::Preview(Event::Activate(
+                id,
+                preview.revision,
+                control,
+            )));
+        super::accessibility_ui::Node::button(name)
+            .key(format!("files-preview-{control:?}"))
+            .focused(preview.focused == Some(control))
+            .disabled(message.is_none())
+            .on_click(message)
+    };
+    let button = |label: &'static str, control: Control| {
+        super::accessibility_ui::semantic(semantics(control), raw(label, control))
     };
     let mut controls_row = row![].spacing(6);
     if preview.bitmap.is_some() {
@@ -964,7 +993,10 @@ pub(super) fn view<'a>(
         format!("{kind} · {information}")
     };
     let close = iced::widget::tooltip(
-        button("×", Control::Close).width(32).padding(4),
+        super::accessibility_ui::semantic(
+            semantics(Control::Close),
+            raw("×", Control::Close).width(32).padding(4),
+        ),
         text("Close preview")
             .font(canopa_ui::font(&appearance))
             .size(appearance.typography().label_size.px()),

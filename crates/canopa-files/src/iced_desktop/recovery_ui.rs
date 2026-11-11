@@ -451,7 +451,7 @@ fn contents<'a>(
     item_font.weight = iced::font::Weight::Semibold;
     let muted = Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted));
     let mut rows = column![space().height(first as f32 * row_height)].spacing(0);
-    for item in &items[first..end] {
+    for (index, item) in items[first..end].iter().enumerate() {
         let selected = recovery.selected == Some(item.identity());
         let original = item.original.as_ref().map_or_else(
             || "Original location unknown".into(),
@@ -479,6 +479,7 @@ fn contents<'a>(
         } else {
             item.message.clone()
         };
+        let description = format!("{original}, {summary}");
         let metadata = column![
             chrome::single_line(
                 item.name().to_string_lossy().into_owned(),
@@ -516,28 +517,50 @@ fn contents<'a>(
         ]
         .spacing(9)
         .align_y(iced::Alignment::Center);
+        let select = Message::Recovery(Event::Select(
+            id,
+            recovery.snapshot.revision,
+            item.identity(),
+        ));
+        let node = super::accessibility_ui::Node::option(
+            item.name().to_string_lossy().into_owned(),
+            selected,
+        )
+        .key(format!("files-recovery-{:?}", item.identity()))
+        .description(description)
+        .position(first + index + 1, items.len())
+        .on_click(Some(select.clone()));
         rows = rows.push(row_state::keyed_row(
             view::RowKey::Recovery(item.identity()),
-            container(
-                canopa_ui::styled_action(
-                    container(label).width(Length::Fill).clip(true),
-                    Some(Message::Recovery(Event::Select(
-                        id,
-                        recovery.snapshot.revision,
-                        item.identity(),
-                    ))),
-                    canopa_ui::Action::Quiet,
-                    selected,
-                    appearance,
+            super::accessibility_ui::semantic(
+                node,
+                container(
+                    canopa_ui::styled_action(
+                        container(label).width(Length::Fill).clip(true),
+                        Some(select),
+                        canopa_ui::Action::Quiet,
+                        selected,
+                        appearance,
+                    )
+                    .width(Length::Fill)
+                    .height(row_height),
                 )
-                .width(Length::Fill)
-                .height(row_height),
-            )
-            .style(move |_| chrome::catalogue_row(appearance, selected)),
+                .style(move |_| chrome::catalogue_row(appearance, selected)),
+            ),
         ));
     }
     rows = rows.push(space().height((items.len() - end) as f32 * row_height));
     let revision = recovery.snapshot.revision;
+    let rows = super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::list("Saved copies")
+            .key("files-recovery-items")
+            .active_descendant(
+                recovery
+                    .selected
+                    .map(|identity| format!("files-recovery-{identity:?}")),
+            ),
+        rows,
+    );
     let listing = scrollable(rows)
         .id(scroll(id))
         .height(Length::Fill)

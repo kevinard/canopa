@@ -558,7 +558,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     let first = first.saturating_sub(4).min(items.len());
     let end = (first + (trash.viewport / row_height).ceil() as usize + 12).min(items.len());
     let mut rows = column![space().height(first as f32 * row_height)].spacing(0);
-    for item in &items[first..end] {
+    for (index, item) in items[first..end].iter().enumerate() {
         let original = item
             .original
             .as_ref()
@@ -583,6 +583,22 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             })
             .unwrap_or_else(|| "Deletion date unknown".into());
         let selected = trash.selected.as_ref() == Some(&item.path);
+        let select = Message::Trash(Event::Select(
+            id,
+            trash.snapshot.revision,
+            item.path.clone(),
+        ));
+        let node = super::accessibility_ui::Node::option(
+            item.name().to_string_lossy().into_owned(),
+            selected,
+        )
+        .key(format!(
+            "files-trash-{}",
+            super::accessibility_ui::path_key(&item.path)
+        ))
+        .description(format!("{original}, {date}"))
+        .position(first + index + 1, items.len())
+        .on_click(Some(select.clone()));
         let label = row![
             container(desktop.icons.chrome(chrome::Icon::Documents, 18.0, 0.9))
                 .padding(8)
@@ -617,23 +633,22 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         .align_y(iced::Alignment::Center);
         rows = rows.push(row_state::keyed_row(
             view::RowKey::Trash(item.path.clone()),
-            container(
-                canopa_ui::styled_action(
-                    container(label).width(Length::Fill).clip(true),
-                    Some(Message::Trash(Event::Select(
-                        id,
-                        trash.snapshot.revision,
-                        item.path.clone(),
-                    ))),
-                    canopa_ui::Action::Quiet,
-                    selected,
-                    appearance,
+            super::accessibility_ui::semantic(
+                node,
+                container(
+                    canopa_ui::styled_action(
+                        container(label).width(Length::Fill).clip(true),
+                        Some(select),
+                        canopa_ui::Action::Quiet,
+                        selected,
+                        appearance,
+                    )
+                    .width(Length::Fill)
+                    .height(row_height),
                 )
                 .width(Length::Fill)
-                .height(row_height),
-            )
-            .width(Length::Fill)
-            .style(move |_| chrome::catalogue_row(appearance, selected)),
+                .style(move |_| chrome::catalogue_row(appearance, selected)),
+            ),
         ));
     }
     rows = rows.push(space().height((items.len() - end) as f32 * row_height));
@@ -649,6 +664,16 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
                 viewport.bounds().height,
             ))
         });
+    let listing =
+        super::accessibility_ui::semantic(
+            super::accessibility_ui::Node::list("Trash items")
+                .key("files-trash-items")
+                .busy(trash.snapshot.loading)
+                .active_descendant(trash.selected.as_ref().map(|path| {
+                    format!("files-trash-{}", super::accessibility_ui::path_key(path))
+                })),
+            listing,
+        );
     let listing = iced::widget::sensor(listing)
         .key((id, trash.snapshot.scope == Scope::Main))
         .on_show(move |size| Message::Trash(Event::Viewport(id, revision, size)))
@@ -775,14 +800,19 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             .height(64),
         );
     }
-    let status = text(status)
-        .font(font)
-        .size(small)
-        .style(canopa_ui::muted)
-        .wrapping(text::Wrapping::WordOrGlyph);
+    let status_node =
+        super::accessibility_ui::Node::status(status.clone()).key("files-trash-status");
+    let status = super::accessibility_ui::semantic(
+        status_node,
+        text(status)
+            .font(font)
+            .size(small)
+            .style(canopa_ui::muted)
+            .wrapping(text::Wrapping::WordOrGlyph),
+    );
     let footer: Element<'_, Message> = match buttons {
         Some(buttons) => column![status, buttons].spacing(4).into(),
-        None => status.into(),
+        None => status,
     };
     body = body
         .push(iced::widget::rule::horizontal(1).style(chrome::divider))

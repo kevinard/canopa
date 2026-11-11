@@ -135,12 +135,25 @@ impl<'a> Form<'a> {
             .size(appearance.typography().body_size.px())
             .padding(canopa_ui::content_padding(appearance.style(UiKind::Input)))
             .style(move |theme, status| view::input_style(&appearance, theme, status));
+        let mut node = super::accessibility_ui::Node::new(super::accessibility_ui::Role::TextInput)
+            .key(format!("files-preferences-{name}"))
+            .value(value)
+            .read_only(!enabled);
         if enabled {
             input = input.on_input(move |v| {
                 Message::Preferences(Event::Change(target, Change::Field(which, v)))
             });
+            node = node.on_text(move |v| {
+                Message::Preferences(Event::Change(target, Change::Field(which, v)))
+            });
         }
-        column![self.note(label), input].spacing(4).into()
+        // Named by the note drawn before it.
+        column![
+            self.note(label),
+            super::accessibility_ui::semantic(node, input)
+        ]
+        .spacing(4)
+        .into()
     }
     fn note(&self, label: impl Into<String>) -> Element<'a, Message> {
         text(label.into())
