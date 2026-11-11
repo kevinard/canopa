@@ -100,6 +100,7 @@ def verify(binary, session, scheme, scale, shell_binary):
     (applications / (direct_app + '.desktop')).write_text('[Desktop Entry]\nType=Application\nName=Direct portal fixture\nExec=/usr/bin/false\n')
     events = session.output / 'application-events.json'
     (services / (APP + '.service')).write_text(f'[D-BUS Service]\nName={APP}\nExec={sys.executable} {Path(__file__).resolve()} --serve {events}\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals),
                        GIO_USE_PORTALS='1', GTK_USE_PORTAL='1', WAYLAND_DEBUG='1')
     session.env['PATH'] = str(binary.parent) + os.pathsep + session.env['PATH']

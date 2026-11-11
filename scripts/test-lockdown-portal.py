@@ -58,6 +58,7 @@ def verify(binary, session, scheme, scale, shipped):
     (portals / 'portals.conf').write_text('[preferred]\ndefault=none\n' + ''.join(
         f'org.freedesktop.impl.portal.{name}=canopa\n' for name in ['Settings', 'Lockdown', 'FileChooser', 'AppChooser']))
     shutil.copy(ROOT / 'packaging/portal/org.freedesktop.impl.portal.desktop.canopa.service', services)
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), WAYLAND_DEBUG='1', XDG_DATA_DIRS=str(data),
         GIO_USE_VFS='local', GSETTINGS_BACKEND='memory', GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas',
         XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals),

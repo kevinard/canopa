@@ -33,6 +33,7 @@ def verify(args,s,result):
     data=Path(s.env['XDG_DATA_HOME']);(data/'applications').mkdir(parents=True)
     (data/'applications/org.canopa.WindowScreenshotFixture.desktop').write_text('[Desktop Entry]\nType=Application\nName=Window screenshot fixture\nExec=true\n')
     home=s.runtime/'home';home.mkdir()
+    s.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     s.env.update(HOME=str(home),CANOPA_PORTAL_CONFIG=str(config),CANOPA_PORTAL_BINARY=str(args.binary),
         XDG_CURRENT_DESKTOP='Canopa',XDG_DESKTOP_PORTAL_DIR=str(portals),XDG_DATA_DIRS=str(data),GIO_USE_VFS='local',
         GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas')

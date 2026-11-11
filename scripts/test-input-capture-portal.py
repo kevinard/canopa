@@ -44,6 +44,7 @@ def verify(args, session, result):
     applications = Path(session.env['XDG_DATA_HOME']) / 'applications'; applications.mkdir(parents=True)
     (applications / (APP + '.desktop')).write_text('[Desktop Entry]\nType=Application\nName=Input capture fixture\nExec=true\n')
     home = session.runtime / 'home'; home.mkdir()
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals),
                        XDG_DATA_DIRS=session.env['XDG_DATA_HOME'], GIO_USE_VFS='local', GSETTINGS_BACKEND='memory',
                        GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas')

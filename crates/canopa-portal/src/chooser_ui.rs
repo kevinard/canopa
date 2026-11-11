@@ -1041,14 +1041,7 @@ impl Picker {
                 .is_some_and(|b| b.selected().contains(&entry.path));
             let name = entry.name().into_owned();
             let key = entry_key(&entry.path);
-            let marker = if !entry.is_directory() {
-                " "
-            } else if canopa_ui::direction::is_rtl() {
-                "◂"
-            } else {
-                "▸"
-            };
-            let label = format!("{marker}  {name}");
+            let label = format!("{}  {name}", entry_marker(entry.is_directory()));
             let select_message = enabled.then_some(Message::Select(entry.path.clone()));
             let activate = enabled.then_some(Message::Activate(entry.path.clone()));
             let select = button(text(label))
@@ -1462,6 +1455,18 @@ fn overwrite_view(prepared: &Prepared) -> Element<'_, Message> {
             .description(description),
         block,
     )
+}
+
+/// The mark before a row's name: folders point into themselves, toward the
+/// reading direction's end.
+pub(crate) fn entry_marker(directory: bool) -> &'static str {
+    if !directory {
+        " "
+    } else if canopa_ui::direction::is_rtl() {
+        "◂"
+    } else {
+        "▸"
+    }
 }
 
 /// A file row's identity: its path, never its (lossy) display name.

@@ -38,7 +38,7 @@ impl PrinterJobs {
                         super::super::Context {
                             app_id: "org.canopa.Portal".into(),
                             parent_window,
-                            title: "Printer jobs".into(),
+                            title: fl!("portal-jobs-title"),
                             modal: false,
                         },
                         scope.cancelled(),

@@ -35,6 +35,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     config = session.runtime / 'config/canopa/config.kdl'
     config.parent.mkdir(parents=True)
     config.write_text(f'schema-version 1\nappearance {{ color-scheme "{scheme}"; }}\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), WAYLAND_DEBUG='1')
     portals = session.runtime / 'portals'
     portals.mkdir()

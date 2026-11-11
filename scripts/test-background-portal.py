@@ -48,6 +48,7 @@ def verify(binary, notify, session, scheme, scale, shipped):
     (portals / 'canopa.portal').write_text(descriptor)
     shutil.copy(ROOT / 'packaging/portal/canopa-notify.portal', portals)
     (portals / 'portals.conf').write_text('[preferred]\ndefault=none\norg.freedesktop.impl.portal.Background=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), WAYLAND_DEBUG='1', XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals),
                        PATH=str(binary.parent) + os.pathsep + str(notify.parent) + os.pathsep + session.env['PATH'])
     session.start_niri('animations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\n',

@@ -54,6 +54,7 @@ def verify(args, session, result):
     (data / 'applications' / (APP + '.desktop')).write_text('[Desktop Entry]\nType=Application\nName=Shortcut test application\nExec=true\n')
     home = session.runtime / 'home'
     home.mkdir()
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), XDG_STATE_HOME=str(session.runtime / 'state'),
                        XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals),
                        XDG_DATA_DIRS=str(data), GIO_USE_VFS='local', GSETTINGS_BACKEND='memory',

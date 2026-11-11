@@ -45,6 +45,7 @@ def verify(args, session, result):
     for app in [APP, APP + '.Other']:
         (applications / (app + '.desktop')).write_text('[Desktop Entry]\nType=Application\nName=Clipboard fixture\nExec=true\n')
     home = session.runtime / 'home'; home.mkdir()
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(CANOPA_PORTAL_CONFIG=str(config), CANOPA_REMOTE_DESKTOP_NATIVE='1', CANOPA_PORTAL_BINARY=str(args.portal),
                        XDG_CURRENT_DESKTOP='Canopa', XDG_DESKTOP_PORTAL_DIR=str(portals), XDG_DATA_DIRS=session.env['XDG_DATA_HOME'], HOME=str(home),
                        GIO_USE_VFS='local', GSETTINGS_BACKEND='memory', GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas')

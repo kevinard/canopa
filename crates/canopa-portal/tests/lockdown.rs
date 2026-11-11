@@ -61,6 +61,7 @@ fn backend(address: &str, root: &Path, readonly: bool) -> Process {
     Process(
         command
             .env("DBUS_SESSION_BUS_ADDRESS", address)
+            .env("CANOPA_LANGUAGE", "en")
             .env("XDG_CONFIG_HOME", root.join("config"))
             .env("XDG_STATE_HOME", root.join("state"))
             .env_remove("NIRI_SOCKET")

@@ -36,6 +36,7 @@ def verify(args,session):
         (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
     applications=Path(session.env['XDG_DATA_HOME'])/'applications';applications.mkdir(parents=True)
     (applications/'org.canopa.CastTest.desktop').write_text('[Desktop Entry]\nType=Application\nName=Screen sharing fixture\nExec=true\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home),XDG_CURRENT_DESKTOP='Canopa',XDG_DESKTOP_PORTAL_DIR=str(portals),XDG_DATA_DIRS=session.env['XDG_DATA_HOME'],GIO_USE_VFS='local',GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas',PATH=str(args.binary.parent)+os.pathsep+session.env['PATH'],RUST_LOG='niri=debug')
     output=session.start_niri('debug { dbus-interfaces-in-non-session-instances; }\nprefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nlayout { gaps 8; border { off; }; focus-ring { off; }; }\n',scale=args.scale,service_directories=[services])
     fixture=ROOT/'scripts/desktop-fixture'

@@ -44,6 +44,7 @@ def verify(args,session):
     (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.Access=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
     applications=Path(session.env['XDG_DATA_HOME'])/'applications';applications.mkdir(parents=True)
     (applications/'org.canopa.ScreenshotTest.desktop').write_text('[Desktop Entry]\nType=Application\nName=Screenshot Fixture\nExec=true\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home),WAYLAND_DEBUG='1',XDG_CURRENT_DESKTOP='Canopa',XDG_DESKTOP_PORTAL_DIR=str(portals),XDG_DATA_DIRS=session.env['XDG_DATA_HOME'],GIO_USE_VFS='local',GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas',PATH=str(args.binary.parent)+os.pathsep+session.env['PATH'])
     output=session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nlayout { gaps 8; border { off; }; focus-ring { off; }; }\n',width=round(1280*args.scale),height=round(800*args.scale),scale=args.scale,service_directories=[services])
     session.start(['wtype','-s','600000'],'keyboard.log')

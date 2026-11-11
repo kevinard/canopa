@@ -37,6 +37,7 @@ def verify(args,session,result):
     from gi.repository import Gio,GLib
     config=session.runtime/'canopa.kdl'
     config.write_text(f'schema-version 1\nappearance {{ color-scheme "{args.scheme}"; }}\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(CANOPA_PORTAL_CONFIG=str(config),PATH=str(args.niri.parent)+os.pathsep+session.env['PATH'],
         CANOPA_REMOTE_DESKTOP_NATIVE='1',CANOPA_PORTAL_BINARY=str(args.portal),
         GSETTINGS_BACKEND='memory')

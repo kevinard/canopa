@@ -47,6 +47,7 @@ def verify(binary, session, scheme, scale):
     (data / 'applications/org.canopa.PortalTest.desktop').write_text('[Desktop Entry]\nType=Application\nName=Profile Fixture\nExec=true\n')
     (data / 'mime').mkdir()
     shutil.copy('/usr/share/mime/globs2', data / 'mime/globs2')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), XDG_DATA_DIRS=str(data), WAYLAND_DEBUG='1',
                        GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas')
     portals = session.runtime / 'portals'

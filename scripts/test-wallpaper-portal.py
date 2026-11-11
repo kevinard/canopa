@@ -75,6 +75,7 @@ def verify(binary, shell_binary, session, scheme, scale, shipped):
     assert IMPL + ';' in descriptor
     (portals / 'canopa.portal').write_text(descriptor)
     (portals / 'portals.conf').write_text('[preferred]\ndefault=none\n' + IMPL + '=canopa\norg.freedesktop.impl.portal.Settings=canopa\norg.freedesktop.impl.portal.Access=canopa\n')
+    session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), WAYLAND_DEBUG='1', XDG_CURRENT_DESKTOP='Canopa', SSL_CERT_FILE=str(tls / 'ca.pem'),
         XDG_DESKTOP_PORTAL_DIR=str(portals), XDG_DATA_DIRS=session.env['XDG_DATA_HOME'],
         GIO_USE_VFS='local', GSETTINGS_BACKEND='memory', NO_PROXY='*', no_proxy='*',
