@@ -41,6 +41,8 @@ pub(super) enum Event {
     Builtin(Arc<Source>, Command),
     Invoke(Arc<Source>, String),
     MenuItem(Arc<Source>, usize),
+    /// Applications for the selection, resolved on a worker.
+    OpenWithReady(Arc<Source>, Arc<Vec<Arc<canopa_apps::DesktopApplication>>>),
 }
 
 #[derive(Clone)]
@@ -52,6 +54,9 @@ enum Item {
     Back,
     Place(PathBuf),
     Device(crate::local_volumes::DeviceToken, bool),
+    OpenWith,
+    Application(Arc<canopa_apps::DesktopApplication>),
+    OtherApplication,
 }
 pub(super) struct Menu {
     source: Arc<Source>,
@@ -145,6 +150,11 @@ impl Desktop {
                 let mut items = Vec::new();
                 if !source.paths.is_empty() {
                     items.push(("Open".into(), Item::Command(Command::Open)));
+                    if source.entries.len() == source.paths.len()
+                        && source.entries.iter().all(|entry| !entry.is_directory())
+                    {
+                        items.push(("Open With…".into(), Item::OpenWith));
+                    }
                     items.push(("Quick Look".into(), Item::Command(Command::QuickLook)));
                 }
                 if self.file_clipboard.ready()
@@ -293,6 +303,22 @@ impl Desktop {
                     resolved_directory: source.resolved.clone(),
                 });
             }
+            Event::OpenWithReady(source, apps) => {
+                if !self.matches_source(&source) {
+                    return Task::none();
+                }
+                let mut items = vec![("Back".into(), Item::Back)];
+                for (index, app) in apps.iter().enumerate() {
+                    let label = if index == 0 {
+                        format!("{} (default)", app.name)
+                    } else {
+                        app.name.clone()
+                    };
+                    items.push((label, Item::Application(app.clone())));
+                }
+                items.push(("Other Application…".into(), Item::OtherApplication));
+                return self.present_menu(source, items);
+            }
             Event::MenuItem(source, index) => {
                 if !self.matches_source(&source) {
                     self.action_menu = None;
@@ -335,6 +361,33 @@ impl Desktop {
                         self.folder_view_event(folder_views::Event::Show(source.window))
                     }
                     Item::Action(id) => self.action_event(Event::Invoke(source, id)),
+                    Item::OpenWith => {
+                        let paths = source.paths.to_vec();
+                        Task::perform(
+                            async move {
+                                let (send, receive) = iced::futures::channel::oneshot::channel();
+                                let _ = std::thread::Builder::new()
+                                    .name("files-open-with-menu".into())
+                                    .spawn(move || {
+                                        let _ = send
+                                            .send(super::open_with_ui::applications_for(&paths));
+                                    });
+                                Arc::new(receive.await.unwrap_or_default())
+                            },
+                            move |apps| Message::Action(Event::OpenWithReady(source.clone(), apps)),
+                        )
+                    }
+                    Item::Application(app) => self.launch(
+                        source.window,
+                        super::open_with_ui::Launch::Application {
+                            app,
+                            files: source.paths.to_vec(),
+                            default_for: None,
+                        },
+                    ),
+                    Item::OtherApplication => {
+                        self.show_open_with_chooser(source.window, source.paths.to_vec())
+                    }
                 };
             }
         }
@@ -518,6 +571,9 @@ pub(super) fn overlay<'a>(
                 .find(|action| &action.id == id)
                 .and_then(|action| action.icon.as_deref()),
             Item::Command(_)
+            | Item::OpenWith
+            | Item::Application(_)
+            | Item::OtherApplication
             | Item::FolderOptions
             | Item::Locations
             | Item::Back

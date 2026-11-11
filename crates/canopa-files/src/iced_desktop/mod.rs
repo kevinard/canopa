@@ -29,6 +29,7 @@ mod listing_ui;
 mod loading;
 mod media_ui;
 mod name_dialog;
+mod open_with_ui;
 mod operation_details;
 #[cfg(test)]
 mod operation_tests;
@@ -223,6 +224,7 @@ struct Desktop {
     trash_window: Option<trash_ui::TrashWindow>,
     trash_restore: Option<trash_restore::Dialog>,
     delete_dialog: Option<delete_dialog::Dialog>,
+    open_dialog: Option<open_with_ui::Dialog>,
     recovery_window: Option<recovery_ui::RecoveryWindow>,
     recovery_destination: Option<recovery_destination::Dialog>,
 }
@@ -399,6 +401,7 @@ enum Message {
     RecoveryDestination(recovery_destination::Event),
     TrashRestore(trash_restore::Event),
     DeleteDialog(delete_dialog::Event),
+    OpenWith(open_with_ui::Event),
 }
 
 impl Desktop {
@@ -457,6 +460,7 @@ impl Desktop {
             trash_window: None,
             trash_restore: None,
             delete_dialog: None,
+            open_dialog: None,
             recovery_window: None,
             recovery_destination: None,
         };
@@ -719,6 +723,23 @@ impl Desktop {
                 self.close_recovery(id)
             }
             Message::DeleteDialog(event) => self.delete_dialog_event(event),
+            Message::OpenWith(event) => self.open_with_event(event),
+            Message::Key(id, key, modifiers, _) | Message::CapturedKey(id, key, modifiers)
+                if self
+                    .open_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.window == id) =>
+            {
+                self.open_dialog_key(id, key, modifiers)
+            }
+            Message::Close(id) | Message::Closed(id)
+                if self
+                    .open_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.window == id) =>
+            {
+                self.close_open_dialog(id)
+            }
             Message::Key(id, key, modifiers, _) | Message::CapturedKey(id, key, modifiers)
                 if self
                     .delete_dialog
@@ -1038,6 +1059,7 @@ impl Desktop {
             | Message::Trash(_)
             | Message::TrashRestore(_)
             | Message::DeleteDialog(_)
+            | Message::OpenWith(_)
             | Message::FileClipboard(_)
             | Message::Properties(_)
             | Message::Drag(_) => {}
@@ -1389,6 +1411,7 @@ impl Desktop {
             && self.recovery_window.is_none()
             && self.trash_restore.is_none()
             && self.delete_dialog.is_none()
+            && self.open_dialog.is_none()
             && self.recovery_destination.is_none()
             && self.action_editor.is_none()
             && self.preferences_editor.is_none()
@@ -1467,10 +1490,6 @@ impl Desktop {
         {
             return Task::none();
         }
-        let recovery = self
-            .recovery_window
-            .as_ref()
-            .is_some_and(|w| w.window == id);
         let is_directory = self
             .active(id)
             .and_then(|tab| tab.browser.as_ref())
@@ -1483,33 +1502,12 @@ impl Desktop {
             .is_some_and(|entry| entry.is_directory());
         if is_directory {
             self.navigate(id, path, Navigation::Visit, None)
+        } else if tab_id.is_some() {
+            self.open_file(id, path)
         } else {
-            Task::perform(
-                async move {
-                    std::process::Command::new("gio")
-                        .arg("open")
-                        .arg(path)
-                        .status()
-                        .map_err(|error| error.to_string())
-                        .and_then(|status| {
-                            if status.success() {
-                                Ok(())
-                            } else {
-                                Err(format!("Opening the file failed: {status}"))
-                            }
-                        })
-                },
-                move |result| match result {
-                    Ok(()) => Message::Opened(id),
-                    Err(error) => match tab_id {
-                        Some(tab_id) => Message::Error(id, tab_id, error),
-                        None if recovery => {
-                            Message::Recovery(recovery_ui::Event::OpenFailed(id, error))
-                        }
-                        None => Message::Trash(trash_ui::Event::OpenFailed(id, error)),
-                    },
-                },
-            )
+            // Trash and Recovery show stored copies: never run them, let GIO
+            // pick a viewer.
+            self.launch(id, open_with_ui::Launch::Default(path))
         }
     }
 
@@ -1897,6 +1895,13 @@ impl Desktop {
             return format!("{} — Canopa Files", dialog.title());
         }
         if let Some(dialog) = self
+            .open_dialog
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return format!("{} — Canopa Files", dialog.title());
+        }
+        if let Some(dialog) = self
             .trash_restore
             .as_ref()
             .filter(|dialog| dialog.window == id)
@@ -2087,6 +2092,13 @@ impl Desktop {
             .filter(|dialog| dialog.window == id)
         {
             return delete_dialog::view(self, dialog);
+        }
+        if let Some(dialog) = self
+            .open_dialog
+            .as_ref()
+            .filter(|dialog| dialog.window == id)
+        {
+            return open_with_ui::view(self, dialog);
         }
         if let Some(dialog) = self
             .file_operations
