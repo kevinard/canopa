@@ -1,9 +1,7 @@
 //! Shared now-playing state. The shell owns selection; the panel is a client.
-use futures_util::{
-    StreamExt, TryStreamExt,
-    future::BoxFuture,
-    stream::{self, FuturesUnordered},
-};
+//! MPRIS discovery, reads and controls come from [`canopa_services::mpris`].
+use canopa_services::mpris::{self, DEADLINE, PLAYER, PREFIX, Registry};
+use futures_util::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use std::{collections::HashMap, time::Duration};
 use tokio::sync::{mpsc, oneshot, watch};
 use zbus::zvariant::OwnedValue;
@@ -11,10 +9,6 @@ use zbus::zvariant::OwnedValue;
 pub const SERVICE: &str = "org.canopa.Shell.Media";
 pub const PATH: &str = "/org/canopa/Shell/Media";
 pub const INTERFACE: &str = "org.canopa.Shell.Media";
-const MPRIS_PATH: &str = "/org/mpris/MediaPlayer2";
-const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
-const PREFIX: &str = "org.mpris.MediaPlayer2.";
-const DEADLINE: Duration = Duration::from_millis(800);
 
 pub use canopa_widgets::media::{Operation, Player, PlayerId, Request, Snapshot};
 
@@ -60,247 +54,6 @@ impl MediaInterface {
     }
 }
 
-fn bounded(value: &str) -> String {
-    value
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(512)
-        .collect()
-}
-
-async fn read_player(conn: &zbus::Connection, bus: String) -> anyhow::Result<Player> {
-    let dbus = zbus::fdo::DBusProxy::new(conn).await?;
-    let owner = dbus
-        .get_name_owner(bus.as_str().try_into()?)
-        .await?
-        .to_string();
-    read_owned_player(
-        conn,
-        PlayerId {
-            bus,
-            owner,
-            server: conn.server_guid().to_string(),
-        },
-    )
-    .await
-}
-
-async fn read_owned_player(conn: &zbus::Connection, id: PlayerId) -> anyhow::Result<Player> {
-    let props = zbus::fdo::PropertiesProxy::builder(conn)
-        .destination(id.owner.clone())?
-        .path(MPRIS_PATH)?
-        .build()
-        .await?;
-    let values = props.get_all(PLAYER.try_into()?).await?;
-    let root = props
-        .get_all("org.mpris.MediaPlayer2".try_into()?)
-        .await
-        .unwrap_or_default();
-    let metadata = values
-        .get("Metadata")
-        .and_then(|v| v.try_clone().ok())
-        .and_then(|v| HashMap::<String, OwnedValue>::try_from(v).ok())
-        .unwrap_or_default();
-    let string = |map: &HashMap<String, OwnedValue>, key: &str| {
-        map.get(key)
-            .and_then(|v| <&str>::try_from(v).ok())
-            .map(bounded)
-            .unwrap_or_default()
-    };
-    let enabled = |key: &str| {
-        values
-            .get(key)
-            .and_then(|v| bool::try_from(v).ok())
-            .unwrap_or(false)
-    };
-    let can_control = enabled("CanControl");
-    let artists = metadata
-        .get("xesam:artist")
-        .and_then(|v| v.try_clone().ok())
-        .and_then(|v| Vec::<String>::try_from(v).ok())
-        .unwrap_or_default();
-    let name = string(&root, "Identity");
-    let status = string(&values, "PlaybackStatus");
-    anyhow::ensure!(
-        matches!(status.as_str(), "Playing" | "Paused" | "Stopped"),
-        "Invalid playback state"
-    );
-    let track = metadata
-        .get("mpris:trackid")
-        .and_then(|v| <&zbus::zvariant::ObjectPath<'_>>::try_from(v).ok())
-        .map(ToString::to_string)
-        .unwrap_or_default();
-    anyhow::ensure!(track.len() <= 2048, "Media track identifier too long");
-    let name = if name.is_empty() {
-        bounded(id.bus.trim_start_matches(PREFIX))
-    } else {
-        name
-    };
-    Ok(Player {
-        id,
-        name,
-        title: string(&metadata, "xesam:title"),
-        artist: bounded(&artists.into_iter().take(16).collect::<Vec<_>>().join(", ")),
-        track,
-        status,
-        can_play: can_control && enabled("CanPlay"),
-        can_pause: can_control && enabled("CanPause"),
-        can_next: can_control && enabled("CanGoNext"),
-        can_previous: can_control && enabled("CanGoPrevious"),
-    })
-}
-
-/// Inventory reads only the bus daemon. Slow player properties are separate work.
-async fn discover_owners(conn: &zbus::Connection) -> anyhow::Result<Vec<PlayerId>> {
-    tokio::time::timeout(DEADLINE, async {
-        let dbus = zbus::fdo::DBusProxy::new(conn).await?;
-        let mut names: Vec<String> = dbus
-            .list_names()
-            .await?
-            .into_iter()
-            .map(|name| name.to_string())
-            .filter(|name| name.starts_with(PREFIX))
-            .collect();
-        names.sort();
-        let dbus = &dbus;
-        let owners: Vec<Option<PlayerId>> = stream::iter(names.into_iter().take(64))
-            .map(|bus| async move {
-                match dbus.get_name_owner(bus.as_str().try_into()?).await {
-                    Ok(owner) => Ok(Some(PlayerId {
-                        bus,
-                        owner: owner.to_string(),
-                        server: conn.server_guid().to_string(),
-                    })),
-                    // The name can disappear between ListNames and GetNameOwner.
-                    Err(zbus::fdo::Error::NameHasNoOwner(_)) => Ok(None),
-                    Err(error) => Err(anyhow::Error::from(error)),
-                }
-            })
-            .buffer_unordered(16)
-            .try_collect()
-            .await?;
-        Ok::<_, anyhow::Error>(owners.into_iter().flatten().collect())
-    })
-    .await?
-}
-
-struct PlayerRecord {
-    id: PlayerId,
-    player: Option<Player>,
-    dirty: bool,
-    reading: Option<u64>,
-    initialized: bool,
-}
-
-type ReadResult = (PlayerId, u64, Option<Player>);
-
-#[derive(Default)]
-struct PlayerRegistry {
-    records: HashMap<String, PlayerRecord>,
-    next_read: u64,
-}
-
-impl PlayerRegistry {
-    fn reconcile_owners(&mut self, owners: Vec<PlayerId>) {
-        let mut previous = std::mem::take(&mut self.records);
-        self.records = owners
-            .into_iter()
-            .map(|id| {
-                let record = previous
-                    .remove(&id.bus)
-                    .filter(|record| record.id == id)
-                    .unwrap_or_else(|| PlayerRecord {
-                        id: id.clone(),
-                        player: None,
-                        dirty: true,
-                        reading: None,
-                        initialized: false,
-                    });
-                (id.bus, record)
-            })
-            .collect();
-    }
-
-    fn dirty(&mut self, bus: &str) {
-        if let Some(record) = self.records.get_mut(bus) {
-            record.dirty = true;
-        }
-    }
-
-    fn properties_changed(&mut self, owner: &str) {
-        for record in self
-            .records
-            .values_mut()
-            .filter(|record| record.id.owner == owner)
-        {
-            record.dirty = true;
-        }
-    }
-
-    fn start_reads(
-        &mut self,
-        conn: &zbus::Connection,
-        reads: &mut FuturesUnordered<BoxFuture<'static, ReadResult>>,
-    ) {
-        for record in self.records.values_mut() {
-            if reads.len() == 16 {
-                break;
-            }
-            if !record.dirty || record.reading.is_some() {
-                continue;
-            }
-            record.dirty = false;
-            self.next_read = self.next_read.wrapping_add(1);
-            let read_id = self.next_read;
-            record.reading = Some(read_id);
-            let id = record.id.clone();
-            let conn = conn.clone();
-            reads.push(Box::pin(async move {
-                let player = tokio::time::timeout(DEADLINE, read_owned_player(&conn, id.clone()))
-                    .await
-                    .ok()
-                    .and_then(Result::ok);
-                (id, read_id, player)
-            }));
-        }
-    }
-
-    fn finish_read(&mut self, (id, read_id, player): ReadResult) -> bool {
-        let Some(record) = self
-            .records
-            .get_mut(&id.bus)
-            .filter(|record| record.id == id && record.reading == Some(read_id))
-        else {
-            return false;
-        };
-        record.reading = None;
-        let initial_read = !record.initialized;
-        record.initialized = true;
-        // One read per live record may advance the display even during a burst.
-        // Signals received during that read retain the next refresh obligation.
-        if let Some(player) = player
-            && record.player.as_ref() != Some(&player)
-        {
-            record.player = Some(player);
-            return true;
-        }
-        // A failed metadata read is not evidence of departure. Retain the last
-        // valid presentation (including manual selection) until ownership changes.
-        initial_read
-    }
-
-    fn initial_reads_complete(&self) -> bool {
-        !self.records.is_empty() && self.records.values().all(|record| record.initialized)
-    }
-
-    fn players(&self) -> Vec<Player> {
-        self.records
-            .values()
-            .filter_map(|record| record.player.clone())
-            .collect()
-    }
-}
-
 async fn apply(
     conn: &zbus::Connection,
     state: &mut Snapshot,
@@ -325,30 +78,7 @@ async fn apply(
                 state.players.iter().any(|p| p.id == player),
                 "Player is no longer available"
             );
-            let current = read_player(conn, player.bus.clone()).await?;
-            anyhow::ensure!(
-                current.id == player && current.track == track,
-                "Player or track changed; try again"
-            );
-            anyhow::ensure!(
-                current.allows(operation),
-                "This player does not support that control"
-            );
-            let method = match operation {
-                Operation::Previous => "Previous",
-                Operation::Play => "Play",
-                Operation::Pause => "Pause",
-                Operation::Next => "Next",
-            };
-            // Address the captured unique owner. Never redirect a late click to a replacement process.
-            conn.call_method(
-                Some(player.owner.as_str()),
-                MPRIS_PATH,
-                Some(PLAYER),
-                method,
-                &(),
-            )
-            .await?;
+            mpris::control(conn, &player, &track, operation).await?;
         }
     }
     Ok(())
@@ -359,23 +89,13 @@ async fn connected(
     output: &watch::Sender<Snapshot>,
     mut commands: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
-    let changes = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .path(MPRIS_PATH)?
-        .interface("org.freedesktop.DBus.Properties")?
-        .member("PropertiesChanged")?
-        .build();
-    let owners = zbus::MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender("org.freedesktop.DBus")?
-        .interface("org.freedesktop.DBus")?
-        .member("NameOwnerChanged")?
-        .build();
+    let changes = mpris::properties_rule()?;
+    let owners = mpris::owners_rule()?;
     // Install both matches before discovery to close the startup race.
     let mut changes = zbus::MessageStream::for_match_rule(changes, &conn, Some(128)).await?;
     let mut owners = zbus::MessageStream::for_match_rule(owners, &conn, Some(128)).await?;
     let mut state = Snapshot::default();
-    let mut registry = PlayerRegistry::default();
+    let mut registry = Registry::default();
     let mut reads = FuturesUnordered::new();
     let mut inventory: Option<BoxFuture<'static, anyhow::Result<Vec<PlayerId>>>> = None;
     let mut inventory_dirty = true;
@@ -384,7 +104,9 @@ async fn connected(
     loop {
         if inventory_dirty && inventory.is_none() {
             let conn = conn.clone();
-            inventory = Some(Box::pin(async move { discover_owners(&conn).await }));
+            inventory = Some(Box::pin(
+                async move { Ok(mpris::discover_owners(&conn).await?) },
+            ));
             inventory_dirty = false;
         }
         registry.start_reads(&conn, &mut reads);

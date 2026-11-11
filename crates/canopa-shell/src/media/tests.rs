@@ -1,27 +1,6 @@
 use super::*;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-};
-
-pub(crate) fn player(name: &str, status: &str) -> Player {
-    Player {
-        id: PlayerId {
-            bus: format!("{PREFIX}{name}"),
-            owner: format!(":1.{name}"),
-            server: "test".into(),
-        },
-        name: name.into(),
-        title: "Track".into(),
-        artist: "Artist".into(),
-        track: "/track/one".into(),
-        status: status.into(),
-        can_play: true,
-        can_pause: true,
-        can_next: true,
-        can_previous: false,
-    }
-}
+use canopa_services::testing::mpris::{changed, export, player};
+use std::sync::atomic::Ordering;
 
 #[test]
 fn selection_prefers_playing_is_stable_and_clears_a_departed_pin() {
@@ -48,150 +27,6 @@ fn selection_prefers_playing_is_stable_and_clears_a_departed_pin() {
     state.reconcile(vec![]);
     assert!(state.current().is_none());
     assert!(state.available, "no players is different from no bus");
-}
-
-#[derive(Clone)]
-struct FakePlayer(
-    Arc<Mutex<Player>>,
-    Arc<Mutex<Vec<String>>>,
-    Arc<ReadBehavior>,
-);
-
-#[derive(Default)]
-struct ReadBehavior {
-    delay_ms: AtomicU64,
-    calls: AtomicUsize,
-    fail_metadata: AtomicBool,
-    fail_state_once: AtomicBool,
-    failures: AtomicUsize,
-}
-
-#[zbus::interface(name = "org.mpris.MediaPlayer2")]
-impl FakePlayer {
-    #[zbus(property)]
-    fn identity(&self) -> String {
-        self.0.lock().unwrap().name.clone()
-    }
-}
-
-struct FakePlayback(FakePlayer);
-
-#[zbus::interface(name = "org.mpris.MediaPlayer2.Player")]
-impl FakePlayback {
-    #[zbus(property)]
-    fn playback_status(&self) -> String {
-        // GetAll may omit failed optional getters; make this one snapshot invalid
-        // even if the server still returns a partial property dictionary.
-        if self.0.2.fail_state_once.swap(false, Ordering::SeqCst) {
-            return "Invalid".into();
-        }
-        self.0.0.lock().unwrap().status.clone()
-    }
-    #[zbus(property)]
-    async fn metadata(&self) -> zbus::fdo::Result<HashMap<String, OwnedValue>> {
-        self.0.2.calls.fetch_add(1, Ordering::SeqCst);
-        let delay = self.0.2.delay_ms.load(Ordering::SeqCst);
-        if delay > 0 {
-            tokio::time::sleep(Duration::from_millis(delay)).await;
-        }
-        if self.0.2.fail_metadata.load(Ordering::SeqCst) {
-            self.0.2.failures.fetch_add(1, Ordering::SeqCst);
-            return Err(zbus::fdo::Error::Failed(
-                "Temporary metadata failure".into(),
-            ));
-        }
-        let p = self.0.0.lock().unwrap();
-        Ok(HashMap::from([
-            (
-                "mpris:trackid".into(),
-                zbus::zvariant::Value::from(
-                    zbus::zvariant::ObjectPath::try_from(p.track.as_str()).unwrap(),
-                )
-                .try_to_owned()
-                .unwrap(),
-            ),
-            (
-                "xesam:title".into(),
-                zbus::zvariant::Value::from(p.title.as_str())
-                    .try_to_owned()
-                    .unwrap(),
-            ),
-            (
-                "xesam:artist".into(),
-                zbus::zvariant::Value::from(vec![p.artist.as_str()])
-                    .try_to_owned()
-                    .unwrap(),
-            ),
-        ]))
-    }
-    #[zbus(property)]
-    fn can_control(&self) -> bool {
-        true
-    }
-    #[zbus(property)]
-    fn can_play(&self) -> bool {
-        self.0.0.lock().unwrap().can_play
-    }
-    #[zbus(property)]
-    fn can_pause(&self) -> bool {
-        self.0.0.lock().unwrap().can_pause
-    }
-    #[zbus(property)]
-    fn can_go_next(&self) -> bool {
-        self.0.0.lock().unwrap().can_next
-    }
-    #[zbus(property)]
-    fn can_go_previous(&self) -> bool {
-        self.0.0.lock().unwrap().can_previous
-    }
-    fn play(&self) {
-        self.0.1.lock().unwrap().push("Play".into());
-    }
-    fn pause(&self) {
-        self.0.1.lock().unwrap().push("Pause".into());
-    }
-    fn next(&self) {
-        self.0.1.lock().unwrap().push("Next".into());
-    }
-    fn previous(&self) {
-        self.0.1.lock().unwrap().push("Previous".into());
-    }
-}
-
-async fn export(bus: &crate::test_bus::TestBus, player: Player) -> (zbus::Connection, FakePlayer) {
-    let fake = FakePlayer(
-        Arc::new(Mutex::new(player.clone())),
-        Arc::new(Mutex::new(vec![])),
-        Arc::new(ReadBehavior::default()),
-    );
-    let conn = zbus::connection::Builder::address(bus.address.as_str())
-        .unwrap()
-        .name(player.id.bus)
-        .unwrap()
-        .serve_at(MPRIS_PATH, fake.clone())
-        .unwrap()
-        .serve_at(MPRIS_PATH, FakePlayback(fake.clone()))
-        .unwrap()
-        .build()
-        .await
-        .unwrap();
-    (conn, fake)
-}
-
-async fn changed(conn: &zbus::Connection) {
-    conn.emit_signal(
-        None::<&str>,
-        MPRIS_PATH,
-        "org.freedesktop.DBus.Properties",
-        "PropertiesChanged",
-        &(
-            PLAYER,
-            HashMap::<String, OwnedValue>::new(),
-            vec!["Metadata", "PlaybackStatus"],
-        ),
-    )
-    .await
-    .unwrap();
 }
 
 async fn until(
@@ -386,16 +221,6 @@ async fn live_discovery_metadata_controls_capabilities_and_replaced_owner() {
 
     worker.abort();
     let _ = worker.await;
-}
-
-#[test]
-fn text_is_bounded_and_handles_missing_metadata() {
-    assert_eq!(bounded("a\nb\tc"), "abc");
-    assert_eq!(bounded(&"é".repeat(1000)).chars().count(), 512);
-    let mut p = player("Radio", "Playing");
-    p.title.clear();
-    p.artist.clear();
-    assert_eq!(p.label(), "Radio");
 }
 
 #[tokio::test]

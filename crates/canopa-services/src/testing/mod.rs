@@ -72,3 +72,4 @@ pub mod wifi;
 pub mod bluez;
 #[cfg(feature = "audio")]
 pub mod audio;
+pub mod mpris;

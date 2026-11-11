@@ -1,45 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlayerId {
-    pub bus: String,
-    pub owner: String,
-    pub server: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Player {
-    pub id: PlayerId,
-    pub name: String,
-    pub title: String,
-    pub artist: String,
-    pub track: String,
-    pub status: String,
-    pub can_play: bool,
-    pub can_pause: bool,
-    pub can_next: bool,
-    pub can_previous: bool,
-}
-
-impl Player {
-    pub fn allows(&self, operation: Operation) -> bool {
-        match operation {
-            Operation::Play => self.can_play,
-            Operation::Pause => self.can_pause,
-            Operation::Next => self.can_next,
-            Operation::Previous => self.can_previous,
-        }
-    }
-    pub fn label(&self) -> String {
-        if self.title.is_empty() {
-            self.name.clone()
-        } else if self.artist.is_empty() {
-            self.title.clone()
-        } else {
-            format!("{} — {}", self.artist, self.title)
-        }
-    }
-}
+pub use canopa_services::mpris::{Operation, Player, PlayerId};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -77,14 +38,6 @@ impl Snapshot {
         }
         self.available = true;
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Operation {
-    Previous,
-    Play,
-    Pause,
-    Next,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
