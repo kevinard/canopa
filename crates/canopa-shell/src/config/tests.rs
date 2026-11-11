@@ -425,6 +425,7 @@ mod config_tests {
     fn validate_duplicate_bar_name_errors() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -449,6 +450,7 @@ mod config_tests {
     fn validate_bar_collapsed_width_too_small_errors() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "x".into(),
@@ -767,6 +769,7 @@ mod config_tests {
     fn bars_for_output_multiple_all_bars_returns_all() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -790,6 +793,7 @@ mod config_tests {
     fn bars_for_output_mixed_returns_both_matching() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -823,6 +827,7 @@ mod config_tests {
     fn bars_for_output_include_target_matches_exact_case_sensitive_names() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "external".into(),
@@ -843,6 +848,7 @@ mod config_tests {
     fn bars_for_output_exclude_target_matches_exact_case_sensitive_names() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "not-laptop".into(),
@@ -863,6 +869,7 @@ mod config_tests {
     fn bars_for_output_preserves_order() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -892,6 +899,7 @@ mod config_tests {
     fn validate_multiple_bars_no_duplicate_names_passes() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -915,6 +923,7 @@ mod config_tests {
     fn validate_duplicate_name_error_includes_bar_name() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -939,6 +948,7 @@ mod config_tests {
     fn bars_for_output_case_sensitive() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),

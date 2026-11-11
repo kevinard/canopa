@@ -41,8 +41,14 @@ impl std::error::Error for ProtocolError {}
 pub enum IpcRequest {
     Reload,
     DmenuSelection(DmenuRequest),
-    OpenMenu { name: String },
-    ToggleMenu { name: String },
+    OpenMenu {
+        name: String,
+    },
+    ToggleMenu {
+        name: String,
+    },
+    /// A device key (`canopa-shell volume up`); answered when it has run.
+    DeviceKey(canopa_shell::device_keys::Request),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

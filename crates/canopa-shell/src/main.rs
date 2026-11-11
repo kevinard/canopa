@@ -40,6 +40,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
         cli::Command::Dmenu(_) => "dmenu",
+        cli::Command::DeviceKey(_) => "device-key",
         cli::Command::UsageError(_) => "usage-error",
     }
 }
@@ -93,6 +94,7 @@ fn main() {
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),
         cli::Command::ToggleMenu(name) => std::process::exit(run_menu_cli(name, true)),
         cli::Command::Dmenu(options) => std::process::exit(run_dmenu_cli(options)),
+        cli::Command::DeviceKey(request) => std::process::exit(run_device_key_cli(request)),
         cli::Command::UsageError(message) => {
             eprintln!("canopa-shell: {message}");
             std::process::exit(DMENU_USAGE_EXIT);
@@ -254,6 +256,49 @@ fn run_reload_cli() -> i32 {
             1
         }
     }
+}
+
+/// Run a device key in the Shell, which shows the result. Without a running
+/// Shell the key still works, without a display, using the configured steps.
+/// Missing services are an ordinary result: exit 1 with nothing printed, so
+/// key repeats never fill the compositor's log.
+fn run_device_key_cli(request: canopa_shell::device_keys::Request) -> i32 {
+    use ipc::protocol::{IpcRequest, IpcResponse};
+    match send_framed_request(
+        &IpcRequest::DeviceKey(request),
+        Some(std::time::Duration::from_secs(5)),
+    ) {
+        Ok(IpcResponse::Accepted) => 0,
+        Ok(_) => 1,
+        Err(error) if shell_unreachable(&error) => {
+            let steps = config::load(&canopa_config::Request::Discover, false)
+                .map(|(config, _)| config.osd.steps())
+                .unwrap_or_default();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let Ok(runtime) = runtime else {
+                return 1;
+            };
+            let keys = canopa_shell::device_keys::Keys::default();
+            let outcome = runtime.block_on(keys.run(request, steps));
+            i32::from(!outcome.succeeded())
+        }
+        Err(error) => {
+            tracing::debug!(%error, "device key request failed");
+            1
+        }
+    }
+}
+
+/// No Shell owns the control socket.
+fn shell_unreachable(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+        )
+    })
 }
 
 fn run_menu_cli(name: String, toggle: bool) -> i32 {

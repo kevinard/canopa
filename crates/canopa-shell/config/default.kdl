@@ -58,6 +58,18 @@ menus {
 //     }
 // }
 
+// ─── On-screen display ───────────────────────────────────────────────────────
+// Volume, microphone, brightness, keyboard-backlight and media keys run
+// `canopa-shell volume up` and similar commands, bound in the session's Niri
+// defaults. The Shell shows the new level on the focused output for a moment,
+// also when another application or the firmware changes it.
+// osd {
+//     enabled #true        // #false keeps the keys working without the display
+//     volume-step 5        // percent per press, 1-100
+//     brightness-step 5    // perceptual percent per press, 1-50
+//     timeout-ms 1500      // 500-10000
+// }
+
 // ─── Bar ─────────────────────────────────────────────────────────────────────
 // One or more named bar sections. Each bar has a unique name (first argument).
 // Multiple bars can target different outputs, or all outputs ("all").

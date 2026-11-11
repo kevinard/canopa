@@ -59,8 +59,15 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
             "modules",
             "menus",
             "panel-providers",
+            "osd",
         ],
-        &["command-policy", "modules", "menus", "panel-providers"],
+        &[
+            "command-policy",
+            "modules",
+            "menus",
+            "panel-providers",
+            "osd",
+        ],
     )?;
     let command_policy = parse_command_policy(doc, &ctx.child("command-policy"))?;
     let bars = bars::parse(doc, &ctx, &command_policy)?;
@@ -72,6 +79,7 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
     let modules = parse_modules_section(doc, &ctx, &command_policy)?;
     let menus = parse_menus_section(doc, &ctx, &command_policy)?;
     let panel_providers = parse_panel_providers_section(doc, &ctx, &command_policy)?;
+    let osd = parse_osd(doc, &ctx.child("osd"))?;
     Ok(Config {
         appearance: Default::default(),
         element_ui: parse_element_ui(doc, &ctx)?,
@@ -79,6 +87,45 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
         modules,
         menus,
         panel_providers,
+        osd,
+    })
+}
+
+fn parse_osd(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<super::OsdConfig> {
+    let defaults = super::OsdConfig::default();
+    let Some(children) = doc.get("osd").and_then(KdlNode::children) else {
+        return Ok(defaults);
+    };
+    let fields = ["enabled", "volume-step", "brightness-step", "timeout-ms"];
+    ctx.validate_child_schema(children, &fields, &fields)?;
+    let timeout_ms = field(children, ctx, "timeout-ms")
+        .optional()
+        .help("use `timeout-ms 1500` for one and a half seconds")
+        .u64_min(500)
+        .unwrap_or(defaults.timeout_ms)?;
+    if timeout_ms > 10_000 {
+        let node = children.get("timeout-ms").expect("parsed above");
+        return Err(ctx.node_err(
+            node,
+            format!("value {timeout_ms} out of range. Expected: integer 500-10000"),
+            None,
+        ));
+    }
+    Ok(super::OsdConfig {
+        enabled: field(children, ctx, "enabled")
+            .optional()
+            .help("use `enabled #true` or `enabled #false`")
+            .bool()
+            .unwrap_or(defaults.enabled)?,
+        volume_step: field(children, ctx, "volume-step")
+            .optional()
+            .u8_range(1, 100)
+            .unwrap_or(defaults.volume_step)?,
+        brightness_step: field(children, ctx, "brightness-step")
+            .optional()
+            .u8_range(1, 50)
+            .unwrap_or(defaults.brightness_step)?,
+        timeout_ms,
     })
 }
 

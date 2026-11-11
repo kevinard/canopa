@@ -26,6 +26,7 @@ mod module_state;
 mod module_store;
 mod navigation;
 mod niri;
+mod osd;
 mod overlay_adapter;
 mod panel;
 mod panel_icons;
@@ -77,6 +78,7 @@ pub(crate) struct App {
     accessibility_focused_window: Option<iced::window::Id>,
     notices: crate::notice::Outbox,
     session: session_actions::SessionRuntime,
+    osd: osd::OsdRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -93,6 +95,8 @@ pub enum Message {
     /// A button on one of the Shell's own notices, or on the bar's error badge.
     Notice(crate::notice::NoticeAction),
     Session(session_actions::Event),
+    /// Device keys and the on-screen display.
+    Osd(osd::Event),
     Wallpaper(crate::wallpaper::Event),
     LauncherHistory(crate::launcher::history::Event),
     LauncherClipboardLoaded(crate::launcher::clipboard::SavedChange),
@@ -168,6 +172,7 @@ impl Message {
             Message::Configuration(_) => "Configuration",
             Message::Notice(_) => "Notice",
             Message::Session(_) => "Session",
+            Message::Osd(_) => "Osd",
             Message::Wallpaper(_) => "Wallpaper",
             Message::LauncherHistory(_) => "LauncherHistory",
             Message::LauncherClipboardLoaded(_) => "LauncherClipboardLoaded",
@@ -284,6 +289,9 @@ impl App {
             messages::IpcEvent::DmenuSelection { request, responder } => {
                 self.handle_dmenu_selection_request(request, responder)
             }
+            messages::IpcEvent::DeviceKey { request, responder } => {
+                self.handle_device_key(request, Some(responder))
+            }
         }
     }
 
@@ -348,6 +356,7 @@ impl App {
             accessibility_focused_window: None,
             notices: Default::default(),
             session: Default::default(),
+            osd: Default::default(),
             #[cfg(test)]
             external_panel_responses_for_test: std::collections::HashMap::new(),
             #[cfg(test)]
@@ -419,6 +428,7 @@ impl App {
             Message::Configuration(event) => self.handle_configuration_event(event),
             Message::Notice(action) => self.handle_notice_action(action),
             Message::Session(event) => self.handle_session_event(event),
+            Message::Osd(event) => self.handle_osd_event(event),
             Message::Wallpaper(event) => self.handle_wallpaper(event),
             Message::LauncherPreferences(event) => {
                 self.launcher_preferences.apply(event);
@@ -480,6 +490,16 @@ impl App {
             {
                 self.wallpaper_configured(window)
             }
+            Message::Surface(messages::SurfaceEvent::WindowClosed(window))
+                if self.osd.closed(window) =>
+            {
+                Task::none()
+            }
+            Message::Surface(
+                messages::SurfaceEvent::WindowSized(window, _, _)
+                | messages::SurfaceEvent::CursorMoved(window, _)
+                | messages::SurfaceEvent::PointerPressed(window),
+            ) if self.osd.contains(window) => Task::none(),
             Message::Surface(event) => self.handle_surface_event(event),
             Message::WaylandOutputSnapshot(outputs) => self.handle_wayland_output_snapshot(outputs),
             Message::Ipc(event) => self.handle_ipc_event(event),
@@ -1625,6 +1645,7 @@ mod tests {
         use crate::config::{BarConfig, ClockConfig, ModuleConfig, ModuleParams};
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1791,6 +1812,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1821,6 +1843,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1852,6 +1875,7 @@ mod tests {
         use crate::config::BarConfig;
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1885,6 +1909,7 @@ mod tests {
     fn wayland_output_snapshot_creates_horizontal_and_side_bars() {
         let config = Config {
             appearance: Default::default(),
+            osd: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 crate::config::BarConfig {

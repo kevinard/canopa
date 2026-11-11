@@ -16,6 +16,9 @@ impl App {
         if let Some(wallpaper) = self.wallpaper.view(window) {
             return wallpaper;
         }
+        if let Some(osd) = self.osd.view(window) {
+            return osd;
+        }
 
         if self.foreground.is_dismissal_window(window) {
             return Space::new().width(Length::Fill).height(Length::Fill).into();

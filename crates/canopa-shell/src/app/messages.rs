@@ -31,6 +31,10 @@ pub enum IpcEvent {
         request: crate::ipc::protocol::DmenuRequest,
         responder: IpcResponder,
     },
+    DeviceKey {
+        request: canopa_shell::device_keys::Request,
+        responder: IpcResponder,
+    },
 }
 
 impl IpcEvent {
@@ -40,6 +44,7 @@ impl IpcEvent {
             IpcEvent::OpenMenu { .. } => "Ipc::OpenMenu",
             IpcEvent::ToggleMenu { .. } => "Ipc::ToggleMenu",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
+            IpcEvent::DeviceKey { .. } => "Ipc::DeviceKey",
         }
     }
 }

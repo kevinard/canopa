@@ -1290,3 +1290,35 @@ fn v5_provider_selection_is_explicit_and_legacy_default_is_preserved() {
         crate::external_panel::ProviderProtocol::NiribarV1
     );
 }
+
+#[test]
+fn osd_block_sets_key_steps_and_display_timeout_within_bounds() {
+    let defaults = parse("").unwrap().osd;
+    assert_eq!(defaults, crate::config::OsdConfig::default());
+    assert!(defaults.enabled);
+    let config =
+        parse("osd { enabled #false; volume-step 10; brightness-step 8; timeout-ms 2500; }")
+            .unwrap();
+    assert_eq!(
+        config.osd,
+        crate::config::OsdConfig {
+            enabled: false,
+            volume_step: 10,
+            brightness_step: 8,
+            timeout_ms: 2500,
+        }
+    );
+    assert_eq!(config.osd.steps().volume, 10);
+    for refused in [
+        "osd { volume-step 0; }",
+        "osd { volume-step 101; }",
+        "osd { brightness-step 51; }",
+        "osd { timeout-ms 100; }",
+        "osd { timeout-ms 20000; }",
+        "osd { unknown 1; }",
+        "osd { volume-step 5; volume-step 6; }",
+        "osd {}\nosd {}",
+    ] {
+        assert!(parse(refused).is_err(), "{refused}");
+    }
+}

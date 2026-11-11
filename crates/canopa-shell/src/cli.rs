@@ -12,6 +12,8 @@ pub enum Command {
     OpenMenu(String),
     ToggleMenu(String),
     Dmenu(DmenuOptions),
+    /// `volume up`, `brightness down`, `media play-pause` and the other keys.
+    DeviceKey(canopa_shell::device_keys::Request),
     UsageError(String),
 }
 
@@ -59,6 +61,16 @@ pub fn parse() -> Command {
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
+    let args = args.into_iter().collect::<Vec<_>>();
+    if args
+        .first()
+        .is_some_and(|word| canopa_shell::device_keys::is_command(word))
+    {
+        return match canopa_shell::device_keys::parse(&args) {
+            Ok(request) => Command::DeviceKey(request),
+            Err(message) => Command::UsageError(message),
+        };
+    }
     let mut args = args.into_iter();
     let mut special_mode = None;
     let mut dmenu = false;
@@ -318,6 +330,33 @@ mod tests {
                 Command::UsageError(_)
             ));
         }
+    }
+
+    #[test]
+    fn device_keys_are_standalone_commands() {
+        let parsed = parse_args(["volume", "up", "10"].map(str::to_string));
+        assert!(matches!(
+            parsed,
+            Command::DeviceKey(canopa_shell::device_keys::Request {
+                action: canopa_shell::device_keys::Action::VolumeUp,
+                step: Some(10),
+            })
+        ));
+        assert!(matches!(
+            parse_args(["media", "next"].map(str::to_string)),
+            Command::DeviceKey(_)
+        ));
+        for refused in [&["brightness"][..], &["volume", "up", "--defaults"]] {
+            assert!(matches!(
+                parse_args(refused.iter().map(|word| word.to_string())),
+                Command::UsageError(_)
+            ));
+        }
+        // Device words elsewhere are ordinary arguments.
+        assert!(matches!(
+            parse_args(["--dmenu", "volume"].map(str::to_string)),
+            Command::Dmenu(_)
+        ));
     }
 
     #[test]

@@ -258,6 +258,9 @@ fn ipc_message_for_request(
         protocol::IpcRequest::DmenuSelection(request) => {
             Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { request, responder })
         }
+        protocol::IpcRequest::DeviceKey(request) => {
+            Message::Ipc(crate::app::messages::IpcEvent::DeviceKey { request, responder })
+        }
     }
 }
 
@@ -385,6 +388,24 @@ mod tests {
             ipc_message_for_bytes(&frame),
             Some(Message::Ipc(crate::app::messages::IpcEvent::ToggleMenu { name, .. }))
                 if name == "Tools ☰"
+        ));
+    }
+
+    #[test]
+    fn framed_device_key_request_decodes_to_ipc_message() {
+        let request = canopa_shell::device_keys::Request {
+            action: canopa_shell::device_keys::Action::BrightnessDown,
+            step: Some(10),
+        };
+        let frame = protocol::encode_frame(&protocol::IpcRequest::DeviceKey(request)).unwrap();
+        assert!(
+            String::from_utf8_lossy(&frame)
+                .contains(r#"{"type":"device-key","action":"brightness-down","step":10}"#)
+        );
+        assert!(matches!(
+            ipc_message_for_bytes(&frame),
+            Some(Message::Ipc(crate::app::messages::IpcEvent::DeviceKey { request: decoded, .. }))
+                if decoded == request
         ));
     }
 

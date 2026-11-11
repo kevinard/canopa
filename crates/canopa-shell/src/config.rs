@@ -73,6 +73,7 @@ pub struct Config {
     pub modules: Vec<ModuleConfig>,
     pub menus: Vec<MenuConfig>,
     pub panel_providers: Vec<PanelProviderConfig>,
+    pub osd: OsdConfig,
 }
 
 impl Default for Config {
@@ -84,6 +85,40 @@ impl Default for Config {
             modules: vec![],
             menus: vec![],
             panel_providers: vec![],
+            osd: OsdConfig::default(),
+        }
+    }
+}
+
+/// Device-key steps and the on-screen display (the `osd` block).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OsdConfig {
+    /// Show the display; the keys work either way.
+    pub enabled: bool,
+    /// Volume step per key press, 1–100 %.
+    pub volume_step: u8,
+    /// Perceptual brightness step per key press, 1–50 %.
+    pub brightness_step: u8,
+    /// How long the display stays after the last change, 500–10000 ms.
+    pub timeout_ms: u64,
+}
+
+impl Default for OsdConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            volume_step: 5,
+            brightness_step: 5,
+            timeout_ms: 1500,
+        }
+    }
+}
+
+impl OsdConfig {
+    pub fn steps(&self) -> canopa_shell::device_keys::Steps {
+        canopa_shell::device_keys::Steps {
+            volume: self.volume_step,
+            brightness: self.brightness_step,
         }
     }
 }

@@ -153,6 +153,7 @@ impl App {
             // process lifetime and is idle until a notice is queued.
             self.notices.subscription().map(Message::Notice),
             crate::wallpaper::subscription(),
+            super::osd::OsdRuntime::subscription(self.config.osd.enabled),
             self.canopa_accessibility.as_ref().map_or_else(
                 iced::Subscription::none,
                 super::canopa_accessibility::PanelAccessibility::subscription,
