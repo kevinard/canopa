@@ -946,3 +946,134 @@ settings-printers-none-found = No new printers found. Check that the printer is 
 settings-printers-add = Add
 settings-printers-helper-hint = Adding and removing printers asks for an administrator’s permission.
 settings-printers-no-helper-hint = Adding and removing printers needs cups-pk-helper, or membership in CUPS’s system group.
+
+## About
+
+settings-about-name = Name
+settings-about-hardware = Hardware
+settings-about-software = Software
+settings-about-device-name = Device name
+settings-about-rename = Rename
+# $name is the network host name.
+settings-about-network-name = Other devices see this computer as { $name } on the network.
+settings-about-no-hostnamed-hint = systemd-hostnamed is not running, so the computer’s name cannot be shown or changed here.
+settings-about-no-hostnamed = systemd-hostnamed is not available.
+settings-about-name-changed = The name changed. Try again.
+settings-about-name-empty = Enter a name for this computer.
+settings-about-model = Model
+settings-about-processor = Processor
+settings-about-memory = Memory
+# Installed memory. $value is a number of gibibytes.
+settings-about-memory-size = { $value } GiB
+settings-about-graphics = Graphics
+settings-about-disk-capacity = Disk capacity
+# One disk: its model and formatted size.
+settings-about-disk = { $name } ({ $size })
+# $total is the capacity of all disks, $disks the list of settings-about-disk.
+settings-about-disks = { $total } — { $disks }
+settings-about-firmware = Firmware
+settings-about-os = Operating system
+settings-about-build = Build
+settings-about-kernel = Kernel
+# The version of an operating system without releases, such as Arch Linux.
+settings-about-rolling = Rolling release
+
+## Privacy
+
+settings-privacy-store-missing = The portal permission store (xdg-permission-store) is not running.
+# $reason is settings-privacy-store-missing.
+settings-privacy-store-missing-hint = { $reason } It records what sandboxed applications were allowed through portals.
+settings-privacy-not-allowed = The change was not allowed.
+settings-privacy-timed-out = The permission store did not answer in time.
+settings-privacy-grant-changed = The grant changed. Try again.
+settings-privacy-unknown-entry = Unknown autostart entry.
+settings-privacy-entry-gone = The entry is gone.
+settings-privacy-entry-not-saved = The entry could not be saved.
+settings-privacy-entry-not-saved-because = The entry could not be saved: { $error }
+settings-error-session-bus = The session bus is not reachable.
+settings-privacy-revoke-only = This permission can only be revoked.
+settings-privacy-location = Location
+settings-privacy-camera = Camera
+settings-privacy-microphone = Microphone
+settings-privacy-speakers = Speakers
+settings-privacy-screenshots = Screenshots
+settings-privacy-background = Running in the background
+settings-privacy-notifications = Notifications
+settings-privacy-screen-sharing = Screen sharing
+settings-privacy-remote-desktop = Remote desktop
+# $accuracy is the portal's location accuracy.
+settings-privacy-location-allowed = { $accuracy ->
+    [none] Allowed (no location)
+    [country] Allowed (country)
+    [city] Allowed (city)
+    [neighborhood] Allowed (neighborhood)
+    [street] Allowed (street)
+   *[exact] Allowed (exact)
+}
+settings-privacy-restore = Can restore its session without asking
+settings-privacy-allowed = Allowed
+settings-privacy-denied = Denied
+settings-privacy-asks = Asks each time
+settings-privacy-allow = Allow
+settings-privacy-deny = Deny
+settings-privacy-forget = Forget
+settings-privacy-permissions = Application permissions
+settings-privacy-permissions-hint = Sandboxed applications ask through the desktop portal. Forget removes the answer, so the application asks again.
+settings-privacy-none-asked = No application has asked.
+settings-privacy-screen-hint = Canopa asks every time an application wants to share or control the screen, and does not remember those answers.
+settings-privacy-autostart = Start at login
+settings-privacy-no-autostart = Nothing starts automatically when you log in.
+# $name is an application's name.
+settings-privacy-autostart-sandboxed = { $name } (added by the application)
+settings-privacy-autostart-system = { $name } (installed for everyone)
+
+## Default applications
+
+settings-default-apps = Default applications
+settings-default-apps-browser = Web browser
+settings-default-apps-mail = Mail
+settings-default-apps-calendar = Calendar
+settings-default-apps-music = Music
+settings-default-apps-video = Video
+settings-default-apps-photos = Photos
+settings-default-apps-text = Text editor
+settings-default-apps-files = File manager
+settings-default-apps-terminal = Terminal
+settings-default-apps-terminal-hint = Programs that run in a terminal open in this one, through xdg-terminal-exec. Without a choice, the first installed terminal is used.
+settings-default-apps-none = No installed application opens these.
+settings-default-apps-others = Other file types
+settings-default-apps-search = File type or extension
+settings-default-apps-no-match = No installed application opens a matching type.
+settings-default-apps-search-hint = Type a file type such as application/pdf, or an extension such as pdf.
+# $file is a path.
+settings-default-apps-saved-in = Choices are saved in { $file }, which other desktops and applications read too.
+settings-default-apps-no-config = There is no configuration folder ($HOME or $XDG_CONFIG_HOME).
+settings-default-apps-not-saved = The choice could not be saved: { $error }
+settings-default-apps-unknown-kind = Unknown kind of application.
+settings-default-apps-unknown-terminal = Unknown terminal.
+settings-default-apps-read-failed = Reading applications failed.
+
+## Display profiles
+
+settings-displays-position-invalid = Display positions must be whole numbers.
+settings-profiles = Display profiles
+settings-profiles-needs-session = Display profiles are available in the Canopa session.
+settings-profiles-reload = Reload display profiles
+settings-profiles-when-changed = When connected displays change
+settings-profiles-manual = Manual only
+settings-profiles-suggest = Suggest matching profiles
+settings-profiles-automatic = Switch automatically
+settings-profiles-save-policy = Save switching policy
+settings-profiles-test = Test saved profile
+settings-profiles-delete = Delete selected profile
+settings-profiles-new-name = New profile name
+settings-profiles-save-layout = Save layout as profile
+settings-profiles-saved = Display profiles saved.
+settings-profiles-choose = Choose a display profile.
+# $error explains why.
+settings-profiles-incompatible = This profile cannot be applied here. { $error }
+settings-profiles-loading = Loading display profiles…
+# A notification when docking. $name is a saved profile.
+settings-profiles-offer-title = Display profile available · { $name }
+settings-profiles-offer-body = The connected displays match a saved layout.
+settings-profiles-offer-review = Review layout

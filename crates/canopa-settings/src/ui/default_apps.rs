@@ -1,14 +1,15 @@
 //! The Default applications page: the web browser, mail, calendar, music,
 //! video, photos, text editor, file manager and terminal, and any other file
 //! type found by name or extension. Each choice is saved at once.
-use super::{Message, State, choice, field, live_page::LivePage, settings_group};
+use super::{Message, State, field, live_page::LivePage, pick, settings_group};
 use crate::{
     default_apps::{CATEGORIES, Choice, DefaultAction, DefaultApps, DefaultAppsService},
     live::{Event, LiveAction},
 };
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type DefaultAppsPage = LivePage<DefaultAppsService>;
@@ -24,7 +25,8 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
 /// Other file types shown for a search, at most.
 const MATCHES: usize = 10;
 
-/// Menu labels for a choice's applications; equal names get their IDs.
+/// A choice's applications by ID, with their menu labels; equal names get
+/// their IDs.
 fn labels(choice: &Choice) -> Vec<(String, String)> {
     choice
         .options
@@ -40,7 +42,7 @@ fn labels(choice: &Choice) -> Vec<(String, String)> {
             } else {
                 option.name.clone()
             };
-            (label, option.id.clone())
+            (option.id.clone(), label)
         })
         .collect()
 }
@@ -64,30 +66,24 @@ impl State {
             ) => Some(chosen.clone()),
             _ => current.current.clone(),
         };
-        let labels = labels(current);
-        let selected = selected_id.and_then(|chosen| {
-            labels
-                .iter()
-                .find(|(_, option)| *option == chosen)
-                .map(|(label, _)| label.clone())
-        });
-        let control: Element<'_, Message> = if labels.is_empty() {
-            muted("No installed application opens these.")
+        let options = labels(current);
+        let control: Element<'_, Message> = if options.is_empty() {
+            muted(fl!("settings-default-apps-none"))
         } else {
-            let options: Vec<String> = labels.iter().map(|(label, _)| label.clone()).collect();
-            choice(id, options, selected, move |label| {
-                let chosen = labels
-                    .iter()
-                    .find(|(name, _)| *name == label)
-                    .map(|(_, id)| id.clone())
-                    .unwrap_or_default();
+            pick(id, options, selected_id, move |chosen| {
                 message(Event::Apply(action(chosen)))
             })
         };
         column![
-            row![text(title).width(Length::Fixed(180.)), control]
-                .spacing(12)
-                .align_y(Alignment::Center),
+            direction::row([
+                text(title)
+                    .width(Length::Fixed(180.))
+                    .align_x(direction::text_start())
+                    .into(),
+                control,
+            ])
+            .spacing(12)
+            .align_y(Alignment::Center),
             page.control_status(&probe, message),
         ]
         .spacing(4)
@@ -100,7 +96,7 @@ impl State {
             let key = category.key;
             defaults = defaults.push(self.app_choice(
                 format!("default-apps-{key}"),
-                category.title.into(),
+                category.title(),
                 current,
                 move |id| DefaultAction::Category(key, id),
             ));
@@ -108,16 +104,14 @@ impl State {
         defaults = defaults
             .push(self.app_choice(
                 "default-apps-terminal".into(),
-                "Terminal".into(),
+                fl!("settings-default-apps-terminal"),
                 &state.terminal,
                 DefaultAction::Terminal,
             ))
-            .push(muted(
-                "Programs that run in a terminal open in this one, through xdg-terminal-exec. Without a choice, the first installed terminal is used.",
-            ));
+            .push(muted(fl!("settings-default-apps-terminal-hint")));
         let mut others = column![field(
             "default-apps-search",
-            "File type or extension",
+            fl!("settings-default-apps-search"),
             &self.default_apps_query,
             Message::DefaultAppsSearch,
         )]
@@ -126,7 +120,7 @@ impl State {
         if !query.is_empty() {
             let found = state.catalog.search(query, MATCHES);
             if found.is_empty() {
-                others = others.push(muted("No installed application opens a matching type."));
+                others = others.push(muted(fl!("settings-default-apps-no-match")));
             }
             for (mime, current) in found {
                 let chosen = mime.clone();
@@ -138,14 +132,15 @@ impl State {
                 ));
             }
         } else {
-            others = others.push(muted(
-                "Type a file type such as application/pdf, or an extension such as pdf.",
-            ));
+            others = others.push(muted(fl!("settings-default-apps-search-hint")));
         }
         column![
-            settings_group("Default applications", defaults),
-            settings_group("Other file types", others),
-            muted("Choices are saved in ~/.config/mimeapps.list, which other desktops and applications read too."),
+            settings_group(fl!("settings-default-apps"), defaults),
+            settings_group(fl!("settings-default-apps-others"), others),
+            muted(fl!(
+                "settings-default-apps-saved-in",
+                file = "~/.config/mimeapps.list"
+            )),
         ]
         .spacing(14)
         .into()
@@ -183,7 +178,7 @@ mod tests {
         };
         let labels: Vec<_> = labels(&choice)
             .into_iter()
-            .map(|(label, _)| label)
+            .map(|(_, label)| label)
             .collect();
         assert_eq!(
             labels,

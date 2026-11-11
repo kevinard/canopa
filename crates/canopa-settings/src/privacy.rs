@@ -17,7 +17,9 @@ use std::{
     time::Duration,
 };
 
-const NOT_RUNNING: &str = "The portal permission store (xdg-permission-store) is not running.";
+fn not_running() -> String {
+    fl!("settings-privacy-store-missing")
+}
 
 /// A kind of access the page lists, and where the portal records it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,17 +74,17 @@ impl Access {
         }
     }
 
-    pub fn title(self) -> &'static str {
+    pub fn title(self) -> String {
         match self {
-            Self::Location => "Location",
-            Self::Camera => "Camera",
-            Self::Microphone => "Microphone",
-            Self::Speakers => "Speakers",
-            Self::Screenshot => "Screenshots",
-            Self::Background => "Running in the background",
-            Self::Notifications => "Notifications",
-            Self::ScreenCast => "Screen sharing",
-            Self::RemoteDesktop => "Remote desktop",
+            Self::Location => fl!("settings-privacy-location"),
+            Self::Camera => fl!("settings-privacy-camera"),
+            Self::Microphone => fl!("settings-privacy-microphone"),
+            Self::Speakers => fl!("settings-privacy-speakers"),
+            Self::Screenshot => fl!("settings-privacy-screenshots"),
+            Self::Background => fl!("settings-privacy-background"),
+            Self::Notifications => fl!("settings-privacy-notifications"),
+            Self::ScreenCast => fl!("settings-privacy-screen-sharing"),
+            Self::RemoteDesktop => fl!("settings-privacy-remote-desktop"),
         }
     }
 
@@ -357,13 +359,11 @@ impl Default for PrivacyService {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     match error {
-        Error::Unavailable => ServiceError::Failed(NOT_RUNNING.into()),
-        Error::NotAuthorized => ServiceError::Failed("The change was not allowed.".into()),
-        Error::TimedOut => {
-            ServiceError::Failed("The permission store did not answer in time.".into())
-        }
+        Error::Unavailable => ServiceError::Failed(not_running()),
+        Error::NotAuthorized => ServiceError::Failed(fl!("settings-privacy-not-allowed")),
+        Error::TimedOut => ServiceError::Failed(fl!("settings-privacy-timed-out")),
         Error::Changed | Error::Invalid(_) => {
-            ServiceError::Failed("The grant changed. Try again.".into())
+            ServiceError::Failed(fl!("settings-privacy-grant-changed"))
         }
         Error::Refused(message) => ServiceError::Failed(message),
     }
@@ -457,12 +457,12 @@ impl PrivacyService {
 
     fn set_autostart(&self, id: &str, enabled: bool) -> Result<(), ServiceError> {
         if !id.ends_with(".desktop") || id.contains('/') || id.starts_with('.') {
-            return Err(ServiceError::Failed("Unknown autostart entry.".into()));
+            return Err(ServiceError::Failed(fl!("settings-privacy-unknown-entry")));
         }
         let user = self
             .autostart_user
             .clone()
-            .ok_or_else(|| ServiceError::Failed("There is no configuration folder.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-region-error-no-config")))?;
         let path = user.join(id);
         let system = self
             .autostart_system
@@ -474,11 +474,14 @@ impl PrivacyService {
             // Turning off a system entry writes a user override.
             None => match &system {
                 Some(system) => read_entry(system).unwrap_or_default(),
-                None => return Err(ServiceError::Failed("The entry is gone.".into())),
+                None => return Err(ServiceError::Failed(fl!("settings-privacy-entry-gone"))),
             },
         };
         let failed = |error: std::io::Error| {
-            ServiceError::Failed(format!("The entry could not be saved: {error}"))
+            ServiceError::Failed(fl!(
+                "settings-privacy-entry-not-saved-because",
+                error = error.to_string()
+            ))
         };
         if enabled && system.is_some() && path.is_file() {
             // Removing the override brings back the system entry.
@@ -503,12 +506,12 @@ impl PrivacyService {
             let (service, id, enabled) = (self.clone(), id.clone(), *enabled);
             return tokio::task::spawn_blocking(move || service.set_autostart(&id, enabled))
                 .await
-                .map_err(|_| ServiceError::Failed("The entry could not be saved.".into()))?;
+                .map_err(|_| ServiceError::Failed(fl!("settings-privacy-entry-not-saved")))?;
         }
         let session = self
             .session()
             .await
-            .ok_or_else(|| ServiceError::Failed("The session bus is not reachable.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-error-session-bus")))?;
         match action {
             PrivacyAction::Revoke(grant) => match grant.access.id() {
                 Some(_) => {
@@ -524,9 +527,7 @@ impl PrivacyService {
             },
             PrivacyAction::Set(grant, allowed) => {
                 if !grant.access.switchable() {
-                    return Err(ServiceError::Failed(
-                        "This permission can only be revoked.".into(),
-                    ));
+                    return Err(ServiceError::Failed(fl!("settings-privacy-revoke-only")));
                 }
                 permission_store::set_permission(
                     &session,
@@ -597,7 +598,10 @@ impl LiveService for PrivacyService {
 }
 
 /// What the page says when the store is missing.
-pub const STORE_MISSING: &str = NOT_RUNNING;
+/// Why the permissions are not listed.
+pub fn store_missing() -> String {
+    not_running()
+}
 
 #[cfg(test)]
 mod tests {

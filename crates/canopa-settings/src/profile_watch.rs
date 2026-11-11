@@ -316,12 +316,12 @@ async fn offer(
         let closed = proxy.receive_notification_closed().await?;
         let id = proxy
             .notify(
-                "Canopa Settings",
+                &fl!("settings-window-title"),
                 0,
                 "video-display",
-                &format!("Display profile available · {name}"),
-                "The connected displays match a saved layout.",
-                &["review", "Review layout"],
+                &fl!("settings-profiles-offer-title", name = name.as_str()),
+                &fl!("settings-profiles-offer-body"),
+                &["review", &fl!("settings-profiles-offer-review")],
                 HashMap::from([("transient", Value::Bool(true))]),
                 lifetime.as_millis() as i32,
             )

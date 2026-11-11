@@ -1,13 +1,14 @@
-use super::{Message, State, choice, field, task};
+use super::{Message, State, choice, field, pick, task};
 use crate::{
     display::{Monitor, TrialHandle},
     profiles::{Book, Switching},
     session::Paths,
 };
 use anyhow::{Context, Result};
+use canopa_ui::direction;
 use iced::{
     Element, Length, Task,
-    widget::{column, container, row, text},
+    widget::{column, container, text},
 };
 
 #[derive(Clone, Debug)]
@@ -17,7 +18,7 @@ pub(super) enum Action {
     Stored(Result<Book, String>),
     Title(String),
     Select(String),
-    Switching(String),
+    Switching(Switching),
     SaveLayout,
     SaveSwitching,
     Delete,
@@ -75,10 +76,10 @@ impl State {
             .map(|(mut monitor, (x, y))| {
                 monitor.x = x
                     .parse()
-                    .context("Display positions must be whole numbers.")?;
+                    .with_context(|| fl!("settings-displays-position-invalid"))?;
                 monitor.y = y
                     .parse()
-                    .context("Display positions must be whole numbers.")?;
+                    .with_context(|| fl!("settings-displays-position-invalid"))?;
                 Ok(monitor)
             })
             .collect()
@@ -92,7 +93,7 @@ impl State {
                 match result {
                     Ok(book) => {
                         self.display_profiles.set_book(Ok(book));
-                        self.notice = "Display profiles saved.".into();
+                        self.notice = fl!("settings-profiles-saved");
                     }
                     Err(error) => self.notice = error,
                 }
@@ -101,14 +102,7 @@ impl State {
             Action::Load => return Editor::load(&self.paths),
             Action::Title(title) => self.display_profiles.title = title.chars().take(80).collect(),
             Action::Select(name) => self.display_profiles.selected = Some(name),
-            Action::Switching(value) => {
-                if let Some(policy) = Switching::ALL
-                    .into_iter()
-                    .find(|policy| policy.to_string() == value)
-                {
-                    self.display_profiles.switching = policy;
-                }
-            }
+            Action::Switching(policy) => self.display_profiles.switching = policy,
             Action::SaveLayout | Action::SaveSwitching | Action::Delete | Action::Test => {
                 let Some(Ok(book)) = self.display_profiles.book.clone() else {
                     return Task::none();
@@ -123,7 +117,7 @@ impl State {
                 if matches!(action, Action::Test) {
                     return task(
                         move || {
-                            let name = selected.context("Choose a display profile.")?;
+                            let name = selected.with_context(|| fl!("settings-profiles-choose"))?;
                             let layout = book.get(&name)?.resolve(&outputs)?;
                             TrialHandle::start(&paths, layout, Some(&name), false)
                         },
@@ -139,7 +133,7 @@ impl State {
                         ),
                         Action::SaveSwitching => book.set_switching(switching),
                         Action::Delete => {
-                            book.remove(&selected.context("Choose a display profile.")?)
+                            book.remove(&selected.with_context(|| fl!("settings-profiles-choose"))?)
                         }
                         _ => unreachable!(),
                     },
@@ -153,15 +147,13 @@ impl State {
     pub(super) fn profiles_view(&self) -> Element<'_, Message> {
         let editor = &self.display_profiles;
         let enabled = self.paths.active() && !self.busy && self.trial.is_none();
-        let mut content = column![text("Display profiles").size(22)].spacing(10);
+        let mut content = column![text(fl!("settings-profiles")).size(22)].spacing(10);
         if !self.paths.active() {
-            content = content.push(text(
-                "Display profiles are available in the Canopa session.",
-            ));
+            content = content.push(text(fl!("settings-profiles-needs-session")));
         } else {
             content = content.push(self.action(
                 "settings-button-reload-display-profiles",
-                "Reload display profiles",
+                fl!("settings-profiles-reload"),
                 enabled.then(|| message(Action::Load)),
                 false,
             ));
@@ -172,24 +164,25 @@ impl State {
                         .iter()
                         .map(|p| p.name.clone())
                         .collect::<Vec<_>>();
-                    let options = Switching::ALL.map(|policy| policy.to_string());
                     let selected = editor
                         .selected
                         .as_ref()
                         .and_then(|name| book.get(name).ok());
                     let compatible = selected.map(|profile| profile.resolve(&self.outputs));
                     content = content
-                        .push(text("When connected displays change"))
-                        .push(choice(
+                        .push(text(fl!("settings-profiles-when-changed")))
+                        .push(pick(
                             "display-profile-switching",
-                            options.to_vec(),
-                            Some(editor.switching.to_string()),
+                            Switching::ALL
+                                .map(|policy| (policy, policy.to_string()))
+                                .to_vec(),
+                            Some(editor.switching),
                             |value| message(Action::Switching(value)),
                         ))
                         .push(
                             self.action(
                                 "settings-button-save-switching-policy",
-                                "Save switching policy",
+                                fl!("settings-profiles-save-policy"),
                                 (enabled && book.switching != editor.switching)
                                     .then(|| message(Action::SaveSwitching)),
                                 false,
@@ -202,36 +195,36 @@ impl State {
                             |value| message(Action::Select(value)),
                         ))
                         .push(
-                            row![
+                            direction::row([
                                 self.action(
                                     "settings-button-test-saved-profile",
-                                    "Test saved profile",
+                                    fl!("settings-profiles-test"),
                                     (enabled
                                         && !self.refreshing
                                         && matches!(compatible, Some(Ok(_))))
                                     .then(|| message(Action::Test)),
-                                    false
+                                    false,
                                 ),
                                 self.action(
                                     "settings-button-delete-selected-profile",
-                                    "Delete selected profile",
+                                    fl!("settings-profiles-delete"),
                                     (enabled && selected.is_some())
                                         .then(|| message(Action::Delete)),
-                                    false
+                                    false,
                                 ),
-                            ]
+                            ])
                             .spacing(8),
                         )
                         .push(field(
                             "display-profile-name",
-                            "New profile name",
+                            fl!("settings-profiles-new-name"),
                             &editor.title,
                             |value| message(Action::Title(value)),
                         ))
                         .push(
                             self.action(
                                 "settings-button-save-layout-as-profile",
-                                "Save layout as profile",
+                                fl!("settings-profiles-save-layout"),
                                 (enabled
                                     && !self.refreshing
                                     && !self.monitors.is_empty()
@@ -241,13 +234,14 @@ impl State {
                             ),
                         );
                     if let Some(Err(error)) = compatible {
-                        content = content.push(text(format!(
-                            "This profile cannot be applied here. {error}"
+                        content = content.push(text(fl!(
+                            "settings-profiles-incompatible",
+                            error = format!("{error:#}")
                         )));
                     }
                 }
                 Some(Err(error)) => content = content.push(text(error)),
-                None => content = content.push(text("Loading display profiles…")),
+                None => content = content.push(text(fl!("settings-profiles-loading"))),
             }
         }
         container(content)

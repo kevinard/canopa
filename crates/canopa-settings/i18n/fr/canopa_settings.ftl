@@ -868,3 +868,123 @@ settings-printers-none-found = Aucune nouvelle imprimante trouvée. Vérifiez qu
 settings-printers-add = Ajouter
 settings-printers-helper-hint = L’ajout et la suppression d’imprimantes demandent l’autorisation d’un administrateur.
 settings-printers-no-helper-hint = L’ajout et la suppression d’imprimantes nécessitent cups-pk-helper, ou l’appartenance au groupe système de CUPS.
+
+## About
+
+settings-about-name = Nom
+settings-about-hardware = Matériel
+settings-about-software = Logiciels
+settings-about-device-name = Nom de l’appareil
+settings-about-rename = Renommer
+settings-about-network-name = Les autres appareils voient cet ordinateur sous le nom { $name } sur le réseau.
+settings-about-no-hostnamed-hint = systemd-hostnamed ne fonctionne pas : le nom de l’ordinateur ne peut être ni affiché ni modifié ici.
+settings-about-no-hostnamed = systemd-hostnamed n’est pas disponible.
+settings-about-name-changed = Le nom a changé. Réessayez.
+settings-about-name-empty = Saisissez un nom pour cet ordinateur.
+settings-about-model = Modèle
+settings-about-processor = Processeur
+settings-about-memory = Mémoire
+settings-about-memory-size = { $value } Gio
+settings-about-graphics = Graphiques
+settings-about-disk-capacity = Capacité des disques
+settings-about-disk = { $name } ({ $size })
+settings-about-disks = { $total } — { $disks }
+settings-about-firmware = Micrologiciel
+settings-about-os = Système d’exploitation
+settings-about-build = Version de construction
+settings-about-kernel = Noyau
+settings-about-rolling = Publication continue
+
+## Privacy
+
+settings-privacy-store-missing = Le magasin d’autorisations du portail (xdg-permission-store) ne fonctionne pas.
+settings-privacy-store-missing-hint = { $reason } Il enregistre ce que les applications isolées ont été autorisées à faire via les portails.
+settings-privacy-not-allowed = La modification n’a pas été autorisée.
+settings-privacy-timed-out = Le magasin d’autorisations n’a pas répondu à temps.
+settings-privacy-grant-changed = L’autorisation a changé. Réessayez.
+settings-privacy-unknown-entry = Entrée de démarrage automatique inconnue.
+settings-privacy-entry-gone = L’entrée n’existe plus.
+settings-privacy-entry-not-saved = L’entrée n’a pas pu être enregistrée.
+settings-privacy-entry-not-saved-because = L’entrée n’a pas pu être enregistrée : { $error }
+settings-error-session-bus = Le bus de session est inaccessible.
+settings-privacy-revoke-only = Cette autorisation peut seulement être révoquée.
+settings-privacy-location = Localisation
+settings-privacy-camera = Caméra
+settings-privacy-microphone = Micro
+settings-privacy-speakers = Haut-parleurs
+settings-privacy-screenshots = Captures d’écran
+settings-privacy-background = Exécution en arrière-plan
+settings-privacy-notifications = Notifications
+settings-privacy-screen-sharing = Partage d’écran
+settings-privacy-remote-desktop = Bureau à distance
+settings-privacy-location-allowed = { $accuracy ->
+    [none] Autorisée (sans position)
+    [country] Autorisée (pays)
+    [city] Autorisée (ville)
+    [neighborhood] Autorisée (quartier)
+    [street] Autorisée (rue)
+   *[exact] Autorisée (précise)
+}
+settings-privacy-restore = Peut restaurer sa session sans demander
+settings-privacy-allowed = Autorisé
+settings-privacy-denied = Refusé
+settings-privacy-asks = Demande à chaque fois
+settings-privacy-allow = Autoriser
+settings-privacy-deny = Refuser
+settings-privacy-forget = Oublier
+settings-privacy-permissions = Autorisations des applications
+settings-privacy-permissions-hint = Les applications isolées demandent via le portail du bureau. Oublier supprime la réponse : l’application demandera à nouveau.
+settings-privacy-none-asked = Aucune application n’a demandé.
+settings-privacy-screen-hint = Canopa demande à chaque fois qu’une application veut partager ou contrôler l’écran, et ne retient pas ces réponses.
+settings-privacy-autostart = Démarrage à la connexion
+settings-privacy-no-autostart = Rien ne démarre automatiquement à votre connexion.
+settings-privacy-autostart-sandboxed = { $name } (ajouté par l’application)
+settings-privacy-autostart-system = { $name } (installé pour tous)
+
+## Default applications
+
+settings-default-apps = Applications par défaut
+settings-default-apps-browser = Navigateur web
+settings-default-apps-mail = Courriel
+settings-default-apps-calendar = Agenda
+settings-default-apps-music = Musique
+settings-default-apps-video = Vidéo
+settings-default-apps-photos = Photos
+settings-default-apps-text = Éditeur de texte
+settings-default-apps-files = Gestionnaire de fichiers
+settings-default-apps-terminal = Terminal
+settings-default-apps-terminal-hint = Les programmes qui s’exécutent dans un terminal s’ouvrent dans celui-ci, via xdg-terminal-exec. Sans choix, le premier terminal installé est utilisé.
+settings-default-apps-none = Aucune application installée n’ouvre ces fichiers.
+settings-default-apps-others = Autres types de fichiers
+settings-default-apps-search = Type de fichier ou extension
+settings-default-apps-no-match = Aucune application installée n’ouvre un type correspondant.
+settings-default-apps-search-hint = Saisissez un type de fichier comme application/pdf, ou une extension comme pdf.
+settings-default-apps-saved-in = Les choix sont enregistrés dans { $file }, que les autres bureaux et applications lisent aussi.
+settings-default-apps-no-config = Il n’y a pas de dossier de configuration ($HOME ou $XDG_CONFIG_HOME).
+settings-default-apps-not-saved = Le choix n’a pas pu être enregistré : { $error }
+settings-default-apps-unknown-kind = Type d’application inconnu.
+settings-default-apps-unknown-terminal = Terminal inconnu.
+settings-default-apps-read-failed = La lecture des applications a échoué.
+
+## Display profiles
+
+settings-displays-position-invalid = Les positions des écrans doivent être des nombres entiers.
+settings-profiles = Profils d’affichage
+settings-profiles-needs-session = Les profils d’affichage sont disponibles dans la session Canopa.
+settings-profiles-reload = Recharger les profils d’affichage
+settings-profiles-when-changed = Lorsque les écrans connectés changent
+settings-profiles-manual = Manuellement seulement
+settings-profiles-suggest = Proposer les profils correspondants
+settings-profiles-automatic = Basculer automatiquement
+settings-profiles-save-policy = Enregistrer ce comportement
+settings-profiles-test = Tester le profil enregistré
+settings-profiles-delete = Supprimer le profil sélectionné
+settings-profiles-new-name = Nom du nouveau profil
+settings-profiles-save-layout = Enregistrer la disposition comme profil
+settings-profiles-saved = Profils d’affichage enregistrés.
+settings-profiles-choose = Choisissez un profil d’affichage.
+settings-profiles-incompatible = Ce profil ne peut pas être appliqué ici. { $error }
+settings-profiles-loading = Chargement des profils d’affichage…
+settings-profiles-offer-title = Profil d’affichage disponible · { $name }
+settings-profiles-offer-body = Les écrans connectés correspondent à une disposition enregistrée.
+settings-profiles-offer-review = Voir la disposition

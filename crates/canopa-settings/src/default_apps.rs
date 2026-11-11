@@ -20,14 +20,28 @@ use std::{
 #[derive(Debug)]
 pub struct Category {
     pub key: &'static str,
-    pub title: &'static str,
     pub types: &'static [&'static str],
+}
+
+impl Category {
+    /// The kind's name on the page.
+    pub fn title(&self) -> String {
+        match self.key {
+            "browser" => fl!("settings-default-apps-browser"),
+            "mail" => fl!("settings-default-apps-mail"),
+            "calendar" => fl!("settings-default-apps-calendar"),
+            "music" => fl!("settings-default-apps-music"),
+            "video" => fl!("settings-default-apps-video"),
+            "photos" => fl!("settings-default-apps-photos"),
+            "text" => fl!("settings-default-apps-text"),
+            _ => fl!("settings-default-apps-files"),
+        }
+    }
 }
 
 pub static CATEGORIES: &[Category] = &[
     Category {
         key: "browser",
-        title: "Web browser",
         types: &[
             "x-scheme-handler/http",
             "x-scheme-handler/https",
@@ -39,17 +53,14 @@ pub static CATEGORIES: &[Category] = &[
     },
     Category {
         key: "mail",
-        title: "Mail",
         types: &["x-scheme-handler/mailto", "message/rfc822"],
     },
     Category {
         key: "calendar",
-        title: "Calendar",
         types: &["text/calendar", "x-scheme-handler/webcal"],
     },
     Category {
         key: "music",
-        title: "Music",
         types: &[
             "audio/mpeg",
             "audio/flac",
@@ -65,7 +76,6 @@ pub static CATEGORIES: &[Category] = &[
     },
     Category {
         key: "video",
-        title: "Video",
         types: &[
             "video/mp4",
             "video/x-matroska",
@@ -78,7 +88,6 @@ pub static CATEGORIES: &[Category] = &[
     },
     Category {
         key: "photos",
-        title: "Photos",
         types: &[
             "image/jpeg",
             "image/png",
@@ -92,12 +101,10 @@ pub static CATEGORIES: &[Category] = &[
     },
     Category {
         key: "text",
-        title: "Text editor",
         types: &["text/plain"],
     },
     Category {
         key: "files",
-        title: "File manager",
         types: &["inode/directory"],
     },
 ];
@@ -369,9 +376,9 @@ impl DefaultAppsService {
 
     fn load(&self) -> Result<DefaultApps, ServiceError> {
         if self.paths.config_home.is_none() {
-            return Err(ServiceError::Unavailable(
-                "There is no configuration folder ($HOME or $XDG_CONFIG_HOME).".into(),
-            ));
+            return Err(ServiceError::Unavailable(fl!(
+                "settings-default-apps-no-config"
+            )));
         }
         let catalog = Catalog {
             apps: Arc::new(MimeApps::load_from(&self.paths, &self.environment())),
@@ -417,14 +424,19 @@ impl DefaultAppsService {
 
     fn run(&self, action: &DefaultAction) -> Result<(), ServiceError> {
         let failed = |error: std::io::Error| {
-            ServiceError::Failed(format!("The choice could not be saved: {error}"))
+            ServiceError::Failed(fl!(
+                "settings-default-apps-not-saved",
+                error = error.to_string()
+            ))
         };
         match action {
             DefaultAction::Category(key, id) => {
                 let category = CATEGORIES
                     .iter()
                     .find(|category| category.key == *key)
-                    .ok_or_else(|| ServiceError::Failed("Unknown kind of application.".into()))?;
+                    .ok_or_else(|| {
+                        ServiceError::Failed(fl!("settings-default-apps-unknown-kind"))
+                    })?;
                 let catalog = self.load()?.catalog;
                 // Every type of the kind that the application opens, and always the first.
                 for (index, mime) in category.types.iter().enumerate() {
@@ -440,11 +452,14 @@ impl DefaultAppsService {
             }
             DefaultAction::Terminal(id) => {
                 if !mime_apps::valid_id(id) {
-                    return Err(ServiceError::Failed("Unknown terminal.".into()));
+                    return Err(ServiceError::Failed(fl!(
+                        "settings-default-apps-unknown-terminal"
+                    )));
                 }
-                let config = self.paths.config_home.as_ref().ok_or_else(|| {
-                    ServiceError::Failed("There is no configuration folder.".into())
-                })?;
+                let config =
+                    self.paths.config_home.as_ref().ok_or_else(|| {
+                        ServiceError::Failed(fl!("settings-region-error-no-config"))
+                    })?;
                 // A desktop-specific list wins, so it is updated when it exists.
                 for desktop in &self.paths.desktops {
                     let path = config.join(format!("{desktop}-{TERMINALS_LIST}"));
@@ -495,7 +510,7 @@ async fn blocking<T: Send + 'static>(
 ) -> Result<T, ServiceError> {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|_| ServiceError::Failed("Reading applications failed.".into()))?
+        .map_err(|_| ServiceError::Failed(fl!("settings-default-apps-read-failed")))?
 }
 
 impl LiveService for DefaultAppsService {

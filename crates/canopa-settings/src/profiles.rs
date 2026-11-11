@@ -28,11 +28,12 @@ impl Switching {
     }
 }
 impl fmt::Display for Switching {
+    /// The policy's name in the selected language.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Manual => "Manual only",
-            Self::Suggest => "Suggest matching profiles",
-            Self::Automatic => "Switch automatically",
+        f.write_str(&match self {
+            Self::Manual => fl!("settings-profiles-manual"),
+            Self::Suggest => fl!("settings-profiles-suggest"),
+            Self::Automatic => fl!("settings-profiles-automatic"),
         })
     }
 }

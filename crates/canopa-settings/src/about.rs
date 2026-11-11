@@ -112,7 +112,7 @@ impl SystemInfo {
         let os_version = [get("VERSION"), get("VERSION_ID")]
             .into_iter()
             .find(|version| !version.is_empty())
-            .or_else(|| (build == "rolling").then(|| "Rolling release".to_owned()))
+            .or_else(|| (build == "rolling").then(|| fl!("settings-about-rolling")))
             .unwrap_or_default();
         let os_build = if build == "rolling" {
             String::new()
@@ -243,30 +243,20 @@ impl SystemInfo {
     }
 }
 
-/// A size in decimal units, as disks are sold: "512 GB", "1.0 TB".
+/// A size in decimal units, as disks are sold: "512 GB", "1.0 TB" ("512 Go").
 pub fn decimal_size(bytes: u64) -> String {
-    let units = ["B", "kB", "MB", "GB", "TB", "PB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1000.0 && unit + 1 < units.len() {
-        value /= 1000.0;
-        unit += 1;
-    }
-    if value >= 100.0 || unit == 0 {
-        format!("{value:.0} {}", units[unit])
-    } else {
-        format!("{value:.1} {}", units[unit])
-    }
+    canopa_i18n::format::decimal_size(bytes)
 }
 
-/// Memory in binary units, as it is installed: "16 GiB".
+/// Memory in binary units, as it is installed: "16 GiB" ("16 Gio"); whole
+/// gibibytes from 10 up.
 pub fn binary_size(bytes: u64) -> String {
     let gib = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-    if gib >= 10.0 {
-        format!("{gib:.0} GiB")
-    } else {
-        format!("{gib:.1} GiB")
-    }
+    let digits = if gib >= 10.0 { 0 } else { 1 };
+    fl!(
+        "settings-about-memory-size",
+        value = canopa_i18n::format::decimal(gib, digits, true)
+    )
 }
 
 /// What the page shows. `host` is `None` while hostnamed is not available,
@@ -309,11 +299,11 @@ impl Default for AboutService {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     ServiceError::Failed(match error {
-        Error::Unavailable => "systemd-hostnamed is not available.".into(),
-        Error::NotAuthorized => "The system did not allow this change.".into(),
-        Error::TimedOut => "The system did not answer in time.".into(),
-        Error::Changed => "The name changed. Try again.".into(),
-        Error::Invalid(what) => format!("That is not a valid {what}."),
+        Error::Unavailable => fl!("settings-about-no-hostnamed"),
+        Error::NotAuthorized => fl!("settings-error-not-authorized"),
+        Error::TimedOut => fl!("settings-error-timed-out"),
+        Error::Changed => fl!("settings-about-name-changed"),
+        Error::Invalid(what) => crate::service_text::invalid(what),
         Error::Refused(message) => message,
     })
 }
@@ -408,15 +398,13 @@ impl LiveService for AboutService {
             let AboutAction::Rename(pretty) = action;
             let pretty = pretty.trim().to_owned();
             if pretty.is_empty() {
-                return Err(ServiceError::Failed(
-                    "Enter a name for this computer.".into(),
-                ));
+                return Err(ServiceError::Failed(fl!("settings-about-name-empty")));
             }
             let system = service
                 .system
                 .get_or_try_init(canopa_services::bus::system)
                 .await
-                .map_err(|_| ServiceError::Failed("The system bus is not reachable.".into()))?
+                .map_err(|_| ServiceError::Failed(fl!("settings-error-bus")))?
                 .clone();
             hostname::rename(&system, &pretty, &hostname::static_name(&pretty))
                 .await

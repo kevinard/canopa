@@ -5,9 +5,10 @@ use crate::{
     about::{AboutAction, AboutService, AboutState, binary_size, decimal_size},
     live::Event,
 };
+use canopa_ui::direction;
 use iced::{
     Alignment, Element, Length, Task,
-    widget::{column, row, text},
+    widget::{column, text},
 };
 
 pub(super) type AboutPage = LivePage<AboutService>;
@@ -20,13 +21,18 @@ fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
     text(label).size(14).style(canopa_ui::muted).into()
 }
 
-fn fact<'a>(label: &'a str, value: String) -> Element<'a, Message> {
-    row![
+fn fact<'a>(label: String, value: String) -> Element<'a, Message> {
+    direction::row([
         text(label)
             .width(Length::Fixed(160.))
-            .style(canopa_ui::muted),
-        text(value).width(Length::Fill),
-    ]
+            .align_x(direction::text_start())
+            .style(canopa_ui::muted)
+            .into(),
+        text(value)
+            .width(Length::Fill)
+            .align_x(direction::text_start())
+            .into(),
+    ])
     .spacing(12)
     .into()
 }
@@ -56,9 +62,7 @@ impl State {
     fn about_sections<'a>(&'a self, state: &'a AboutState) -> Element<'a, Message> {
         let info = &state.system;
         let name: Element<'_, Message> = match &state.host {
-            None => muted(
-                "systemd-hostnamed is not running, so the computer's name cannot be shown or changed here.",
-            ),
+            None => muted(fl!("settings-about-no-hostnamed-hint")),
             Some(host) => {
                 let current = host.pretty_or_static();
                 let typed = self.about_name.as_deref().unwrap_or(current);
@@ -67,25 +71,28 @@ impl State {
                     .as_deref()
                     .is_some_and(|name| !name.trim().is_empty() && name.trim() != current);
                 column![
-                    row![
-                        field("about-name", "Device name", typed, |value| {
-                            Message::AboutForm(Edit::Name(value))
-                        }),
+                    direction::row([
+                        field(
+                            "about-name",
+                            fl!("settings-about-device-name"),
+                            typed,
+                            |value| { Message::AboutForm(Edit::Name(value)) }
+                        ),
                         self.action(
                             "settings-button-rename",
-                            "Rename",
+                            fl!("settings-about-rename"),
                             changed.then_some(Message::AboutForm(Edit::Rename)),
                             changed,
                         ),
-                    ]
+                    ])
                     .spacing(12)
                     .align_y(Alignment::End),
-                    muted(format!(
-                        "Other devices see this computer as {} on the network.",
-                        if host.static_hostname.is_empty() {
-                            &host.hostname
+                    muted(fl!(
+                        "settings-about-network-name",
+                        name = if host.static_hostname.is_empty() {
+                            host.hostname.as_str()
                         } else {
-                            &host.static_hostname
+                            host.static_hostname.as_str()
                         }
                     )),
                     self.about.control_status("name", message),
@@ -110,11 +117,11 @@ impl State {
             .collect::<Vec<_>>()
             .join(" ");
         if !computer.is_empty() {
-            hardware = hardware.push(fact("Model", computer));
+            hardware = hardware.push(fact(fl!("settings-about-model"), computer));
         }
         if !info.cpu.is_empty() {
             hardware = hardware.push(fact(
-                "Processor",
+                fl!("settings-about-processor"),
                 if info.cores > 1 {
                     format!("{} × {}", info.cpu, info.cores)
                 } else {
@@ -123,11 +130,18 @@ impl State {
             ));
         }
         if info.memory_bytes > 0 {
-            hardware = hardware.push(fact("Memory", binary_size(info.memory_bytes)));
+            hardware = hardware.push(fact(
+                fl!("settings-about-memory"),
+                binary_size(info.memory_bytes),
+            ));
         }
         for (index, graphics) in info.graphics.iter().enumerate() {
             hardware = hardware.push(fact(
-                if index == 0 { "Graphics" } else { "" },
+                if index == 0 {
+                    fl!("settings-about-graphics")
+                } else {
+                    String::new()
+                },
                 graphics.clone(),
             ));
         }
@@ -136,36 +150,46 @@ impl State {
             let detail = info
                 .disks
                 .iter()
-                .map(|(name, size)| format!("{name} ({})", decimal_size(*size)))
+                .map(|(name, size)| {
+                    fl!(
+                        "settings-about-disk",
+                        name = name.as_str(),
+                        size = decimal_size(*size)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             hardware = hardware.push(fact(
-                "Disk capacity",
-                format!("{} — {detail}", decimal_size(total)),
+                fl!("settings-about-disk-capacity"),
+                fl!(
+                    "settings-about-disks",
+                    total = decimal_size(total),
+                    disks = detail
+                ),
             ));
         }
         let firmware = pick(host.map(|h| &h.firmware), &info.firmware);
         if !firmware.is_empty() {
-            hardware = hardware.push(fact("Firmware", firmware));
+            hardware = hardware.push(fact(fl!("settings-about-firmware"), firmware));
         }
         let os = [info.os_name.as_str(), info.os_version.as_str()]
             .into_iter()
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
             .join(" ");
-        let mut software = column![fact("Operating system", os)].spacing(8);
+        let mut software = column![fact(fl!("settings-about-os"), os)].spacing(8);
         if !info.os_build.is_empty() {
-            software = software.push(fact("Build", info.os_build.clone()));
+            software = software.push(fact(fl!("settings-about-build"), info.os_build.clone()));
         }
         let kernel = pick(host.map(|h| &h.kernel), &info.kernel);
         if !kernel.is_empty() {
-            software = software.push(fact("Kernel", kernel));
+            software = software.push(fact(fl!("settings-about-kernel"), kernel));
         }
-        software = software.push(fact("Canopa", info.canopa_version.clone()));
+        software = software.push(fact("Canopa".into(), info.canopa_version.clone()));
         column![
-            settings_group("Name", name),
-            settings_group("Hardware", hardware),
-            settings_group("Software", software),
+            settings_group(fl!("settings-about-name"), name),
+            settings_group(fl!("settings-about-hardware"), hardware),
+            settings_group(fl!("settings-about-software"), software),
         ]
         .spacing(14)
         .into()
