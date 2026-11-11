@@ -11,10 +11,12 @@ use std::{
 /// One bounded, off-thread batch. Missing/invalid assets keep textual app labels.
 pub(crate) fn prepare(names: &[String], foreground: canopa_theme::Rgb) -> HashMap<String, Handle> {
     let roots = canopa_assets::icons::search_roots();
+    // The desktop icon theme (GTK settings), its parents, then hicolor.
+    let theme = canopa_assets::icons::IconResolver::system().desktop_theme();
     let mut lookup = IconLookup::new(
         &roots,
         LookupOptions {
-            theme: "hicolor",
+            theme: &theme,
             scale: 1,
             formats: IconFormats::PngSvgXpm,
             allow_unindexed_hicolor: true,
