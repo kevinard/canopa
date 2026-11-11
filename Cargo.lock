@@ -1201,6 +1201,7 @@ dependencies = [
  "anyhow",
  "canopa-assets",
  "canopa-config",
+ "canopa-notify-client",
  "canopa-theme",
  "canopa-widgets",
  "chrono",
