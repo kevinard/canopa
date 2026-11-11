@@ -471,7 +471,7 @@ Optional text that gives user-facing context for a **Panel Menu** search or sele
 _Avoid_: Menu item, title when the text is not just a heading
 
 **Installed Desktop Application**:
-A user-launchable GUI application discovered from the desktop environment's application metadata.
+A user-launchable application discovered from the desktop environment's application metadata. Terminal applications are included and open in a terminal.
 _Avoid_: Desktop file, command, package
 
 **Desktop Application ID**:

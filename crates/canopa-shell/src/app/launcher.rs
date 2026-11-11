@@ -646,7 +646,7 @@ impl Session {
                 );
             }
         }
-        let query = text.to_lowercase();
+        let query = super::panel_search::fold(text);
         let mut ranked: Vec<_> = native
             .into_iter()
             .enumerate()
@@ -654,7 +654,7 @@ impl Session {
                 let PanelMenuEntryTarget::Launcher(target) = &entry.target else {
                     unreachable!()
                 };
-                let mut labels = vec![entry.label.to_lowercase()];
+                let mut labels = vec![super::panel_search::fold(&entry.label)];
                 if let Some(NamedAction {
                     action:
                         Action::FocusWindow {
@@ -664,14 +664,12 @@ impl Session {
                     ..
                 }) = target.result.actions.first()
                 {
-                    labels.push(
+                    labels.push(super::panel_search::fold(
                         self.apps
                             .iter()
                             .find(|app| &app.id == id)
-                            .map(|app| app.name.clone())
-                            .unwrap_or_else(|| id.clone())
-                            .to_lowercase(),
-                    );
+                            .map_or(id.as_str(), |app| app.name.as_str()),
+                    ));
                 }
                 let quality = if query.is_empty() || labels.iter().any(|label| label == &query) {
                     0
@@ -739,7 +737,7 @@ impl Session {
                     fields.extend(app.comment.as_deref());
                     fields.extend(app.keywords.iter().map(String::as_str));
                 }
-                let fields: Vec<_> = fields.into_iter().map(str::to_lowercase).collect();
+                let fields: Vec<_> = fields.into_iter().map(super::panel_search::fold).collect();
                 words
                     .iter()
                     .all(|word| fields.iter().any(|field| field.contains(word)))
@@ -1438,10 +1436,11 @@ impl super::App {
                                         )
                                         .await
                                         .map(|_| ())
+                                        .map_err(|error| launch_failure(&app.name, &error))
                                     }
-                                    None => Err(std::io::Error::other(
-                                        "Application is no longer available",
-                                    )),
+                                    None => Err(std::io::Error::other(LaunchFailure(
+                                        "Application is no longer available".into(),
+                                    ))),
                                 }
                             }
                             #[cfg(test)]
@@ -1495,14 +1494,43 @@ impl super::App {
                         | Action::EditAlias { .. }
                         | Action::SaveAlias { .. } => unreachable!(),
                     };
-                    result.map_err(|_| {
-                        "Could not apply action; check the application or file is available".into()
-                    })
+                    result.map_err(|error| action_error_message(&error))
                 },
                 finished,
             ),
         }
     }
+}
+
+/// An action failure whose text the launcher status shows as is.
+#[derive(Debug)]
+struct LaunchFailure(String);
+
+impl std::fmt::Display for LaunchFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for LaunchFailure {}
+
+/// Names the application and the reason, such as a missing program or
+/// terminal found before the handoff, or the compositor refusing the spawn.
+fn launch_failure(name: &str, error: &std::io::Error) -> std::io::Error {
+    std::io::Error::new(
+        error.kind(),
+        LaunchFailure(format!("Could not start {name}: {error}")),
+    )
+}
+
+fn action_error_message(error: &std::io::Error) -> String {
+    error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<LaunchFailure>())
+        .map_or_else(
+            || "Could not apply action; check the application or file is available".into(),
+            |failure| failure.0.clone(),
+        )
 }
 
 async fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
@@ -1545,10 +1573,13 @@ async fn open_with_application(path: &std::path::Path, id: &str) -> std::io::Res
         .await
         .ok()
         .flatten()
-        .ok_or_else(|| std::io::Error::other("Application is unavailable"))?;
+        .ok_or_else(|| {
+            std::io::Error::other(LaunchFailure("Application is no longer available".into()))
+        })?;
         crate::command::open_desktop_application(&application, &[file_uri(&path)])
             .await
             .map(|_| ())
+            .map_err(|error| launch_failure(&application.name, &error))
     }
 }
 
@@ -1765,6 +1796,73 @@ mod tests {
                 .entries()
                 .iter()
                 .any(|entry| entry.label == "File Renderer")
+        );
+    }
+
+    #[test]
+    fn launcher_finds_and_ranks_non_latin_and_accented_names() {
+        let mut keyword_match = application("party.desktop", "Party Planner");
+        keyword_match.keywords.push("Piñata".into());
+        let mut session = Session::new(
+            Config::default(),
+            vec![
+                application("cafeteria.desktop", "Cafeteria Menu"),
+                application("cafe.desktop", "Café"),
+                application("terminal.desktop", "Терминал"),
+                application("files.desktop", "Файлы"),
+                application("settings.desktop", "Ρυθμίσεις"),
+                application("cjk.desktop", "终端"),
+                keyword_match,
+            ],
+        );
+        let first = |session: &mut Session, query: &str| {
+            session.search_changed(query);
+            session.entries().first().map(|entry| entry.label.clone())
+        };
+
+        assert_eq!(first(&mut session, "терм").as_deref(), Some("Терминал"));
+        assert_eq!(first(&mut session, "ТЕРМИНАЛ").as_deref(), Some("Терминал"));
+        assert!(!session.entries().iter().any(|entry| entry.label == "Файлы"));
+        // A folded exact match outranks a longer prefix match.
+        assert_eq!(first(&mut session, "cafe").as_deref(), Some("Café"));
+        assert_eq!(first(&mut session, "CAFÉ").as_deref(), Some("Café"));
+        assert_eq!(
+            first(&mut session, "ρυθμισεις").as_deref(),
+            Some("Ρυθμίσεις")
+        );
+        assert_eq!(first(&mut session, "终端").as_deref(), Some("终端"));
+        assert_eq!(
+            first(&mut session, "pinata").as_deref(),
+            Some("Party Planner")
+        );
+    }
+
+    #[test]
+    fn launcher_launch_failures_name_the_application_and_reason() {
+        let problem = std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            crate::desktop_apps::LaunchProblem::MissingProgram("does-not-exist".into()),
+        );
+        assert_eq!(
+            action_error_message(&launch_failure("Broken", &problem)),
+            "Could not start Broken: “does-not-exist” is not installed"
+        );
+        let terminal = std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            crate::desktop_apps::LaunchProblem::NoTerminal,
+        );
+        assert!(
+            action_error_message(&launch_failure("htop", &terminal))
+                .starts_with("Could not start htop: it runs in a terminal")
+        );
+        let rejected = std::io::Error::other("niri rejected application launch");
+        assert_eq!(
+            action_error_message(&launch_failure("Firefox", &rejected)),
+            "Could not start Firefox: niri rejected application launch"
+        );
+        assert_eq!(
+            action_error_message(&std::io::Error::other("Invalid web URL")),
+            "Could not apply action; check the application or file is available"
         );
     }
 

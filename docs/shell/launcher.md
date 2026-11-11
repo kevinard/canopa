@@ -36,7 +36,32 @@ single application match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
 
-Applications use their existing desktop-entry launch behavior. Files and folders
+Matching ignores case and accents in every script: `терм` finds “Терминал”,
+`cafe` finds “Café”, and `ρυθμισεις` finds “Ρυθμίσεις”. Text is lowercased with
+Unicode rules (also folding `ß` to `ss` and final `ς` to `σ`), then accented
+letters are reduced to their base letter, as canonical decomposition followed by
+removal of combining marks would. Without a Unicode normalization crate in the
+workspace, a built-in table covers precomposed Latin (including Vietnamese),
+modern Greek and Cyrillic letters; separate combining marks are dropped in any
+script. Letters that do not decompose, such as `ł`, `ø` or `đ`, stay distinct.
+Scripts without case, such as Chinese, Japanese and Korean, match as typed. The
+highlight in a result title covers the original characters that matched.
+
+Applications use their existing desktop-entry launch behavior through
+`gio launch`. Entries with `Terminal=true`, such as htop or nmtui, are listed and
+open in the user's terminal through `xdg-terminal-exec` when it is installed;
+otherwise GLib's own list of known terminals is tried. Entries whose `TryExec`
+program is missing from `PATH` or not executable are hidden. Before handing a
+launch to Niri, the launcher rereads the entry and checks its `TryExec` and `Exec`
+programs and, for terminal entries, that a terminal launcher exists. A failure
+keeps the panel open and names the application and reason, such as “Could not
+start htop: it runs in a terminal and no terminal launcher is installed; install
+xdg-terminal-exec”. A spawn that Niri rejects or does not acknowledge is reported
+the same way. Programs are resolved against Shell's `PATH`, while the app inherits
+Niri's environment. A program that starts and then exits or crashes is not
+reported, because Niri discards its output.
+
+Files and folders
 open through their default desktop handlers; ordinary text paths also offer Copy
 path. Files and folders also offer Reveal in file manager. Files offer Open with
 and Quick Look. Open with searches file-capable installed applications within the
@@ -151,8 +176,8 @@ while open. Newly created, renamed, or deleted paths become searchable after a
 refresh; opening rechecks existence. No indexing service runs while the launcher
 is closed. Each scan stops at 100,000 paths, ten seconds, or 32 directory levels;
 partial indexes are indicated in the panel. Files are fuzzy-matched by name first,
-with parent-path matches as secondary text. Non-ASCII names use Unicode lowercase
-comparison without accent folding.
+with parent-path matches as secondary text, using the same case and accent
+folding as other results.
 
 Override roots and extend basename exclusions within the source:
 

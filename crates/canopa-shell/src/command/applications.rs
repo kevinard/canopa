@@ -107,6 +107,21 @@ async fn niri_action(path: &Path, action: niri_ipc::Action) -> io::Result<()> {
     })?
 }
 
+/// The compositor accepts a spawn before `gio launch` resolves the entry, and
+/// the child's output is discarded, so check what would otherwise fail unseen.
+fn check_desktop_launch(
+    app: &crate::desktop_apps::DesktopApplication,
+    search_path: &[std::path::PathBuf],
+) -> io::Result<()> {
+    crate::desktop_apps::check_launch(app, search_path).map_err(|problem| {
+        let kind = match problem {
+            crate::desktop_apps::LaunchProblem::InvalidCommand => io::ErrorKind::InvalidData,
+            _ => io::ErrorKind::NotFound,
+        };
+        io::Error::new(kind, problem)
+    })
+}
+
 fn desktop_launch_argv(app: &crate::desktop_apps::DesktopApplication) -> io::Result<Vec<String>> {
     // GIO owns Exec field codes and cwd for non-D-Bus desktop entries.
     // Never reconstruct an Exec line or pass it through a shell here.
@@ -129,6 +144,7 @@ fn desktop_launch_argv(app: &crate::desktop_apps::DesktopApplication) -> io::Res
 pub async fn spawn_desktop_application_fire_and_forget(
     app: &crate::desktop_apps::DesktopApplication,
 ) -> io::Result<SpawnResult> {
+    check_desktop_launch(app, &crate::desktop_apps::process_search_path())?;
     if app.dbus_activatable {
         // Auto-activation is owned by the session bus, outside the bar's cgroup.
         // Await delivery instead of letting a short-lived CLI exit mid-flush.
@@ -156,6 +172,7 @@ pub async fn open_desktop_application(
     app: &crate::desktop_apps::DesktopApplication,
     uris: &[String],
 ) -> io::Result<SpawnResult> {
+    check_desktop_launch(app, &crate::desktop_apps::process_search_path())?;
     if app.dbus_activatable {
         tokio::time::timeout(Duration::from_secs(10), async {
             let connection = zbus::Connection::session()
@@ -457,6 +474,106 @@ mod tests {
             );
             server.join().unwrap();
         }
+    }
+
+    fn executable(path: &Path, body: &str) {
+        std::fs::write(path, body).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    fn fixture_app(desktop_file: std::path::PathBuf) -> crate::desktop_apps::DesktopApplication {
+        crate::desktop_apps::DesktopApplication {
+            id: "org.example.Fixture.desktop".into(),
+            name: "Fixture".into(),
+            generic_name: None,
+            comment: None,
+            keywords: vec![],
+            icon: None,
+            desktop_file,
+            dbus_activatable: false,
+        }
+    }
+
+    #[test]
+    fn launcher_rejects_missing_programs_and_terminals_before_handoff() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = [dir.path().to_path_buf()];
+        let desktop_file = dir.path().join("org.example.Fixture.desktop");
+        let app = fixture_app(desktop_file.clone());
+
+        std::fs::write(
+            &desktop_file,
+            "[Desktop Entry]\nType=Application\nName=Fixture\nExec=does-not-exist %U\n",
+        )
+        .unwrap();
+        let error = check_desktop_launch(&app, &bin).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(error.to_string(), "“does-not-exist” is not installed");
+
+        executable(&dir.path().join("htop"), "#!/bin/sh\n");
+        std::fs::write(
+            &desktop_file,
+            "[Desktop Entry]\nType=Application\nName=Fixture\nExec=htop\nTerminal=true\n",
+        )
+        .unwrap();
+        let error = check_desktop_launch(&app, &bin).unwrap_err();
+        assert!(error.to_string().contains("xdg-terminal-exec"), "{error}");
+
+        executable(&dir.path().join("xdg-terminal-exec"), "#!/bin/sh\n");
+        check_desktop_launch(&app, &bin).unwrap();
+
+        std::fs::remove_file(&desktop_file).unwrap();
+        assert_eq!(
+            check_desktop_launch(&app, &bin).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn gio_launch_runs_terminal_entries_through_xdg_terminal_exec() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output");
+        executable(
+            &dir.path().join("xdg-terminal-exec"),
+            &format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+                output.display()
+            ),
+        );
+        executable(&dir.path().join("tui-fixture"), "#!/bin/sh\n");
+        let desktop_file = dir.path().join("org.example.Fixture.desktop");
+        std::fs::write(
+            &desktop_file,
+            "[Desktop Entry]\nType=Application\nName=Fixture\nExec=tui-fixture --flag\nTerminal=true\n",
+        )
+        .unwrap();
+        let app = fixture_app(desktop_file);
+        let mut path = std::ffi::OsString::from(dir.path());
+        path.push(":");
+        path.push(std::env::var_os("PATH").unwrap_or_default());
+        let search_path: Vec<_> = std::env::split_paths(&path).collect();
+        check_desktop_launch(&app, &search_path).unwrap();
+        let argv = desktop_launch_argv(&app).unwrap();
+        assert!(
+            std::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .env("PATH", &path)
+                .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent")
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !std::fs::read_to_string(&output).is_ok_and(|text| text.ends_with("--flag\n"))
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let arguments = std::fs::read_to_string(&output).unwrap();
+        assert!(
+            arguments.lines().any(|line| line == "tui-fixture") && arguments.ends_with("--flag\n"),
+            "{arguments}"
+        );
     }
 
     #[test]
