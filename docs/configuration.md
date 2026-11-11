@@ -43,8 +43,9 @@ or `"light"` (warm white and forest green). Optional `accent` accepts an opaque 
 color; omit it to use the selected preset's accent. Each setting may appear once.
 Colors, font families/sizes, borders, corner radii and spacing can be configured in
 this block or in a reusable theme file. See [theme and UI customization](theme-customization.md)
-for the complete schema, local overrides and bar placement. Icon-theme and motion
-settings retain their existing owners. Existing shell
+for the complete schema, local overrides and bar placement. The icon theme
+follows GTK's `gtk-icon-theme-name` ([ADR 0138](adr/0138-shared-icon-theme-and-mime-lookup.md));
+motion settings retain their existing owners. Existing shell
 style tokens resolve against this palette; explicit color overrides still win.
 Presets have contrast checks; custom colors can reduce contrast.
 

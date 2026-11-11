@@ -36,13 +36,13 @@ The installed configuration is the `notifications` namespace of `$XDG_CONFIG_HOM
 
 Configuration must be a readable regular UTF-8 file of at most 1 MiB; symlinks to regular files work, but directories, FIFOs and devices are not configuration streams. Inside the notification namespace (or a legacy flat file), supported KDL nodes are `rule`, `sound` and `icons`, with their documented entries only. Child documents and type annotations are rejected. Read, parse or installation failure leaves the committed path, generation and settings unchanged. Diagnostics identify the setting category or syntax byte offset without echoing arbitrary names, values or source text. File reading and parsing run off the async executor, and reloads remain serialized even if a waiting caller is cancelled. These are source/admission bounds, not a hard filesystem deadline or a limit on parser-internal nesting and work.
 
-Select a static icon theme and source-asset scale with:
+Override the icon theme and choose a source-asset scale with:
 
 ```kdl
 icons theme="Adwaita" scale=2
 ```
 
-Defaults are `theme="hicolor"` and `scale=1`. Scale is an integer from 1 to 8 used for icon lookup, not banner geometry; it is not automatically derived from the compositor. Theme names are case-sensitive local directory names. A reload applies selection to subsequent banner updates without changing existing notification delivery decisions. Missing icons fall back through inherited themes, hicolor and unthemed files. Unsafe metadata or exhausted lookup budgets omit icons. PNG is supported; JPEG is a local extension; SVG and XPM remain unsupported. Theme metadata and files are refreshed on the next banner update without restarting; simply editing a theme does not generate a notification update.
+Without `theme`, icons follow the desktop theme (GTK `gtk-icon-theme-name`, see [ADR 0138](../adr/0138-shared-icon-theme-and-mime-lookup.md)), then hicolor; the default scale is 1. Scale is an integer from 1 to 8 used for icon lookup, not banner geometry; it is not automatically derived from the compositor. Theme names are case-sensitive local directory names. A reload applies selection to subsequent banner updates without changing existing notification delivery decisions. Missing icons fall back through inherited themes, hicolor and unthemed files; sender icon names also try their `-symbolic` and dash-truncated generic forms. An application without a sender icon uses its installed desktop entry's `Icon=`. Unsafe metadata or exhausted lookup budgets omit icons. PNG and SVG are supported and JPEG is a local extension; local `app_icon` and `image-path` files are recognized by content, so extensionless files work. XPM remains unsupported. Theme metadata and files are refreshed on the next banner update without restarting; simply editing a theme does not generate a notification update.
 
 Control commands never start the daemon implicitly:
 

@@ -63,6 +63,7 @@ The supported system installation has a dedicated session.
 - [Theme configuration reference](docs/theme-customization.md)
 - [Canopa visual direction and first shell slice](docs/adr/0014-canopa-visual-direction.md)
 - [Local asset mechanisms and caller policies](docs/adr/0005-shared-assets.md)
+- [Shared icon-theme and MIME lookup](docs/adr/0138-shared-icon-theme-and-mime-lookup.md)
 - [Shared provider contracts and host state](docs/adr/0006-shared-provider-contracts.md)
 - [Unified built-in provider protocol](docs/adr/0007-unified-panel-protocol.md)
 - [Rich item sliders](docs/adr/0012-rich-panel-sliders.md)
