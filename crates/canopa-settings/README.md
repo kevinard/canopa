@@ -11,8 +11,9 @@ policy and lifetimes. No settings daemon runs after the window closes.
 
 The supported Arch installation uses a separate Canopa session and compatible
 Niri build; see [installation](../../docs/installation.md). Existing ordinary Niri
-configuration is never rewritten. Core adapter tests can be selected with
-`bash scripts/cargo.sh test --locked -p canopa-settings --test backend`.
-The IPC peer tests use a separate validator stub. Two native parser tests are
+configuration is never rewritten. Core adapter tests are in the `integration`
+target; select them with
+`bash scripts/cargo.sh test --locked -p canopa-settings --test integration`.
+The IPC peer tests use a separate validator stub. Three native parser tests are
 explicitly ignored in portable checks and run by desktop CI; select them with
-`CANOPA_NIRI_BIN=/absolute/path/to/niri bash scripts/cargo.sh test --locked --workspace --test backend -- --ignored`.
+`CANOPA_NIRI_BIN=/absolute/path/to/niri bash scripts/cargo.sh test --locked -p canopa-settings --test integration -- --ignored`.

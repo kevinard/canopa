@@ -95,14 +95,39 @@ managed input files are read-only rather than silently losing extra settings.
 
 Press Ctrl+6 to find packaged keyboard actions by name or current key. Enter a
 Niri combination such as `Mod+Shift+Space`, then use **Save changes**. In the
-physical Canopa session, Mod is normally Super. **Reset to defaults** stages
-the original keys for review before saving. Save rejects duplicate assignments
-and new conflicts with included bindings.
+physical Canopa session, Mod is normally Super. Leave a shortcut empty to turn
+it off. **Reset to defaults** stages the original keys for review before saving.
+Save rejects duplicate assignments and new conflicts with included bindings.
 
-The first edit copies the packaged defaults into the user's `niri.kdl` in
-place of their include so that changing a key releases its old assignment.
-Other includes stay in order. Keep your own bindings in `niri-custom.kdl`.
-Custom main configurations with a different binding set are edited in KDL.
+Settings stores only your changes, in `~/.config/canopa/shortcuts.kdl`. Shortcuts
+you have not changed follow Canopa updates. Because Niri cannot remove an
+inherited key, Settings combines the shipped defaults with your changes into
+`niri-shortcuts.kdl` and includes that file in `niri.kdl` in place of the
+defaults. Canopa regenerates it at each login. If an update assigns a default to
+a key you use, your binding wins and the new default appears unassigned on this
+page. Resetting every shortcut restores the original defaults include. Other
+includes stay in order. Keep your own bindings in `niri-custom.kdl`. Custom main
+configurations with a different binding set are edited in KDL.
+
+`shortcuts.kdl` lists added and changed bindings under `binds`, and the shipped
+actions you moved or turned off under `remove`:
+
+```kdl
+defaults "/usr/share/canopa/niri-defaults.kdl"
+binds {
+    Mod+Shift+Space { spawn "canopa-shell" "--toggle-menu" "Applications"; }
+}
+remove {
+    spawn "canopa-shell" "--toggle-menu" "Applications"
+}
+```
+
+Earlier versions of Settings copied all shipped bindings into `niri.kdl` on the
+first save. At the next login, Canopa moves your changes from that copy into
+`shortcuts.kdl` and drops the bindings identical to the copied defaults, so they
+follow updates again. Edited copies of other default sections stay in `niri.kdl`.
+The previous file is kept as `niri.kdl.before-shortcut-changes`. Saving on the
+Shortcuts page does the same.
 
 ## Personalization
 
@@ -168,7 +193,10 @@ guessing are read-only; status and manual controls still work.
 
 Saving checks the original source again, validates a same-directory private
 candidate, then atomically replaces the file. External edits are rejected; use
-**Reload and discard edits** to adopt them. Owned regular files are required for
+**Reload this page and discard its edits** to adopt them. It affects only the
+selected page; drafts on other pages remain. Personalization and Widgets share
+`config.kdl`: saving one keeps the other's unsaved edits on top of the saved
+file, but a change made outside Settings still has to be reloaded. Owned regular files are required for
 editing; symlink-managed configuration remains read-only. Legacy-only application
 configuration must be explicitly migrated before creating a common Canopa file,
 so a new appearance file cannot silently hide existing shell/notification settings.
