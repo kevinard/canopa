@@ -78,6 +78,8 @@ def main():
                "niri": niri, "results": results, "status": "interrupted"}
     try:
         env = os.environ.copy()
+        # Acceptance cases assert English text; Canopa binaries follow this.
+        env["CANOPA_LANGUAGE"] = "en"
         if niri:
             niri = stage_niri(niri, output)
             summary["niri"] = niri

@@ -52,6 +52,8 @@ class Session:
         ):
             self.env.pop(key, None)
         self.env.update(
+            # Native checks assert English text; Canopa binaries follow this.
+            CANOPA_LANGUAGE="en",
             XDG_RUNTIME_DIR=str(runtime),
             XDG_CONFIG_HOME=str(runtime / "config"),
             XDG_DATA_HOME=str(runtime / "data"),
