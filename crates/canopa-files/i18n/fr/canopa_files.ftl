@@ -664,3 +664,209 @@ files-command-job-folder = { $folder }  ·  { $count ->
 }
 files-action-exit-code = Échec · code de sortie { $code }
 files-action-could-not-run = Exécution impossible : { $error }
+
+## Properties window
+
+files-properties = Propriétés
+files-properties-title-reading = Propriétés — Lecture…
+files-properties-title = { $count ->
+    [one] Propriétés — { $count } élément
+   *[other] Propriétés — { $count } éléments
+}
+files-properties-reading = Lecture des propriétés…
+files-properties-cancelled = Examen des propriétés annulé.
+files-properties-copy-location = Copier l’emplacement
+files-properties-copy-locations = Copier les emplacements
+files-properties-link-target = Cible du lien
+files-properties-access = Accès
+files-properties-owner = Propriétaire
+files-properties-group = Groupe
+files-properties-others = Autres
+files-properties-access-identity = { $who } · { $identity }
+files-properties-mode = Mode { $mode } · UID { $uid } · GID { $gid }
+files-unavailable = Indisponible
+files-kind-symlink = Lien symbolique
+files-kind-special-file = Fichier spécial
+files-size-bytes = { $bytes ->
+    [one] { $bytes } octet
+   *[other] { $bytes } octets
+}
+files-date-out-of-range = Hors de la plage de dates prise en charge
+files-permission-none = aucun
+files-permission-x = exécution
+files-permission-w = écriture
+files-permission-wx = écriture et exécution
+files-permission-r = lecture
+files-permission-rx = lecture et exécution
+files-permission-rw = lecture et écriture
+files-permission-rwx = lecture, écriture et exécution
+
+## Trash window and Restore to folder
+
+files-trash-restore = Restaurer
+files-trash-restore-to = Restaurer vers…
+files-trash-copy = Copier dans le presse-papiers
+files-trash-empty = Vider la corbeille…
+files-trash-all-locations = Tous les emplacements
+files-trash-main = Corbeille principale
+files-trash-original-unknown = Emplacement d’origine inconnu
+files-trash-deleted = Supprimé le { $date }
+files-trash-date-unknown = Date de suppression inconnue
+files-trash-item-description = { $location }, { $date }
+files-trash-items = Éléments de la corbeille
+files-trash-items-heading = Éléments dans la corbeille
+files-trash-loading = Chargement de la corbeille…
+files-trash-original-unavailable = Les informations d’origine sont indisponibles. Copiez cet élément pour récupérer son contenu.
+files-trash-count-select = { $count ->
+    [one] { $count } élément · Sélectionnez un élément pour voir les options de restauration
+   *[other] { $count } éléments · Sélectionnez un élément pour voir les options de restauration
+}
+files-select-item-for-restore = Sélectionnez un élément pour voir les options de restauration
+files-trash-empty-title = La corbeille est vide
+files-trash-empty-description = Les éléments mis à la corbeille apparaîtront ici.
+files-trash-subtitle = Restaurez les fichiers supprimés à leur emplacement d’origine ou dans un autre dossier, ou supprimez-les définitivement.
+files-restore-dialog-failed = Impossible d’ouvrir la boîte de dialogue de destination de la restauration.
+files-operation-queue-not-ready = La file des opérations n’est pas prête. Réessayez.
+files-enter-destination-folder = Saisissez un dossier de destination local.
+files-folder-path = Chemin du dossier
+files-location-line = Emplacement · { $location }
+files-destination-folder = Dossier de destination
+files-restore-name-taken = Si ce nom est déjà pris, l’élément reste dans la corbeille.
+files-restore-here = Restaurer ici
+
+## Recovery window, Recover a copy and the folder chooser
+
+files-recovery-recover = Récupérer une copie…
+files-recovery-keep = Conserver dans Récupération
+files-recovery-load-more = Charger plus
+files-recovery-reconcile = Réconcilier le travail interrompu
+files-recovery-view-operations = Voir les opérations
+files-recovery-held = Conservé pour l’annulation
+files-recovery-held-modified = Modifié le { $date }  ·  Conservé pour l’annulation
+files-recovery-saved-copies = Copies enregistrées
+files-recovery-loading = Chargement de Récupération…
+files-recovery-count = { $count ->
+    [one] { $count } version conservée · Récupération crée une copie et garde la version enregistrée.
+   *[other] { $count } versions conservées · Récupération crée une copie et garde la version enregistrée.
+}
+files-recovery-count-loaded = { $count ->
+    [one] { $count } version conservée chargée · Récupération crée une copie et garde la version enregistrée.
+   *[other] { $count } versions conservées chargées · Récupération crée une copie et garde la version enregistrée.
+}
+files-recovery-empty = Aucune version enregistrée
+files-recovery-empty-description = Les versions enregistrées lors du remplacement de fichiers apparaissent ici. Opérations affiche vos modifications de fichiers récentes.
+files-recovery-subtitle-interrupted = Versions enregistrées et opérations interrompues
+files-recovery-subtitle = Récupérez une copie d’une version antérieure.
+files-recovery-saved-versions = Versions enregistrées
+files-recovery-select = Sélectionnez une version pour choisir où la récupérer
+files-recovery-interrupted-notice = { $operation } : { $message }
+files-recovery-destination-invalid = Saisissez un dossier de destination local et un nom de fichier valide.
+files-recovery-name-invalid = Saisissez un nom de fichier, ou un chemin local complet ou une URI de fichier.
+files-recovery-no-copy = Aucune copie n’a été faite. Vérifiez la destination et réessayez.
+files-recovery-dialog-failed = Impossible d’ouvrir la boîte de dialogue de destination de Récupération.
+files-recovery-keep-name = Garder le nom de fichier enregistré
+files-file-name = Nom du fichier
+files-recovery-new-name = Nouveau nom de fichier (facultatif)
+files-recovery-submitting = Envoi de la copie de récupération…
+files-recovery-in-progress = Demande de copie en cours. Fermer cette fenêtre laisse le travail accepté se poursuivre.
+files-recovery-hint = ~ désigne votre dossier personnel. Laissez le nom de fichier vide pour garder le nom enregistré.
+files-recovery-recover-here = Récupérer ici
+files-destination-up = Monter
+files-destination-no-subfolders = Aucun sous-dossier
+files-destination-reading = Lecture des dossiers…
+files-destination-use = Utiliser ce dossier
+files-browse = Parcourir…
+
+## Open With and launch confirmation ($name is a file name)
+
+files-open-could-not-open = Impossible d’ouvrir « { $name } » : { $error }
+files-open-default-failed = Impossible de définir { $application } par défaut : { $error }
+files-open-start-failed = Impossible de démarrer { $name } : { $error }
+files-open-start-file-failed = Impossible de démarrer « { $name } » : { $error }
+files-open-link-failed = Impossible d’ouvrir le lien : { $error }
+files-open-run-failed = Impossible d’exécuter « { $name } » : { $error }
+files-open-terminal-missing = L’exécution dans un terminal nécessite xdg-terminal-exec ; installez-le pour choisir votre terminal.
+files-open-failed = L’ouverture du fichier a échoué : { $error }
+files-open-with-title = Ouvrir avec
+files-open-run-script-title = Exécuter ce script ?
+files-open-run-program-title = Exécuter ce programme ?
+files-open-untrusted-title = Lanceur d’application non fiable
+files-open-choose-one = Choisissez une application pour « { $name } ».
+files-open-choose-many = { $count ->
+    [one] Choisissez une application pour { $count } fichier.
+   *[other] Choisissez une application pour { $count } fichiers.
+}
+files-open-script-message = « { $name } » est un script exécutable. Ne l’exécutez que si vous avez confiance en sa provenance.
+files-open-program-message = « { $name } » est un programme exécutable. Ne l’exécutez que si vous avez confiance en sa provenance.
+files-open-untrusted-message = « { $application } » ({ $file }) n’est pas installé dans un dossier d’applications et n’est pas marqué comme exécutable. Ne le lancez que si vous avez confiance en sa provenance. Marquer le fichier comme exécutable indique à Fichiers de lui faire confiance.
+files-open-file-failed = Impossible d’ouvrir le fichier.
+files-open-list-failed = Impossible de lister les applications.
+files-open-interrupted = Le lancement a été interrompu.
+files-open-dialog-failed = Impossible d’ouvrir la boîte de dialogue.
+files-open-search = Rechercher des applications
+files-open-looking = Recherche des applications…
+files-open-no-match = Aucune application correspondante
+files-open-recommended = Recommandées
+files-open-other = Autres applications
+files-open-applications = Applications
+files-open-set-default = Définir par défaut pour { $mime }
+files-open-in = Ouvrir dans { $application }
+files-open-run-in-terminal = Exécuter dans un terminal
+files-open-run = Exécuter
+files-open-as-text = Ouvrir comme texte
+files-open-launch = Lancer
+
+## Device and server questions (passwords, choices)
+
+files-device-q-connect = Se connecter au serveur
+files-device-q-unlock = Déverrouiller le périphérique
+files-device-q-busy = Le périphérique est occupé
+files-device-q-host-identity = Vérifier l’identité du serveur
+files-device-q-server = Question du serveur
+files-device-q-device = Question du périphérique
+files-device-q-failed = Impossible d’ouvrir la question du périphérique. Consultez-la dans Opérations pour réessayer.
+files-device-q-too-long = Le champ dépasse sa limite de saisie.
+files-device-q-pim-invalid = Saisissez un nombre entier pour le PIM.
+files-device-q-username = Nom d’utilisateur
+files-device-q-domain = Domaine
+files-device-q-password = Mot de passe
+files-device-q-pim = PIM (facultatif)
+files-device-q-anonymous = Se connecter anonymement
+files-device-q-hidden = Volume caché
+files-device-q-system = Volume système
+files-device-q-remembered = Un mot de passe mémorisé est conservé dans votre trousseau par GVFS, pas par Fichiers.
+files-device-q-this-request = Fichiers utilise ces identifiants pour cette demande uniquement.
+files-device-q-unlock-button = Déverrouiller
+files-device-q-close-app = Fermez l’application avant de réessayer.
+files-device-q-host-explanation = Ne continuez que si vous vous attendez à vous connecter à ce serveur, par exemple sur votre propre réseau. SSH mémorise son identité pour la prochaine fois ; si elle change plus tard, Fichiers ne pourra pas se connecter tant qu’elle n’aura pas été vérifiée.
+files-remember-never = Oublier le mot de passe immédiatement
+files-remember-session = Le mémoriser jusqu’à la déconnexion
+files-remember-keyring = Le mémoriser dans le trousseau
+
+## Network: sidebar section and Connect to Server
+
+files-network = Réseau
+files-network-title = Se connecter à un serveur
+files-network-bookmarks-failed = Impossible de mettre à jour les signets GTK : { $error }
+files-network-wait-for-folder = Attendez le chargement du dossier, puis reconnectez-vous.
+files-network-unavailable = Les emplacements réseau sont indisponibles.
+files-network-dialog-failed = Impossible d’ouvrir Se connecter à un serveur.
+files-network-window-closed = Sa fenêtre de Fichiers a été fermée.
+files-network-open-failed = Impossible d’ouvrir le fichier : { $error }
+files-network-location = Emplacement réseau
+files-network-phone = Téléphone
+files-network-camera = Appareil photo
+files-network-disconnect = Déconnecter { $device }
+files-network-remove-bookmark = Retirer le signet { $name }
+files-network-other-locations = Autres emplacements…
+files-network-address = Adresse du serveur
+files-network-address-hint = smb://, sftp://, ftp://, ftps://, dav://, davs:// ou nfs://. Fichiers demande un mot de passe si le serveur en a besoin.
+files-network-add-bookmark = Ajouter aux signets
+files-network-bookmarked = Serveurs dans les signets
+files-network-server = { $name } — { $uri }
+files-network-on-this-network = Sur ce réseau
+files-network-looking = Recherche…
+files-network-no-servers = Aucun serveur n’a été trouvé. Saisissez une adresse ci-dessus.
+files-network-empty = Cet emplacement est vide.
+files-network-truncated = Seules les premières entrées sont affichées.
+files-network-connect = Se connecter

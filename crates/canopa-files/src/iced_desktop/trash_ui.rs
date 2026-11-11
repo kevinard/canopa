@@ -429,7 +429,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     let restore =
         ready && selected.is_some_and(|item| item.problem.is_none() && item.original.is_some());
     let mut order = Vec::new();
-    let mut action = |label: &'static str, name: &'static str, message: Message, enabled: bool| {
+    let mut action = |label: String, name: &'static str, message: Message, enabled: bool| {
         let widget = control(id, name);
         if enabled {
             order.push(widget.clone());
@@ -473,25 +473,25 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         )
     };
     let restore_button = action(
-        "Restore",
+        fl!("files-trash-restore"),
         "restore",
         Message::Trash(Event::Restore(id, false)),
         restore,
     );
     let alternate = action(
-        "Restore to…",
+        fl!("files-trash-restore-to"),
         "restore-to",
         Message::Trash(Event::Restore(id, true)),
         restore,
     );
     let copy = action(
-        "Copy to clipboard",
+        fl!("files-trash-copy"),
         "copy",
         Message::Trash(Event::Copy(id)),
         selected.is_some() && !trash.snapshot.loading && desktop.file_clipboard.ready(),
     );
     let delete = action(
-        "Delete permanently…",
+        fl!("files-menu-delete-permanently"),
         "delete",
         Message::Trash(Event::Delete(id)),
         ready && selected.is_some(),
@@ -512,19 +512,19 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     };
     let tools = row![
         action(
-            "Empty Trash…",
+            fl!("files-trash-empty"),
             "empty",
             Message::Trash(Event::Empty(id)),
             ready && !trash.snapshot.catalog.items.is_empty(),
         ),
         action(
-            "Refresh",
+            fl!("files-command-refresh"),
             "refresh",
             Message::Trash(Event::Refresh(id)),
             true
         ),
         action(
-            "Operations",
+            fl!("files-command-operations"),
             "operations",
             Message::Command(id, Command::Operations),
             true
@@ -532,15 +532,15 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     ]
     .spacing(6);
     let scope = row![
-        chrome::section_title(appearance, "Locations"),
+        chrome::section_title(appearance, fl!("files-preferences-page-locations")),
         action(
-            "All locations",
+            fl!("files-trash-all-locations"),
             "all",
             Message::Trash(Event::Scope(id, Scope::All)),
             true
         ),
         action(
-            "Main Trash",
+            fl!("files-trash-main"),
             "main",
             Message::Trash(Event::Scope(id, Scope::Main)),
             true
@@ -566,22 +566,28 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
                 let location = path.parent().unwrap_or(path);
                 location.strip_prefix(&desktop.home).map_or_else(
                     |_| location.to_string_lossy().into_owned(),
-                    |path| format!("Home / {}", path.to_string_lossy().replace('/', " / ")),
+                    |path| {
+                        fl!(
+                            "files-home-path",
+                            path = path.to_string_lossy().replace('/', " / ")
+                        )
+                    },
                 )
             })
-            .unwrap_or_else(|| "Original location unknown".into());
+            .unwrap_or_else(|| fl!("files-trash-original-unknown"));
         let date = item
             .problem
             .clone()
             .or_else(|| {
                 item.deletion_date.as_ref().map(|date| {
+                    // The Trash specification's DeletionDate, in local time.
                     let display = chrono::NaiveDateTime::parse_from_str(date, "%Y-%m-%dT%H:%M:%S")
-                        .map(|time| time.format("%b %-d, %Y · %H:%M").to_string())
+                        .map(canopa_i18n::format::date_time)
                         .unwrap_or_else(|_| date.replace('T', " "));
-                    format!("Deleted {display}")
+                    fl!("files-trash-deleted", date = display)
                 })
             })
-            .unwrap_or_else(|| "Deletion date unknown".into());
+            .unwrap_or_else(|| fl!("files-trash-date-unknown"));
         let selected = trash.selected.as_ref() == Some(&item.path);
         let select = Message::Trash(Event::Select(
             id,
@@ -596,16 +602,20 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             "files-trash-{}",
             super::accessibility_ui::path_key(&item.path)
         ))
-        .description(format!("{original}, {date}"))
+        .description(fl!(
+            "files-trash-item-description",
+            location = original.clone(),
+            date = date.clone()
+        ))
         .position(first + index + 1, items.len())
         .on_click(Some(select.clone()));
-        let label = row![
+        let label = canopa_ui::direction::row([
             container(desktop.icons.chrome(chrome::Icon::Documents, 18.0, 0.9))
                 .padding(8)
-                .style(move |_| chrome::highlight(
-                    appearance,
-                    canopa_theme::ColorRole::AccentSurface
-                )),
+                .style(move |_| {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                })
+                .into(),
             column![
                 chrome::single_line(
                     item.name().to_string_lossy().into_owned(),
@@ -618,7 +628,8 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
                 chrome::single_line(date, font, small, muted, true),
             ]
             .spacing(2)
-            .width(Length::Fill),
+            .width(Length::Fill)
+            .into(),
             if wide {
                 if selected {
                     space().width(15).into()
@@ -628,7 +639,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             } else {
                 chrome::selection_mark(appearance, selected)
             },
-        ]
+        ])
         .spacing(10)
         .align_y(iced::Alignment::Center);
         rows = rows.push(row_state::keyed_row(
@@ -666,7 +677,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         });
     let listing =
         super::accessibility_ui::semantic(
-            super::accessibility_ui::Node::list("Trash items")
+            super::accessibility_ui::Node::list(fl!("files-trash-items"))
                 .key("files-trash-items")
                 .busy(trash.snapshot.loading)
                 .active_descendant(trash.selected.as_ref().map(|path| {
@@ -685,43 +696,35 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         .map(str::to_owned)
         .unwrap_or_else(|| {
             if trash.snapshot.loading {
-                "Loading Trash…".into()
+                fl!("files-trash-loading")
             } else if selected.is_some_and(|item| item.problem.is_some()) {
-                "Original information is unavailable. Copy this item to recover its contents."
-                    .into()
+                fl!("files-trash-original-unavailable")
             } else if items.is_empty() && trash.snapshot.catalog.warnings.is_empty() {
                 String::new()
+            } else if !wide && selected.is_none() {
+                fl!("files-trash-count-select", count = items.len())
             } else {
-                format!(
-                    "{} {}{}",
-                    items.len(),
-                    if items.len() == 1 { "item" } else { "items" },
-                    if !wide && selected.is_none() {
-                        " · Select an item to see restore options"
-                    } else {
-                        ""
-                    }
-                )
+                fl!("files-status-items", count = items.len())
             }
         });
     let listing: Element<'_, Message> = if items.is_empty() && !trash.snapshot.loading {
         chrome::empty_state(
             desktop,
             chrome::Icon::Trash,
-            "Trash is empty",
-            "Items moved to Trash will appear here.",
+            fl!("files-trash-empty-title"),
+            fl!("files-trash-empty-description"),
             None,
         )
     } else {
         listing.into()
     };
-    let subtitle = "Restore deleted files to their original location or another folder, or delete them permanently.";
+    let subtitle = fl!("files-trash-subtitle");
     let heading: Element<'a, Message> = if wide {
         chrome::heading_with_action(
             desktop,
             chrome::Icon::Trash,
-            "Trash",
-            subtitle,
+            fl!("files-place-trash"),
+            subtitle.clone(),
             Some(
                 tools
                     .push(chrome::dismiss(desktop, id))
@@ -734,7 +737,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             chrome::heading_with_action(
                 desktop,
                 chrome::Icon::Trash,
-                "Trash",
+                fl!("files-place-trash"),
                 subtitle,
                 Some(chrome::dismiss(desktop, id))
             ),
@@ -756,7 +759,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
     let buttons = if wide && !items.is_empty() {
         let inspector = selected.map(|item| {
             let original = item.original.as_deref().map_or_else(
-                || "Original location unknown".to_owned(),
+                || fl!("files-trash-original-unknown"),
                 |path| {
                     super::question_dialog::display_location(
                         &desktop.home,
@@ -779,8 +782,8 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         });
         body = body.push(chrome::catalogue(
             appearance,
-            "Items in Trash",
-            "Select an item to see restore options",
+            fl!("files-trash-items-heading"),
+            fl!("files-select-item-for-restore"),
             listing,
             inspector,
         ));

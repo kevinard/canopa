@@ -353,7 +353,7 @@ fn contents<'a>(
     let selected = recovery.selected();
     let ready = desktop.file_operations.ready() && !recovery.snapshot.loading;
     let mut order = Vec::new();
-    let mut action = |label: &'static str, name: &str, event: Event, enabled: bool| {
+    let mut action = |label: String, name: &str, event: Event, enabled: bool| {
         let widget = control(id, name);
         if enabled {
             order.push(widget.clone());
@@ -390,21 +390,30 @@ fn contents<'a>(
     let mut item_actions = row![].spacing(6);
     if has_items {
         item_actions = item_actions.push(action(
-            "Recover a copy…",
+            fl!("files-recovery-recover"),
             "recover",
             Event::Recover(id),
             ready && selected.is_some_and(|item| item.entry.is_some()),
         ));
     }
     if selected.is_some_and(RecoveryItem::can_keep_in_recovery) {
-        item_actions =
-            item_actions.push(action("Keep in Recovery", "keep", Event::Keep(id), ready));
+        item_actions = item_actions.push(action(
+            fl!("files-recovery-keep"),
+            "keep",
+            Event::Keep(id),
+            ready,
+        ));
     }
-    let refresh = action("Refresh", "refresh", Event::Refresh(id), true);
+    let refresh = action(
+        fl!("files-command-refresh"),
+        "refresh",
+        Event::Refresh(id),
+        true,
+    );
     let mut buttons = row![].spacing(6);
     if recovery.snapshot.catalog.has_more {
         buttons = buttons.push(action(
-            "Load more",
+            fl!("files-recovery-load-more"),
             "more",
             Event::More(id),
             !recovery.snapshot.loading,
@@ -412,7 +421,7 @@ fn contents<'a>(
     }
     if interrupted {
         buttons = buttons.push(action(
-            "Reconcile interrupted work",
+            fl!("files-recovery-reconcile"),
             "reconcile",
             Event::Reconcile(id),
             ready,
@@ -424,9 +433,9 @@ fn contents<'a>(
         appearance,
         canopa_ui::styled_action(
             text(if show_empty_action {
-                "View Operations"
+                fl!("files-recovery-view-operations")
             } else {
-                "Operations"
+                fl!("files-command-operations")
             })
             .font(font)
             .size(small),
@@ -454,7 +463,7 @@ fn contents<'a>(
     for (index, item) in items[first..end].iter().enumerate() {
         let selected = recovery.selected == Some(item.identity());
         let original = item.original.as_ref().map_or_else(
-            || "Original location unknown".into(),
+            || fl!("files-trash-original-unknown"),
             |path| {
                 super::question_dialog::display_location(
                     &desktop.home,
@@ -466,20 +475,24 @@ fn contents<'a>(
             item.entry
                 .as_ref()
                 .and_then(|entry| entry.modified)
-                .map(chrono::DateTime::<chrono::Local>::from)
+                .and_then(super::listing_ui::local_time)
                 .map_or_else(
-                    || "Held for Undo".into(),
+                    || fl!("files-recovery-held"),
                     |time| {
-                        format!(
-                            "Modified {}  ·  Held for Undo",
-                            time.format("%b %-d, %Y · %H:%M")
+                        fl!(
+                            "files-recovery-held-modified",
+                            date = canopa_i18n::format::date_time(time)
                         )
                     },
                 )
         } else {
-            item.message.clone()
+            crate::history_labels::display(&item.message)
         };
-        let description = format!("{original}, {summary}");
+        let description = fl!(
+            "files-trash-item-description",
+            location = original.clone(),
+            date = summary.clone()
+        );
         let metadata = column![
             chrome::single_line(
                 item.name().to_string_lossy().into_owned(),
@@ -497,14 +510,14 @@ fn contents<'a>(
             || desktop.icons.chrome(chrome::Icon::Documents, 20.0, 0.9),
             |entry| desktop.icons.file(entry, 20.0),
         );
-        let label = row![
+        let label = canopa_ui::direction::row([
             container(identity)
                 .padding(7)
-                .style(move |_| chrome::highlight(
-                    appearance,
-                    canopa_theme::ColorRole::AccentSurface
-                )),
-            metadata,
+                .style(move |_| {
+                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                })
+                .into(),
+            metadata.into(),
             if wide {
                 if selected {
                     space().width(15).into()
@@ -514,7 +527,7 @@ fn contents<'a>(
             } else {
                 chrome::selection_mark(appearance, selected)
             },
-        ]
+        ])
         .spacing(9)
         .align_y(iced::Alignment::Center);
         let select = Message::Recovery(Event::Select(
@@ -552,7 +565,7 @@ fn contents<'a>(
     rows = rows.push(space().height((items.len() - end) as f32 * row_height));
     let revision = recovery.snapshot.revision;
     let rows = super::accessibility_ui::semantic(
-        super::accessibility_ui::Node::list("Saved copies")
+        super::accessibility_ui::Node::list(fl!("files-recovery-saved-copies"))
             .key("files-recovery-items")
             .active_descendant(
                 recovery
@@ -583,24 +596,13 @@ fn contents<'a>(
         .map(str::to_owned)
         .unwrap_or_else(|| {
             if recovery.snapshot.loading {
-                "Loading Recovery…".into()
+                fl!("files-recovery-loading")
             } else if items.is_empty() {
                 String::new()
+            } else if recovery.snapshot.catalog.has_more {
+                fl!("files-recovery-count-loaded", count = items.len())
             } else {
-                format!(
-                    "{} retained {}{} · Recovery creates a copy and keeps the saved version.",
-                    items.len(),
-                    if items.len() == 1 {
-                        "version"
-                    } else {
-                        "versions"
-                    },
-                    if recovery.snapshot.catalog.has_more {
-                        " loaded"
-                    } else {
-                        ""
-                    }
-                )
+                fl!("files-recovery-count", count = items.len())
             }
         });
     let (empty_action, tools_action) = if show_empty_action {
@@ -612,8 +614,8 @@ fn contents<'a>(
         chrome::empty_state(
             desktop,
             chrome::Icon::Documents,
-            "No saved versions",
-            "Saved versions from file replacements appear here. Operations shows your recent file changes.",
+            fl!("files-recovery-empty"),
+            fl!("files-recovery-empty-description"),
             empty_action,
         )
     } else {
@@ -621,16 +623,16 @@ fn contents<'a>(
     };
     let tools = row![refresh, tools_action].spacing(6);
     let subtitle = if interrupted {
-        "Saved versions and interrupted operations"
+        fl!("files-recovery-subtitle-interrupted")
     } else {
-        "Recover a copy of an earlier version."
+        fl!("files-recovery-subtitle")
     };
     let heading: Element<'a, Message> = if wide {
         chrome::heading_with_action(
             desktop,
             chrome::Icon::Recovery,
-            "Recovery",
-            subtitle,
+            fl!("files-command-recovery"),
+            subtitle.clone(),
             Some(
                 tools
                     .push(chrome::dismiss(desktop, id))
@@ -643,7 +645,7 @@ fn contents<'a>(
             chrome::heading_with_action(
                 desktop,
                 chrome::Icon::Recovery,
-                "Recovery",
+                fl!("files-command-recovery"),
                 subtitle,
                 Some(chrome::dismiss(desktop, id))
             ),
@@ -676,15 +678,15 @@ fn contents<'a>(
                 details = details.push(note(super::question_dialog::entry_metadata(entry)));
             }
             details = details
-                .push(note(item.message.clone()))
+                .push(note(crate::history_labels::display(&item.message)))
                 .push(item_actions.wrap());
             (control(id, "details-scroll"), 260.0, details.into())
         });
         (
             chrome::catalogue(
                 appearance,
-                "Saved versions",
-                "Select a version to choose where to recover it",
+                fl!("files-recovery-saved-versions"),
+                fl!("files-recovery-select"),
                 listing,
                 inspector,
             ),
@@ -710,18 +712,17 @@ fn contents<'a>(
             .push(
                 container(column![narrow_actions, buttons.wrap()].spacing(4))
                     .width(Length::Fill)
-                    .align_x(iced::Alignment::End),
+                    .align_x(canopa_ui::direction::end()),
             );
     }
     let mut notices = recovery.snapshot.catalog.warnings.clone();
-    notices.extend(
-        recovery
-            .snapshot
-            .catalog
-            .interrupted
-            .iter()
-            .map(|i| format!("{}: {}", i.label, i.message)),
-    );
+    notices.extend(recovery.snapshot.catalog.interrupted.iter().map(|i| {
+        fl!(
+            "files-recovery-interrupted-notice",
+            operation = crate::history_labels::title(&i.label),
+            message = i.message.clone()
+        )
+    }));
     if !notices.is_empty() {
         body = body.push(
             scrollable(

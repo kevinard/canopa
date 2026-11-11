@@ -13,7 +13,7 @@ use canopa_file::mime::MimeDatabase;
 use canopa_theme::UiKind;
 use iced::{
     Length,
-    widget::{checkbox, column, container, row, scrollable, text, text_input},
+    widget::{checkbox, column, container, scrollable, text, text_input},
 };
 
 /// The chooser shows at most this many matching rows.
@@ -129,8 +129,13 @@ fn chain(database: &MimeDatabase, path: &Path) -> (String, Vec<String>) {
 fn resolve(path: PathBuf) -> Result<Resolved, String> {
     let paths = MimeAppsPaths::current();
     let facts = crate::mounts::Mounts::read().facts(&path);
-    let opening = opening::classify(&path, facts, &paths.application_dirs())
-        .map_err(|error| format!("Could not open “{}”: {error}", display_name(&path)))?;
+    let opening = opening::classify(&path, facts, &paths.application_dirs()).map_err(|error| {
+        fl!(
+            "files-open-could-not-open",
+            name = display_name(&path),
+            error = error.to_string()
+        )
+    })?;
     let database = MimeDatabase::system();
     let (_, types) = chain(&database, &path);
     let apps = MimeApps::load_from(&paths, &canopa_apps::DesktopEnvironment::current());
@@ -214,66 +219,106 @@ fn execute(launch: &Launch, token: Option<&str>) -> Result<(), String> {
             default_for,
         } => {
             if let Some(mime) = default_for {
-                mime_apps::set_default(&MimeAppsPaths::current(), mime, &app.id)
-                    .map_err(|error| format!("Could not make {} the default: {error}", app.name))?;
+                mime_apps::set_default(&MimeAppsPaths::current(), mime, &app.id).map_err(
+                    |error| {
+                        fl!(
+                            "files-open-default-failed",
+                            application = app.name.clone(),
+                            error = error.to_string()
+                        )
+                    },
+                )?;
             }
-            canopa_apps::check_launch(app, &search)
-                .map_err(|problem| format!("Could not start {}: {problem}", app.name))?;
-            opening::spawn(opening::launch_entry(&app.desktop_file, files, token), true)
-                .map_err(|error| format!("Could not start {}: {error}", app.name))
+            canopa_apps::check_launch(app, &search).map_err(|problem| {
+                fl!(
+                    "files-open-start-failed",
+                    name = app.name.clone(),
+                    error = problem.to_string()
+                )
+            })?;
+            opening::spawn(opening::launch_entry(&app.desktop_file, files, token), true).map_err(
+                |error| {
+                    fl!(
+                        "files-open-start-failed",
+                        name = app.name.clone(),
+                        error = error.to_string()
+                    )
+                },
+            )
         }
         Launch::Entry(path) => {
             opening::check_desktop_entry(path).map_err(|problem| {
-                format!("Could not start “{}”: {problem}", display_name(path))
+                fl!(
+                    "files-open-start-file-failed",
+                    name = display_name(path),
+                    error = problem.to_string()
+                )
             })?;
-            opening::spawn(opening::launch_entry(path, &[], token), true)
-                .map_err(|error| format!("Could not start “{}”: {error}", display_name(path)))
+            opening::spawn(opening::launch_entry(path, &[], token), true).map_err(|error| {
+                fl!(
+                    "files-open-start-file-failed",
+                    name = display_name(path),
+                    error = error.to_string()
+                )
+            })
         }
         Launch::Url(url) => opening::spawn(opening::open_url(url, token), true)
-            .map_err(|error| format!("Could not open the link: {error}")),
-        Launch::Program(path) => opening::spawn(opening::run_program(path, token), false)
-            .map_err(|error| format!("Could not run “{}”: {error}", display_name(path))),
+            .map_err(|error| fl!("files-open-link-failed", error = error.to_string())),
+        Launch::Program(path) => {
+            opening::spawn(opening::run_program(path, token), false).map_err(|error| {
+                fl!(
+                    "files-open-run-failed",
+                    name = display_name(path),
+                    error = error.to_string()
+                )
+            })
+        }
         Launch::Terminal(path) => {
-            let command = opening::run_in_terminal(path, token).ok_or_else(|| {
-                "Running in a terminal needs xdg-terminal-exec; install it to choose your terminal."
-                    .to_owned()
-            })?;
-            opening::spawn(command, false)
-                .map_err(|error| format!("Could not run “{}”: {error}", display_name(path)))
+            let command = opening::run_in_terminal(path, token)
+                .ok_or_else(|| fl!("files-open-terminal-missing"))?;
+            opening::spawn(command, false).map_err(|error| {
+                fl!(
+                    "files-open-run-failed",
+                    name = display_name(path),
+                    error = error.to_string()
+                )
+            })
         }
         Launch::Default(path) => {
             let mut command = std::process::Command::new("gio");
             command.arg("open").arg(path);
             opening::spawn(command, true)
-                .map_err(|error| format!("Opening the file failed: {error}"))
+                .map_err(|error| fl!("files-open-failed", error = error.to_string()))
         }
     }
 }
 
 impl Dialog {
-    pub fn title(&self) -> &'static str {
+    pub fn title(&self) -> String {
         match &self.kind {
-            Kind::Chooser { .. } => "Open With",
-            Kind::Program { script: true, .. } => "Run this script?",
-            Kind::Program { .. } => "Run this program?",
-            Kind::Untrusted { .. } => "Untrusted application launcher",
+            Kind::Chooser { .. } => fl!("files-open-with-title"),
+            Kind::Program { script: true, .. } => fl!("files-open-run-script-title"),
+            Kind::Program { .. } => fl!("files-open-run-program-title"),
+            Kind::Untrusted { .. } => fl!("files-open-untrusted-title"),
         }
     }
 
     fn message(&self) -> String {
         match &self.kind {
             Kind::Chooser { files, .. } => match files.as_slice() {
-                [path] => format!("Choose an application for “{}”.", display_name(path)),
-                files => format!("Choose an application for {} files.", files.len()),
+                [path] => fl!("files-open-choose-one", name = display_name(path)),
+                files => fl!("files-open-choose-many", count = files.len()),
             },
-            Kind::Program { path, script, .. } => format!(
-                "“{}” is an executable {}. Run it only if you trust where it came from.",
-                display_name(path),
-                if *script { "script" } else { "program" }
-            ),
-            Kind::Untrusted { path, name, .. } => format!(
-                "“{name}” ({}) is not installed in an applications folder and is not marked as executable. Launch it only if you trust where it came from. Marking the file executable makes Files trust it.",
-                display_name(path)
+            Kind::Program {
+                path, script: true, ..
+            } => fl!("files-open-script-message", name = display_name(path)),
+            Kind::Program { path, .. } => {
+                fl!("files-open-program-message", name = display_name(path))
+            }
+            Kind::Untrusted { path, name, .. } => fl!(
+                "files-open-untrusted-message",
+                application = name.clone(),
+                file = display_name(path)
             ),
         }
     }
@@ -315,7 +360,7 @@ impl Desktop {
                 Arc::new(
                     receive
                         .await
-                        .unwrap_or_else(|_| Err("Could not open the file.".into())),
+                        .unwrap_or_else(|_| Err(fl!("files-open-file-failed"))),
                 )
             },
             move |resolved| Message::OpenWith(Event::Resolved(id, tab, resolved)),
@@ -425,11 +470,7 @@ impl Desktop {
                         .spawn(move || {
                             let _ = send.send(chooser_rows(&files));
                         });
-                    Arc::new(
-                        receive
-                            .await
-                            .map_err(|_| "Applications could not be listed.".to_owned()),
-                    )
+                    Arc::new(receive.await.map_err(|_| fl!("files-open-list-failed")))
                 },
                 move |rows| Message::OpenWith(Event::Rows(window, rows)),
             )
@@ -490,7 +531,7 @@ impl Desktop {
                         });
                     receive
                         .await
-                        .unwrap_or_else(|_| Err("The launch was interrupted.".into()))
+                        .unwrap_or_else(|_| Err(fl!("files-open-interrupted")))
                 },
                 move |result| Message::OpenWith(Event::Launched(id, tab, result)),
             ),
@@ -585,7 +626,7 @@ impl Desktop {
             Event::Opened(_, None) => {
                 let (owner, tab) = (dialog.owner, dialog.tab);
                 self.open_dialog = None;
-                self.report(owner, tab, "Could not open the dialog.".into())
+                self.report(owner, tab, fl!("files-open-dialog-failed"))
             }
             Event::Opened(..) => {
                 let focus = match &dialog.kind {
@@ -761,10 +802,12 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .wrapping(text::Wrapping::WordOrGlyph),
     ]
     .spacing(12);
-    let mut buttons = row![iced::widget::space().width(Length::Fill)].spacing(8);
+    // In reading order; mirrored for right-to-left languages.
+    let mut buttons: Vec<Element<'_, Message>> =
+        vec![iced::widget::space().width(Length::Fill).into()];
     order.push(control(id, "cancel"));
-    buttons = buttons.push(action(
-        "Cancel".into(),
+    buttons.push(action(
+        fl!("files-cancel"),
         "cancel",
         Some(Message::OpenWith(Event::Cancel(id))),
         canopa_ui::Action::Quiet,
@@ -783,13 +826,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 .as_ref()
                 .map(|app| format!("files-application-{app}"));
             body = body.push(super::accessibility_ui::semantic(
-                super::accessibility_ui::Node::search_input("Search applications", search.clone())
-                    .key("files-application-search")
-                    .placeholder("Search applications")
-                    .controls("files-applications")
-                    .active_descendant(chosen)
-                    .on_text(move |value| Message::OpenWith(Event::Search(id, value))),
-                text_input("Search applications", search)
+                super::accessibility_ui::Node::search_input(
+                    fl!("files-open-search"),
+                    search.clone(),
+                )
+                .key("files-application-search")
+                .placeholder(fl!("files-open-search"))
+                .controls("files-applications")
+                .active_descendant(chosen)
+                .on_text(move |value| Message::OpenWith(Event::Search(id, value))),
+                text_input(&fl!("files-open-search"), search)
                     .id(control(id, "search"))
                     .on_input(move |value| Message::OpenWith(Event::Search(id, value)))
                     .on_submit(Message::OpenWith(Event::Accept(id)))
@@ -802,13 +848,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ));
             let mut list = column![].spacing(2);
             match rows {
-                None => list = list.push(text("Looking for applications…").font(font).size(small)),
+                None => list = list.push(text(fl!("files-open-looking")).font(font).size(small)),
                 Some(Err(error)) => list = list.push(text(error.clone()).font(font).size(small)),
                 Some(Ok(_)) => {
                     let visible = dialog.visible();
                     let total = visible.len();
                     if visible.is_empty() {
-                        list = list.push(text("No matching applications").font(font).size(small));
+                        list = list.push(text(fl!("files-open-no-match")).font(font).size(small));
                     }
                     let mut heading = None;
                     for (index, row) in visible.into_iter().enumerate() {
@@ -816,9 +862,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                             heading = Some(row.recommended);
                             list = list.push(
                                 text(if row.recommended {
-                                    "Recommended"
+                                    fl!("files-open-recommended")
                                 } else {
-                                    "Other applications"
+                                    fl!("files-open-other")
                                 })
                                 .font(font)
                                 .size(small)
@@ -859,7 +905,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 }
             }
             body = body.push(super::accessibility_ui::semantic(
-                super::accessibility_ui::Node::list("Applications").key("files-applications"),
+                super::accessibility_ui::Node::list(fl!("files-open-applications"))
+                    .key("files-applications"),
                 scrollable(list).height(Length::Fill),
             ));
             if let Some(mime) = mime {
@@ -871,7 +918,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                     Some(toggle),
                     appearance,
                     checkbox(*set_default)
-                        .label(format!("Set as default for {mime}"))
+                        .label(fl!("files-open-set-default", mime = mime.to_string()))
                         .font(font)
                         .text_size(small)
                         .style(canopa_ui::checkbox_style)
@@ -880,8 +927,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             }
             order.push(control(id, "accept"));
             let ready = selected.is_some() && !dialog.visible().is_empty();
-            buttons = buttons.push(action(
-                "Open".into(),
+            buttons.push(action(
+                fl!("files-menu-open"),
                 "accept",
                 ready.then_some(Message::OpenWith(Event::Accept(id))),
                 canopa_ui::Action::Primary,
@@ -894,10 +941,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             let choose = |choice| Some(Message::OpenWith(Event::Choose(id, choice)));
             if *script {
                 order.push(control(id, "open"));
-                buttons = buttons.push(action(
-                    open_with
-                        .as_ref()
-                        .map_or("Open".into(), |app| format!("Open in {}", app.name)),
+                buttons.push(action(
+                    open_with.as_ref().map_or_else(
+                        || fl!("files-menu-open"),
+                        |app| fl!("files-open-in", application = app.name.clone()),
+                    ),
                     "open",
                     open_with.as_ref().and(choose(Choice::Open)),
                     canopa_ui::Action::Quiet,
@@ -905,41 +953,39 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             }
             order.push(control(id, "terminal"));
             order.push(control(id, "run"));
-            buttons = buttons
-                .push(action(
-                    "Run in Terminal".into(),
-                    "terminal",
-                    choose(Choice::Terminal),
-                    canopa_ui::Action::Quiet,
-                ))
-                .push(action(
-                    "Run".into(),
-                    "run",
-                    choose(Choice::Run),
-                    canopa_ui::Action::Primary,
-                ));
+            buttons.push(action(
+                fl!("files-open-run-in-terminal"),
+                "terminal",
+                choose(Choice::Terminal),
+                canopa_ui::Action::Quiet,
+            ));
+            buttons.push(action(
+                fl!("files-open-run"),
+                "run",
+                choose(Choice::Run),
+                canopa_ui::Action::Primary,
+            ));
         }
         Kind::Untrusted { text: editor, .. } => {
             body = body.push(iced::widget::space().height(Length::Fill));
             let choose = |choice| Some(Message::OpenWith(Event::Choose(id, choice)));
             order.push(control(id, "open"));
             order.push(control(id, "launch"));
-            buttons = buttons
-                .push(action(
-                    "Open as Text".into(),
-                    "open",
-                    editor.as_ref().and(choose(Choice::Open)),
-                    canopa_ui::Action::Quiet,
-                ))
-                .push(action(
-                    "Launch".into(),
-                    "launch",
-                    choose(Choice::LaunchOnce),
-                    canopa_ui::Action::Destructive,
-                ));
+            buttons.push(action(
+                fl!("files-open-as-text"),
+                "open",
+                editor.as_ref().and(choose(Choice::Open)),
+                canopa_ui::Action::Quiet,
+            ));
+            buttons.push(action(
+                fl!("files-open-launch"),
+                "launch",
+                choose(Choice::LaunchOnce),
+                canopa_ui::Action::Destructive,
+            ));
         }
     }
-    body = body.push(buttons);
+    body = body.push(canopa_ui::direction::row(buttons).spacing(8));
     let style = appearance.clone();
     let body = container(body)
         .padding(16)

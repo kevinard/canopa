@@ -32,6 +32,7 @@ struct Arguments {
 }
 
 fn main() -> std::process::ExitCode {
+    canopa_i18n::init();
     let arguments = Arguments::parse();
     if arguments.internal_check_copy {
         return match copy_check::run() {

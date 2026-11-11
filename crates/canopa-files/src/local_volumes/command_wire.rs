@@ -53,11 +53,11 @@ pub enum Remember {
 }
 
 impl Remember {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Never => "Forget the password immediately",
-            Self::ForSession => "Remember it until you log out",
-            Self::Permanently => "Remember it in the keyring",
+            Self::Never => fl!("files-remember-never"),
+            Self::ForSession => fl!("files-remember-session"),
+            Self::Permanently => fl!("files-remember-keyring"),
         }
     }
 

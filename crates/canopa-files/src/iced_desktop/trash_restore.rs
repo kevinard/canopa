@@ -126,7 +126,7 @@ impl Desktop {
                 if opened.is_none() {
                     self.trash_restore = None;
                     if let Some(trash) = &mut self.trash_window {
-                        trash.error = Some("Could not open the Restore destination dialog.".into());
+                        trash.error = Some(fl!("files-restore-dialog-failed"));
                     }
                     return Task::none();
                 }
@@ -156,11 +156,11 @@ impl Desktop {
             Event::Close(_) => return self.close_trash_restore(id),
             Event::Submit(_) if !dialog.busy && !dialog.browser.open() => {
                 if !self.file_operations.ready() {
-                    dialog.error = Some("The operation queue is not ready. Try again.".into());
+                    dialog.error = Some(fl!("files-operation-queue-not-ready"));
                     return Task::none();
                 }
                 if dialog.folder.is_empty() || dialog.folder.contains('\0') {
-                    dialog.error = Some("Enter a local destination folder.".into());
+                    dialog.error = Some(fl!("files-enter-destination-folder"));
                     return Task::none();
                 }
                 let folder =
@@ -197,7 +197,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         id,
         (!dialog.busy).then_some(message(destination_browser::Event::Browse)),
     );
-    let mut input = text_input("Folder path", &dialog.folder)
+    let placeholder = fl!("files-folder-path");
+    let mut input = text_input(&placeholder, &dialog.folder)
         .id(control(id, "folder"))
         .font(font)
         .size(size)
@@ -210,14 +211,15 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .on_input(move |folder| Message::TrashRestore(Event::Folder(id, folder)))
             .on_submit(Message::TrashRestore(Event::Submit(id)));
     }
-    let mut node = super::accessibility_ui::Node::text_input("Folder path", dialog.folder.clone())
-        .key("files-restore-folder")
-        .read_only(dialog.busy);
+    let mut node =
+        super::accessibility_ui::Node::text_input(placeholder.clone(), dialog.folder.clone())
+            .key("files-restore-folder")
+            .read_only(dialog.busy);
     if !dialog.busy {
         node = node.on_text(move |folder| Message::TrashRestore(Event::Folder(id, folder)));
     }
     let input = super::accessibility_ui::semantic(node, input);
-    let action = |label, name, event| {
+    let action = |label: String, name, event| {
         let message = (!dialog.busy).then_some(Message::TrashRestore(event));
         focus::button(
             control(id, name),
@@ -245,9 +247,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     .filter(|_| !dialog.folder.is_empty() && !dialog.busy)
     .map(|path| {
         chrome::single_line(
-            format!(
-                "Location · {}",
-                super::question_dialog::display_location(&desktop.home, &path)
+            fl!(
+                "files-location-line",
+                location = super::question_dialog::display_location(&desktop.home, &path)
             ),
             font,
             small,
@@ -259,21 +261,21 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         chrome::dialog_heading(
             desktop,
             chrome::Icon::Folder,
-            "Restore to folder",
+            fl!("files-restore-to-folder-title"),
             dialog.item.name().to_string_lossy().into_owned()
         ),
         column![
-            chrome::section_title(appearance, "Destination folder"),
+            chrome::section_title(appearance, fl!("files-destination-folder")),
             row![input, browse]
                 .spacing(8)
                 .align_y(iced::Alignment::Center),
         ]
         .spacing(5),
         location,
-        text(dialog.error.as_deref().unwrap_or(if dialog.busy {
-            "Accepting operation…"
+        text(dialog.error.clone().unwrap_or_else(|| if dialog.busy {
+            fl!("files-accepting-operation")
         } else {
-            "If this name is already taken, the item stays in Trash."
+            fl!("files-restore-name-taken")
         }))
         .font(font)
         .size(small)
@@ -281,10 +283,10 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .wrapping(text::Wrapping::WordOrGlyph),
     ]
     .spacing(10);
-    let actions = row![
-        action("Cancel", "cancel", Event::Close(id)),
-        action("Restore here", "submit", Event::Submit(id))
-    ]
+    let actions = canopa_ui::direction::row([
+        action(fl!("files-cancel"), "cancel", Event::Close(id)),
+        action(fl!("files-restore-here"), "submit", Event::Submit(id)),
+    ])
     .spacing(8);
     let body = container(
         column![
@@ -309,7 +311,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     };
     super::accessibility_ui::dialog(
         "files-restore-dialog",
-        "Restore to folder",
+        fl!("files-restore-to-folder-title"),
         "",
         false,
         focus::group(

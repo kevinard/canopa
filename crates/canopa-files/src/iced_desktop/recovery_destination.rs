@@ -39,9 +39,7 @@ fn destination(
     home: &Path,
 ) -> io::Result<PathBuf> {
     if folder.is_empty() || folder.contains('\0') || name.contains('\0') {
-        return Err(io::Error::other(
-            "Enter a local destination folder and a valid filename.",
-        ));
+        return Err(io::Error::other(fl!("files-recovery-destination-invalid")));
     }
     if name.starts_with('/') || name.starts_with("file://") || name.starts_with("~/") {
         return local_path(Path::new(name), home, Some(home));
@@ -51,9 +49,7 @@ fn destination(
         return Ok(folder.join(original));
     }
     if name == "." || name == ".." || name.contains('/') {
-        return Err(io::Error::other(
-            "Enter a filename, or a full local path or file URI.",
-        ));
+        return Err(io::Error::other(fl!("files-recovery-name-invalid")));
     }
     Ok(folder.join(name))
 }
@@ -150,9 +146,11 @@ impl Desktop {
         if refused {
             dialog.busy = false;
             dialog.job = None;
-            dialog.error = Some(job.error.clone().unwrap_or_else(|| {
-                "No copy was made. Review the destination and try again.".into()
-            }));
+            dialog.error = Some(
+                job.error
+                    .clone()
+                    .unwrap_or_else(|| fl!("files-recovery-no-copy")),
+            );
             if self.focused_window == Some(dialog.window) {
                 iced::widget::operation::focus(control(dialog.window, "folder"))
             } else {
@@ -188,7 +186,7 @@ impl Desktop {
                 if opened.is_none() {
                     self.recovery_destination = None;
                     if let Some(w) = &mut self.recovery_window {
-                        w.error = Some("Could not open the Recovery destination dialog.".into());
+                        w.error = Some(fl!("files-recovery-dialog-failed"));
                     }
                     return Task::none();
                 }
@@ -222,7 +220,7 @@ impl Desktop {
             Event::Close(_) => return self.close_recovery_destination(id),
             Event::Submit(_) if !dialog.busy && !dialog.browser.open() => {
                 if !self.file_operations.ready() {
-                    dialog.error = Some("The operation queue is not ready. Try again.".into());
+                    dialog.error = Some(fl!("files-operation-queue-not-ready"));
                     return Task::none();
                 }
                 let destination =
@@ -272,8 +270,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         id,
         (!dialog.busy).then_some(message(destination_browser::Event::Browse)),
     );
-    let input = |placeholder: &'static str, value: &'a str, name: &str| {
-        text_input(placeholder, value)
+    let input = |placeholder: String, value: &'a str, name: &str| {
+        text_input(&placeholder, value)
             .id(control(id, name))
             .font(font)
             .size(size)
@@ -282,8 +280,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ))
             .style(move |theme, status| view::input_style(appearance, theme, status))
     };
-    let mut folder = input("Folder path", &dialog.folder, "folder");
-    let mut name = input("Keep the saved filename", &dialog.name, "name");
+    let mut folder = input(fl!("files-folder-path"), &dialog.folder, "folder");
+    let mut name = input(fl!("files-recovery-keep-name"), &dialog.name, "name");
     if !dialog.busy {
         folder = folder
             .on_input(move |value| Message::RecoveryDestination(Event::Folder(id, value)))
@@ -292,22 +290,20 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .on_input(move |value| Message::RecoveryDestination(Event::Name(id, value)))
             .on_submit(Message::RecoveryDestination(Event::Submit(id)));
     }
-    let field = |label: &'static str,
-                 key: &'static str,
-                 value: &str,
-                 change: fn(window::Id, String) -> Event| {
-        let node = super::accessibility_ui::Node::text_input(label, value)
-            .key(key)
-            .read_only(dialog.busy);
-        if dialog.busy {
-            node
-        } else {
-            node.on_text(move |value| Message::RecoveryDestination(change(id, value)))
-        }
-    };
+    let field =
+        |label: String, key: &'static str, value: &str, change: fn(window::Id, String) -> Event| {
+            let node = super::accessibility_ui::Node::text_input(label, value)
+                .key(key)
+                .read_only(dialog.busy);
+            if dialog.busy {
+                node
+            } else {
+                node.on_text(move |value| Message::RecoveryDestination(change(id, value)))
+            }
+        };
     let folder = super::accessibility_ui::semantic(
         field(
-            "Folder path",
+            fl!("files-folder-path"),
             "files-recover-folder",
             &dialog.folder,
             Event::Folder,
@@ -315,10 +311,15 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         folder,
     );
     let name = super::accessibility_ui::semantic(
-        field("File name", "files-recover-name", &dialog.name, Event::Name),
+        field(
+            fl!("files-file-name"),
+            "files-recover-name",
+            &dialog.name,
+            Event::Name,
+        ),
         name,
     );
-    let action = |label, name, event, enabled: bool| {
+    let action = |label: String, name, event, enabled: bool| {
         let message = enabled.then_some(Message::RecoveryDestination(event));
         focus::button(
             control(id, name),
@@ -341,48 +342,54 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         chrome::dialog_heading(
             desktop,
             chrome::Icon::Recovery,
-            "Recover a copy",
+            fl!("files-recover-copy-title"),
             dialog.item.name().to_string_lossy().into_owned()
         ),
         column![
-            chrome::section_title(appearance, "Destination folder"),
+            chrome::section_title(appearance, fl!("files-destination-folder")),
             row![folder, browse]
                 .spacing(8)
                 .align_y(iced::Alignment::Center),
         ]
         .spacing(5),
         column![
-            chrome::section_title(appearance, "New filename (optional)"),
+            chrome::section_title(appearance, fl!("files-recovery-new-name")),
             name,
         ]
         .spacing(5),
-        text(
-            dialog
-                .error
-                .as_deref()
-                .unwrap_or(if dialog.busy && dialog.job.is_none() {
-                    "Submitting Recovery copy…"
-                } else if dialog.busy {
-                    "Copy request in progress. Closing this window keeps accepted work running."
-                } else {
-                    "~ is your Home folder. Leave the filename blank to keep the saved name."
-                })
-        )
+        text(dialog.error.clone().unwrap_or_else(|| {
+            if dialog.busy && dialog.job.is_none() {
+                fl!("files-recovery-submitting")
+            } else if dialog.busy {
+                fl!("files-recovery-in-progress")
+            } else {
+                fl!("files-recovery-hint")
+            }
+        }))
         .font(font)
         .size(small)
         .style(canopa_ui::muted)
         .wrapping(text::Wrapping::WordOrGlyph),
     ]
     .spacing(10);
-    let actions = row![
+    let actions = canopa_ui::direction::row([
         action(
-            if dialog.busy { "Close" } else { "Cancel" },
+            if dialog.busy {
+                fl!("files-close")
+            } else {
+                fl!("files-cancel")
+            },
             "close",
             Event::Close(id),
-            true
+            true,
         ),
-        action("Recover here", "submit", Event::Submit(id), !dialog.busy)
-    ]
+        action(
+            fl!("files-recovery-recover-here"),
+            "submit",
+            Event::Submit(id),
+            !dialog.busy,
+        ),
+    ])
     .spacing(8);
     let order = if dialog.busy {
         vec![control(id, "close")]
@@ -422,7 +429,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     );
     super::accessibility_ui::dialog(
         "files-recover-dialog",
-        "Recover a copy",
+        fl!("files-recover-copy-title"),
         "",
         false,
         dialog_view,

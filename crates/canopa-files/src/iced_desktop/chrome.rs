@@ -278,8 +278,8 @@ pub(super) fn card<'a>(
 
 pub(super) fn catalogue<'a>(
     appearance: &'a Appearance,
-    title: &'static str,
-    instruction: &'static str,
+    title: String,
+    instruction: String,
     listing: Element<'a, Message>,
     inspector: Option<(iced::widget::Id, f32, Element<'a, Message>)>,
 ) -> Element<'a, Message> {

@@ -8,7 +8,7 @@ use crate::local_volumes::{
 use canopa_theme::UiKind;
 use iced::{
     Length,
-    widget::{checkbox, column, container, row, scrollable, text, text_input},
+    widget::{checkbox, column, container, scrollable, text, text_input},
 };
 
 pub(super) struct Dialog {
@@ -63,14 +63,16 @@ impl Dialog {
             error: None,
         }
     }
-    pub fn title(&self) -> &'static str {
+    pub fn title(&self) -> String {
         match &self.question {
-            DeviceQuestion::Password { .. } if self.network => "Connect to server",
-            DeviceQuestion::Password { .. } => "Unlock device",
-            DeviceQuestion::Choice { blocked: true, .. } => "Device is busy",
-            DeviceQuestion::Choice { .. } if self.host_identity() => "Check the server's identity",
-            DeviceQuestion::Choice { .. } if self.network => "Server question",
-            DeviceQuestion::Choice { .. } => "Device question",
+            DeviceQuestion::Password { .. } if self.network => fl!("files-device-q-connect"),
+            DeviceQuestion::Password { .. } => fl!("files-device-q-unlock"),
+            DeviceQuestion::Choice { blocked: true, .. } => fl!("files-device-q-busy"),
+            DeviceQuestion::Choice { .. } if self.host_identity() => {
+                fl!("files-device-q-host-identity")
+            }
+            DeviceQuestion::Choice { .. } if self.network => fl!("files-device-q-server"),
+            DeviceQuestion::Choice { .. } => fl!("files-device-q-device"),
         }
     }
 
@@ -247,10 +249,7 @@ impl Desktop {
                 }
                 if opened.is_none() {
                     self.devices.dialog = None;
-                    self.devices.error = Some(
-                        "Could not open the device question. Review it in Operations to try again."
-                            .into(),
-                    );
+                    self.devices.error = Some(fl!("files-device-q-failed"));
                     return self.exit_if_empty();
                 }
                 return iced::widget::operation::focus(control(id, "cancel"))
@@ -264,7 +263,7 @@ impl Desktop {
                     .filter(|dialog| dialog.window == id && dialog.token == token)
                 {
                     if value.len() > 4096 || value.contains('\0') {
-                        dialog.error = Some("The field exceeds its input limit.".into());
+                        dialog.error = Some(fl!("files-device-q-too-long"));
                         return Task::none();
                     }
                     match field {
@@ -308,7 +307,7 @@ impl Desktop {
                     match dialog.pim.parse::<u32>() {
                         Ok(pim) => pim,
                         Err(_) => {
-                            dialog.error = Some("Enter a whole number for PIM.".into());
+                            dialog.error = Some(fl!("files-device-q-pim-invalid"));
                             return Task::none();
                         }
                     }
@@ -389,7 +388,7 @@ impl Desktop {
     ) -> Task<Message> {
         let result = self
             .device_runtime()
-            .ok_or_else(|| io::Error::other("Devices are unavailable."))
+            .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
             .and_then(|runtime| runtime.device_requests().answer(token, answer));
         match result {
             Ok(()) => Task::batch([self.dismiss_device_question(window), self.poll_devices()]),
@@ -421,7 +420,7 @@ fn input<'a>(
     desktop: &'a Desktop,
     dialog: &'a Dialog,
     field: Field,
-    label: &'static str,
+    label: String,
     value: &'a str,
     secure: bool,
 ) -> Element<'a, Message> {
@@ -444,9 +443,9 @@ fn input<'a>(
     use super::accessibility_ui::{Node, Role, semantic};
     // A secret is never published; screen readers announce only its role.
     let node = if secure {
-        Node::new(Role::PasswordInput).label(label)
+        Node::new(Role::PasswordInput).label(label.clone())
     } else {
-        let node = Node::text_input(label, value);
+        let node = Node::text_input(label.clone(), value);
         if editable {
             node.on_text(move |value| Message::Device(Event::Text(id, token, field, Edited(value))))
         } else {
@@ -507,39 +506,39 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .wrapping(text::Wrapping::WordOrGlyph),
     ]
     .spacing(12);
-    let mut actions = row![button(
-        "Cancel".into(),
+    // In reading order; mirrored for right-to-left languages.
+    let mut actions = vec![button(
+        fl!("files-cancel"),
         "cancel".into(),
-        Event::CancelQuestion(id)
-    )]
-    .spacing(8);
+        Event::CancelQuestion(id),
+    )];
     if let Some(fields) = dialog.question.password_fields() {
         for (show, field, label, value, secure) in [
             (
                 fields.username,
                 Field::Username,
-                "Username",
+                fl!("files-device-q-username"),
                 &dialog.username,
                 false,
             ),
             (
                 fields.domain,
                 Field::Domain,
-                "Domain",
+                fl!("files-device-q-domain"),
                 &dialog.domain,
                 false,
             ),
             (
                 fields.password,
                 Field::Password,
-                "Password",
+                fl!("files-device-q-password"),
                 &dialog.password,
                 true,
             ),
             (
                 fields.tcrypt,
                 Field::Pim,
-                "PIM (optional)",
+                fl!("files-device-q-pim"),
                 &dialog.pim,
                 false,
             ),
@@ -555,19 +554,19 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             (
                 fields.anonymous,
                 Toggle::Anonymous,
-                "Connect anonymously",
+                fl!("files-device-q-anonymous"),
                 dialog.anonymous,
             ),
             (
                 fields.tcrypt,
                 Toggle::Hidden,
-                "Hidden volume",
+                fl!("files-device-q-hidden"),
                 dialog.hidden,
             ),
             (
                 fields.tcrypt,
                 Toggle::System,
-                "System volume",
+                fl!("files-device-q-system"),
                 dialog.system,
             ),
         ] {
@@ -609,22 +608,26 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 ));
             }
             body = body.push(
-                text("A remembered password is kept in your keyring by GVFS, not by Files.")
+                text(fl!("files-device-q-remembered"))
                     .size(small)
                     .font(font)
                     .style(canopa_ui::muted),
             );
         } else {
             body = body.push(
-                text("Files uses these credentials for this request only.")
+                text(fl!("files-device-q-this-request"))
                     .size(small)
                     .font(font)
                     .style(canopa_ui::muted),
             );
         }
         order.push(control(id, "submit"));
-        actions = actions.push(button(
-            if dialog.network { "Connect" } else { "Unlock" }.into(),
+        actions.push(button(
+            if dialog.network {
+                fl!("files-network-connect")
+            } else {
+                fl!("files-device-q-unlock-button")
+            },
             "submit".into(),
             Event::Submit(id, dialog.token),
         ));
@@ -633,15 +636,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     } = &dialog.question
     {
         if *blocked {
-            body = body.push(
-                text("Close the application before retrying.")
-                    .size(small)
-                    .font(font),
-            );
+            body = body.push(text(fl!("files-device-q-close-app")).size(small).font(font));
         }
         if dialog.host_identity() {
             body = body.push(
-                text("Continue only if you expect to connect to this server, for example on your own network. SSH remembers its identity for next time; if it changes later, Files cannot connect until it is checked.")
+                text(fl!("files-device-q-host-explanation"))
                     .size(small)
                     .font(font)
                     .wrapping(text::Wrapping::WordOrGlyph),
@@ -656,7 +655,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         {
             let name = format!("choice-{index}");
             order.push(control(id, name.clone()));
-            actions = actions.push(button(
+            actions.push(button(
                 choice.clone(),
                 name,
                 Event::Choice(id, dialog.token, index),
@@ -671,7 +670,10 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .cloned()
         .map(|control| (control, scroll(id)))
         .collect();
-    let footer = super::question_dialog::decision_actions(actions, None);
+    let footer = super::question_dialog::decision_actions(
+        canopa_ui::direction::row(actions).spacing(8),
+        None,
+    );
     let scrollbar = scrollable::Direction::Vertical(
         scrollable::Scrollbar::new()
             .width(6)

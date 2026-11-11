@@ -56,8 +56,8 @@ pub(super) struct Window {
 }
 
 impl Window {
-    pub fn title(&self) -> &'static str {
-        "Connect to Server"
+    pub fn title(&self) -> String {
+        fl!("files-network-title")
     }
 
     fn browsing(&self) -> &str {
@@ -209,7 +209,7 @@ impl Desktop {
                 } else {
                     gtk_bookmarks::add(&path, &bookmark).map(|_| ())
                 }
-                .map_err(|error| format!("Could not update the GTK bookmarks: {error}"))
+                .map_err(|error| fl!("files-network-bookmarks-failed", error = error.to_string()))
             },
             |result| Message::Network(Event::BookmarkSaved(Arc::new(result))),
         )
@@ -229,12 +229,12 @@ impl Desktop {
         }
         self.devices.error = None;
         let Some(origin) = Origin::capture(self, owner) else {
-            self.devices.error = Some("Wait for the folder to load, then connect again.".into());
+            self.devices.error = Some(fl!("files-network-wait-for-folder"));
             return Task::none();
         };
         let result = self
             .device_runtime()
-            .ok_or_else(|| io::Error::other("Network locations are unavailable."))
+            .ok_or_else(|| io::Error::other(fl!("files-network-unavailable")))
             .and_then(|runtime| runtime.device_requests().connect(address));
         match result {
             Ok(id) => {
@@ -331,7 +331,7 @@ impl Desktop {
         match self
             .file_operations
             .local_runtime()
-            .ok_or_else(|| io::Error::other("Network locations are unavailable."))
+            .ok_or_else(|| io::Error::other(fl!("files-network-unavailable")))
             .and_then(|runtime| runtime.device_requests().enumerate(&uri))
         {
             Ok(id) => window.listing = Some(id),
@@ -477,7 +477,7 @@ impl Desktop {
                 }
                 if opened.is_none() {
                     self.network.window = None;
-                    self.devices.error = Some("Could not open Connect to Server.".into());
+                    self.devices.error = Some(fl!("files-network-dialog-failed"));
                     return self.exit_if_empty();
                 }
                 return window::gain_focus(id)
@@ -504,7 +504,7 @@ impl Desktop {
                     Ok(address) => {
                         let (owner, bookmark) = (window.owner, window.bookmark);
                         if !self.windows.contains_key(&owner) {
-                            window.error = Some("Its Files window was closed.".into());
+                            window.error = Some(fl!("files-network-window-closed"));
                             return Task::none();
                         }
                         // Questions and the opened folder belong to the Browser
@@ -549,8 +549,9 @@ impl Desktop {
                 }
                 return Task::perform(
                     async move {
-                        crate::opening::spawn(crate::opening::open_url(&uri, None), true)
-                            .map_err(|error| format!("Could not open the file: {error}"))
+                        crate::opening::spawn(crate::opening::open_url(&uri, None), true).map_err(
+                            |error| fl!("files-network-open-failed", error = error.to_string()),
+                        )
                     },
                     |result| Message::Network(Event::Opening(Arc::new(result))),
                 );
@@ -608,12 +609,11 @@ impl Desktop {
 impl LocationKind {
     fn label(self) -> String {
         match self {
-            Self::Local => "Location",
-            Self::Network => "Network location",
-            Self::Phone => "Phone",
-            Self::Camera => "Camera",
+            Self::Local => fl!("files-location"),
+            Self::Network => fl!("files-network-location"),
+            Self::Phone => fl!("files-network-phone"),
+            Self::Camera => fl!("files-network-camera"),
         }
-        .into()
     }
 }
 
@@ -637,19 +637,19 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     let ready = desktop.devices.catalog.status == crate::local_volumes::DeviceStatus::Ready;
     let idle = ready && !desktop.devices.busy();
     let origin = Origin::capture(desktop, window);
-    let mut body = column![chrome::section(appearance, "Network")].spacing(2);
+    let mut body = column![chrome::section(appearance, fl!("files-network"))].spacing(2);
     let entry = |key: String, icon: Icon, label: String, message: Option<Message>, active: bool| {
         let node = super::accessibility_ui::Node::option(label.clone(), active)
             .key(key)
             .disabled(message.is_none())
             .on_click(message.clone());
         let button = canopa_ui::styled_action(
-            row![
+            canopa_ui::direction::row([
                 desktop
                     .icons
                     .chrome(icon, 17.0, if message.is_some() { 0.74 } else { 0.35 }),
-                chrome::single_line(label, font, size, None, true)
-            ]
+                chrome::single_line(label, font, size, None, true),
+            ])
             .spacing(9)
             .align_y(Alignment::Center),
             message,
@@ -719,7 +719,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             item = item.push(trailing(
                 format!("files-device-{:?}-remove", device.id()),
                 Icon::Eject,
-                format!("Disconnect {}", device.name),
+                fl!("files-network-disconnect", device = device.name.clone()),
                 idle.then_some(Message::Device(DeviceEvent::Remove(window, device.token))),
             ));
         }
@@ -736,7 +736,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             trailing(
                 format!("{key}-remove"),
                 Icon::Trash,
-                format!("Remove bookmark {name}"),
+                fl!("files-network-remove-bookmark", name = name.clone()),
                 Some(Message::Network(Event::RemoveBookmark(uri))),
             )
         ]
@@ -746,7 +746,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     body = body.push(entry(
         "files-other-locations".into(),
         Icon::Places,
-        "Other Locations…".into(),
+        fl!("files-network-other-locations"),
         Some(Message::Network(Event::Show(window, None, None))),
         false,
     ));
@@ -754,7 +754,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
         body = body.push(text(error).size(size).font(font));
     }
     super::accessibility_ui::semantic(
-        super::accessibility_ui::Node::list("Network").key("files-network"),
+        super::accessibility_ui::Node::list(fl!("files-network")).key("files-network"),
         body,
     )
 }
@@ -804,9 +804,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     let mut body = column![
         chrome::dialog_heading(desktop, Icon::Network, dialog.title(), ""),
         column![
-            chrome::section_title(appearance, "Server address").size(small + 1.0),
+            chrome::section_title(appearance, fl!("files-network-address")).size(small + 1.0),
             input,
-            text("smb://, sftp://, ftp://, ftps://, dav://, davs:// or nfs://. Files asks for a password when the server needs one.")
+            text(fl!("files-network-address-hint"))
                 .font(font)
                 .size(small)
                 .color(muted)
@@ -819,7 +819,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
             Some(toggle.clone()),
             appearance,
             checkbox(dialog.bookmark)
-                .label("Add to bookmarks")
+                .label(fl!("files-network-add-bookmark"))
                 .font(font)
                 .text_size(size)
                 .style(canopa_ui::checkbox_style)
@@ -841,30 +841,34 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     let servers = sidebar(&desktop.devices.catalog, &desktop.network.bookmarks).servers;
     let mut list = column![].spacing(2);
     if dialog.trail.is_empty() && !servers.is_empty() {
-        list = list.push(chrome::section(appearance, "Bookmarked servers"));
+        list = list.push(chrome::section(appearance, fl!("files-network-bookmarked")));
         for (index, (name, uri)) in servers.into_iter().enumerate() {
             let name_id = format!("server-{index}");
             order.push(control(id, &name_id));
             list = list.push(action(
-                format!("{name} — {uri}"),
+                fl!(
+                    "files-network-server",
+                    name = name.clone(),
+                    uri = uri.clone()
+                ),
                 name_id,
                 Message::Network(Event::Pick(id, uri)),
                 canopa_ui::Action::Quiet,
             ));
         }
     }
-    let heading = dialog
-        .trail
-        .last()
-        .map_or("On this network", |(name, _)| name.as_str());
-    let mut header = row![chrome::section(appearance, heading)]
+    let heading = dialog.trail.last().map_or_else(
+        || fl!("files-network-on-this-network"),
+        |(name, _)| name.clone(),
+    );
+    let mut header = row![chrome::section(appearance, heading.clone())]
         .spacing(8)
         .align_y(Alignment::Center);
     header = header.push(iced::widget::space().width(Length::Fill));
     if !dialog.trail.is_empty() {
         order.push(control(id, "up"));
         header = header.push(action(
-            "Back".into(),
+            fl!("files-command-back"),
             "up".into(),
             Message::Network(Event::Up(id)),
             canopa_ui::Action::Quiet,
@@ -872,14 +876,21 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     }
     order.push(control(id, "refresh"));
     header = header.push(action(
-        "Refresh".into(),
+        fl!("files-command-refresh"),
         "refresh".into(),
         Message::Network(Event::Refresh(id)),
         canopa_ui::Action::Quiet,
     ));
     list = list.push(header);
     match &dialog.result {
-        None => list = list.push(text("Looking…").font(font).size(small).color(muted)),
+        None => {
+            list = list.push(
+                text(fl!("files-network-looking"))
+                    .font(font)
+                    .size(small)
+                    .color(muted),
+            )
+        }
         Some(Err(error)) => {
             list = list.push(
                 text(error.as_str())
@@ -892,9 +903,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
         Some(Ok(listed)) if listed.entries.is_empty() => {
             list = list.push(
                 text(if dialog.trail.is_empty() {
-                    "No servers were found. Enter an address above."
+                    fl!("files-network-no-servers")
                 } else {
-                    "This location is empty."
+                    fl!("files-network-empty")
                 })
                 .font(font)
                 .size(small)
@@ -909,7 +920,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
                     if connectable(entry) {
                         (
                             Message::Network(Event::Pick(id, entry.uri.clone())),
-                            format!("{} — {}", entry.name, entry.uri),
+                            fl!(
+                                "files-network-server",
+                                name = entry.name.clone(),
+                                uri = entry.uri.clone()
+                            ),
                         )
                     } else if entry.directory {
                         (
@@ -918,7 +933,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
                                 entry.name.clone(),
                                 entry.uri.clone(),
                             )),
-                            format!("{} ›", entry.name),
+                            format!("{} {}", entry.name, canopa_ui::direction::forward_chevron()),
                         )
                     } else {
                         (
@@ -929,14 +944,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
                 } else {
                     (
                         Message::Network(Event::Browse(id, entry.name.clone(), entry.uri.clone())),
-                        format!("{} ›", entry.name),
+                        format!("{} {}", entry.name, canopa_ui::direction::forward_chevron()),
                     )
                 };
                 list = list.push(action(label, name, message, canopa_ui::Action::Quiet));
             }
             if listed.truncated {
                 list = list.push(
-                    text("Only the first entries are shown.")
+                    text(fl!("files-network-truncated"))
                         .font(font)
                         .size(small)
                         .color(muted),
@@ -946,21 +961,21 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     }
     order.push(control(id, "cancel"));
     order.push(control(id, "connect"));
-    let footer = row![
-        iced::widget::space().width(Length::Fill),
+    let footer = canopa_ui::direction::row([
+        iced::widget::space().width(Length::Fill).into(),
         action(
-            "Cancel".into(),
+            fl!("files-cancel"),
             "cancel".into(),
             Message::Network(Event::Close(id)),
             canopa_ui::Action::Quiet,
         ),
         action(
-            "Connect".into(),
+            fl!("files-network-connect"),
             "connect".into(),
             Message::Network(Event::Connect(id)),
             canopa_ui::Action::Primary,
         ),
-    ]
+    ])
     .spacing(8);
     let list = super::accessibility_ui::semantic(
         super::accessibility_ui::Node::group(heading)

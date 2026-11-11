@@ -153,19 +153,19 @@ impl Browser {
                 };
                 focus::button(widget, message, appearance, button)
             };
-        let label = |value: &'static str| text(value).size(small).font(font).into();
+        let label = |value: String| text(value).size(small).font(font).into();
         let ordinary = canopa_ui::Action::Normal;
         let tools = row![
             action(
                 "home",
-                label("Home"),
+                label(fl!("files-place-home")),
                 Some(Event::Navigate(revision, desktop.home.clone())),
                 ordinary,
                 false
             ),
             action(
                 "up",
-                label("Up"),
+                label(fl!("files-destination-up")),
                 scan.path
                     .parent()
                     .map(|path| Event::Navigate(revision, path.to_owned())),
@@ -186,11 +186,11 @@ impl Browser {
                         .to_str()
                         .map(str::to_owned)
                         .unwrap_or_else(|| format!("{name:?}"));
-                    let entry = row![
+                    let entry = canopa_ui::direction::row([
                         desktop.icons.chrome(chrome::Icon::Folder, 17.0, 0.9),
                         chrome::single_line(name, font, small + 1.0, None, true),
                         desktop.icons.chrome(chrome::Icon::Forward, 14.0, 0.8),
-                    ]
+                    ])
                     .spacing(8)
                     .align_y(iced::Alignment::Center);
                     folders = folders.push(action(
@@ -206,7 +206,7 @@ impl Browser {
                         row![]
                             .push(action(
                                 "previous",
-                                label("Previous"),
+                                label(fl!("files-previous")),
                                 scan.page
                                     .checked_sub(1)
                                     .map(|page| Event::Page(revision, page)),
@@ -215,7 +215,7 @@ impl Browser {
                             ))
                             .push(action(
                                 "next",
-                                label("Next"),
+                                label(fl!("files-next")),
                                 (end < paths.len()).then_some(Event::Page(revision, scan.page + 1)),
                                 ordinary,
                                 false,
@@ -224,7 +224,7 @@ impl Browser {
                     );
                 }
             }
-            Some(Ok(_)) => folders = folders.push(label("No subfolders")),
+            Some(Ok(_)) => folders = folders.push(label(fl!("files-destination-no-subfolders"))),
             Some(Err(error)) => {
                 folders = folders.push(
                     text(error)
@@ -233,31 +233,31 @@ impl Browser {
                         .wrapping(text::Wrapping::WordOrGlyph),
                 )
             }
-            None => folders = folders.push(label("Reading folders…")),
+            None => folders = folders.push(label(fl!("files-destination-reading"))),
         }
-        let buttons = row![
+        let buttons = canopa_ui::direction::row([
             action(
                 "back",
-                label("Back"),
+                label(fl!("files-command-back")),
                 Some(Event::Cancel),
                 canopa_ui::Action::Quiet,
-                false
+                false,
             ),
             action(
                 "use",
-                label("Use this folder"),
+                label(fl!("files-destination-use")),
                 matches!(scan.result.as_deref(), Some(Ok(_))).then_some(Event::Use(revision)),
                 canopa_ui::Action::Primary,
-                false
+                false,
             ),
-        ]
+        ])
         .spacing(8);
         let body = container(
             column![
                 chrome::heading_with_action(
                     desktop,
                     chrome::Icon::Folder,
-                    "Choose a folder",
+                    fl!("files-choose-folder"),
                     "",
                     Some(tools.into())
                 ),
@@ -308,7 +308,7 @@ pub(super) fn browse_button<'a>(
         message.clone(),
         appearance,
         canopa_ui::styled_action(
-            text("Browse…")
+            text(fl!("files-browse"))
                 .font(canopa_ui::font(appearance))
                 .size(appearance.typography().label_size.px()),
             message,

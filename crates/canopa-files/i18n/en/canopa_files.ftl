@@ -689,3 +689,215 @@ files-command-job-folder = { $folder }  ·  { $count } selected
 # $code is a process exit code.
 files-action-exit-code = Failed · exit code { $code }
 files-action-could-not-run = Could not run: { $error }
+
+## Properties window
+
+files-properties = Properties
+files-properties-title-reading = Properties — Reading…
+files-properties-title = { $count ->
+    [one] Properties — { $count } item
+   *[other] Properties — { $count } items
+}
+files-properties-reading = Reading properties…
+files-properties-cancelled = Properties inspection cancelled.
+files-properties-copy-location = Copy location
+files-properties-copy-locations = Copy locations
+files-properties-link-target = Link target
+files-properties-access = Access
+files-properties-owner = Owner
+files-properties-group = Group
+files-properties-others = Others
+# $who is Owner or Group, $identity the user or group name.
+files-properties-access-identity = { $who } · { $identity }
+# $mode is an octal mode such as 0644.
+files-properties-mode = Mode { $mode } · UID { $uid } · GID { $gid }
+files-unavailable = Unavailable
+files-kind-symlink = Symbolic link
+files-kind-special-file = Special file
+files-size-bytes = { $bytes ->
+    [one] { $bytes } byte
+   *[other] { $bytes } bytes
+}
+files-date-out-of-range = Outside supported date range
+files-permission-none = none
+files-permission-x = execute
+files-permission-w = write
+files-permission-wx = write and execute
+files-permission-r = read
+files-permission-rx = read and execute
+files-permission-rw = read and write
+files-permission-rwx = read, write, and execute
+
+## Trash window and Restore to folder
+
+files-trash-restore = Restore
+files-trash-restore-to = Restore to…
+files-trash-copy = Copy to clipboard
+files-trash-empty = Empty Trash…
+files-trash-all-locations = All locations
+files-trash-main = Main Trash
+files-trash-original-unknown = Original location unknown
+# $date is when the item was moved to Trash.
+files-trash-deleted = Deleted { $date }
+files-trash-date-unknown = Deletion date unknown
+files-trash-item-description = { $location }, { $date }
+files-trash-items = Trash items
+files-trash-items-heading = Items in Trash
+files-trash-loading = Loading Trash…
+files-trash-original-unavailable = Original information is unavailable. Copy this item to recover its contents.
+files-trash-count-select = { $count ->
+    [one] { $count } item · Select an item to see restore options
+   *[other] { $count } items · Select an item to see restore options
+}
+files-select-item-for-restore = Select an item to see restore options
+files-trash-empty-title = Trash is empty
+files-trash-empty-description = Items moved to Trash will appear here.
+files-trash-subtitle = Restore deleted files to their original location or another folder, or delete them permanently.
+files-restore-dialog-failed = Could not open the Restore destination dialog.
+files-operation-queue-not-ready = The operation queue is not ready. Try again.
+files-enter-destination-folder = Enter a local destination folder.
+files-folder-path = Folder path
+files-location-line = Location · { $location }
+files-destination-folder = Destination folder
+files-restore-name-taken = If this name is already taken, the item stays in Trash.
+files-restore-here = Restore here
+
+## Recovery window, Recover a copy and the folder chooser
+
+files-recovery-recover = Recover a copy…
+files-recovery-keep = Keep in Recovery
+files-recovery-load-more = Load more
+files-recovery-reconcile = Reconcile interrupted work
+files-recovery-view-operations = View Operations
+files-recovery-held = Held for Undo
+files-recovery-held-modified = Modified { $date }  ·  Held for Undo
+files-recovery-saved-copies = Saved copies
+files-recovery-loading = Loading Recovery…
+files-recovery-count = { $count ->
+    [one] { $count } retained version · Recovery creates a copy and keeps the saved version.
+   *[other] { $count } retained versions · Recovery creates a copy and keeps the saved version.
+}
+files-recovery-count-loaded = { $count ->
+    [one] { $count } retained version loaded · Recovery creates a copy and keeps the saved version.
+   *[other] { $count } retained versions loaded · Recovery creates a copy and keeps the saved version.
+}
+files-recovery-empty = No saved versions
+files-recovery-empty-description = Saved versions from file replacements appear here. Operations shows your recent file changes.
+files-recovery-subtitle-interrupted = Saved versions and interrupted operations
+files-recovery-subtitle = Recover a copy of an earlier version.
+files-recovery-saved-versions = Saved versions
+files-recovery-select = Select a version to choose where to recover it
+# An interrupted operation and why it stopped.
+files-recovery-interrupted-notice = { $operation }: { $message }
+files-recovery-destination-invalid = Enter a local destination folder and a valid filename.
+files-recovery-name-invalid = Enter a filename, or a full local path or file URI.
+files-recovery-no-copy = No copy was made. Review the destination and try again.
+files-recovery-dialog-failed = Could not open the Recovery destination dialog.
+files-recovery-keep-name = Keep the saved filename
+files-file-name = File name
+files-recovery-new-name = New filename (optional)
+files-recovery-submitting = Submitting Recovery copy…
+files-recovery-in-progress = Copy request in progress. Closing this window keeps accepted work running.
+files-recovery-hint = ~ is your Home folder. Leave the filename blank to keep the saved name.
+files-recovery-recover-here = Recover here
+files-destination-up = Up
+files-destination-no-subfolders = No subfolders
+files-destination-reading = Reading folders…
+files-destination-use = Use this folder
+files-browse = Browse…
+
+## Open With and launch confirmation ($name is a file name)
+
+files-open-could-not-open = Could not open “{ $name }”: { $error }
+files-open-default-failed = Could not make { $application } the default: { $error }
+# $name is an application or file name.
+files-open-start-failed = Could not start { $name }: { $error }
+files-open-start-file-failed = Could not start “{ $name }”: { $error }
+files-open-link-failed = Could not open the link: { $error }
+files-open-run-failed = Could not run “{ $name }”: { $error }
+files-open-terminal-missing = Running in a terminal needs xdg-terminal-exec; install it to choose your terminal.
+files-open-failed = Opening the file failed: { $error }
+files-open-with-title = Open With
+files-open-run-script-title = Run this script?
+files-open-run-program-title = Run this program?
+files-open-untrusted-title = Untrusted application launcher
+files-open-choose-one = Choose an application for “{ $name }”.
+files-open-choose-many = Choose an application for { $count } files.
+files-open-script-message = “{ $name }” is an executable script. Run it only if you trust where it came from.
+files-open-program-message = “{ $name }” is an executable program. Run it only if you trust where it came from.
+# $application is the launcher's name, $file its file name.
+files-open-untrusted-message = “{ $application }” ({ $file }) is not installed in an applications folder and is not marked as executable. Launch it only if you trust where it came from. Marking the file executable makes Files trust it.
+files-open-file-failed = Could not open the file.
+files-open-list-failed = Applications could not be listed.
+files-open-interrupted = The launch was interrupted.
+files-open-dialog-failed = Could not open the dialog.
+files-open-search = Search applications
+files-open-looking = Looking for applications…
+files-open-no-match = No matching applications
+files-open-recommended = Recommended
+files-open-other = Other applications
+files-open-applications = Applications
+# $mime is a file type such as text/plain.
+files-open-set-default = Set as default for { $mime }
+files-open-in = Open in { $application }
+files-open-run-in-terminal = Run in Terminal
+files-open-run = Run
+files-open-as-text = Open as Text
+files-open-launch = Launch
+
+## Device and server questions (passwords, choices)
+
+files-device-q-connect = Connect to server
+files-device-q-unlock = Unlock device
+files-device-q-busy = Device is busy
+files-device-q-host-identity = Check the server's identity
+files-device-q-server = Server question
+files-device-q-device = Device question
+files-device-q-failed = Could not open the device question. Review it in Operations to try again.
+files-device-q-too-long = The field exceeds its input limit.
+files-device-q-pim-invalid = Enter a whole number for PIM.
+files-device-q-username = Username
+files-device-q-domain = Domain
+files-device-q-password = Password
+# PIM: the VeraCrypt personal iterations multiplier.
+files-device-q-pim = PIM (optional)
+files-device-q-anonymous = Connect anonymously
+files-device-q-hidden = Hidden volume
+files-device-q-system = System volume
+files-device-q-remembered = A remembered password is kept in your keyring by GVFS, not by Files.
+files-device-q-this-request = Files uses these credentials for this request only.
+files-device-q-unlock-button = Unlock
+files-device-q-close-app = Close the application before retrying.
+files-device-q-host-explanation = Continue only if you expect to connect to this server, for example on your own network. SSH remembers its identity for next time; if it changes later, Files cannot connect until it is checked.
+files-remember-never = Forget the password immediately
+files-remember-session = Remember it until you log out
+files-remember-keyring = Remember it in the keyring
+
+## Network: sidebar section and Connect to Server
+
+files-network = Network
+files-network-title = Connect to Server
+files-network-bookmarks-failed = Could not update the GTK bookmarks: { $error }
+files-network-wait-for-folder = Wait for the folder to load, then connect again.
+files-network-unavailable = Network locations are unavailable.
+files-network-dialog-failed = Could not open Connect to Server.
+files-network-window-closed = Its Files window was closed.
+files-network-open-failed = Could not open the file: { $error }
+files-network-location = Network location
+files-network-phone = Phone
+files-network-camera = Camera
+files-network-disconnect = Disconnect { $device }
+files-network-remove-bookmark = Remove bookmark { $name }
+files-network-other-locations = Other Locations…
+files-network-address = Server address
+files-network-address-hint = smb://, sftp://, ftp://, ftps://, dav://, davs:// or nfs://. Files asks for a password when the server needs one.
+files-network-add-bookmark = Add to bookmarks
+files-network-bookmarked = Bookmarked servers
+# A server's name and address.
+files-network-server = { $name } — { $uri }
+files-network-on-this-network = On this network
+files-network-looking = Looking…
+files-network-no-servers = No servers were found. Enter an address above.
+files-network-empty = This location is empty.
+files-network-truncated = Only the first entries are shown.
+files-network-connect = Connect

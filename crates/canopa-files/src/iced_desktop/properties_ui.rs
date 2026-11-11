@@ -26,19 +26,12 @@ impl Drop for Window {
 }
 impl Window {
     pub fn title(&self) -> String {
-        if self.result.is_none() {
-            "Properties — Reading… — Canopa Files".into()
+        let title = if self.result.is_none() {
+            fl!("files-properties-title-reading")
         } else {
-            format!(
-                "Properties — {} {} — Canopa Files",
-                self.paths.len(),
-                if self.paths.len() == 1 {
-                    "item"
-                } else {
-                    "items"
-                }
-            )
-        }
+            fl!("files-properties-title", count = self.paths.len())
+        };
+        fl!("files-window-title", title = title)
     }
 }
 
@@ -90,16 +83,16 @@ impl Item {
     }
 }
 
-fn permission_label(mode: u32) -> &'static str {
+fn permission_label(mode: u32) -> String {
     match mode & 7 {
-        0 => "none",
-        1 => "execute",
-        2 => "write",
-        3 => "write and execute",
-        4 => "read",
-        5 => "read and execute",
-        6 => "read and write",
-        _ => "read, write, and execute",
+        0 => fl!("files-permission-none"),
+        1 => fl!("files-permission-x"),
+        2 => fl!("files-permission-w"),
+        3 => fl!("files-permission-wx"),
+        4 => fl!("files-permission-r"),
+        5 => fl!("files-permission-rx"),
+        6 => fl!("files-permission-rw"),
+        _ => fl!("files-permission-rwx"),
     }
 }
 
@@ -138,12 +131,12 @@ fn timestamp(time: std::time::SystemTime) -> Option<chrono::DateTime<chrono::Utc
 fn modified(time: std::time::SystemTime) -> String {
     use chrono::Datelike;
     timestamp(time).map_or_else(
-        || "Outside supported date range".into(),
+        || fl!("files-date-out-of-range"),
         |utc| {
             if (1..=9999).contains(&utc.year()) {
-                utc.with_timezone(&chrono::Local)
-                    .format("%b %-d, %Y · %H:%M:%S")
-                    .to_string()
+                super::listing_ui::date_time_seconds(
+                    utc.with_timezone(&chrono::Local).naive_local(),
+                )
             } else {
                 utc.format("%Y-%m-%d %H:%M:%S UTC").to_string()
             }
@@ -185,7 +178,7 @@ impl Desktop {
                         .into_iter()
                         .map(|item| {
                             if worker_cancel.is_cancelled() {
-                                return Err("Properties inspection cancelled.".into());
+                                return Err(fl!("files-properties-cancelled"));
                             }
                             Ok(Item::describe(item))
                         })
@@ -289,7 +282,7 @@ fn contents<'a>(
             .size(size)
             .wrapping(text::Wrapping::WordOrGlyph)
     };
-    let fact = |key: &'static str, value: String| {
+    let fact = |key: String, value: String| {
         row![
             text(key)
                 .font(font)
@@ -310,7 +303,7 @@ fn contents<'a>(
         None => {
             facts = facts.push(chrome::card(
                 appearance,
-                label("Reading properties…".into()),
+                label(fl!("files-properties-reading")),
             ))
         }
         Some(Err(error)) => facts = facts.push(chrome::card(appearance, label(error.clone()))),
@@ -334,53 +327,74 @@ fn contents<'a>(
                         .push(iced::widget::rule::horizontal(1).style(chrome::divider));
                 }
                 entry = entry
-                    .push(chrome::section_title(appearance, "Details"))
-                    .push(fact("Location", location));
+                    .push(chrome::section_title(appearance, fl!("files-details")))
+                    .push(fact(fl!("files-location"), location));
                 match &item.filesystem.metadata {
-                    Err(error) => entry = entry.push(fact("Unavailable", error.clone())),
+                    Err(error) => entry = entry.push(fact(fl!("files-unavailable"), error.clone())),
                     Ok(metadata) => {
                         let kind = match metadata.kind {
-                            crate::browse::EntryKind::Directory => "Folder",
+                            crate::browse::EntryKind::Directory => fl!("files-kind-folder"),
                             crate::browse::EntryKind::File => {
-                                item.kind.as_deref().unwrap_or("File")
+                                item.kind.clone().unwrap_or_else(|| fl!("files-kind-file"))
                             }
-                            crate::browse::EntryKind::Symlink => "Symbolic link",
-                            crate::browse::EntryKind::Other => "Special file",
+                            crate::browse::EntryKind::Symlink => fl!("files-kind-symlink"),
+                            crate::browse::EntryKind::Other => fl!("files-kind-special-file"),
                         };
-                        entry = entry.push(fact("Kind", kind.into()));
+                        entry = entry.push(fact(fl!("files-column-kind"), kind));
                         if metadata.kind == crate::browse::EntryKind::File {
-                            entry = entry.push(fact("Size", format!("{} bytes", metadata.bytes)));
+                            entry = entry.push(fact(
+                                fl!("files-column-size"),
+                                fl!("files-size-bytes", bytes = metadata.bytes),
+                            ));
                         }
                         if let Some(target) = &metadata.link_target {
-                            entry = entry
-                                .push(fact("Link target", target.to_string_lossy().into_owned()));
+                            entry = entry.push(fact(
+                                fl!("files-properties-link-target"),
+                                target.to_string_lossy().into_owned(),
+                            ));
                         }
                         entry = entry.push(fact(
-                            "Modified",
+                            fl!("files-column-modified"),
                             metadata
                                 .modified
                                 .map(modified)
-                                .unwrap_or_else(|| "Unavailable".into()),
+                                .unwrap_or_else(|| fl!("files-unavailable")),
                         ));
-                        let access_line = |who: &str, identity: Option<String>, bits: u32| {
+                        let access_line = |who: String, identity: Option<String>, bits: u32| {
                             let identity = identity.map_or_else(
-                                || who.to_owned(),
-                                |identity| format!("{who} · {identity}"),
+                                || who.clone(),
+                                |identity| {
+                                    fl!(
+                                        "files-properties-access-identity",
+                                        who = who.clone(),
+                                        identity = identity
+                                    )
+                                },
                             );
                             row![
                                 label(identity).width(Length::Fill),
-                                label(permission_label(bits).into()).style(canopa_ui::muted),
+                                label(permission_label(bits)).style(canopa_ui::muted),
                             ]
                             .spacing(8)
                         };
                         let access = column![
-                            chrome::section_title(appearance, "Access"),
-                            access_line("Owner", item.owner.clone(), metadata.permissions >> 6),
-                            access_line("Group", item.group.clone(), metadata.permissions >> 3),
-                            access_line("Others", None, metadata.permissions),
-                            label(format!(
-                                "Mode {:04o} · UID {} · GID {}",
-                                metadata.permissions, metadata.owner, metadata.group
+                            chrome::section_title(appearance, fl!("files-properties-access")),
+                            access_line(
+                                fl!("files-properties-owner"),
+                                item.owner.clone(),
+                                metadata.permissions >> 6
+                            ),
+                            access_line(
+                                fl!("files-properties-group"),
+                                item.group.clone(),
+                                metadata.permissions >> 3
+                            ),
+                            access_line(fl!("files-properties-others"), None, metadata.permissions),
+                            label(fl!(
+                                "files-properties-mode",
+                                mode = format!("{:04o}", metadata.permissions),
+                                uid = metadata.owner.to_string(),
+                                gid = metadata.group.to_string()
                             ))
                             .style(canopa_ui::muted),
                         ]
@@ -404,7 +418,7 @@ fn contents<'a>(
             }
         }
     }
-    let action = |index, title: &'static str, message: Message| {
+    let action = |index, title: String, message: Message| {
         super::focus::button(
             control(id, index),
             Some(message.clone()),
@@ -424,14 +438,14 @@ fn contents<'a>(
                 .unwrap_or(path.as_os_str())
                 .to_string_lossy()
                 .into_owned(),
-            "Properties".into(),
-            "Copy location",
+            fl!("files-properties"),
+            fl!("files-properties-copy-location"),
         )
     } else {
         (
-            "Properties".into(),
-            format!("{} items", properties.paths.len()),
-            "Copy locations",
+            fl!("files-properties"),
+            fl!("files-status-items", count = properties.paths.len()),
+            fl!("files-properties-copy-locations"),
         )
     };
     let icon = if single {
@@ -449,11 +463,11 @@ fn contents<'a>(
     } else {
         chrome::Icon::Info
     };
-    let actions = row![
+    let actions = canopa_ui::direction::row([
         action(0, copy_label, Message::Properties(Event::Copy(id))),
-        iced::widget::space().width(Length::Fill),
-        action(1, "Close", Message::Close(id))
-    ]
+        iced::widget::space().width(Length::Fill).into(),
+        action(1, fl!("files-close"), Message::Close(id)),
+    ])
     .spacing(8);
     let body = chrome::centered(
         column![
