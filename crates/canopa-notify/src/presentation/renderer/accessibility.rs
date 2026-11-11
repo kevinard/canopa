@@ -126,12 +126,17 @@ impl BannerAccessibility {
             let group_id = id_for(target, 0);
             groups.push(group_id);
             let mut group = Node::new(Role::Alert);
-            // One polite announcement per new revision, including image alternative text.
+            // One announcement per new revision, including image alternative text.
+            // Critical notifications interrupt; others wait for the current speech.
             group.set_label(format!(
                 "{}: {}. {}",
                 banner.app_name, banner.summary, banner.body
             ));
-            group.set_live(Live::Polite);
+            group.set_live(if banner.urgency == crate::Urgency::Critical {
+                Live::Assertive
+            } else {
+                Live::Polite
+            });
             group.set_live_atomic();
             let mut children = Vec::new();
             let body_id = id_for(target, 1);
