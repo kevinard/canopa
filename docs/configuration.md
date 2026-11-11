@@ -110,7 +110,15 @@ results cannot update the replacement. The manual keep-awake preference survives
 reload while an idle-inhibitor module remains configured.
 
 Invalid input retains the previous complete configuration and foreground content.
-Safe errors go to the journal and the explicit command; use
+If the configuration is already invalid when Canopa Shell starts, the Shell starts
+with its embedded defaults instead of exiting, so the bar and launcher stay
+available, and it keeps watching the selected file. In both cases every bar shows
+a red warning badge at the top of its end zone, and a persistent Notify
+notification names the file, line and column and the parser's message, with
+**Open file** and **Open Settings** buttons. Clicking the badge opens the file
+(right-click opens Settings). The first valid save applies the configuration and
+removes both. The notification waits for Notify if it is not running yet. Only safe
+error codes go to the journal and the explicit command; use
 `canopa-shell --check-config --show-source` (with the same source override, if any)
 for local diagnostic details. Discovery is repeated, so creating the common file
 supersedes legacy input, and removing it reselects legacy input or defaults. A

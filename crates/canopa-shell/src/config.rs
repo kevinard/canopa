@@ -2,6 +2,7 @@ mod bar;
 mod defaults;
 mod error;
 mod module;
+pub(crate) mod notice;
 mod parse;
 pub mod style;
 mod template;

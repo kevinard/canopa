@@ -31,13 +31,28 @@ impl ConfigSourceName {
 #[derive(Debug, Clone)]
 pub(crate) struct ConfigSource {
     inner: Arc<NamedSource<String>>,
+    path: Option<Arc<std::path::Path>>,
 }
 
 impl ConfigSource {
     pub(crate) fn new(name: ConfigSourceName, text: impl Into<String>) -> Self {
+        let path = match &name {
+            ConfigSourceName::UserFile(path) => Some(Arc::from(path.as_path())),
+            _ => None,
+        };
         Self {
             inner: Arc::new(NamedSource::new(name.display_name(), text.into())),
+            path,
         }
+    }
+
+    /// The user file this source was read from; `None` for embedded defaults.
+    pub(crate) fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
+    }
+
+    pub(crate) fn text(&self) -> &str {
+        self.inner.inner()
     }
 
     #[cfg(test)]
@@ -104,9 +119,16 @@ impl ConfigDiagnostic {
         self.path.as_deref()
     }
 
-    #[cfg(test)]
     pub(crate) fn help_text(&self) -> Option<&str> {
         self.help.as_deref()
+    }
+
+    pub(crate) fn source(&self) -> &ConfigSource {
+        &self.source
+    }
+
+    pub(crate) fn offset(&self) -> Option<usize> {
+        self.span.map(|span| span.offset())
     }
 
     #[cfg(test)]

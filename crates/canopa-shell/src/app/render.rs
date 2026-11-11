@@ -36,6 +36,9 @@ pub(super) struct BarRenderModel<'a> {
     pub(super) start: Vec<ModuleRenderEntry<'a>>,
     pub(super) center: Vec<ModuleRenderEntry<'a>>,
     pub(super) end: Vec<ModuleRenderEntry<'a>>,
+    /// Present while the selected configuration is rejected: the badge's
+    /// click and right-click actions.
+    pub(super) config_alert: Option<Vec<crate::notice::NoticeAction>>,
 }
 
 pub(super) struct PanelRenderModel<'a> {
@@ -540,6 +543,7 @@ impl App {
             start,
             center,
             end,
+            config_alert: self.configuration_notice_actions(),
         }
     }
 

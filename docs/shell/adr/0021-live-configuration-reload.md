@@ -24,8 +24,24 @@ arriving during preparation coalesce into one subsequent preparation; the earlie
 candidate is discarded before installation. IPC callers wait for the newest result,
 with a bounded responder set. A disconnected caller does not cancel installation.
 Read, parse, validation and module construction failures retain the prior complete
-configuration, source, generation and foreground. Runtime errors never include
+configuration, source, generation and foreground. Logs and IPC replies never include
 configuration source values. The explicit local checker retains detailed diagnostics.
+
+Amended 2026-11-11: an invalid selection at startup no longer stops the Shell. It
+starts with the embedded defaults, as `canopa-lock` does, and keeps watching the
+original selection, so the first valid save installs it. While the selected
+configuration is rejected (at startup or on reload), every bar shows a warning
+badge and the Shell keeps one persistent Notify notification naming the file, the
+line and column, and the parser's message, with buttons to open the file or
+Settings. That notice is shown only to the person whose file it is; logs keep the
+safe codes. A successful installation removes both.
+
+The Shell's notice service is one long-lived subscription owning a session-bus
+connection, one notification per purpose, and the `ActionInvoked` and
+`NotificationClosed` signals. It never D-Bus-activates a notification server,
+which could start an unrelated daemon ahead of Canopa Notify; a server that
+starts later is noticed through its bus name, and a restarted server receives the
+current notices again.
 
 Installation first constructs the candidate Module Runtime, then commits in one
 App update. Effective equality makes comment-only changes and unrelated namespace

@@ -1086,10 +1086,14 @@ fn render_bar_model<'a>(
             .into(),
         );
     }
+    let mut end: Vec<_> = model.end.into_iter().map(|e| e.element).collect();
+    if let Some(actions) = model.config_alert {
+        end.insert(0, config_alert(actions, model.is_horizontal));
+    }
     let content: Element<'_, Message> = container(zone_layout(
         model.start.into_iter().map(|e| e.element).collect(),
         center,
-        model.end.into_iter().map(|e| e.element).collect(),
+        end,
         model.is_horizontal,
         padding,
         ui.gap.px(),
@@ -1155,6 +1159,45 @@ fn render_bar_model<'a>(
             bottom: 0.0,
         })
         .into()
+}
+
+/// The configuration-error badge: click opens the file (or Settings when there
+/// is no file), right-click opens Settings. The notification carries the text.
+fn config_alert<'a>(
+    actions: Vec<crate::notice::NoticeAction>,
+    horizontal: bool,
+) -> Element<'a, Message> {
+    let palette = crate::theme::palette();
+    let primary = actions.first().cloned();
+    let settings = actions
+        .iter()
+        .find(|action| matches!(action, crate::notice::NoticeAction::OpenSettings(_)))
+        .cloned()
+        .or_else(|| primary.clone());
+    let badge = container(crate::theme::icon(
+        include_bytes!("../../assets/alert.svg"),
+        20.0,
+        palette.danger,
+    ))
+    .padding(7)
+    .style(move |_| {
+        container::Style::default()
+            .background(palette.danger.scale_alpha(0.14))
+            .border(iced::Border::default().rounded(12))
+    });
+    let badge = if horizontal {
+        container(badge).center_y(Length::Fill)
+    } else {
+        container(badge).center_x(Length::Fill)
+    };
+    let mut area = mouse_area(badge).interaction(iced::mouse::Interaction::Pointer);
+    if let Some(action) = primary {
+        area = area.on_press(Message::Notice(action));
+    }
+    if let Some(action) = settings {
+        area = area.on_right_press(Message::Notice(action));
+    }
+    area.into()
 }
 
 #[cfg(test)]

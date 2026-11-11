@@ -15,6 +15,7 @@ mod ipc;
 mod launcher;
 mod modules;
 mod niri;
+mod notice;
 mod surface;
 mod theme;
 mod wallpaper;
@@ -323,9 +324,48 @@ fn send_ipc_command(cmd: &str) {
     }
 }
 
+/// The configuration the Shell starts with. An invalid selection never stops the
+/// Shell: it starts with the embedded defaults (as `canopa-lock` does), keeps
+/// watching the selected file, and reports the problem in the bar and Notify.
+fn startup_configuration(
+    request: &canopa_config::Request,
+) -> Result<
+    (
+        config::Config,
+        canopa_config::SourceInfo,
+        canopa_config::Request,
+        Option<config::notice::ConfigNotice>,
+    ),
+    AppError,
+> {
+    let (config, source, notice) = match config::load(request, true) {
+        Ok((config, source)) => (config, source, None),
+        Err(error) => {
+            let notice = config::notice::ConfigNotice::from_error(&error, request);
+            tracing::warn!(target: "canopa_shell::configuration", error = %error.safe_diagnostic(),
+                "configuration rejected at startup; starting with the embedded defaults");
+            eprintln!(
+                "canopa-shell: {}; starting with the embedded defaults. Run canopa-shell --check-config --show-source for details",
+                error.safe_diagnostic()
+            );
+            let (config, source) = config::load(&canopa_config::Request::Defaults, false)?;
+            (config, source, Some(notice))
+        }
+    };
+    // Discovery is repeated on every reload; explicit paths are resolved once.
+    // A selection that cannot be resolved has nothing to watch.
+    let watched = match request {
+        canopa_config::Request::Discover => request.clone(),
+        _ => request
+            .resolve(canopa_config::Component::Shell)
+            .unwrap_or_default(),
+    };
+    Ok((config, source, watched, notice))
+}
+
 fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
     // Load config fully before any surface is created (AR7).
-    let (config, source) = config::load(request, false)?;
+    let (config, source, request, startup_error) = startup_configuration(request)?;
     theme::install(config.appearance.clone());
     tracing::info!(target: "canopa_shell::configuration", source = ?source, "configuration installed; automatic reload enabled");
     tracing::debug!(
@@ -356,17 +396,11 @@ fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
         "waiting for Wayland Output Snapshot before opening Bar Surfaces"
     );
 
-    let request = match request {
-        canopa_config::Request::Discover => request.clone(),
-        _ => request
-            .resolve(canopa_config::Component::Shell)
-            .map_err(config::ConfigError::Intake)?,
-    };
     daemon(
         move || {
             let (mut app, task) =
                 App::boot_with_eligible_outputs(config.clone(), eligible_outputs.clone());
-            app.configure_reload(request.clone(), source.clone());
+            app.configure_reload(request.clone(), source.clone(), startup_error.clone());
             (app, task)
         },
         App::namespace,
@@ -422,6 +456,45 @@ mod tests {
 
         assert_eq!(entries[0].display_label(), "Firefox");
         assert_eq!(entries[0].selected_value(), "org.mozilla.firefox");
+    }
+
+    #[test]
+    fn invalid_configuration_starts_with_defaults_and_keeps_watching_the_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.kdl");
+        let (defaults, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
+        for text in [
+            "schema-version 1\nshell { bar \"main\" { edge \"nowhere\"; }; }\n",
+            "schema-version 1\nshell {\n",
+            "schema-version 7\n",
+            "schema-version 1\nappearance { color-scheme \"plaid\"; }\n",
+        ] {
+            std::fs::write(&path, text).unwrap();
+            let request = canopa_config::Request::common(&path);
+            let (config, source, watched, notice) =
+                super::startup_configuration(&request).expect("never exits on a config error");
+            assert_eq!(config, defaults, "{text}");
+            assert!(source.defaults);
+            assert_eq!(watched, request);
+            let notice = notice.expect("the error is reported");
+            assert_eq!(notice.path.as_deref(), Some(path.as_path()));
+        }
+        // A missing explicit file is also reported instead of stopping the Shell.
+        let missing = canopa_config::Request::common(directory.path().join("absent.kdl"));
+        let (config, _, _, notice) = super::startup_configuration(&missing).unwrap();
+        assert_eq!(config, defaults);
+        assert!(notice.is_some());
+
+        std::fs::write(
+            &path,
+            "schema-version 1\nshell { bar \"main\" { edge \"top\"; }; }\n",
+        )
+        .unwrap();
+        let (config, source, _, notice) =
+            super::startup_configuration(&canopa_config::Request::common(&path)).unwrap();
+        assert_eq!(config.bars[0].edge, crate::config::Edge::Top);
+        assert!(!source.defaults);
+        assert!(notice.is_none());
     }
 
     #[test]

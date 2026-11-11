@@ -74,6 +74,7 @@ pub(crate) struct App {
     external_panel_session: external_panel_session::ExternalPanelSessionRuntime,
     canopa_accessibility: Option<canopa_accessibility::PanelAccessibility>,
     accessibility_focused_window: Option<iced::window::Id>,
+    notices: crate::notice::Outbox,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -87,6 +88,8 @@ pub(crate) struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     Configuration(configuration::Event),
+    /// A button on one of the Shell's own notices, or on the bar's error badge.
+    Notice(crate::notice::NoticeAction),
     Wallpaper(crate::wallpaper::Event),
     LauncherHistory(crate::launcher::history::Event),
     LauncherClipboardLoaded(crate::launcher::clipboard::SavedChange),
@@ -160,6 +163,7 @@ impl Message {
             Message::Surface(event) => event.diagnostic_label(),
             Message::WaylandOutputSnapshot(_) => "WaylandOutputSnapshot",
             Message::Configuration(_) => "Configuration",
+            Message::Notice(_) => "Notice",
             Message::Wallpaper(_) => "Wallpaper",
             Message::LauncherHistory(_) => "LauncherHistory",
             Message::LauncherClipboardLoaded(_) => "LauncherClipboardLoaded",
@@ -338,6 +342,7 @@ impl App {
             external_panel_session: external_panel_session::ExternalPanelSessionRuntime::default(),
             canopa_accessibility: None,
             accessibility_focused_window: None,
+            notices: Default::default(),
             #[cfg(test)]
             external_panel_responses_for_test: std::collections::HashMap::new(),
             #[cfg(test)]
@@ -402,6 +407,7 @@ impl App {
 
         let task = match message {
             Message::Configuration(event) => self.handle_configuration_event(event),
+            Message::Notice(action) => self.handle_notice_action(action),
             Message::Wallpaper(event) => self.handle_wallpaper(event),
             Message::LauncherPreferences(event) => {
                 self.launcher_preferences.apply(event);

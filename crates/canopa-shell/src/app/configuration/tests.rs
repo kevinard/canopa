@@ -17,7 +17,7 @@ fn source() -> SourceInfo {
 
 fn app(config: Config) -> App {
     let (mut app, _) = App::boot(config, vec!["DP-1".into(), "DP-2".into()]);
-    app.configure_reload(Request::Defaults, source());
+    app.configure_reload(Request::Defaults, source(), None);
     app
 }
 
@@ -26,7 +26,7 @@ fn install(app: &mut App, config: Config) {
         config,
         source(),
     ))))));
-    assert!(app.configuration.last_error.is_none());
+    assert!(app.configuration.notice.is_none());
 }
 
 fn reload_request(app: &mut App) -> tokio::sync::oneshot::Receiver<IpcResponse> {
@@ -117,6 +117,23 @@ async fn invalid_candidate_keeps_foreground_configuration_source_and_generation(
         panic!("reload must fail")
     };
     assert!(!reason.contains("private-secret"));
+    // The person editing the file sees where and what, in the bar and Notify.
+    let notice = app.configuration.notice.clone().expect("rejection notice");
+    assert_eq!(notice.path.as_deref(), Some(path.as_path()));
+    assert_eq!(notice.position.map(|(line, _)| line), Some(2));
+    assert!(notice.message.contains("private-secret"));
+    let Some(crate::notice::Command::Show(crate::notice::NoticeSlot::Configuration, shown)) =
+        app.notices.sent.last()
+    else {
+        panic!("a rejected reload must notify: {:?}", app.notices.sent)
+    };
+    assert!(shown.persistent);
+    assert!(shown.body.starts_with(&format!("{}:2:", path.display())));
+    assert!(shown.body.contains("last working configuration"));
+    assert_eq!(
+        app.configuration_notice_actions().unwrap()[0],
+        crate::notice::NoticeAction::OpenFile(path.clone())
+    );
     assert_eq!(app.config, before);
     assert_eq!(app.configuration.source, Some(source()));
     assert_eq!(app.configuration.generation, 0);
@@ -132,7 +149,92 @@ async fn invalid_candidate_keeps_foreground_configuration_source_and_generation(
     )));
     assert_eq!(response.await.unwrap(), IpcResponse::Accepted);
     assert_eq!(app.config.bars[0].edge, Edge::Bottom);
-    assert!(app.configuration.last_error.is_none());
+    assert!(app.configuration.notice.is_none());
+    assert!(app.configuration_notice_actions().is_none());
+    assert_eq!(
+        app.notices.sent.last(),
+        Some(&crate::notice::Command::Clear(
+            crate::notice::NoticeSlot::Configuration
+        ))
+    );
+}
+
+#[tokio::test]
+async fn startup_fallback_keeps_reporting_until_the_file_is_fixed() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.kdl");
+    std::fs::write(
+        &path,
+        "schema-version 1\nshell {\n  bar \"main\" { edge \"nowhere\"; }\n}\n",
+    )
+    .unwrap();
+    let request = Request::common(&path);
+    let error = crate::config::load(&request, true).unwrap_err();
+    let notice = ConfigNotice::from_error(&error, &request);
+    let (defaults, defaults_source) = crate::config::load(&Request::Defaults, false).unwrap();
+    let (mut app, _) = App::boot(defaults.clone(), vec!["DP-1".into()]);
+    app.configure_reload(request.clone(), defaults_source, Some(notice));
+    let wording = |app: &App| match app.notices.sent.last() {
+        Some(crate::notice::Command::Show(_, shown)) => shown.body.clone(),
+        other => panic!("expected a shown notice, got {other:?}"),
+    };
+    assert!(wording(&app).contains("built-in layout"));
+    // Every bar shows the error badge; its click opens the file.
+    let bar = *app.surfaces.keys().next().unwrap();
+    assert_eq!(
+        app.bar_render_model(bar).config_alert.unwrap()[0],
+        crate::notice::NoticeAction::OpenFile(path.clone())
+    );
+
+    // Another invalid save keeps the defaults and says so.
+    std::fs::write(
+        &path,
+        "schema-version 1\nshell { bar \"main\" { thickness 1; }; }\n",
+    )
+    .unwrap();
+    let _ = app.update(Message::Configuration(Event::Changed));
+    let _ = app.update(Message::Configuration(Event::Prepared(
+        prepare(request.clone()).await,
+    )));
+    assert_eq!(app.config, defaults);
+    assert!(
+        wording(&app).contains("built-in layout"),
+        "{}",
+        wording(&app)
+    );
+
+    std::fs::write(
+        &path,
+        "schema-version 1\nshell { bar \"main\" { edge \"top\"; }; }\n",
+    )
+    .unwrap();
+    let _ = app.update(Message::Configuration(Event::Changed));
+    let _ = app.update(Message::Configuration(Event::Prepared(
+        prepare(request.clone()).await,
+    )));
+    assert_eq!(app.config.bars[0].edge, Edge::Top);
+    assert!(app.configuration.notice.is_none());
+    let bar = *app.surfaces.keys().next().unwrap();
+    assert!(app.bar_render_model(bar).config_alert.is_none());
+    assert_eq!(
+        app.notices.sent.last(),
+        Some(&crate::notice::Command::Clear(
+            crate::notice::NoticeSlot::Configuration
+        ))
+    );
+
+    // After a good configuration, a later mistake keeps that configuration.
+    std::fs::write(
+        &path,
+        "schema-version 1\nshell { bar \"main\" { edge 3; }; }\n",
+    )
+    .unwrap();
+    let _ = app.update(Message::Configuration(Event::Changed));
+    let _ = app.update(Message::Configuration(Event::Prepared(
+        prepare(request).await,
+    )));
+    assert_eq!(app.config.bars[0].edge, Edge::Top);
+    assert!(wording(&app).contains("last working configuration"));
 }
 
 #[tokio::test]

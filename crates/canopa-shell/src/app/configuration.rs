@@ -8,12 +8,22 @@ use iced::{Subscription, Task};
 use super::messages::IpcResponder;
 use super::{App, Message};
 use crate::config::Config;
+use crate::config::notice::{ConfigNotice, Fallback};
 use crate::ipc::protocol::IpcResponse;
+use crate::notice::NoticeSlot;
 
 #[derive(Debug, Clone)]
 pub enum Event {
     Changed,
-    Prepared(Result<Box<(Config, SourceInfo)>, String>),
+    Prepared(Result<Box<(Config, SourceInfo)>, Box<Rejection>>),
+}
+
+/// A rejected candidate: the safe reason for logs and IPC callers, and the
+/// detailed notice for the person editing the file.
+#[derive(Debug, Clone)]
+pub struct Rejection {
+    reason: String,
+    notice: ConfigNotice,
 }
 
 #[cfg(test)]
@@ -26,7 +36,12 @@ pub(super) struct ConfigurationRuntime {
     loading: bool,
     pending: bool,
     responders: Vec<IpcResponder>,
-    last_error: Option<String>,
+    /// The latest rejection, shown in the bar and through Notify until a
+    /// candidate installs.
+    pub(super) notice: Option<ConfigNotice>,
+    /// Set while the Shell runs its embedded defaults because the selected
+    /// configuration was invalid at startup.
+    fallback: Option<Fallback>,
     pub(super) generation: u64,
 }
 
@@ -140,14 +155,25 @@ fn watch(request: Request) -> Subscription<Event> {
     )
 }
 
-async fn prepare(request: Request) -> Result<Box<(Config, SourceInfo)>, String> {
+async fn prepare(request: Request) -> Result<Box<(Config, SourceInfo)>, Box<Rejection>> {
+    let selection = request.clone();
     tokio::task::spawn_blocking(move || {
-        crate::config::load(&request, false)
+        crate::config::load(&selection, true)
             .map(Box::new)
-            .map_err(|error| error.safe_diagnostic().to_string())
+            .map_err(|error| {
+                Box::new(Rejection {
+                    reason: error.safe_diagnostic().to_string(),
+                    notice: ConfigNotice::from_error(&error, &selection),
+                })
+            })
     })
     .await
-    .map_err(|_| "configuration preparation failed".to_string())?
+    .map_err(|_| {
+        Box::new(Rejection {
+            reason: "configuration preparation failed".into(),
+            notice: ConfigNotice::construction(&request),
+        })
+    })?
 }
 
 fn respond(responder: &IpcResponder, response: IpcResponse) {
@@ -159,9 +185,48 @@ fn respond(responder: &IpcResponder, response: IpcResponse) {
 }
 
 impl App {
-    pub(crate) fn configure_reload(&mut self, request: Request, source: SourceInfo) {
+    pub(crate) fn configure_reload(
+        &mut self,
+        request: Request,
+        source: SourceInfo,
+        startup_error: Option<ConfigNotice>,
+    ) {
         self.configuration.request = Some(request);
         self.configuration.source = Some(source);
+        if let Some(notice) = startup_error {
+            self.configuration.fallback = Some(Fallback::EmbeddedDefaults);
+            self.show_configuration_notice(notice);
+        }
+    }
+
+    fn show_configuration_notice(&mut self, notice: ConfigNotice) {
+        let fallback = self
+            .configuration
+            .fallback
+            .unwrap_or(Fallback::PreviousConfiguration);
+        self.notices
+            .show(NoticeSlot::Configuration, notice.notice(fallback));
+        self.configuration.notice = Some(notice);
+    }
+
+    /// A button on one of the Shell's notices, or on the bar's error badge.
+    pub(super) fn handle_notice_action(
+        &mut self,
+        action: crate::notice::NoticeAction,
+    ) -> Task<Message> {
+        Task::batch(
+            self.apply_app_effects(vec![super::app_effects::AppEffect::LaunchApplication(
+                action.argv(),
+            )]),
+        )
+    }
+
+    /// The bar's configuration-error badge: its click and right-click actions.
+    pub(super) fn configuration_notice_actions(&self) -> Option<Vec<crate::notice::NoticeAction>> {
+        self.configuration
+            .notice
+            .as_ref()
+            .map(ConfigNotice::actions)
     }
 
     pub(super) fn request_configuration_reload(
@@ -214,18 +279,28 @@ impl App {
         }
         let result = candidate.and_then(|candidate| {
             let (config, source) = *candidate;
-            let task = self.install_configuration(config)?;
+            let task = self.install_configuration(config).map_err(|reason| {
+                let request = self.configuration.request.clone().unwrap_or_default();
+                Box::new(Rejection {
+                    reason,
+                    notice: ConfigNotice::construction(&request),
+                })
+            })?;
             self.configuration.source = Some(source);
-            self.configuration.last_error = None;
+            self.configuration.fallback = None;
+            if self.configuration.notice.take().is_some() {
+                self.notices.clear(NoticeSlot::Configuration);
+            }
             tracing::info!(target: "canopa_shell::configuration", generation = self.configuration.generation,
                 source = ?self.configuration.source, "configuration reloaded");
             Ok(task)
         });
         let (response, task) = match result {
             Ok(task) => (IpcResponse::Accepted, task),
-            Err(reason) => {
+            Err(rejection) => {
+                let Rejection { reason, notice } = *rejection;
                 tracing::warn!(target: "canopa_shell::configuration", error = %reason, "configuration reload rejected; keeping previous configuration");
-                self.configuration.last_error = Some(reason.clone());
+                self.show_configuration_notice(notice);
                 (IpcResponse::Rejected { reason }, Task::none())
             }
         };

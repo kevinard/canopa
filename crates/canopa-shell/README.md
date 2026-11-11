@@ -30,7 +30,11 @@ Configuration comes from the `shell` namespace of `$XDG_CONFIG_HOME/canopa/confi
 (default `~/.config/canopa/config.kdl`). When that file is absent, the legacy
 `niribar/config.kdl` remains supported; otherwise missing namespaces use embedded
 defaults. See the [shared configuration guide](../../docs/configuration.md) for validation,
-explicit sources, and migration. Shell changes require a restart. Existing option
+explicit sources, and migration. Saved changes apply within about half a second,
+without a restart. An invalid file never stops the Shell: it keeps the last working
+configuration (or starts with the embedded defaults), shows a red badge on the bar
+and a notification with the file, line and message, and applies the next valid
+save. Click the badge to open the file. Existing option
 examples in [config/default.kdl](config/default.kdl), [docs](../../docs/shell/) and
 [CONTEXT.md](../../docs/shell/CONTEXT.md) go inside the shared `shell` block.
 The adjacent shared `appearance` block controls the dark/light palette and accent
@@ -149,7 +153,7 @@ panel {
 
 Set both durations to `0` for reduced motion. Either duration can be disabled
 independently. Motion is configured per bar; the shared `appearance` block does not
-currently read a desktop motion preference. Restart Canopa Shell after changing settings.
+currently read a desktop motion preference. Saved changes apply without a restart.
 Closing ends interaction immediately; the remaining exit image cannot receive input.
 
 ### Vertical side drawer
@@ -180,8 +184,8 @@ panel {
 Explicit `width`/`height` and `max-width`/`max-height` still apply. On top/bottom
 bars, the drawer preference uses the existing automatic layout. Omitted
 `presentation`, or `presentation "auto"`, keeps the previous content-aware panel
-sizing. Tooltips and tray context menus remain small popups. Restart Canopa Shell after
-editing configuration.
+sizing. Tooltips and tray context menus remain small popups. Saved changes apply
+without a restart.
 
 `drawer-mode "overlay"` (the default) keeps the bar at the screen edge and opens
 the drawer beside it. `drawer-mode "push-bar"` opens the drawer at the bar's edge

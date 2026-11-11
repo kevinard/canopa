@@ -149,6 +149,9 @@ impl App {
                 super::launcher::Session::subscription,
             ),
             self.configuration.subscription(),
+            // Always installed: it owns the Shell's notification IDs for the
+            // process lifetime and is idle until a notice is queued.
+            self.notices.subscription().map(Message::Notice),
             crate::wallpaper::subscription(),
             self.canopa_accessibility.as_ref().map_or_else(
                 iced::Subscription::none,
