@@ -108,6 +108,7 @@ fn prepare_using(
         // A duplicate of the owned output descriptor lets the callback validate
         // its namespace without borrowing the writer. No user path is reopened.
         let mut output = payload.file().try_clone()?;
+        let mut behind = copy_backend::WriteBehind::new(&output)?;
         copy_backend::copy_regular(&mut input, &mut output, |count| {
             check_cancel(cancellation)?;
             checkpoint()?;
@@ -125,6 +126,7 @@ fn prepare_using(
                     cancellation,
                 );
                 progress(count);
+                behind.written(count)?;
                 check_cancel(cancellation)?;
                 source.require_current()?;
                 payload.require_current()?;
@@ -148,7 +150,8 @@ fn prepare_using(
         payload.require_current()?;
         copy_backend::restore_metadata(&output, before)?;
         // Sync is a host durability boundary, after backend content/metadata.
-        output.sync_all()?;
+        // A batched Copy span defers it to the batch barrier (ADR0165).
+        durability::sync(&output)?;
         #[cfg(test)]
         super::transfer::stage_boundary::preparing("completed", source.path(), &stage);
         (payload, digest)

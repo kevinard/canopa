@@ -39,6 +39,7 @@ pub mod deletion;
 mod directory_removal;
 #[cfg(test)]
 mod directory_removal_boundary;
+mod durability;
 mod entry_move;
 #[cfg(test)]
 mod entry_move_boundary;
@@ -962,7 +963,7 @@ fn commit_forward_with_created(
     if let Some(stage) = &stage
         && stage.identity.matches(&stage.directory)
     {
-        fs::File::open(&stage.directory)?.sync_all()?;
+        durability::sync(&fs::File::open(&stage.directory)?)?;
     }
     append_forward(state, id, ordinal, &change, stage.as_ref())?;
     Ok(())
@@ -1269,7 +1270,7 @@ fn restore_directory_mode(
     }
     if metadata.mode() & 0o7777 == mode | 0o700 {
         file.set_permissions(fs::Permissions::from_mode(mode))?;
-        file.sync_all()?;
+        durability::sync(&file)?;
     }
     Ok(())
 }
@@ -1550,10 +1551,13 @@ fn sync_change(change: &Change) -> io::Result<()> {
             sync_parent(destination)
         }
         Change::DirectoryMerge { change, .. } => sync_change(change),
-        Change::CreatedFolder { path, .. }
-        | Change::Copied { path, .. }
-        | Change::RetainedOnly { path, .. }
-        | Change::RemovedDirectory { path, .. } => sync_parent(path),
+        // New items only; a deferred span batches this barrier (ADR0165).
+        Change::CreatedFolder { path, .. } | Change::Copied { path, .. } => {
+            durability::sync_parent(path)
+        }
+        Change::RetainedOnly { path, .. } | Change::RemovedDirectory { path, .. } => {
+            sync_parent(path)
+        }
         Change::Rename {
             original, current, ..
         } => {

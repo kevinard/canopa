@@ -17,6 +17,34 @@ pub(super) fn copy_regular(
     Ok(())
 }
 
+/// Bounded write-behind for large outputs (ADR0165). Without it a slow device
+/// accepts the whole file into the page cache at memory speed, progress reaches
+/// the end at once and the final sync then stalls for the real transfer. After
+/// each window the file's data is synced, so at most one window is dirty and
+/// progress follows the device. Smaller files are untouched.
+pub(super) struct WriteBehind {
+    file: fs::File,
+    pending: u64,
+}
+
+impl WriteBehind {
+    pub(super) fn new(output: &fs::File) -> io::Result<Self> {
+        Ok(Self {
+            file: output.try_clone()?,
+            pending: 0,
+        })
+    }
+
+    pub(super) fn written(&mut self, count: u64) -> io::Result<()> {
+        self.pending += count;
+        if self.pending >= super::durability::MAX_BYTES {
+            self.pending = 0;
+            rustix::fs::fdatasync(&self.file)?;
+        }
+        Ok(())
+    }
+}
+
 /// Apply policy after receipt reads, so they cannot change the preserved atime.
 pub(super) fn restore_metadata(output: &fs::File, metadata: &fs::Metadata) -> io::Result<()> {
     output.set_permissions(fs::Permissions::from_mode(

@@ -179,6 +179,29 @@ impl Store {
         wal.push("-wal");
         vec![self.path.clone(), wal.into()]
     }
+    /// Run plain new-item Copy steps with deferred barriers when a batched
+    /// Copy session is active on this thread (ADR0165). Commits keep their order
+    /// and reach the kernel before the next step; only their sync is batched.
+    pub(super) fn deferred<T>(
+        &mut self,
+        plain: bool,
+        run: impl FnOnce(&mut Self) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let Some(span) = plain.then(super::durability::enter).flatten() else {
+            return run(self);
+        };
+        self.connection
+            .execute_batch("PRAGMA synchronous=NORMAL;")
+            .map_err(db_error)?;
+        let result = run(self);
+        drop(span);
+        let restored = self
+            .connection
+            .execute_batch("PRAGMA synchronous=FULL;")
+            .map_err(db_error);
+        let value = result?;
+        restored.map(|()| value)
+    }
     pub(super) fn lane_for_reconciliation(&self) -> IntentLane {
         self.lane
     }

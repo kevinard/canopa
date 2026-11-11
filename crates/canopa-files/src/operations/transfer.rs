@@ -478,6 +478,14 @@ impl TransferContinuation {
         self.pending.iter().map(|(source, _, _)| source)
     }
 
+    /// Sources still to transfer, without post-order folder removals.
+    pub(crate) fn task_sources(&self) -> impl Iterator<Item = &PathBuf> {
+        self.pending
+            .iter()
+            .filter(|(_, _, finish)| finish.is_none())
+            .map(|(source, _, _)| source)
+    }
+
     pub(crate) fn observed_transfer(&self) -> Option<&ObservedTransfer> {
         self.observed.as_ref()
     }
@@ -809,19 +817,24 @@ pub(super) fn run_transfer(
     context: RunContext<'_>,
 ) -> io::Result<TransferOutcome> {
     let mut outcome = TransferOutcome::default();
-    let result = state
-        .with_directory_access(|state| {
-            run_transfer_inner(
-                state,
-                request,
-                cancellation,
-                check,
-                interact,
-                context,
-                &mut outcome,
-            )
-        })
-        .and_then(|()| state.trim());
+    // New-item Copy batches its barriers; Move and Recovery keep per-step
+    // syncs (ADR0165). The final flush makes "done" mean on the device.
+    let session = (request.kind == TransferKind::Copy
+        && matches!(context, RunContext::Transfer { .. }))
+    .then(|| super::durability::Session::begin(state.history_observation_paths()));
+    let result = state.with_directory_access(|state| {
+        run_transfer_inner(
+            state,
+            request,
+            cancellation,
+            check,
+            interact,
+            context,
+            &mut outcome,
+        )
+    });
+    let flushed = session.map_or(Ok(()), super::durability::Session::flush);
+    let result = result.and(flushed).and_then(|()| state.trim());
     match result {
         Ok(()) => Ok(outcome),
         Err(error) => Err(io::Error::new(
@@ -931,19 +944,23 @@ fn run_transfer_inner(
     while !pending.is_empty() {
         state.restore_directory_access()?;
         if let Some(cursor) = &mut cursor {
-            cursor.checkpoint(
-                state,
-                cursor::Checkpoint {
-                    queue: &mut pending,
-                    directories: &directories,
-                    changed_directories: &mut changed_directories,
-                    saved: &saved_receipts,
-                    copied: &copied_receipts,
-                    failed: &failed,
-                    result,
-                    root: &destination_observation,
-                },
-            )?;
+            // Restart cursors share the history database, so a power loss
+            // still leaves a consistent earlier journal prefix (ADR0165).
+            state.deferred(true, |state| {
+                cursor.checkpoint(
+                    state,
+                    cursor::Checkpoint {
+                        queue: &mut pending,
+                        directories: &directories,
+                        changed_directories: &mut changed_directories,
+                        saved: &saved_receipts,
+                        copied: &copied_receipts,
+                        failed: &failed,
+                        result,
+                        root: &destination_observation,
+                    },
+                )
+            })?;
         }
         let (source, mut destination, finish) = pending.pop_front().unwrap();
         if cancellation.is_cancelled() {
@@ -962,6 +979,7 @@ fn run_transfer_inner(
             break;
         }
         while let Err(error) = destination_observation.check() {
+            super::durability::flush()?;
             match interact(TransferEvent::Unavailable {
                 destination: request.destination.clone(),
                 message: format!("The destination folder is unavailable or has changed: {error}"),
@@ -1248,6 +1266,8 @@ fn run_transfer_inner(
                     } else if let Some(choice) = *cached {
                         choice
                     } else {
+                        // Earlier copies are durable while the user decides.
+                        super::durability::flush()?;
                         match interact(TransferEvent::Conflict {
                             source: entry.clone(),
                             destination: existing,
@@ -1468,25 +1488,31 @@ fn run_transfer_inner(
                         identity,
                     };
                     let prepared_finish = make_finish(identity, original);
-                    if let Some(cursor) = &mut cursor {
-                        cursor.prepare_directory(
-                            state,
-                            &pending,
-                            cursor::expansion::Preparation {
-                                task: (source.clone(), destination.clone(), Some(prepared_finish)),
-                                stage: Some(&stage),
-                                change: Some(&change),
-                                names: &children,
-                                operation: id,
-                            },
-                        )?;
-                    } else {
-                        state.register_preparing(
-                            id,
-                            &destination,
-                            &created.registration(&opened_source, &stage)?,
-                        )?;
-                    }
+                    state.deferred(true, |state| {
+                        if let Some(cursor) = &mut cursor {
+                            cursor.prepare_directory(
+                                state,
+                                &pending,
+                                cursor::expansion::Preparation {
+                                    task: (
+                                        source.clone(),
+                                        destination.clone(),
+                                        Some(prepared_finish),
+                                    ),
+                                    stage: Some(&stage),
+                                    change: Some(&change),
+                                    names: &children,
+                                    operation: id,
+                                },
+                            )
+                        } else {
+                            state.register_preparing(
+                                id,
+                                &destination,
+                                &created.registration(&opened_source, &stage)?,
+                            )
+                        }
+                    })?;
                     #[cfg(test)]
                     directory_boundary::boundary("preparing", &source, &destination);
                     checkpoint(
@@ -1497,19 +1523,22 @@ fn run_transfer_inner(
                         finish.is_some(),
                     )?;
                     opened_source.require_current()?;
-                    commit_forward_with_created(
-                        state,
-                        id,
-                        change,
-                        Some((stage, temporary)),
-                        Some(created.file()),
-                        |_| {
-                            created.publish()?;
-                            #[cfg(test)]
-                            directory_boundary::boundary("published", &source, &destination);
-                            Ok(())
-                        },
-                    )?;
+                    state.deferred(true, |state| {
+                        commit_forward_with_created(
+                            state,
+                            id,
+                            change,
+                            Some((stage, temporary)),
+                            Some(created.file()),
+                            |_| {
+                                created.publish()?;
+                                #[cfg(test)]
+                                directory_boundary::boundary("published", &source, &destination);
+                                Ok(())
+                            },
+                        )
+                    })?;
+                    super::durability::completed(0)?;
                     #[cfg(test)]
                     directory_boundary::boundary("appended", &source, &destination);
                     result.completed += 1;
@@ -1525,17 +1554,19 @@ fn run_transfer_inner(
                     opened.require_current()?;
                     let finish = make_finish(opened.identity, opened.original());
                     if let Some(cursor) = &mut cursor {
-                        cursor.prepare_directory(
-                            state,
-                            &pending,
-                            cursor::expansion::Preparation {
-                                task: (source.clone(), destination.clone(), Some(finish)),
-                                stage: None,
-                                change: None,
-                                names: &children,
-                                operation: id,
-                            },
-                        )?;
+                        state.deferred(true, |state| {
+                            cursor.prepare_directory(
+                                state,
+                                &pending,
+                                cursor::expansion::Preparation {
+                                    task: (source.clone(), destination.clone(), Some(finish)),
+                                    stage: None,
+                                    change: None,
+                                    names: &children,
+                                    operation: id,
+                                },
+                            )
+                        })?;
                     }
                     #[cfg(test)]
                     directory_boundary::boundary("merged", &source, &destination);
@@ -1553,6 +1584,13 @@ fn run_transfer_inner(
                 }
                 return Ok(false);
             } else {
+                // Only a new item with no reviewed replacement batches its
+                // barriers; Replace starts from a durable state (ADR0165).
+                let plain = replacement.is_none();
+                if !plain {
+                    super::durability::flush()?;
+                }
+                let bytes_before = result.bytes;
                 let prepared_copy::PreparedCopy {
                     source: source_pin,
                     opened,
@@ -1562,32 +1600,34 @@ fn run_transfer_inner(
                     fingerprint,
                     source_identity,
                     source_fingerprint,
-                } = prepared_copy::prepare_copy(
-                    &source,
-                    destination.parent().unwrap(),
-                    cancellation,
-                    |created| state.register_preparing(id, &destination, created),
-                    |bytes| {
-                        result.bytes = result.bytes.saturating_add(bytes);
-                        if interact(TransferEvent::Progress {
-                            path: source.clone(),
-                            completed: result.completed,
-                            bytes: result.bytes,
-                        }) == TransferReply::Cancel
-                        {
-                            cancellation.cancel();
-                        }
-                    },
-                    || {
-                        checkpoint(
-                            &mut check,
-                            &source,
-                            &destination,
-                            &directories,
-                            finish.is_some(),
-                        )
-                    },
-                )?;
+                } = state.deferred(plain, |state| {
+                    prepared_copy::prepare_copy(
+                        &source,
+                        destination.parent().unwrap(),
+                        cancellation,
+                        |created| state.register_preparing(id, &destination, created),
+                        |bytes| {
+                            result.bytes = result.bytes.saturating_add(bytes);
+                            if interact(TransferEvent::Progress {
+                                path: source.clone(),
+                                completed: result.completed,
+                                bytes: result.bytes,
+                            }) == TransferReply::Cancel
+                            {
+                                cancellation.cancel();
+                            }
+                        },
+                        || {
+                            checkpoint(
+                                &mut check,
+                                &source,
+                                &destination,
+                                &directories,
+                                finish.is_some(),
+                            )
+                        },
+                    )
+                })?;
                 stage.record_parent_access(access_parent);
                 let change = Change::Copied {
                     source: copied_leaf::Source::capture(&source_pin, &source_fingerprint),
@@ -1628,13 +1668,16 @@ fn run_transfer_inner(
                         },
                     )?;
                 } else {
-                    commit_forward(state, id, change, Some((stage, temporary)), |_| {
-                        opened.require_current()?;
-                        opened.publish(&destination)?;
-                        #[cfg(test)]
-                        copy_boundary::boundary("published", &source);
-                        Ok(())
+                    state.deferred(true, |state| {
+                        commit_forward(state, id, change, Some((stage, temporary)), |_| {
+                            opened.require_current()?;
+                            opened.publish(&destination)?;
+                            #[cfg(test)]
+                            copy_boundary::boundary("published", &source);
+                            Ok(())
+                        })
                     })?;
+                    super::durability::completed(result.bytes - bytes_before)?;
                 }
                 #[cfg(test)]
                 copy_boundary::after_copy(&source, &destination);
@@ -1702,6 +1745,10 @@ fn run_transfer_inner(
             }
             Ok(true)
         })();
+        if operation.is_err() {
+            // Failure handling restores or retains data with full syncs.
+            super::durability::flush()?;
+        }
         match operation {
             Ok(committed) => {
                 if let Some(id) = reconciled {

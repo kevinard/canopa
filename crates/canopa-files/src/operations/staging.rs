@@ -727,13 +727,12 @@ pub(super) fn clean(record: &Stage, ownership: &Ownership) -> io::Result<()> {
     // Only an empty, proven directory is retired. Unknown children stay intact.
     ownership.directory.require(&named(&parent, name)?)?;
     rustix::fs::unlinkat(&parent, name, AtFlags::REMOVEDIR)?;
-    fs::File::from(openat(
+    super::durability::sync(&fs::File::from(openat(
         &parent,
         c".",
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
         Mode::empty(),
-    )?)
-    .sync_all()
+    )?))
 }
 
 /// Once its change is committed, a work directory owns no disposable payload.
