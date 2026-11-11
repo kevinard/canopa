@@ -23,7 +23,8 @@ menus, dmenu, and whole-panel providers retain their behavior.
 
 ## Searching and actions
 
-Type normally to search applications, open windows, controls and file/folder names.
+Type normally to search applications, open windows, controls, Settings pages,
+session actions and file/folder names.
 Choose a scope below the search field to narrow the current query. Choose **All**
 to search across sources again. You can also type a scope directly, as in
 `apps firefox`, `windows notes`, `settings volume`, or `files budget`.
@@ -36,6 +37,10 @@ single application match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
 
+Applications match on their name, generic name, comment and keywords, and, with
+the lowest priority, on their desktop-file id and the file name of their `Exec`
+program: `nautilus` finds Files and `org.gnome.Nautilus` does too.
+
 Matching ignores case and accents in every script: `терм` finds “Терминал”,
 `cafe` finds “Café”, and `ρυθμισεις` finds “Ρυθμίσεις”. Text is lowercased with
 Unicode rules (also folding `ß` to `ss` and final `ς` to `σ`), then accented
@@ -46,6 +51,38 @@ modern Greek and Cyrillic letters; separate combining marks are dropped in any
 script. Letters that do not decompose, such as `ł`, `ø` or `đ`, stay distinct.
 Scripts without case, such as Chinese, Japanese and Korean, match as typed. The
 highlight in a result title covers the original characters that matched.
+
+### Browsing all apps
+
+With an empty query the launcher lists Pinned results first, then up to five
+Recent apps (from selection history, unless history is off), then every
+installed app from A to Z. The list scrolls and has no row limit; Up and Down
+move through it. Typing `apps ` (or choosing the **Apps** scope) with no search
+term lists only the A–Z apps. Pin an app with **Pin in Launcher** in its actions
+(Tab); pins are stored with the launcher preferences in
+`$XDG_CONFIG_HOME/canopa/launcher.json`, and **Unpin from Launcher** removes
+one. Open windows are not part of the empty list; type a name, or use the
+`windows ` scope, to find them.
+
+### Desktop actions and running apps
+
+Desktop entries can declare extra actions in `[Desktop Action]` groups, such as
+Firefox's “New Private Window”. They appear, with their localized names, as
+further actions of the app's result: press Tab on the app, or use Ctrl+2 to
+Ctrl+5. A query of three or more letters that names an action also lists it as
+its own row, so `private` or `firefox private` offers “Firefox — New Private
+Window”. Actions of D-Bus-activatable apps go through
+`org.freedesktop.Application.ActivateAction`; other actions are started through
+GIO like the app itself.
+
+When an app already has a window, Enter on its result says **Switch to** and
+focuses that window through Niri. The next action opens a new window: the
+entry's own `new-window` action when it has one, otherwise a second launch.
+Entries with `SingleMainWindow=true` offer only Switch to. A window belongs to
+an app when its app id is the desktop-file id or the entry's `StartupWMClass`,
+ignoring case.
+
+### Launching
 
 Applications use their existing desktop-entry launch behavior through
 `gio launch`. Entries with `Terminal=true`, such as htop or nmtui, are listed and
@@ -60,6 +97,22 @@ xdg-terminal-exec”. A spawn that Niri rejects or does not acknowledge is repor
 the same way. Programs are resolved against Shell's `PATH`, while the app inherits
 Niri's environment. A program that starts and then exits or crashes is not
 reported, because Niri discards its output.
+
+Each app runs in its own systemd user scope named
+`app-canopa-<desktop id>-<random>.scope`, following systemd's naming convention
+for desktop applications, for example
+`app-canopa-org.mozilla.firefox-3f2a9c1d0b7e4a65.scope`. Characters other than
+letters, digits, `:`, `_` and `.` in the id are escaped as `\xNN`. Niri spawns a
+small `canopa-shell --app-scope` helper, which waits for Niri to place it,
+moves itself into the named scope and then starts `gio launch`. Without a
+systemd user manager the app starts in Niri's scope as before. List them with
+`systemctl --user list-units 'app-canopa-*'`.
+
+D-Bus-activatable apps receive an xdg-activation token in `platform-data`
+(`activation-token` and `desktop-startup-id`), so an app that is already running
+raises its window. The token comes from the key press or click that chose the
+result, so keyboard-only launches get one too. **Reveal in file manager** passes
+the same token as the `ShowItems` startup id, so an open Files window is raised.
 
 Files and folders
 open through their default desktop handlers; ordinary text paths also offer Copy
@@ -130,8 +183,9 @@ Units must measure compatible quantities. `= 1 m to kg`, for example, shows an
 error and offers no copy action. An incomplete or unsupported conversion is quiet
 during ordinary search; explicit `=` mode explains it.
 
-Recognized calculations and bundled web/date answers lead. Native application, window, file and control
-results share 20 visible slots, ordered by match quality, then recent/frequent
+Recognized calculations and bundled web/date answers lead. While searching,
+native application, window, file, control, Settings page and session results
+share 20 visible slots, ordered by match quality, then recent/frequent
 selection, then stable source order. Exact and prefix matches stay ahead of weaker
 matches regardless of history. Each configured extension then contributes up to
 20 results in configuration order. Refine the query to narrow additional matches.
@@ -141,9 +195,29 @@ An old result cannot execute after the query or displayed results have changed.
 ## Controls and selection history
 
 Search `settings` to browse shortcuts to Wi-Fi, sound, notifications/Do Not
-Disturb, and Settings pages for displays, input, personalization, and power.
-These open their existing panels or application pages; no setting changes merely
-by searching. Existing extensions named `windows` or `settings` keep their keyword.
+Disturb, Bluetooth, power and brightness, and every Settings page. These open
+their existing panels or application pages; no setting changes merely by
+searching. Settings pages come from the Settings page registry: their titles,
+descriptions and search keywords are matched, so `night light`, `resolution`
+or `keybindings` find the page that declares them, and new pages appear without
+a launcher change. The Shell reads the registry once with
+`canopa-settings pages`, which prints it as JSON without opening a window, and
+opens a page with `org.canopa.Settings.OpenPage`, starting Settings through
+D-Bus activation if needed (or `canopa-settings --page ID` without a session
+bus service).
+
+### Session actions
+
+Type `lock`, `log out`, `suspend`, `hibernate`, `reboot`/`restart` or
+`power off`/`shut down` to get the session actions the bar's buttons offer.
+Lock runs `canopa-lock` (or `loginctl lock-session` when Canopa Lock is not
+installed). Suspend and Hibernate ask logind directly, like the bar buttons.
+Log out, Reboot and Power off open the configured confirmation menu, the one
+whose items log out (`niri msg action quit`) or name `session "reboot"` or
+`session "power-off"`; without such a menu they are not offered. Rows follow
+logind's `Can*` answers, read again when the launcher opens: an action logind
+refuses is hidden, and Hibernate needs a plain “yes”. Failures are reported
+the same way as from the bar. Existing extensions named `windows` or `settings` keep their keyword.
 
 Successful application and file selections improve ranking among comparable
 matches. The shell stores at most 256 identities, counts, and selection order in
@@ -215,7 +289,7 @@ keywords are unique within the source; `apps`, `files`, and `=` are reserved.
 Up to eight extensions may be configured. An example is provided in
 [`launcher-projects.py`](../../crates/canopa-shell/examples/launcher-projects.py).
 
-After a 100 ms debounce, the shell launches one process per query, writes this
+After a 250 ms pause in typing, the shell launches one process per query, writes this
 JSON line to stdin, then closes stdin:
 
 ```json
@@ -259,8 +333,10 @@ isolation, with the permissions of the configured user executable.
 
 ## Web, dates and time
 
-The launcher bundles two executable extensions using the same JSONL protocol as
-configured providers. Their results appear in the same Applications panel.
+The launcher bundles two extensions that are configured like executable
+extensions, but the Shell answers their queries itself after a 100 ms pause, so
+typing starts no processes for them (zoned times still run GNU `date`).
+Calculations wait for a 250 ms pause before starting `qalc`. Their results appear in the same Applications panel.
 
 - Paste `https://example.com/path` to offer Open in browser and Copy URL.
 - `web rust async tutorial` searches using the configured search URL. The default

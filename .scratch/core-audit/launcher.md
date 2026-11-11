@@ -55,11 +55,11 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | App search | `TryExec` | missing (**Fixed in e48a85b**) | Not parsed anywhere in `canopa-apps` | Stale entries for uninstalled binaries still show and then fail silently |
 | App search | `Terminal=true` apps | missing (**Fixed in e48a85b**) | Filtered out for the launcher (`canopa-apps/src/lib.rs:231`) | htop, btop, vim, nmtui and ranger can't be found |
 | App search | Localized Name, GenericName, Comment, Keywords | works | `canopa-apps/src/lib.rs:274-303`, with `LANGUAGE`/`LC_*` fallbacks (`:46-62`) | Localized names show. Localized `Keywords[xx]` **replace** the English ones, so English keyword search stops working in localized sessions |
-| App search | Fields matched | partial | Name, then GenericName, Comment, Keywords (`app/panel_menu_session.rs:795-812`). The desktop ID and `Exec` binary are not matched | Typing `nautilus` for "Files" or `code` for some VS Code builds may fail |
+| App search | Fields matched | partial (**Fixed in d768cb9**: the desktop-file id and the `Exec` program name are matched with the lowest priority) | Name, then GenericName, Comment, Keywords (`app/panel_menu_session.rs:795-812`). The desktop ID and `Exec` binary are not matched | Typing `nautilus` for "Files" or `code` for some VS Code builds may fail |
 | App search | Fuzzy matching | **broken** (non-ASCII) (**Fixed in ce15a6d**, ranking in 40bbd51) | `to_ascii_lowercase` on both query and text (`app/panel_search.rs:30,100`). The later tiering uses `to_lowercase` (`app/launcher.rs:649-690`), but only on entries that already matched | Case-insensitive search fails for Cyrillic, Greek and accented capitals (`éd` doesn't match "Éditeur"), and there is no accent folding |
-| App search | `[Desktop Action]` entries | missing | Parser reads only `[Desktop Entry]` (`canopa-apps/src/lib.rs:338`) | No "New private window" or "New document" |
+| App search | `[Desktop Action]` entries | missing (**Fixed in 15fed5b and d768cb9**: parsed with localized names; Tab actions and query-matched rows; `ActivateAction` with a token for D-Bus apps) | Parser reads only `[Desktop Entry]` (`canopa-apps/src/lib.rs:338`) | No "New private window" or "New document" |
 | App search | Ranking / frecency | works | Count capped at 20, plus recency by selection order (`launcher/history.rs:68-75`). Ranked by quality tier, then pin, then boost, then source order (`app/launcher.rs:649-720`). Pins and aliases: `app/launcher/personalization.rs:164+` | Frequent apps rise; exact and prefix matches stay on top |
-| App search | Empty query / browse all apps | rough | Native results are cut to `RESULT_LIMIT` = 20 (`app/launcher.rs:770`, `launcher.rs:22`), and open windows come first | Users with more than 20 apps can't scroll an A–Z list and have no categories (confirm hands-on) |
+| App search | Empty query / browse all apps | rough (**Fixed in d768cb9**: pins, up to five recent apps, then every app A–Z with no limit; `apps ` lists A–Z only; windows left the empty list) | Native results are cut to `RESULT_LIMIT` = 20 (`app/launcher.rs:770`, `launcher.rs:22`), and open windows come first | Users with more than 20 apps can't scroll an A–Z list and have no categories (confirm hands-on) |
 | App search | Icons: theme | partial | Lookup is hard-coded to `theme: "hicolor"`, `scale: 1` (`icon_theme.rs:62-63`). It is rasterized at 72 px (`app/panel_icons/prepare.rs:14`), so it stays sharp up to about 2× | Papirus, Breeze and Adwaita-only icons are ignored. Apps without hicolor icons show a glyph |
 | App search | Icons: absolute `Icon=` paths | missing | `is_valid_icon_name` rejects `/` (`icon_theme.rs:5-7`, `app/panel_menu_session.rs:766`) | AppImage, Steam-game and JetBrains Toolbox entries have no icon |
 | App search | Icons: fallback | works | Kind glyph when there is no icon (`app/view/launcher.rs:946-956`). Lazy batches of 4 (`app/panel_icons.rs:14`) | Icons appear progressively on first open |
@@ -67,18 +67,18 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | Launch | Exec apps | works | `gio launch <file>` (`command/applications.rs:108-126`) sent to Niri `Action::Spawn` (`:27-28,64-72`). GIO owns field codes and `Path=` | Correct field codes and working directory |
 | Launch | `%f`/`%u` (Open with) | works | URIs appended to `gio launch` (`command/applications.rs:154-176`). D-Bus `Open` for activatable apps | Correct |
 | Launch | Environment | works | Apps inherit **Niri's** environment (systemd user env plus Niri `environment {}`), not the shell's. `argv[0]` is resolved against the shell's PATH (`command/applications.rs:13-25`) | Normal. The two PATHs can differ only if they were configured differently |
-| Launch | systemd scope | rough | Niri names the scope after the argv basename: `app-niri-<basename>-<pid>.scope` (`forks/niri/src/utils/spawning.rs:428-443`). Every launcher app becomes `app-niri-gio-<pid>.scope`. Without `NIRI_SOCKET` the fallback is a `systemd-run --scope` with no name (`command/applications.rs:29-43`) | Isolated from Shell (good), but you can't tell apps apart in `systemctl --user`, systemd-oomd or by portal host-app-ID parsing |
+| Launch | systemd scope | rough (**Fixed in d768cb9**: `canopa-shell --app-scope` moves each app into `app-canopa-<desktop id>-<random>.scope` after Niri places it) | Niri names the scope after the argv basename: `app-niri-<basename>-<pid>.scope` (`forks/niri/src/utils/spawning.rs:428-443`). Every launcher app becomes `app-niri-gio-<pid>.scope`. Without `NIRI_SOCKET` the fallback is a `systemd-run --scope` with no name (`command/applications.rs:29-43`) | Isolated from Shell (good), but you can't tell apps apart in `systemctl --user`, systemd-oomd or by portal host-app-ID parsing |
 | Launch | Activation token / focus, Exec apps | works | Niri creates an external token for `Spawn` (`forks/niri/src/input/mod.rs:1102-1105`) and exports it (`spawning.rs:152-155`). External tokens have no `UrgentOnlyMarker`, so they focus (`handlers/mod.rs:809-816`). The lifetime is 10 s (`handlers/mod.rs:86`). This does **not** depend on layershellev | New windows and single-instance apps that forward the token (Firefox, GTK4) are focused |
-| Launch | `DBusActivatable=true` | partial | `org.freedesktop.Application.Activate`/`Open` with **empty `platform_data`** (`command/applications.rs:182-215`, `:201`). There is no Exec fallback | First start is usually focused by Niri's Smart policy. An **already-running** GNOME app is not raised |
+| Launch | `DBusActivatable=true` | partial (**Fixed in d768cb9**: `platform-data` carries `activation-token` and `desktop-startup-id`; an app with a window also offers Switch to) | `org.freedesktop.Application.Activate`/`Open` with **empty `platform_data`** (`command/applications.rs:182-215`, `:201`). There is no Exec fallback | First start is usually focused by Niri's Smart policy. An **already-running** GNOME app is not raised |
 | Launch | `Terminal=true` | missing (**Fixed in e48a85b** and 40bbd51: `gio launch` uses `xdg-terminal-exec`, a missing terminal is reported) | Hidden (see above). Even if shown, no terminal is chosen. GLib uses `xdg-terminal-exec` or its own built-in list | — |
 | Launch | Startup feedback | missing | The panel closes once Niri accepts the request. There is no busy cursor or spinner | Slow apps (LibreOffice) look like nothing happened, so users press Enter again |
 | Launch | Errors shown | partial (**Fixed in 40bbd51** for a missing `TryExec`/`Exec` program, missing terminal and rejected spawn; a crash after start is still silent) | Handoff errors appear as one generic status line (`app/launcher.rs:1498-1500`). Niri replies `Handled` before `exec`, and the child's stderr goes to `/dev/null` (`forks/niri/src/utils/spawning.rs:114-120`) | A broken `Exec`, missing binary or crash on start closes the panel silently |
-| Launch | Reveal in file manager | partial | `FileManager1.ShowItems(uris, "")`, with an empty startup ID (`app/launcher.rs:1508-1527`). Files accepts one (`canopa-files/src/file_manager.rs:43-44`) | An existing Files window may not be raised |
+| Launch | Reveal in file manager | partial (**Fixed in d768cb9**: the token is the `ShowItems` startup id) | `FileManager1.ShowItems(uris, "")`, with an empty startup ID (`app/launcher.rs:1508-1527`). Files accepts one (`canopa-files/src/file_manager.rs:43-44`) | An existing Files window may not be raised |
 | Providers | Calculator, units | works | qalc, sandboxed state (`launcher/process.rs:58-140`). Docs: `docs/shell/launcher.md` | Needs `libqalculate`. No currency |
 | Providers | Files (names) | works | `launcher/files.rs:17+`. Home only by default, 100k paths, 10 s, depth 32, 60 s refresh while open (`app/launcher.rs:934-944`) | Good. No recent files (`recently-used.xbel`), no content search (PRD W9) |
-| Providers | Running windows | works | `launcher/windows.rs:16-125`. Focus via Niri `FocusWindow` (`command/applications.rs:73-77`). App lookup by exact ID only (`windows.rs:73-79`); `StartupWMClass` is ignored | Windows whose `app_id` isn't the desktop ID lose their icon, name and "Launch" action |
-| Providers | Settings pages / controls | partial | 13 hard-coded rows (`launcher/controls.rs:8-125`). The Settings **Widgets** page (`canopa-settings/src/lib.rs:10`) is missing. Search doesn't reach inside pages. Settings isn't single-instance (see the Settings audit) | "Wi-Fi" and "volume" work. "night light", "language" and "default browser" find nothing |
-| Providers | Power and session actions | missing | Not in `controls.rs`. They exist only as bar buttons and menus (`config/default.kdl:31-42,130`) | Typing "shut down", "lock" or "log out" finds nothing |
+| Providers | Running windows | works (**StartupWMClass fixed in d768cb9**; app rows of running apps offer Switch to and New window) | `launcher/windows.rs:16-125`. Focus via Niri `FocusWindow` (`command/applications.rs:73-77`). App lookup by exact ID only (`windows.rs:73-79`); `StartupWMClass` is ignored | Windows whose `app_id` isn't the desktop ID lose their icon, name and "Launch" action |
+| Providers | Settings pages / controls | partial (**Fixed in f286c32 and d768cb9**: pages come from the Settings registry through `canopa-settings pages` and open with `OpenPage`; search inside a page is still open) | 13 hard-coded rows (`launcher/controls.rs:8-125`). The Settings **Widgets** page (`canopa-settings/src/lib.rs:10`) is missing. Search doesn't reach inside pages. Settings isn't single-instance (see the Settings audit) | "Wi-Fi" and "volume" work. "night light", "language" and "default browser" find nothing |
+| Providers | Power and session actions | missing (**Fixed in d768cb9**: Lock, Log out, Suspend, Hibernate, Reboot, Power off, following `Can*` and the confirmation menus) | Not in `controls.rs`. They exist only as bar buttons and menus (`config/default.kdl:31-42,130`) | Typing "shut down", "lock" or "log out" finds nothing |
 | Providers | Command runner | missing | Only an extension's `launch` argv (`launcher.rs:110-112`) | Can't type a shell command |
 | Providers | Web search | partial | `web`/`wiki` keywords, URL detection, custom templates (`launcher/bundled.rs:9-70`) | No "Search the web for …" fallback row when nothing matches |
 | Providers | Clipboard history, snippets | works | Opt-in, `wl-paste --watch` (`launcher/clipboard.rs:274-302`). ADR 0132 | Needs wl-clipboard and data-control |
@@ -90,13 +90,13 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | Accessibility | AccessKit tree | missing | The Shell bridge publishes only `PanelContent::ExternalProvider` (`app/canopa_accessibility.rs:574-577`). The launcher is a Menu panel | Orca says nothing in the launcher. This blocks the W6 exit criterion "launch apps" |
 | Translations | Strings | missing | No i18n crate in the workspace. About 220 capitalized string literals in launcher files. Scope keywords are hard-coded (`launcher.rs:160-205`, `app/launcher.rs:32-48`) | English only |
 | Performance | Cold open | rough (unmeasured) | Desktop entries are rescanned before the panel opens (`app/overlay_adapter.rs:183-200`). The file index builds on first open. There is no recorded latency figure in `.scratch/unified-launcher/` | Fine with 78 entries on this host. Not measured with a large Flatpak set |
-| Performance | Per-keystroke cost | rough | `web` and `date` are `global=true` and run `canopa-shell --launcher-extension` (`launcher/bundled.rs:15-26`). `qalc` runs for math-like queries. All of this follows a 100 ms debounce (`app/launcher.rs:1101`) | Each pause in typing forks up to 3 processes. Matters on low-end and battery hardware |
+| Performance | Per-keystroke cost | rough (**Fixed in d768cb9**: `web` and `date` answer in-process; qalc and configured extensions wait 250 ms) | `web` and `date` are `global=true` and run `canopa-shell --launcher-extension` (`launcher/bundled.rs:15-26`). `qalc` runs for math-like queries. All of this follows a 100 ms debounce (`app/launcher.rs:1101`) | Each pause in typing forks up to 3 processes. Matters on low-end and battery hardware |
 | Performance | Memory | works (bounded) | 100k-path index, 256 history entries, clipboard images capped at 32 MiB, icon cache 1024 entries (`app/panel_icons.rs:15`) | — |
 | Config / theming | Source config, Settings page, JSON prefs, theme | works | `docs/shell/launcher.md`. `panel.launcher-width`. `canopa-settings --page launcher`. ADRs 0131 and 0132 | Good |
 
 ## Ranked gaps
 
-1. **Unicode-aware matching.** **Fixed in ce15a6d and 40bbd51** (case and accent folding; desktop ID and `Exec` basename matching remain open). *Impact:* app, window and control search fails
+1. **Unicode-aware matching.** **Fixed in ce15a6d and 40bbd51** (case and accent folding); desktop ID and `Exec` basename matching **fixed in d768cb9**. *Impact:* app, window and control search fails
    for most non-Latin locales, which matters for any distribution default.
    *Approach:* fold both sides with `str::to_lowercase`. Optionally add NFKD
    accent folding with `unicode-normalization`, or use `nucleo-matcher` (the
@@ -113,7 +113,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    `gio launch` already wraps these apps in a terminal, and GLib prefers
    `xdg-terminal-exec`, so ship or depend on that and configure a default
    terminal. Honour `TryExec` against PATH. *Size:* S.
-4. **Desktop actions.** *Impact:* a common expectation ("New window", "New
+4. **Desktop actions.** **Fixed in 15fed5b and d768cb9.** Exec actions run through GIO's `g_desktop_app_info_launch_action` in the `--app-scope` helper (gio 0.22 has no `DesktopAppInfo` binding, so the helper declares the `libgio-2.0` symbols). *Impact:* a common expectation ("New window", "New
    private window") is missing. *Approach:* parse `Actions=` and
    `[Desktop Action *]` in `canopa-apps`, show them as Tab actions, and use
    D-Bus `ActivateAction` for activatable apps. For Exec apps, add a
@@ -127,7 +127,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    portal. Pass the output scale, and accept absolute `Icon=` paths through the
    existing bounded raster loader. Files uses the same `"hicolor"` hard-code
    (`canopa-files/src/iced_desktop/icons_ui.rs:216`), so fix it in `canopa-assets` once. *Size:* S–M.
-6. **Activation tokens for D-Bus apps, Reveal and panel actions.** *Impact:*
+6. **Activation tokens for D-Bus apps, Reveal and panel actions.** Fork part fixed in `fecb4f1a` (`e489cad`); launcher part **fixed in d768cb9**. *Impact:*
    running GNOME apps and Files aren't raised. Activating a Notification
    Center action from the keyboard doesn't focus the app. *Approach:* in
    layershellev, call `update_activation_context` from `wl_keyboard`
@@ -144,25 +144,25 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    via `i18n-embed`. For the launcher, also translate scope keywords and
    control keywords while keeping English aliases, and localize the emoji
    annotations from CLDR. *Size:* M for the launcher, L for the whole desktop.
-9. **Power and session actions in search.** *Impact:* "shut down" and "lock"
+9. **Power and session actions in search.** **Fixed in d768cb9.** *Impact:* "shut down" and "lock"
    are common launcher queries. *Approach:* add control rows that open the
    existing confirmation menus (`config/default.kdl:31-42`). Add Lock through
    `loginctl lock-session`, which Canopa Lock already handles, and Suspend
    through logind `Suspend`. *Size:* S.
-10. **Browse all apps.** *Impact:* discoverability for new users. *Approach:*
+10. **Browse all apps.** **Fixed in d768cb9** (no categories). *Impact:* discoverability for new users. *Approach:*
     remove the 20-row cap for a blank query and for the `apps` scope
     (rendering is already range-limited). Optionally add categories from
     `Categories=`. *Size:* S.
-11. **Per-app systemd scopes.** *Impact:* resource control, oomd, and
+11. **Per-app systemd scopes.** **Fixed in d768cb9** (the helper route). *Impact:* resource control, oomd, and
     attributing processes to apps. *Approach:* the Niri overlay could accept a
     scope name. Alternatively, Shell can spawn
     `systemd-run --user --scope --unit=app-canopa-<desktop-id>-<rand>.scope gio launch …`
     through Niri, following the XDG app-unit naming convention. *Size:* S.
-12. **Window and app matching through `StartupWMClass`.** *Impact:* some
+12. **Window and app matching through `StartupWMClass`.** **Launcher part fixed in d768cb9**; `focused_window_icons` still never refreshes. *Impact:* some
     window rows lack an icon and the Launch action. *Approach:* parse
     `StartupWMClass` in `canopa-apps` and match case-insensitively. Also fix
     `focused_window_icons`, whose catalog never refreshes (`focused_window_icons.rs:40`). *Size:* S.
-13. **Bundled providers in-process.** *Impact:* fewer process forks per
+13. **Bundled providers in-process.** **Fixed in d768cb9.** *Impact:* fewer process forks per
     keystroke. *Approach:* run the `web` and `date` handlers as async
     functions inside Shell. They are already Rust (`launcher/bundled.rs`). Keep
     the JSONL protocol for third-party extensions. *Size:* S.
@@ -185,7 +185,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
   and relies on Niri's `Spawn` token. It does block issue 6 above. One more
   limit: Niri accepts a serial only if it is no older than the last
   keyboard or pointer enter (`forks/niri/src/handlers/mod.rs:773-785`).
-- **Empty D-Bus `platform_data`** (`command/applications.rs:201`). A running
+- **Fixed in d768cb9.** **Empty D-Bus `platform_data`** (`command/applications.rs:201`). A running
   activatable app can't be raised from the launcher.
 - **Fixed in ce15a6d.** **ASCII-only case folding** (`app/panel_search.rs:30,100`). This is a bug,
   not just a gap, because the file provider already uses Unicode lowercasing
@@ -195,18 +195,18 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
   lists aren't handled (`unescape_string`, `:305-328`).
 - **Partly fixed in 40bbd51** (missing program, missing terminal, rejected spawn). **Silent launch failures** after the Niri handoff. A missing `gio` binary is
   reported, but a broken target app is not.
-- **Every app scope is named after `gio`**
+- **Fixed in d768cb9.** **Every app scope is named after `gio`**
   (`forks/niri/src/utils/spawning.rs:428-443`). This hurts per-app accounting
   and any tool that parses `app-<launcher>-<id>-…` unit names.
 - **Each launch rescans the whole catalog** (`app/launcher.rs:1424-1430`,
   `:1538-1544`). It's correct, but doubles the I/O cost of a launch and can
   resolve a different entry if an override appeared in between.
-- **Process forks while typing.** Up to two `canopa-shell` processes plus
+- **Fixed in d768cb9.** **Process forks while typing.** Up to two `canopa-shell` processes plus
   `qalc` per debounced query (`launcher/bundled.rs:15-26`).
 - **The global IME flag** (`ime_allowed`, `layershellev/src/lib.rs:1027,1233`)
   is shared by every layer surface Shell owns (bars, panel, popups). That
   could misroute IME when the focused surface changes. This is unverified.
-- **Settings coverage drift.** The hard-coded control list lacks the Widgets
+- **Fixed in f286c32 and d768cb9.** **Settings coverage drift.** The hard-coded control list lacks the Widgets
   page, and future Settings pages need manual entries (`launcher/controls.rs`).
 - **The panel needs a bar.** If a user configures no bar on any output,
   `select_global_panel_surface` returns `None` and the launcher can't open
@@ -227,6 +227,14 @@ PRD gaps, confirmed or refuted:
   bar's session buttons, not the launcher.
 
 ## Hands-on checks needed
+
+After d768cb9 the expectations of checks 2, 3, 5, 7, 10 and 13 change: a
+running app's result says Switch to and a running D-Bus app is raised; Files is
+raised by Reveal; scopes are `app-canopa-<desktop id>-<random>.scope`; Tab on
+Firefox lists New Window and New Private Window; the empty query lists every
+app; typing starts no `canopa-shell --launcher-extension` processes. Also try
+`private`, `shut down`, `night light` (once Settings has such a page) and
+`nautilus`.
 
 1. **Exec token.** Launch an Exec app (for example `foot` or Firefox) from the
    launcher with Enter only. Then run

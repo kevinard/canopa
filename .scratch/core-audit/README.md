@@ -91,7 +91,7 @@ been run in a live session yet; use the hands-on checks in each report.
 3. **Settings Power** (M): battery, profiles, lid and power-button actions. Decide whether Stasis is a hard dependency.
 4. **Files Open With and executables** (M), **thumbnails** (M–L, after C), **copy throughput and ETA** (L engine, S UI).
 5. **Notify everyday controls:** DND schedule and timer, suppression over fullscreen and screen sharing, a Settings Notifications page, "mark all read", lock-screen policy. Also finish W15: portal v2 inline replies, `display-hint`, banner timer.
-6. **Launcher:** desktop actions (M), browse all apps (the empty query shows 20 rows), session actions searchable.
+6. **Launcher:** desktop actions (M), browse all apps (the empty query shows 20 rows), session actions searchable. **Done in 15fed5b, f286c32 and d768cb9**, with running-app switching, per-app scopes, Settings pages from the registry and in-process bundled providers.
 7. **Settings:** default applications and date/time, then users, region, privacy and printers.
 8. **Cross-cutting:**
    - AccessKit in `canopa-ui`, so Settings, the launcher and the bar get trees.
