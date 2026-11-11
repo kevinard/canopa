@@ -3609,7 +3609,9 @@ mod tests {
     }
 
     #[test]
-    fn installed_apps_entries_carry_valid_icons_only() {
+    fn installed_apps_entries_keep_named_and_absolute_icons() {
+        // Absolute `Icon=` paths are valid desktop-entry icons since the shared
+        // icon lookup (ADR 0138); the launcher resolves them like theme names.
         let mut alpha = installed_app("Alpha", "alpha.desktop");
         alpha.icon = Some("alpha-icon".into());
         let mut beta = installed_app("Beta", "beta.desktop");
@@ -3619,7 +3621,7 @@ mod tests {
 
         let entries = active_menu_entries(&app);
         assert_eq!(entries[0].icon, Some("alpha-icon".into()));
-        assert_eq!(entries[1].icon, None);
+        assert_eq!(entries[1].icon, Some("/usr/share/icons/beta.png".into()));
     }
 
     #[test]
