@@ -12,6 +12,7 @@ use std::path::Path;
 pub mod icons;
 #[cfg(feature = "svg")]
 pub mod svg;
+pub mod thumbnails;
 
 /// File formats admitted independently of Cargo feature unification.
 #[derive(Clone, Copy)]
