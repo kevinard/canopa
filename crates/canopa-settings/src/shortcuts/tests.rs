@@ -436,3 +436,154 @@ fn migration_is_lossless_when_shipped_actions_repeat() {
     let rebuilt = effective(base, &delta).unwrap();
     assert_eq!(keys(&rebuilt), ["C", "A", "D"]);
 }
+
+const OLD_MUTE: &str = r#"spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle""#;
+
+fn without_wpctl(paths: &Paths) {
+    for path in [paths.shortcuts(), paths.generated_shortcuts()] {
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("wpctl"), "{}: {text}", path.display());
+    }
+}
+
+#[test]
+fn legacy_wpctl_bindings_become_inherited_shell_device_keys() {
+    let Fixture {
+        _root,
+        paths,
+        defaults,
+    } = fixture();
+    // A copy from the release that bound volume keys to wpctl, with the
+    // speaker mute moved to Mod+M and the microphone key turned off.
+    let original = legacy_session(&paths)
+        .replace("    XF86AudioMute allow-when-locked=true {", "    Mod+M allow-when-locked=true {")
+        .replace(
+            "    XF86AudioMicMute allow-when-locked=true { spawn \"wpctl\" \"set-mute\" \"@DEFAULT_AUDIO_SOURCE@\" \"toggle\"; }\n",
+            "",
+        );
+    std::fs::write(paths.niri(), &original).unwrap();
+    assert!(original.contains("XF86AudioRaiseVolume allow-when-locked=true { spawn \"wpctl\""));
+    let message = refresh(&paths, Some(&defaults), check).unwrap().unwrap();
+    assert!(message.contains("moved"), "{message}");
+    without_wpctl(&paths);
+
+    let binds = generated(&paths);
+    let action = |key: &str| {
+        binds
+            .iter()
+            .find(|(bound, _)| bound == key)
+            .map(|(_, action)| action.clone())
+    };
+    // Unchanged keys are inherited, so they follow the current defaults.
+    assert_eq!(
+        action("XF86AudioRaiseVolume").as_deref(),
+        Some("spawn canopa-shell volume up")
+    );
+    assert!(
+        action("XF86MonBrightnessUp")
+            .unwrap()
+            .contains("brightness")
+    );
+    // The moved key moved with its action; the turned-off one stays off.
+    assert_eq!(
+        action("Mod+M").as_deref(),
+        Some("spawn canopa-shell volume mute")
+    );
+    assert_eq!(action("XF86AudioMute"), None);
+    assert_eq!(action("XF86AudioMicMute"), None);
+    let stored = delta(&paths);
+    assert_eq!(keys(&stored.binds), ["Mod+Shift+Space", "Mod+T", "Mod+M"]);
+    let removed = stored.removed.iter().map(plain).collect::<Vec<_>>();
+    assert!(removed.contains(&"spawn canopa-shell volume mute".to_string()));
+    assert!(removed.contains(&"spawn canopa-shell microphone mute".to_string()));
+    assert_eq!(refresh(&paths, Some(&defaults), check).unwrap(), None);
+
+    let editor = Editor::load(&paths).unwrap();
+    assert_eq!(editor.rows[row(&editor, "XF86AudioMute")].key, "Mod+M");
+    assert_eq!(
+        editor.rows[row(&editor, "XF86AudioMute")].label,
+        "Mute speakers"
+    );
+    assert_eq!(editor.rows[row(&editor, "XF86AudioMicMute")].key, "");
+    assert_eq!(
+        editor.rows[row(&editor, "XF86AudioLowerVolume")].key,
+        "XF86AudioLowerVolume"
+    );
+    assert_eq!(
+        editor.rows[row(&editor, "XF86AudioPlay")].label,
+        "Play or pause"
+    );
+}
+
+#[test]
+fn saved_changes_naming_wpctl_follow_the_shell_commands_at_session_start() {
+    let Fixture {
+        _root,
+        paths,
+        defaults,
+    } = fixture();
+    let mut editor = Editor::load(&paths).unwrap();
+    let mute = row(&editor, "XF86AudioMute");
+    editor.rows[mute].key = "Mod+M".into();
+    commit(&editor, &paths).unwrap();
+    // As the release with wpctl defaults stored the same change, with a
+    // custom volume binding the user wrote themselves.
+    let custom = r#"spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "2%+""#;
+    let old = std::fs::read_to_string(paths.shortcuts())
+        .unwrap()
+        .replace(" repeat=false", "")
+        .replace(r#"spawn "canopa-shell" "volume" "mute""#, OLD_MUTE)
+        .replace(
+            "binds {\n",
+            &format!("binds {{\n    XF86AudioRaiseVolume {{ {custom}; }}\n"),
+        );
+    std::fs::write(paths.shortcuts(), &old).unwrap();
+    assert!(old.matches("wpctl").count() == 3, "{old}");
+
+    let message = refresh(&paths, Some(&defaults), check).unwrap().unwrap();
+    assert!(message.contains("updated"), "{message}");
+    let stored = std::fs::read_to_string(paths.shortcuts()).unwrap();
+    assert!(!stored.contains(OLD_MUTE), "{stored}");
+    assert!(
+        stored.contains(custom),
+        "a user's own action is kept: {stored}"
+    );
+    let binds = generated(&paths);
+    assert!(
+        binds
+            .iter()
+            .any(|(key, action)| key == "Mod+M" && action == "spawn canopa-shell volume mute")
+    );
+    assert!(!binds.iter().any(|(key, _)| key == "XF86AudioMute"));
+    assert!(
+        binds
+            .iter()
+            .any(|(key, action)| key == "XF86AudioRaiseVolume" && action.contains("2%+"))
+    );
+    assert_eq!(refresh(&paths, Some(&defaults), check).unwrap(), None);
+    let editor = Editor::load(&paths).unwrap();
+    assert_eq!(editor.rows[row(&editor, "XF86AudioMute")].key, "Mod+M");
+}
+
+#[test]
+fn retired_actions_wait_for_defaults_that_replace_them() {
+    let Fixture {
+        _root,
+        paths,
+        defaults,
+    } = fixture();
+    // An installation whose shipped defaults still bind wpctl.
+    std::fs::write(&defaults, LEGACY_DEFAULTS).unwrap();
+    let mut editor = Editor::load(&paths).unwrap();
+    let mute = row(&editor, "XF86AudioMute");
+    editor.rows[mute].key = "Mod+M".into();
+    commit(&editor, &paths).unwrap();
+    assert!(
+        std::fs::read_to_string(paths.shortcuts())
+            .unwrap()
+            .contains(OLD_MUTE)
+    );
+    assert_eq!(refresh(&paths, Some(&defaults), check).unwrap(), None);
+    let editor = Editor::load(&paths).unwrap();
+    assert_eq!(editor.rows[row(&editor, "XF86AudioMute")].key, "Mod+M");
+}

@@ -36,8 +36,18 @@ binds {
     Print { screenshot; }
     Ctrl+Print { screenshot-screen; }
     Alt+Print { screenshot-window; }
-    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"; }
-    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"; }
-    XF86AudioMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
-    XF86AudioMicMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "canopa-shell" "volume" "up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "canopa-shell" "volume" "down"; }
+    XF86AudioMute allow-when-locked=true repeat=false { spawn "canopa-shell" "volume" "mute"; }
+    XF86AudioMicMute allow-when-locked=true repeat=false { spawn "canopa-shell" "microphone" "mute"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn "canopa-shell" "brightness" "up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "canopa-shell" "brightness" "down"; }
+    XF86KbdBrightnessUp { spawn "canopa-shell" "keyboard-backlight" "up"; }
+    XF86KbdBrightnessDown { spawn "canopa-shell" "keyboard-backlight" "down"; }
+    XF86KbdLightOnOff repeat=false { spawn "canopa-shell" "keyboard-backlight" "toggle"; }
+    XF86AudioPlay allow-when-locked=true repeat=false { spawn "canopa-shell" "media" "play-pause"; }
+    XF86AudioPause allow-when-locked=true repeat=false { spawn "canopa-shell" "media" "pause"; }
+    XF86AudioStop allow-when-locked=true repeat=false { spawn "canopa-shell" "media" "stop"; }
+    XF86AudioNext allow-when-locked=true repeat=false { spawn "canopa-shell" "media" "next"; }
+    XF86AudioPrev allow-when-locked=true repeat=false { spawn "canopa-shell" "media" "previous"; }
 }

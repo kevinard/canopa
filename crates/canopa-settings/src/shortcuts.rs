@@ -32,6 +32,28 @@ const DEFAULTS: &str = include_str!("../../../packaging/niri/defaults.kdl");
 /// compares the copied block with this, not with the current defaults.
 const LEGACY_DEFAULTS: &str = include_str!("shortcuts/legacy-defaults.kdl");
 const DEFAULTS_HEADER: &str = "// Canopa compositor defaults.";
+/// Shipped actions that a later release replaced: (old action, new action).
+/// Changes that still name an old action follow it to its replacement (see
+/// [`retire`]). The device keys moved from `wpctl` to Canopa Shell commands
+/// (Shell ADR 0025).
+const RETIRED_ACTIONS: &[(&str, &str)] = &[
+    (
+        r#"spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+""#,
+        r#"spawn "canopa-shell" "volume" "up""#,
+    ),
+    (
+        r#"spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-""#,
+        r#"spawn "canopa-shell" "volume" "down""#,
+    ),
+    (
+        r#"spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle""#,
+        r#"spawn "canopa-shell" "volume" "mute""#,
+    ),
+    (
+        r#"spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle""#,
+        r#"spawn "canopa-shell" "microphone" "mute""#,
+    ),
+];
 const MAX_INCLUDES: usize = 32;
 const LEGACY_READ_ONLY: &str =
     "Custom top-level binding blocks are read-only. Keep your own bindings in niri-custom.kdl.";
@@ -270,6 +292,61 @@ fn migrate(base: &[KdlNode], user: &[KdlNode]) -> Result<Delta> {
     Ok(delta)
 }
 
+/// Carry changes that name a retired shipped action over to its replacement,
+/// once the shipped defaults have that replacement and no longer the old
+/// action. A moved or turned-off binding stays moved or off, and a carried
+/// binding that now equals a shipped one is inherited again. Bindings whose
+/// action the user changed are theirs and are kept as written.
+fn retire(delta: &mut Delta, shipped: &[KdlNode]) -> Result<()> {
+    let actions = shipped
+        .iter()
+        .map(action_id)
+        .collect::<Result<HashSet<_>>>()?;
+    let mut carried = Vec::new();
+    for (old, new) in RETIRED_ACTIONS {
+        let parse = |text: &str| -> Result<KdlNode> {
+            let document = KdlDocument::parse_v1(&format!("{text}\n"))?;
+            document
+                .nodes()
+                .first()
+                .cloned()
+                .context("Invalid retired action")
+        };
+        let (old, new) = (plain(&parse(old)?), parse(new)?);
+        if !actions.contains(&plain(&new)) || actions.contains(&old) {
+            continue;
+        }
+        for node in &mut delta.removed {
+            if plain(node) == old {
+                *node = new.clone();
+            }
+        }
+        for (index, bind) in delta.binds.iter_mut().enumerate() {
+            if action_id(bind)? == old {
+                let children = bind
+                    .children_mut()
+                    .as_mut()
+                    .context("Missing binding action")?;
+                children.nodes_mut()[0] = new.clone();
+                carried.push(index);
+            }
+        }
+    }
+    let mut seen = HashSet::new();
+    delta.removed.retain(|node| seen.insert(plain(node)));
+    let removed = delta.removed.iter().map(plain).collect::<HashSet<_>>();
+    let inherited = shipped.iter().map(binding_id).collect::<HashSet<_>>();
+    let mut index = 0;
+    delta.binds.retain(|bind| {
+        let keep = !carried.contains(&index)
+            || !inherited.contains(&binding_id(bind))
+            || action_id(bind).is_ok_and(|action| removed.contains(&action));
+        index += 1;
+        keep
+    });
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 struct Include {
     path: PathBuf,
@@ -499,7 +576,9 @@ impl Editor {
             });
         }
         delta.defaults = Some(shipped.path.clone());
-        let rows = rows(&shipped.binds()?, &delta)?;
+        let shipped_binds = shipped.binds()?;
+        retire(&mut delta, &shipped_binds)?;
+        let rows = rows(&shipped_binds, &delta)?;
         Ok(Self {
             main,
             document,
@@ -1001,6 +1080,16 @@ fn label(node: &KdlNode) -> Result<String> {
         "XF86AudioLowerVolume" => "Lower volume",
         "XF86AudioMute" => "Mute speakers",
         "XF86AudioMicMute" => "Mute microphone",
+        "XF86MonBrightnessUp" => "Brightness up",
+        "XF86MonBrightnessDown" => "Brightness down",
+        "XF86KbdBrightnessUp" => "Keyboard brightness up",
+        "XF86KbdBrightnessDown" => "Keyboard brightness down",
+        "XF86KbdLightOnOff" => "Toggle keyboard backlight",
+        "XF86AudioPlay" => "Play or pause",
+        "XF86AudioPause" => "Pause media",
+        "XF86AudioStop" => "Stop media",
+        "XF86AudioNext" => "Next track",
+        "XF86AudioPrev" => "Previous track",
         _ => {
             let mut label = action.name().value().replace('-', " ");
             if let Some(initial) = label.get_mut(..1) {
