@@ -77,19 +77,13 @@ impl DesktopEnvironment {
             .filter(|value| !value.trim().is_empty())
             .map(|value| Self::from_current_desktop(&value))
             .unwrap_or_else(Self::unknown);
-        let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
-            .into_iter()
-            .filter_map(|key| std::env::var(key).ok())
-            .find(|value| !value.is_empty());
-        if let Some(locale) =
-            locale.filter(|value| value != "C" && value != "POSIX" && !value.starts_with("C."))
-        {
-            env.locales = std::env::var("LANGUAGE")
-                .ok()
-                .filter(|value| !value.is_empty())
-                .map(|value| value.split(':').map(str::to_owned).collect())
-                .unwrap_or_else(|| vec![locale]);
-        }
+        // The languages Canopa negotiates (CANOPA_LANGUAGE, LC_ALL, the person's
+        // locale.conf, LC_MESSAGES/LANG with LANGUAGE), in desktop-entry form.
+        env.locales = canopa_i18n::LocaleSources::current()
+            .requested_languages()
+            .iter()
+            .map(|language| language.to_string().replace('-', "_"))
+            .collect();
         env
     }
 

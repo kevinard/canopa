@@ -6,6 +6,7 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
+canopa-i18n.workspace = true
 canopa-file.workspace = true
 tracing.workspace = true
 
