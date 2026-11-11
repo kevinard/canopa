@@ -1,6 +1,9 @@
 //! Descriptor-safe, content-free bounded reads for local assets and configuration,
-//! and upgrade-safe paths for re-executing the running program.
+//! upgrade-safe paths for re-executing the running program, and the XDG desktop
+//! data built on those reads: shared-mime-info types and the selected icon theme.
 pub mod executable;
+pub mod icon_theme;
+pub mod mime;
 pub mod private_state;
 pub mod watch;
 use std::io::Read;
@@ -32,6 +35,30 @@ pub fn read_canonical_bounded(
 ) -> Result<Vec<u8>, BoundedReadError> {
     let resolved = std::fs::canonicalize(path).map_err(|_| BoundedReadError { bytes_read: 0 })?;
     read_with_flags(&resolved, maximum_bytes, rustix::fs::OFlags::NOFOLLOW)
+}
+
+/// Read at most `maximum_bytes` from the start of a regular file of any size,
+/// with the same descriptor validation as [`read_bounded`]. For content sniffing.
+pub fn read_prefix(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, BoundedReadError> {
+    use rustix::fs::{Mode, OFlags, open};
+    let unavailable = || BoundedReadError { bytes_read: 0 };
+    let fd = open(
+        path,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|_| unavailable())?;
+    let file = std::fs::File::from(fd);
+    if !file.metadata().map_err(|_| unavailable())?.is_file() {
+        return Err(unavailable());
+    }
+    let mut bytes = Vec::with_capacity(maximum_bytes.min(64 * 1024));
+    file.take(maximum_bytes as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| BoundedReadError {
+            bytes_read: bytes.len(),
+        })?;
+    Ok(bytes)
 }
 
 fn read_with_flags(
