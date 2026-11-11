@@ -22,7 +22,7 @@ impl Parent {
         if !path.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Choose an absolute folder",
+                fl!("portal-chooser-absolute-folder"),
             ));
         }
         let directory = File::from(open(
@@ -41,9 +41,7 @@ impl Parent {
         let pinned = self.directory.metadata()?;
         let current = std::fs::metadata(&self.path)?;
         if (pinned.dev(), pinned.ino()) != (current.dev(), current.ino()) {
-            return Err(io::Error::other(
-                "The folder location changed. Choose it again.",
-            ));
+            return Err(io::Error::other(fl!("portal-chooser-folder-changed")));
         }
         Ok(())
     }
@@ -52,7 +50,7 @@ impl Parent {
         if !valid_name(name) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Enter one folder name, without a slash, up to 255 bytes",
+                fl!("portal-chooser-folder-name-rule"),
             ));
         }
         self.verify()?;

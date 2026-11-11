@@ -121,7 +121,11 @@ pub(crate) fn combo_box<'a, M: Clone + Send + Sync + 'static>(
         .on_increment(next)
         .on_decrement(previous);
     if let Some(index) = current {
-        node = node.description(format!("{} of {count}", index + 1));
+        node = node.description(fl!(
+            "portal-combo-position",
+            position = index.saturating_add(1),
+            count = count
+        ));
     }
     semantic(
         node.on_set_value(move |requested| match requested {

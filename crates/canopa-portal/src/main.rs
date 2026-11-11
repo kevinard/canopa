@@ -100,6 +100,7 @@ struct Args {
 }
 
 fn main() {
+    canopa_i18n::init();
     let args = Args::parse();
     let result = if args.printer_jobs {
         tokio::runtime::Runtime::new()

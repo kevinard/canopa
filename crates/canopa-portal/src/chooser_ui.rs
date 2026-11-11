@@ -167,17 +167,26 @@ pub(crate) fn prepare_picker(request: ChooserRequest) -> anyhow::Result<PickerSt
         Some(home.as_os_str()),
     )?;
     let places = canopa_files::personal_folders::PersonalFolders::load(&home, &config_home)?;
-    let mut shortcuts = vec![("Home".to_owned(), home.clone())];
+    let mut shortcuts = vec![(fl!("portal-place-home"), home.clone())];
     for (label, kind) in [
-        ("Documents", canopa_files::interface::PlaceKind::Documents),
-        ("Downloads", canopa_files::interface::PlaceKind::Downloads),
-        ("Pictures", canopa_files::interface::PlaceKind::Pictures),
+        (
+            fl!("portal-place-documents"),
+            canopa_files::interface::PlaceKind::Documents,
+        ),
+        (
+            fl!("portal-place-downloads"),
+            canopa_files::interface::PlaceKind::Downloads,
+        ),
+        (
+            fl!("portal-place-pictures"),
+            canopa_files::interface::PlaceKind::Pictures,
+        ),
     ] {
         if let Some(path) = places.path(kind) {
-            shortcuts.push((label.into(), path.to_owned()));
+            shortcuts.push((label, path.to_owned()));
         }
     }
-    shortcuts.push(("Filesystem".into(), PathBuf::from("/")));
+    shortcuts.push((fl!("portal-place-filesystem"), PathBuf::from("/")));
     let folder = request
         .current_file
         .as_deref()
@@ -604,8 +613,7 @@ impl Picker {
                     return Task::none();
                 };
                 if !folders::valid_name(&draft.name) {
-                    self.error =
-                        Some("Enter one folder name, without a slash, up to 255 bytes".into());
+                    self.error = Some(fl!("portal-chooser-folder-name-rule"));
                     return Task::none();
                 }
                 let (parent, name) = (draft.parent.clone(), draft.name.clone());
@@ -902,7 +910,7 @@ impl Picker {
 
     /// The standalone dialog's title, also its AT-SPI window name.
     pub(crate) fn window_title(&self) -> String {
-        format!("{} — Canopa", self.request.title)
+        fl!("portal-window-title", title = self.request.title.as_str())
     }
 
     /// The standalone dialog: an AT-SPI window holding the chooser dialog.
@@ -918,11 +926,11 @@ impl Picker {
         )
     }
 
-    fn purpose(&self) -> &str {
+    fn purpose(&self) -> String {
         if self.request.app_id.is_empty() {
-            "Choose from your local files and folders"
+            fl!("portal-chooser-purpose")
         } else {
-            &self.request.app_id
+            self.request.app_id.clone()
         }
     }
 
@@ -939,11 +947,11 @@ impl Picker {
             return self.new_folder_view(draft);
         }
         let enabled = !self.loading && !self.busy && self.overwrite.is_none();
-        let action = |key: &'static str, label: &'static str, message| {
+        let action = |key: &'static str, label: String, message| {
             let message = enabled.then_some(message);
             a11y::button(
                 key,
-                label,
+                label.clone(),
                 message.clone(),
                 canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false),
             )
@@ -952,32 +960,35 @@ impl Picker {
         // Arrow keys move the file cursor even while a field has keyboard
         // focus, so every field points at the row they move.
         let focused_row = self.focused_row(&entries);
-        let mut toolbar = row![
-            action("chooser-home", "Home", Message::Home),
-            action("chooser-up", "Up", Message::Up),
+        let location = fl!("portal-chooser-location");
+        let mut toolbar: Vec<Element<'_, Message>> = vec![
+            action("chooser-home", fl!("portal-place-home"), Message::Home),
+            action("chooser-up", fl!("portal-chooser-up"), Message::Up),
             semantic(
-                Node::text_input("Location", &self.location)
+                Node::text_input(location.clone(), &self.location)
                     .key("chooser-location")
-                    .placeholder("Location")
+                    .placeholder(location.clone())
                     .active_descendant(focused_row.clone())
                     .on_text(Message::Location),
-                text_input("Location", &self.location)
+                text_input(&location, &self.location)
                     .id("location")
                     .on_input(Message::Location)
                     .on_submit(Message::Go)
                     .width(Length::Fill),
             ),
-            action("chooser-go", "Go", Message::Go)
-        ]
-        .spacing(6);
+            action("chooser-go", fl!("portal-chooser-go"), Message::Go),
+        ];
         if self.request.mode != Mode::Open {
-            toolbar = toolbar.push(action(
+            toolbar.push(action(
                 "chooser-new-folder-button",
-                "New folder",
+                fl!("portal-chooser-new-folder"),
                 Message::NewFolder,
             ));
         }
-        let toolbar = semantic(Node::toolbar("Navigation").key("chooser-toolbar"), toolbar);
+        let toolbar = semantic(
+            Node::toolbar(fl!("portal-chooser-navigation")).key("chooser-toolbar"),
+            canopa_ui::direction::row(toolbar).spacing(6),
+        );
         let mut shortcuts = column![].spacing(5);
         for (label, path) in &self.shortcuts {
             let current = self
@@ -1004,8 +1015,11 @@ impl Picker {
             ));
         }
         let shortcuts = column![
-            chooser_heading("Places", 14),
-            semantic(Node::list("Places").key("chooser-places"), shortcuts),
+            chooser_heading(fl!("portal-chooser-places"), 14),
+            semantic(
+                Node::list(fl!("portal-chooser-places")).key("chooser-places"),
+                shortcuts
+            ),
         ]
         .spacing(5);
         let places = container(scrollable(shortcuts).height(Length::Fill))
@@ -1027,7 +1041,14 @@ impl Picker {
                 .is_some_and(|b| b.selected().contains(&entry.path));
             let name = entry.name().into_owned();
             let key = entry_key(&entry.path);
-            let label = format!("{}  {}", if entry.is_directory() { "▸" } else { " " }, name);
+            let marker = if !entry.is_directory() {
+                " "
+            } else if canopa_ui::direction::is_rtl() {
+                "◂"
+            } else {
+                "▸"
+            };
+            let label = format!("{marker}  {name}");
             let select_message = enabled.then_some(Message::Select(entry.path.clone()));
             let activate = enabled.then_some(Message::Activate(entry.path.clone()));
             let select = button(text(label))
@@ -1043,10 +1064,10 @@ impl Picker {
                 });
             let open = a11y::button(
                 format!("{key}-open"),
-                format!("Open {name}"),
+                fl!("portal-chooser-open-entry", name = name.as_str()),
                 activate.clone(),
                 canopa_ui::action(
-                    text("Open").size(13),
+                    text(fl!("portal-chooser-open-row")).size(13),
                     activate,
                     canopa_ui::Action::Quiet,
                     false,
@@ -1060,28 +1081,28 @@ impl Picker {
                     .focused(focused_row.as_ref() == Some(&key))
                     .disabled(select_message.is_none())
                     .on_click(select_message),
-                row![select, open].spacing(4),
+                canopa_ui::direction::row([select.into(), open]).spacing(4),
             ));
         }
         if self.loading {
-            listing = listing.push(text("Loading…"));
+            listing = listing.push(text(fl!("portal-loading")));
         } else if empty {
-            listing = listing
-                .push(container(text("No matching files").style(canopa_ui::muted)).padding(12));
+            listing = listing.push(
+                container(text(fl!("portal-chooser-no-matches")).style(canopa_ui::muted))
+                    .padding(12),
+            );
         }
         let status = if self.loading {
-            "Loading folder…".to_owned()
+            fl!("portal-chooser-loading-folder")
         } else if self.browser.is_none() {
             String::new()
         } else if empty {
-            "No matching files".to_owned()
-        } else if total == 1 {
-            "1 item".to_owned()
+            fl!("portal-chooser-no-matches")
         } else {
-            format!("{total} items")
+            fl!("portal-chooser-item-count", count = total)
         };
         let list = semantic(
-            Node::list("Files")
+            Node::list(fl!("portal-chooser-files"))
                 .key(FILES_KEY)
                 .description(&self.location)
                 .multiselectable(self.request.multiple)
@@ -1089,36 +1110,38 @@ impl Picker {
                 .active_descendant(focused_row.clone()),
             scrollable(listing).height(Length::Fill).width(Length::Fill),
         );
-        let body = row![
-            places,
+        let body = canopa_ui::direction::row([
+            places.into(),
             column![
-                container(chooser_heading("Name", 14)).padding([0, 8]),
+                container(chooser_heading(fl!("portal-chooser-name-column"), 14)).padding([0, 8]),
                 rule::horizontal(1).style(chooser_rule),
                 list,
                 a11y::announcer("chooser-status", status, false),
             ]
             .spacing(6)
-        ]
+            .into(),
+        ])
         .spacing(12)
         .height(Length::Fill);
+        let filter = fl!("portal-chooser-search");
         let mut content = column![
             column![
                 semantic(
                     Node::heading(&self.request.title, 1),
-                    chooser_heading(&self.request.title, 23)
+                    chooser_heading(self.request.title.clone(), 23)
                 ),
                 text(self.purpose()).size(13).style(canopa_ui::muted)
             ]
             .spacing(3),
             toolbar,
             semantic(
-                Node::search_input("Filter names in this folder", &self.search)
+                Node::search_input(filter.clone(), &self.search)
                     .key("chooser-search")
-                    .placeholder("Filter names in this folder")
+                    .placeholder(filter.clone())
                     .controls(FILES_KEY)
                     .active_descendant(focused_row.clone())
                     .on_text(Message::Search),
-                text_input("Filter names in this folder", &self.search)
+                text_input(&filter, &self.search)
                     .id("search")
                     .on_input(Message::Search),
             ),
@@ -1126,30 +1149,31 @@ impl Picker {
         ]
         .spacing(10);
         if self.request.mode == Mode::Save {
+            let file_name = fl!("portal-chooser-file-name");
             content = content.push(
-                row![
-                    text("Name"),
+                canopa_ui::direction::row([
+                    text(fl!("portal-chooser-name-label")).into(),
                     semantic(
-                        Node::text_input("File name", &self.name)
+                        Node::text_input(file_name.clone(), &self.name)
                             .key("chooser-name")
-                            .placeholder("File name")
+                            .placeholder(file_name.clone())
                             .required(true)
                             .active_descendant(focused_row)
                             .on_text(Message::Name),
-                        text_input("File name", &self.name)
+                        text_input(&file_name, &self.name)
                             .id("name")
                             .on_input(Message::Name)
-                            .on_submit(Message::Accept)
-                    )
-                ]
+                            .on_submit(Message::Accept),
+                    ),
+                ])
                 .spacing(10)
                 .align_y(iced::Center),
             );
         }
         if self.request.mode == Mode::SaveMany {
-            content = content.push(text(format!(
-                "Choose a folder for {} files",
-                self.request.files.len()
+            content = content.push(text(fl!(
+                "portal-chooser-save-many",
+                count = self.request.files.len()
             )));
         }
         if !self.request.filters.is_empty() {
@@ -1173,7 +1197,7 @@ impl Picker {
                 .collect();
             content = content.push(a11y::combo_box(
                 "chooser-filter",
-                "File type",
+                fl!("portal-chooser-file-type"),
                 options,
                 current,
                 pick_list(labels, selected, |item| Message::Filter(item.0)),
@@ -1226,12 +1250,12 @@ impl Picker {
         if self.request.mode == Mode::Open && self.read_only_choice {
             content = content.push(a11y::check_box(
                 "chooser-read-only",
-                "Open read-only",
+                fl!("portal-chooser-read-only"),
                 !self.writable,
                 Some(Message::ReadOnly(self.writable)),
                 checkbox(!self.writable)
                     .style(canopa_ui::checkbox_style)
-                    .label("Open read-only")
+                    .label(fl!("portal-chooser-read-only"))
                     .on_toggle(Message::ReadOnly),
             ));
         }
@@ -1247,28 +1271,28 @@ impl Picker {
         let hidden = self.browser.as_ref().is_some_and(Browser::show_hidden);
         let accept = enabled.then_some(Message::Accept);
         let accept_label = self.request.accept_label.replace('_', "");
-        let footer = row![
+        let footer = canopa_ui::direction::row([
             a11y::check_box(
                 "chooser-hidden",
-                "Show hidden files",
+                fl!("portal-chooser-show-hidden"),
                 hidden,
                 Some(Message::Hidden(!hidden)),
                 checkbox(hidden)
                     .style(canopa_ui::checkbox_style)
-                    .label("Show hidden files")
+                    .label(fl!("portal-chooser-show-hidden"))
                     .on_toggle(Message::Hidden),
             ),
-            iced::widget::space().width(Length::Fill),
+            iced::widget::space().width(Length::Fill).into(),
             a11y::button(
                 "chooser-cancel",
-                "Cancel",
+                fl!("portal-cancel"),
                 Some(Message::Cancel),
                 canopa_ui::action(
-                    text("Cancel"),
+                    text(fl!("portal-cancel")),
                     Some(Message::Cancel),
                     canopa_ui::Action::Normal,
-                    false
-                )
+                    false,
+                ),
             ),
             a11y::button(
                 "chooser-accept",
@@ -1278,10 +1302,10 @@ impl Picker {
                     text(accept_label),
                     accept,
                     canopa_ui::Action::Primary,
-                    false
-                )
-            )
-        ]
+                    false,
+                ),
+            ),
+        ])
         .spacing(10)
         .align_y(iced::Center);
         container(
@@ -1299,17 +1323,22 @@ impl Picker {
     fn new_folder_view<'a>(&'a self, draft: &'a FolderDraft) -> Element<'a, Message> {
         let valid = folders::valid_name(&draft.name);
         let parent = draft.parent.path().to_string_lossy();
+        let title = fl!("portal-chooser-new-folder");
+        let folder_name = fl!("portal-chooser-folder-name");
         let mut prompt = column![
-            semantic(Node::heading("New folder", 2), text("New folder").size(22)),
+            semantic(
+                Node::heading(title.clone(), 2),
+                text(title.clone()).size(22)
+            ),
             text(parent.clone()).style(canopa_ui::muted),
             semantic(
-                Node::text_input("Folder name", &draft.name)
+                Node::text_input(folder_name.clone(), &draft.name)
                     .key("chooser-new-folder-name")
-                    .placeholder("Folder name")
+                    .placeholder(folder_name.clone())
                     .required(true)
                     .invalid(!draft.name.is_empty() && !valid)
                     .on_text(Message::FolderName),
-                text_input("Folder name", &draft.name)
+                text_input(&folder_name, &draft.name)
                     .id("new-folder-name")
                     .on_input(Message::FolderName)
                     .on_submit(Message::CreateFolder),
@@ -1324,18 +1353,27 @@ impl Picker {
         }
         let cancel = (!self.busy).then_some(Message::KeepChoosing);
         let create = (!self.busy && valid).then_some(Message::CreateFolder);
-        let create_label = if self.busy { "Creating…" } else { "Create" };
+        let create_label = if self.busy {
+            fl!("portal-chooser-creating")
+        } else {
+            fl!("portal-chooser-create")
+        };
         prompt = prompt.push(
             row![
                 a11y::button(
                     "chooser-new-folder-cancel",
-                    "Cancel",
+                    fl!("portal-cancel"),
                     cancel.clone(),
-                    canopa_ui::action(text("Cancel"), cancel, canopa_ui::Action::Normal, false)
+                    canopa_ui::action(
+                        text(fl!("portal-cancel")),
+                        cancel,
+                        canopa_ui::Action::Normal,
+                        false
+                    )
                 ),
                 a11y::button(
                     "chooser-new-folder-create",
-                    create_label,
+                    create_label.clone(),
                     create.clone(),
                     canopa_ui::action(
                         text(create_label),
@@ -1348,7 +1386,7 @@ impl Picker {
             .spacing(10),
         );
         semantic(
-            Node::dialog("New folder")
+            Node::dialog(title)
                 .key("chooser-new-folder")
                 .description(parent)
                 .busy(self.busy),
@@ -1363,7 +1401,7 @@ impl Picker {
 /// The replacement question: an alert dialog whose question is announced
 /// assertively when it appears.
 fn overwrite_view(prepared: &Prepared) -> Element<'_, Message> {
-    const QUESTION: &str = "The destination already exists. Allow the application to replace it?";
+    let question = fl!("portal-chooser-overwrite-question");
     let names: Vec<String> = prepared
         .existing
         .iter()
@@ -1374,29 +1412,31 @@ fn overwrite_view(prepared: &Prepared) -> Element<'_, Message> {
                 .into_owned()
         })
         .collect();
-    let mut description = names.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
-    if names.len() > 3 {
-        description.push_str(&format!(" and {} more", names.len() - 3));
-    }
+    let more = names.len().saturating_sub(3);
+    let description = fl!(
+        "portal-chooser-overwrite-names",
+        names = names.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+        more = more
+    );
     let mut block = column![semantic(
-        Node::alert(QUESTION).key("chooser-overwrite-question"),
-        text(QUESTION)
+        Node::alert(question.clone()).key("chooser-overwrite-question"),
+        text(question)
     )]
     .spacing(10);
     for name in names.iter().take(3) {
         block = block.push(text(name.clone()));
     }
     if names.len() > 3 {
-        block = block.push(text(format!("and {} more", names.len() - 3)));
+        block = block.push(text(fl!("portal-chooser-overwrite-more", count = more)));
     }
     block = block.push(
         row![
             a11y::button(
                 "chooser-keep-choosing",
-                "Keep choosing",
+                fl!("portal-chooser-keep-choosing"),
                 Some(Message::KeepChoosing),
                 canopa_ui::action(
-                    text("Keep choosing"),
+                    text(fl!("portal-chooser-keep-choosing")),
                     Some(Message::KeepChoosing),
                     canopa_ui::Action::Normal,
                     false
@@ -1404,10 +1444,10 @@ fn overwrite_view(prepared: &Prepared) -> Element<'_, Message> {
             ),
             a11y::button(
                 "chooser-replace",
-                "Replace",
+                fl!("portal-chooser-replace"),
                 Some(Message::Replace),
                 canopa_ui::action(
-                    text("Replace"),
+                    text(fl!("portal-chooser-replace")),
                     Some(Message::Replace),
                     canopa_ui::Action::Destructive,
                     false
@@ -1417,7 +1457,7 @@ fn overwrite_view(prepared: &Prepared) -> Element<'_, Message> {
         .spacing(10),
     );
     semantic(
-        Node::alert_dialog("Replace existing files?")
+        Node::alert_dialog(fl!("portal-chooser-overwrite-title"))
             .key("chooser-overwrite")
             .description(description),
         block,
@@ -1433,22 +1473,27 @@ fn entry_key(path: &Path) -> String {
 fn describe(entry: &canopa_files::browse::Entry) -> String {
     use canopa_files::browse::EntryKind;
     let kind = match entry.kind {
-        EntryKind::Symlink if entry.is_directory() => "Link to folder".to_owned(),
-        EntryKind::Symlink => "Link".to_owned(),
-        _ if entry.is_directory() => "Folder".to_owned(),
+        EntryKind::Symlink if entry.is_directory() => fl!("portal-chooser-kind-folder-link"),
+        EntryKind::Symlink => fl!("portal-chooser-kind-link"),
+        _ if entry.is_directory() => fl!("portal-chooser-kind-folder"),
         _ => entry.path.extension().map_or_else(
-            || "File".into(),
-            |extension| format!("{} file", extension.to_string_lossy().to_uppercase()),
+            || fl!("portal-chooser-kind-file"),
+            |extension| {
+                fl!(
+                    "portal-chooser-kind-typed-file",
+                    extension = extension.to_string_lossy().to_uppercase()
+                )
+            },
         ),
     };
     if entry.is_hidden() {
-        format!("{kind}, hidden")
+        fl!("portal-chooser-kind-hidden", kind = kind)
     } else {
         kind
     }
 }
 
-fn chooser_heading(label: &str, size: u32) -> iced::widget::Text<'_> {
+fn chooser_heading<'a>(label: String, size: u32) -> iced::widget::Text<'a> {
     text(label).size(size)
 }
 
@@ -1476,10 +1521,10 @@ fn prepare(
     selected: Vec<PathBuf>,
     name: OsString,
 ) -> io::Result<Prepared> {
-    let invalid = |message| io::Error::new(io::ErrorKind::InvalidInput, message);
+    let invalid = |message: String| io::Error::new(io::ErrorKind::InvalidInput, message);
     let folder = std::fs::canonicalize(folder)?;
     if !folder.is_dir() {
-        return Err(invalid("Choose an existing folder"));
+        return Err(invalid(fl!("portal-chooser-choose-existing-folder")));
     }
     let paths = match request.mode {
         Mode::Open => {
@@ -1489,7 +1534,7 @@ fn prepare(
                 selected
             };
             if paths.is_empty() || (!request.multiple && paths.len() > 1) {
-                return Err(invalid("Select a file"));
+                return Err(invalid(fl!("portal-chooser-select-file")));
             }
             for path in &paths {
                 let metadata = std::fs::metadata(path)?;
@@ -1498,14 +1543,14 @@ fn prepare(
                 } else {
                     !metadata.is_file()
                 } {
-                    return Err(invalid("Select the requested file type"));
+                    return Err(invalid(fl!("portal-chooser-select-type")));
                 }
             }
             paths
         }
         Mode::Save => {
             if name.as_bytes().contains(&0) || !file_name(Path::new(&name)) {
-                return Err(invalid("Enter one file name without a folder path"));
+                return Err(invalid(fl!("portal-chooser-one-file-name")));
             }
             vec![folder.join(name)]
         }
@@ -1516,7 +1561,7 @@ fn prepare(
                 folder
             };
             if !folder.is_dir() {
-                return Err(invalid("Choose a folder"));
+                return Err(invalid(fl!("portal-chooser-choose-folder")));
             }
             request
                 .files
@@ -1525,7 +1570,7 @@ fn prepare(
                     path_bytes(bytes)
                         .filter(|p| file_name(p))
                         .map(|p| folder.join(p))
-                        .ok_or_else(|| invalid("Invalid file name"))
+                        .ok_or_else(|| invalid(fl!("portal-chooser-invalid-name")))
                 })
                 .collect::<io::Result<Vec<_>>>()?
         }
@@ -1535,12 +1580,12 @@ fn prepare(
         let mut unique = BTreeSet::new();
         for path in &paths {
             if !unique.insert(path) {
-                return Err(invalid("Save file names must be distinct"));
+                return Err(invalid(fl!("portal-chooser-distinct-names")));
             }
             match std::fs::symlink_metadata(path) {
                 Ok(metadata) => {
                     if !metadata.is_file() {
-                        return Err(invalid("The destination is a folder or special file"));
+                        return Err(invalid(fl!("portal-chooser-special-destination")));
                     }
                     existing.push(path.clone());
                 }
@@ -1572,9 +1617,7 @@ fn prepare_with_target(
             &prepared.paths[0],
         )?);
         if reviewed.selection().path() != prepared.paths[0].as_os_str().as_bytes() {
-            return Err(io::Error::other(
-                "The destination folder changed. Choose it again.",
-            ));
+            return Err(io::Error::other(fl!("portal-chooser-destination-changed")));
         }
         prepared.existing = if reviewed.selection().replaces() {
             prepared.paths.clone()

@@ -6,7 +6,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{checkbox, column, container, image, pick_list, row, scrollable, text},
+    widget::{checkbox, column, container, image, pick_list, scrollable, text},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -112,11 +112,12 @@ impl canopa_ui::accessibility::Message for Message {
 
 impl Dialog {
     fn window_title(&self) -> String {
-        if self.request.title.is_empty() {
-            "Permission — Canopa".into()
+        let title = if self.request.title.is_empty() {
+            fl!("portal-access-title")
         } else {
-            format!("{} — Canopa", self.request.title)
-        }
+            self.request.title.clone()
+        };
+        fl!("portal-window-title", title = title)
     }
     fn subscription(&self) -> Subscription<Message> {
         let input = iced::event::listen_with(|event, status, _| {
@@ -194,7 +195,7 @@ impl Dialog {
             text(&self.request.title).size(22),
         );
         let heading: Element<'_, Message> = if let Some(icon) = &self.icon {
-            row![image(icon.clone()).width(40).height(40), title]
+            canopa_ui::direction::row([image(icon.clone()).width(40).height(40).into(), title])
                 .spacing(12)
                 .align_y(iced::Center)
                 .into()
@@ -255,7 +256,7 @@ impl Dialog {
                 );
             }
         }
-        let actions = row![
+        let actions = canopa_ui::direction::row([
             a11y::button(
                 "access-deny",
                 &self.request.deny_label,
@@ -264,9 +265,9 @@ impl Dialog {
                     text(&self.request.deny_label),
                     Some(Message::Deny),
                     canopa_ui::Action::Normal,
-                    false
+                    false,
                 )
-                .width(Length::Fill)
+                .width(Length::Fill),
             ),
             a11y::button(
                 "access-grant",
@@ -276,11 +277,11 @@ impl Dialog {
                     text(&self.request.grant_label),
                     Some(Message::Grant),
                     canopa_ui::Action::Normal,
-                    false
+                    false,
                 )
-                .width(Length::Fill)
-            )
-        ]
+                .width(Length::Fill),
+            ),
+        ])
         .spacing(12)
         .align_y(iced::Center);
         // A consent question: an alert dialog, described by what it asks.
@@ -291,9 +292,9 @@ impl Dialog {
             .collect::<Vec<_>>()
             .join(" ");
         let dialog_title = if self.request.title.is_empty() {
-            "Permission"
+            fl!("portal-access-title")
         } else {
-            &self.request.title
+            self.request.title.clone()
         };
         a11y::dialog_window(
             WINDOW_KEY,

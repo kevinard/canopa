@@ -109,8 +109,13 @@ impl ChooserRequest {
             app_id,
             parent_window,
             title,
-            accept_label: option(&mut options, "accept_label")?
-                .unwrap_or_else(|| if mode == Mode::Open { "Open" } else { "Save" }.into()),
+            accept_label: option(&mut options, "accept_label")?.unwrap_or_else(|| {
+                if mode == Mode::Open {
+                    fl!("portal-chooser-accept-open")
+                } else {
+                    fl!("portal-chooser-accept-save")
+                }
+            }),
             modal: option(&mut options, "modal")?.unwrap_or(true),
             multiple: mode == Mode::Open && option(&mut options, "multiple")?.unwrap_or(false),
             directory: mode == Mode::SaveMany

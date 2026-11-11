@@ -34,7 +34,7 @@ async fn native_application_rows_and_buttons_send_the_input_messages() {
     let mut chooser = super::tests::chooser();
     chooser.reconcile();
     let mut bridge = Bridge::new("app-chooser-test");
-    bridge.open(WINDOW_KEY, WINDOW_TITLE, None);
+    bridge.open(WINDOW_KEY, &window_title(), None);
     bridge.set_window_focused(WINDOW_KEY, true);
     assert!(matches!(next(&bridge).await, Accessibility::Activated));
     let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
@@ -45,7 +45,7 @@ async fn native_application_rows_and_buttons_send_the_input_messages() {
         bridge.publish_snapshot(&harness.collect());
     };
     publish(&chooser, &mut bridge);
-    let window = testing::named(&connection, WINDOW_TITLE).await;
+    let window = testing::named(&connection, &window_title()).await;
     if std::env::var_os("CANOPA_ACCESSIBILITY_DUMP").is_some() {
         testing::dump(&window).await;
     }
@@ -83,5 +83,5 @@ async fn native_application_rows_and_buttons_send_the_input_messages() {
     assert!(matches!(action(&bridge).await, Message::Cancel));
 
     drop(bridge);
-    testing::gone(&connection, WINDOW_TITLE).await;
+    testing::gone(&connection, &window_title()).await;
 }

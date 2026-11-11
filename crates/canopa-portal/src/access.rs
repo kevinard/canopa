@@ -45,10 +45,10 @@ impl AccessRequest {
             modal: option(&mut options, "modal")?.unwrap_or(true),
             deny_label: option(&mut options, "deny_label")?
                 .filter(|s: &String| !s.is_empty())
-                .unwrap_or_else(|| "Deny".into()),
+                .unwrap_or_else(|| fl!("portal-access-deny")),
             grant_label: option(&mut options, "grant_label")?
                 .filter(|s: &String| !s.is_empty())
-                .unwrap_or_else(|| "Allow".into()),
+                .unwrap_or_else(|| fl!("portal-access-allow")),
             icon: option(&mut options, "icon")?,
             choices: choices::parse(&mut options)?,
         })

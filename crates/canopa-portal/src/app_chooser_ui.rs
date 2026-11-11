@@ -7,7 +7,7 @@ use crate::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{button, column, container, image, row, scrollable, text, text_input},
+    widget::{button, column, container, image, scrollable, text, text_input},
     window,
 };
 use std::{
@@ -77,7 +77,7 @@ fn offered(choices: &[String], catalog: &[Application]) -> Vec<Application> {
                 .unwrap_or_else(|| Application {
                     id: id.clone(),
                     name: id.clone(),
-                    caption: "Application".into(),
+                    caption: fl!("portal-app-chooser-caption"),
                     search: id.to_lowercase(),
                     icon: None,
                 });
@@ -162,7 +162,7 @@ pub fn run(
         Chooser::update,
         Chooser::view,
     )
-    .title(|_: &Chooser, _| WINDOW_TITLE.to_owned())
+    .title(|_: &Chooser, _| window_title())
     .theme(|app: &Chooser, _| app.theme.clone())
     .subscription(Chooser::subscription)
     .default_font(font)
@@ -173,7 +173,12 @@ pub fn run(
 
 /// The AT-SPI window of the application chooser and its title.
 const WINDOW_KEY: &str = "app-chooser";
-const WINDOW_TITLE: &str = "Open with — Canopa";
+fn window_title() -> String {
+    fl!(
+        "portal-window-title",
+        title = fl!("portal-app-chooser-title")
+    )
+}
 /// The application list, controlled by the search field.
 const APPLICATIONS_KEY: &str = "app-chooser-applications";
 
@@ -301,7 +306,7 @@ impl Chooser {
             Message::Opened => {
                 let window = self.window;
                 if let Some(state) = &mut self.accessibility {
-                    state.opened(WINDOW_TITLE, window);
+                    state.opened(&window_title(), window);
                 }
             }
             Message::Accessibility(_) => {}
@@ -440,13 +445,15 @@ impl Chooser {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let context = self
+        let heading = match self
             .request
             .filename
             .as_deref()
             .or(self.request.content_type.as_deref())
-            .unwrap_or("this item");
-        let heading = format!("Choose an application for {context}");
+        {
+            Some(item) => fl!("portal-app-chooser-heading", item = item),
+            None => fl!("portal-app-chooser-heading-any"),
+        };
         let visible = self.visible();
         let total = visible.len();
         // Arrow keys move the selection even while the search field has
@@ -473,7 +480,7 @@ impl Chooser {
                     .focused(focused_row.as_ref() == Some(&key))
                     .on_click(Some(select.clone())),
                 button(
-                    row![
+                    canopa_ui::direction::row([
                         icon,
                         column![
                             text(&application.name),
@@ -486,7 +493,8 @@ impl Chooser {
                                 })
                         ]
                         .spacing(3)
-                    ]
+                        .into(),
+                    ])
                     .spacing(10)
                     .align_y(iced::Center),
                 )
@@ -504,38 +512,37 @@ impl Chooser {
         }
         if self.rows.is_empty() {
             listing = listing.push(text(if self.loading {
-                "Loading applications…"
+                fl!("portal-app-chooser-loading")
             } else {
-                "No applications available"
+                fl!("portal-app-chooser-none")
             }));
         }
         let status = if self.rows.is_empty() && self.loading {
-            "Loading applications…".to_owned()
+            fl!("portal-app-chooser-loading")
         } else if self.rows.is_empty() {
-            "No applications available".to_owned()
+            fl!("portal-app-chooser-none")
         } else if total == 0 {
-            "No matching applications".to_owned()
-        } else if total == 1 {
-            "1 application".to_owned()
+            fl!("portal-app-chooser-no-matches")
         } else {
-            format!("{total} applications")
+            fl!("portal-app-chooser-count", count = total)
         };
+        let search = fl!("portal-app-chooser-search");
         let mut content = column![
             semantic(Node::heading(&heading, 1), text(heading.clone()).size(20)),
             semantic(
-                Node::search_input("Search applications", &self.search)
+                Node::search_input(search.clone(), &self.search)
                     .key("app-chooser-search")
-                    .placeholder("Search applications")
+                    .placeholder(search.clone())
                     .controls(APPLICATIONS_KEY)
                     .active_descendant(focused_row.clone())
                     .on_text(Message::Search),
-                text_input("Search applications", &self.search)
+                text_input(&search, &self.search)
                     .id("applications-search")
                     .on_input(Message::Search)
                     .on_submit(Message::Accept),
             ),
             semantic(
-                Node::list("Applications")
+                Node::list(fl!("portal-app-chooser-applications"))
                     .key(APPLICATIONS_KEY)
                     .busy(self.loading)
                     .active_descendant(focused_row),
@@ -552,31 +559,36 @@ impl Chooser {
         }
         let open = (!self.initial && self.pending.is_none() && self.selected.is_some())
             .then_some(Message::Accept);
-        let footer = row![
-            iced::widget::space().width(Length::Fill),
+        let footer = canopa_ui::direction::row([
+            iced::widget::space().width(Length::Fill).into(),
             a11y::button(
                 "app-chooser-cancel",
-                "Cancel",
+                fl!("portal-cancel"),
                 Some(Message::Cancel),
                 canopa_ui::action(
-                    text("Cancel"),
+                    text(fl!("portal-cancel")),
                     Some(Message::Cancel),
                     canopa_ui::Action::Normal,
-                    false
-                )
+                    false,
+                ),
             ),
             a11y::button(
                 "app-chooser-open",
-                "Open",
+                fl!("portal-app-chooser-open"),
                 open.clone(),
-                canopa_ui::action(text("Open"), open, canopa_ui::Action::Normal, false)
-            )
-        ]
+                canopa_ui::action(
+                    text(fl!("portal-app-chooser-open")),
+                    open,
+                    canopa_ui::Action::Normal,
+                    false,
+                ),
+            ),
+        ])
         .spacing(10);
         a11y::dialog_window(
             WINDOW_KEY,
-            WINDOW_TITLE,
-            Node::dialog("Open with")
+            window_title(),
+            Node::dialog(fl!("portal-app-chooser-title"))
                 .key("app-chooser-dialog")
                 .description(heading)
                 .busy(self.loading || self.pending.is_some()),
