@@ -45,19 +45,20 @@ impl<T> From<Option<T>> for ServiceState<T> {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     /// The bus or the service is not reachable.
-    #[error("the service is not available")]
+    #[error("{}", fl!("services-error-unavailable"))]
     Unavailable,
     /// Polkit or the service refused, or the person cancelled authentication.
-    #[error("the request is not authorized")]
+    #[error("{}", fl!("services-error-not-authorized"))]
     NotAuthorized,
-    #[error("the service did not answer in time")]
+    #[error("{}", fl!("services-error-timed-out"))]
     TimedOut,
     /// The device, profile or owner the request named is no longer current.
     /// Read the current state and ask again.
-    #[error("the target changed")]
+    #[error("{}", fl!("services-error-changed"))]
     Changed,
     /// The request is outside what the service accepts (for example a
-    /// brightness of 0 %). The message is plain English for logs.
+    /// brightness of 0 %). The message is plain English for logs; Settings
+    /// matches it to translate it, so it stays English.
     #[error("{0}")]
     Invalid(&'static str),
     /// The service refused for another reason; its bounded message is kept.

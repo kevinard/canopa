@@ -98,13 +98,13 @@ pub enum Operation {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MprisError {
     /// The owner or the track changed since the reading the request names.
-    #[error("Player or track changed; try again")]
+    #[error("{}", fl!("services-mpris-changed"))]
     Changed,
     /// The player does not currently advertise the operation.
-    #[error("This player does not support that control")]
+    #[error("{}", fl!("services-mpris-unsupported"))]
     Unsupported,
-    /// The player sent invalid properties.
-    #[error("{0}")]
+    /// The player sent invalid properties; the detail is English, for logs.
+    #[error("{}", fl!("services-mpris-invalid", detail = .0.to_string()))]
     Invalid(&'static str),
     #[error(transparent)]
     Bus(#[from] Error),

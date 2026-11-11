@@ -95,14 +95,14 @@ fn text(settings: &Settings, setting: &str, key: &str) -> Option<String> {
 
 /// The secrets a setting needs, from the connection's own settings.
 pub fn fields(settings: &Settings, setting: &str, hints: &[String]) -> Vec<SecretField> {
-    let field = |key: &str, label: &str| SecretField {
+    let field = |key: &str, label: String| SecretField {
         key: key.into(),
-        label: label.into(),
+        label,
     };
     match setting {
         "802-11-wireless-security" => match text(settings, setting, "key-mgmt").as_deref() {
-            Some("none") => vec![field("wep-key0", "WEP key")],
-            _ => vec![field("psk", "Wi-Fi password")],
+            Some("none") => vec![field("wep-key0", fl!("services-secret-wep-key"))],
+            _ => vec![field("psk", fl!("services-secret-wifi-password"))],
         },
         "802-1x" => {
             let eap = settings
@@ -111,26 +111,29 @@ pub fn fields(settings: &Settings, setting: &str, hints: &[String]) -> Vec<Secre
                 .and_then(|value| Vec::<String>::try_from(value.try_clone().ok()?).ok())
                 .unwrap_or_default();
             if eap.iter().any(|method| method == "tls") {
-                vec![field("private-key-password", "Private key password")]
+                vec![field(
+                    "private-key-password",
+                    fl!("services-secret-private-key-password"),
+                )]
             } else {
-                vec![field("password", "Password")]
+                vec![field("password", fl!("services-secret-password"))]
             }
         }
-        "wireguard" => vec![field("private-key", "WireGuard private key")],
+        "wireguard" => vec![field("private-key", fl!("services-secret-wireguard-key"))],
         "vpn" => {
             // Plugins name the secrets they want in the hints.
             let mut asked: Vec<SecretField> = hints
                 .iter()
                 .filter(|hint| !hint.starts_with("x-"))
                 .take(4)
-                .map(|hint| field(hint, &hint.replace('-', " ")))
+                .map(|hint| field(hint, hint.replace('-', " ")))
                 .collect();
             if asked.is_empty() {
-                asked.push(field("password", "VPN password"));
+                asked.push(field("password", fl!("services-secret-vpn-password")));
             }
             asked
         }
-        _ => vec![field("password", "Password")],
+        _ => vec![field("password", fl!("services-secret-password"))],
     }
 }
 

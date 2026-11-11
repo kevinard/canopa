@@ -52,43 +52,43 @@ pub use devices::{
 };
 pub use meter::level_meter;
 
-/// Why an audio read or command failed. The messages are plain sentences
-/// that panels show as they are.
+/// Why an audio read or command failed. The messages are plain sentences in
+/// the person's language that panels show as they are.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AudioError {
     /// The command queue is full or the observer has stopped.
-    #[error("Audio controls are busy or unavailable.")]
+    #[error("{}", fl!("services-audio-busy"))]
     Busy,
-    #[error("Audio operation timed out.")]
+    #[error("{}", fl!("services-audio-timed-out"))]
     TimedOut,
     /// The observer ended before answering.
-    #[error("Audio controls are unavailable.")]
+    #[error("{}", fl!("services-audio-controls-unavailable"))]
     ControlsUnavailable,
     /// No audio server connection.
-    #[error("Audio is unavailable.")]
+    #[error("{}", fl!("services-audio-unavailable"))]
     Unavailable,
-    #[error("Audio server did not respond.")]
+    #[error("{}", fl!("services-audio-no-response"))]
     NoResponse,
-    #[error("Too many audio devices.")]
+    #[error("{}", fl!("services-audio-too-many-devices"))]
     TooManyDevices,
-    #[error("Could not read audio devices.")]
+    #[error("{}", fl!("services-audio-read-failed"))]
     ReadFailed,
     /// The id came from an earlier connection.
-    #[error("The audio connection changed. Choose a current device.")]
+    #[error("{}", fl!("services-audio-connection-changed"))]
     ConnectionChanged,
-    #[error("The audio device is no longer available. Choose a current device.")]
+    #[error("{}", fl!("services-audio-device-gone"))]
     DeviceGone,
-    #[error("Invalid audio channel volumes.")]
+    #[error("{}", fl!("services-audio-invalid-channels"))]
     InvalidChannels,
-    #[error("Volume must be between 0% and 100%.")]
+    #[error("{}", fl!("services-audio-volume-out-of-range"))]
     VolumeOutOfRange,
-    #[error("The audio server rejected the change.")]
+    #[error("{}", fl!("services-audio-rejected"))]
     Rejected,
-    #[error("default audio sink is unavailable")]
+    #[error("{}", fl!("services-audio-no-default-sink"))]
     NoDefaultSink,
-    #[error("audio server rejected volume adjustment")]
+    #[error("{}", fl!("services-audio-adjustment-rejected"))]
     AdjustmentRejected,
-    #[error("audio adjustment timed out")]
+    #[error("{}", fl!("services-audio-adjustment-timed-out"))]
     AdjustmentTimedOut,
     /// Connecting to the server failed; the detail is for logs.
     #[error("{0}")]

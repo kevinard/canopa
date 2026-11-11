@@ -553,7 +553,7 @@ fn stream(
     };
     let application = text(proplist.get_str(properties::APPLICATION_NAME))
         .or_else(|| text(proplist.get_str(properties::APPLICATION_PROCESS_BINARY)))
-        .unwrap_or_else(|| "Unknown application".into());
+        .unwrap_or_else(|| fl!("services-audio-unknown-application"));
     Some(AudioStream {
         id: AudioStreamId {
             kind,

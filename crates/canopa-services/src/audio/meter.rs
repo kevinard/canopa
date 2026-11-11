@@ -43,7 +43,7 @@ fn run(
     connection.mainloop.lock();
     let stream = Stream::new_with_proplist(
         &mut connection.context.borrow_mut(),
-        "Input level",
+        &fl!("services-audio-meter-stream"),
         &spec,
         None,
         &mut properties,

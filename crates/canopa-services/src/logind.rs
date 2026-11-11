@@ -188,18 +188,18 @@ pub struct InhibitorLock {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Failure {
     /// The system bus or logind is not reachable.
-    #[error("the login manager is not available")]
+    #[error("{}", fl!("services-logind-unavailable"))]
     Unavailable,
     /// Polkit refused, or the person dismissed the authentication prompt.
-    #[error("the request is not authorized")]
+    #[error("{}", fl!("services-error-not-authorized"))]
     NotAuthorized,
     /// Applications hold block inhibitors.
-    #[error("blocked by applications")]
+    #[error("{}", fl!("services-logind-blocked"))]
     Blocked(Vec<Inhibitor>),
     /// logind refused for another reason; its bounded message is kept.
     #[error("{0}")]
     Refused(String),
-    #[error("the login manager did not answer in time")]
+    #[error("{}", fl!("services-logind-timed-out"))]
     TimedOut,
 }
 
@@ -345,8 +345,9 @@ pub async fn request(connection: &zbus::Connection, action: SessionAction) -> Re
     let message = description
         .as_deref()
         .filter(|text| !text.trim().is_empty())
-        .unwrap_or("The login manager refused the request.");
-    Err(Failure::Refused(crate::bus::bounded_text(message, 200)))
+        .map(str::to_owned)
+        .unwrap_or_else(|| fl!("services-logind-refused"));
+    Err(Failure::Refused(crate::bus::bounded_text(&message, 200)))
 }
 
 /// This process's login session.

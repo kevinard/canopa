@@ -2,3 +2,9 @@
 # not translated. One per line, `path: "literal"  # reason` or `path: *  # reason`;
 # paths may be fnmatch patterns. Keep each reason specific.
 crates/canopa-files/src/desktop/*.rs: *  # the retired GTK adapter; lib.rs builds `desktop` from iced_desktop/
+crates/canopa-services/src/accounts.rs: "Language"  # AccountsService D-Bus property name read by a local `text` closure
+crates/canopa-services/src/hostname.rs: "Hostname"  # systemd-hostnamed D-Bus property name read by a local `text` closure
+crates/canopa-services/src/hostname.rs: "Chassis"  # systemd-hostnamed D-Bus property name read by a local `text` closure
+crates/canopa-services/src/upower.rs: "Vendor"  # UPower D-Bus property name read by a local `text` closure
+crates/canopa-services/src/upower.rs: "Model"  # UPower D-Bus property name read by a local `text` closure
+crates/canopa-services/src/testing/*.rs: *  # fake services for consumers' tests (feature test-support), never shown to people

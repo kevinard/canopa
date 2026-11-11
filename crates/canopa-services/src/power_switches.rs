@@ -147,7 +147,7 @@ pub async fn handle_lid(system: zbus::Connection, mut policy: watch::Receiver<Li
             &system,
             "handle-lid-switch",
             "Canopa",
-            "Closing the lid follows the choice in Canopa Settings",
+            &fl!("services-lid-inhibitor-reason"),
             "block",
         )
         .await;

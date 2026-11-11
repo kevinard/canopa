@@ -221,7 +221,7 @@ impl Snapshot {
                         };
                         let address = string(properties, "Address").unwrap_or_default();
                         let fallback = if address.is_empty() {
-                            "Unnamed device".to_owned()
+                            fl!("services-bluetooth-unnamed-device")
                         } else {
                             address.clone()
                         };
