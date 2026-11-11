@@ -193,7 +193,9 @@ fn light_readings() -> impl iced::futures::Stream<Item = Message> {
             keyboards.first().map(device_keys::keyboard_indicator),
         )),
     ];
-    stream::iter(initial).chain(backlight::hardware_changes(files).map(move |path| {
+    // Register the kernel notifications on the runtime that polls the stream.
+    let changes = stream::once(async move { backlight::hardware_changes(files) }).flatten();
+    stream::iter(initial).chain(changes.map(move |path| {
         let channel = if path.starts_with(backlight::ROOT) {
             Channel::Brightness
         } else {

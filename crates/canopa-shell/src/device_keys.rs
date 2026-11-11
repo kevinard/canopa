@@ -321,6 +321,9 @@ pub struct Keys {
     pub leds: PathBuf,
     system: tokio::sync::Mutex<Option<zbus::Connection>>,
     session: tokio::sync::Mutex<Option<zbus::Connection>>,
+    /// Given buses are kept; connected ones are dropped after a failure, so
+    /// a restarted bus daemon is reached again on the next press.
+    given: bool,
     backlight: tokio::sync::Mutex<HashMap<String, u32>>,
 }
 
@@ -342,6 +345,7 @@ impl Keys {
             leds,
             system: Default::default(),
             session: Default::default(),
+            given: false,
             backlight: Default::default(),
         }
     }
@@ -354,6 +358,7 @@ impl Keys {
     ) -> Self {
         self.system = tokio::sync::Mutex::new(system);
         self.session = tokio::sync::Mutex::new(session);
+        self.given = true;
         self
     }
 
@@ -376,6 +381,12 @@ impl Keys {
                 .and_then(Result::ok);
         }
         slot.clone()
+    }
+
+    async fn forget(&self, slot: &tokio::sync::Mutex<Option<zbus::Connection>>) {
+        if !self.given {
+            *slot.lock().await = None;
+        }
     }
 
     /// Run one key press.
@@ -443,6 +454,7 @@ impl Keys {
                 tokio::time::timeout(SERVICE_DEADLINE, set).await,
                 Ok(Ok(()))
             ) {
+                self.forget(&self.system).await;
                 return unavailable;
             }
         }
@@ -486,6 +498,7 @@ impl Keys {
                 );
             if device.name == primary.name {
                 if !applied {
+                    self.forget(&self.system).await;
                     return unavailable;
                 }
                 shown = Some(keyboard_indicator(&KeyboardBacklight {
@@ -505,6 +518,7 @@ impl Keys {
         if matches!(played, Ok(Ok(()))) {
             Outcome::Played
         } else {
+            self.forget(&self.session).await;
             Outcome::NoPlayer
         }
     }
