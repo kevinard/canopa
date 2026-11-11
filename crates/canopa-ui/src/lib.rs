@@ -3,6 +3,9 @@
 #[cfg(feature = "accessibility")]
 pub mod accessibility;
 mod customization;
+pub mod direction;
+#[macro_use]
+mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod panel;
@@ -240,6 +243,8 @@ pub fn action<'a, Message: Clone + 'a>(
 
 #[cfg(test)]
 mod tests {
+    /// The language selection is process-wide; tests that change it take turns.
+    pub(crate) static SELECTION: std::sync::Mutex<()> = std::sync::Mutex::new(());
     use super::*;
     #[test]
     fn consumers_share_surface_action_and_focus_roles() {
