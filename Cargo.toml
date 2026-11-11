@@ -132,11 +132,11 @@ iced_tiny_skia = { git = "https://github.com/kevinard/iced", rev = "af379ca087c5
 iced_wgpu = { git = "https://github.com/kevinard/iced", rev = "af379ca087c56c79f2b6431a219c33407218b130" }
 iced_widget = { git = "https://github.com/kevinard/iced", rev = "af379ca087c56c79f2b6431a219c33407218b130" }
 iced_winit = { git = "https://github.com/kevinard/iced", rev = "af379ca087c56c79f2b6431a219c33407218b130" }
-iced_layershell = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "1de59e6dfd3285f56cadb9b40c5dfaab9c11b55b" }
-iced_layershell_macros = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "1de59e6dfd3285f56cadb9b40c5dfaab9c11b55b" }
-iced_exdevtools = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "1de59e6dfd3285f56cadb9b40c5dfaab9c11b55b" }
-layershellev = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "1de59e6dfd3285f56cadb9b40c5dfaab9c11b55b" }
-waycrate_xkbkeycode = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "1de59e6dfd3285f56cadb9b40c5dfaab9c11b55b" }
+iced_layershell = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
+iced_layershell_macros = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
+iced_exdevtools = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
+layershellev = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
+waycrate_xkbkeycode = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
 reis = { git = "https://github.com/kevinard/reis", rev = "c99f5a7195977bec7e4cc06861b7b3b447c75625" }
 uucore = { git = "https://github.com/kevinard/coreutils", rev = "1e4f136e045306ff99dd7387585f42a336a184b2" }
 
