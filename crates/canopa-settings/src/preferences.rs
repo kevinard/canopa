@@ -8,6 +8,7 @@ pub struct Personal {
     pub lock: canopa_session_ui::settings::Settings,
     pub text_scale: u16,
     pub reduced_motion: bool,
+    pub high_contrast: bool,
 }
 impl Personal {
     pub fn from_lock(lock: canopa_session_ui::settings::Settings) -> Self {
@@ -15,6 +16,7 @@ impl Personal {
             appearance: lock.appearance.clone(),
             text_scale: lock.appearance.text_scale(),
             reduced_motion: lock.appearance.reduced_motion(),
+            high_contrast: lock.appearance.high_contrast(),
             lock,
         }
     }
@@ -70,6 +72,9 @@ impl Personal {
                 "reduced-motion",
                 Some(self.reduced_motion.into()),
             );
+        }
+        if self.high_contrast || appearance.get("high-contrast").is_some() {
+            put(appearance, "high-contrast", Some(self.high_contrast.into()));
         }
         let lock = block(&mut document, "lockscreen")?;
         put(

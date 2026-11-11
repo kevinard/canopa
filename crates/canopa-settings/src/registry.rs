@@ -14,6 +14,7 @@ pub enum Page {
     Bluetooth,
     Sound,
     Personal,
+    Accessibility,
     Power,
     DateTime,
     Notifications,
@@ -326,6 +327,33 @@ pub static PAGES: &[Entry] = &[
         ],
         kind: Kind::File {
             documents: &[Document::Common, Document::Niri],
+            apply: Apply::Save,
+        },
+        hidden: false,
+    },
+    Entry {
+        page: Page::Accessibility,
+        id: "accessibility",
+        title: "Accessibility",
+        description: "High contrast, larger text and cursor, reduced motion and the screen reader.",
+        icon: "preferences-desktop-accessibility",
+        group: Group::Appearance,
+        keywords: &[
+            "a11y",
+            "contrast",
+            "high contrast",
+            "text size",
+            "larger text",
+            "cursor",
+            "pointer size",
+            "motion",
+            "animation",
+            "screen reader",
+            "orca",
+            "vision",
+        ],
+        kind: Kind::File {
+            documents: &[Document::Common, Document::Input, Document::Niri],
             apply: Apply::Save,
         },
         hidden: false,
@@ -797,6 +825,7 @@ mod tests {
             "users",
             "privacy",
             "printers",
+            "accessibility",
         ] {
             assert!(Page::from_id(id).is_some(), "{id}");
         }
@@ -816,6 +845,7 @@ mod tests {
                 Page::Printers,
                 Page::Sound,
                 Page::Personal,
+                Page::Accessibility,
                 Page::Power,
                 Page::DateTime,
                 Page::Region,

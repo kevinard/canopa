@@ -129,6 +129,35 @@ fn separate_session_defaults_validate_and_existing_files_are_preserved() {
     assert!(!root.path().join("config/niri/config.kdl").exists());
 }
 #[test]
+fn input_cursor_size_round_trips_and_custom_cursor_settings_stay_read_only() {
+    let input = Input {
+        cursor_size: Some(64),
+        ..Default::default()
+    };
+    let text = input.text().unwrap();
+    assert!(text.contains("cursor {\n    xcursor-size 64\n}"));
+    assert_eq!(Input::parse(&text).unwrap(), input);
+    assert_eq!(
+        Input::parse(&Input::default().text().unwrap())
+            .unwrap()
+            .cursor_size,
+        None
+    );
+    let custom = format!(
+        "{}cursor {{ xcursor-theme \"Adwaita\"; }}\n",
+        Input::default().text().unwrap()
+    );
+    assert!(Input::parse(&custom).is_err());
+    assert!(
+        Input {
+            cursor_size: Some(4),
+            ..Default::default()
+        }
+        .text()
+        .is_err()
+    );
+}
+#[test]
 #[ignore = "requires a native Niri parser; the desktop workflow runs this check"]
 fn input_round_trips_and_actual_niri_validates_the_generated_include() {
     let root = tempfile::tempdir().unwrap();
@@ -137,6 +166,7 @@ fn input_round_trips_and_actual_niri_validates_the_generated_include() {
         layouts: "us,fr".into(),
         options: "grp:alt_shift_toggle".into(),
         mouse_speed: -0.4,
+        cursor_size: Some(48),
         ..Default::default()
     };
     let source = Snapshot::load(paths.input()).unwrap();

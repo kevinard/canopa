@@ -107,6 +107,10 @@ enum Message {
     Light(bool),
     TextScale(f64),
     ReducedMotion(bool),
+    HighContrast(bool),
+    /// Apply a Niri cursor size at once (`None`: Niri's default).
+    CursorSize(Option<u16>),
+    CursorSizeStored(Result<Snapshot, String>),
     CompositorMotion(bool),
     CompositorMotionStored(Result<bool, String>),
     Dim(f64),
@@ -392,6 +396,8 @@ impl State {
                     | Message::Light(..)
                     | Message::TextScale(..)
                     | Message::ReducedMotion(..)
+                    | Message::HighContrast(..)
+                    | Message::CursorSize(..)
                     | Message::Dim(..)
                     | Message::IdleTime(..)
                     | Message::LidClose(..)
@@ -689,6 +695,45 @@ impl State {
             }
             Message::TextScale(value) => self.personal.value.values.text_scale = value as u16,
             Message::ReducedMotion(value) => self.personal.value.values.reduced_motion = value,
+            Message::HighContrast(value) => {
+                let values = &mut self.personal.value.values;
+                values.high_contrast = value;
+                // Preview at once; Save writes it for every Canopa surface.
+                Arc::make_mut(&mut values.appearance.customization).high_contrast = value;
+            }
+            Message::CursorSize(size)
+                if self.paths.active() && size != self.input.value.cursor_size =>
+            {
+                let unsaved = self
+                    .input
+                    .source()
+                    .and_then(|source| <Input as FileModel>::read(source).ok())
+                    .is_none_or(|saved| saved != self.input.value);
+                if unsaved {
+                    self.notice =
+                        "Save or reload your Keyboard & pointer edits before changing the cursor size."
+                            .into();
+                    return Task::none();
+                }
+                self.busy = true;
+                self.notice.clear();
+                let paths = self.paths.clone();
+                return task(
+                    move || crate::input::set_cursor_size(&paths, size),
+                    Message::CursorSizeStored,
+                );
+            }
+            Message::CursorSizeStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(_) => {
+                        // The Input draft had no edits; read the new include.
+                        self.input.reload(&self.paths);
+                        self.notice = "Cursor size applied. New windows use it at once.".into();
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
             Message::CompositorMotion(enabled) if !self.busy && self.trial.is_none() => {
                 if matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
                     self.notice =
@@ -825,7 +870,8 @@ impl State {
                         );
                     }
                     Page::Input => return file_save(Page::Input, self.input.save_job(&paths)),
-                    Page::Personal => {
+                    // Accessibility shares the Personalization draft of config.kdl.
+                    Page::Personal | Page::Accessibility => {
                         return file_save(Page::Personal, self.personal.save_job(&paths));
                     }
                     Page::Power => {
@@ -1127,9 +1173,12 @@ impl State {
                 self.notice = self.input.reload(&paths).unwrap_or_default();
                 Task::none()
             }
-            Page::Personal => {
+            Page::Personal | Page::Accessibility => {
                 self.notice = self.personal.reload(&paths).unwrap_or_default();
                 self.compositor_motion = Self::load_motion(&paths);
+                if self.page == Page::Accessibility {
+                    let _ = self.input.reload(&paths);
+                }
                 Task::none()
             }
             Page::Power => {
@@ -1354,6 +1403,7 @@ impl State {
             Page::Privacy => self.privacy_view(),
             Page::Printers => self.printers_view(),
             Page::Personal => self.personal_view(),
+            Page::Accessibility => self.accessibility_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),
             Page::Shortcuts => self.shortcuts_view(),
@@ -1664,6 +1714,106 @@ impl State {
             settings_group("Touchpad", touchpad)
         ]
         .spacing(14)
+        .into()
+    }
+    /// High contrast, larger text and cursor, and motion, over the
+    /// Personalization draft and Niri's cursor settings.
+    fn accessibility_view(&self) -> Element<'_, Message> {
+        let values = &self.personal.value.values;
+        let cursor = self.input.value.cursor_size;
+        let cursor_label = |size: Option<u16>| match size {
+            None => "Default (24 px)".to_owned(),
+            Some(size) => format!("{size} px"),
+        };
+        let cursor_options: Vec<String> = std::iter::once(None)
+            .chain(crate::input::CURSOR_SIZES[1..].iter().copied().map(Some))
+            .map(cursor_label)
+            .collect();
+        let cursor_control: Element<'_, Message> = if self.paths.active() {
+            choice(
+                "settings-cursor-size",
+                cursor_options,
+                Some(cursor_label(cursor)),
+                |label| {
+                    Message::CursorSize(
+                        label
+                            .split_once(' ')
+                            .and_then(|(size, unit)| (unit == "px").then_some(size))
+                            .and_then(|size| size.parse().ok()),
+                    )
+                },
+            )
+        } else {
+            text("The cursor size is editable in a Canopa session.")
+                .size(14)
+                .style(canopa_ui::muted)
+                .into()
+        };
+        let seeing = column![
+            toggle(
+                "settings-high-contrast",
+                "High contrast",
+                values.high_contrast,
+                Message::HighContrast(!values.high_contrast)
+            ),
+            text(
+                "Black and white surfaces with full-strength text and borders. \
+                 Applications that follow the desktop contrast setting change too."
+            )
+            .size(14)
+            .style(canopa_ui::muted),
+            text(format!("Larger text · {}%", values.text_scale)),
+            adjust(
+                "settings-accessibility-text-scale",
+                100.0..=150.0,
+                f64::from(values.text_scale),
+                5.0,
+                Message::TextScale
+            ),
+            text("Cursor size (applies at once)"),
+            cursor_control,
+        ]
+        .spacing(12);
+        let motion = column![
+            toggle(
+                "settings-accessibility-reduced-motion",
+                "Reduce motion in Canopa and in applications",
+                values.reduced_motion,
+                Message::ReducedMotion(!values.reduced_motion)
+            ),
+            match self.compositor_motion {
+                Some(reduced) => self.action(
+                    "settings-accessibility-compositor-motion",
+                    if reduced {
+                        "Use Niri animation settings"
+                    } else {
+                        "Reduce window and workspace motion"
+                    },
+                    Some(Message::CompositorMotion(!reduced)),
+                    false,
+                ),
+                None => text(
+                    "Compositor motion is editable in a Canopa session with a managed Niri configuration."
+                )
+                .size(14)
+                .style(canopa_ui::muted)
+                .into(),
+            },
+        ]
+        .spacing(12);
+        let reader = text(
+            "Settings, the launcher, Files, the Shell bar and notifications work with \
+             the Orca screen reader. Start it with the command orca, or turn it on \
+             for every session in Orca's own preferences.",
+        )
+        .size(14)
+        .style(canopa_ui::muted);
+        column![
+            settings_group("Seeing", seeing),
+            settings_group("Motion", motion),
+            settings_group("Screen reader", reader),
+        ]
+        .spacing(16)
         .into()
     }
     fn personal_view(&self) -> Element<'_, Message> {
@@ -2276,6 +2426,36 @@ mod tests {
         let _ = state.update(Message::ReloadSaved);
         assert_eq!(state.personal.value.accent, "");
         assert_eq!(state.input.value.layouts, "de");
+    }
+
+    #[test]
+    fn accessibility_page_edits_the_personalization_draft_and_saves_high_contrast() {
+        let (root, mut state) = fresh();
+        let _ = state.update(Message::Page(Page::Accessibility));
+        assert_eq!(state.page, Page::Accessibility);
+        let _ = state.update(Message::HighContrast(true));
+        let _ = state.update(Message::TextScale(125.0));
+        assert!(state.personal.value.values.appearance.high_contrast());
+        // Personalization shows the same draft.
+        let _ = state.update(Message::Page(Page::Personal));
+        assert!(state.personal.value.values.high_contrast);
+        let source = state.personal.source().cloned().unwrap();
+        let text = state.personal.value.values.text(&source).unwrap();
+        assert!(text.contains("high-contrast #true"), "{text}");
+        assert!(text.contains("text-scale 125"), "{text}");
+        let written = root.path().join("written.kdl");
+        std::fs::write(&written, &text).unwrap();
+        let (lock, _) = canopa_session_ui::settings::Settings::load(
+            &canopa_config::Request::common(&written),
+            canopa_config::Component::Lockscreen,
+        )
+        .unwrap();
+        assert!(lock.appearance.high_contrast());
+        // Without a Canopa session the cursor size is not applied.
+        let _ = state.update(Message::Page(Page::Accessibility));
+        let _ = state.update(Message::CursorSize(Some(48)));
+        assert!(!state.busy);
+        assert_eq!(state.input.value.cursor_size, None);
     }
 
     #[test]

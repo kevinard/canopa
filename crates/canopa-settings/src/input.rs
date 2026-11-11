@@ -1,4 +1,4 @@
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -19,7 +19,11 @@ pub struct Input {
     /// Leave the power button to logind's system setting instead of Niri's
     /// default (suspend). See the Power page.
     pub power_key_to_logind: bool,
+    /// Niri's `cursor { xcursor-size }`; `None` keeps Niri's default (24).
+    pub cursor_size: Option<u16>,
 }
+/// The cursor sizes Settings offers, in pixels.
+pub const CURSOR_SIZES: [u16; 5] = [24, 32, 48, 64, 96];
 impl Default for Input {
     fn default() -> Self {
         Self {
@@ -36,6 +40,7 @@ impl Default for Input {
             touchpad_natural_scroll: true,
             touchpad_disable_while_typing: true,
             power_key_to_logind: false,
+            cursor_size: None,
         }
     }
 }
@@ -57,6 +62,11 @@ impl Input {
         ensure!(
             (100..=2000).contains(&self.repeat_delay) && (1..=100).contains(&self.repeat_rate),
             "repeat delay/rate are outside their supported range"
+        );
+        ensure!(
+            self.cursor_size
+                .is_none_or(|size| (16..=256).contains(&size)),
+            "cursor size is outside its supported range"
         );
         ensure!(
             (-1.0..=1.0).contains(&self.mouse_speed) && (-1.0..=1.0).contains(&self.touchpad_speed),
@@ -107,19 +117,35 @@ impl Input {
             flag("tap", self.touchpad_tap),
             flag("natural-scroll", self.touchpad_natural_scroll),
             flag("dwt", self.touchpad_disable_while_typing)
-        ))
+        ) + &self
+            .cursor_size
+            .map(|size| format!("cursor {{\n    xcursor-size {size}\n}}\n"))
+            .unwrap_or_default())
     }
     pub fn parse(text: &str) -> Result<Self> {
         let document = kdl::KdlDocument::parse_v1(text)?;
         ensure!(
-            document.nodes().len() <= 1
+            document.nodes().len() <= 2
                 && document
                     .nodes()
                     .iter()
-                    .all(|node| node.name().value() == "input"),
+                    .all(|node| ["input", "cursor"].contains(&node.name().value())),
             "custom input includes are read-only; keep additional options in niri-custom.kdl"
         );
         let mut result = Self::default();
+        if let Some(cursor) = document.get("cursor") {
+            for field in cursor.children().map(|c| c.nodes()).unwrap_or_default() {
+                ensure!(
+                    field.name().value() == "xcursor-size",
+                    "custom cursor settings are read-only; keep them in niri-custom.kdl"
+                );
+                let size = field
+                    .get(0)
+                    .and_then(|value| value.as_integer())
+                    .context("invalid cursor size")?;
+                result.cursor_size = Some(size.try_into()?);
+            }
+        }
         let Some(input) = document.get("input").and_then(|n| n.children()) else {
             return Ok(result);
         };
@@ -219,6 +245,17 @@ pub fn set_power_key(
     let source = crate::storage::Snapshot::load(paths.input())?;
     let mut input = Input::parse(&source.text)?;
     input.power_key_to_logind = to_logind;
+    apply(paths, &source, &input)
+}
+/// Change only the cursor size, keeping the other input settings, and
+/// reload Niri, which also passes the size to new applications.
+pub fn set_cursor_size(
+    paths: &crate::session::Paths,
+    size: Option<u16>,
+) -> Result<crate::storage::Snapshot> {
+    let source = crate::storage::Snapshot::load(paths.input())?;
+    let mut input = Input::parse(&source.text)?;
+    input.cursor_size = size;
     apply(paths, &source, &input)
 }
 fn boolean(value: Option<&kdl::KdlValue>) -> Result<bool> {

@@ -441,11 +441,29 @@ configuration must be explicitly migrated before creating a common Canopa file,
 so a new appearance file cannot silently hide existing shell/notification settings.
 See [configuration](configuration.md) and [installation](installation.md).
 
+## Accessibility
+
+**High contrast** switches every Canopa surface to black and white surfaces with
+full-strength text and borders (`appearance { high-contrast #true }`), and the
+Settings portal reports `contrast` 1 to applications. **Larger text** is the same
+100–150% text size as on Personalization, and **Reduce motion** the same switch;
+the portal reports it as `reduced-motion`. These three share the Personalization
+draft and are written by Save.
+
+**Cursor size** applies at once in a Canopa session: it writes
+`cursor { xcursor-size N }` into the managed `niri-input.kdl` include and reloads
+Niri, which passes the size to new applications. As with the power button, save
+or reload pending Keyboard & pointer edits first. Window and workspace motion is
+the same compositor override as on Personalization.
+
+Settings, the launcher, Files and the Shell expose AT-SPI trees for Orca (see
+[ADR 0144](adr/0144-shared-accesskit-layer.md)).
+
 ## Opening a page
 
 `canopa-settings PAGE` opens a page; `--page PAGE` is the same. The page ids are
 `displays`, `input` (Keyboard & pointer), `network`, `sound`, `personal`
-(Personalization), `power`, `launcher`, `shortcuts` and `widgets`. When Settings is already open, the window
+(Personalization), `accessibility`, `power`, `launcher`, `shortcuts` and `widgets`. When Settings is already open, the window
 switches to the page and the command exits. Opening a page never saves
 anything; the page's own controls remain responsible for writes. A page cannot
 be combined with command-line operations such as `outputs` or `check`.
