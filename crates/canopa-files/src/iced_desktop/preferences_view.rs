@@ -104,7 +104,7 @@ impl<'a> Form<'a> {
                 }
             }
         });
-        focus::control_with_keyboard(id, message, keyboard_message, self.appearance, content)
+        focus::button_with_keyboard(id, message, keyboard_message, self.appearance, content)
     }
     fn change(
         &mut self,
@@ -167,8 +167,9 @@ impl<'a> Form<'a> {
             let event = event.clone();
             check = check.on_toggle(move |_| Message::Preferences(event.clone()));
         }
-        focus::control(
+        focus::check_box(
             id,
+            value,
             enabled.then_some(Message::Preferences(event)),
             self.appearance,
             container(check).padding(2),

@@ -311,7 +311,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
     let action = |label: String, name: &'static str, message: Message, kind| {
-        super::focus::control(
+        super::focus::button(
             control(id, name),
             Some(message.clone()),
             appearance,
@@ -355,10 +355,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
-    super::focus::group(
-        body,
-        vec![control(id, "cancel"), control(id, "confirm")],
-        Vec::new(),
-        Some(control(id, "cancel")),
+    super::accessibility_ui::dialog(
+        "files-delete-dialog",
+        dialog.title(),
+        dialog.message(),
+        true,
+        super::focus::group(
+            body,
+            vec![control(id, "cancel"), control(id, "confirm")],
+            Vec::new(),
+            Some(control(id, "cancel")),
+        ),
     )
 }

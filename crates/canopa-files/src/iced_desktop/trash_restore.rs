@@ -210,9 +210,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .on_input(move |folder| Message::TrashRestore(Event::Folder(id, folder)))
             .on_submit(Message::TrashRestore(Event::Submit(id)));
     }
+    let mut node = super::accessibility_ui::Node::text_input("Folder path", dialog.folder.clone())
+        .key("files-restore-folder")
+        .read_only(dialog.busy);
+    if !dialog.busy {
+        node = node.on_text(move |folder| Message::TrashRestore(Event::Folder(id, folder)));
+    }
+    let input = super::accessibility_ui::semantic(node, input);
     let action = |label, name, event| {
         let message = (!dialog.busy).then_some(Message::TrashRestore(event));
-        focus::control(
+        focus::button(
             control(id, name),
             message.clone(),
             appearance,
@@ -300,10 +307,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             control(id, "submit"),
         ]
     };
-    focus::group(
-        body,
-        order,
-        Vec::new(),
-        (!dialog.busy).then(|| control(id, "folder")),
+    super::accessibility_ui::dialog(
+        "files-restore-dialog",
+        "Restore to folder",
+        "",
+        false,
+        focus::group(
+            body,
+            order,
+            Vec::new(),
+            (!dialog.busy).then(|| control(id, "folder")),
+        ),
     )
 }

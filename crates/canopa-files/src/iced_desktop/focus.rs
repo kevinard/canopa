@@ -206,6 +206,47 @@ pub(super) fn control<'a>(
     control_with_keyboard(id, message.clone(), message, appearance, content)
 }
 
+/// A focusable push button, named for assistive technologies by its drawn
+/// text; its default action sends `message` as a click does.
+pub(super) fn button<'a>(
+    id: Id,
+    message: Option<Message>,
+    appearance: &Appearance,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    button_with_keyboard(id, message.clone(), message, appearance, content)
+}
+
+pub(super) fn button_with_keyboard<'a>(
+    id: Id,
+    message: Option<Message>,
+    keyboard_message: Option<Message>,
+    appearance: &Appearance,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    super::accessibility_ui::button(
+        super::accessibility_ui::focus_key(&id),
+        message.clone(),
+        control_with_keyboard(id, message, keyboard_message, appearance, content),
+    )
+}
+
+/// A focusable check box named by its drawn label.
+pub(super) fn check_box<'a>(
+    id: Id,
+    checked: bool,
+    message: Option<Message>,
+    appearance: &Appearance,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    super::accessibility_ui::check_box(
+        super::accessibility_ui::focus_key(&id),
+        checked,
+        message.clone(),
+        control(id, message, appearance, content),
+    )
+}
+
 pub(super) fn control_with_keyboard<'a>(
     id: Id,
     message: Option<Message>,

@@ -133,20 +133,24 @@ fn detail_value(entry: &Entry, detail: Detail) -> Option<String> {
     match detail {
         Detail::Size => (!entry.is_directory()).then(|| size(entry.size)),
         Detail::Kind => Some(kind(entry)),
-        Detail::Modified => entry.modified.and_then(|time| {
-            let milliseconds = match time.duration_since(std::time::UNIX_EPOCH) {
-                Ok(duration) => i64::try_from(duration.as_millis()).ok()?,
-                Err(error) => i64::try_from(error.duration().as_millis())
-                    .ok()?
-                    .checked_neg()?,
-            };
-            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(milliseconds).map(|time| {
-                time.with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            })
-        }),
+        Detail::Modified => modified(entry),
     }
+}
+/// The local modification time as the Modified detail shows it.
+pub(super) fn modified(entry: &Entry) -> Option<String> {
+    entry.modified.and_then(|time| {
+        let milliseconds = match time.duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => i64::try_from(duration.as_millis()).ok()?,
+            Err(error) => i64::try_from(error.duration().as_millis())
+                .ok()?
+                .checked_neg()?,
+        };
+        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(milliseconds).map(|time| {
+            time.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+    })
 }
 
 pub(super) fn details(entry: &Entry, settings: &ViewSettings) -> String {
@@ -250,6 +254,8 @@ pub(super) struct Presentation<'a> {
     pub searching: bool,
     pub grid: bool,
     pub alternate: bool,
+    /// One-based position among all rows of the virtualized list.
+    pub position: (usize, usize),
 }
 
 pub(super) fn entry<'a>(
@@ -266,6 +272,7 @@ pub(super) fn entry<'a>(
         searching,
         grid,
         alternate,
+        position,
     } = presentation;
     let appearance = &desktop.configuration.appearance;
     let browser = tab.browser.as_ref().unwrap();
@@ -439,6 +446,14 @@ pub(super) fn entry<'a>(
     } else {
         Message::Activate(id, entry.path.clone())
     };
+    let node = super::accessibility_ui::row(super::accessibility_ui::Row {
+        entry,
+        settings,
+        selected,
+        focused: focused && super::view::rows_have_focus(desktop, id, tab),
+        position,
+        select: Message::Select(id, entry.path.clone()),
+    });
     let card = mouse_area(card)
         .on_press(Message::Select(id, entry.path.clone()))
         .on_right_press(Message::Action(actions_ui::Event::Row(
@@ -460,7 +475,7 @@ pub(super) fn entry<'a>(
     } else {
         card
     };
-    if grid
+    let card = if grid
         && tab.location.is_none()
         && desktop.action_menu.is_none()
         && desktop.folder_options.is_none()
@@ -473,7 +488,8 @@ pub(super) fn entry<'a>(
         .into()
     } else {
         card
-    }
+    };
+    super::accessibility_ui::semantic(node, card)
 }
 
 pub(super) fn icons<'a>(
@@ -493,6 +509,7 @@ pub(super) fn icons<'a>(
             desktop.icon_size(),
         );
         let rows = visible.len().div_ceil(geometry.columns);
+        let total = visible.len();
         let range = super::view::visible_rows(rows, browser.scroll(), size.height, geometry.height);
         let mut items = column![keyed_row(
             RowKey::Top,
@@ -523,6 +540,7 @@ pub(super) fn icons<'a>(
                                     searching: false,
                                     grid: true,
                                     alternate: false,
+                                    position: (index * geometry.columns + slot + 1, total),
                                 },
                             ),
                         ))

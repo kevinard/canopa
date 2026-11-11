@@ -459,7 +459,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
         } else {
             Length::Shrink
         });
-        focus::control(
+        focus::button(
             widget,
             message,
             appearance,

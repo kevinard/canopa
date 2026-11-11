@@ -62,7 +62,7 @@ pub(super) fn rows(
         } else {
             label.into()
         };
-        super::focus::control(
+        super::focus::button(
             id,
             message.clone(),
             appearance,
@@ -226,6 +226,14 @@ pub(super) fn rows(
             title = "Created folder".into();
             subtitle = Some(name.to_owned());
         }
+        let mut description = vec![phase_label(job).to_owned()];
+        description.extend(subtitle.clone());
+        description.extend(job.error.clone());
+        let node = super::accessibility_ui::Node::new(super::accessibility_ui::Role::ListItem)
+            .label(title.clone())
+            .key(format!("files-operation-{}", job.id))
+            .description(description.join(", "))
+            .position(index + 1, count);
         let location = folder
             .filter(|_| renamed.is_some() || created.is_some() || title == "Moved to Trash")
             .map(|path| super::question_dialog::display_location(&desktop.home, path));
@@ -418,9 +426,18 @@ pub(super) fn rows(
         }
         history = history.push(super::row_state::keyed_row(
             view::RowKey::FilesystemJob(job.id),
-            container(content).padding([11, 12]).width(Length::Fill),
+            super::accessibility_ui::semantic(
+                node,
+                container(content).padding([11, 12]).width(Length::Fill),
+            ),
         ));
     }
+    let history = super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::new(super::accessibility_ui::Role::List)
+            .label("File history")
+            .key("files-operations-history"),
+        history,
+    );
     if count > 0 {
         body = body.push(container(history).width(Length::Fill).style(move |_| {
             chrome::highlight(appearance, ColorRole::Raised).border(iced::Border {
@@ -446,11 +463,9 @@ fn report_operation(job: &crate::operation_jobs::JobSnapshot) -> Option<u64> {
         })
 }
 
-pub(super) fn phase_badge<'a>(
-    appearance: &'a canopa_theme::Appearance,
-    job: &crate::operation_jobs::JobSnapshot,
-) -> Element<'a, Message> {
-    let completed = job.phase == Phase::Finished
+/// Finished without failures, skips, cancellation or interruption.
+pub(super) fn completed(job: &crate::operation_jobs::JobSnapshot) -> bool {
+    job.phase == Phase::Finished
         && job.error.is_none()
         && job
             .transfer
@@ -474,12 +489,29 @@ pub(super) fn phase_badge<'a>(
             .recovery
             .as_ref()
             .is_none_or(|report| report.error.is_none() && !report.interrupted)
-        && job.restore.as_ref().is_none_or(|report| {
-            report.error.is_none() && !report.cancelled && !report.interrupted
-        })
+        && job
+            .restore
+            .as_ref()
+            .is_none_or(|report| report.error.is_none() && !report.cancelled && !report.interrupted)
         && job.delete.as_ref().is_none_or(|report| {
             report.failures.is_empty() && report.remaining.is_empty() && !report.cancelled
-        });
+        })
+}
+
+/// What a job's badge says: "Completed", "Running", "Could not finish"…
+pub(super) fn phase_label(job: &crate::operation_jobs::JobSnapshot) -> &'static str {
+    if completed(job) {
+        "Completed"
+    } else {
+        file_operations::status(job.phase)
+    }
+}
+
+pub(super) fn phase_badge<'a>(
+    appearance: &'a canopa_theme::Appearance,
+    job: &crate::operation_jobs::JobSnapshot,
+) -> Element<'a, Message> {
+    let completed = completed(job);
     let role = match job.phase {
         Phase::Failed | Phase::StartSaveFailed | Phase::SaveFailed => ColorRole::Danger,
         Phase::Waiting | Phase::AwaitingReview | Phase::Interrupted | Phase::Stopped => {
@@ -496,14 +528,10 @@ pub(super) fn phase_badge<'a>(
                 .font(canopa_ui::font(appearance))
                 .size(if completed { 13 } else { 8 })
                 .color(ink),
-            text(if completed {
-                "Completed"
-            } else {
-                file_operations::status(job.phase)
-            })
-            .font(canopa_ui::font(appearance))
-            .size(appearance.typography().label_size.px())
-            .color_maybe(completed.then(|| chrome::ink(appearance, ColorRole::Muted))),
+            text(phase_label(job))
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px())
+                .color_maybe(completed.then(|| chrome::ink(appearance, ColorRole::Muted))),
         ]
         .spacing(5)
         .align_y(iced::Alignment::Center),

@@ -7,12 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-default = ["desktop"]
+default = ["desktop", "accessibility-testing"]
+# Native AT-SPI acceptance helpers for the lib tests. A dev-dependency would
+# pull Iced into the core (--no-default-features) test profile.
+accessibility-testing = ["desktop", "canopa-ui/accessibility-testing"]
 background-actions = ["dep:tokio", "dep:zbus", "dep:futures-util"]
 background-operations = ["dep:tokio", "dep:zbus", "dep:futures-util"]
 media-playback = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
 local-runtime = ["background-actions", "background-operations", "dep:gio", "dep:glib"]
-desktop = ["local-runtime", "media-playback", "dep:iced", "dep:canopa-ui", "canopa-ui/icons", "dep:clap", "dep:canopa-assets", "dep:resvg", "wayland-clipboard"]
+desktop = ["local-runtime", "media-playback", "dep:iced", "dep:canopa-ui", "canopa-ui/icons", "canopa-ui/accessibility", "dep:clap", "dep:canopa-assets", "dep:resvg", "wayland-clipboard"]
 wayland-clipboard = ["dep:wayland-client", "dep:wayland-protocols", "rustix/event", "rustix/pipe", "rustix/net"]
 
 [[bin]]

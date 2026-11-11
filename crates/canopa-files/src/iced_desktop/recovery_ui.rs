@@ -359,7 +359,7 @@ fn contents<'a>(
             order.push(widget.clone());
         }
         let message = enabled.then_some(Message::Recovery(event));
-        focus::control(
+        focus::button(
             widget,
             message.clone(),
             appearance,
@@ -418,7 +418,7 @@ fn contents<'a>(
             ready,
         ));
     }
-    let operations = focus::control(
+    let operations = focus::button(
         control(id, "operations"),
         Some(Message::Command(id, Command::Operations)),
         appearance,

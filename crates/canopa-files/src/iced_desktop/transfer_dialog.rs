@@ -169,7 +169,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             dialog.generation,
             *choice,
         ));
-        buttons = buttons.push(super::focus::control(
+        buttons = buttons.push(super::focus::button(
             control(dialog.window, index),
             Some(message.clone()),
             appearance,
@@ -200,8 +200,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         order.push(id.clone());
         let message = Message::FileOperation(Event::ToggleApply(dialog.job, dialog.generation));
         let toggled = message.clone();
-        scope = Some(super::focus::control(
+        scope = Some(super::focus::check_box(
             id,
+            dialog.apply,
             Some(message),
             appearance,
             checkbox(dialog.apply)

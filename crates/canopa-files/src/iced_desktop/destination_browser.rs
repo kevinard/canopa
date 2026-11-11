@@ -151,7 +151,7 @@ impl Browser {
                 } else {
                     button
                 };
-                focus::control(widget, message, appearance, button)
+                focus::button(widget, message, appearance, button)
             };
         let label = |value: &'static str| text(value).size(small).font(font).into();
         let ordinary = canopa_ui::Action::Normal;
@@ -303,7 +303,7 @@ pub(super) fn browse_button<'a>(
     message: Option<Message>,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
-    focus::control(
+    focus::button(
         browse_id(id),
         message.clone(),
         appearance,

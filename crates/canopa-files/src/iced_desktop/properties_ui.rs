@@ -405,7 +405,7 @@ fn contents<'a>(
         }
     }
     let action = |index, title: &'static str, message: Message| {
-        super::focus::control(
+        super::focus::button(
             control(id, index),
             Some(message.clone()),
             appearance,

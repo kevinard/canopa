@@ -188,7 +188,12 @@ pub(super) fn dismiss(desktop: &Desktop, window: iced::window::Id) -> Element<'_
     .height(32)
     .padding(4);
     tooltip(
-        super::focus::control(dismiss_id(window), message, appearance, button),
+        super::accessibility_ui::named_button(
+            super::accessibility_ui::focus_key(&dismiss_id(window)),
+            "Close window",
+            message.clone(),
+            super::focus::control(dismiss_id(window), message, appearance, button),
+        ),
         text("Close window")
             .font(font)
             .size(appearance.typography().label_size.px()),

@@ -297,7 +297,7 @@ pub(super) fn overlay<'a>(
             Event::Change(target.clone(), change)
         });
         let message = enabled.then_some(Message::FolderView(event));
-        focus::control(
+        focus::button(
             id,
             message.clone(),
             appearance,
@@ -413,8 +413,9 @@ pub(super) fn overlay<'a>(
         order.push(id.clone());
         reveal.push((id.clone(), scroll.clone()));
         let message = Message::FolderView(Event::Change(target.clone(), change));
-        focus::control(
+        focus::check_box(
             id,
+            value,
             Some(message.clone()),
             appearance,
             checkbox(value)

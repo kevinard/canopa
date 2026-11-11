@@ -281,9 +281,29 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .on_input(move |value| Message::FileOperation(Event::NameChanged(id, value)))
             .on_submit(Message::FileOperation(Event::NameSubmit(id)));
     }
+    // Named by the "Full name" or "Folder name" caption drawn before it.
+    let mut node = super::accessibility_ui::Node::new(super::accessibility_ui::Role::TextInput)
+        .key("files-name-field")
+        .value(dialog.value.clone())
+        .required(true)
+        .invalid(dialog.error.is_some())
+        .read_only(dialog.busy);
+    if !dialog.busy {
+        node = node.on_text(move |value| Message::FileOperation(Event::NameChanged(id, value)));
+    }
+    let input = super::accessibility_ui::semantic(node, input);
+    let feedback = match (&dialog.error, dialog.busy) {
+        (Some(error), _) => {
+            super::accessibility_ui::Node::alert(error.clone()).key("files-name-error")
+        }
+        (None, true) => {
+            super::accessibility_ui::Node::status("Accepting operation…").key("files-name-busy")
+        }
+        (None, false) => super::accessibility_ui::Node::status("").key("files-name-busy"),
+    };
     let action = |label, name, event| {
         let message = (!dialog.busy).then_some(Message::FileOperation(event));
-        super::focus::control(
+        super::focus::button(
             control(id, name),
             message.clone(),
             appearance,
@@ -346,28 +366,31 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             input,
         ]
         .spacing(4),
-        container(
-            text(dialog.error.as_deref().unwrap_or(if dialog.busy {
-                "Accepting operation…"
-            } else {
-                ""
-            }))
-            .font(font)
-            .size(small)
-            .color(chrome::ink(
-                appearance,
-                if dialog.error.is_some() {
-                    canopa_theme::ColorRole::Danger
+        super::accessibility_ui::semantic(
+            feedback,
+            container(
+                text(dialog.error.as_deref().unwrap_or(if dialog.busy {
+                    "Accepting operation…"
                 } else {
-                    canopa_theme::ColorRole::Muted
-                }
-            ))
-        )
-        .height(if dialog.error.is_some() || dialog.busy {
-            26
-        } else {
-            1
-        }),
+                    ""
+                }))
+                .font(font)
+                .size(small)
+                .color(chrome::ink(
+                    appearance,
+                    if dialog.error.is_some() {
+                        canopa_theme::ColorRole::Danger
+                    } else {
+                        canopa_theme::ColorRole::Muted
+                    }
+                ))
+            )
+            .height(if dialog.error.is_some() || dialog.busy {
+                26
+            } else {
+                1
+            })
+        ),
         row![
             iced::widget::space().width(Length::Fill),
             action("Cancel", "cancel", Event::NameCancel(id)),
@@ -399,10 +422,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             control(id, "submit"),
         ]
     };
-    super::focus::group(
-        body,
-        order,
-        Vec::new(),
-        (!dialog.busy).then(|| control(id, "name")),
+    super::accessibility_ui::dialog(
+        "files-name-dialog",
+        dialog.title(),
+        "",
+        false,
+        super::focus::group(
+            body,
+            order,
+            Vec::new(),
+            (!dialog.busy).then(|| control(id, "name")),
+        ),
     )
 }

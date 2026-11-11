@@ -361,6 +361,10 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             .as_deref()
             .is_some_and(|root| desktop.active(window).is_some_and(|tab| tab.path() == root));
         let label = chrome::single_line(device.name.as_str(), font, size, None, true);
+        let node = super::accessibility_ui::Node::option(device.name.clone(), active)
+            .key(format!("files-device-{:?}", device.id()))
+            .disabled(open.is_none())
+            .on_click(open.clone());
         let open = canopa_ui::styled_action(
             row![
                 desktop.icons.chrome(
@@ -386,27 +390,33 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             desktop,
             window,
             device.token,
-            open.into()
+            super::accessibility_ui::semantic(node, open)
         )]
         .align_y(Alignment::Center);
         if let Some(kind) = device.removal {
             let enabled = ready && !desktop.devices.busy();
+            let remove = enabled.then_some(Message::Device(Event::Remove(window, device.token)));
             let button = canopa_ui::styled_action(
                 desktop
                     .icons
                     .chrome(Icon::Eject, 18.0, if enabled { 0.95 } else { 0.35 }),
-                enabled.then_some(Message::Device(Event::Remove(window, device.token))),
+                remove.clone(),
                 canopa_ui::Action::Quiet,
                 false,
                 appearance,
             )
             .padding([7, 8]);
-            item = item.push(tooltip(
-                button,
-                text(kind.label())
-                    .font(font)
-                    .size(appearance.typography().label_size.px()),
-                tooltip::Position::Right,
+            item = item.push(super::accessibility_ui::named_button(
+                format!("files-device-{:?}-remove", device.id()),
+                format!("{} {}", kind.label(), device.name),
+                remove,
+                tooltip(
+                    button,
+                    text(kind.label())
+                        .font(font)
+                        .size(appearance.typography().label_size.px()),
+                    tooltip::Position::Right,
+                ),
             ));
         }
         body = body.push(super::row_state::keyed_row(
@@ -420,7 +430,10 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     if let Some(error) = &desktop.devices.error {
         body = body.push(text(error).size(size));
     }
-    body.into()
+    super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::list("Devices").key("files-devices"),
+        body,
+    )
 }
 
 pub(super) fn rows(
@@ -451,7 +464,7 @@ pub(super) fn rows(
             if message.is_some() {
                 order.push(id.clone());
             }
-            super::focus::control(
+            super::focus::button(
                 id,
                 message.clone(),
                 appearance,

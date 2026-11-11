@@ -44,6 +44,9 @@ pub(super) struct SearchSession {
     pub failure_scroll: f32,
     pub cancellation: Cancellation,
     focus_when_ready: bool,
+    /// Keyboard focus left the query field for the results: the result cursor,
+    /// not the field, is what an assistive technology reports as focused.
+    pub results_focused: bool,
 }
 
 impl SearchSession {
@@ -59,6 +62,7 @@ impl SearchSession {
             failure_scroll: 0.0,
             cancellation: Cancellation::default(),
             focus_when_ready: false,
+            results_focused: false,
         }
     }
 }
@@ -364,6 +368,7 @@ impl Desktop {
                     session.query = value;
                     session.maximum_results = 50_000;
                     session.focus_when_ready = false;
+                    session.results_focused = false;
                     return self.restart_search(target.window);
                 }
             }
@@ -403,6 +408,12 @@ impl Desktop {
             Event::NavigationKey(target, name, modifiers, focused)
                 if self.target_is_active(target) =>
             {
+                if let Some(session) = self
+                    .active_mut(target.window)
+                    .and_then(|tab| tab.search.as_mut())
+                {
+                    session.results_focused = !focused;
+                }
                 if focused {
                     if name == "Down" {
                         return self.focus_search_results(target);
@@ -465,6 +476,7 @@ impl Desktop {
             return Task::none();
         };
         session.focus_when_ready = session.running;
+        session.results_focused = true;
         tab.prefix.clear();
         if let Some(browser) = tab
             .browser

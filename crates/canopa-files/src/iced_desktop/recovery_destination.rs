@@ -292,9 +292,35 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .on_input(move |value| Message::RecoveryDestination(Event::Name(id, value)))
             .on_submit(Message::RecoveryDestination(Event::Submit(id)));
     }
+    let field = |label: &'static str,
+                 key: &'static str,
+                 value: &str,
+                 change: fn(window::Id, String) -> Event| {
+        let node = super::accessibility_ui::Node::text_input(label, value)
+            .key(key)
+            .read_only(dialog.busy);
+        if dialog.busy {
+            node
+        } else {
+            node.on_text(move |value| Message::RecoveryDestination(change(id, value)))
+        }
+    };
+    let folder = super::accessibility_ui::semantic(
+        field(
+            "Folder path",
+            "files-recover-folder",
+            &dialog.folder,
+            Event::Folder,
+        ),
+        folder,
+    );
+    let name = super::accessibility_ui::semantic(
+        field("File name", "files-recover-name", &dialog.name, Event::Name),
+        name,
+    );
     let action = |label, name, event, enabled: bool| {
         let message = enabled.then_some(Message::RecoveryDestination(event));
-        focus::control(
+        focus::button(
             control(id, name),
             message.clone(),
             appearance,
@@ -374,7 +400,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .cloned()
         .map(|input| (input, control(id, "scroll")))
         .collect();
-    focus::group(
+    let dialog_view = focus::group(
         container(
             column![
                 scrollable(body)
@@ -393,6 +419,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         order,
         reveal,
         (!dialog.busy).then(|| control(id, "folder")),
+    );
+    super::accessibility_ui::dialog(
+        "files-recover-dialog",
+        "Recover a copy",
+        "",
+        false,
+        dialog_view,
     )
 }
 

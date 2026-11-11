@@ -638,8 +638,12 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     let idle = ready && !desktop.devices.busy();
     let origin = Origin::capture(desktop, window);
     let mut body = column![chrome::section(appearance, "Network")].spacing(2);
-    let entry = |icon: Icon, label: String, message: Option<Message>, active: bool| {
-        canopa_ui::styled_action(
+    let entry = |key: String, icon: Icon, label: String, message: Option<Message>, active: bool| {
+        let node = super::accessibility_ui::Node::option(label.clone(), active)
+            .key(key)
+            .disabled(message.is_none())
+            .on_click(message.clone());
+        let button = canopa_ui::styled_action(
             row![
                 desktop
                     .icons
@@ -657,25 +661,31 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             false,
             appearance,
         )
-        .width(Length::Fill)
+        .width(Length::Fill);
+        super::accessibility_ui::semantic(node, button)
     };
-    let trailing = |icon: Icon, label: &'static str, message: Option<Message>| {
+    let trailing = |key: String, icon: Icon, label: String, message: Option<Message>| {
         let enabled = message.is_some();
-        tooltip(
-            canopa_ui::styled_action(
-                desktop
-                    .icons
-                    .chrome(icon, 18.0, if enabled { 0.95 } else { 0.35 }),
-                message,
-                canopa_ui::Action::Quiet,
-                false,
-                appearance,
-            )
-            .padding([7, 8]),
-            text(label)
-                .font(font)
-                .size(appearance.typography().label_size.px()),
-            tooltip::Position::Right,
+        super::accessibility_ui::named_button(
+            key,
+            label.clone(),
+            message.clone(),
+            tooltip(
+                canopa_ui::styled_action(
+                    desktop
+                        .icons
+                        .chrome(icon, 18.0, if enabled { 0.95 } else { 0.35 }),
+                    message,
+                    canopa_ui::Action::Quiet,
+                    false,
+                    appearance,
+                )
+                .padding([7, 8]),
+                text(label)
+                    .font(font)
+                    .size(appearance.typography().label_size.px()),
+                tooltip::Position::Right,
+            ),
         )
     };
     for device in &model.mounted {
@@ -696,13 +706,20 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             desktop,
             window,
             device.token,
-            entry(Icon::Network, device.name.clone(), open, active).into()
+            entry(
+                format!("files-device-{:?}", device.id()),
+                Icon::Network,
+                device.name.clone(),
+                open,
+                active
+            )
         )]
         .align_y(Alignment::Center);
         if device.removal.is_some() {
             item = item.push(trailing(
+                format!("files-device-{:?}-remove", device.id()),
                 Icon::Eject,
-                "Disconnect",
+                format!("Disconnect {}", device.name),
                 idle.then_some(Message::Device(DeviceEvent::Remove(window, device.token))),
             ));
         }
@@ -713,11 +730,13 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     }
     for (name, uri) in model.servers {
         let open = idle.then(|| Message::Network(Event::OpenServer(window, uri.clone())));
+        let key = format!("files-server-{uri}");
         let item = row![
-            entry(Icon::Folder, name, open, false),
+            entry(key.clone(), Icon::Folder, name.clone(), open, false),
             trailing(
+                format!("{key}-remove"),
                 Icon::Trash,
-                "Remove bookmark",
+                format!("Remove bookmark {name}"),
                 Some(Message::Network(Event::RemoveBookmark(uri))),
             )
         ]
@@ -725,6 +744,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
         body = body.push(item);
     }
     body = body.push(entry(
+        "files-other-locations".into(),
         Icon::Places,
         "Other Locations…".into(),
         Some(Message::Network(Event::Show(window, None, None))),
@@ -733,7 +753,10 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     if let Some(error) = &desktop.network.bookmarks_error {
         body = body.push(text(error).size(size).font(font));
     }
-    body.into()
+    super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::list("Network").key("files-network"),
+        body,
+    )
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, Message> {
@@ -745,7 +768,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     let id = dialog.window;
     let mut order = vec![control(id, "address")];
     let action = |label: String, name: String, message: Message, kind| {
-        super::focus::control(
+        super::focus::button(
             control(id, &name),
             Some(message.clone()),
             appearance,
@@ -766,6 +789,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
         .style(move |theme, status| super::view::input_style(appearance, theme, status))
         .on_input(move |value| Message::Network(Event::Address(id, value)))
         .on_submit(Message::Network(Event::Connect(id)));
+    // Named by the "Server address" caption drawn before it.
+    let input = super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::new(super::accessibility_ui::Role::TextInput)
+            .key("files-server-address")
+            .value(dialog.address.clone())
+            .placeholder("smb://server/share")
+            .invalid(dialog.error.is_some())
+            .on_text(move |value| Message::Network(Event::Address(id, value))),
+        input,
+    );
     let toggle = Message::Network(Event::ToggleBookmark(id));
     order.push(control(id, "bookmark"));
     let mut body = column![
@@ -780,8 +813,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
                 .wrapping(text::Wrapping::WordOrGlyph),
         ]
         .spacing(4),
-        super::focus::control(
+        super::focus::check_box(
             control(id, "bookmark"),
+            dialog.bookmark,
             Some(toggle.clone()),
             appearance,
             checkbox(dialog.bookmark)
@@ -794,13 +828,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
     ]
     .spacing(10);
     if let Some(error) = &dialog.error {
-        body = body.push(
+        body = body.push(super::accessibility_ui::semantic(
+            super::accessibility_ui::Node::alert(error.clone()).key("files-server-error"),
             text(error)
                 .font(font)
                 .size(small)
                 .color(chrome::ink(appearance, canopa_theme::ColorRole::Danger))
                 .wrapping(text::Wrapping::WordOrGlyph),
-        );
+        ));
     }
     // Bookmarked servers first, then what the current location lists.
     let servers = sidebar(&desktop.devices.catalog, &desktop.network.bookmarks).servers;
@@ -927,14 +962,26 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Window) -> Element<'a, 
         ),
     ]
     .spacing(8);
-    let body = column![body, scrollable(list).height(Length::Fill), footer].spacing(12);
+    let list = super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::group(heading)
+            .key("files-server-list")
+            .busy(dialog.result.is_none()),
+        scrollable(list).height(Length::Fill),
+    );
+    let body = column![body, list, footer].spacing(12);
     let appearance = appearance.clone();
     let body = container(body)
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
-    super::focus::group(body, order, Vec::new(), Some(control(id, "address")))
+    super::accessibility_ui::dialog(
+        "files-server-dialog",
+        dialog.title(),
+        "",
+        false,
+        super::focus::group(body, order, Vec::new(), Some(control(id, "address"))),
+    )
 }
 
 #[cfg(test)]

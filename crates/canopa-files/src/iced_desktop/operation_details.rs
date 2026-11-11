@@ -138,23 +138,36 @@ pub(super) fn progress<'a>(
     };
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().label_size.px();
+    let title = format!(
+        "{stage} {}",
+        bounded(
+            &progress
+                .path
+                .file_name()
+                .unwrap_or(progress.path.as_os_str())
+                .to_string_lossy(),
+            false
+        )
+    );
+    let mut description = vec![progress_counts(progress)];
+    description.extend(progress_rate(progress));
+    let fraction = progress_fraction(progress);
+    let node = super::accessibility_ui::Node::progress(title.clone(), fraction.map(f64::from))
+        .key(format!("files-progress-{}", job.id))
+        .description(description.join(", "));
+    let counts = text(progress_counts(progress))
+        .font(font)
+        .size(size)
+        .wrapping(text::Wrapping::WordOrGlyph);
+    // While totals are still counting the progress is indeterminate.
+    let counts: Element<'a, Message> = if fraction.is_none() {
+        super::accessibility_ui::semantic(node.clone(), counts)
+    } else {
+        counts.into()
+    };
     Some(
         column![
-            chrome::section_title(
-                appearance,
-                format!(
-                    "{stage} {}",
-                    bounded(
-                        &progress
-                            .path
-                            .file_name()
-                            .unwrap_or(progress.path.as_os_str())
-                            .to_string_lossy(),
-                        false
-                    )
-                ),
-            )
-            .wrapping(text::Wrapping::WordOrGlyph),
+            chrome::section_title(appearance, title).wrapping(text::Wrapping::WordOrGlyph),
             text(bounded(
                 &super::question_dialog::display_location(home, &progress.path),
                 false
@@ -163,15 +176,13 @@ pub(super) fn progress<'a>(
             .size(size)
             .style(canopa_ui::muted)
             .wrapping(text::Wrapping::WordOrGlyph),
-            progress_fraction(progress).map(|fraction| {
+            fraction.map(|fraction| super::accessibility_ui::semantic(
+                node.clone(),
                 iced::widget::progress_bar(0.0..=1.0, fraction)
                     .girth(4)
                     .style(iced::widget::progress_bar::primary)
-            }),
-            text(progress_counts(progress))
-                .font(font)
-                .size(size)
-                .wrapping(text::Wrapping::WordOrGlyph),
+            )),
+            counts,
             progress_rate(progress).map(|rate| {
                 text(rate)
                     .font(font)
@@ -508,7 +519,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             let id = control(dialog.window, 8);
             order.push(id.clone());
             let message = Message::FileOperation(Event::Review(job.id));
-            review = Some(super::focus::control(
+            review = Some(super::focus::button(
                 id,
                 Some(message.clone()),
                 appearance,
@@ -563,7 +574,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
                     dialog.job,
                     choice,
                 ));
-                sections = sections.push(super::focus::control(
+                sections = sections.push(super::focus::button(
                     id,
                     Some(message.clone()),
                     appearance,
@@ -617,7 +628,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
                 if message.is_some() {
                     order.push(id.clone());
                 }
-                controls = controls.push(super::focus::control(
+                controls = controls.push(super::focus::button(
                     id,
                     message.clone(),
                     appearance,
@@ -640,7 +651,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
         );
     }
     let message = Message::FileOperation(Event::DetailsClose(dialog.window));
-    let close = super::focus::control(
+    let close = super::focus::button(
         control(dialog.window, 0),
         Some(message.clone()),
         appearance,

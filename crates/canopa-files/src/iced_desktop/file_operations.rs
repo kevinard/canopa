@@ -282,6 +282,24 @@ impl State {
     pub fn starting(&self) -> bool {
         self.snapshot.initializing
     }
+    /// The newest operation's state for a screen reader, and whether it needs
+    /// attention now: "Copy 3 items: Completed", "…: Could not finish. …".
+    pub fn announcement(&self) -> Option<(String, bool)> {
+        let job = self.snapshot.jobs.iter().max_by_key(|job| job.id)?;
+        let mut title = job.title.clone();
+        if let Some(initial) = title.get_mut(..1) {
+            initial.make_ascii_uppercase();
+        }
+        let failed = matches!(
+            job.phase,
+            Phase::Failed | Phase::StartSaveFailed | Phase::SaveFailed
+        );
+        let mut text = format!("{title}: {}", super::file_operation_rows::phase_label(job));
+        if failed && let Some(error) = &job.error {
+            text = format!("{text}. {error}");
+        }
+        Some((text, failed))
+    }
 }
 
 pub(super) fn status(phase: Phase) -> &'static str {

@@ -734,7 +734,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
     let action = |label: String, name: &str, message: Option<Message>, kind| {
-        super::focus::control(
+        super::focus::button(
             control(id, name),
             message.clone(),
             appearance,
@@ -779,7 +779,16 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ..
         } => {
             order.insert(0, control(id, "search"));
-            body = body.push(
+            let chosen = selected
+                .as_ref()
+                .map(|app| format!("files-application-{app}"));
+            body = body.push(super::accessibility_ui::semantic(
+                super::accessibility_ui::Node::search_input("Search applications", search.clone())
+                    .key("files-application-search")
+                    .placeholder("Search applications")
+                    .controls("files-applications")
+                    .active_descendant(chosen)
+                    .on_text(move |value| Message::OpenWith(Event::Search(id, value))),
                 text_input("Search applications", search)
                     .id(control(id, "search"))
                     .on_input(move |value| Message::OpenWith(Event::Search(id, value)))
@@ -790,18 +799,19 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                     .style(move |theme, status| {
                         super::view::input_style(appearance, theme, status)
                     }),
-            );
+            ));
             let mut list = column![].spacing(2);
             match rows {
                 None => list = list.push(text("Looking for applications…").font(font).size(small)),
                 Some(Err(error)) => list = list.push(text(error.clone()).font(font).size(small)),
                 Some(Ok(_)) => {
                     let visible = dialog.visible();
+                    let total = visible.len();
                     if visible.is_empty() {
                         list = list.push(text("No matching applications").font(font).size(small));
                     }
                     let mut heading = None;
-                    for row in visible {
+                    for (index, row) in visible.into_iter().enumerate() {
                         if heading != Some(row.recommended) {
                             heading = Some(row.recommended);
                             list = list.push(
@@ -823,27 +833,41 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                             .unwrap_or_default();
                         let content = column![
                             text(row.app.name.clone()).font(font).size(size),
-                            text(caption).font(font).size(small).style(canopa_ui::muted),
+                            text(caption.clone())
+                                .font(font)
+                                .size(small)
+                                .style(canopa_ui::muted),
                         ];
-                        list = list.push(
+                        let choose = Message::OpenWith(Event::Select(id, row.app.id.clone()));
+                        let chosen = selected.as_deref() == Some(row.app.id.as_str());
+                        list = list.push(super::accessibility_ui::semantic(
+                            super::accessibility_ui::Node::option(row.app.name.clone(), chosen)
+                                .key(format!("files-application-{}", row.app.id))
+                                .description(caption.clone())
+                                .position(index + 1, total)
+                                .on_click(Some(choose.clone())),
                             canopa_ui::styled_action(
                                 content,
-                                Some(Message::OpenWith(Event::Select(id, row.app.id.clone()))),
+                                Some(choose),
                                 canopa_ui::Action::Quiet,
-                                selected.as_deref() == Some(row.app.id.as_str()),
+                                chosen,
                                 appearance,
                             )
                             .width(Length::Fill),
-                        );
+                        ));
                     }
                 }
             }
-            body = body.push(scrollable(list).height(Length::Fill));
+            body = body.push(super::accessibility_ui::semantic(
+                super::accessibility_ui::Node::list("Applications").key("files-applications"),
+                scrollable(list).height(Length::Fill),
+            ));
             if let Some(mime) = mime {
                 order.push(control(id, "default"));
                 let toggle = Message::OpenWith(Event::SetDefault(id, !set_default));
-                body = body.push(super::focus::control(
+                body = body.push(super::focus::check_box(
                     control(id, "default"),
+                    *set_default,
                     Some(toggle),
                     appearance,
                     checkbox(*set_default)
@@ -922,7 +946,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| canopa_ui::frame(&style, style.style(UiKind::Panel)));
-    super::focus::group(body, order, Vec::new(), Some(control(id, "cancel")))
+    super::accessibility_ui::dialog(
+        "files-open-dialog",
+        dialog.title(),
+        dialog.message(),
+        !matches!(dialog.kind, Kind::Chooser { .. }),
+        super::focus::group(body, order, Vec::new(), Some(control(id, "cancel"))),
+    )
 }
 
 #[cfg(test)]

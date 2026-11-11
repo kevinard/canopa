@@ -493,7 +493,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
         } else {
             label.into()
         };
-        super::focus::control(
+        super::focus::button(
             control_id(window, control),
             message.clone(),
             appearance,
@@ -549,6 +549,8 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
         .spacing(6)
         .into()
     };
+    // The zero-width live region shares a spacing-free row with the heading.
+    let heading = row![desktop.operations_announcer(window), heading];
     let mut body = column![heading].spacing(14);
     if let Some(error) = &desktop.jobs.error {
         body = body.push(text(error).size(small).font(font));

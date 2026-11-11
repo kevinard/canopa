@@ -727,7 +727,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             appearance,
         );
         if let Some(focus) = focus {
-            super::focus::control_with_keyboard(
+            super::focus::button_with_keyboard(
                 editor.focus_id(focus),
                 message,
                 keyboard_message,
@@ -750,7 +750,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             false,
             appearance,
         );
-        chooser = chooser.push(super::focus::control(
+        chooser = chooser.push(super::focus::button(
             editor.focus_id(Focus::Select(draft.serial)),
             message,
             appearance,
@@ -923,8 +923,9 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
                     Message::ActionEditor(Event::Toggle(target, which, value))
                 });
             }
-            super::focus::control(
+            super::focus::check_box(
                 editor.focus_id(Focus::Check(which)),
+                value,
                 enabled.then_some(Message::ActionEditor(Event::Toggle(target, which, !value))),
                 appearance,
                 container(control).padding(2),

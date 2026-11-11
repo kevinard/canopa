@@ -439,7 +439,37 @@ impl Desktop {
     }
 }
 
+/// What a screen reader reads when the question opens, beside its title.
+fn summary(dialog: &Dialog) -> String {
+    use crate::operation_jobs::TransferQuestion;
+    match &dialog.question {
+        Question::Undo(conflict) => explanation(conflict.source).to_owned(),
+        Question::Transfer(TransferQuestion::Conflict { source, .. })
+        | Question::Recovery(TransferQuestion::Conflict { source, .. }) => format!(
+            "{} “{}” already exists in the destination.",
+            if source.is_directory() {
+                "A folder named"
+            } else {
+                "An item named"
+            },
+            source.name()
+        ),
+        Question::Transfer(TransferQuestion::Unavailable { message, .. })
+        | Question::Recovery(TransferQuestion::Unavailable { message, .. }) => message.clone(),
+    }
+}
+
 pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
+    super::accessibility_ui::dialog(
+        "files-question-dialog",
+        dialog.title(),
+        summary(dialog),
+        true,
+        content(desktop, dialog),
+    )
+}
+
+fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
     let Question::Undo(conflict) = &dialog.question else {
         return super::transfer_dialog::view(desktop, dialog);
     };
@@ -564,7 +594,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let mut buttons = row![].spacing(8);
     for (index, (label, choice)) in choices.into_iter().enumerate() {
         let message = Message::FileOperation(Event::Answer(dialog.job, dialog.generation, choice));
-        buttons = buttons.push(super::focus::control(
+        buttons = buttons.push(super::focus::button(
             control(dialog.window, index),
             Some(message.clone()),
             appearance,

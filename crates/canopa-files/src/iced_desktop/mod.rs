@@ -1,5 +1,6 @@
 //! Iced application windows. Filesystem snapshots stay in the shared core and
 //! are prepared on workers; UI messages carry a tab identity and scan revision.
+mod accessibility_ui;
 mod action_editor;
 mod actions_ui;
 mod activation_ui;
@@ -155,6 +156,7 @@ pub fn run(
                 .map(activation_ui::Notices::new);
             desktop.activity = Some(activity_frontend.clone());
             desktop.media = media_ui::Host::attach(playback_frontend.clone());
+            desktop.accessibility = Some(accessibility_ui::Accessibility::new());
             let mut tasks = vec![task];
             desktop.file_clipboard = clipboard_ui::State::start();
             desktop.folder_watch = folder_watch_ui::State::start();
@@ -234,6 +236,8 @@ struct Desktop {
     open_dialog: Option<open_with_ui::Dialog>,
     recovery_window: Option<recovery_ui::RecoveryWindow>,
     recovery_destination: Option<recovery_destination::Dialog>,
+    /// The AT-SPI bridge, created by the running application only.
+    accessibility: Option<accessibility_ui::Accessibility>,
 }
 
 struct BrowserWindow {
@@ -416,6 +420,7 @@ enum Message {
     DeleteDialog(delete_dialog::Event),
     OpenWith(open_with_ui::Event),
     Network(network_ui::Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
 }
 
 impl Desktop {
@@ -478,6 +483,7 @@ impl Desktop {
             open_dialog: None,
             recovery_window: None,
             recovery_destination: None,
+            accessibility: None,
         };
         let icons = desktop.icons.refresh(&desktop.configuration);
         let initial = paths.map_or_else(Task::none, |paths| {
@@ -659,7 +665,18 @@ impl Desktop {
         )
     }
 
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::Accessibility(event) => return self.accessibility_event(event),
+            Message::Focus(id, focused) => self.accessibility_focus(id, focused),
+            _ => {}
+        }
+        let task = self.apply(message);
+        Task::batch([task, self.sync_accessibility()])
+    }
+
+    fn apply(&mut self, message: Message) -> Task<Message> {
         let task = match message {
             Message::Properties(event) => self.properties_event(event),
             Message::Drag(event) => self.drag_event(event),
@@ -1098,6 +1115,7 @@ impl Desktop {
             | Message::OpenWith(_)
             | Message::FileClipboard(_)
             | Message::Properties(_)
+            | Message::Accessibility(_)
             | Message::Drag(_) => {}
             Message::ConfigurationPoll => return self.configuration_poll(),
             Message::ActionEditor(_) | Message::Preferences(_) | Message::CapturedKey(..) => {}
@@ -2092,6 +2110,9 @@ impl Desktop {
                 .as_ref()
                 .map_or_else(Subscription::none, configuration_ui::Notices::subscription),
             window::close_events().map(Message::Closed),
+            self.accessibility
+                .as_ref()
+                .map_or_else(Subscription::none, |state| state.bridge.subscription()),
             iced::event::listen_with(|event, status, id| match event {
                 Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => Some(Message::Drag(drag_ui::Event::NativePress(id))),
                 Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => Some(Message::Drag(drag_ui::Event::Release(id))),
@@ -2123,6 +2144,13 @@ impl Desktop {
     }
 
     fn view(&self, id: window::Id) -> Element<'_, Message> {
+        accessibility_ui::semantic(
+            accessibility_ui::Node::window(accessibility_ui::window_key(id), self.title(id)),
+            self.window_view(id),
+        )
+    }
+
+    fn window_view(&self, id: window::Id) -> Element<'_, Message> {
         if let Some(properties) = self.properties.get(&id) {
             return properties_ui::view(self, id, properties);
         }

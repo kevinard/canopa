@@ -1,3 +1,4 @@
+use super::accessibility_ui::{self as a11y, Node, Role, semantic};
 use super::row_state::keyed_row;
 use super::{chrome::Icon, *};
 use canopa_theme::{ColorRole, UiKind};
@@ -131,33 +132,48 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     } else {
         0.0
     };
-    let toolbar = iced::widget::Row::from_vec(vec![brand, toolbar::view(desktop, id, tab)])
-        .width(Length::Fill)
-        .align_y(Alignment::Center);
+    let toolbar = iced::widget::Row::from_vec(vec![
+        brand,
+        semantic(
+            Node::toolbar("Toolbar").key("files-toolbar"),
+            toolbar::view(desktop, id, tab),
+        ),
+    ])
+    .width(Length::Fill)
+    .align_y(Alignment::Center);
     let mut body = column![
         container(toolbar).style(move |_| chrome::bar(appearance, true)),
         rule::horizontal(1).style(chrome::divider)
     ];
     let notice: Element<'_, Message> = if let Some(error) = &desktop.configuration_error {
-        container(text(format!("Configuration was not applied: {error}")).size(label_size))
-            .padding([6, 12])
-            .into()
+        let notice = format!("Configuration was not applied: {error}");
+        semantic(
+            Node::alert(notice.clone()).key("files-configuration-error"),
+            container(text(notice).size(label_size)).padding([6, 12]),
+        )
     } else {
         space().height(0).into()
     };
     body = body.push(container(notice));
     let persistence_notice: Element<'_, Message> = if let Some(error) = &desktop.folder_writer.error
     {
+        let notice = format!("View preferences were not saved: {error}");
+        let retry = Some(Message::FolderView(folder_views::Event::Retry));
         container(row![
-            text(format!("View preferences were not saved: {error}"))
-                .size(label_size)
-                .width(Length::Fill),
-            canopa_ui::styled_action(
-                text("Retry").size(label_size),
-                Some(Message::FolderView(folder_views::Event::Retry)),
-                canopa_ui::Action::Quiet,
-                false,
-                appearance
+            semantic(
+                Node::alert(notice.clone()).key("files-view-preferences-error"),
+                text(notice).size(label_size).width(Length::Fill),
+            ),
+            a11y::button(
+                "files-view-preferences-retry",
+                retry.clone(),
+                canopa_ui::styled_action(
+                    text("Retry").size(label_size),
+                    retry,
+                    canopa_ui::Action::Quiet,
+                    false,
+                    appearance
+                )
             )
         ])
         .padding([4, 10])
@@ -175,23 +191,30 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 .unwrap_or(candidate.path().as_os_str())
                 .to_string_lossy()
                 .into_owned();
-            tabs = tabs.push(canopa_ui::styled_action(
-                text(label).size(label_size),
-                Some(Message::SwitchTab(id, index)),
-                if index == window.active {
-                    canopa_ui::Action::Normal
-                } else {
-                    canopa_ui::Action::Quiet
-                },
-                index == window.active,
-                appearance,
+            tabs = tabs.push(semantic(
+                Node::tab(label.clone(), index == window.active)
+                    .key(format!("files-tab-{}", candidate.id))
+                    .position(index + 1, window.tabs.len())
+                    .on_click(Some(Message::SwitchTab(id, index))),
+                canopa_ui::styled_action(
+                    text(label).size(label_size),
+                    Some(Message::SwitchTab(id, index)),
+                    if index == window.active {
+                        canopa_ui::Action::Normal
+                    } else {
+                        canopa_ui::Action::Quiet
+                    },
+                    index == window.active,
+                    appearance,
+                ),
             ));
         }
-        body = body.push(
+        body = body.push(semantic(
+            Node::tab_list("Tabs").key("files-tabs"),
             scrollable(tabs).direction(scrollable::Direction::Horizontal(
                 scrollable::Scrollbar::new(),
             )),
-        );
+        ));
     }
     if let Some(session) = &tab.search {
         body = body.push(search_bar(desktop, id, tab, session));
@@ -199,7 +222,10 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     let mut content = row![].height(Length::Fill);
     if sidebar {
         content = content
-            .push(places(desktop, id))
+            .push(semantic(
+                Node::navigation("Sidebar").key("files-sidebar"),
+                places(desktop, id),
+            ))
             .push(rule::vertical(1).style(chrome::divider));
     }
     if let Some(browser) = &tab.browser {
@@ -258,6 +284,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     row_height(appearance)
                 };
                 let range = visible_rows(visible.len(), offset, tab.viewport_height, height);
+                let total = visible.len();
                 entries = entries.push(keyed_row(
                     RowKey::Top,
                     space().height(range.start as f32 * height),
@@ -283,6 +310,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                                 searching,
                                 grid: false,
                                 alternate: !(range.start + index).is_multiple_of(2),
+                                position: (range.start + index + 1, total),
                             },
                         ),
                     ));
@@ -353,6 +381,34 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             } else {
                 list.into()
             };
+            let list = semantic(
+                Node::list(heading.clone())
+                    .key(a11y::list_key(&path_for_drop))
+                    .description(if !current {
+                        "Parent folder"
+                    } else if searching {
+                        ""
+                    } else {
+                        match browser.view().mode {
+                            crate::preferences::ViewMode::Columns => "Column view",
+                            crate::preferences::ViewMode::List => "List view",
+                            crate::preferences::ViewMode::Icons => "Icon view",
+                        }
+                    })
+                    .multiselectable(current)
+                    .busy(
+                        current
+                            && (tab.loading
+                                || searching
+                                    && tab.search.as_ref().is_some_and(|search| search.running)),
+                    )
+                    .active_descendant(
+                        current
+                            .then(|| browser.focused().map(a11y::entry_key))
+                            .flatten(),
+                    ),
+                list,
+            );
             let symbol = desktop.icons.chrome(
                 if searching {
                     Icon::Search
@@ -557,38 +613,62 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     } else {
         status
     };
+    let announcement = announcement(tab);
+    let status_node = match &tab.error {
+        Some(error) => Node::alert(error.clone()).key("files-error"),
+        None => Node::new(Role::Status)
+            .label(status.clone())
+            .key("files-status")
+            .hide_text(),
+    };
+    // Zero-width live regions share a spacing-free row with the status text.
     let mut footer = row![
-        container(
-            text(status)
-                .font(font)
-                .size(label_size + 1.0)
-                .color(chrome::ink(
-                    appearance,
-                    if tab.error.is_some() {
-                        ColorRole::Danger
-                    } else {
-                        ColorRole::Text
-                    },
-                ))
-                .wrapping(text::Wrapping::None)
-        )
-        .clip(true)
+        row![
+            semantic(
+                Node::status(announcement).key("files-announcement"),
+                a11y::announcer_space()
+            ),
+            desktop.operations_announcer(id),
+            semantic(
+                status_node,
+                container(
+                    text(status)
+                        .font(font)
+                        .size(label_size + 1.0)
+                        .color(chrome::ink(
+                            appearance,
+                            if tab.error.is_some() {
+                                ColorRole::Danger
+                            } else {
+                                ColorRole::Text
+                            },
+                        ))
+                        .wrapping(text::Wrapping::None)
+                )
+                .clip(true)
+                .width(Length::Fill)
+            )
+        ]
         .width(Length::Fill)
     ]
     .spacing(6)
     .align_y(Alignment::Center);
     let operation_button = || {
-        canopa_ui::styled_action(
-            row![
-                desktop.icons.chrome(Icon::Activity, 15.0, 0.90),
-                text("Operations").font(font).size(label_size),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
+        a11y::button(
+            "files-operations",
             Some(Message::Command(id, Command::Operations)),
-            canopa_ui::Action::Normal,
-            false,
-            appearance,
+            canopa_ui::styled_action(
+                row![
+                    desktop.icons.chrome(Icon::Activity, 15.0, 0.90),
+                    text("Operations").font(font).size(label_size),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+                Some(Message::Command(id, Command::Operations)),
+                canopa_ui::Action::Normal,
+                false,
+                appearance,
+            ),
         )
     };
     if wide_status && !summary.is_empty() {
@@ -675,6 +755,55 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     }
 }
 
+/// Whether the keyboard cursor in the rows holds focus, rather than the
+/// location or search field or an open menu.
+pub(super) fn rows_have_focus(desktop: &Desktop, id: window::Id, tab: &Tab) -> bool {
+    tab.location.is_none()
+        && tab
+            .search
+            .as_ref()
+            .is_none_or(|search| search.results_focused)
+        && desktop
+            .action_menu
+            .as_ref()
+            .is_none_or(|menu| menu.window() != id)
+        && desktop
+            .folder_options
+            .as_ref()
+            .is_none_or(|target| target.window != id)
+}
+
+/// The politely announced folder state: what loading, a finished search or a
+/// selection change produced, without volatile scan counts.
+pub(super) fn announcement(tab: &Tab) -> String {
+    if tab.loading {
+        return "Loading folder…".into();
+    }
+    let Some(browser) = &tab.browser else {
+        return String::new();
+    };
+    let selection = match browser.selected().len() {
+        0 => String::new(),
+        count => format!(", {count} selected"),
+    };
+    if let Some(results) = browser.search() {
+        if tab.search.as_ref().is_some_and(|search| search.running) {
+            return "Searching…".into();
+        }
+        let count = results.entries.len();
+        return format!(
+            "{count} {}{}{selection}",
+            if count == 1 { "result" } else { "results" },
+            if results.cancelled { ", stopped" } else { "" }
+        );
+    }
+    let count = browser.visible_entries().len();
+    format!(
+        "{count} {}{selection}",
+        if count == 1 { "item" } else { "items" }
+    )
+}
+
 /// Preserve the full scroll extent while building only nearby row widgets.
 pub(super) fn visible_rows(
     count: usize,
@@ -706,6 +835,20 @@ fn search_bar<'a>(
     let body_size = appearance.typography().body_size.px();
     let label_size = appearance.typography().label_size.px();
     let input_appearance = appearance.clone();
+    let focused_result = tab
+        .browser
+        .as_ref()
+        .filter(|browser| browser.search().is_some())
+        .and_then(Browser::focused)
+        .map(a11y::entry_key);
+    let mut input_node = Node::search_input("Search filenames", &session.query)
+        .key("files-search")
+        .placeholder("Search filenames")
+        .on_text(move |query| Message::Search(Event::Query(target, query)))
+        .active_descendant(focused_result.filter(|_| !session.results_focused));
+    if let Some(browser) = &tab.browser {
+        input_node = input_node.controls(a11y::list_key(browser.path()));
+    }
     let input = text_input("Search filenames", &session.query)
         .id(search_id(id, tab.id))
         .on_input(move |query| Message::Search(Event::Query(target, query)))
@@ -713,22 +856,39 @@ fn search_bar<'a>(
         .size(body_size)
         .padding(canopa_ui::content_padding(appearance.style(UiKind::Input)))
         .style(move |theme, status| input_style(&input_appearance, theme, status));
-    let action = |label: String, event: Option<Event>| -> Element<'a, Message> {
-        canopa_ui::styled_action(
-            text(label).size(label_size),
-            event.map(Message::Search),
-            canopa_ui::Action::Quiet,
-            false,
-            appearance,
+    let input = semantic(input_node, input);
+    let action = |key: &'static str, label: String, event: Option<Event>| -> Element<'a, Message> {
+        let message = event.map(Message::Search);
+        a11y::button(
+            key,
+            message.clone(),
+            canopa_ui::styled_action(
+                text(label).size(label_size),
+                message,
+                canopa_ui::Action::Quiet,
+                false,
+                appearance,
+            ),
         )
-        .into()
     };
-    let close = action("Close".into(), Some(Event::Close(target)));
-    let scope = checkbox(session.recursive)
-        .label("Include subfolders")
-        .text_size(body_size)
-        .on_toggle(move |recursive| Message::Search(Event::Recursive(target, recursive)))
-        .width(Length::Fill);
+    let close = action(
+        "files-search-close",
+        "Close".into(),
+        Some(Event::Close(target)),
+    );
+    let scope = a11y::check_box(
+        "files-search-subfolders",
+        session.recursive,
+        Some(Message::Search(Event::Recursive(
+            target,
+            !session.recursive,
+        ))),
+        checkbox(session.recursive)
+            .label("Include subfolders")
+            .text_size(body_size)
+            .on_toggle(move |recursive| Message::Search(Event::Recursive(target, recursive)))
+            .width(Length::Fill),
+    );
     let results = tab.browser.as_ref().and_then(Browser::search);
     let padding = canopa_ui::content_padding(appearance.style(UiKind::Button));
     let height = ((label_size * 1.3).ceil() + padding.top + padding.bottom)
@@ -740,6 +900,7 @@ fn search_bar<'a>(
         .height(height);
     if session.running {
         options = options.push(action(
+            "files-search-stop",
             if session.stopping {
                 "Stopping…"
             } else {
@@ -749,7 +910,11 @@ fn search_bar<'a>(
             (!session.stopping).then_some(Event::Stop(target)),
         ));
     } else if results.is_some_and(|results| results.truncated) {
-        options = options.push(action("More results".into(), Some(Event::More(target))));
+        options = options.push(action(
+            "files-search-more",
+            "More results".into(),
+            Some(Event::More(target)),
+        ));
     }
     let mut body = column![row![input, close].spacing(6), options].spacing(4);
     let focused = tab
@@ -762,11 +927,13 @@ fn search_bar<'a>(
     if results.is_some() || !failures.is_empty() {
         let mut actions = row![].spacing(6);
         actions = actions.push(action(
+            "files-search-reveal",
             "Show in folder".into(),
             focused.then_some(Event::Reveal(target)),
         ));
         if !failures.is_empty() {
             actions = actions.push(action(
+                "files-search-failures",
                 format!(
                     "{} unreadable{}",
                     failures.len(),
@@ -839,7 +1006,12 @@ fn search_bar<'a>(
             })
     })
     .collect();
-    super::focus::editing_shortcuts(container(body).padding([4, 10]), shortcuts)
+    semantic(
+        Node::new(Role::Search)
+            .label("Search")
+            .key("files-search-bar"),
+        super::focus::editing_shortcuts(container(body).padding([4, 10]), shortcuts),
+    )
 }
 
 pub(super) fn view_switcher<'a>(
@@ -898,13 +1070,25 @@ pub(super) fn view_switcher<'a>(
                 }
                 style
             });
+        let label = match mode {
+            ViewMode::Columns => "Columns",
+            ViewMode::List => "List",
+            ViewMode::Icons => "Icons",
+        };
+        let control = semantic(
+            Node::radio(label, active)
+                .key(format!("files-view-{}", command.id()))
+                .disabled(tab.loading)
+                .on_click((!active && !tab.loading).then_some(Message::Command(id, command))),
+            control,
+        );
         let control: Element<'_, Message> = if active
             || show_labels
             || tab.location.is_some()
             || desktop.action_menu.is_some()
             || desktop.folder_options.is_some()
         {
-            control.into()
+            control
         } else {
             tooltip(
                 control,
@@ -921,10 +1105,16 @@ pub(super) fn view_switcher<'a>(
     }
     (
         width,
-        container(controls)
-            .padding(3)
-            .style(move |_| chrome::highlight(appearance, ColorRole::Spine))
-            .into(),
+        semantic(
+            Node::new(Role::RadioGroup).label("View").key(if top {
+                "files-view-switcher-top"
+            } else {
+                "files-view-switcher"
+            }),
+            container(controls)
+                .padding(3)
+                .style(move |_| chrome::highlight(appearance, ColorRole::Spine)),
+        ),
     )
 }
 
@@ -945,9 +1135,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         })
         .max_by_key(|&(index, depth)| (depth, std::cmp::Reverse(index)))
         .map(|(index, _)| index);
-    let mut places = column![chrome::section(appearance, "Places")]
-        .spacing(2)
-        .padding([10, 10]);
+    let mut list = column![].spacing(2);
     for (index, place) in desktop.configuration.settings.places.iter().enumerate() {
         let icon = match place {
             Place::Builtin(PlaceKind::Home) => Icon::Home,
@@ -992,7 +1180,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             ]
             .spacing(9)
             .align_y(Alignment::Center),
-            Some(message),
+            Some(message.clone()),
             canopa_ui::Action::Quiet,
             false,
             appearance,
@@ -1012,11 +1200,23 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         } else {
             button.into()
         };
+        let key = match place {
+            Place::Builtin(kind) => format!("files-place-{}", kind.id()),
+            Place::Bookmark { path, .. } => {
+                format!("files-place-bookmark-{}", a11y::path_key(path))
+            }
+        };
+        let button = semantic(
+            Node::option(place.label(), active)
+                .key(key)
+                .on_click(Some(message)),
+            button,
+        );
         let button = match path {
             Some(path) => super::drag_ui::target_region(desktop, id, tab, path, None, 2, button),
             None => button,
         };
-        places = places.push(button);
+        list = list.push(button);
     }
     let configured: Vec<_> = desktop
         .configuration
@@ -1033,6 +1233,9 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         if active {
             font.weight = Weight::Semibold;
         }
+        let node = Node::option(name.clone(), active)
+            .key(format!("files-place-gtk-{}", a11y::path_key(&path)))
+            .on_click(Some(Message::Go(id, path.clone())));
         let button = canopa_ui::styled_action(
             row![
                 desktop
@@ -1054,16 +1257,22 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             appearance,
         )
         .width(Length::Fill);
-        places = places.push(super::drag_ui::target_region(
+        list = list.push(super::drag_ui::target_region(
             desktop,
             id,
             tab,
             path,
             None,
             2,
-            button.into(),
+            semantic(node, button),
         ));
     }
+    let mut places = column![
+        chrome::section(appearance, "Places"),
+        semantic(Node::list("Places").key("files-places"), list)
+    ]
+    .spacing(2)
+    .padding([10, 10]);
     let model = super::network_ui::sidebar(&desktop.devices.catalog, &desktop.network.bookmarks);
     if !model.devices.is_empty()
         || matches!(

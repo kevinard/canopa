@@ -435,14 +435,29 @@ fn input<'a>(
         .size(appearance.typography().body_size.px())
         .padding(canopa_ui::content_padding(appearance.style(UiKind::Input)))
         .style(move |theme, status| super::view::input_style(appearance, theme, status));
-    if !dialog.anonymous || matches!(field, Field::Pim) {
+    let editable = !dialog.anonymous || matches!(field, Field::Pim);
+    if editable {
         input = input
             .on_input(move |value| Message::Device(Event::Text(id, token, field, Edited(value))))
             .on_submit(Message::Device(Event::Submit(id, token)));
     }
+    use super::accessibility_ui::{Node, Role, semantic};
+    // A secret is never published; screen readers announce only its role.
+    let node = if secure {
+        Node::new(Role::PasswordInput).label(label)
+    } else {
+        let node = Node::text_input(label, value);
+        if editable {
+            node.on_text(move |value| Message::Device(Event::Text(id, token, field, Edited(value))))
+        } else {
+            node
+        }
+    }
+    .key(format!("files-device-field-{field:?}"))
+    .read_only(!editable);
     column![
         text(label).size(appearance.typography().label_size.px()),
-        input
+        semantic(node, input)
     ]
     .spacing(4)
     .into()
@@ -458,7 +473,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let button = |label: String, name: String, event: Event| {
         let message = Message::Device(event);
         let primary = name == "submit" || matches!(label.as_str(), "Continue" | "Try again");
-        super::focus::control(
+        super::focus::button(
             control(id, name.clone()),
             Some(message.clone()),
             appearance,
@@ -559,8 +574,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             if show {
                 let event = Event::Toggle(id, dialog.token, toggle);
                 order.push(control(id, toggle));
-                body = body.push(super::focus::control(
+                body = body.push(super::focus::check_box(
                     control(id, toggle),
+                    value,
                     Some(Message::Device(event.clone())),
                     appearance,
                     checkbox(value)
@@ -579,8 +595,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 let event = Event::Toggle(id, dialog.token, Toggle::Remember(remember));
                 let name = format!("remember-{remember:?}");
                 order.push(control(id, name.clone()));
-                body = body.push(super::focus::control(
+                body = body.push(super::focus::check_box(
                     control(id, name),
+                    dialog.remember == remember,
                     Some(Message::Device(event.clone())),
                     appearance,
                     checkbox(dialog.remember == remember)
@@ -683,7 +700,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| canopa_ui::frame(appearance, appearance.style(UiKind::Panel)));
-    super::focus::group(content, order, reveal, Some(control(id, "cancel")))
+    super::accessibility_ui::dialog(
+        "files-device-dialog",
+        dialog.title(),
+        "",
+        true,
+        super::focus::group(content, order, reveal, Some(control(id, "cancel"))),
+    )
 }
 
 /// The provider's own cancel choice ("Cancel", or SSH's "Cancel Login"): the

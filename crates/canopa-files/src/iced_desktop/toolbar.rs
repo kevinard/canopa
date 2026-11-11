@@ -1,5 +1,6 @@
 //! Configuration order is preserved across both toolbar arrangements. A narrow
 //! tile gets a full-width location field and a scrollable command strip.
+use super::accessibility_ui::{self as a11y, Node, Role, semantic};
 use super::{chrome::Icon, *};
 use crate::actions::CustomAction;
 use canopa_theme::{ColorRole, UiKind};
@@ -193,7 +194,10 @@ fn location<'a>(
     let font = canopa_ui::font(appearance);
     if let Some(value) = &tab.location {
         let appearance = appearance.clone();
-        text_input("Location", value)
+        let node = Node::text_input("Location", value.clone())
+            .key("files-location")
+            .on_text(move |value| Message::Location(id, value));
+        let input = text_input("Location", value)
             .id(view::location_id(id))
             .on_input(move |value| Message::Location(id, value))
             .on_submit(Message::SubmitLocation(id))
@@ -201,10 +205,15 @@ fn location<'a>(
             .font(font)
             .padding(canopa_ui::content_padding(appearance.style(UiKind::Input)))
             .style(move |theme, status| view::input_style(&appearance, theme, status))
-            .width(Length::Fill)
-            .into()
+            .width(Length::Fill);
+        semantic(node, input)
     } else {
-        breadcrumb(desktop, id, tab, compact_path)
+        semantic(
+            Node::new(Role::Navigation)
+                .label("Location")
+                .key("files-breadcrumb"),
+            breadcrumb(desktop, id, tab, compact_path),
+        )
     }
 }
 
@@ -274,18 +283,20 @@ fn breadcrumb<'a>(
             0.87,
         );
         let origin: Element<'_, Message> = if within_home && count < ancestors.len() {
-            let home =
-                crumb_button(origin_icon, Message::Go(id, desktop.home.clone())).padding([4, 2]);
-            if tab.search.is_some() || desktop.action_menu.is_some() {
-                home.into()
-            } else {
-                tooltip(
-                    home,
-                    text("Home").font(font).size(size),
-                    tooltip::Position::Bottom,
-                )
-                .into()
-            }
+            let message = Message::Go(id, desktop.home.clone());
+            let home = crumb_button(origin_icon, message.clone()).padding([4, 2]);
+            let home: Element<'_, Message> =
+                if tab.search.is_some() || desktop.action_menu.is_some() {
+                    home.into()
+                } else {
+                    tooltip(
+                        home,
+                        text("Home").font(font).size(size),
+                        tooltip::Position::Bottom,
+                    )
+                    .into()
+                };
+            a11y::named_button("files-crumb-home", "Home", Some(message), home)
         } else {
             container(origin_icon).padding([0, 2]).into()
         };
@@ -299,8 +310,12 @@ fn breadcrumb<'a>(
             }
         }
         for (path, label, _) in ancestors[..count].iter().rev() {
+            let message = Message::Go(id, (*path).to_owned());
             trail = trail
-                .push(
+                .push(a11y::named_button(
+                    format!("files-crumb-{}", a11y::path_key(path)),
+                    label.clone(),
+                    Some(message.clone()),
                     crumb_button(
                         text(label.clone())
                             .font(font)
@@ -308,21 +323,26 @@ fn breadcrumb<'a>(
                             .shaping(text::Shaping::Advanced)
                             .color(chrome::ink(appearance, ColorRole::Muted))
                             .wrapping(text::Wrapping::None),
-                        Message::Go(id, (*path).to_owned()),
+                        message,
                     )
                     .padding([4, 4]),
-                )
+                ))
                 .push(desktop.icons.chrome(Icon::Forward, 12.0, 0.82));
         }
+        let edit = Message::Command(id, Command::Location);
         trail
-            .push(
+            .push(semantic(
+                Node::button(current.clone())
+                    .key("files-crumb-current")
+                    .description("Current folder. Activate to edit the location")
+                    .on_click(Some(edit.clone())),
                 crumb_button(
                     chrome::single_line(current.clone(), current_font, size, None, false),
-                    Message::Command(id, Command::Location),
+                    edit,
                 )
                 .padding([4.0, button_inset])
                 .width(Length::Fill),
-            )
+            ))
             .into()
     })
     .height(Length::Shrink);
@@ -344,6 +364,12 @@ fn breadcrumb<'a>(
         )
         .into()
     };
+    let edit = a11y::named_button(
+        "files-location-edit",
+        "Edit location",
+        Some(Message::Command(id, Command::Location)),
+        edit,
+    );
     container(row![crumbs, edit].spacing(2).align_y(Alignment::Center))
         .width(Length::Fill)
         .height((size * 1.3).ceil() + padding.top + padding.bottom)
@@ -410,6 +436,15 @@ fn control<'a>(
         ),
     };
     let font = canopa_ui::font(appearance);
+    let key = match item {
+        Item::Builtin(command) => format!("files-toolbar-{}", command.id()),
+        Item::Action(action) => format!("files-toolbar-action-{}", action.id),
+        Item::Location => unreachable!("location fills its own layout slot"),
+    };
+    let node = Node::button(title)
+        .key(key)
+        .disabled(message.is_none())
+        .on_click(message.clone());
     let content: Element<'_, Message> = match item {
         Item::Builtin(command) if command_icon(*command).is_some() => {
             let (icon, label) = command_icon(*command).unwrap();
@@ -476,16 +511,18 @@ fn control<'a>(
                 .is_some_and(|source| source.window == menu.window())
         })
     {
-        return button;
+        return semantic(node, button);
     }
-    tooltip(
-        button,
-        text(title)
-            .font(font)
-            .size(appearance.typography().label_size.px()),
-        tooltip::Position::Bottom,
+    semantic(
+        node,
+        tooltip(
+            button,
+            text(title)
+                .font(font)
+                .size(appearance.typography().label_size.px()),
+            tooltip::Position::Bottom,
+        ),
     )
-    .into()
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> Element<'a, Message> {
@@ -499,11 +536,12 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
         menu_padding.right -= 6.0;
     }
     let menu_width = 18.0 + menu_padding.left + menu_padding.right;
+    let open_menu = source
+        .as_ref()
+        .map(|_| Message::Action(actions_ui::Event::Menu(id)));
     let menu = canopa_ui::styled_action(
         desktop.icons.chrome(Icon::More, 18.0, 1.0),
-        source
-            .as_ref()
-            .map(|_| Message::Action(actions_ui::Event::Menu(id))),
+        open_menu.clone(),
         canopa_ui::Action::Normal,
         false,
         appearance,
@@ -521,6 +559,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
             )
             .into()
         };
+    let menu = semantic(
+        Node::button("Actions")
+            .key("files-toolbar-menu")
+            .disabled(open_menu.is_none())
+            .on_click(open_menu),
+        menu,
+    );
     let window_width = desktop.windows.get(&id).map_or(0.0, |window| window.width);
     let show_places = !sidebar_visible(desktop.configuration.settings.sidebar, window_width);
     let (menu, menu_width) = if show_places {
@@ -533,6 +578,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
         let size = appearance.typography().label_size.px();
         let places_width =
             chrome::text_width("Places", font, size) + padding.left + padding.right + 24.0;
+        let open_places = source
+            .as_ref()
+            .map(|_| Message::Action(actions_ui::Event::Locations(id)));
         let places = canopa_ui::styled_action(
             row![
                 desktop.icons.chrome(
@@ -544,15 +592,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
             ]
             .spacing(6)
             .align_y(Alignment::Center),
-            source
-                .as_ref()
-                .map(|_| Message::Action(actions_ui::Event::Locations(id))),
+            open_places.clone(),
             canopa_ui::Action::Normal,
             false,
             appearance,
         )
         .padding(padding)
         .width(places_width);
+        let places = a11y::button("files-toolbar-places", open_places, places);
         (
             row![places, menu]
                 .spacing(4)

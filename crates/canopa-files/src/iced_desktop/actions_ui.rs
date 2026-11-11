@@ -580,16 +580,22 @@ pub(super) fn overlay<'a>(
             | Item::Device(..)
             | Item::Place(_) => None,
         };
-        items = items.push(
+        let message = Message::Action(Event::MenuItem(menu.source.clone(), index));
+        items = items.push(super::accessibility_ui::semantic(
+            super::accessibility_ui::Node::menu_item(label.clone())
+                .key(format!("files-menu-item-{index}"))
+                .position(index + 1, menu.items.len())
+                .focused(index == menu.focused)
+                .on_click(Some(message.clone())),
             canopa_ui::styled_action(
                 desktop.icons.label(icon, label, size, font, true),
-                Some(Message::Action(Event::MenuItem(menu.source.clone(), index))),
+                Some(message),
                 canopa_ui::Action::Quiet,
                 index == menu.focused,
                 appearance,
             )
             .width(Length::Fill),
-        );
+        ));
     }
     let appearance = appearance.clone();
     let menu = container(scrollable(items).id(menu_id(id)).height(Length::Shrink))
@@ -605,12 +611,15 @@ pub(super) fn overlay<'a>(
                 .on_right_press(Message::Action(Event::Close(id))),
         )
         .push(
-            container(opaque(menu))
-                .padding([74, 10])
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_right(Length::Fill)
-                .align_top(Length::Fill),
+            container(opaque(super::accessibility_ui::semantic(
+                super::accessibility_ui::Node::menu("Actions").key("files-menu"),
+                menu,
+            )))
+            .padding([74, 10])
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_right(Length::Fill)
+            .align_top(Length::Fill),
         )
         .into()
 }
