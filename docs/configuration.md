@@ -116,7 +116,9 @@ available, and it keeps watching the selected file. In both cases every bar show
 a red warning badge at the top of its end zone, and a persistent Notify
 notification names the file, line and column and the parser's message, with
 **Open file** and **Open Settings** buttons. Clicking the badge opens the file
-(right-click opens Settings). The first valid save applies the configuration and
+(right-click opens Settings). Settings opens at **Widgets** for a problem in the
+`shell` section and at **Personalization** for syntax, schema-version and
+appearance problems; an open Settings window switches to that page. The first valid save applies the configuration and
 removes both. The notification waits for Notify if it is not running yet. Only safe
 error codes go to the journal and the explicit command; use
 `canopa-shell --check-config --show-source` (with the same source override, if any)

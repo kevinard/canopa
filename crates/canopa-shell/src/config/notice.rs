@@ -16,7 +16,8 @@ pub(crate) struct ConfigNotice {
     /// One-based line and column of the reported position.
     pub(crate) position: Option<(usize, usize)>,
     pub(crate) message: String,
-    /// Shell-namespace problems open Settings at the Shell's Widgets page.
+    /// Shell-namespace problems open Settings at the Shell's Widgets page;
+    /// others at Personalization.
     pub(crate) shell_namespace: bool,
 }
 
@@ -102,7 +103,15 @@ impl ConfigNotice {
     }
 
     pub(crate) fn actions(&self) -> Vec<NoticeAction> {
-        let settings = NoticeAction::OpenSettings(self.shell_namespace.then_some("widgets"));
+        // Shell problems open the Widgets page. Envelope, syntax and appearance
+        // problems open Personalization, which edits the shared appearance
+        // and reports why the file can't be read. A running Settings window
+        // switches to the page.
+        let settings = NoticeAction::OpenSettings(Some(if self.shell_namespace {
+            "widgets"
+        } else {
+            "personal"
+        }));
         match &self.path {
             Some(path) => vec![NoticeAction::OpenFile(path.clone()), settings],
             None => vec![settings],
@@ -222,6 +231,9 @@ mod tests {
         assert!(notice.message.starts_with("expected schema-version 1"));
         assert!(!notice.message.contains("near byte"));
         assert!(!notice.shell_namespace);
-        assert_eq!(notice.actions()[1], NoticeAction::OpenSettings(None));
+        assert_eq!(
+            notice.actions()[1],
+            NoticeAction::OpenSettings(Some("personal"))
+        );
     }
 }
