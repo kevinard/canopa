@@ -1,16 +1,7 @@
 use crate::theme;
 
 /// Connectivity level reported by the active backend.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum NetworkConnectivity {
-    Full,    // full internet access
-    Limited, // local/site connectivity only
-    #[default]
-    Unknown, // no reachability result yet
-    Connected, // link is online, Internet reachability is unmeasured
-    Portal,  // captive portal detected
-    None,    // no connectivity
-}
+pub use canopa_services::network::Connectivity as NetworkConnectivity;
 
 /// Runtime state for the network module.
 #[derive(Debug, Clone, Default, PartialEq)]

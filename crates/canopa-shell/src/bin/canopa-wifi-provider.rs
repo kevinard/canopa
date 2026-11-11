@@ -2,7 +2,7 @@ use canopa_panel_protocol::v1::{
     ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, ProviderEvent,
 };
 use canopa_panel_protocol::v5::Update;
-use canopa_shell::wifi_provider::backends::choose_backend;
+use canopa_services::network::wifi::backends::choose_backend;
 use canopa_shell::wifi_provider::transport::{Action, Transport};
 use canopa_shell::wifi_provider::{WifiBackendErrorCategory, WifiPanelProvider};
 

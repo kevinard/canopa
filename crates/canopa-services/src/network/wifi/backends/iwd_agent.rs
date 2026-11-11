@@ -30,13 +30,9 @@ impl Agent {
         if header.sender().map(|s| s.as_str()) != Some(self.owner.as_str()) {
             return Err(AgentError::Canceled);
         }
-        verify_control(
-            &self.conn,
-            crate::network_integration::Kind::Iwd,
-            &self.owner,
-        )
-        .await
-        .map_err(|_| AgentError::Canceled)?;
+        verify_control(&self.conn, crate::network::bundle::Kind::Iwd, &self.owner)
+            .await
+            .map_err(|_| AgentError::Canceled)?;
         let proxy = IwdNetworkProxy::builder(&self.conn)
             .destination(self.owner.clone())
             .map_err(|_| AgentError::Canceled)?
@@ -52,13 +48,9 @@ impl Agent {
         {
             return Err(AgentError::Canceled);
         }
-        verify_control(
-            &self.conn,
-            crate::network_integration::Kind::Iwd,
-            &self.owner,
-        )
-        .await
-        .map_err(|_| AgentError::Canceled)?;
+        verify_control(&self.conn, crate::network::bundle::Kind::Iwd, &self.owner)
+            .await
+            .map_err(|_| AgentError::Canceled)?;
         self.secret
             .lock()
             .unwrap()

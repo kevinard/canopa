@@ -1,134 +1,16 @@
-pub mod backends;
-pub mod cleanup;
-mod identity;
 pub mod session;
 pub mod transport;
-
-use std::future::Future;
-use std::pin::Pin;
 
 use canopa_panel_protocol::v1::{
     ExternalPanelDocument, ExternalPanelElement, ExternalPanelSeverity, ExternalSelectableEntry,
     ProviderEvent,
 };
 
-pub type WifiBackendFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, WifiBackendError>> + Send + 'a>>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackendName {
-    Iwd,
-    NetworkManager,
-    Unavailable,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BackendCapabilities {
-    pub can_scan_while_connecting: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WifiBackendError {
-    category: WifiBackendErrorCategory,
-}
-
-impl WifiBackendError {
-    pub fn new(category: WifiBackendErrorCategory) -> Self {
-        Self { category }
-    }
-
-    pub fn category(&self) -> WifiBackendErrorCategory {
-        self.category
-    }
-}
-
-impl std::fmt::Display for WifiBackendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self.category {
-            WifiBackendErrorCategory::TargetChanged => "selected Wi-Fi target changed",
-            WifiBackendErrorCategory::NoControl => {
-                "no supported Wi-Fi control backend is available"
-            }
-            WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed",
-            WifiBackendErrorCategory::ConnectionFailed => "Wi-Fi connection failed",
-            WifiBackendErrorCategory::CredentialRejected => "network credential was rejected",
-            WifiBackendErrorCategory::UnsupportedNetwork => "Wi-Fi network type is unsupported",
-            WifiBackendErrorCategory::AuthorizationRequired => "Wi-Fi authorization is required",
-        })
-    }
-}
-
-impl std::error::Error for WifiBackendError {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WifiBackendErrorCategory {
-    NoControl,
-    ScanFailed,
-    ConnectionFailed,
-    CredentialRejected,
-    UnsupportedNetwork,
-    AuthorizationRequired,
-    TargetChanged,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WifiSecurity {
-    Open,
-    Personal,
-    Enterprise,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WifiNetwork {
-    pub id: String,
-    pub label: String,
-    pub signal_strength: u8,
-    pub security: WifiSecurity,
-    pub known: bool,
-    pub active: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WifiSnapshot {
-    /// Opaque handle for the currently observed daemon/device pair.
-    pub device_id: Option<String>,
-    pub networks: Vec<WifiNetwork>,
-    pub scanning: bool,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct WifiConnectRequest {
-    pub device_id: String,
-    pub network_id: Option<String>,
-    pub label: String,
-    pub credential: Option<String>,
-    pub hidden: bool,
-}
-
-impl std::fmt::Debug for WifiConnectRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WifiConnectRequest")
-            .field("network_id", &self.network_id)
-            .field("label", &self.label)
-            .field(
-                "credential",
-                &self.credential.as_ref().map(|_| "[redacted]"),
-            )
-            .field("hidden", &self.hidden)
-            .finish()
-    }
-}
-
-pub trait WifiControlBackend {
-    fn name(&self) -> BackendName;
-    fn capabilities(&self) -> BackendCapabilities;
-    fn initial_snapshot<'a>(&'a mut self) -> WifiBackendFuture<'a, WifiSnapshot>;
-    fn scan<'a>(&'a mut self) -> WifiBackendFuture<'a, WifiSnapshot>;
-    fn connect<'a>(
-        &'a mut self,
-        request: WifiConnectRequest,
-    ) -> WifiBackendFuture<'a, WifiSnapshot>;
-}
+pub use canopa_services::network::wifi::{
+    BackendCapabilities, BackendName, WifiBackendError, WifiBackendErrorCategory,
+    WifiBackendFuture, WifiConnectRequest, WifiControlBackend, WifiNetwork, WifiSecurity,
+    WifiSnapshot,
+};
 
 pub fn no_control_document() -> ExternalPanelDocument {
     ExternalPanelDocument {
@@ -682,3 +564,6 @@ fn network_description(network: &WifiNetwork) -> String {
     parts.push(signal.as_str());
     parts.join(" ")
 }
+
+#[cfg(test)]
+mod backend_tests;

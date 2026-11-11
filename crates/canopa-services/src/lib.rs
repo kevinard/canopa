@@ -3,3 +3,11 @@
 //! System services own state and policy; this crate only reads, observes and
 //! asks them. It has no Iced, Wayland or panel-protocol dependency, so the Shell,
 //! its headless providers and Settings share one client per service.
+
+pub mod bus;
+mod error;
+pub mod network;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
+
+pub use error::{Error, ServiceState};

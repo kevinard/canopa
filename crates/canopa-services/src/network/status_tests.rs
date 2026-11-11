@@ -41,12 +41,17 @@ impl Link {
     }
 }
 
-type ReadingReceiver = mpsc::UnboundedReceiver<Result<(NetworkConnectivity, Option<String>), ()>>;
-async fn expect(rx: &mut ReadingReceiver, connectivity: NetworkConnectivity, label: &str) {
+type ReadingReceiver = mpsc::UnboundedReceiver<Result<NetworkStatus, ()>>;
+async fn expect(rx: &mut ReadingReceiver, connectivity: Connectivity, label: &str) {
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let reading = rx.recv().await.unwrap().unwrap();
-            if reading == (connectivity.clone(), Some(label.into())) {
+            if reading
+                == (NetworkStatus {
+                    connectivity: connectivity.clone(),
+                    label: Some(label.into()),
+                })
+            {
                 break;
             }
         }
@@ -57,7 +62,7 @@ async fn expect(rx: &mut ReadingReceiver, connectivity: NetworkConnectivity, lab
 
 #[tokio::test]
 async fn networkd_tracks_usable_links_while_manager_stays_online() {
-    let bus = crate::test_bus::TestBus::new();
+    let bus = crate::testing::TestBus::new();
     let service = bus.connect().await;
     service
         .object_server()
@@ -93,7 +98,7 @@ async fn networkd_tracks_usable_links_while_manager_stays_online() {
         service.unique_name().unwrap().to_string(),
         tx,
     ));
-    expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
+    expect(&mut rx, Connectivity::Connected, "eth0").await;
     for (index, online, operational, expected) in [
         (4, "online", "routable", "eth0, wlan0"),
         (3, "offline", "no-carrier", "wlan0"),
@@ -115,7 +120,7 @@ async fn networkd_tracks_usable_links_while_manager_stays_online() {
             .await
             .unwrap();
         drop(guard);
-        expect(&mut rx, NetworkConnectivity::Connected, expected).await;
+        expect(&mut rx, Connectivity::Connected, expected).await;
     }
     worker.abort();
     let _ = worker.await;
@@ -148,7 +153,7 @@ impl Active {
 
 #[tokio::test]
 async fn nm_unknown_portal_and_profile_rename_are_distinct() {
-    let bus = crate::test_bus::TestBus::new();
+    let bus = crate::testing::TestBus::new();
     let service = bus.connect().await;
     let path = "/org/freedesktop/NetworkManager";
     service
@@ -171,7 +176,7 @@ async fn nm_unknown_portal_and_profile_rename_are_distinct() {
         service.unique_name().unwrap().to_string(),
         tx,
     ));
-    expect(&mut rx, NetworkConnectivity::Unknown, "Wi-Fi").await;
+    expect(&mut rx, Connectivity::Unknown, "Wi-Fi").await;
     let manager = service
         .object_server()
         .interface::<_, NM>(path)
@@ -184,7 +189,7 @@ async fn nm_unknown_portal_and_profile_rename_are_distinct() {
         .await
         .unwrap();
     drop(guard);
-    expect(&mut rx, NetworkConnectivity::Portal, "Wi-Fi").await;
+    expect(&mut rx, Connectivity::Portal, "Wi-Fi").await;
     let active = service
         .object_server()
         .interface::<_, Active>("/Connection")
@@ -194,15 +199,15 @@ async fn nm_unknown_portal_and_profile_rename_are_distinct() {
     guard.id = "Renamed".into();
     guard.id_changed(active.signal_emitter()).await.unwrap();
     drop(guard);
-    expect(&mut rx, NetworkConnectivity::Portal, "Renamed").await;
+    expect(&mut rx, Connectivity::Portal, "Renamed").await;
     worker.abort();
     let _ = worker.await;
 }
 
 #[tokio::test]
 async fn status_observer_switches_live_bundles_and_recovers_after_absence() {
-    use canopa_shell::network_integration::{Bundle, Kind, NETWORKD, NM as NM_NAME};
-    let bus = crate::test_bus::TestBus::new();
+    use crate::network::bundle::{Bundle, Kind, NETWORKD, NM as NM_NAME};
+    let bus = crate::testing::TestBus::new();
     let client = bus.connect().await;
     let service = bus.connect().await;
     service
@@ -239,7 +244,7 @@ async fn status_observer_switches_live_bundles_and_recovers_after_absence() {
             .unwrap();
     }
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let worker = tokio::spawn(run_network_task(client.clone(), tx));
+    let worker = tokio::spawn(observe(client.clone(), tx));
     assert!(
         tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
             .await
@@ -248,17 +253,17 @@ async fn status_observer_switches_live_bundles_and_recovers_after_absence() {
             .is_err()
     );
     service.request_name(NETWORKD).await.unwrap();
-    expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
+    expect(&mut rx, Connectivity::Connected, "eth0").await;
     assert_eq!(
         Bundle::resolve(&client).await.unwrap().status.unwrap().kind,
         Kind::Networkd
     );
     service.request_name(NM_NAME).await.unwrap();
-    expect(&mut rx, NetworkConnectivity::Full, "Primary").await;
+    expect(&mut rx, Connectivity::Full, "Primary").await;
     let bundle = Bundle::resolve(&client).await.unwrap();
     assert_eq!(bundle.status, bundle.control);
     service.release_name(NM_NAME).await.unwrap();
-    expect(&mut rx, NetworkConnectivity::Connected, "eth0").await;
+    expect(&mut rx, Connectivity::Connected, "eth0").await;
     service.release_name(NETWORKD).await.unwrap();
     assert!(
         tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
@@ -268,10 +273,50 @@ async fn status_observer_switches_live_bundles_and_recovers_after_absence() {
             .is_err()
     );
     service.request_name(NM_NAME).await.unwrap();
-    expect(&mut rx, NetworkConnectivity::Full, "Primary").await;
+    expect(&mut rx, Connectivity::Full, "Primary").await;
     drop(rx);
     tokio::time::timeout(std::time::Duration::from_secs(3), worker)
         .await
         .unwrap()
         .unwrap();
+}
+
+#[tokio::test]
+async fn read_and_watch_report_absence_as_a_state() {
+    use futures_util::StreamExt;
+    let bus = crate::testing::TestBus::new();
+    let client = bus.connect().await;
+    assert_eq!(read(&client).await, Ok(ServiceState::Unavailable));
+    let mut states = watch(client.clone());
+    let next = async |states: &mut crate::bus::StateStream<NetworkStatus>| {
+        tokio::time::timeout(std::time::Duration::from_secs(3), states.next())
+            .await
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(next(&mut states).await, ServiceState::Unavailable);
+    let service = bus.connect().await;
+    service
+        .object_server()
+        .at("/org/freedesktop/NetworkManager", NM { connectivity: 4 })
+        .await
+        .unwrap();
+    service
+        .object_server()
+        .at("/Connection", Active { id: "Home".into() })
+        .await
+        .unwrap();
+    service
+        .request_name("org.freedesktop.NetworkManager")
+        .await
+        .unwrap();
+    let expected = NetworkStatus {
+        connectivity: Connectivity::Full,
+        label: Some("Home".into()),
+    };
+    assert_eq!(
+        next(&mut states).await,
+        ServiceState::Available(expected.clone())
+    );
+    assert_eq!(read(&client).await, Ok(ServiceState::Available(expected)));
 }

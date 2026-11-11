@@ -1,6 +1,6 @@
 //! Live control selection from the same integration policy as network status.
 use super::*;
-use crate::network_integration::{Bundle, Kind, Owner, Watch};
+use crate::network::bundle::{Bundle, Kind, Owner, Watch};
 
 #[derive(Clone, Copy, Default)]
 enum Policy {
@@ -19,6 +19,9 @@ impl Policy {
     }
 }
 
+/// Wi-Fi control on the system bus. `CANOPA_WIFI_PROVIDER_BACKEND` may restrict
+/// the choice to `networkmanager` or `iwd`, or disable it with `none`.
+/// `None` means the system bus is unreachable.
 pub async fn choose_backend() -> Option<RuntimeBackend> {
     let conn = zbus::Connection::system().await.ok()?;
     let policy = match std::env::var("CANOPA_WIFI_PROVIDER_BACKEND")
@@ -42,6 +45,12 @@ pub struct RuntimeBackend {
     cleanup: cleanup::Cleanup,
 }
 impl RuntimeBackend {
+    /// Follow the bundle on `conn` without the environment override, for
+    /// callers that own their connection (and tests on a private bus).
+    pub async fn with_connection(conn: zbus::Connection) -> zbus::Result<Self> {
+        Self::new(conn, Policy::Auto).await
+    }
+
     async fn new(conn: zbus::Connection, policy: Policy) -> zbus::Result<Self> {
         let watch = Watch::new(&conn).await?;
         Ok(Self {
@@ -134,10 +143,7 @@ impl RuntimeBackend {
 
     pub async fn changes(&self) -> zbus::Result<tokio::sync::mpsc::Receiver<()>> {
         let mut signals = futures_util::stream::SelectAll::new();
-        for service in [
-            crate::network_integration::NM,
-            crate::network_integration::IWD,
-        ] {
+        for service in [crate::network::bundle::NM, crate::network::bundle::IWD] {
             let rule = zbus::MatchRule::builder()
                 .msg_type(zbus::message::Type::Signal)
                 .sender(service)?
@@ -200,7 +206,7 @@ pub(super) async fn verify_control(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wifi_provider::backends::tests::{IwdFixture, NmFixture};
+    use crate::network::wifi::backends::tests::{IwdFixture, NmFixture};
 
     async fn update(changes: &mut tokio::sync::mpsc::Receiver<()>) {
         tokio::time::timeout(std::time::Duration::from_secs(3), changes.recv())
@@ -209,31 +215,43 @@ mod tests {
             .unwrap();
     }
 
+    /// A read racing an ownership change reports TargetChanged; read again.
+    async fn settled(backend: &mut RuntimeBackend) -> WifiSnapshot {
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                match backend.initial_snapshot().await {
+                    Ok(snapshot) => return snapshot,
+                    Err(error) => {
+                        assert_eq!(error.category(), WifiBackendErrorCategory::TargetChanged)
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap()
+    }
+
     #[tokio::test]
-    async fn open_provider_tracks_the_status_bundle_and_retires_credentials() {
+    async fn open_backend_tracks_the_status_bundle_and_rejects_old_selections() {
         let fixture = IwdFixture::new().await;
         let client = fixture.bus.connect().await;
-        let backend = RuntimeBackend::new(client.clone(), Policy::Auto)
+        let mut backend = RuntimeBackend::with_connection(client.clone())
             .await
             .unwrap();
         let mut changes = backend.changes().await.unwrap();
-        let mut provider = WifiPanelProvider::new(backend);
-        provider.initial_content().await.unwrap();
-        assert_eq!(provider.backend_name(), BackendName::Iwd);
-        let old = provider.snapshot.networks[0].id.clone();
-        provider
-            .handle_event(ProviderEvent::SelectableListEntryActivated {
-                element_id: "networks".into(),
-                entry_id: old,
-            })
-            .await
-            .unwrap();
-        assert!(provider.credential_prompt.is_some());
+        let old = backend.initial_snapshot().await.unwrap();
+        assert_eq!(backend.name(), BackendName::Iwd);
         let nm = NmFixture::on_bus(&fixture.bus, 2, false).await;
         update(&mut changes).await;
-        provider.synchronize().await.unwrap();
-        assert!(provider.credential_prompt.is_none());
-        assert_eq!(provider.backend_name(), BackendName::NetworkManager);
+        let current = settled(&mut backend).await;
+        assert_eq!(backend.name(), BackendName::NetworkManager);
+        assert_ne!(current.device_id, old.device_id);
+        let stale = super::super::tests::selected_request(old, Some("test-passphrase"));
+        assert_eq!(
+            backend.connect(stale).await.unwrap_err().category(),
+            WifiBackendErrorCategory::TargetChanged
+        );
         let bundle = Bundle::resolve(&client).await.unwrap();
         assert_eq!(bundle.status, bundle.control);
         assert_eq!(
@@ -251,7 +269,7 @@ mod tests {
                 .device_id
                 .is_none()
         );
-        let mut new_panel = RuntimeBackend::new(client.clone(), Policy::Auto)
+        let mut new_panel = RuntimeBackend::with_connection(client.clone())
             .await
             .unwrap();
         assert!(
@@ -264,29 +282,28 @@ mod tests {
         );
         assert_eq!(new_panel.name(), BackendName::NetworkManager);
         nm._service
-            .release_name(crate::network_integration::NM)
+            .release_name(crate::network::bundle::NM)
             .await
             .unwrap();
         update(&mut changes).await;
-        provider.synchronize().await.unwrap();
-        assert_eq!(provider.backend_name(), BackendName::Iwd);
+        settled(&mut backend).await;
+        assert_eq!(backend.name(), BackendName::Iwd);
         fixture
             .service
-            .release_name(crate::network_integration::IWD)
+            .release_name(crate::network::bundle::IWD)
             .await
             .unwrap();
         update(&mut changes).await;
-        provider.synchronize().await.unwrap();
-        assert_eq!(provider.backend_name(), BackendName::Unavailable);
-        assert!(provider.snapshot.device_id.is_none());
+        assert!(settled(&mut backend).await.device_id.is_none());
+        assert_eq!(backend.name(), BackendName::Unavailable);
         fixture
             .service
-            .request_name(crate::network_integration::IWD)
+            .request_name(crate::network::bundle::IWD)
             .await
             .unwrap();
         update(&mut changes).await;
-        provider.synchronize().await.unwrap();
-        assert_eq!(provider.backend_name(), BackendName::Iwd);
+        settled(&mut backend).await;
+        assert_eq!(backend.name(), BackendName::Iwd);
     }
 
     #[tokio::test]
@@ -304,7 +321,7 @@ mod tests {
                 result = &mut work => panic!("activation ended early: {result:?}"),
                 _ = async { while !fixture.observed.load(std::sync::atomic::Ordering::SeqCst) { tokio::task::yield_now().await; } } => {}
             }
-            fixture._service.release_name(crate::network_integration::NM).await.unwrap();
+            fixture._service.release_name(crate::network::bundle::NM).await.unwrap();
             assert_eq!(work.await.unwrap_err().category(), WifiBackendErrorCategory::TargetChanged);
         }).await.unwrap();
         cleanup.finish().await;

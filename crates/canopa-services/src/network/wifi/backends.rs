@@ -1,8 +1,6 @@
-#[path = "runtime_backend.rs"]
 mod runtime_backend;
 use runtime_backend::verify_control;
 pub use runtime_backend::{RuntimeBackend, choose_backend};
-#[path = "iwd_agent.rs"]
 mod iwd_agent;
 use iwd_agent::IwdAgentRegistration;
 // D-Bus Wi-Fi adapters. Wire methods follow the NetworkManager and iwd APIs;
@@ -93,7 +91,7 @@ impl NetworkManagerBackend {
     async fn verify_owner(&self) -> Result<(), WifiBackendError> {
         verify_control(
             &self.conn,
-            crate::network_integration::Kind::NetworkManager,
+            crate::network::bundle::Kind::NetworkManager,
             &self.owner,
         )
         .await
@@ -438,12 +436,8 @@ impl NetworkManagerBackend {
                         .build()
                         .await
                         .map_err(connection_error)?;
-                    verify_control(
-                        &conn,
-                        crate::network_integration::Kind::NetworkManager,
-                        &owner,
-                    )
-                    .await?;
+                    verify_control(&conn, crate::network::bundle::Kind::NetworkManager, &owner)
+                        .await?;
                     let options = HashMap::from([("persist".to_string(), Value::from("memory"))]);
                     let (profile, active, _) = manager
                         .add_and_activate_connection2(settings, &device, &ap, options)
@@ -601,14 +595,14 @@ fn profile_security(key: &str) -> WifiSecurity {
     }
 }
 
-type Settings = HashMap<String, HashMap<String, OwnedValue>>;
+pub(crate) type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 fn owned(value: impl Into<Value<'static>>) -> OwnedValue {
     value
         .into()
         .try_into()
         .expect("owned scalar/array has no file descriptors")
 }
-fn nm_settings(
+pub(crate) fn nm_settings(
     request: &WifiConnectRequest,
     ssid: Vec<u8>,
     security: WifiSecurity,
@@ -674,12 +668,7 @@ impl IwdBackend {
     }
 
     async fn verify_owner(&self) -> Result<(), WifiBackendError> {
-        verify_control(
-            &self.conn,
-            crate::network_integration::Kind::Iwd,
-            &self.owner,
-        )
-        .await
+        verify_control(&self.conn, crate::network::bundle::Kind::Iwd, &self.owner).await
     }
 
     async fn snapshot(&self) -> Result<WifiSnapshot, WifiBackendError> {
@@ -929,7 +918,7 @@ impl IwdBackend {
     }
 }
 
-type ManagedObjects =
+pub(crate) type ManagedObjects =
     HashMap<OwnedObjectPath, HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>>;
 
 #[zbus::proxy(
