@@ -9,10 +9,12 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
 use fixed_decimal::{Decimal, FloatPrecision};
 use fluent::FluentValue;
 use icu_calendar::{Date, Gregorian};
+/// How long weekday and month names are (`Long`: Monday, `Medium`: Mon,
+/// `Short`: M), for [`weekday`] and [`weekday_month_day_with`].
+pub use icu_datetime::options::Length;
 use icu_datetime::{
     FixedCalendarDateTimeFormatter, NoCalendarFormatter, fieldsets,
     input::{DateTime, Time},
-    options::Length,
 };
 use icu_decimal::DecimalFormatter;
 use icu_locale_core::Locale;
