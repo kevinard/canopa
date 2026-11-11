@@ -2,7 +2,7 @@
 #[macro_use]
 mod i18n;
 use canopa_config::{Component, Format, MAX_BYTES, Request};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::{
     collections::HashMap,
     io::Write,
@@ -60,6 +60,7 @@ enum Operation {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
+    /// Check or migrate the Canopa configuration.
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -88,8 +89,39 @@ enum ConfigCommand {
     },
 }
 
+/// The command line with its descriptions in the person's language; the
+/// derive's doc comments are the English source.
+fn localized_command() -> clap::Command {
+    Cli::command()
+        .about(fl!("cli-about"))
+        .mut_subcommand("settings", |c| c.about(fl!("cli-settings-about")))
+        .mut_subcommand("wallpaper", |c| c.about(fl!("cli-wallpaper-about")))
+        .mut_subcommand("lock", |c| c.about(fl!("cli-lock-about")))
+        .mut_subcommand("greeter", |c| c.about(fl!("cli-greeter-about")))
+        .mut_subcommand("polkit", |c| c.about(fl!("cli-polkit-about")))
+        .mut_subcommand("pinentry", |c| c.about(fl!("cli-pinentry-about")))
+        .mut_subcommand("idle", |c| c.about(fl!("cli-idle-about")))
+        .mut_subcommand("config", |c| {
+            c.about(fl!("cli-config-about"))
+                .mut_subcommand("check", |c| {
+                    c.about(fl!("cli-config-check-about"))
+                        .mut_arg("file", |a| a.help(fl!("cli-config-check-file")))
+                        .mut_arg("show_source", |a| {
+                            a.help(fl!("cli-config-check-show-source"))
+                        })
+                })
+                .mut_subcommand("migrate", |c| {
+                    c.about(fl!("cli-config-migrate-about"))
+                        .long_about(fl!("cli-config-migrate-long-about"))
+                })
+        })
+}
+
 fn main() {
-    if let Err(error) = run(Cli::parse()) {
+    canopa_i18n::init();
+    let cli = Cli::from_arg_matches(&localized_command().get_matches())
+        .unwrap_or_else(|error| error.exit());
+    if let Err(error) = run(cli) {
         eprintln!("canopa: {error:#}");
         std::process::exit(1);
     }
@@ -108,7 +140,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             command: ConfigCommand::Check { file, show_source },
         } => {
             let request = file.map(Request::common).unwrap_or(Request::Discover);
-            anyhow::ensure!(check(&request, show_source)?, "configuration check failed");
+            anyhow::ensure!(check(&request, show_source)?, fl!("cli-check-failed"));
         }
         Operation::Config {
             command:
@@ -120,7 +152,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         } => {
             anyhow::ensure!(
                 shell.is_some() || notifications.is_some(),
-                "specify at least one legacy source"
+                fl!("cli-migrate-no-source")
             );
             // No source rewriting: wrapping preserves comments and relative path semantics.
             let mut text = String::from("schema-version 1\n");
@@ -138,20 +170,17 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                     text.push_str("\n}\n");
                 }
             }
-            anyhow::ensure!(
-                text.len() <= MAX_BYTES,
-                "combined configuration exceeds 1 MiB"
-            );
+            anyhow::ensure!(text.len() <= MAX_BYTES, fl!("cli-migrate-too-large"));
             let mut snapshot = tempfile::NamedTempFile::new()?;
             snapshot.write_all(text.as_bytes())?;
             anyhow::ensure!(
                 check(&Request::common(snapshot.path()), false)?,
-                "migration rejected by a component schema"
+                fl!("cli-migrate-rejected")
             );
             install_new(&output, text.as_bytes())?;
             println!(
-                "Created {}. Install this candidate at the shared configuration path (or select it explicitly), then restart Canopa Shell and reload Notify.",
-                output.display()
+                "{}",
+                fl!("cli-migrate-created", path = output.display().to_string())
             );
         }
     }
@@ -162,7 +191,7 @@ fn companion(name: &str, args: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
     let executable = std::env::current_exe()?;
     let path = executable
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("cannot find installation directory"))?
+        .ok_or_else(|| anyhow::anyhow!(fl!("cli-no-installation-directory")))?
         .join(name);
     use std::os::unix::process::CommandExt;
     // Replace the forwarding CLI so resident companions have one process lifetime.
@@ -300,26 +329,29 @@ fn check_component(
     }
     let output = command
         .output()
-        .map_err(|_| anyhow::anyhow!("component validator could not execute"))?;
+        .map_err(|_| anyhow::anyhow!(fl!("cli-validator-cannot-run")))?;
     if show_source {
         if let Some(path) = original_path {
             eprintln!(
-                "{}: {} (diagnostics refer to an immutable temporary copy)",
-                component.namespace(),
-                path.display()
+                "{}",
+                fl!(
+                    "cli-show-source-copy",
+                    component = component.namespace(),
+                    path = path.display().to_string()
+                )
             );
         }
         std::io::stderr().write_all(&output.stderr)?;
     }
     let mut report: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|_| anyhow::anyhow!("component validator returned an invalid report"))?;
+        .map_err(|_| anyhow::anyhow!(fl!("cli-validator-invalid-report")))?;
     anyhow::ensure!(
         report.get("component") == Some(&serde_json::to_value(component)?),
-        "component validator returned the wrong schema owner"
+        fl!("cli-validator-wrong-owner")
     );
     anyhow::ensure!(
         output.status.success() == report.get("error").is_none(),
-        "component validator returned an inconsistent result"
+        fl!("cli-validator-inconsistent")
     );
     if let Some(path) = original_path {
         snapshots[path].restore_offset(&mut report);
@@ -343,7 +375,7 @@ fn validator(component: Component) -> anyhow::Result<Command> {
     let executable = std::env::current_exe()?;
     let sibling = executable
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("cannot find installation directory"))?
+        .ok_or_else(|| anyhow::anyhow!(fl!("cli-no-installation-directory")))?
         .join(match component {
             Component::Shell => "canopa-shell",
             Component::Notifications => "canopa-notify",
@@ -354,10 +386,7 @@ fn validator(component: Component) -> anyhow::Result<Command> {
             Component::Polkit => "canopa-polkit",
             Component::Pinentry => "canopa-pinentry",
         });
-    anyhow::ensure!(
-        sibling.is_file(),
-        "install all Canopa executables beside the canopa executable"
-    );
+    anyhow::ensure!(sibling.is_file(), fl!("cli-install-all-executables"));
     let mut command = Command::new(sibling);
     command.arg(match component {
         Component::Shell => "--check-config",
@@ -376,14 +405,14 @@ fn install_new(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let path = std::path::absolute(path)?;
     let parent = path
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("output needs a parent directory"))?;
+        .ok_or_else(|| anyhow::anyhow!(fl!("cli-output-no-parent")))?;
     // Require an existing directory: the command only creates the requested file.
     let mut pending = tempfile::NamedTempFile::new_in(parent)?;
     pending.write_all(bytes)?;
     pending.as_file().sync_all()?;
     pending
         .persist_noclobber(&path)
-        .map_err(|_| anyhow::anyhow!("output already exists or cannot be created"))?;
+        .map_err(|_| anyhow::anyhow!(fl!("cli-output-exists")))?;
     std::fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
@@ -439,6 +468,43 @@ mod tests {
         let unchanged = report.clone();
         snapshot.restore_offset(&mut report);
         assert_eq!(report, unchanged);
+    }
+
+    #[test]
+    fn messages_and_help_follow_the_language() {
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        struct Restore(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                canopa_i18n::select(canopa_i18n::Selection::default());
+            }
+        }
+        let english = localized_command();
+        assert_eq!(
+            english.get_about().unwrap().to_string(),
+            "Canopa desktop tools"
+        );
+        let (message, about) = {
+            let _restore = Restore(SERIAL.lock().unwrap_or_else(|p| p.into_inner()));
+            canopa_i18n::select(canopa_i18n::Selection {
+                languages: canopa_i18n::negotiate(&["fr".parse().unwrap()]),
+                time: "fr".parse().unwrap(),
+                numbers: "fr".parse().unwrap(),
+                pseudo: false,
+            });
+            let command = localized_command();
+            let check = command
+                .find_subcommand("config")
+                .and_then(|config| config.find_subcommand("check"))
+                .unwrap();
+            (
+                fl!("cli-check-failed"),
+                check.get_about().unwrap().to_string(),
+            )
+        };
+        assert_eq!(message, "la vérification de la configuration a échoué");
+        assert!(about.starts_with("Vérifier"), "{about}");
+        localized_command().debug_assert();
     }
 
     #[test]
