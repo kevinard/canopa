@@ -418,3 +418,56 @@ async fn app_preferences_round_trip_through_the_control_api() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn sharing_hides_content_of_visible_and_critical_banners() {
+    let temp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::open(DaemonOptions::graphical(
+        temp.path().join("history.db"),
+        canopa_notify::NoopBannerPresenter,
+    ))
+    .await
+    .unwrap();
+    daemon
+        .receive_notification(canopa_notify::NotificationInput {
+            body: "private body".into(),
+            ..notification("Chat", "Secret summary")
+        })
+        .await
+        .unwrap();
+    assert_eq!(daemon.visible_banners().await[0].summary, "Secret summary");
+    daemon.set_suppression(SuppressionState {
+        fullscreen: false,
+        screen_sharing: true,
+    });
+    let hidden = &daemon.visible_banners().await[0];
+    assert_eq!(hidden.summary, canopa_notify::HIDDEN_CONTENT_SUMMARY);
+    assert!(hidden.body.is_empty() && hidden.body_segments.is_empty() && hidden.image.is_none());
+    assert_eq!(
+        hidden.app_name, "Chat",
+        "the application stays identifiable"
+    );
+    daemon
+        .receive_notification(NotificationInput {
+            urgency: Urgency::Critical,
+            ..notification("Bank", "Code 123456")
+        })
+        .await
+        .unwrap();
+    assert!(
+        daemon
+            .visible_banners()
+            .await
+            .iter()
+            .all(|banner| banner.summary == canopa_notify::HIDDEN_CONTENT_SUMMARY)
+    );
+    daemon.set_suppression(SuppressionState::default());
+    assert!(
+        daemon
+            .visible_banners()
+            .await
+            .iter()
+            .any(|banner| banner.summary == "Code 123456")
+    );
+    daemon.shutdown().await.unwrap();
+}

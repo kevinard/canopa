@@ -348,6 +348,9 @@ pub enum BannerFocusBehavior {
     DoesNotTakeFocus,
 }
 
+/// The summary shown instead of content while content is hidden.
+pub const HIDDEN_CONTENT_SUMMARY: &str = "New notification";
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BannerView {
     pub notification_id: InternalNotificationId,
@@ -523,6 +526,17 @@ impl BannerView {
             notification_id: self.notification_id,
             revision: self.revision,
         }
+    }
+
+    /// Screen-sharing presentation: application identity and actions only.
+    pub fn with_hidden_content(mut self) -> Self {
+        self.summary = HIDDEN_CONTENT_SUMMARY.into();
+        self.body.clear();
+        self.body_content = NotificationBodyContent::default();
+        self.body_segments.clear();
+        self.image = None;
+        self.progress = None;
+        self
     }
 
     pub(crate) fn from_thread(

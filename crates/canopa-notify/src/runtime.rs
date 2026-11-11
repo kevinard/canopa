@@ -1372,6 +1372,7 @@ impl NotificationRuntime {
             .iter()
             .map(|thread| (thread.id, thread.revision))
             .collect();
+        let hide_content = self.active_suppression() == Some(crate::Suppression::ScreenSharing);
         let resources = self.resources.lock().unwrap();
         (
             BannerPresentation {
@@ -1379,7 +1380,12 @@ impl NotificationRuntime {
                     .into_iter()
                     .map(|thread| {
                         let image = resources.image_for(thread.id, thread.revision);
-                        BannerView::from_thread(thread, image)
+                        let view = BannerView::from_thread(thread, image);
+                        if hide_content {
+                            view.with_hidden_content()
+                        } else {
+                            view
+                        }
                     })
                     .collect(),
                 overflow_count,

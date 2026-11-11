@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 mod banner_interactions;
+#[cfg(feature = "gui")]
+mod compositor_suppression;
 
 mod control_adapters;
 mod notification_server;
@@ -286,6 +288,10 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     let interactions = startup
         .banner_interactions
         .map(|receiver| banner_interactions::Forwarder::spawn(daemon.clone(), receiver));
+    #[cfg(feature = "gui")]
+    let suppression = (mode == DaemonMode::Service)
+        .then(|| compositor_suppression::spawn(daemon.clone()))
+        .flatten();
     eprintln!(
         "level=info component=daemon event=startup mode={} socket={}",
         mode.as_str(),
@@ -330,6 +336,10 @@ async fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
         }
     }
 
+    #[cfg(feature = "gui")]
+    if let Some(suppression) = suppression {
+        suppression.abort();
+    }
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         if let Some(notifications) = notifications {
             notifications.shutdown().await?;
