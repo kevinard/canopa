@@ -6,7 +6,7 @@ use crate::print::{
 };
 use iced::{
     Element, Event, Length, Size, Task, Theme, keyboard,
-    widget::{column, container, row, scrollable, text, text_input},
+    widget::{column, container, scrollable, text, text_input},
     window,
 };
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,12 @@ pub fn run(request: Request, appearance: canopa_theme::Appearance) -> anyhow::Re
         Form::update,
         Form::view,
     )
-    .title(|_: &Form, _| "Printer authentication — Canopa".to_owned())
+    .title(|_: &Form, _| {
+        fl!(
+            "portal-window-title",
+            title = fl!("portal-print-auth-title")
+        )
+    })
     .theme(|app: &Form, _| app.theme.clone())
     .subscription(|_: &Form| iced::event::listen().map(Message::Event))
     .default_font(font)
@@ -213,7 +218,7 @@ impl Form {
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         if self.completed {
-            return container(text("Closing authentication…"))
+            return container(text(fl!("portal-print-auth-closing")))
                 .padding(20)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -222,70 +227,69 @@ impl Form {
         }
         let challenge = &self.request.challenge;
         let mut content = column![
-            text("Printer authentication").size(24),
+            text(fl!("portal-print-auth-title")).size(24),
             text(if self.request.context.title.is_empty() {
-                "Document"
+                fl!("portal-print-document")
             } else {
-                &self.request.context.title
+                self.request.context.title.clone()
             })
             .size(18),
             text(if self.request.context.app_id.is_empty() {
-                "Requested by an application"
+                fl!("portal-requested-by-application")
             } else {
-                &self.request.context.app_id
+                self.request.context.app_id.clone()
             })
             .style(canopa_ui::muted)
         ]
         .spacing(12)
         .width(Length::Fill);
         content = content.push(text(match &challenge.kind {
-            Kind::Server { realm, .. } if !realm.is_empty() => format!(
-                "Sign in to print server {}:{} ({realm}).",
-                challenge.endpoint.server, challenge.endpoint.port
+            Kind::Server { realm, .. } if !realm.is_empty() => fl!(
+                "portal-print-auth-server-realm",
+                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port),
+                realm = realm.as_str()
             ),
-            Kind::Server { .. } => format!(
-                "Sign in to print server {}:{}.",
-                challenge.endpoint.server, challenge.endpoint.port
+            Kind::Server { .. } => fl!(
+                "portal-print-auth-server",
+                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port)
             ),
-            Kind::Queue { destination, .. } => format!(
-                "Credentials for printer {}{} on {}:{}.",
-                destination.queue,
-                destination
-                    .instance
-                    .as_ref()
-                    .map(|i| format!(" / {i}"))
-                    .unwrap_or_default(),
-                challenge.endpoint.server,
-                challenge.endpoint.port
+            Kind::Queue { destination, .. } => fl!(
+                "portal-print-auth-queue",
+                printer = format!(
+                    "{}{}",
+                    destination.queue,
+                    destination
+                        .instance
+                        .as_ref()
+                        .map(|i| format!(" / {i}"))
+                        .unwrap_or_default()
+                ),
+                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port)
             ),
         }));
         content = content.push(
             text(match challenge.endpoint.transport {
-                Transport::Local => "Connected through a local printer socket.",
-                Transport::Loopback => {
-                    "Connected to this computer. This connection is not encrypted."
-                }
-                Transport::Tls => "Connected using TLS encryption.",
+                Transport::Local => fl!("portal-print-auth-local"),
+                Transport::Loopback => fl!("portal-print-auth-loopback"),
+                Transport::Tls => fl!("portal-print-auth-tls"),
             })
             .size(14)
             .style(canopa_ui::muted),
         );
         if challenge.attempt > 1 {
-            content = content.push(
-                text("The previous credentials were not accepted. Try again or cancel.").size(14),
-            );
+            content = content.push(text(fl!("portal-print-auth-rejected")).size(14));
         }
         for (index, field) in challenge.fields().iter().enumerate() {
             let label = match field {
-                Field::Domain => "Domain",
-                Field::Username => "Username",
-                Field::Password => "Password",
+                Field::Domain => fl!("portal-print-auth-domain"),
+                Field::Username => fl!("portal-print-auth-username"),
+                Field::Password => fl!("portal-print-auth-password"),
             };
             let value = std::str::from_utf8(self.values[index].bytes()).expect("Iced UTF-8 input");
             content = content.push(
                 column![
-                    text(label).size(14),
-                    text_input(label, value)
+                    text(label.clone()).size(14),
+                    text_input(&label, value)
                         .id(format!("print-auth-field-{index}"))
                         .secure(*field == Field::Password)
                         .on_input(move |value| Message::Value(
@@ -297,28 +301,30 @@ impl Form {
             );
         }
         if !self.valid() {
-            content = content.push(text("Check the username and credential lengths.").size(14));
+            content = content.push(text(fl!("portal-print-auth-invalid")).size(14));
         }
         content = content.push(
-            text("Used only for this print request. Credentials are not saved by Canopa.")
+            text(fl!("portal-print-auth-not-saved"))
                 .size(13)
                 .style(canopa_ui::muted),
         );
-        let actions = row![
+        let actions = canopa_ui::direction::row([
             canopa_ui::action(
-                text("Cancel"),
+                text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
-                false
-            ),
-            iced::widget::Space::new().width(Length::Fill),
+                false,
+            )
+            .into(),
+            iced::widget::Space::new().width(Length::Fill).into(),
             canopa_ui::action(
-                text("Authenticate"),
+                text(fl!("portal-print-auth-authenticate")),
                 self.valid().then_some(Message::Authenticate),
                 canopa_ui::Action::Normal,
-                true
+                true,
             )
-        ]
+            .into(),
+        ])
         .spacing(10);
         container(column![scrollable(content).height(Length::Fill), actions].spacing(16))
             .padding(20)

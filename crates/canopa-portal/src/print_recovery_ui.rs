@@ -63,7 +63,7 @@ pub fn run(
         Recovery::update,
         Recovery::view,
     )
-    .title(|_: &Recovery, _| "Print recovery — Canopa".to_owned())
+    .title(|_: &Recovery, _| fl!("portal-window-title", title = fl!("portal-recovery-title")))
     .theme(|app: &Recovery, _| app.theme.clone())
     .subscription(Recovery::subscription)
     .default_font(font)
@@ -303,8 +303,7 @@ impl Recovery {
                         for item in &mut self.printers {
                             item.status = PrinterRecoveryStatus::Unavailable;
                         }
-                        self.printer_load_error =
-                            Some("Couldn’t load printer records. Refresh to try again.".into());
+                        self.printer_load_error = Some(fl!("portal-recovery-printers-failed"));
                     }
                 }
                 if !self.loaded && self.items.is_empty() && !self.printers.is_empty() {
@@ -369,12 +368,11 @@ impl Recovery {
                 let _ = self.back();
                 match result {
                     Ok(()) => {
-                        self.notice =
-                            Some("Record removed. The printer job was left unchanged.".into());
+                        self.notice = Some(fl!("portal-recovery-record-removed"));
                         return self.refresh();
                     }
                     Err(_) => {
-                        self.error = Some("Couldn’t confirm removal. The record may have changed or still be in use. Refresh the list.".into());
+                        self.error = Some(fl!("portal-recovery-record-removal-unconfirmed"));
                     }
                 }
             }
@@ -405,8 +403,13 @@ impl Recovery {
             {
                 let _ = self.back();
                 self.notice = Some(match result {
-                    Ok(report) => format!("{} cleared · {} unconfirmed · {} still in use. Check your printer before printing again.", report.retired, report.unresolved, report.busy),
-                    Err(_) => "Couldn’t confirm cleanup. Refresh the list and check your printer before printing again.".into(),
+                    Ok(report) => fl!(
+                        "portal-recovery-cleanup-report",
+                        cleared = report.retired,
+                        unconfirmed = report.unresolved,
+                        busy = report.busy
+                    ),
+                    Err(_) => fl!("portal-recovery-cleanup-unconfirmed"),
                 });
                 return self.refresh();
             }
@@ -433,8 +436,7 @@ impl Recovery {
                             item.document = false;
                             item.displaced = false;
                         }
-                        self.error =
-                            Some("Couldn’t load retained work. Refresh to try again.".into());
+                        self.error = Some(fl!("portal-recovery-files-failed"));
                     }
                 }
             }
@@ -477,11 +479,11 @@ impl Recovery {
                             Mode::Save,
                             String::new(),
                             String::new(),
-                            "Save recovered copy".into(),
+                            fl!("portal-recovery-save-title"),
                             Default::default(),
                         )
                         .expect("bounded recovery picker");
-                        request.accept_label = "Save copy".into();
+                        request.accept_label = fl!("portal-recovery-save-copy");
                         request.current_name = Some(suggested(item, body));
                         return Task::perform(
                             crate::worker::run(move || chooser_ui::prepare_picker(request)),
@@ -509,7 +511,7 @@ impl Recovery {
                                 RecoveryBody::Displaced => item.displaced = false,
                             }
                         }
-                        self.error = Some("Couldn’t verify this copy. The retained files are still available in their folder.".into());
+                        self.error = Some(fl!("portal-recovery-verify-failed"));
                         return self.back();
                     }
                 }
@@ -530,7 +532,7 @@ impl Recovery {
                         return task.map(move |message| Message::Picker(generation, message));
                     }
                     Err(_) => {
-                        self.error = Some("Couldn’t open the destination picker.".into());
+                        self.error = Some(fl!("portal-print-picker-failed"));
                         return self.back();
                     }
                 }
@@ -560,13 +562,12 @@ impl Recovery {
                         let pin = match handoff(&reviewed) {
                             Ok(pin) => pin,
                             Err(_) => {
-                                self.error = Some("Choose the destination again.".into());
+                                self.error = Some(fl!("portal-recovery-choose-again"));
                                 return self.back();
                             }
                         };
                         if !recovered.allows_destination(pin.selection()) {
-                            self.error =
-                                Some("Choose a destination outside the retained folder.".into());
+                            self.error = Some(fl!("portal-recovery-outside-folder"));
                             return self.back();
                         }
                         self.screen = Screen::Saving;
@@ -599,20 +600,15 @@ impl Recovery {
                 let _ = self.back();
                 match result {
                     Ok(()) => {
-                        self.notice = Some(format!(
-                            "Saved a copy to {}. Retained files are unchanged.",
-                            label(&path)
-                        ));
+                        self.notice = Some(fl!("portal-recovery-saved", path = label(&path)));
                         return self.refresh();
                     }
                     Err(error) => {
                         eprintln!(
                             "level=warn component=print_recovery event=save_unconfirmed error={error}"
                         );
-                        self.error = Some(format!(
-                            "Couldn’t confirm the save. Check {} before trying again. Retained files are still available.",
-                            label(&path)
-                        ));
+                        self.error =
+                            Some(fl!("portal-recovery-save-unconfirmed", path = label(&path)));
                     }
                 }
             }
@@ -651,13 +647,11 @@ impl Recovery {
                 let _ = self.back();
                 match result {
                     Ok(()) => {
-                        self.notice = Some(
-                            "Removed from the list. Retained files were left in place.".into(),
-                        );
+                        self.notice = Some(fl!("portal-recovery-removed"));
                         return self.refresh();
                     }
                     Err(_) => {
-                        self.error = Some("Couldn’t confirm removal. Refresh the list.".into());
+                        self.error = Some(fl!("portal-recovery-removal-unconfirmed"));
                     }
                 }
             }
@@ -677,10 +671,7 @@ impl Recovery {
                 self.running = None;
                 self.busy = false;
                 if result.is_err() {
-                    self.error = Some(
-                        "Couldn’t open the retained folder. Its last known location is shown here."
-                            .into(),
-                    );
+                    self.error = Some(fl!("portal-recovery-open-folder-failed"));
                 }
             }
             Message::Back

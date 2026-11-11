@@ -142,7 +142,7 @@ async fn serve(
                         "level=warn component=print_jobs event=list_unavailable error={error}"
                     );
                     Response::Failed {
-                        message: "Couldn’t check printer jobs. Refresh to try again.".into(),
+                        message: fl!("portal-jobs-list-failed"),
                     }
                 })
             }

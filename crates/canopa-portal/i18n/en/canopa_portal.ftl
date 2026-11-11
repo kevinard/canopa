@@ -409,3 +409,281 @@ portal-print-paper-source = Paper source
 portal-print-paper-type = Paper type
 portal-print-quality = Print quality
 portal-print-resolution = Resolution
+
+portal-close = Close
+
+## Print recovery: retained print files and unresolved printer jobs
+
+portal-recovery-title = Print recovery
+portal-recovery-status-busy = Still in use
+portal-recovery-status-missing = Folder unavailable
+portal-recovery-status-incomplete = Incomplete copy
+portal-recovery-status-interrupted = Interrupted
+portal-recovery-status-uncertain = Result unconfirmed
+portal-recovery-status-published = Previously published
+portal-recovery-status-unavailable = Couldn’t check files
+portal-recovery-explain-busy = A print process may still be using these files. Refresh after it exits.
+portal-recovery-explain-missing = The retained folder may have moved or become unavailable. Its last known location is shown below.
+portal-recovery-explain-incomplete = A complete document could not be established. You can inspect any retained files in their folder.
+portal-recovery-explain-interrupted = Printing was interrupted. You can save a copy of the retained data to a new destination.
+portal-recovery-explain-uncertain = The print result could not be confirmed. Check the original destination before saving another copy.
+portal-recovery-explain-published = The document was previously published. You can review the retained data and save another copy if needed.
+portal-recovery-explain-unavailable = The recorded files changed or could not be checked. You can inspect their last known folder.
+portal-recovery-preparing = Preparing recovered copy…
+portal-recovery-files-stay = Retained files will stay in place.
+portal-recovery-saving = Saving recovered copy…
+portal-recovery-saving-hint = Retained files will stay in place. If you close this window, check your chosen destination before trying again.
+portal-recovery-checking = Checking printer jobs…
+portal-recovery-checking-hint = Only identified jobs without confirmed acceptance may be cancelled. Documents are never sent again.
+portal-recovery-removing = Removing printer record…
+portal-recovery-removing-hint = The printer job will be left unchanged.
+# Title of a printer record whose document has no title.
+portal-recovery-printed-document = Printed document
+# Name of a retained file without a name.
+portal-recovery-printed-file = Printed file
+portal-recovery-remove-printer-question = Remove this printer record?
+portal-recovery-remove-printer-explain = Check your printer before printing another copy. This removes only Canopa’s record; it does not cancel the printer job or send the document again.
+portal-recovery-remove-printer-effect = Canopa will stop checking this record automatically. Removing it frees one place in the recovery list.
+portal-recovery-keep = Keep in list
+portal-recovery-remove-record = Remove record
+portal-recovery-remove-record-ellipsis = Remove record…
+portal-recovery-remove-work-question = Remove this work from the list?
+portal-recovery-remove-work-explain = Its files will stay in place. Keep the folder location if you want to find them later.
+portal-recovery-remove-from-list = Remove from list
+portal-recovery-remove-from-list-ellipsis = Remove from list…
+portal-recovery-original-destination = Original destination
+portal-recovery-save-document = Save document copy…
+portal-recovery-save-displaced = Save file moved aside…
+portal-recovery-displaced-hint = A file moved aside may contain unrelated data. Saving a copy leaves it in place.
+# $size is the largest copy that can be saved, such as "128 MiB".
+portal-recovery-size-limit = Copies up to { $size } can be saved here. Use the folder for other files.
+portal-recovery-retained-folder = Retained folder
+portal-recovery-open-folder = Open folder
+portal-recovery-loading = Loading retained work…
+portal-recovery-unavailable = Retained work unavailable
+portal-recovery-empty = No retained print work
+portal-recovery-empty-hint = Interrupted print files will appear here when they can be found.
+# Tabs with the number of entries in each.
+portal-recovery-files-tab = Files ({ $count })
+portal-recovery-printers-tab = Printers ({ $count })
+portal-recovery-printer-unconfirmed = Print result unconfirmed
+portal-recovery-printer-accepted = Previously accepted
+portal-recovery-printer-unavailable = Couldn’t check record
+portal-recovery-printer-explain-busy = A print process is still using this record. Refresh after it finishes.
+portal-recovery-printer-explain-unconfirmed = Canopa could not confirm this print result. Check your printer before printing another copy.
+portal-recovery-printer-explain-accepted = The printer service previously accepted this document. It may still be printing. Removing this record leaves the job unchanged.
+portal-recovery-printer-explain-unavailable = This record could not be checked. Refresh before removing it.
+portal-recovery-printer = Printer
+portal-recovery-server = Print server
+# $id is the printer's job number.
+portal-recovery-job = Job { $id }
+portal-recovery-job-unknown = Job number unavailable
+portal-recovery-printers-loading = Loading printer records…
+portal-recovery-printers-unavailable = Printer records unavailable
+portal-recovery-printers-empty = No unresolved printer records
+portal-recovery-printers-empty-hint = Printer records with an uncertain outcome will appear here.
+portal-recovery-check-all = Check all printer records
+portal-recovery-check-all-hint = Cleanup cancels only identified jobs whose acceptance was not confirmed. Previously accepted jobs are left alone. Documents are never sent again.
+portal-recovery-check-cleanup = Check and clean up
+# $count is the maximum number of records kept.
+portal-recovery-record-limit = Up to { $count } records can be kept. Unconfirmed records stay until cleanup or your explicit removal.
+portal-recovery-printers-failed = Couldn’t load printer records. Refresh to try again.
+portal-recovery-record-removed = Record removed. The printer job was left unchanged.
+portal-recovery-record-removal-unconfirmed = Couldn’t confirm removal. The record may have changed or still be in use. Refresh the list.
+# Result of a cleanup: numbers of records in each state.
+portal-recovery-cleanup-report = { $cleared } cleared · { $unconfirmed } unconfirmed · { $busy } still in use. Check your printer before printing again.
+portal-recovery-cleanup-unconfirmed = Couldn’t confirm cleanup. Refresh the list and check your printer before printing again.
+portal-recovery-files-failed = Couldn’t load retained work. Refresh to try again.
+portal-recovery-save-title = Save recovered copy
+portal-recovery-save-copy = Save copy
+portal-recovery-verify-failed = Couldn’t verify this copy. The retained files are still available in their folder.
+portal-recovery-choose-again = Choose the destination again.
+portal-recovery-outside-folder = Choose a destination outside the retained folder.
+# $path is the saved file's location.
+portal-recovery-saved = Saved a copy to { $path }. Retained files are unchanged.
+portal-recovery-save-unconfirmed = Couldn’t confirm the save. Check { $path } before trying again. Retained files are still available.
+portal-recovery-removed = Removed from the list. Retained files were left in place.
+portal-recovery-removal-unconfirmed = Couldn’t confirm removal. Refresh the list.
+portal-recovery-open-folder-failed = Couldn’t open the retained folder. Its last known location is shown here.
+
+## Printer jobs review
+
+portal-jobs-title = Printer jobs
+portal-jobs-stopped = Printer review stopped
+portal-jobs-communication-failed = Couldn’t communicate with the printer review service.
+portal-jobs-list-failed = Couldn’t check printer jobs. Refresh to try again.
+portal-jobs-signed-in = Sign-in was sent to the printer service. Refresh to check the job; printing may still be in progress.
+portal-jobs-sign-in-cancelled = Sign-in canceled.
+portal-jobs-sign-in-unconfirmed = Sign-in couldn’t be confirmed. Refresh and check the job before trying again.
+# $job is the printer's job number, $status one of the job states below.
+portal-jobs-entry = Job { $job } · { $status }
+portal-jobs-existing-document = The printer service already has this job. Sign-in uses its existing document.
+portal-jobs-sign-in = Sign in…
+portal-jobs-identity-unconfirmed = This job’s identity or sign-in method couldn’t be confirmed. Refresh to check again.
+portal-jobs-unavailable = Printer jobs unavailable
+portal-jobs-select-printer = Select a printer
+portal-jobs-empty = No active printer jobs
+portal-jobs-select-job = Select a printer job
+portal-jobs-held-hint = Jobs held for sign-in can continue using the document already in the queue.
+portal-jobs-status-receiving = Receiving document
+portal-jobs-status-queued = Waiting to print
+portal-jobs-status-held = On hold
+portal-jobs-status-needs-sign-in = Sign-in needed
+portal-jobs-status-printing = Printing
+portal-jobs-status-stopped = Stopped
+portal-jobs-status-cancelled = Canceled
+portal-jobs-status-aborted = Couldn’t print
+portal-jobs-status-completed = Completed by printer service
+
+## Printer authentication
+
+portal-print-auth-title = Printer authentication
+portal-print-auth-closing = Closing authentication…
+# $server is host:port; $realm is the server's authentication realm.
+portal-print-auth-server-realm = Sign in to print server { $server } ({ $realm }).
+portal-print-auth-server = Sign in to print server { $server }.
+# $printer is the printer queue (with its instance), $server is host:port.
+portal-print-auth-queue = Credentials for printer { $printer } on { $server }.
+portal-print-auth-local = Connected through a local printer socket.
+portal-print-auth-loopback = Connected to this computer. This connection is not encrypted.
+portal-print-auth-tls = Connected using TLS encryption.
+portal-print-auth-rejected = The previous credentials were not accepted. Try again or cancel.
+portal-print-auth-domain = Domain
+portal-print-auth-username = Username
+portal-print-auth-password = Password
+portal-print-auth-invalid = Check the username and credential lengths.
+portal-print-auth-not-saved = Used only for this print request. Credentials are not saved by Canopa.
+portal-print-auth-authenticate = Authenticate
+
+## Account: sharing the person's profile
+
+portal-account-window = Share profile
+portal-account-image-window = Choose profile image
+portal-account-title = Share your profile
+portal-account-enter-information = Enter the information you want to share.
+# Accept button of the image picker.
+portal-account-select = Select
+# File type filter of the image picker.
+portal-account-images = Images
+portal-account-picker-failed = Couldn’t open the image picker.
+portal-account-image-failed = Couldn’t load that image.
+portal-account-image-prepare-failed = Couldn’t prepare the image for sharing. Retry or turn off image sharing.
+portal-account-preparing-picker = Preparing image picker…
+portal-account-loading = Loading profile…
+portal-account-no-image = No image
+portal-account-choose-image = Choose image
+portal-account-clear-image = Clear image
+portal-account-share-image = Share profile image
+portal-account-share-username = Share username
+portal-account-share-name = Share name
+portal-account-username = Username
+portal-account-name = Name
+portal-account-invalid-name = That name is too long or contains an unsupported character. Edit it before sharing.
+portal-account-preparing-image = Preparing image…
+portal-account-sharing = Sharing…
+
+## USB device access
+
+portal-usb-window = USB device access
+portal-usb-question = Allow USB device access?
+portal-usb-choose = Choose the devices this app may access.
+# Accessible description; $requester is the app's name or ID.
+portal-usb-description = { $requester }. Choose the devices this app may access.
+# $count devices of $total are selected.
+portal-usb-selected = { $count } of { $total } selected
+portal-usb-select-all = Select all
+portal-usb-clear-selection = Clear selection
+# The same buttons with their keyboard shortcut.
+portal-usb-select-all-shortcut = Select all (Alt+S)
+portal-usb-clear-selection-shortcut = Clear selection (Alt+S)
+portal-usb-read-write = Read-write access requested
+portal-usb-read-only = Read-only access requested
+portal-usb-serial = Serial: { $serial }
+# $location is the device file, such as /dev/bus/usb/001/004.
+portal-usb-location = Location: { $location }
+portal-usb-use-read-only = Use read-only access instead
+portal-usb-read-only-hint = Alt+R makes the selected devices read-only.
+portal-usb-allow-selected = Allow selected
+portal-usb-allow-selected-shortcut = Allow selected (Alt+A)
+# Name of a device that reports none.
+portal-usb-device = USB device
+
+## Dynamic launcher installation review
+
+portal-launcher-window = Install launcher
+portal-launcher-install-application = Install application launcher?
+portal-launcher-install-webapp = Install web app?
+portal-launcher-name = Launcher name
+portal-launcher-name-placeholder = Enter a name
+portal-launcher-name-too-long = Use a shorter name on one line.
+portal-launcher-name-missing = Enter a launcher name.
+portal-launcher-web-address = Web address
+portal-launcher-hint = The launcher will appear in your applications.
+portal-launcher-install = Install
+# Accessible descriptions; $requester is the app's ID, $address the web app's URL.
+portal-launcher-description = Requested by { $requester }.
+portal-launcher-description-webapp = Requested by { $requester }. Web address { $address }.
+
+# A control's label with its keyboard shortcut, such as "Allow pointer input (Alt+P)".
+portal-with-shortcut = { $label } ({ $shortcut })
+
+## Input capture consent
+
+portal-input-capture-window = Input capture
+portal-input-capture-question = Allow input capture?
+# $requester is the app's ID.
+portal-input-capture-request = { $requester } wants to receive input from this desktop.
+portal-input-capture-explanation = Moving the pointer across a screen edge chosen by the application activates capture of the input you approve.
+portal-input-capture-description = { $requester } wants to receive input from this desktop. Moving the pointer across a screen edge chosen by the application activates capture of the input you approve.
+portal-input-capture-pointer = Allow pointer input
+portal-input-capture-keyboard = Allow keyboard input
+portal-input-capture-clipboard = Share clipboard while input is captured
+portal-input-capture-hint = Ctrl+Alt+Esc pauses capture. You can end this session from its control window.
+portal-input-capture-allow = Allow input capture
+
+## Wallpaper
+
+portal-wallpaper-window = Set wallpaper
+portal-wallpaper-question = Change wallpaper?
+portal-wallpaper-preview = Wallpaper preview
+portal-wallpaper-background = Desktop background
+portal-wallpaper-lock-screen = Lock screen
+portal-wallpaper-both = Desktop and lock screen
+portal-wallpaper-lock-hint = The lock screen image is used by Canopa’s Lock action.
+portal-wallpaper-apply = Apply
+# Accessible description: $requester is the app's ID, $destination one of the
+# destinations above and $size the image size in pixels.
+portal-wallpaper-description = Requested by { $requester }. { $destination }, { $size }.
+
+## Global shortcuts
+
+portal-shortcuts-window = Global shortcuts
+portal-shortcuts-configure = Configure global shortcuts
+portal-shortcuts-question = Allow global shortcuts?
+portal-shortcuts-explanation = Choose which shortcuts this app can use while other windows are focused.
+portal-shortcuts-none-chosen = No shortcut chosen
+# Placeholder of a shortcut field. Modifier names stay in capitals as typed.
+portal-shortcuts-placeholder = CTRL+ALT+a or LOGO+F9
+portal-shortcuts-cancel-recording = Cancel recording
+portal-shortcuts-record = Record keys
+portal-shortcuts-preparing = Preparing keyboard recording…
+portal-shortcuts-release-to-begin = Release held keys to begin.
+portal-shortcuts-press = Press the shortcut keys.
+portal-shortcuts-release-to-finish = Release the keys to finish.
+portal-shortcuts-finishing = Finishing keyboard recording…
+portal-shortcuts-unavailable = This shortcut is unavailable. Choose another trigger.
+portal-shortcuts-none-requested = This app requested no shortcuts.
+# CTRL, ALT, SHIFT and LOGO are typed as shown.
+portal-shortcuts-syntax-hint = Use CTRL, ALT, SHIFT or LOGO (Super), followed by a key name. Example: CTRL+ALT+a.
+portal-shortcuts-applying = Applying…
+portal-shortcuts-save = Save shortcuts
+portal-shortcuts-unrepresentable = This key combination is unavailable in the current keyboard layout. Choose another shortcut.
+portal-shortcuts-keymap-changed = The keyboard setup changed. Record the shortcut again.
+portal-shortcuts-recording-interrupted = Keyboard recording was interrupted. Focus this window and try again.
+portal-shortcuts-recording-gone = Keyboard recording is no longer available in this window.
+portal-shortcuts-recording-unavailable = Keyboard recording is unavailable. Enter a shortcut or focus this window and try again.
+portal-shortcuts-conflict = A selected shortcut is already in use. Choose another trigger.
+portal-shortcuts-stale = Available shortcuts changed. Review your choices and try again.
+portal-shortcuts-unresolved = A selected key combination is unavailable in the current keyboard layout.
+portal-shortcuts-failed = These shortcuts could not be applied. Review the selected keys and try again.
+portal-shortcuts-missing-key = Choose a key for every selected shortcut.

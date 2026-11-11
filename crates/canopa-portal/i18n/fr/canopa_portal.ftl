@@ -357,3 +357,259 @@ portal-print-paper-source = Source du papier
 portal-print-paper-type = Type de papier
 portal-print-quality = Qualité d’impression
 portal-print-resolution = Résolution
+
+portal-close = Fermer
+
+## Print recovery: retained print files and unresolved printer jobs
+
+portal-recovery-title = Récupération d’impression
+portal-recovery-status-busy = Toujours utilisé
+portal-recovery-status-missing = Dossier indisponible
+portal-recovery-status-incomplete = Copie incomplète
+portal-recovery-status-interrupted = Interrompu
+portal-recovery-status-uncertain = Résultat non confirmé
+portal-recovery-status-published = Déjà publié
+portal-recovery-status-unavailable = Impossible de vérifier les fichiers
+portal-recovery-explain-busy = Un processus d’impression utilise peut-être encore ces fichiers. Actualisez une fois qu’il est terminé.
+portal-recovery-explain-missing = Le dossier conservé a peut-être été déplacé ou est devenu indisponible. Son dernier emplacement connu est indiqué ci-dessous.
+portal-recovery-explain-incomplete = Aucun document complet n’a pu être établi. Vous pouvez examiner les fichiers conservés dans leur dossier.
+portal-recovery-explain-interrupted = L’impression a été interrompue. Vous pouvez enregistrer une copie des données conservées vers une nouvelle destination.
+portal-recovery-explain-uncertain = Le résultat de l’impression n’a pas pu être confirmé. Vérifiez la destination d’origine avant d’enregistrer une autre copie.
+portal-recovery-explain-published = Le document a déjà été publié. Vous pouvez examiner les données conservées et enregistrer une autre copie si nécessaire.
+portal-recovery-explain-unavailable = Les fichiers enregistrés ont changé ou n’ont pas pu être vérifiés. Vous pouvez examiner leur dernier dossier connu.
+portal-recovery-preparing = Préparation de la copie récupérée…
+portal-recovery-files-stay = Les fichiers conservés resteront en place.
+portal-recovery-saving = Enregistrement de la copie récupérée…
+portal-recovery-saving-hint = Les fichiers conservés resteront en place. Si vous fermez cette fenêtre, vérifiez la destination choisie avant de réessayer.
+portal-recovery-checking = Vérification des travaux d’impression…
+portal-recovery-checking-hint = Seuls les travaux identifiés dont l’acceptation n’est pas confirmée peuvent être annulés. Les documents ne sont jamais renvoyés.
+portal-recovery-removing = Suppression de l’enregistrement de l’imprimante…
+portal-recovery-removing-hint = Le travail d’impression restera inchangé.
+portal-recovery-printed-document = Document imprimé
+portal-recovery-printed-file = Fichier imprimé
+portal-recovery-remove-printer-question = Supprimer cet enregistrement d’imprimante ?
+portal-recovery-remove-printer-explain = Vérifiez votre imprimante avant d’imprimer une autre copie. Cette action supprime uniquement l’enregistrement de Canopa ; elle n’annule pas le travail d’impression et ne renvoie pas le document.
+portal-recovery-remove-printer-effect = Canopa cessera de vérifier automatiquement cet enregistrement. Le supprimer libère une place dans la liste de récupération.
+portal-recovery-keep = Conserver dans la liste
+portal-recovery-remove-record = Supprimer l’enregistrement
+portal-recovery-remove-record-ellipsis = Supprimer l’enregistrement…
+portal-recovery-remove-work-question = Retirer ce travail de la liste ?
+portal-recovery-remove-work-explain = Ses fichiers resteront en place. Notez l’emplacement du dossier si vous voulez les retrouver plus tard.
+portal-recovery-remove-from-list = Retirer de la liste
+portal-recovery-remove-from-list-ellipsis = Retirer de la liste…
+portal-recovery-original-destination = Destination d’origine
+portal-recovery-save-document = Enregistrer une copie du document…
+portal-recovery-save-displaced = Enregistrer le fichier mis de côté…
+portal-recovery-displaced-hint = Un fichier mis de côté peut contenir des données sans rapport. En enregistrer une copie le laisse en place.
+portal-recovery-size-limit = Les copies jusqu’à { $size } peuvent être enregistrées ici. Utilisez le dossier pour les autres fichiers.
+portal-recovery-retained-folder = Dossier conservé
+portal-recovery-open-folder = Ouvrir le dossier
+portal-recovery-loading = Chargement des travaux conservés…
+portal-recovery-unavailable = Travaux conservés indisponibles
+portal-recovery-empty = Aucun travail d’impression conservé
+portal-recovery-empty-hint = Les fichiers d’impression interrompus apparaîtront ici lorsqu’ils pourront être trouvés.
+portal-recovery-files-tab = Fichiers ({ $count })
+portal-recovery-printers-tab = Imprimantes ({ $count })
+portal-recovery-printer-unconfirmed = Résultat de l’impression non confirmé
+portal-recovery-printer-accepted = Déjà accepté
+portal-recovery-printer-unavailable = Impossible de vérifier l’enregistrement
+portal-recovery-printer-explain-busy = Un processus d’impression utilise encore cet enregistrement. Actualisez une fois qu’il est terminé.
+portal-recovery-printer-explain-unconfirmed = Canopa n’a pas pu confirmer le résultat de cette impression. Vérifiez votre imprimante avant d’imprimer une autre copie.
+portal-recovery-printer-explain-accepted = Le service d’impression a déjà accepté ce document. Il est peut-être encore en cours d’impression. Supprimer cet enregistrement laisse le travail inchangé.
+portal-recovery-printer-explain-unavailable = Cet enregistrement n’a pas pu être vérifié. Actualisez avant de le supprimer.
+portal-recovery-printer = Imprimante
+portal-recovery-server = Serveur d’impression
+portal-recovery-job = Travail { $id }
+portal-recovery-job-unknown = Numéro de travail indisponible
+portal-recovery-printers-loading = Chargement des enregistrements d’imprimante…
+portal-recovery-printers-unavailable = Enregistrements d’imprimante indisponibles
+portal-recovery-printers-empty = Aucun enregistrement d’imprimante en suspens
+portal-recovery-printers-empty-hint = Les enregistrements d’imprimante dont le résultat est incertain apparaîtront ici.
+portal-recovery-check-all = Vérifier tous les enregistrements d’imprimante
+portal-recovery-check-all-hint = Le nettoyage annule uniquement les travaux identifiés dont l’acceptation n’a pas été confirmée. Les travaux déjà acceptés ne sont pas touchés. Les documents ne sont jamais renvoyés.
+portal-recovery-check-cleanup = Vérifier et nettoyer
+portal-recovery-record-limit = Jusqu’à { $count } enregistrements peuvent être conservés. Les enregistrements non confirmés restent jusqu’au nettoyage ou jusqu’à ce que vous les supprimiez.
+portal-recovery-printers-failed = Impossible de charger les enregistrements d’imprimante. Actualisez pour réessayer.
+portal-recovery-record-removed = Enregistrement supprimé. Le travail d’impression est resté inchangé.
+portal-recovery-record-removal-unconfirmed = Impossible de confirmer la suppression. L’enregistrement a peut-être changé ou est encore utilisé. Actualisez la liste.
+portal-recovery-cleanup-report = Nettoyés : { $cleared } · non confirmés : { $unconfirmed } · encore utilisés : { $busy }. Vérifiez votre imprimante avant d’imprimer à nouveau.
+portal-recovery-cleanup-unconfirmed = Impossible de confirmer le nettoyage. Actualisez la liste et vérifiez votre imprimante avant d’imprimer à nouveau.
+portal-recovery-files-failed = Impossible de charger les travaux conservés. Actualisez pour réessayer.
+portal-recovery-save-title = Enregistrer la copie récupérée
+portal-recovery-save-copy = Enregistrer la copie
+portal-recovery-verify-failed = Impossible de vérifier cette copie. Les fichiers conservés sont toujours disponibles dans leur dossier.
+portal-recovery-choose-again = Choisissez à nouveau la destination.
+portal-recovery-outside-folder = Choisissez une destination en dehors du dossier conservé.
+portal-recovery-saved = Copie enregistrée dans { $path }. Les fichiers conservés sont inchangés.
+portal-recovery-save-unconfirmed = Impossible de confirmer l’enregistrement. Vérifiez { $path } avant de réessayer. Les fichiers conservés sont toujours disponibles.
+portal-recovery-removed = Retiré de la liste. Les fichiers conservés ont été laissés en place.
+portal-recovery-removal-unconfirmed = Impossible de confirmer la suppression. Actualisez la liste.
+portal-recovery-open-folder-failed = Impossible d’ouvrir le dossier conservé. Son dernier emplacement connu est indiqué ici.
+
+## Printer jobs review
+
+portal-jobs-title = Travaux d’impression
+portal-jobs-stopped = L’examen des imprimantes s’est arrêté
+portal-jobs-communication-failed = Impossible de communiquer avec le service d’examen des imprimantes.
+portal-jobs-list-failed = Impossible de vérifier les travaux d’impression. Actualisez pour réessayer.
+portal-jobs-signed-in = L’identification a été envoyée au service d’impression. Actualisez pour vérifier le travail ; l’impression est peut-être encore en cours.
+portal-jobs-sign-in-cancelled = Identification annulée.
+portal-jobs-sign-in-unconfirmed = L’identification n’a pas pu être confirmée. Actualisez et vérifiez le travail avant de réessayer.
+portal-jobs-entry = Travail { $job } · { $status }
+portal-jobs-existing-document = Le service d’impression a déjà ce travail. L’identification utilise son document existant.
+portal-jobs-sign-in = S’identifier…
+portal-jobs-identity-unconfirmed = L’identité de ce travail ou sa méthode d’identification n’a pas pu être confirmée. Actualisez pour vérifier à nouveau.
+portal-jobs-unavailable = Travaux d’impression indisponibles
+portal-jobs-select-printer = Sélectionnez une imprimante
+portal-jobs-empty = Aucun travail d’impression actif
+portal-jobs-select-job = Sélectionnez un travail d’impression
+portal-jobs-held-hint = Les travaux en attente d’identification peuvent continuer avec le document déjà dans la file.
+portal-jobs-status-receiving = Réception du document
+portal-jobs-status-queued = En attente d’impression
+portal-jobs-status-held = En attente
+portal-jobs-status-needs-sign-in = Identification requise
+portal-jobs-status-printing = Impression en cours
+portal-jobs-status-stopped = Arrêté
+portal-jobs-status-cancelled = Annulé
+portal-jobs-status-aborted = Impression impossible
+portal-jobs-status-completed = Terminé par le service d’impression
+
+## Printer authentication
+
+portal-print-auth-title = Authentification de l’imprimante
+portal-print-auth-closing = Fermeture de l’authentification…
+portal-print-auth-server-realm = Identifiez-vous auprès du serveur d’impression { $server } ({ $realm }).
+portal-print-auth-server = Identifiez-vous auprès du serveur d’impression { $server }.
+portal-print-auth-queue = Identifiants pour l’imprimante { $printer } sur { $server }.
+portal-print-auth-local = Connecté par un socket d’imprimante local.
+portal-print-auth-loopback = Connecté à cet ordinateur. Cette connexion n’est pas chiffrée.
+portal-print-auth-tls = Connecté avec un chiffrement TLS.
+portal-print-auth-rejected = Les identifiants précédents n’ont pas été acceptés. Réessayez ou annulez.
+portal-print-auth-domain = Domaine
+portal-print-auth-username = Nom d’utilisateur
+portal-print-auth-password = Mot de passe
+portal-print-auth-invalid = Vérifiez la longueur du nom d’utilisateur et des identifiants.
+portal-print-auth-not-saved = Utilisés uniquement pour cette demande d’impression. Les identifiants ne sont pas enregistrés par Canopa.
+portal-print-auth-authenticate = S’authentifier
+
+## Account: sharing the person's profile
+
+portal-account-window = Partager le profil
+portal-account-image-window = Choisir une image de profil
+portal-account-title = Partager votre profil
+portal-account-enter-information = Saisissez les informations que vous voulez partager.
+portal-account-select = Sélectionner
+portal-account-images = Images
+portal-account-picker-failed = Impossible d’ouvrir le sélecteur d’images.
+portal-account-image-failed = Impossible de charger cette image.
+portal-account-image-prepare-failed = Impossible de préparer l’image pour le partage. Réessayez ou désactivez le partage de l’image.
+portal-account-preparing-picker = Préparation du sélecteur d’images…
+portal-account-loading = Chargement du profil…
+portal-account-no-image = Aucune image
+portal-account-choose-image = Choisir une image
+portal-account-clear-image = Effacer l’image
+portal-account-share-image = Partager l’image de profil
+portal-account-share-username = Partager le nom d’utilisateur
+portal-account-share-name = Partager le nom
+portal-account-username = Nom d’utilisateur
+portal-account-name = Nom
+portal-account-invalid-name = Ce nom est trop long ou contient un caractère non pris en charge. Modifiez-le avant de le partager.
+portal-account-preparing-image = Préparation de l’image…
+portal-account-sharing = Partage…
+
+## USB device access
+
+portal-usb-window = Accès aux périphériques USB
+portal-usb-question = Autoriser l’accès aux périphériques USB ?
+portal-usb-choose = Choisissez les périphériques auxquels cette application peut accéder.
+portal-usb-description = { $requester }. Choisissez les périphériques auxquels cette application peut accéder.
+portal-usb-selected = { $count ->
+    [one] { $count } sur { $total } sélectionné
+   *[other] { $count } sur { $total } sélectionnés
+}
+portal-usb-select-all = Tout sélectionner
+portal-usb-clear-selection = Effacer la sélection
+portal-usb-select-all-shortcut = Tout sélectionner (Alt+S)
+portal-usb-clear-selection-shortcut = Effacer la sélection (Alt+S)
+portal-usb-read-write = Accès en lecture et écriture demandé
+portal-usb-read-only = Accès en lecture seule demandé
+portal-usb-serial = Numéro de série : { $serial }
+portal-usb-location = Emplacement : { $location }
+portal-usb-use-read-only = Utiliser plutôt un accès en lecture seule
+portal-usb-read-only-hint = Alt+R passe les périphériques sélectionnés en lecture seule.
+portal-usb-allow-selected = Autoriser la sélection
+portal-usb-allow-selected-shortcut = Autoriser la sélection (Alt+A)
+portal-usb-device = Périphérique USB
+
+## Dynamic launcher installation review
+
+portal-launcher-window = Installer un lanceur
+portal-launcher-install-application = Installer le lanceur d’application ?
+portal-launcher-install-webapp = Installer l’application web ?
+portal-launcher-name = Nom du lanceur
+portal-launcher-name-placeholder = Saisissez un nom
+portal-launcher-name-too-long = Utilisez un nom plus court, sur une seule ligne.
+portal-launcher-name-missing = Saisissez un nom de lanceur.
+portal-launcher-web-address = Adresse web
+portal-launcher-hint = Le lanceur apparaîtra parmi vos applications.
+portal-launcher-install = Installer
+portal-launcher-description = Demandé par { $requester }.
+portal-launcher-description-webapp = Demandé par { $requester }. Adresse web : { $address }.
+
+portal-with-shortcut = { $label } ({ $shortcut })
+
+## Input capture consent
+
+portal-input-capture-window = Capture des entrées
+portal-input-capture-question = Autoriser la capture des entrées ?
+portal-input-capture-request = { $requester } souhaite recevoir les entrées de ce bureau.
+portal-input-capture-explanation = Déplacer le pointeur au-delà d’un bord d’écran choisi par l’application active la capture des entrées que vous autorisez.
+portal-input-capture-description = { $requester } souhaite recevoir les entrées de ce bureau. Déplacer le pointeur au-delà d’un bord d’écran choisi par l’application active la capture des entrées que vous autorisez.
+portal-input-capture-pointer = Autoriser les entrées du pointeur
+portal-input-capture-keyboard = Autoriser les entrées du clavier
+portal-input-capture-clipboard = Partager le presse-papiers pendant la capture des entrées
+portal-input-capture-hint = Ctrl+Alt+Échap suspend la capture. Vous pouvez mettre fin à cette session depuis sa fenêtre de contrôle.
+portal-input-capture-allow = Autoriser la capture des entrées
+
+## Wallpaper
+
+portal-wallpaper-window = Définir le fond d’écran
+portal-wallpaper-question = Changer le fond d’écran ?
+portal-wallpaper-preview = Aperçu du fond d’écran
+portal-wallpaper-background = Fond du bureau
+portal-wallpaper-lock-screen = Écran de verrouillage
+portal-wallpaper-both = Bureau et écran de verrouillage
+portal-wallpaper-lock-hint = L’image de l’écran de verrouillage est utilisée par l’action Verrouiller de Canopa.
+portal-wallpaper-apply = Appliquer
+portal-wallpaper-description = Demandé par { $requester }. { $destination }, { $size }.
+
+## Global shortcuts
+
+portal-shortcuts-window = Raccourcis globaux
+portal-shortcuts-configure = Configurer les raccourcis globaux
+portal-shortcuts-question = Autoriser les raccourcis globaux ?
+portal-shortcuts-explanation = Choisissez les raccourcis que cette application peut utiliser lorsque d’autres fenêtres ont le focus.
+portal-shortcuts-none-chosen = Aucun raccourci choisi
+portal-shortcuts-placeholder = CTRL+ALT+a ou LOGO+F9
+portal-shortcuts-cancel-recording = Annuler l’enregistrement
+portal-shortcuts-record = Enregistrer les touches
+portal-shortcuts-preparing = Préparation de l’enregistrement du clavier…
+portal-shortcuts-release-to-begin = Relâchez les touches enfoncées pour commencer.
+portal-shortcuts-press = Appuyez sur les touches du raccourci.
+portal-shortcuts-release-to-finish = Relâchez les touches pour terminer.
+portal-shortcuts-finishing = Fin de l’enregistrement du clavier…
+portal-shortcuts-unavailable = Ce raccourci n’est pas disponible. Choisissez un autre déclencheur.
+portal-shortcuts-none-requested = Cette application n’a demandé aucun raccourci.
+portal-shortcuts-syntax-hint = Utilisez CTRL, ALT, SHIFT ou LOGO (Super), suivi du nom d’une touche. Exemple : CTRL+ALT+a.
+portal-shortcuts-applying = Application…
+portal-shortcuts-save = Enregistrer les raccourcis
+portal-shortcuts-unrepresentable = Cette combinaison de touches n’est pas disponible avec la disposition de clavier actuelle. Choisissez un autre raccourci.
+portal-shortcuts-keymap-changed = La configuration du clavier a changé. Enregistrez à nouveau le raccourci.
+portal-shortcuts-recording-interrupted = L’enregistrement du clavier a été interrompu. Donnez le focus à cette fenêtre et réessayez.
+portal-shortcuts-recording-gone = L’enregistrement du clavier n’est plus disponible dans cette fenêtre.
+portal-shortcuts-recording-unavailable = L’enregistrement du clavier n’est pas disponible. Saisissez un raccourci ou donnez le focus à cette fenêtre et réessayez.
+portal-shortcuts-conflict = Un raccourci sélectionné est déjà utilisé. Choisissez un autre déclencheur.
+portal-shortcuts-stale = Les raccourcis disponibles ont changé. Vérifiez vos choix et réessayez.
+portal-shortcuts-unresolved = Une combinaison de touches sélectionnée n’est pas disponible avec la disposition de clavier actuelle.
+portal-shortcuts-failed = Ces raccourcis n’ont pas pu être appliqués. Vérifiez les touches sélectionnées et réessayez.
+portal-shortcuts-missing-key = Choisissez une touche pour chaque raccourci sélectionné.

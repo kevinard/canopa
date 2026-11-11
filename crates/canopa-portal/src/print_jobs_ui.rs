@@ -6,7 +6,7 @@ use crate::print::{
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, pick_list, row, scrollable, text},
+    widget::{column, container, pick_list, scrollable, text},
     window,
 };
 use std::{sync::Arc, time::Duration};
@@ -88,7 +88,7 @@ pub fn run(
         Review::update,
         Review::view,
     )
-    .title(|_: &Review, _| "Printer jobs — Canopa".to_owned())
+    .title(|_: &Review, _| fl!("portal-window-title", title = fl!("portal-jobs-title")))
     .theme(|app: &Review, _| app.theme.clone())
     .subscription(Review::subscription)
     .default_font(canopa_ui::font(&appearance))
@@ -152,8 +152,8 @@ impl Review {
         Task::perform(
             async move {
                 task.await
-                    .map_err(|_| "Printer review stopped".to_owned())?
-                    .map_err(|_| "Couldn’t communicate with the printer review service.".to_owned())
+                    .map_err(|_| fl!("portal-jobs-stopped"))?
+                    .map_err(|_| fl!("portal-jobs-communication-failed"))
             },
             move |response| Message::Replied(generation, response),
         )
@@ -235,9 +235,12 @@ impl Review {
                         cancelled,
                     }) => {
                         self.notice = Some(if acknowledged {
-                            "Sign-in was sent to the printer service. Refresh to check the job; printing may still be in progress."
-                        } else if cancelled { "Sign-in canceled." }
-                        else { "Sign-in couldn’t be confirmed. Refresh and check the job before trying again." }.into());
+                            fl!("portal-jobs-signed-in")
+                        } else if cancelled {
+                            fl!("portal-jobs-sign-in-cancelled")
+                        } else {
+                            fl!("portal-jobs-sign-in-unconfirmed")
+                        });
                         self.entries.clear();
                         self.selected = None;
                         return self.request(Command::List {
@@ -262,7 +265,12 @@ impl Review {
                 canopa_ui::action(
                     column![
                         text(&entry.title).size(16),
-                        text(format!("Job {} · {}", entry.job, status(entry.status))).size(13)
+                        text(fl!(
+                            "portal-jobs-entry",
+                            job = entry.job.to_string(),
+                            status = status(entry.status)
+                        ))
+                        .size(13)
                     ]
                     .spacing(5),
                     (!self.busy).then(|| Message::Select(entry.key.clone())),
@@ -280,38 +288,36 @@ impl Review {
             let mut details = column![
                 text(&entry.title).size(22),
                 text(status(entry.status)),
-                text(
-                    "The printer service already has this job. Sign-in uses its existing document."
-                )
+                text(fl!("portal-jobs-existing-document"))
             ]
             .spacing(16);
             if entry.status == Status::NeedsAuthentication {
                 details = details.push(canopa_ui::action(
-                    text("Sign in…"),
+                    text(fl!("portal-jobs-sign-in")),
                     (!self.busy && entry.authenticate).then_some(Message::Authenticate),
                     canopa_ui::Action::Normal,
                     true,
                 ));
                 if !entry.authenticate {
-                    details = details.push(text("This job’s identity or sign-in method couldn’t be confirmed. Refresh to check again."));
+                    details = details.push(text(fl!("portal-jobs-identity-unconfirmed")));
                 }
             }
             details.into()
         } else {
             column![
                 text(if self.busy {
-                    "Checking printer jobs…"
+                    fl!("portal-recovery-checking")
                 } else if self.error.is_some() {
-                    "Printer jobs unavailable"
+                    fl!("portal-jobs-unavailable")
                 } else if self.destination.is_none() && !self.printers.is_empty() {
-                    "Select a printer"
+                    fl!("portal-jobs-select-printer")
                 } else if self.entries.is_empty() {
-                    "No active printer jobs"
+                    fl!("portal-jobs-empty")
                 } else {
-                    "Select a printer job"
+                    fl!("portal-jobs-select-job")
                 })
                 .size(22),
-                text("Jobs held for sign-in can continue using the document already in the queue.")
+                text(fl!("portal-jobs-held-hint"))
             ]
             .spacing(16)
             .into()
@@ -322,21 +328,31 @@ impl Review {
             .find(|choice| Some(&choice.destination) == self.destination.as_ref())
             .cloned();
         let mut content = column![
-            row![
-                text("Printer jobs").size(28).width(Length::Fill),
+            canopa_ui::direction::row([
+                text(fl!("portal-jobs-title"))
+                    .size(28)
+                    .width(Length::Fill)
+                    .into(),
                 canopa_ui::action(
-                    text("Refresh"),
+                    text(fl!("portal-print-refresh")),
                     (!self.busy).then_some(Message::Refresh),
                     canopa_ui::Action::Normal,
-                    false
+                    false,
                 )
-            ]
+                .into(),
+            ])
             .spacing(10),
             pick_list(self.printers.clone(), selected, Message::Destination).width(Length::Fill),
-            row![
-                scrollable(entries).spacing(6).width(Length::FillPortion(2)),
-                scrollable(details).spacing(6).width(Length::FillPortion(3))
-            ]
+            canopa_ui::direction::row([
+                scrollable(entries)
+                    .spacing(6)
+                    .width(Length::FillPortion(2))
+                    .into(),
+                scrollable(details)
+                    .spacing(6)
+                    .width(Length::FillPortion(3))
+                    .into(),
+            ])
             .spacing(22)
             .height(Length::Fill)
         ]
@@ -348,7 +364,7 @@ impl Review {
             content = content.push(text(error));
         }
         content = content.push(canopa_ui::action(
-            text("Close"),
+            text(fl!("portal-close")),
             Some(Message::Close),
             canopa_ui::Action::Normal,
             false,
@@ -360,16 +376,16 @@ impl Review {
             .into()
     }
 }
-fn status(status: Status) -> &'static str {
+fn status(status: Status) -> String {
     match status {
-        Status::Receiving => "Receiving document",
-        Status::Queued => "Waiting to print",
-        Status::Held => "On hold",
-        Status::NeedsAuthentication => "Sign-in needed",
-        Status::Processing => "Printing",
-        Status::Stopped => "Stopped",
-        Status::Cancelled => "Canceled",
-        Status::Aborted => "Couldn’t print",
-        Status::Completed => "Completed by printer service",
+        Status::Receiving => fl!("portal-jobs-status-receiving"),
+        Status::Queued => fl!("portal-jobs-status-queued"),
+        Status::Held => fl!("portal-jobs-status-held"),
+        Status::NeedsAuthentication => fl!("portal-jobs-status-needs-sign-in"),
+        Status::Processing => fl!("portal-jobs-status-printing"),
+        Status::Stopped => fl!("portal-jobs-status-stopped"),
+        Status::Cancelled => fl!("portal-jobs-status-cancelled"),
+        Status::Aborted => fl!("portal-jobs-status-aborted"),
+        Status::Completed => fl!("portal-jobs-status-completed"),
     }
 }
