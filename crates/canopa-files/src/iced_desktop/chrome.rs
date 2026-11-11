@@ -210,7 +210,11 @@ pub(super) fn catalogue_row(appearance: &Appearance, selected: bool) -> containe
         container::Style::default().border(iced::Border {
             width: 1.0,
             radius: 8.0.into(),
-            color: ink(appearance, ColorRole::Border).scale_alpha(0.26),
+            color: ink(appearance, ColorRole::Border).scale_alpha(if appearance.high_contrast() {
+                1.0
+            } else {
+                0.26
+            }),
         })
     }
 }

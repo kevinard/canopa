@@ -398,6 +398,8 @@ pub(super) fn entry<'a>(
             let base = style_appearance.style(UiKind::MenuRow);
             let resolved = base.state(selected, false, false, false, focused);
             let mut style = canopa_ui::frame(&style_appearance, resolved);
+            // High contrast keeps selection and its edge opaque in every column.
+            let contrast = style_appearance.high_contrast();
             if selected && base.states[0].background.is_none() {
                 let role = if highlighted {
                     ColorRole::Accent
@@ -405,23 +407,34 @@ pub(super) fn entry<'a>(
                     ColorRole::AccentSurface
                 };
                 let mut color = chrome::ink(&style_appearance, role);
-                color.a = if current || current_folder { 1.0 } else { 0.50 };
+                color.a = if current || current_folder || contrast {
+                    1.0
+                } else {
+                    0.50
+                };
                 style.background = Some(color.into());
                 if !base.custom_border && base.states[0].border_color.is_none() {
                     let mut edge = chrome::ink(&style_appearance, ColorRole::Accent);
-                    edge.a = if current {
+                    edge.a = if contrast {
+                        1.0
+                    } else if current {
                         0.58
                     } else if current_folder {
                         0.42
                     } else {
                         0.0
                     };
-                    style.border.width = if current || current_folder { 1.0 } else { 0.0 };
+                    style.border.width = if current || current_folder || contrast {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     style.border.color = edge;
                 }
             }
             if inline
                 && alternate
+                && !contrast
                 && !selected
                 && !focused
                 && canopa_ui::resolve_color(&style_appearance, base.background).a == 0.0
