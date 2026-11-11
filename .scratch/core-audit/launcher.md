@@ -52,11 +52,11 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | App search | XDG data dirs, desktop-ID precedence, subdirectory IDs | works | `canopa-apps/src/lib.rs:161-213` (dirs, ID = relative path joined by `-`), `:146-149` (first ID wins, before filtering) | User overrides in `~/.local/share/applications` win, as expected |
 | App search | Flatpak / Snap | partial | Only through `XDG_DATA_DIRS`. `niri-session` re-execs a login shell (`forks/niri/resources/niri-session:13-18`), so `/etc/profile.d/flatpak.sh` normally applies. There is no built-in fallback | Works on a normal install. Flatpak or Snap apps vanish if the login shell skips `profile.d` |
 | App search | `Hidden`, `NoDisplay`, `OnlyShowIn`/`NotShowIn` | works | `canopa-apps/src/lib.rs:227-248`. Session sets `XDG_CURRENT_DESKTOP=canopa:niri` (`packaging/wayland-sessions/canopa.desktop:4`) | Correct |
-| App search | `TryExec` | missing | Not parsed anywhere in `canopa-apps` | Stale entries for uninstalled binaries still show and then fail silently |
-| App search | `Terminal=true` apps | missing | Filtered out for the launcher (`canopa-apps/src/lib.rs:231`) | htop, btop, vim, nmtui and ranger can't be found |
+| App search | `TryExec` | missing (**Fixed in e48a85b**) | Not parsed anywhere in `canopa-apps` | Stale entries for uninstalled binaries still show and then fail silently |
+| App search | `Terminal=true` apps | missing (**Fixed in e48a85b**) | Filtered out for the launcher (`canopa-apps/src/lib.rs:231`) | htop, btop, vim, nmtui and ranger can't be found |
 | App search | Localized Name, GenericName, Comment, Keywords | works | `canopa-apps/src/lib.rs:274-303`, with `LANGUAGE`/`LC_*` fallbacks (`:46-62`) | Localized names show. Localized `Keywords[xx]` **replace** the English ones, so English keyword search stops working in localized sessions |
 | App search | Fields matched | partial | Name, then GenericName, Comment, Keywords (`app/panel_menu_session.rs:795-812`). The desktop ID and `Exec` binary are not matched | Typing `nautilus` for "Files" or `code` for some VS Code builds may fail |
-| App search | Fuzzy matching | **broken** (non-ASCII) | `to_ascii_lowercase` on both query and text (`app/panel_search.rs:30,100`). The later tiering uses `to_lowercase` (`app/launcher.rs:649-690`), but only on entries that already matched | Case-insensitive search fails for Cyrillic, Greek and accented capitals (`éd` doesn't match "Éditeur"), and there is no accent folding |
+| App search | Fuzzy matching | **broken** (non-ASCII) (**Fixed in ce15a6d**, ranking in 40bbd51) | `to_ascii_lowercase` on both query and text (`app/panel_search.rs:30,100`). The later tiering uses `to_lowercase` (`app/launcher.rs:649-690`), but only on entries that already matched | Case-insensitive search fails for Cyrillic, Greek and accented capitals (`éd` doesn't match "Éditeur"), and there is no accent folding |
 | App search | `[Desktop Action]` entries | missing | Parser reads only `[Desktop Entry]` (`canopa-apps/src/lib.rs:338`) | No "New private window" or "New document" |
 | App search | Ranking / frecency | works | Count capped at 20, plus recency by selection order (`launcher/history.rs:68-75`). Ranked by quality tier, then pin, then boost, then source order (`app/launcher.rs:649-720`). Pins and aliases: `app/launcher/personalization.rs:164+` | Frequent apps rise; exact and prefix matches stay on top |
 | App search | Empty query / browse all apps | rough | Native results are cut to `RESULT_LIMIT` = 20 (`app/launcher.rs:770`, `launcher.rs:22`), and open windows come first | Users with more than 20 apps can't scroll an A–Z list and have no categories (confirm hands-on) |
@@ -70,9 +70,9 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 | Launch | systemd scope | rough | Niri names the scope after the argv basename: `app-niri-<basename>-<pid>.scope` (`forks/niri/src/utils/spawning.rs:428-443`). Every launcher app becomes `app-niri-gio-<pid>.scope`. Without `NIRI_SOCKET` the fallback is a `systemd-run --scope` with no name (`command/applications.rs:29-43`) | Isolated from Shell (good), but you can't tell apps apart in `systemctl --user`, systemd-oomd or by portal host-app-ID parsing |
 | Launch | Activation token / focus, Exec apps | works | Niri creates an external token for `Spawn` (`forks/niri/src/input/mod.rs:1102-1105`) and exports it (`spawning.rs:152-155`). External tokens have no `UrgentOnlyMarker`, so they focus (`handlers/mod.rs:809-816`). The lifetime is 10 s (`handlers/mod.rs:86`). This does **not** depend on layershellev | New windows and single-instance apps that forward the token (Firefox, GTK4) are focused |
 | Launch | `DBusActivatable=true` | partial | `org.freedesktop.Application.Activate`/`Open` with **empty `platform_data`** (`command/applications.rs:182-215`, `:201`). There is no Exec fallback | First start is usually focused by Niri's Smart policy. An **already-running** GNOME app is not raised |
-| Launch | `Terminal=true` | missing | Hidden (see above). Even if shown, no terminal is chosen. GLib uses `xdg-terminal-exec` or its own built-in list | — |
+| Launch | `Terminal=true` | missing (**Fixed in e48a85b** and 40bbd51: `gio launch` uses `xdg-terminal-exec`, a missing terminal is reported) | Hidden (see above). Even if shown, no terminal is chosen. GLib uses `xdg-terminal-exec` or its own built-in list | — |
 | Launch | Startup feedback | missing | The panel closes once Niri accepts the request. There is no busy cursor or spinner | Slow apps (LibreOffice) look like nothing happened, so users press Enter again |
-| Launch | Errors shown | partial | Handoff errors appear as one generic status line (`app/launcher.rs:1498-1500`). Niri replies `Handled` before `exec`, and the child's stderr goes to `/dev/null` (`forks/niri/src/utils/spawning.rs:114-120`) | A broken `Exec`, missing binary or crash on start closes the panel silently |
+| Launch | Errors shown | partial (**Fixed in 40bbd51** for a missing `TryExec`/`Exec` program, missing terminal and rejected spawn; a crash after start is still silent) | Handoff errors appear as one generic status line (`app/launcher.rs:1498-1500`). Niri replies `Handled` before `exec`, and the child's stderr goes to `/dev/null` (`forks/niri/src/utils/spawning.rs:114-120`) | A broken `Exec`, missing binary or crash on start closes the panel silently |
 | Launch | Reveal in file manager | partial | `FileManager1.ShowItems(uris, "")`, with an empty startup ID (`app/launcher.rs:1508-1527`). Files accepts one (`canopa-files/src/file_manager.rs:43-44`) | An existing Files window may not be raised |
 | Providers | Calculator, units | works | qalc, sandboxed state (`launcher/process.rs:58-140`). Docs: `docs/shell/launcher.md` | Needs `libqalculate`. No currency |
 | Providers | Files (names) | works | `launcher/files.rs:17+`. Home only by default, 100k paths, 10 s, depth 32, 60 s refresh while open (`app/launcher.rs:934-944`) | Good. No recent files (`recently-used.xbel`), no content search (PRD W9) |
@@ -96,7 +96,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
 
 ## Ranked gaps
 
-1. **Unicode-aware matching.** *Impact:* app, window and control search fails
+1. **Unicode-aware matching.** **Fixed in ce15a6d and 40bbd51** (case and accent folding; desktop ID and `Exec` basename matching remain open). *Impact:* app, window and control search fails
    for most non-Latin locales, which matters for any distribution default.
    *Approach:* fold both sides with `str::to_lowercase`. Optionally add NFKD
    accent folding with `unicode-normalization`, or use `nucleo-matcher` (the
@@ -108,7 +108,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    search field as `Role::SearchInput`, results as `ListBox`/`ListBoxItem`
    with the active descendant tracking the selection, and status as a live
    region. Reuse the existing bridge and AT-SPI test fixture. *Size:* M.
-3. **Terminal apps and `TryExec`.** *Impact:* TUI apps are invisible, and
+3. **Terminal apps and `TryExec`.** **Fixed in e48a85b and 40bbd51** (the package does not yet depend on `xdg-terminal-exec`). *Impact:* TUI apps are invisible, and
    stale entries fail silently. *Approach:* stop filtering `Terminal=true`.
    `gio launch` already wraps these apps in a terminal, and GLib prefers
    `xdg-terminal-exec`, so ship or depend on that and configure a default
@@ -134,7 +134,7 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
    `Enter`/`Key`. Then request a token before D-Bus `Activate`/`Open` and pass
    it as `platform_data["activation-token"]` and `["desktop-startup-id"]`,
    and as the `ShowItems` startup ID. *Size:* S (fork) + S (Shell).
-7. **Launch feedback and errors.** *Impact:* a launch that fails or starts
+7. **Launch feedback and errors.** **Errors fixed in 40bbd51** (pre-handoff checks; "Starting X…" feedback and crash-on-start reporting remain open). *Impact:* a launch that fails or starts
    slowly looks like nothing happened. *Approach:* validate with
    `gio::DesktopAppInfo` before handoff (TryExec, Exec binary). Keep a short
    "Starting X…" state until Niri's event stream reports a window with the
@@ -187,13 +187,13 @@ focused work. Paths without a crate prefix are under `crates/canopa-shell/src/`.
   keyboard or pointer enter (`forks/niri/src/handlers/mod.rs:773-785`).
 - **Empty D-Bus `platform_data`** (`command/applications.rs:201`). A running
   activatable app can't be raised from the launcher.
-- **ASCII-only case folding** (`app/panel_search.rs:30,100`). This is a bug,
+- **Fixed in ce15a6d.** **ASCII-only case folding** (`app/panel_search.rs:30,100`). This is a bug,
   not just a gap, because the file provider already uses Unicode lowercasing
   (`launcher/files.rs:135-149`).
 - **Localized keywords replace the English ones**
   (`canopa-apps/src/lib.rs:256-266` with `localized_field`). `\;` escapes in
   lists aren't handled (`unescape_string`, `:305-328`).
-- **Silent launch failures** after the Niri handoff. A missing `gio` binary is
+- **Partly fixed in 40bbd51** (missing program, missing terminal, rejected spawn). **Silent launch failures** after the Niri handoff. A missing `gio` binary is
   reported, but a broken target app is not.
 - **Every app scope is named after `gio`**
   (`forks/niri/src/utils/spawning.rs:428-443`). This hurts per-app accounting
