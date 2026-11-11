@@ -223,6 +223,21 @@ async fn measured_content_updates_pointer_input_instead_of_resizing_the_surface(
     );
 }
 
+// The natural height of the fixture card that `queue_banner_ui_presentation`
+// shows, measured rather than hard-coded so theme spacing changes do not stale
+// the region assertions.
+fn queued_card_height(renderer: &iced::Renderer, width: f32) -> i32 {
+    let banner = banner_view(42, "Queued");
+    let mut card = notification_banner_widget(&banner, &Default::default());
+    let mut tree = Tree::new(card.as_widget());
+    let node = card.as_widget_mut().layout(
+        &mut tree,
+        renderer,
+        &core::layout::Limits::new(Size::ZERO, Size::new(width, 1000.0)),
+    );
+    node.size().height.ceil() as i32
+}
+
 // An external wire peer records actual wl_region requests. No compositor or
 // private geometry helper is mocked; object setup uses ordinary client proxies.
 fn region_requests(callback: &iced_layershell::actions::ActionCallback) -> Vec<(u16, Vec<i32>)> {
@@ -290,13 +305,19 @@ async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_cle
     let reset = (2, vec![0, 0, i32::MAX, i32::MAX]);
     assert_eq!(
         region_requests(old),
-        vec![reset.clone(), (1, vec![616, 0, 360, 132])]
+        vec![
+            reset.clone(),
+            (1, vec![616, 0, 360, queued_card_height(&renderer, 360.0)])
+        ]
     );
     let resized = frame_actions(&mut state, &renderer, Size::new(276.0, 216.0), &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(current)] = resized.as_slice() else {
         panic!("{resized:?}");
     };
-    let narrow = vec![reset.clone(), (1, vec![0, 0, 276, 132])];
+    let narrow = vec![
+        reset.clone(),
+        (1, vec![0, 0, 276, queued_card_height(&renderer, 276.0)]),
+    ];
     assert_eq!(region_requests(current), narrow);
     assert_eq!(
         region_requests(old),
@@ -1343,7 +1364,7 @@ async fn late_layout_from_lost_output_cannot_restore_its_input_region() {
         region_requests(current),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![0, 0, 276, 132]),
+            (1, vec![0, 0, 276, queued_card_height(&renderer, 276.0)]),
         ],
         "late geometry cannot change the fallback output's input region"
     );
@@ -1574,13 +1595,12 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
     let mut scroll = ScrollBounds::default();
     view.as_widget_mut()
         .operate(&mut tree, Layout::new(&node), &renderer, &mut scroll);
-    assert!(
-        scroll
-            .0
-            .iter()
-            .any(|(viewport, content, _)| { viewport.height == 150.0 && content.height > 200.0 }),
-        "the complete natural card must remain internally scrollable"
-    );
+    let natural_height = scroll
+        .0
+        .iter()
+        .find(|(viewport, content, _)| viewport.height == 150.0 && content.height > 200.0)
+        .map(|(_, content, _)| content.height.ceil())
+        .expect("the complete natural card must remain internally scrollable");
     drop(view);
     let _ = event_messages_in_tree(
         &state,
@@ -1598,13 +1618,14 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
             .y
             > 0.0
     );
-    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 320.0), &mut tree).await;
+    let grown = Size::new(976.0, natural_height);
+    let actions = frame_actions(&mut state, &renderer, grown, &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
         panic!("{actions:?}");
     };
     let requests = region_requests(region);
-    assert!(
-        requests[1].1[3] > 160 && requests[1].1[3] <= 320,
+    assert_eq!(
+        requests[1].1[3], natural_height as i32,
         "rich card retains its natural height"
     );
     assert!(
@@ -1612,7 +1633,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         "the fitting frame must acknowledge its presentation"
     );
     assert_eq!(
-        scroll_bounds_in_tree(&state, &renderer, Size::new(976.0, 320.0), &mut tree).0[1]
+        scroll_bounds_in_tree(&state, &renderer, grown, &mut tree).0[1]
             .2
             .y,
         0.0,
@@ -1621,7 +1642,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
 
     let replacement = Arc::new(AtomicBool::new(false));
     queue_banner_ui_presentation(&mut state, 42, replacement.clone());
-    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 320.0), &mut tree).await;
+    let actions = frame_actions(&mut state, &renderer, grown, &mut tree).await;
     let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
         panic!("{actions:?}");
     };
@@ -1629,7 +1650,7 @@ async fn oversized_card_is_bounded_and_acknowledged_without_losing_natural_conte
         region_requests(region),
         vec![
             (2, vec![0, 0, i32::MAX, i32::MAX]),
-            (1, vec![616, 0, 360, 132])
+            (1, vec![616, 0, 360, queued_card_height(&renderer, 360.0)])
         ]
     );
     assert!(
