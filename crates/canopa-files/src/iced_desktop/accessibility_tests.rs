@@ -102,6 +102,52 @@ fn folder_announcements_follow_loading_selection_and_search() {
     );
 }
 
+#[test]
+fn the_newest_operation_is_announced_once_and_failures_assertively() {
+    use crate::operation_jobs::{JobSnapshot, Phase};
+    let root = tempfile::tempdir().unwrap();
+    let (mut desktop, window) = desktop(root.path(), vec![root.path().to_owned()]);
+    assert_eq!(desktop.file_operations.announcement(), None);
+    let job = |id, phase, error: Option<&str>| JobSnapshot {
+        id,
+        accepted_at: None,
+        title: "copy 2 items".into(),
+        phase,
+        error: error.map(Into::into),
+        paths: Vec::new().into(),
+        detail: None,
+        decision: None,
+        progress: None,
+        transfer: None,
+        trash: None,
+        restore: None,
+        delete: None,
+        recovery: None,
+        recovery_actions: Default::default(),
+        transfer_actions: Default::default(),
+        dismissible: false,
+    };
+    desktop.file_operations.snapshot.jobs = vec![job(1, Phase::Finished, None)];
+    assert_eq!(
+        desktop.file_operations.announcement(),
+        Some(("Copy 2 items: Completed".into(), false))
+    );
+    desktop
+        .file_operations
+        .snapshot
+        .jobs
+        .push(job(2, Phase::Failed, Some("Disk full")));
+    assert_eq!(
+        desktop.file_operations.announcement(),
+        Some(("Copy 2 items: Could not finish. Disk full".into(), true))
+    );
+    // Only one window speaks: the focused one, else the first Browser.
+    let other = window::Id::unique();
+    assert!(desktop.announces_operations(window));
+    desktop.focused_window = Some(other);
+    assert!(!desktop.announces_operations(window));
+}
+
 async fn next(bridge: &Bridge<Message>) -> Accessibility<Message> {
     tokio::time::timeout(Duration::from_secs(5), bridge.next_event())
         .await

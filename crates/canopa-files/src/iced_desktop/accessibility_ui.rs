@@ -142,7 +142,7 @@ impl Desktop {
 impl Desktop {
     /// Operation outcomes are announced once, from the focused window (or the
     /// first Browser while Files has no focus), never from every window.
-    fn announces_operations(&self, id: window::Id) -> bool {
+    pub(super) fn announces_operations(&self, id: window::Id) -> bool {
         match self.focused_window {
             Some(focused) => focused == id,
             None => self.windows.keys().next() == Some(&id),
