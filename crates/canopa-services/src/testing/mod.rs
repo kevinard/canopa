@@ -69,3 +69,4 @@ pub mod logind;
 pub mod power_profiles;
 pub mod upower;
 pub mod wifi;
+pub mod bluez;

@@ -5,6 +5,7 @@
 //! its headless providers and Settings share one client per service.
 
 pub mod backlight;
+pub mod bluetooth;
 pub mod bus;
 mod error;
 pub mod logind;
