@@ -105,9 +105,18 @@ impl RuntimeBackend {
         scan: bool,
         request: Option<WifiConnectRequest>,
     ) -> Result<WifiSnapshot, WifiBackendError> {
+        let operation = match (scan, request) {
+            (_, Some(request)) => Operation::Connect(request),
+            (true, None) => Operation::Scan,
+            (false, None) => Operation::Snapshot,
+        };
+        self.run(operation).await
+    }
+
+    async fn run(&mut self, operation: Operation) -> Result<WifiSnapshot, WifiBackendError> {
         self.reconcile().await?;
         let Some(adapter) = self.adapter.as_mut() else {
-            return if request.is_some() {
+            return if !matches!(operation, Operation::Snapshot | Operation::Scan) {
                 Err(identity::changed())
             } else {
                 Ok(WifiSnapshot {
@@ -121,12 +130,13 @@ impl RuntimeBackend {
         let policy = self.policy;
         let mut watch = self.watch.clone();
         let work = async {
-            if let Some(request) = request {
-                adapter.connect(request).await
-            } else if scan {
-                adapter.scan().await
-            } else {
-                adapter.initial_snapshot().await
+            match operation {
+                Operation::Connect(request) => adapter.connect(request).await,
+                Operation::Scan => adapter.scan().await,
+                Operation::Snapshot => adapter.initial_snapshot().await,
+                Operation::Radio(enabled) => adapter.set_radio(enabled).await,
+                Operation::Disconnect(device) => adapter.disconnect(device).await,
+                Operation::Forget(request) => adapter.forget(request).await,
             }
         };
         tokio::pin!(work);
@@ -184,6 +194,34 @@ impl WifiControlBackend for RuntimeBackend {
     fn connect(&mut self, request: WifiConnectRequest) -> WifiBackendFuture<'_, WifiSnapshot> {
         Box::pin(self.operate(false, Some(request)))
     }
+    fn radio(&mut self) -> WifiBackendFuture<'_, Option<bool>> {
+        Box::pin(async move {
+            self.reconcile().await?;
+            match self.adapter.as_mut() {
+                Some(adapter) => adapter.radio().await,
+                None => Ok(None),
+            }
+        })
+    }
+    fn set_radio(&mut self, enabled: bool) -> WifiBackendFuture<'_, WifiSnapshot> {
+        Box::pin(self.run(Operation::Radio(enabled)))
+    }
+    fn disconnect(&mut self, device_id: String) -> WifiBackendFuture<'_, WifiSnapshot> {
+        Box::pin(self.run(Operation::Disconnect(device_id)))
+    }
+    fn forget(&mut self, request: WifiConnectRequest) -> WifiBackendFuture<'_, WifiSnapshot> {
+        Box::pin(self.run(Operation::Forget(request)))
+    }
+}
+
+/// One request through the selected adapter.
+enum Operation {
+    Snapshot,
+    Scan,
+    Connect(WifiConnectRequest),
+    Radio(bool),
+    Disconnect(String),
+    Forget(WifiConnectRequest),
 }
 
 pub(super) async fn verify_control(

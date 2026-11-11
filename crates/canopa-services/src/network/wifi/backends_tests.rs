@@ -305,3 +305,29 @@ async fn iwd_agent_revalidates_network_properties_device_and_owner_on_every_requ
         "cleanup must unregister at the original owner"
     );
 }
+
+#[tokio::test]
+async fn networkmanager_radio_disconnect_and_forget() {
+    let bus = TestBus::new();
+    let fake = wifi::NetworkManager::serve(&bus, 2, false).await;
+    let backend = NetworkManagerBackend::from_connection(bus.connect().await)
+        .await
+        .unwrap();
+    assert_eq!(backend.radio().await.unwrap(), Some(true));
+    backend.set_radio(false).await.unwrap();
+    assert!(fake.radio_off.load(Ordering::SeqCst));
+    assert_eq!(backend.radio().await.unwrap(), Some(false));
+    let snapshot = backend.set_radio(true).await.unwrap();
+    let device = snapshot.device_id.clone().unwrap();
+    backend.disconnect(&device).await.unwrap();
+    assert!(fake.disconnected.load(Ordering::SeqCst));
+    assert_eq!(
+        backend.disconnect("stale").await.unwrap_err().category(),
+        WifiBackendErrorCategory::TargetChanged
+    );
+    backend
+        .forget(selected_request(snapshot, None))
+        .await
+        .unwrap();
+    assert!(fake.deleted.load(Ordering::SeqCst));
+}

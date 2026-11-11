@@ -70,6 +70,7 @@ pub mod audio;
 pub mod bluez;
 pub mod logind;
 pub mod mpris;
+pub mod network;
 pub mod power_profiles;
 pub mod upower;
 pub mod wifi;

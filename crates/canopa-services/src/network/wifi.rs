@@ -139,4 +139,24 @@ pub trait WifiControlBackend {
         &'a mut self,
         request: WifiConnectRequest,
     ) -> WifiBackendFuture<'a, WifiSnapshot>;
+    /// Whether the Wi-Fi radio is on; `None` when the backend cannot tell.
+    fn radio<'a>(&'a mut self) -> WifiBackendFuture<'a, Option<bool>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// Turn the radio on or off.
+    fn set_radio<'a>(&'a mut self, _enabled: bool) -> WifiBackendFuture<'a, WifiSnapshot> {
+        Box::pin(async { Err(WifiBackendError::new(WifiBackendErrorCategory::NoControl)) })
+    }
+    /// Leave the current network on the device of a snapshot.
+    fn disconnect<'a>(&'a mut self, _device_id: String) -> WifiBackendFuture<'a, WifiSnapshot> {
+        Box::pin(async { Err(WifiBackendError::new(WifiBackendErrorCategory::NoControl)) })
+    }
+    /// Forget a known network (`device_id` and `network_id` of the request),
+    /// with the credentials its daemon stored.
+    fn forget<'a>(
+        &'a mut self,
+        _request: WifiConnectRequest,
+    ) -> WifiBackendFuture<'a, WifiSnapshot> {
+        Box::pin(async { Err(WifiBackendError::new(WifiBackendErrorCategory::NoControl)) })
+    }
 }

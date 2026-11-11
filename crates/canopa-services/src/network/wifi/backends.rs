@@ -56,6 +56,250 @@ impl WifiControlBackend for Adapter {
             Self::Iwd(backend) => Box::pin(async move { backend.connect(request).await }),
         }
     }
+
+    fn radio<'a>(&'a mut self) -> WifiBackendFuture<'a, Option<bool>> {
+        match self {
+            Self::NetworkManager(backend) => Box::pin(async move { backend.radio().await }),
+            Self::Iwd(backend) => Box::pin(async move { backend.radio().await }),
+        }
+    }
+
+    fn set_radio<'a>(&'a mut self, enabled: bool) -> WifiBackendFuture<'a, WifiSnapshot> {
+        match self {
+            Self::NetworkManager(backend) => {
+                Box::pin(async move { backend.set_radio(enabled).await })
+            }
+            Self::Iwd(backend) => Box::pin(async move { backend.set_radio(enabled).await }),
+        }
+    }
+
+    fn disconnect<'a>(&'a mut self, device_id: String) -> WifiBackendFuture<'a, WifiSnapshot> {
+        match self {
+            Self::NetworkManager(backend) => {
+                Box::pin(async move { backend.disconnect(&device_id).await })
+            }
+            Self::Iwd(backend) => Box::pin(async move { backend.disconnect(&device_id).await }),
+        }
+    }
+
+    fn forget<'a>(
+        &'a mut self,
+        request: WifiConnectRequest,
+    ) -> WifiBackendFuture<'a, WifiSnapshot> {
+        match self {
+            Self::NetworkManager(backend) => Box::pin(async move { backend.forget(request).await }),
+            Self::Iwd(backend) => Box::pin(async move { backend.forget(request).await }),
+        }
+    }
+}
+
+impl NetworkManagerBackend {
+    async fn manager(&self) -> Result<zbus::Proxy<'_>, WifiBackendError> {
+        zbus::proxy::Builder::new(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(connection_error)?
+            .path("/org/freedesktop/NetworkManager")
+            .map_err(connection_error)?
+            .interface("org.freedesktop.NetworkManager")
+            .map_err(connection_error)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+            .map_err(connection_error)
+    }
+
+    async fn radio(&self) -> Result<Option<bool>, WifiBackendError> {
+        self.verify_owner().await?;
+        Ok(Some(
+            self.manager()
+                .await?
+                .get_property::<bool>("WirelessEnabled")
+                .await
+                .map_err(connection_error)?,
+        ))
+    }
+
+    async fn set_radio(&self, enabled: bool) -> Result<WifiSnapshot, WifiBackendError> {
+        self.verify_owner().await?;
+        self.manager()
+            .await?
+            .set_property("WirelessEnabled", enabled)
+            .await
+            .map_err(|error| connection_error(zbus::Error::from(error)))?;
+        self.snapshot().await
+    }
+
+    async fn disconnect(&self, device_id: &str) -> Result<WifiSnapshot, WifiBackendError> {
+        let device = self.targets.lock().unwrap().resolve_device(device_id)?;
+        self.verify_owner().await?;
+        zbus::proxy::Builder::<zbus::Proxy<'_>>::new(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(connection_error)?
+            .path(device.path)
+            .map_err(connection_error)?
+            .interface("org.freedesktop.NetworkManager.Device")
+            .map_err(connection_error)?
+            .build()
+            .await
+            .map_err(connection_error)?
+            .call::<_, _, ()>("Disconnect", &())
+            .await
+            .map_err(connection_error)?;
+        self.snapshot().await
+    }
+
+    async fn forget(&self, request: WifiConnectRequest) -> Result<WifiSnapshot, WifiBackendError> {
+        let (device, network) = self.targets.lock().unwrap().resolve(&request)?;
+        let Some(NetworkIdentity::NetworkManager {
+            ssid,
+            flags,
+            wpa,
+            rsn,
+        }) = network
+        else {
+            return Err(identity::changed());
+        };
+        let security = nm_security(wpa | rsn, flags);
+        self.verify_owner().await?;
+        for (path, saved, key) in self.profiles(&device.path).await? {
+            if saved == ssid && profile_security(&key) == security {
+                NmSettingsConnectionProxy::builder(&self.conn)
+                    .destination(self.owner.clone())
+                    .map_err(connection_error)?
+                    .path(path)
+                    .map_err(connection_error)?
+                    .build()
+                    .await
+                    .map_err(connection_error)?
+                    .delete()
+                    .await
+                    .map_err(connection_error)?;
+            }
+        }
+        self.snapshot().await
+    }
+}
+
+impl IwdBackend {
+    async fn adapter_path(&self) -> Result<Option<OwnedObjectPath>, WifiBackendError> {
+        self.verify_owner().await?;
+        let objects = IwdObjectManagerProxy::builder(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(connection_error)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+            .map_err(connection_error)?
+            .get_managed_objects()
+            .await
+            .map_err(connection_error)?;
+        let mut devices: Vec<_> = objects
+            .into_iter()
+            .filter(|(_, interfaces)| interfaces.contains_key("net.connman.iwd.Device"))
+            .map(|(path, _)| path)
+            .collect();
+        devices.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        Ok(devices.into_iter().next())
+    }
+
+    async fn device_proxy(
+        &self,
+        path: OwnedObjectPath,
+        interface: &'static str,
+    ) -> Result<zbus::Proxy<'_>, WifiBackendError> {
+        zbus::proxy::Builder::new(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(connection_error)?
+            .path(path)
+            .map_err(connection_error)?
+            .interface(interface)
+            .map_err(connection_error)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+            .map_err(connection_error)
+    }
+
+    async fn radio(&self) -> Result<Option<bool>, WifiBackendError> {
+        let Some(path) = self.adapter_path().await? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.device_proxy(path, "net.connman.iwd.Device")
+                .await?
+                .get_property::<bool>("Powered")
+                .await
+                .map_err(connection_error)?,
+        ))
+    }
+
+    async fn set_radio(&self, enabled: bool) -> Result<WifiSnapshot, WifiBackendError> {
+        let path = self
+            .adapter_path()
+            .await?
+            .ok_or_else(|| WifiBackendError::new(WifiBackendErrorCategory::NoControl))?;
+        self.device_proxy(path, "net.connman.iwd.Device")
+            .await?
+            .set_property("Powered", enabled)
+            .await
+            .map_err(|error| connection_error(zbus::Error::from(error)))?;
+        self.snapshot().await
+    }
+
+    async fn disconnect(&self, device_id: &str) -> Result<WifiSnapshot, WifiBackendError> {
+        let device = self.targets.lock().unwrap().resolve_device(device_id)?;
+        self.device_proxy(device.path, "net.connman.iwd.Station")
+            .await?
+            .call::<_, _, ()>("Disconnect", &())
+            .await
+            .map_err(connection_error)?;
+        self.snapshot().await
+    }
+
+    async fn forget(&self, request: WifiConnectRequest) -> Result<WifiSnapshot, WifiBackendError> {
+        let (device, network) = self.targets.lock().unwrap().resolve(&request)?;
+        let Some(NetworkIdentity::Iwd { name, kind }) = network else {
+            return Err(identity::changed());
+        };
+        self.verify_owner().await?;
+        let station = IwdStationProxy::builder(&self.conn)
+            .destination(self.owner.clone())
+            .map_err(connection_error)?
+            .path(device.path.clone())
+            .map_err(connection_error)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+            .map_err(connection_error)?;
+        for (path, _) in station
+            .get_ordered_networks()
+            .await
+            .map_err(connection_error)?
+        {
+            let network = IwdNetworkProxy::builder(&self.conn)
+                .destination(self.owner.clone())
+                .map_err(connection_error)?
+                .path(path)
+                .map_err(connection_error)?
+                .cache_properties(zbus::proxy::CacheProperties::No)
+                .build()
+                .await
+                .map_err(connection_error)?;
+            if network.name().await.ok().as_ref() == Some(&name)
+                && network.network_type().await.ok().as_ref() == Some(&kind)
+            {
+                let known = network.known_network().await.map_err(connection_error)?;
+                if known.as_str() != "/" {
+                    self.device_proxy(known, "net.connman.iwd.KnownNetwork")
+                        .await?
+                        .call::<_, _, ()>("Forget", &())
+                        .await
+                        .map_err(connection_error)?;
+                }
+            }
+        }
+        self.snapshot().await
+    }
 }
 
 async fn nm_network_identity(

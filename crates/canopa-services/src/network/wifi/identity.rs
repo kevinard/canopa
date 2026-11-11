@@ -153,6 +153,15 @@ impl Targets {
         Ok((device.clone(), network))
     }
 
+    /// The device behind a snapshot's device handle.
+    pub fn resolve_device(&self, device_id: &str) -> Result<DeviceIdentity, WifiBackendError> {
+        self.device
+            .as_ref()
+            .filter(|(id, _)| id == device_id)
+            .map(|(_, device)| device.clone())
+            .ok_or_else(changed)
+    }
+
     pub fn clear(&mut self) {
         self.device = None;
         self.networks.clear();

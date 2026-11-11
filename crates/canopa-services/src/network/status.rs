@@ -62,6 +62,12 @@ trait NetworkManager {
     /// Path to primary active connection, or "/" when no connection.
     #[zbus(property)]
     fn primary_connection(&self) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+
+    #[zbus(property)]
+    fn primary_connection_type(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn active_connections(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
 }
 
 /// Active connection proxy for reading the profile name.
@@ -74,6 +80,12 @@ trait NMActiveConnection {
     /// Human-readable connection profile name (e.g. "Home WiFi").
     #[zbus(property)]
     fn id(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn vpn(&self) -> zbus::Result<bool>;
+
+    #[zbus(property, name = "Type")]
+    fn kind(&self) -> zbus::Result<String>;
 }
 
 // ── systemd-networkd proxy ───────────────────────────────────────────────
@@ -199,9 +211,45 @@ async fn read_nm_state(
 ) -> zbus::Result<NetworkStatus> {
     let connectivity = nm_connectivity(proxy.connectivity().await?);
     let label = read_nm_label(proxy, conn).await;
+    // Older daemons and fakes may not have these; they only add detail.
+    let kind = proxy
+        .primary_connection_type()
+        .await
+        .ok()
+        .and_then(|kind| super::NetworkKind::from_nm(&kind));
+    let mut vpn = Vec::new();
+    for path in proxy
+        .active_connections()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .take(64)
+    {
+        let Ok(builder) = NMActiveConnectionProxy::builder(conn)
+            .destination(proxy.inner().destination().to_string())
+            .and_then(|builder| builder.path(path))
+        else {
+            continue;
+        };
+        let Ok(active) = builder
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await
+        else {
+            continue;
+        };
+        let is_vpn = active.vpn().await.unwrap_or(false)
+            || active.kind().await.is_ok_and(|kind| kind == "wireguard");
+        if is_vpn && let Ok(id) = active.id().await {
+            vpn.push(crate::bus::bounded_text(&id, 64));
+        }
+    }
+    vpn.sort();
     Ok(NetworkStatus {
         connectivity,
         label,
+        kind,
+        vpn,
     })
 }
 
@@ -292,6 +340,7 @@ async fn read_networkd_state(
     Ok(NetworkStatus {
         connectivity,
         label,
+        ..Default::default()
     })
 }
 

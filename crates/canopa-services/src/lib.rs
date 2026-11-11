@@ -7,7 +7,7 @@
 //!
 //! | Module | Service | Snapshot | Changes | Commands |
 //! | --- | --- | --- | --- | --- |
-//! | [`network`] | NetworkManager, systemd-networkd, iwd | [`network::NetworkStatus`], [`network::wifi::WifiSnapshot`] | [`network::status::watch`], `RuntimeBackend::changes` | Wi-Fi scan and connect |
+//! | [`network`] | NetworkManager, systemd-networkd, iwd | [`network::NetworkStatus`] (with kind and VPNs), [`network::wifi::WifiSnapshot`], [`network::manager::Overview`] | [`network::status::watch`], `RuntimeBackend::changes`, [`network::manager::watch`] | Wi-Fi scan, connect, radio, disconnect, forget; profiles (Wi-Fi with WPA-Enterprise, wired IP and DNS, VPN, WireGuard, hotspot, metered, proxy); [`network::secret_agent`] |
 //! | [`bluetooth`] | BlueZ | [`bluetooth::Snapshot`] | [`bluetooth::watch`] | power, discovery, connect, [`bluetooth::pair`] |
 //! | `audio` (feature `audio`) | PulseAudio protocol (PipeWire) | `audio::AudioSnapshot` (with streams and cards from `audio::mixer`), `audio::Defaults` | `audio::monitor`, `audio::mixer`, `audio::watch_defaults`, `audio::level_meter` | volume, mute, balance, default device, stream volume and mute, card profiles, `audio::change_default` |
 //! | [`upower`] | UPower | [`upower::DisplayDevice`], [`upower::PowerSupply`] (batteries, health, lid) | [`upower::watch`], [`upower::watch_power_supply`] | – |

@@ -50,6 +50,7 @@ async fn expect(rx: &mut ReadingReceiver, connectivity: Connectivity, label: &st
                 == (NetworkStatus {
                     connectivity: connectivity.clone(),
                     label: Some(label.into()),
+                    ..Default::default()
                 })
             {
                 break;
@@ -313,10 +314,33 @@ async fn read_and_watch_report_absence_as_a_state() {
     let expected = NetworkStatus {
         connectivity: Connectivity::Full,
         label: Some("Home".into()),
+        ..Default::default()
     };
     assert_eq!(
         next(&mut states).await,
         ServiceState::Available(expected.clone())
     );
     assert_eq!(read(&client).await, Ok(ServiceState::Available(expected)));
+}
+
+#[tokio::test]
+async fn networkmanager_status_names_the_primary_kind_and_active_vpns() {
+    use crate::testing::{TestBus, network::FakeNetworkManager};
+    let bus = TestBus::new();
+    let nm = FakeNetworkManager::serve(&bus).await;
+    let client = bus.connect().await;
+    let overview = crate::network::manager::read(&client).await.unwrap();
+    let vpn = crate::network::manager::Target::from(
+        overview.connection(crate::testing::network::VPN).unwrap(),
+    );
+    crate::network::manager::activate(&client, &vpn, "/", "/")
+        .await
+        .unwrap();
+    let crate::ServiceState::Available(status) = read(&client).await.unwrap() else {
+        panic!("status expected");
+    };
+    assert_eq!(status.kind, Some(crate::network::NetworkKind::Wired));
+    assert_eq!(status.label.as_deref(), Some("Wired"));
+    assert_eq!(status.vpn, ["Office VPN"]);
+    drop(nm);
 }

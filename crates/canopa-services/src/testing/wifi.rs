@@ -26,6 +26,7 @@ pub const PROFILE: &str = "/settings/home";
 pub const ACTIVE: &str = "/connections/home";
 
 struct Manager {
+    radio_off: Arc<AtomicBool>,
     runtime: tokio::runtime::Handle,
     delay_reply: bool,
     created: Arc<AtomicBool>,
@@ -34,6 +35,14 @@ struct Manager {
 }
 #[zbus::interface(name = "org.freedesktop.NetworkManager")]
 impl Manager {
+    #[zbus(property)]
+    fn wireless_enabled(&self) -> bool {
+        !self.radio_off.load(Ordering::SeqCst)
+    }
+    #[zbus(property)]
+    fn set_wireless_enabled(&mut self, enabled: bool) {
+        self.radio_off.store(!enabled, Ordering::SeqCst);
+    }
     fn deactivate_connection(&self, _active: OwnedObjectPath) {
         self.deactivated.store(true, Ordering::SeqCst);
     }
@@ -81,9 +90,12 @@ impl Manager {
         (path(PROFILE), path(ACTIVE), HashMap::new())
     }
 }
-struct Device;
+struct Device(Arc<AtomicBool>);
 #[zbus::interface(name = "org.freedesktop.NetworkManager.Device")]
 impl Device {
+    fn disconnect(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
     #[zbus(property)]
     fn device_type(&self) -> u32 {
         2
@@ -326,6 +338,10 @@ pub struct NetworkManager {
     pub aps: Arc<Mutex<Vec<OwnedObjectPath>>>,
     /// The access point of the last activation.
     pub selected_ap: Arc<Mutex<Option<OwnedObjectPath>>>,
+    /// Set by `WirelessEnabled = false`.
+    pub radio_off: Arc<AtomicBool>,
+    /// Set by the device's `Disconnect`.
+    pub disconnected: Arc<AtomicBool>,
 }
 
 impl NetworkManager {
@@ -339,11 +355,14 @@ impl NetworkManager {
         let last = Arc::new(AtomicI64::new(0));
         let aps = Arc::new(Mutex::new(vec![path(AP)]));
         let selected_ap = Arc::new(Mutex::new(None));
+        let radio_off = Arc::new(AtomicBool::new(false));
+        let disconnected = Arc::new(AtomicBool::new(false));
         let server = service.object_server();
         server
             .at(
                 "/org/freedesktop/NetworkManager",
                 Manager {
+                    radio_off: radio_off.clone(),
                     runtime: tokio::runtime::Handle::current(),
                     delay_reply,
                     created: created.clone(),
@@ -353,7 +372,10 @@ impl NetworkManager {
             )
             .await
             .unwrap();
-        server.at(DEVICE, Device).await.unwrap();
+        server
+            .at(DEVICE, Device(disconnected.clone()))
+            .await
+            .unwrap();
         server
             .at(
                 DEVICE,
@@ -408,6 +430,8 @@ impl NetworkManager {
             last,
             aps,
             selected_ap,
+            radio_off,
+            disconnected,
         }
     }
 }
