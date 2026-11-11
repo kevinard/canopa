@@ -30,6 +30,10 @@ impl Paths {
     pub fn idle(&self) -> PathBuf {
         self.directory.join("stasis.rune")
     }
+    /// The lid-close choice the Canopa session follows.
+    pub fn power(&self) -> PathBuf {
+        self.directory.join("power.kdl")
+    }
     /// The user's changes to the shipped key bindings.
     pub fn shortcuts(&self) -> PathBuf {
         self.directory.join(crate::shortcuts::DELTA)

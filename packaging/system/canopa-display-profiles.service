@@ -1,5 +1,5 @@
 [Unit]
-Description=Watch connected displays for matching Canopa profiles
+Description=Follow Canopa display profiles and the lid-close choice
 ConditionEnvironment=CANOPA_SESSION=1
 PartOf=canopa-session.target graphical-session.target
 After=canopa-compositor.service canopa-notify.service

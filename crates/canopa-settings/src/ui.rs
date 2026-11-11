@@ -3,9 +3,9 @@ mod focus;
 mod launcher;
 #[cfg(debug_assertions)]
 mod live_example;
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
 mod live_page;
 mod navigation;
+mod power;
 mod profiles;
 mod shortcuts;
 mod widget_layouts;
@@ -15,6 +15,7 @@ use crate::{
     input::Input,
     instance::{Instance, Request},
     niri::Client,
+    power::PowerChoices,
     preferences::{IdleDraft, Personalization},
     registry::Document,
     session::Paths,
@@ -115,6 +116,13 @@ enum Message {
     Activated(Request),
     /// Whether the compositor focused the window.
     Raised(bool),
+    Power(crate::live::Event<crate::power::PowerService>),
+    LidClose(canopa_services::power_switches::LidAction),
+    /// Leave the power button to logind (`true`) or to Niri's suspend.
+    PowerKey(bool),
+    PowerKeyStored(Result<Snapshot, String>),
+    /// The lid choice saved, then the idle timeouts if they changed.
+    PowerStored(Result<(Snapshot, Result<Option<Snapshot>, String>), String>),
     #[cfg(debug_assertions)]
     LiveExample(crate::live::Event<crate::live::fake::Service>),
     #[cfg(debug_assertions)]
@@ -142,6 +150,8 @@ struct State {
     input: FileDraft<Input>,
     personal: FileDraft<Personalization>,
     idle: FileDraft<IdleDraft>,
+    power_choices: FileDraft<PowerChoices>,
+    power: power::PowerPage,
     profile: String,
     idle_status: String,
     idle_available: bool,
@@ -205,6 +215,7 @@ impl State {
         let (personal, personal_error) = FileDraft::load(&paths);
         // Unreadable idle policy shows the defaults without a notice, as before.
         let (idle, _) = FileDraft::load(&paths);
+        let (power_choices, _) = FileDraft::load(&paths);
         let compositor_motion = Self::load_motion(&paths);
         let notice = personal_error.or(input_error).unwrap_or_default();
         let profile_task = profiles::Editor::load(&paths);
@@ -230,6 +241,8 @@ impl State {
             input,
             personal,
             idle,
+            power_choices,
+            power: live_page::LivePage::new(Default::default()),
             profile: "none".into(),
             idle_status: "Connecting to the idle manager…".into(),
             idle_available: false,
@@ -270,6 +283,7 @@ impl State {
                     | Message::ReducedMotion(..)
                     | Message::Dim(..)
                     | Message::IdleTime(..)
+                    | Message::LidClose(..)
                     | Message::Profile(..)
                     | Message::Wallpaper
             )
@@ -637,11 +651,7 @@ impl State {
                     }
                 }
             }
-            Message::Save
-                if !self.busy
-                    && self.trial.is_none()
-                    && (self.page != Page::Power || self.idle_available) =>
-            {
+            Message::Save if !self.busy && self.trial.is_none() => {
                 self.notice.clear();
                 self.busy = true;
                 let paths = self.paths.clone();
@@ -678,7 +688,21 @@ impl State {
                     Page::Personal => {
                         return file_save(Page::Personal, self.personal.save_job(&paths));
                     }
-                    Page::Power => return file_save(Page::Power, self.idle.save_job(&paths)),
+                    Page::Power => {
+                        let choices = self.power_choices.save_job(&paths);
+                        let idle = self.idle_dirty().then(|| self.idle.save_job(&paths));
+                        return task(
+                            move || {
+                                let saved = choices()?;
+                                let idle = idle
+                                    .map(|job| job())
+                                    .transpose()
+                                    .map_err(|error| format!("{error:#}"));
+                                Ok((saved, idle))
+                            },
+                            Message::PowerStored,
+                        );
+                    }
                 }
             }
             Message::Stored(result) => {
@@ -758,6 +782,67 @@ impl State {
                     None => Task::none(),
                 });
             }
+            Message::Power(event) => return self.power.update(event, power::message),
+            Message::LidClose(action) => self.power_choices.value.lid_close = action,
+            Message::PowerKey(to_logind)
+                if !self.busy
+                    && self.trial.is_none()
+                    && self.paths.active()
+                    && to_logind != self.input.value.power_key_to_logind =>
+            {
+                let unsaved = self
+                    .input
+                    .source()
+                    .and_then(|source| <Input as FileModel>::read(source).ok())
+                    .is_none_or(|saved| saved != self.input.value);
+                if unsaved {
+                    self.notice =
+                        "Save or reload your Keyboard & pointer edits before changing the power button."
+                            .into();
+                    return Task::none();
+                }
+                self.busy = true;
+                self.notice.clear();
+                let paths = self.paths.clone();
+                return task(
+                    move || crate::input::set_power_key(&paths, to_logind),
+                    Message::PowerKeyStored,
+                );
+            }
+            Message::PowerKeyStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(_) => {
+                        // The Input draft had no edits; read the new include.
+                        self.input.reload(&self.paths);
+                        self.notice = "Power button setting applied.".into();
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
+            Message::PowerStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok((saved, idle)) => {
+                        self.power_choices.saved(saved);
+                        self.notice = match idle {
+                            Ok(Some(saved)) => {
+                                self.idle.saved(saved);
+                                if self.idle_available {
+                                    "Settings saved.".into()
+                                } else {
+                                    "Settings saved. No idle daemon is running; Stasis uses these timeouts when it starts.".into()
+                                }
+                            }
+                            Ok(None) => "Settings saved.".into(),
+                            Err(error) => format!(
+                                "The lid choice was saved, but the idle timeouts were not: {error}"
+                            ),
+                        };
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
             #[cfg(debug_assertions)]
             Message::LiveExample(event) => {
                 return self.live_example.update(event, live_example::message);
@@ -792,7 +877,6 @@ impl State {
                 Personalization::DOCUMENT,
                 self.personal.saved(saved.clone()),
             ),
-            Page::Power => (IdleDraft::DOCUMENT, self.idle.saved(saved.clone())),
             _ => return,
         };
         if let Some(previous) = previous {
@@ -861,8 +945,10 @@ impl State {
             }
             Page::Power => {
                 self.idle.reload(&paths);
+                self.power_choices.reload(&paths);
                 self.profile = "none".into();
-                Task::none()
+                self.power
+                    .update(crate::live::Event::Reload, power::message)
             }
             Page::Launcher => {
                 self.launcher = Default::default();
@@ -904,6 +990,7 @@ impl State {
         }
         if self.page == Page::Power {
             subscriptions.push(Subscription::run(idle_events));
+            subscriptions.push(self.power.subscription(Message::Power));
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1026,7 +1113,6 @@ impl State {
         (self.page != Page::Launcher || self.launcher.loaded)
             && !self.busy
             && self.trial.is_none()
-            && (self.page != Page::Power || self.idle_available)
             && (self.page != Page::Shortcuts
                 || (matches!(self.shortcuts, Some(Ok(_))) && self.paths.active()))
             && (self.page != Page::Widgets || self.widget_layouts.dirty())
@@ -1363,77 +1449,6 @@ impl State {
             settings_group("Appearance", appearance),
             settings_group("Lock screen", lockscreen),
             settings_group("Window and workspace motion", motion),
-        ]
-        .spacing(14)
-        .into()
-    }
-    fn power_view(&self) -> Element<'_, Message> {
-        let mut ac = column![].spacing(10);
-        let mut battery = column![].spacing(10);
-        for (index, label) in [
-            "Lock after (seconds)",
-            "After lock: displays off (seconds)",
-            "After displays off: suspend (seconds)",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            ac = ac.push(field_id(
-                format!("idle-ac-{index}"),
-                label,
-                &self.idle.value.ac[index],
-                move |v| Message::IdleTime(false, index, v),
-            ));
-            battery = battery.push(field_id(
-                format!("idle-battery-{index}"),
-                label,
-                &self.idle.value.battery[index],
-                move |v| Message::IdleTime(true, index, v),
-            ));
-        }
-        let activity = column![
-            text(&self.idle_status).style(canopa_ui::muted),
-            row![
-                self.action(
-                    "Pause idle actions",
-                    (!self.busy && self.idle_available).then_some(Message::IdleAction("pause")),
-                    false
-                ),
-                self.action(
-                    "Resume",
-                    (!self.busy && self.idle_available).then_some(Message::IdleAction("resume")),
-                    false
-                )
-            ]
-            .spacing(12),
-            row![
-                field("Stasis profile", &self.profile, Message::Profile),
-                self.action(
-                    "Use profile",
-                    (!self.busy && self.idle_available && !self.profile.trim().is_empty())
-                        .then_some(Message::UseProfile),
-                    false
-                )
-            ]
-            .spacing(12)
-            .align_y(Alignment::End),
-        ]
-        .spacing(12);
-        column![
-            settings_group("Idle controls", activity),
-            text("Timeouts run in order: lock, turn off displays, then suspend.")
-                .size(14)
-                .style(canopa_ui::muted),
-            row![
-                settings_group("On AC power", ac),
-                settings_group("On battery", battery)
-            ]
-            .spacing(12),
-            text(
-                "Custom commands, profiles and inhibition rules stay in your existing idle policy."
-            )
-            .size(14)
-            .style(canopa_ui::muted),
         ]
         .spacing(14)
         .into()

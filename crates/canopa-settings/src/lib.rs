@@ -7,6 +7,7 @@ pub mod instance;
 pub mod launcher;
 pub mod live;
 pub mod niri;
+pub mod power;
 pub mod preferences;
 pub mod profile_watch;
 pub mod profiles;

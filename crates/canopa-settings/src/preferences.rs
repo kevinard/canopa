@@ -332,13 +332,24 @@ impl IdleTimes {
         }
         Ok(lines.concat())
     }
+    /// Save the timeouts. A running idle daemon reloads them and the previous
+    /// file comes back if it refuses; without one, the file is saved for the
+    /// daemon to read when it starts (Stasis is optional).
     pub fn save(&self, snapshot: &Snapshot) -> Result<Snapshot> {
+        self.save_with(snapshot, idle_running())
+    }
+
+    /// [`IdleTimes::save`] with a known daemon state.
+    pub fn save_with(&self, snapshot: &Snapshot, daemon_running: bool) -> Result<Snapshot> {
         let text = self.text(&snapshot.text)?;
         // Numeric-only edits cannot add Rune syntax or change executable policy.
         let saved = snapshot.save(&text, |_| {
             timeouts(&text)?;
             Ok(())
         })?;
+        if !daemon_running {
+            return Ok(saved);
+        }
         if let Err(error) = idle_command(&["reload".into()]) {
             saved.save(&snapshot.text, |_| Ok(()))?;
             return Err(error.context("Stasis rejected the reload; the previous file was restored"));
@@ -386,6 +397,14 @@ impl crate::file_page::FileModel for IdleDraft {
         }
         .save(source)
     }
+}
+
+/// Whether an idle daemon (Stasis through `canopa-idle`) answers now.
+pub fn idle_running() -> bool {
+    idle_command(&["info".into(), "--json".into()])
+        .ok()
+        .and_then(|reply| serde_json::from_str::<serde_json::Value>(&reply).ok())
+        .is_some_and(|info| info["state"].is_string())
 }
 
 pub fn idle_command(arguments: &[String]) -> Result<String> {

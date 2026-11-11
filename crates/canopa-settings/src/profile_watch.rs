@@ -99,7 +99,7 @@ fn watch_heads() -> Result<watch::Receiver<()>> {
     Ok(receive)
 }
 
-async fn file_changed(watcher: &mut AsyncFd<Watcher>) -> Result<()> {
+pub(crate) async fn file_changed(watcher: &mut AsyncFd<Watcher>) -> Result<()> {
     loop {
         let mut ready = watcher.readable_mut().await?;
         let changed = ready.get_inner_mut().changed()?;
@@ -146,6 +146,14 @@ pub fn run() -> Result<()> {
 }
 
 async fn watch_profiles(paths: Paths) -> Result<()> {
+    // The session's lid choice lives here because this watcher runs for the
+    // whole Canopa session (ADR 0140). A failure only stops lid handling.
+    let lid = paths.clone();
+    tokio::spawn(async move {
+        if let Err(error) = crate::power::follow_lid(lid).await {
+            eprintln!("canopa-settings: {error:#}");
+        }
+    });
     let client = Client::discover()?;
     let mut heads = watch_heads()?;
     let watcher = Watcher::new(vec![Target::File(paths.profiles())])?;

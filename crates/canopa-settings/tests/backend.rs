@@ -306,6 +306,21 @@ fn idle_edits_only_numeric_tokens_and_preserves_commands_and_profiles() {
     );
 }
 
+#[test]
+fn idle_timeouts_save_without_a_running_idle_daemon() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("stasis.rune");
+    let original = include_str!("../../../packaging/stasis/stasis.rune");
+    std::fs::write(&path, original).unwrap();
+    let source = Snapshot::load(&path).unwrap();
+    let mut times = IdleTimes::parse(original).unwrap();
+    times.ac[1] = 120;
+    // Stasis is optional: the file is saved for it to read when it starts.
+    let saved = times.save_with(&source, false).unwrap();
+    assert_eq!(IdleTimes::parse(&saved.text).unwrap(), times);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), saved.text);
+}
+
 fn output() -> Output {
     Output {
         name: "TEST-1".into(),

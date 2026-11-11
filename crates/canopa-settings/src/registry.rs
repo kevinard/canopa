@@ -70,6 +70,8 @@ pub enum Document {
     Displays,
     /// The Stasis idle policy.
     Idle,
+    /// The session's lid-close choice.
+    Power,
     /// Launcher preferences and clipboard history settings.
     Launcher,
     /// The shortcut changes over the shipped defaults.
@@ -203,22 +205,35 @@ pub static PAGES: &[Entry] = &[
     Entry {
         page: Page::Power,
         id: "power",
-        title: "Power & idle",
-        description: "Set how your desktop responds when you step away.",
+        title: "Power",
+        description: "Battery, power mode, brightness, the lid and idle timeouts.",
         icon: "preferences-system-power",
         group: Group::System,
         keywords: &[
+            "battery",
+            "health",
+            "charge",
+            "power mode",
+            "power profile",
+            "power saver",
+            "performance",
+            "brightness",
+            "backlight",
+            "lid",
+            "power button",
             "idle",
             "sleep",
             "suspend",
+            "hibernate",
             "lock",
             "screen off",
             "timeout",
-            "battery",
             "stasis",
         ],
+        // Battery, power mode and brightness apply at once; the lid choice
+        // and idle timeouts are saved.
         kind: Kind::File {
-            documents: &[Document::Idle],
+            documents: &[Document::Idle, Document::Power],
             apply: Apply::Save,
         },
         hidden: false,

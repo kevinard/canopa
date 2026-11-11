@@ -55,7 +55,8 @@ impl Snapshot {
                 min: 1,
                 max: 100,
                 step: 1,
-                value: light.percent().max(1),
+                // The slider moves on the same perceptual curve as the brightness keys.
+                value: light.perceptual().max(1),
                 unit: "%".into(),
             });
             row
@@ -117,7 +118,7 @@ pub(super) async fn run(
                 let result = match (id, key, value) {
                     ("display", "brightness", Some(value)) if let Some(light) = &snapshot.light => {
                         let Ok(percent) = value.parse::<u16>() else { continue; };
-                        tokio::time::timeout(Duration::from_secs(2), light.set(connection, percent)).await
+                        tokio::time::timeout(Duration::from_secs(2), light.set_perceptual(connection, percent)).await
                     }
                     ("profiles", profile, None) if let Some(profiles) = &snapshot.profiles && profiles.supported.contains(&profile) => {
                         tokio::time::timeout(Duration::from_secs(2), profiles.set(connection, profile)).await

@@ -16,6 +16,9 @@ pub struct Input {
     pub touchpad_tap: bool,
     pub touchpad_natural_scroll: bool,
     pub touchpad_disable_while_typing: bool,
+    /// Leave the power button to logind's system setting instead of Niri's
+    /// default (suspend). See the Power page.
+    pub power_key_to_logind: bool,
 }
 impl Default for Input {
     fn default() -> Self {
@@ -32,6 +35,7 @@ impl Default for Input {
             touchpad_tap: true,
             touchpad_natural_scroll: true,
             touchpad_disable_while_typing: true,
+            power_key_to_logind: false,
         }
     }
 }
@@ -85,7 +89,12 @@ impl Input {
             }
         };
         Ok(format!(
-            "// Managed by Canopa Settings.\ninput {{\n    keyboard {{\n        xkb {{ layout {}; variant {}; options {}; }}\n        repeat-delay {}\n        repeat-rate {}\n    }}\n    mouse {{\n        accel-speed {}\n{}{}    }}\n    touchpad {{\n        accel-speed {}\n{}{}{}    }}\n}}\n",
+            "// Managed by Canopa Settings.\ninput {{\n{}    keyboard {{\n        xkb {{ layout {}; variant {}; options {}; }}\n        repeat-delay {}\n        repeat-rate {}\n    }}\n    mouse {{\n        accel-speed {}\n{}{}    }}\n    touchpad {{\n        accel-speed {}\n{}{}{}    }}\n}}\n",
+            if self.power_key_to_logind {
+                "    disable-power-key-handling\n"
+            } else {
+                ""
+            },
             quote(&self.layouts),
             quote(&self.variants),
             quote(&self.options),
@@ -118,6 +127,12 @@ impl Input {
         result.touchpad_natural_scroll = false;
         result.touchpad_disable_while_typing = false;
         for section in input.nodes() {
+            if section.name().value() == "disable-power-key-handling"
+                && section.children().is_none()
+            {
+                result.power_key_to_logind = boolean(section.get(0))?;
+                continue;
+            }
             let Some(fields) = section.children() else {
                 continue;
             };
@@ -194,6 +209,17 @@ pub fn apply(
         return Err(error.context("input reload failed; previous settings restored"));
     }
     Ok(saved)
+}
+/// Change only who handles the power button, keeping the other input
+/// settings, and reload Niri. Returns the saved include.
+pub fn set_power_key(
+    paths: &crate::session::Paths,
+    to_logind: bool,
+) -> Result<crate::storage::Snapshot> {
+    let source = crate::storage::Snapshot::load(paths.input())?;
+    let mut input = Input::parse(&source.text)?;
+    input.power_key_to_logind = to_logind;
+    apply(paths, &source, &input)
 }
 fn boolean(value: Option<&kdl::KdlValue>) -> Result<bool> {
     match value {
