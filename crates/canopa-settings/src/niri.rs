@@ -67,6 +67,27 @@ impl Client {
             _ => bail!("unexpected compositor output reply"),
         }
     }
+    /// Focus the window this process mapped with `app_id`.
+    pub fn focus_own_window(&self, app_id: &str) -> Result<()> {
+        let Response::Windows(windows) = self.request(Request::Windows)? else {
+            bail!("unexpected compositor window reply");
+        };
+        let pid = i32::try_from(std::process::id())?;
+        let window = windows
+            .iter()
+            .find(|window| window.pid == Some(pid) && window.app_id.as_deref() == Some(app_id))
+            .context("the window is not mapped yet")?;
+        ensure!(
+            matches!(
+                self.request(Request::Action(niri_ipc::Action::FocusWindow {
+                    id: window.id
+                }))?,
+                Response::Handled
+            ),
+            "compositor focus was not acknowledged"
+        );
+        Ok(())
+    }
     pub fn reload(&self) -> Result<()> {
         ensure!(
             matches!(

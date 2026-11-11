@@ -104,8 +104,12 @@ impl<S: LiveService> LivePage<S> {
         }
     }
 
-    /// Follow the service while the page is shown.
-    pub(super) fn subscription(&self, map: fn(Event<S>) -> Message) -> Subscription<Message> {
+    /// Follow the service while the page is shown. `map` must be a function
+    /// item, such as an enum variant, not a pointer or a capturing closure.
+    pub(super) fn subscription<F>(&self, map: F) -> Subscription<Message>
+    where
+        F: Fn(Event<S>) -> Message + Clone + Send + 'static,
+    {
         Subscription::run_with(Service(self.service.clone()), follow::<S>).map(map)
     }
 

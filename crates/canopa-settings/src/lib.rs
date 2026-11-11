@@ -3,6 +3,7 @@ pub use registry::Page;
 pub mod display;
 pub mod file_page;
 pub mod input;
+pub mod instance;
 pub mod launcher;
 pub mod live;
 pub mod niri;

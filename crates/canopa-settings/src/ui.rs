@@ -13,6 +13,7 @@ use crate::{
     display::{Monitor, TrialHandle, transform_name},
     file_page::{FileDraft, FileModel},
     input::Input,
+    instance::{Instance, Request},
     niri::Client,
     preferences::{IdleDraft, Personalization},
     registry::Document,
@@ -29,12 +30,20 @@ use iced::{
     },
 };
 use niri_ipc::{Output, Transform};
-use std::{collections::HashMap, process::Stdio, time::Duration};
+use std::{
+    collections::HashMap,
+    process::Stdio,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
     Page,
     registry::{self, Apply, Kind},
 };
+/// The window's Wayland app id and desktop entry name.
+const APPLICATION_ID: &str = "org.canopa.Settings";
 /// The footer action reloads only the selected page; other drafts remain.
 const RELOAD_PAGE: &str = "Reload this page and discard its edits";
 #[derive(Clone, Debug)]
@@ -102,6 +111,10 @@ enum Message {
     Wallpaper,
     Finished(std::result::Result<String, String>),
     WallpaperFinished(std::result::Result<(), String>),
+    /// A later launch or a D-Bus caller asks for this window.
+    Activated(Request),
+    /// Whether the compositor focused the window.
+    Raised(bool),
     #[cfg(debug_assertions)]
     LiveExample(crate::live::Event<crate::live::fake::Service>),
     #[cfg(debug_assertions)]
@@ -136,6 +149,7 @@ struct State {
     remaining: u64,
     #[cfg(debug_assertions)]
     live_example: live_example::Example,
+    activations: Option<Activations>,
 }
 fn task<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
@@ -223,6 +237,7 @@ impl State {
             remaining: 0,
             #[cfg(debug_assertions)]
             live_example: live_page::LivePage::new(Default::default()),
+            activations: None,
         };
         (
             state,
@@ -730,6 +745,19 @@ impl State {
                 self.busy = false;
                 self.notice = result.unwrap_or_else(|error| error);
             }
+            Message::Activated(request) => return self.activate(request),
+            Message::Raised(false) => {
+                return iced::window::latest().then(|id| match id {
+                    Some(id) => Task::batch([
+                        iced::window::gain_focus(id),
+                        iced::window::request_user_attention(
+                            id,
+                            Some(iced::window::UserAttention::Informational),
+                        ),
+                    ]),
+                    None => Task::none(),
+                });
+            }
             #[cfg(debug_assertions)]
             Message::LiveExample(event) => {
                 return self.live_example.update(event, live_example::message);
@@ -739,6 +767,22 @@ impl State {
             _ => {}
         }
         Task::none()
+    }
+    /// Show what a later launch or a D-Bus caller asked for, then raise.
+    fn activate(&mut self, request: Request) -> Task<Message> {
+        let Some(page) = request.page else {
+            return raise();
+        };
+        if self.busy || self.trial.is_some() {
+            self.notice = format!("Finish the current change, then open {}.", page.title());
+            return raise();
+        }
+        if let Some(profile) = request.display_profile {
+            self.display_profiles.selected = Some(profile);
+            self.display_profiles.prominent = true;
+        }
+        self.search.clear();
+        Task::batch([self.update(Message::Page(page)), raise()])
     }
     /// A file-backed page saved: adopt the save, then apply the shared-document rule.
     fn file_saved(&mut self, page: Page, saved: Snapshot) {
@@ -863,6 +907,9 @@ impl State {
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
+        }
+        if let Some(source) = &self.activations {
+            subscriptions.push(Subscription::run_with(source.clone(), activations));
         }
         #[cfg(debug_assertions)]
         if self.page == Page::LiveExample {
@@ -1660,18 +1707,56 @@ fn niri_events() -> impl iced::futures::Stream<Item = Message> {
         },
     )
 }
-pub fn run() -> Result<()> {
-    run_page(Page::Displays)
+/// Requests for the running window from later launches and D-Bus callers.
+#[derive(Clone)]
+struct Activations(Arc<Mutex<Option<UnboundedReceiver<Request>>>>);
+
+impl std::hash::Hash for Activations {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Arc::as_ptr(&self.0) as usize).hash(state);
+    }
 }
-pub fn run_page(page: Page) -> Result<()> {
-    run_with_profile(page, None)
+
+fn activations(source: &Activations) -> futures_util::stream::BoxStream<'static, Message> {
+    use futures_util::StreamExt;
+    let receiver = source
+        .0
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .take();
+    match receiver {
+        Some(receiver) => futures_util::stream::unfold(receiver, |mut receiver| async move {
+            let request = receiver.recv().await?;
+            Some((Message::Activated(request), receiver))
+        })
+        .boxed(),
+        None => futures_util::stream::pending().boxed(),
+    }
 }
-pub fn run_with_profile(page: Page, profile: Option<String>) -> Result<()> {
+
+/// Bring the window forward for a deep link. Niri focuses it through IPC;
+/// elsewhere the toolkit asks for focus and attention.
+fn raise() -> Task<Message> {
+    task(
+        || Client::discover()?.focus_own_window(APPLICATION_ID),
+        |result| Message::Raised(result.is_ok()),
+    )
+}
+
+/// Run the window at `request`; with `instance`, also serve later requests.
+pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
+    let activations =
+        instance.map(|instance| Activations(Arc::new(Mutex::new(Some(instance.requests)))));
     iced::application(
         move || {
             let (mut state, task) = State::boot();
-            state.display_profiles.selected.clone_from(&profile);
-            state.display_profiles.prominent = profile.is_some();
+            state.activations = activations.clone();
+            let page = request.page.unwrap_or(Page::Displays);
+            state
+                .display_profiles
+                .selected
+                .clone_from(&request.display_profile);
+            state.display_profiles.prominent = request.display_profile.is_some();
             let page_task = state.update(Message::Page(page));
             (state, Task::batch([task, page_task]))
         },
@@ -1688,7 +1773,7 @@ pub fn run_with_profile(page: Page, profile: Option<String>) -> Result<()> {
         size: iced::Size::new(1000., 780.),
         min_size: Some(iced::Size::new(760., 600.)),
         platform_specific: iced::window::settings::PlatformSpecific {
-            application_id: "org.canopa.Settings".into(),
+            application_id: APPLICATION_ID.into(),
             ..Default::default()
         },
         ..Default::default()

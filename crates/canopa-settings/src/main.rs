@@ -141,10 +141,24 @@ fn run() -> Result<()> {
         Some(Operation::WatchDisplayProfiles) => canopa_settings::profile_watch::run()?,
         None => {
             #[cfg(feature = "desktop")]
-            canopa_settings::ui::run_with_profile(
-                page.unwrap_or(Page::Displays),
-                cli.display_profile,
-            )?;
+            {
+                use canopa_settings::instance::{Claim, Request, claim};
+                let request = Request {
+                    // A display profile is reviewed on Displays.
+                    page: page.or(cli.display_profile.as_ref().map(|_| Page::Displays)),
+                    display_profile: cli.display_profile,
+                };
+                // One window per session: a running one shows the page instead.
+                let instance = match claim(&request) {
+                    Ok(Claim::Forwarded) => return Ok(()),
+                    Ok(Claim::Primary(instance)) => Some(instance),
+                    Err(error) => {
+                        eprintln!("canopa-settings: opening a separate window: {error:#}");
+                        None
+                    }
+                };
+                canopa_settings::ui::run(request, instance)?;
+            }
             #[cfg(not(feature = "desktop"))]
             anyhow::bail!("this build does not include the desktop interface");
         }
