@@ -662,7 +662,7 @@ shell-history-busy = Launcher history is busy
 shell-provider-event-timed-out = Provider “{ $provider }” did not answer in time
 shell-provider-not-configured = Provider “{ $provider }” is not configured
 shell-provider-not-available = Provider “{ $provider }” is not available
-shell-provider-launch-failed = Could not start provider “{ $provider }”: { $error }
+shell-provider-launch-failed = Could not launch provider “{ $provider }”: { $error }
 shell-provider-handshake-timed-out = Provider “{ $provider }” did not start in time
 # A configuration notice when the configuration parses but its modules cannot be built.
 shell-config-notice-construction = The Shell could not build the configured modules

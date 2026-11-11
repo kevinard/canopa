@@ -2085,7 +2085,7 @@ mod tests {
             crate::surface::panel::PanelContent::ExternalProvider(content) => {
                 assert_eq!(content.provider_name, "wifi");
                 assert!(
-                    content.failure_text().contains("could not launch"),
+                    content.failure_text().contains("Could not launch provider"),
                     "got: {:?}",
                     content.failure_text()
                 );
