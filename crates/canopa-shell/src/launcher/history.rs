@@ -89,10 +89,10 @@ impl Snapshot {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self::default());
             }
-            Err(_) => return Err("Launcher history could not be read".into()),
+            Err(_) => return Err(fl!("shell-history-unreadable")),
         };
         let snapshot: Self =
-            serde_json::from_slice(&bytes).map_err(|_| "Launcher history is invalid")?;
+            serde_json::from_slice(&bytes).map_err(|_| fl!("shell-history-invalid"))?;
         let mut keys = std::collections::HashSet::new();
         if snapshot.version != 1
             || snapshot.entries.len() > LIMIT
@@ -100,15 +100,13 @@ impl Snapshot {
                 !valid_key(&entry.key) || entry.last > snapshot.serial || !keys.insert(&entry.key)
             })
         {
-            return Err("Launcher history is invalid".into());
+            return Err(fl!("shell-history-invalid"));
         }
         Ok(snapshot)
     }
     fn save(&self, path: &std::path::Path) -> Result<(), String> {
-        let bytes =
-            serde_json::to_vec(self).map_err(|_| "Launcher history could not be encoded")?;
-        canopa_file::private_state::write(path, &bytes)
-            .map_err(|_| "Launcher history could not be saved".into())
+        let bytes = serde_json::to_vec(self).map_err(|_| fl!("shell-history-unsaved"))?;
+        canopa_file::private_state::write(path, &bytes).map_err(|_| fl!("shell-history-unsaved"))
     }
 }
 
@@ -225,7 +223,7 @@ impl Runtime {
             self.sender = Some(sender);
             self.receiver = Some(Receiver(Arc::new(Mutex::new(Some(receiver)))));
         } else {
-            self.error = Some("Launcher history worker is unavailable".into());
+            self.error = Some(fl!("shell-history-unavailable"));
         }
     }
     pub fn record(&mut self, key: String) {
@@ -234,7 +232,7 @@ impl Runtime {
         }
         if let Some(sender) = &self.sender {
             if sender.try_send(Command::Record(key)).is_err() {
-                self.error = Some("Launcher history is busy".into());
+                self.error = Some(fl!("shell-history-busy"));
             }
         } else {
             let mut snapshot = (*self.snapshot).clone();
@@ -247,7 +245,7 @@ impl Runtime {
         if let Some(sender) = &self.sender {
             sender
                 .try_send(Command::Clear(session, generation))
-                .map_err(|_| "Launcher history is busy")?;
+                .map_err(|_| fl!("shell-history-busy"))?;
             Ok(None)
         } else if let Some(error) = &self.error {
             Err(error.clone())

@@ -13,12 +13,17 @@ pub fn definitions(config: &Config) -> Vec<Extension> {
         .into_owned();
     let mut extensions = config.extensions.clone();
     for (id, name, keyword, mode) in [
-        ("builtin:web", "Web", "web", "web"),
-        ("builtin:date-time", "Date and time", "date", "date-time"),
+        ("builtin:web", fl!("shell-extension-web"), "web", "web"),
+        (
+            "builtin:date-time",
+            fl!("shell-extension-date-time"),
+            "date",
+            "date-time",
+        ),
     ] {
         extensions.push(Extension {
             id: id.into(),
-            name: name.into(),
+            name,
             keyword: keyword.into(),
             global: true,
             argv: vec![exe.clone(), "--launcher-extension".into(), mode.into()],
@@ -40,7 +45,10 @@ pub fn effective(config: &Config, prefs: &Preferences) -> (Config, Option<String
                 ext.keyword = value.keyword.clone();
             }
             if !keywords.insert(ext.keyword.clone()) {
-                error = Some(format!("Duplicate extension keyword: {}", ext.keyword));
+                error = Some(fl!(
+                    "shell-extension-duplicate-keyword",
+                    keyword = ext.keyword.clone()
+                ));
                 return None;
             }
             Some(ext)
@@ -54,12 +62,18 @@ pub fn effective(config: &Config, prefs: &Preferences) -> (Config, Option<String
     {
         for search in &prefs.searches {
             if !keywords.insert(search.keyword.clone()) {
-                error = Some(format!("Duplicate search keyword: {}", search.keyword));
+                error = Some(fl!(
+                    "shell-extension-duplicate-search",
+                    keyword = search.keyword.clone()
+                ));
                 continue;
             }
             let mut ext = web.clone();
             ext.id = format!("builtin:web:{}", search.keyword);
-            ext.name = format!("Web · {}", search.keyword);
+            ext.name = fl!(
+                "shell-extension-web-search",
+                keyword = search.keyword.clone()
+            );
             ext.keyword = search.keyword.clone();
             ext.global = false;
             ext.argv[2] = "web-search".into();
@@ -79,17 +93,17 @@ pub fn catalog(
         for ext in definitions(config) {
             let (description, actions) = match ext.id.as_str() {
                 "builtin:web" => (
-                    "Paste an HTTP(S) URL, or use the keyword to search. Browser actions run only when selected.",
-                    vec!["Open in browser".into(), "Copy URL".into()],
+                    fl!("shell-extension-web-description"),
+                    vec![
+                        fl!("shell-extension-open-in-browser"),
+                        fl!("shell-extension-copy-url"),
+                    ],
                 ),
                 "builtin:date-time" => (
-                    "Local dates, time zones and Unix timestamps. Try time in Tokyo, 90 days from today, or timestamp now.",
-                    vec!["Copy".into()],
+                    fl!("shell-extension-date-time-description"),
+                    vec![fl!("shell-clipboard-copy")],
                 ),
-                _ => (
-                    "Configured executable extension. Its actions appear here after it returns results.",
-                    vec![],
-                ),
+                _ => (fl!("shell-extension-configured-description"), vec![]),
             };
             let pref = prefs.extensions.get(&ext.id);
             let (status, observed) = diagnostics.get(&ext.id).cloned().unwrap_or_default();
@@ -98,7 +112,7 @@ pub fn catalog(
                 name: ext.name,
                 keyword: pref.map(|p| p.keyword.clone()).unwrap_or(ext.keyword),
                 enabled: pref.is_none_or(|p| p.enabled),
-                description: description.into(),
+                description,
                 actions: if observed.is_empty() {
                     actions
                 } else {
@@ -120,7 +134,7 @@ fn copy(label: String, description: &str) -> Batch {
             description: description.into(),
             icon: Some("accessories-calculator".into()),
             actions: vec![NamedAction {
-                label: "Copy".into(),
+                label: fl!("shell-clipboard-copy"),
                 action: Action::Copy { text: label },
             }],
         }],
@@ -142,24 +156,24 @@ fn web(query: &str, explicit: bool, template: &str) -> Batch {
     let label = if canopa_launcher::valid_url(query) {
         query.chars().take(480).collect()
     } else {
-        format!(
-            "Search web: {}",
-            query.chars().take(450).collect::<String>()
+        fl!(
+            "shell-extension-search-web",
+            query = query.chars().take(450).collect::<String>()
         )
     };
     Batch {
         results: vec![ResultItem {
             id: "web".into(),
             label,
-            description: "Open in your default browser · requests start when selected".into(),
+            description: fl!("shell-extension-web-result"),
             icon: Some("web-browser".into()),
             actions: vec![
                 NamedAction {
-                    label: "Open in browser".into(),
+                    label: fl!("shell-extension-open-in-browser"),
                     action: Action::OpenUrl { url: url.clone() },
                 },
                 NamedAction {
-                    label: "Copy URL".into(),
+                    label: fl!("shell-extension-copy-url"),
                     action: Action::Copy { text: url },
                 },
             ],
@@ -218,7 +232,10 @@ fn datetime(query: &str, explicit: bool, now: DateTime<Local>) -> Batch {
             && output.stdout.len() < 512
             && let Ok(value) = String::from_utf8(output.stdout)
         {
-            return copy(value.trim().into(), &format!("Time in {zone}"));
+            return copy(
+                value.trim().into(),
+                &fl!("shell-extension-time-in", zone = zone),
+            );
         }
     }
     if let Some(value) = lower
@@ -226,20 +243,23 @@ fn datetime(query: &str, explicit: bool, now: DateTime<Local>) -> Batch {
         .or_else(|| lower.strip_prefix("unix "))
     {
         if value == "now" {
-            return copy(now.timestamp().to_string(), "Unix timestamp · seconds");
+            return copy(
+                now.timestamp().to_string(),
+                &fl!("shell-extension-unix-timestamp"),
+            );
         }
         if let Ok(seconds) = value.parse::<i64>()
             && let Some(date) = Utc.timestamp_opt(seconds, 0).single()
         {
             return copy(
                 date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                "Unix timestamp to UTC",
+                &fl!("shell-extension-timestamp-to-utc"),
             );
         }
         if let Ok(date) = DateTime::parse_from_rfc3339(query.split_once(' ').unwrap().1) {
             return copy(
                 date.timestamp().to_string(),
-                "Date to Unix timestamp · seconds",
+                &fl!("shell-extension-date-to-timestamp"),
             );
         }
         return Batch::default();
@@ -280,7 +300,7 @@ fn datetime(query: &str, explicit: bool, now: DateTime<Local>) -> Batch {
                 .checked_sub_days(Days::new(days.unsigned_abs()))
         };
         if let Some(date) = date {
-            return copy(date.to_string(), "Calendar date · local time zone");
+            return copy(date.to_string(), &fl!("shell-extension-calendar-date"));
         }
     }
     Batch::default()

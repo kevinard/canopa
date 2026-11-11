@@ -396,3 +396,262 @@ shell-power-balanced = Balanced
 shell-power-performance = Performance
 shell-power-profiles-unavailable = Power profiles service is unavailable.
 shell-power-change-failed = The system could not apply the change.
+
+## Launcher: scope keywords
+# Words that start a scoped search, besides the English ones (apps, files,
+# windows, settings, clip, snip, emoji, symbol), which always work. List
+# alternatives separated by spaces, lowercase, without punctuation other than "-".
+
+shell-keyword-apps = apps
+shell-keyword-files = files
+shell-keyword-windows = windows
+shell-keyword-settings = settings
+shell-keyword-clipboard = clip
+shell-keyword-snippets = snip
+shell-keyword-emoji = emoji
+shell-keyword-symbol = symbol
+
+## Launcher: window, search field and results
+
+shell-launcher-scope-all = All
+shell-launcher-scope-apps = Apps
+shell-launcher-scope-files = Files
+shell-launcher-scope-windows = Windows
+shell-launcher-scope-settings = Settings
+shell-launcher-search-apps = Search apps
+shell-launcher-search-files = Search files
+shell-launcher-search-windows = Search windows
+shell-launcher-search-settings = Search settings
+shell-launcher-close = Close launcher
+# $key is the key that closes it (shell-key-escape).
+shell-launcher-close-hint = Close launcher · { $key }
+shell-launcher-clear = Clear
+shell-launcher-clear-search = Clear search
+shell-launcher-clear-search-hint = Clear search · { $key }
+shell-launcher-calculator = Calculator
+# Around the "=" key cap: "Type [=] to calculate".
+shell-launcher-calculate-before = Type
+shell-launcher-calculate-after = to calculate
+shell-launcher-select = Select
+shell-launcher-installed-apps = Installed apps
+shell-launcher-browse = Browse
+shell-launcher-results = Results
+shell-launcher-actions = Actions
+# $name is the result's name.
+shell-launcher-actions-for = Actions for { $name }
+shell-launcher-open = Open
+shell-launcher-open-named = Open { $name }
+shell-launcher-launch = Launch { $name }
+shell-launcher-no-matches = No matches
+shell-launcher-advice-scope = Try another term or choose All.
+shell-launcher-advice-spelling = Check the spelling or try a shorter query.
+shell-launcher-match-count = { $count ->
+        [one] { $count } match
+       *[other] { $count } matches
+    }
+shell-launcher-match-count-approximate = { $count } matches · { $approximate } approximate
+shell-launcher-hint-unpin = Remove this result from launcher suggestions
+shell-launcher-hint-pin = Keep this result in launcher suggestions
+shell-launcher-hint-alias = Find this result with a custom search term
+# Key caps shown beside commands.
+shell-key-escape = Esc
+shell-key-enter = Enter
+shell-key-tab = Tab
+# $digit is 1 to 4.
+shell-key-ctrl-digit = Ctrl+{ $digit }
+
+## Launcher: sessions, apps and status
+
+shell-launcher-application = Application
+shell-launcher-application-action = Application action
+shell-launcher-matched-command = Matched app file or command name
+shell-launcher-matched-description = Matched app description
+shell-launcher-matched-keywords = Matched app keywords
+shell-launcher-approximate-match = Approximate keyword match
+# $path is the file to open.
+shell-launcher-open-with-path = Open with · { $path }
+shell-launcher-open-with-file = Open with — { $file }
+shell-launcher-recent = Recent
+shell-launcher-filter-actions = Filter actions
+shell-launcher-filter-applications = Filter applications
+shell-launcher-snippet-name = Snippet name
+shell-launcher-alias-for = Alias for { $name }
+shell-launcher-applying-action = Applying action…
+shell-launcher-snippet-name-help = Type a snippet name and press Enter to save
+shell-launcher-alias-help = Type a unique single-word alias, then Enter · empty removes the alias
+shell-launcher-query-too-long = Search is limited to { $bytes } bytes
+shell-launcher-enter-expression = Enter an arithmetic expression
+shell-launcher-enter-file-name = Enter a file or folder name
+shell-launcher-finding-applications = Finding applications…
+shell-launcher-calculating = Calculating…
+shell-launcher-top-matches = Showing the highest-ranked app matches.
+shell-launcher-indexing-files = Indexing file names…
+shell-launcher-searching-files = Searching files…
+# $name is an extension's name.
+shell-launcher-searching-extension = Searching { $name }…
+shell-launcher-application-gone = Application is no longer available
+# $name is the application; $error the system's reason.
+shell-launcher-could-not-start = Could not start { $name }: { $error }
+shell-launcher-action-failed = Could not apply action; check the application or file is available
+shell-launcher-more-matches = More matches; refine your search
+shell-launcher-query-long = Query is too long
+shell-launcher-extension-error = { $name }: { $error }
+shell-launcher-preferences-stopped = Launcher preferences worker stopped
+shell-launcher-remove-alias = Remove alias
+shell-launcher-save-alias = Save alias
+shell-launcher-save-alias-named = Save alias: { $alias }
+shell-launcher-pinned = Pinned
+shell-launcher-shortcut = Shortcut
+shell-launcher-pinned-alias = Pinned · { $alias }
+shell-launcher-shortcut-alias = Shortcut · { $alias }
+shell-launcher-switch-to = Switch to
+shell-launcher-new-window = New window
+shell-launcher-running-application = Running application
+shell-launcher-unpin = Unpin from Launcher
+shell-launcher-pin = Pin in Launcher
+shell-launcher-set-alias = Set search alias…
+shell-launcher-edit-alias = Edit search alias…
+# $action is a session action such as "Log out"; it opens a confirmation.
+shell-session-confirmed-label = { $action }…
+shell-session-row = Session
+shell-session-row-confirms = Session · asks for confirmation
+# Search words for session actions besides the English ones.
+shell-session-lock-keywords = lock screen session
+shell-session-log-out-keywords = log out sign out logout logoff exit quit session
+shell-session-suspend-keywords = suspend sleep standby
+shell-session-hibernate-keywords = hibernate sleep disk
+shell-session-reboot-keywords = reboot restart
+shell-session-power-off-keywords = power off shut down shutdown turn off halt
+
+## Launcher: windows, files and controls
+
+shell-window-workspace = Workspace { $workspace }
+shell-window-workspace-on-output = Workspace { $workspace } · { $output }
+shell-window-workspace-unavailable = Workspace unavailable
+shell-window-switch = Switch to window
+shell-window-launch-application = Launch application
+shell-window-description = Window · { $application } · { $workspace }
+shell-files-index-partial = File index is partial (scan limit reached)
+shell-files-locations-unreadable = Some search locations could not be read
+shell-files-top-matches = Showing the highest-ranked file matches.
+# $parent is the folder that contains it.
+shell-files-folder-in = Folder · { $parent }
+shell-files-file-in = File · { $parent }
+shell-files-copy-path = Copy path
+shell-files-open-folder = Open containing folder
+shell-files-open-with = Open with…
+shell-files-quick-look = Quick Look
+shell-control-description = Settings and controls
+shell-control-wifi = Wi-Fi networks
+shell-control-sound = Sound and volume
+shell-control-notifications = Notifications and Do Not Disturb
+shell-control-settings = Canopa Settings
+shell-control-clear-history = Clear launcher history
+shell-control-bluetooth = Bluetooth devices
+shell-control-power = Power & brightness
+# Search words besides the English ones.
+shell-control-wifi-keywords = wifi wireless
+shell-control-sound-keywords = sound audio
+shell-control-notifications-keywords = notifications
+shell-control-settings-keywords = settings
+shell-control-clear-history-keywords = history
+shell-control-bluetooth-keywords = bluetooth
+shell-control-power-keywords = power brightness
+shell-settings-page = Settings page
+# $page is a Settings page title.
+shell-settings-page-label = { $page } settings
+shell-settings-not-installed = Canopa Settings is not installed
+shell-settings-pages-timed-out = Canopa Settings did not list its pages in time
+shell-settings-pages-failed = Canopa Settings could not list its pages
+shell-settings-pages-too-large = Settings page list is too large
+shell-settings-pages-invalid = Settings page list is invalid
+shell-settings-no-such-page = Settings does not have that page
+
+## Launcher: calculator, characters and extensions
+
+shell-calculator-too-long = Calculations are limited to { $bytes } bytes
+shell-calculator-target-unit = Choose a supported target unit
+shell-calculator-amount = Enter a complete numerical amount
+shell-calculator-source-unit = Choose a supported source unit
+shell-calculator-dimensions = These units measure different quantities
+shell-calculator-incomplete = Enter a complete arithmetic expression or unit conversion
+shell-calculator-no-result-in-unit = Expression has no finite real result in the requested unit
+shell-calculator-no-result = Expression has no finite real result
+# $query is what the person typed.
+shell-calculator-description = Calculator · { $query }
+shell-calculator-copy-result = Copy result
+shell-calculator-failed = Calculator: { $error } (requires qalc)
+shell-characters-help = Search by name or keyword · Enter to copy
+shell-provider-unavailable = Provider executable is unavailable
+shell-provider-io-unavailable = Provider input or output is unavailable
+shell-provider-io-failed = Provider input or output failed
+shell-provider-output-too-large = Provider output exceeded 256 KiB
+shell-provider-process-failed = Provider process failed
+shell-provider-exit-failed = Provider exited unsuccessfully
+shell-provider-timed-out = Provider timed out
+shell-extension-web = Web
+shell-extension-date-time = Date and time
+# $keyword is the search's keyword.
+shell-extension-web-search = Web · { $keyword }
+shell-extension-duplicate-keyword = Duplicate extension keyword: { $keyword }
+shell-extension-duplicate-search = Duplicate search keyword: { $keyword }
+shell-extension-web-description = Paste an HTTP(S) URL, or use the keyword to search. Browser actions run only when selected.
+# The example queries are typed in English.
+shell-extension-date-time-description = Local dates, time zones and Unix timestamps. Try time in Tokyo, 90 days from today, or timestamp now.
+shell-extension-configured-description = Configured executable extension. Its actions appear here after it returns results.
+shell-extension-open-in-browser = Open in browser
+shell-extension-copy-url = Copy URL
+shell-extension-search-web = Search web: { $query }
+shell-extension-web-result = Open in your default browser · requests start when selected
+shell-extension-time-in = Time in { $zone }
+shell-extension-unix-timestamp = Unix timestamp · seconds
+shell-extension-timestamp-to-utc = Unix timestamp to UTC
+shell-extension-date-to-timestamp = Date to Unix timestamp · seconds
+shell-extension-calendar-date = Calendar date · local time zone
+
+## Launcher: clipboard history and snippets
+
+shell-clipboard-copy = Copy
+shell-clipboard-remove = Remove from history
+shell-clipboard-recent-copy = Recent copy
+shell-clipboard-save-as-snippet = Save as snippet…
+shell-clipboard-image = Image
+# Searchable text of a copied image; $description is its format and size.
+shell-clipboard-image-named = Image { $description }
+# $format is PNG, JPEG, GIF or WebP; $width and $height are pixels.
+shell-clipboard-image-description = { $format } · { $width } × { $height }
+shell-clipboard-clear-history = Clear clipboard history
+shell-clipboard-clear = Clear history
+shell-clipboard-turn-off = Turn off clipboard history
+shell-clipboard-turn-on = Turn on clipboard history
+shell-clipboard-keep-recent = Keep recent copies for this session
+shell-clipboard-rename-snippet = Rename snippet…
+shell-clipboard-delete-snippet = Delete snippet
+shell-clipboard-new-snippet = New snippet from clipboard
+shell-clipboard-name-snippet = Name snippet…
+shell-clipboard-loading = Loading clipboard preferences…
+shell-clipboard-history-off = History is off · type snip for saved snippets
+shell-clipboard-recording-text = Recording text for this session · Enter to copy · Tab for actions
+shell-clipboard-recording-text-images = Recording text and images for this session · Enter to copy · Tab for actions
+shell-clipboard-snippets-help = Saved snippets · Enter to copy · Tab to rename or delete
+shell-clipboard-help = Enter to copy · Tab for actions
+# $name is the snippet name being typed.
+shell-clipboard-save-snippet-named = Save snippet “{ $name }”
+shell-clipboard-save-snippet = Save snippet
+shell-clipboard-entry-gone = That clipboard entry is no longer available
+shell-clipboard-copy-text-first = Copy some text up to 16 KiB before creating a snippet
+shell-clipboard-saving = A clipboard change is being saved
+shell-clipboard-preferences-unavailable = Clipboard preferences are unavailable
+shell-clipboard-save-stopped = Clipboard save stopped
+shell-clipboard-reader-failed = Could not start the clipboard reader
+shell-clipboard-wl-paste-failed = Could not start wl-paste for clipboard history
+shell-clipboard-watcher-unreadable = Could not read the clipboard watcher
+shell-clipboard-text-watcher-stopped = Text clipboard watcher stopped. Check Wayland data control support
+shell-clipboard-image-watcher-stopped = Image clipboard watcher stopped. Check Wayland data control support
+shell-clipboard-preferences-stopped = Clipboard preferences reader stopped
+shell-clipboard-image-copy-failed = Could not copy the image to the clipboard
+shell-history-unreadable = Launcher history could not be read
+shell-history-invalid = Launcher history is invalid
+shell-history-unsaved = Launcher history could not be saved
+shell-history-unavailable = Launcher history worker is unavailable
+shell-history-busy = Launcher history is busy

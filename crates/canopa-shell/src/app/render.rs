@@ -67,7 +67,7 @@ pub(super) struct PanelRenderModel<'a> {
     pub(super) launcher_scopes: Vec<super::launcher::QuickScope>,
     pub(super) launcher_scope: Option<super::launcher::QuickScope>,
     pub(super) launcher_input_scope: Option<super::launcher::QuickScope>,
-    pub(super) launcher_filter_placeholder: Option<&'static str>,
+    pub(super) launcher_filter_placeholder: Option<String>,
     pub(super) search_query: String,
     pub(super) focused_index: Option<usize>,
     pub(super) keyboard_focus: bool,

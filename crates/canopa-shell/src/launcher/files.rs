@@ -117,15 +117,17 @@ pub(crate) fn build_index(config: &Config, cancel: &Cancellation) -> FileIndex {
     index.paths.sort_by(|left, right| left.0.cmp(&right.0));
     index.paths.dedup_by(|left, right| left.0 == right.0);
     index.status = match (limited, skipped) {
-        (true, _) => "File index is partial (scan limit reached)",
-        (_, true) => "Some search locations could not be read",
-        _ => "",
-    }
-    .into();
+        (true, _) => fl!("shell-files-index-partial"),
+        (_, true) => fl!("shell-files-locations-unreadable"),
+        _ => String::new(),
+    };
     index
 }
 
-pub(crate) const MATCH_LIMIT_STATUS: &str = "Showing the highest-ranked file matches.";
+/// The status of a file search that found more matches than it shows.
+pub(crate) fn match_limit_status() -> String {
+    fl!("shell-files-top-matches")
+}
 
 pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation) -> Batch {
     let mut matches = Vec::new();
@@ -179,11 +181,14 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into(),
-                description: format!(
-                    "{} · {}",
-                    if *is_dir { "Folder" } else { "File" },
-                    path.parent().unwrap_or(path).display()
-                ),
+                description: {
+                    let parent = path.parent().unwrap_or(path).display().to_string();
+                    if *is_dir {
+                        fl!("shell-files-folder-in", parent = parent)
+                    } else {
+                        fl!("shell-files-file-in", parent = parent)
+                    }
+                },
                 icon: Some(if *is_dir { "folder" } else { "text-x-generic" }.into()),
                 actions,
             }
@@ -192,7 +197,7 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
     Batch {
         results,
         status: if more {
-            MATCH_LIMIT_STATUS.into()
+            match_limit_status()
         } else {
             index.status.clone()
         },
@@ -201,32 +206,32 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
 
 pub(crate) fn actions(path: &std::path::Path, is_dir: bool) -> Vec<NamedAction> {
     let mut actions = vec![NamedAction {
-        label: "Open".into(),
+        label: fl!("shell-launcher-open"),
         action: Action::Open {
             path: path.to_path_buf(),
         },
     }];
     if let Some(text) = path.to_str() {
         actions.push(NamedAction {
-            label: "Copy path".into(),
+            label: fl!("shell-files-copy-path"),
             action: Action::Copy { text: text.into() },
         });
     }
     actions.push(NamedAction {
-        label: "Open containing folder".into(),
+        label: fl!("shell-files-open-folder"),
         action: Action::Reveal {
             path: path.to_path_buf(),
         },
     });
     if !is_dir {
         actions.push(NamedAction {
-            label: "Open with…".into(),
+            label: fl!("shell-files-open-with"),
             action: Action::ChooseApplication {
                 path: path.to_path_buf(),
             },
         });
         actions.push(NamedAction {
-            label: "Quick Look".into(),
+            label: fl!("shell-files-quick-look"),
             action: Action::Preview {
                 path: path.to_path_buf(),
             },

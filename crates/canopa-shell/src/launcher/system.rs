@@ -41,26 +41,40 @@ impl SessionCommand {
         }
     }
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Lock => "Lock",
-            Self::LogOut => "Log out",
-            Self::Suspend => "Suspend",
-            Self::Hibernate => "Hibernate",
-            Self::Reboot => "Reboot",
-            Self::PowerOff => "Power off",
+            Self::Lock => fl!("shell-module-lock"),
+            Self::LogOut => fl!("shell-module-log-out"),
+            Self::Suspend => fl!("shell-module-suspend"),
+            Self::Hibernate => fl!("shell-module-hibernate"),
+            Self::Reboot => fl!("shell-module-reboot"),
+            Self::PowerOff => fl!("shell-module-power-off"),
         }
     }
 
-    fn keywords(self) -> &'static str {
-        match self {
-            Self::Lock => "lock screen session",
-            Self::LogOut => "log out sign out logout logoff exit quit session",
-            Self::Suspend => "suspend sleep standby",
-            Self::Hibernate => "hibernate sleep disk",
-            Self::Reboot => "reboot restart",
-            Self::PowerOff => "power off shut down shutdown turn off halt",
-        }
+    /// English keywords, which always match, and the session language's.
+    fn keywords(self) -> String {
+        let (english, translated) = match self {
+            Self::Lock => ("lock screen session", fl!("shell-session-lock-keywords")),
+            Self::LogOut => (
+                "log out sign out logout logoff exit quit session",
+                fl!("shell-session-log-out-keywords"),
+            ),
+            Self::Suspend => (
+                "suspend sleep standby",
+                fl!("shell-session-suspend-keywords"),
+            ),
+            Self::Hibernate => (
+                "hibernate sleep disk",
+                fl!("shell-session-hibernate-keywords"),
+            ),
+            Self::Reboot => ("reboot restart", fl!("shell-session-reboot-keywords")),
+            Self::PowerOff => (
+                "power off shut down shutdown turn off halt",
+                fl!("shell-session-power-off-keywords"),
+            ),
+        };
+        format!("{english} {translated}")
     }
 
     fn icon(self) -> &'static str {
@@ -180,15 +194,16 @@ pub fn session_results(rows: &[SessionRow], query: &str) -> Vec<ResultItem> {
         .enumerate()
         .filter_map(|(source_index, row)| {
             let command = row.command;
+            let (label, keywords) = (command.label(), command.keywords());
             let score = best_match(
                 &[
                     SearchText {
                         field: SearchField::Label,
-                        text: command.label(),
+                        text: &label,
                     },
                     SearchText {
                         field: SearchField::Secondary,
-                        text: command.keywords(),
+                        text: &keywords,
                     },
                 ],
                 query,
@@ -200,18 +215,18 @@ pub fn session_results(rows: &[SessionRow], query: &str) -> Vec<ResultItem> {
                 item: ResultItem {
                     id: format!("session:{}", command.id()),
                     label: if confirms {
-                        format!("{}…", command.label())
+                        fl!("shell-session-confirmed-label", action = label.clone())
                     } else {
-                        command.label().into()
+                        label.clone()
                     },
                     description: if confirms {
-                        "Session · asks for confirmation".into()
+                        fl!("shell-session-row-confirms")
                     } else {
-                        "Session".into()
+                        fl!("shell-session-row")
                     },
                     icon: Some(command.icon().into()),
                     actions: vec![NamedAction {
-                        label: command.label().into(),
+                        label,
                         action: Action::Panel(row.action.clone()),
                     }],
                 },
@@ -244,10 +259,10 @@ pub fn parse_pages(bytes: &[u8]) -> Result<Vec<SettingsPage>, String> {
         pages: Vec<SettingsPage>,
     }
     if bytes.len() > PAGES_BYTES {
-        return Err("Settings page list is too large".into());
+        return Err(fl!("shell-settings-pages-too-large"));
     }
     let catalog: Catalog =
-        serde_json::from_slice(bytes).map_err(|_| "Settings page list is invalid")?;
+        serde_json::from_slice(bytes).map_err(|_| fl!("shell-settings-pages-invalid"))?;
     let short =
         |text: &str, limit: usize| text.len() <= limit && !text.chars().any(char::is_control);
     let valid = catalog.pages.len() <= MAX_PAGES
@@ -268,7 +283,7 @@ pub fn parse_pages(bytes: &[u8]) -> Result<Vec<SettingsPage>, String> {
                 && page.keywords.iter().all(|keyword| short(keyword, 64))
         });
     if !valid {
-        return Err("Settings page list is invalid".into());
+        return Err(fl!("shell-settings-pages-invalid"));
     }
     Ok(catalog.pages)
 }
@@ -284,8 +299,11 @@ pub async fn fetch_pages() -> Result<Vec<SettingsPage>, String> {
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| "Canopa Settings is not installed")?;
-    let mut stdout = child.stdout.take().ok_or("no output")?;
+        .map_err(|_| fl!("shell-settings-not-installed"))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| fl!("shell-settings-pages-failed"))?;
     let mut bytes = Vec::new();
     let read = async {
         (&mut stdout)
@@ -296,10 +314,10 @@ pub async fn fetch_pages() -> Result<Vec<SettingsPage>, String> {
     };
     let status = tokio::time::timeout(std::time::Duration::from_secs(3), read)
         .await
-        .map_err(|_| "Canopa Settings did not list its pages in time")?
+        .map_err(|_| fl!("shell-settings-pages-timed-out"))?
         .map_err(|error| error.to_string())?;
     if !status.success() {
-        return Err("Canopa Settings could not list its pages".into());
+        return Err(fl!("shell-settings-pages-failed"));
     }
     parse_pages(&bytes)
 }
@@ -337,14 +355,14 @@ pub fn page_results(pages: &[SettingsPage], query: &str, scoped: bool) -> Vec<Re
                 score,
                 item: ResultItem {
                     id: format!("settings-page:{}", page.id),
-                    label: format!("{} settings", page.title),
-                    description: "Settings page".into(),
+                    label: fl!("shell-settings-page-label", page = page.title.clone()),
+                    description: fl!("shell-settings-page"),
                     icon: page
                         .icon
                         .clone()
                         .or_else(|| Some("preferences-system".into())),
                     actions: vec![NamedAction {
-                        label: "Open".into(),
+                        label: fl!("shell-launcher-open"),
                         action: Action::SettingsPage {
                             id: page.id.clone(),
                         },
@@ -379,7 +397,7 @@ pub async fn open_page(id: &str) -> std::io::Result<()> {
         Ok(Err(zbus::Error::MethodError(name, _, _)))
             if name.as_str() == "org.freedesktop.DBus.Error.InvalidArgs" =>
         {
-            Err(std::io::Error::other("Settings does not have that page"))
+            Err(std::io::Error::other(fl!("shell-settings-no-such-page")))
         }
         _ => crate::command::launch_application(&[
             "canopa-settings".into(),

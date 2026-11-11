@@ -40,19 +40,21 @@ impl Session {
                     .history
                     .iter()
                     .filter_map(|entry| {
-                        let copy = named("Copy", Command::CopyHistory(entry.id));
-                        let remove = named("Remove from history", Command::Forget(entry.id));
+                        let copy =
+                            named(&fl!("shell-clipboard-copy"), Command::CopyHistory(entry.id));
+                        let remove =
+                            named(&fl!("shell-clipboard-remove"), Command::Forget(entry.id));
                         let id = format!("recent:{}", entry.id);
                         match &entry.content {
                             Content::Text(text) if matches_text(query, text.as_str()) => {
                                 Some(self.clipboard_entry(
                                     id,
                                     text.preview(),
-                                    "Recent copy",
+                                    &fl!("shell-clipboard-recent-copy"),
                                     vec![
                                         copy,
                                         named(
-                                            "Save as snippet…",
+                                            &fl!("shell-clipboard-save-as-snippet"),
                                             Command::DraftFromHistory(entry.id),
                                         ),
                                         remove,
@@ -61,12 +63,21 @@ impl Session {
                             }
                             Content::Image(image) => {
                                 let description = image.description();
-                                if !matches_text(query, &format!("Image {description}")) {
+                                // English words always match, beside the translated ones.
+                                if !matches_text(query, &format!("Image {description}"))
+                                    && !matches_text(
+                                        query,
+                                        &fl!(
+                                            "shell-clipboard-image-named",
+                                            description = description.clone()
+                                        ),
+                                    )
+                                {
                                     return None;
                                 }
                                 let mut row = self.clipboard_entry(
                                     id,
-                                    "Image".into(),
+                                    fl!("shell-clipboard-image"),
                                     &description,
                                     vec![copy, remove],
                                 );
@@ -80,29 +91,32 @@ impl Session {
                     })
                     .take(launcher::RESULT_LIMIT),
             );
-            let clear = "Clear clipboard history";
-            if !self.clipboard.history.is_empty() && matches_text(query, clear) {
+            let clear = fl!("shell-clipboard-clear-history");
+            if !self.clipboard.history.is_empty()
+                && (matches_text(query, &clear) || matches_text(query, "Clear clipboard history"))
+            {
                 rows.push(self.clipboard_entry(
                     "clear".into(),
-                    clear.into(),
+                    clear,
                     "",
-                    vec![named("Clear history", Command::Clear)],
+                    vec![named(&fl!("shell-clipboard-clear"), Command::Clear)],
                 ));
             }
-            let label = if self.clipboard.saved.options().recording {
-                "Turn off clipboard history"
+            let recording = self.clipboard.saved.options().recording;
+            let (label, english) = if recording {
+                (
+                    fl!("shell-clipboard-turn-off"),
+                    "Turn off clipboard history",
+                )
             } else {
-                "Turn on clipboard history"
+                (fl!("shell-clipboard-turn-on"), "Turn on clipboard history")
             };
-            if matches_text(query, label) {
+            if matches_text(query, &label) || matches_text(query, english) {
                 rows.push(self.clipboard_entry(
                     "recording".into(),
-                    label.into(),
-                    "Keep recent copies for this session",
-                    vec![named(
-                        label,
-                        Command::Save(Edit::Recording(!self.clipboard.saved.options().recording)),
-                    )],
+                    label.clone(),
+                    &fl!("shell-clipboard-keep-recent"),
+                    vec![named(&label, Command::Save(Edit::Recording(!recording)))],
                 ));
             }
         } else {
@@ -122,21 +136,30 @@ impl Session {
                             entry.name.clone(),
                             &entry.text.preview(),
                             vec![
-                                named("Copy", Command::CopySnippet(entry.id)),
-                                named("Rename snippet…", Command::Rename(entry.id)),
-                                named("Delete snippet", Command::Save(Edit::Delete(entry.id))),
+                                named(&fl!("shell-clipboard-copy"), Command::CopySnippet(entry.id)),
+                                named(
+                                    &fl!("shell-clipboard-rename-snippet"),
+                                    Command::Rename(entry.id),
+                                ),
+                                named(
+                                    &fl!("shell-clipboard-delete-snippet"),
+                                    Command::Save(Edit::Delete(entry.id)),
+                                ),
                             ],
                         ))
                     })
                     .take(launcher::RESULT_LIMIT),
             );
-            let label = "New snippet from clipboard";
-            if matches_text(query, label) {
+            let label = fl!("shell-clipboard-new-snippet");
+            if matches_text(query, &label) || matches_text(query, "New snippet from clipboard") {
                 rows.push(self.clipboard_entry(
                     "new".into(),
-                    label.into(),
+                    label,
                     "",
-                    vec![named("Name snippet…", Command::DraftFromClipboard)],
+                    vec![named(
+                        &fl!("shell-clipboard-name-snippet"),
+                        Command::DraftFromClipboard,
+                    )],
                 ));
             }
         }
@@ -148,32 +171,29 @@ impl Session {
             return error.clone();
         }
         if !self.clipboard.loaded {
-            return "Loading clipboard preferences…".into();
+            return fl!("shell-clipboard-loading");
         }
         if scope == Scope::Clipboard {
-            if let Some(error) = self.clipboard.status.into_iter().flatten().next() {
-                return error.into();
+            if let Some(error) = self.clipboard.status.iter().flatten().next() {
+                return error.clone();
             }
             if !self.clipboard.saved.options().recording {
-                return "History is off · type snip for saved snippets".into();
+                return fl!("shell-clipboard-history-off");
             }
             if query.is_empty() {
-                let kinds = if self.clipboard.saved.options().images {
-                    "text and images"
+                return if self.clipboard.saved.options().images {
+                    fl!("shell-clipboard-recording-text-images")
                 } else {
-                    "text"
+                    fl!("shell-clipboard-recording-text")
                 };
-                return format!(
-                    "Recording {kinds} for this session · Enter to copy · Tab for actions"
-                );
             }
         } else if query.is_empty() {
-            return "Saved snippets · Enter to copy · Tab to rename or delete".into();
+            return fl!("shell-clipboard-snippets-help");
         }
         if self.clipboard_entries(scope, query).is_empty() {
-            "No matches".into()
+            fl!("shell-launcher-no-matches")
         } else {
-            "Enter to copy · Tab for actions".into()
+            fl!("shell-clipboard-help")
         }
     }
 
@@ -212,9 +232,12 @@ impl Session {
         };
         Some(vec![self.clipboard_entry(
             "save".into(),
-            format!("Save snippet “{name}”"),
+            fl!("shell-clipboard-save-snippet-named", name = name.to_owned()),
             "",
-            vec![named("Save snippet", Command::Save(edit))],
+            vec![named(
+                &fl!("shell-clipboard-save-snippet"),
+                Command::Save(edit),
+            )],
         )])
     }
 
@@ -270,7 +293,7 @@ impl super::super::App {
                 result,
             }))
         };
-        let unavailable = || "That clipboard entry is no longer available".to_owned();
+        let unavailable = || fl!("shell-clipboard-entry-gone");
         let history = |id| {
             self.launcher_clipboard
                 .view
@@ -335,9 +358,7 @@ impl super::super::App {
                         value
                             .and_then(Text::new)
                             .map(|text| Some(Draft::New(text)))
-                            .ok_or_else(|| {
-                                "Copy some text up to 16 KiB before creating a snippet".into()
-                            }),
+                            .ok_or_else(|| fl!("shell-clipboard-copy-text-first")),
                     )
                 });
             }
@@ -351,14 +372,12 @@ impl super::super::App {
             }
             Command::Save(edit) => {
                 if self.launcher_clipboard.saving {
-                    return iced::Task::done(finish(Err(
-                        "A clipboard change is being saved".into()
-                    )));
+                    return iced::Task::done(finish(Err(fl!("shell-clipboard-saving"))));
                 }
                 if !self.launcher_clipboard.view.loaded {
-                    return iced::Task::done(finish(Err(
-                        "Clipboard preferences are unavailable".into()
-                    )));
+                    return iced::Task::done(finish(Err(fl!(
+                        "shell-clipboard-preferences-unavailable"
+                    ))));
                 }
                 self.launcher_clipboard.saving = true;
                 return iced::Task::perform(
@@ -367,7 +386,7 @@ impl super::super::App {
                             Saved::update(&clipboard::path()?, |saved| saved.edit(edit))
                         })
                         .await
-                        .unwrap_or_else(|_| Err("Clipboard save stopped".into()))
+                        .unwrap_or_else(|_| Err(fl!("shell-clipboard-save-stopped")))
                     },
                     move |result| Message::LauncherClipboardSaved {
                         session,

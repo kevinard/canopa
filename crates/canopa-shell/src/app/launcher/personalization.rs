@@ -143,14 +143,14 @@ impl Session {
                     ResultItem {
                         id: "save-alias".into(),
                         label: if alias.is_empty() {
-                            "Remove alias".into()
+                            fl!("shell-launcher-remove-alias")
                         } else {
-                            format!("Save alias: {alias}")
+                            fl!("shell-launcher-save-alias-named", alias = alias.to_string())
                         },
                         description: shortcut.label.clone(),
                         icon: None,
                         actions: vec![NamedAction {
-                            label: "Save alias".into(),
+                            label: fl!("shell-launcher-save-alias"),
                             action: Action::SaveAlias { shortcut },
                         }],
                     },
@@ -194,21 +194,22 @@ impl Session {
                         } else {
                             s.label.clone()
                         },
-                        description: format!(
-                            "{}{}",
-                            if s.pinned { "Pinned" } else { "Shortcut" },
-                            if s.alias.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" · {}", s.alias)
+                        description: match (s.pinned, s.alias.is_empty()) {
+                            (true, true) => fl!("shell-launcher-pinned"),
+                            (false, true) => fl!("shell-launcher-shortcut"),
+                            (true, false) => {
+                                fl!("shell-launcher-pinned-alias", alias = s.alias.clone())
                             }
-                        ),
+                            (false, false) => {
+                                fl!("shell-launcher-shortcut-alias", alias = s.alias.clone())
+                            }
+                        },
                         icon: s.icon.clone(),
                         actions: if let Some(path) = s.target.path() {
                             launcher::files::actions(&path, s.icon.as_deref() == Some("folder"))
                         } else {
                             vec![NamedAction {
-                                label: "Open".into(),
+                                label: fl!("shell-launcher-open"),
                                 action: action(&s.target),
                             }]
                         },
@@ -246,7 +247,7 @@ impl Session {
         match launcher::windows::window_for(&self.windows, &self.apps, app) {
             Some(window) => {
                 actions.push(NamedAction {
-                    label: "Switch to".into(),
+                    label: fl!("shell-launcher-switch-to"),
                     action: Action::FocusWindow {
                         id: window.id,
                         application: Some(app.id.clone()),
@@ -260,12 +261,12 @@ impl Session {
                     {
                         Some(position) => actions.push(desktop.remove(position)),
                         None => actions.push(NamedAction {
-                            label: "New window".into(),
+                            label: fl!("shell-launcher-new-window"),
                             action: Action::Application { id: app.id.clone() },
                         }),
                     }
                 }
-                result.description = "Running application".into();
+                result.description = fl!("shell-launcher-running-application");
             }
             None => actions.push(result.actions[0].clone()),
         }
@@ -307,9 +308,9 @@ impl Session {
         });
         result.actions.push(NamedAction {
             label: if shortcut.pinned {
-                "Unpin from Launcher".into()
+                fl!("shell-launcher-unpin")
             } else {
-                "Pin in Launcher".into()
+                fl!("shell-launcher-pin")
             },
             action: Action::TogglePin {
                 shortcut: shortcut.clone(),
@@ -317,9 +318,9 @@ impl Session {
         });
         result.actions.push(NamedAction {
             label: if shortcut.alias.is_empty() {
-                "Set search alias…".into()
+                fl!("shell-launcher-set-alias")
             } else {
-                "Edit search alias…".into()
+                fl!("shell-launcher-edit-alias")
             },
             action: Action::EditAlias { shortcut },
         });

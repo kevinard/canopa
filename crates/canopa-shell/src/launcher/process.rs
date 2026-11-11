@@ -21,38 +21,44 @@ async fn capture(
         .kill_on_drop(true);
     let mut child = command
         .spawn()
-        .map_err(|_| "Provider executable is unavailable".to_string())?;
+        .map_err(|_| fl!("shell-provider-unavailable"))?;
     let _group = crate::command::ProcessGroup::new(child.id());
-    let mut stdin = child.stdin.take().ok_or("Provider input is unavailable")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| fl!("shell-provider-io-unavailable"))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or("Provider output is unavailable")?;
+        .ok_or_else(|| fl!("shell-provider-io-unavailable"))?;
     tokio::time::timeout(Duration::from_secs(2), async {
         stdin
             .write_all(input)
             .await
-            .map_err(|_| "Provider input failed")?;
+            .map_err(|_| fl!("shell-provider-io-failed"))?;
         drop(stdin);
         let mut bytes = Vec::new();
         stdout
             .take((MAX_OUTPUT + 1) as u64)
             .read_to_end(&mut bytes)
             .await
-            .map_err(|_| "Provider output failed")?;
+            .map_err(|_| fl!("shell-provider-io-failed"))?;
         if bytes.len() > MAX_OUTPUT {
-            return Err("Provider output exceeded 256 KiB".into());
+            return Err(fl!("shell-provider-output-too-large"));
         }
-        let status = child.wait().await.map_err(|_| "Provider process failed")?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|_| fl!("shell-provider-process-failed"))?;
         // qalc -n can return 1 with a numerical result; its caller validates
         // the complete result. Extension processes must exit successfully.
         if !(status.success() || allow_nodefs_status && status.code() == Some(1)) {
-            return Err("Provider exited unsuccessfully".into());
+            return Err(fl!("shell-provider-exit-failed"));
         }
         Ok(bytes)
     })
     .await
-    .map_err(|_| "Provider timed out".to_string())?
+    .map_err(|_| fl!("shell-provider-timed-out"))?
 }
 
 pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
@@ -115,9 +121,9 @@ pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
                 return Batch {
                     status: if explicit {
                         if expression.units_enabled() {
-                            "Expression has no finite real result in the requested unit".into()
+                            fl!("shell-calculator-no-result-in-unit")
                         } else {
-                            "Expression has no finite real result".into()
+                            fl!("shell-calculator-no-result")
                         }
                     } else {
                         String::new()
@@ -128,11 +134,13 @@ pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
             Batch {
                 results: vec![ResultItem {
                     id: "value".into(),
-                    label: value.clone(),
-                    description: format!("Calculator · {query}"),
+                    // Shown in the locale's digits and separators; the
+                    // copied value stays as qalc wrote it.
+                    label: super::calculator::display(&value),
+                    description: fl!("shell-calculator-description", query = query.to_owned()),
                     icon: Some("accessories-calculator".into()),
                     actions: vec![NamedAction {
-                        label: "Copy result".into(),
+                        label: fl!("shell-calculator-copy-result"),
                         action: Action::Copy { text: value },
                     }],
                 }],
@@ -141,7 +149,7 @@ pub(crate) async fn calculate(query: &str, explicit: bool) -> Batch {
         }
         Err(error) => Batch {
             status: if explicit {
-                format!("Calculator: {error} (requires qalc)")
+                fl!("shell-calculator-failed", error = error)
             } else {
                 String::new()
             },
@@ -220,7 +228,7 @@ fn decode(bytes: &[u8]) -> Result<Batch, String> {
     Ok(Batch {
         results: response.results,
         status: if response.more {
-            "More matches; refine your search".into()
+            fl!("shell-launcher-more-matches")
         } else {
             String::new()
         },
@@ -230,7 +238,7 @@ fn decode(bytes: &[u8]) -> Result<Batch, String> {
 pub(crate) async fn query_extension(extension: &Extension, query: &str) -> Batch {
     let result = async {
         if query.len() > MAX_QUERY_BYTES {
-            return Err("Query is too long".into());
+            return Err(fl!("shell-launcher-query-long"));
         }
         let (program, args) = extension
             .argv
@@ -249,7 +257,11 @@ pub(crate) async fn query_extension(extension: &Extension, query: &str) -> Batch
     }
     .await;
     result.unwrap_or_else(|error: String| Batch {
-        status: format!("{}: {error}", extension.name),
+        status: fl!(
+            "shell-launcher-extension-error",
+            name = extension.name.clone(),
+            error = error
+        ),
         ..Batch::default()
     })
 }

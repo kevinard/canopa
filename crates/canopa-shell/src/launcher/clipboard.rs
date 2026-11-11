@@ -42,7 +42,7 @@ pub struct Snapshot {
     pub saved: Arc<Saved>,
     pub loaded: bool,
     pub history: Vec<Entry>,
-    pub status: [Option<&'static str>; 2],
+    pub status: [Option<String>; 2],
     pub load_error: Option<String>,
 }
 
@@ -232,7 +232,7 @@ pub struct Observation {
 #[derive(Clone, Debug)]
 enum Observed {
     Content { content: Content, received: Instant },
-    Status(Option<&'static str>),
+    Status(Option<String>),
 }
 
 fn watch(key: &Watch) -> impl iced::futures::Stream<Item = Observation> + use<> {
@@ -263,14 +263,14 @@ fn watch(key: &Watch) -> impl iced::futures::Stream<Item = Observation> + use<> 
 async fn watch_once(
     key: Watch,
     out: &mut iced::futures::channel::mpsc::Sender<Observation>,
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     use std::process::Stdio;
     let (mime, flag) = match key.kind {
         Kind::Text => ("text", "--clipboard-frame"),
         Kind::Image => ("image", "--clipboard-image-frame"),
     };
     let exe =
-        canopa_file::executable::installed().map_err(|_| "Could not start the clipboard reader")?;
+        canopa_file::executable::installed().map_err(|_| fl!("shell-clipboard-reader-failed"))?;
     let mut child = tokio::process::Command::new("wl-paste")
         .args([
             "--type",
@@ -289,22 +289,22 @@ async fn watch_once(
         .kill_on_drop(true)
         .process_group(0)
         .spawn()
-        .map_err(|_| "Could not start wl-paste for clipboard history")?;
+        .map_err(|_| fl!("shell-clipboard-wl-paste-failed"))?;
     let _group = crate::command::ProcessGroup::new(child.id());
     let mut reader = BufReader::new(
         child
             .stdout
             .take()
-            .ok_or("Could not read the clipboard watcher")?,
+            .ok_or_else(|| fl!("shell-clipboard-watcher-unreadable"))?,
     );
-    let stopped = match key.kind {
-        Kind::Text => "Text clipboard watcher stopped. Check Wayland data control support",
-        Kind::Image => "Image clipboard watcher stopped. Check Wayland data control support",
+    let stopped = || match key.kind {
+        Kind::Text => fl!("shell-clipboard-text-watcher-stopped"),
+        Kind::Image => fl!("shell-clipboard-image-watcher-stopped"),
     };
     loop {
         let payload = tokio::select! {
-            _ = child.wait() => return Err(stopped),
-            result = read_frame(&mut reader, key.kind.maximum()) => result.map_err(|_| stopped)?,
+            _ = child.wait() => return Err(stopped()),
+            result = read_frame(&mut reader, key.kind.maximum()) => result.map_err(|_| stopped())?,
         };
         let received = Instant::now();
         let content = if payload.is_empty() {
@@ -434,7 +434,7 @@ fn saved_changes(epoch: &u64) -> impl iced::futures::Stream<Item = SavedChange> 
                         let _ = out
                             .send(SavedChange {
                                 epoch,
-                                result: Err("Clipboard preferences reader stopped".into()),
+                                result: Err(fl!("shell-clipboard-preferences-stopped")),
                             })
                             .await;
                         return;

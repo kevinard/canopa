@@ -241,9 +241,9 @@ pub(super) struct Expression {
 }
 
 impl Expression {
-    pub fn parse(query: &str) -> Result<Self, &'static str> {
+    pub fn parse(query: &str) -> Result<Self, String> {
         if query.len() > 256 {
-            return Err("Calculations are limited to 256 bytes");
+            return Err(fl!("shell-calculator-too-long", bytes = 256));
         }
         let input = query
             .replace("->", " to ")
@@ -255,13 +255,14 @@ impl Expression {
         let separator = lower.rfind(" to ").or_else(|| lower.rfind(" in "));
         if let Some(position) = separator {
             let (quantity, target) = input.split_at(position);
-            let target = parse_unit(target[4..].trim()).ok_or("Choose a supported target unit")?;
+            let target = parse_unit(target[4..].trim())
+                .ok_or_else(|| fl!("shell-calculator-target-unit"))?;
             let (amount, end) =
-                super::math::prefix(quantity).ok_or("Enter a complete numerical amount")?;
-            let unit =
-                parse_unit(quantity[end..].trim()).ok_or("Choose a supported source unit")?;
+                super::math::prefix(quantity).ok_or_else(|| fl!("shell-calculator-amount"))?;
+            let unit = parse_unit(quantity[end..].trim())
+                .ok_or_else(|| fl!("shell-calculator-source-unit"))?;
             if unit.dimension != target.dimension {
-                return Err("These units measure different quantities");
+                return Err(fl!("shell-calculator-dimensions"));
             }
             Ok(Self {
                 source: format!("({amount}) {} to -{}", unit.code, target.code),
@@ -269,8 +270,7 @@ impl Expression {
                 target: Some(target),
             })
         } else {
-            let source = arithmetic(&input)
-                .ok_or("Enter a complete arithmetic expression or unit conversion")?;
+            let source = arithmetic(&input).ok_or_else(|| fl!("shell-calculator-incomplete"))?;
             Ok(Self {
                 automatic: source.contains(['+', '-', '*', '/', '^', '%'])
                     || (source.contains('(') && source.chars().any(|ch| ch.is_ascii_alphabetic())),
@@ -298,6 +298,30 @@ impl Expression {
                     .then(|| format!("{number} {}", target.label))
             }
         }
+    }
+}
+
+/// A result as people read it: `3600000 J` is `3,600,000 J` in English and
+/// `3 600 000 J` in French, with the decimals qalc gave. Exponents and long
+/// numbers stay as qalc wrote them. Input keeps qalc's syntax (`.` decimals).
+pub(super) fn display(value: &str) -> String {
+    let (number, unit) = value
+        .split_once(' ')
+        .map_or((value, None), |(number, unit)| (number, Some(unit)));
+    let digits = number.chars().filter(char::is_ascii_digit).count();
+    if !numeric_result(number) || number.contains(['e', 'E']) || digits > 15 {
+        return value.to_owned();
+    }
+    let decimals = number
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let Ok(parsed) = number.parse::<f64>() else {
+        return value.to_owned();
+    };
+    let number = canopa_i18n::format::decimal(parsed, decimals as u8, true);
+    match unit {
+        Some(unit) => format!("{number} {unit}"),
+        None => number,
     }
 }
 
@@ -413,6 +437,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn results_are_shown_in_the_locales_digits() {
+        let english = crate::i18n_testing::english();
+        assert_eq!(super::display("3600000 J"), "3,600,000 J");
+        assert_eq!(super::display("2.4384 m"), "2.4384 m");
+        assert_eq!(super::display("-0.5"), "-0.5");
+        assert_eq!(super::display("1E+3000"), "1E+3000");
+        assert_eq!(super::display("12"), "12");
+        drop(english);
+        let _french = crate::i18n_testing::select("fr", false);
+        let spaced = |text: String| text.replace(['\u{202f}', '\u{a0}'], " ");
+        assert_eq!(spaced(super::display("3600000 J")), "3 600 000 J");
+        assert_eq!(super::display("2.4384 m"), "2,4384 m");
+    }
+
     #[tokio::test]
     async fn qalc_converts_supported_units_and_rejects_incompatible_quantities() {
         if std::process::Command::new("qalc")
@@ -456,9 +495,10 @@ mod tests {
             ("1 week to hours", "168 h"),
         ] {
             let batch = super::super::process::calculate(query, false).await;
+            // Shown with the locale's grouping, copied as qalc wrote it.
             assert_eq!(
-                batch.results.first().map(|result| result.label.as_str()),
-                Some(expected),
+                batch.results.first().map(|result| result.label.clone()),
+                Some(super::display(expected)),
                 "{query}: {}",
                 batch.status
             );

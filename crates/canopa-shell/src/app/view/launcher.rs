@@ -3,7 +3,7 @@ use std::rc::Rc;
 use iced::widget::{Space, column, container, keyed_column, responsive, row, stack};
 use iced::{Element, Length, Padding, Size};
 
-use super::super::launcher::{APPROXIMATE_KEYWORD_MATCH, QuickScope, Target};
+use super::super::launcher::{QuickScope, Target};
 use super::super::messages::PanelEvent;
 use super::super::panel_menu_session::{PanelMenuEntry, PanelMenuEntryTarget};
 use super::super::shell_accessibility::{launcher_announcements, menu_entry_key};
@@ -65,15 +65,18 @@ fn contents<'a>(
     let wide = width >= 450.0;
     let close_icon = theme::icon(CLOSE_ICON, 16.0, theme::palette().text);
     let close_label: Element<'a, Message> = if wide {
-        row![close_icon, theme::strong_text("Close").size(caption_size())]
-            .spacing(5)
-            .align_y(iced::Alignment::Center)
-            .into()
+        row![
+            close_icon,
+            theme::strong_text(fl!("shell-close")).size(caption_size())
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .into()
     } else {
         container(close_icon).center(20).into()
     };
     let close_shortcut = !child && model.search_query.is_empty();
-    let mut close_node = Node::button("Close launcher")
+    let mut close_node = Node::button(fl!("shell-launcher-close"))
         .key("launcher-close")
         .on_click(Some(Message::Panel(PanelEvent::Close)));
     if close_shortcut {
@@ -90,9 +93,9 @@ fn contents<'a>(
             )
             .padding([6, 9]),
             if close_shortcut {
-                "Close launcher · Esc"
+                fl!("shell-launcher-close-hint", key = fl!("shell-key-escape"))
             } else {
-                "Close launcher"
+                fl!("shell-launcher-close")
             },
         ),
     );
@@ -102,7 +105,9 @@ fn contents<'a>(
         && count == 1
         && target.is_some_and(|target| is_calculator(&model.menu_entries[0], target));
     let empty_recovery = count == 0
-        && matches!(model.launcher_status.as_str(), "No matches" | "")
+        // The status is only the session's own "No matches" (or nothing).
+        && (model.launcher_status.is_empty()
+            || model.launcher_status == fl!("shell-launcher-no-matches"))
         && !visible_query(model).trim().is_empty();
     let preferred_body = if count == 0 {
         if empty_recovery && width < 445.0 {
@@ -140,7 +145,7 @@ fn contents<'a>(
             .clone()
             .unwrap_or_else(|| model.title.clone());
         controls = controls.push(
-            row![
+            canopa_ui::direction::row([
                 back_button(model.search_query.is_empty()),
                 semantic(
                     Node::heading(title.clone(), 2).key("launcher-heading"),
@@ -148,7 +153,7 @@ fn contents<'a>(
                         .size(theme::body_size() + 2.0)
                         .wrapping(iced::widget::text::Wrapping::None),
                 ),
-            ]
+            ])
             .align_y(iced::Alignment::Center)
             .spacing(12),
         );
@@ -157,8 +162,8 @@ fn contents<'a>(
             row![
                 theme::icon(CALC_ICON, 18.0, theme::palette().accent),
                 semantic(
-                    Node::heading("Calculator", 2).key("launcher-heading"),
-                    theme::strong_text("Calculator").size(caption_size()),
+                    Node::heading(fl!("shell-launcher-calculator"), 2).key("launcher-heading"),
+                    theme::strong_text(fl!("shell-launcher-calculator")).size(caption_size()),
                 ),
             ]
             .align_y(iced::Alignment::Center)
@@ -176,9 +181,9 @@ fn contents<'a>(
         .spacing(4);
         if wide {
             header = header
-                .push(muted_label("Type"))
+                .push(muted_label(fl!("shell-launcher-calculate-before")))
                 .push(keycap("="))
-                .push(muted_label("to calculate"));
+                .push(muted_label(fl!("shell-launcher-calculate-after")));
         }
         controls = controls.push(header);
     }
@@ -252,7 +257,7 @@ fn contents<'a>(
                 footer = footer
                     .push(keycap("↑"))
                     .push(keycap("↓"))
-                    .push(muted_label("Select"));
+                    .push(muted_label(fl!("shell-launcher-select")));
             } else if !child && !calculator {
                 footer = footer.push(muted_label(result_count(model)));
             }
@@ -297,15 +302,15 @@ fn contents<'a>(
     )
 }
 
-fn browse_heading(model: &PanelRenderModel<'_>) -> &'static str {
+fn browse_heading(model: &PanelRenderModel<'_>) -> String {
     let apps_only = model.menu_entries.iter().all(|entry| {
         matches!(&entry.target, PanelMenuEntryTarget::Launcher(target)
             if target.result.actions.first().is_some_and(|named| matches!(named.action, Action::Application { .. })))
     });
     if apps_only {
-        "Installed apps"
+        fl!("shell-launcher-installed-apps")
     } else {
-        "Browse"
+        fl!("shell-launcher-browse")
     }
 }
 
@@ -378,9 +383,9 @@ fn results_node(model: &PanelRenderModel<'_>) -> Node<Message> {
             .clone()
             .unwrap_or_else(|| model.title.clone())
     } else if model.search_query.trim().is_empty() {
-        browse_heading(model).to_owned()
+        browse_heading(model)
     } else {
-        "Results".to_owned()
+        fl!("shell-launcher-results")
     };
     Node::list(label).key(RESULTS)
 }
@@ -394,7 +399,7 @@ fn command_controls(
     let mut toolbar = row![].spacing(6).align_y(iced::Alignment::Center);
     if grouped {
         let action = theme::action(
-            command_label("Actions", "Tab"),
+            command_label(&fl!("shell-launcher-actions"), fl!("shell-key-tab")),
             Some(Message::Panel(PanelEvent::LauncherActions(Some(
                 target.clone(),
             )))),
@@ -402,7 +407,10 @@ fn command_controls(
             false,
         )
         .padding([5, 9]);
-        let name = format!("Actions for {}", target.result.label);
+        let name = fl!(
+            "shell-launcher-actions-for",
+            name = target.result.label.clone()
+        );
         toolbar = toolbar.push(semantic(
             Node::button(name.clone())
                 .key("launcher-actions")
@@ -416,8 +424,14 @@ fn command_controls(
     if let Some(primary) = target.result.actions.first() {
         let label = if model.can_go_back && target.result.id.starts_with("action:") {
             target.result.label.clone()
-        } else if primary.label == "Open" && model.menu_entries.len() == 1 && width >= 450.0 {
-            format!("Open {}", target.result.label)
+        } else if primary.label == fl!("shell-launcher-open")
+            && model.menu_entries.len() == 1
+            && width >= 450.0
+        {
+            fl!(
+                "shell-launcher-open-named",
+                name = target.result.label.clone()
+            )
         } else {
             primary.label.clone()
         };
@@ -472,26 +486,30 @@ fn control_hint<'a>(
 }
 
 fn back_button(escape: bool) -> Element<'static, Message> {
-    let node = Node::button("Back")
+    let node = Node::button(fl!("shell-back"))
         .key("launcher-back")
         .on_click(Some(Message::Panel(PanelEvent::Back)));
     if escape {
         return semantic(
             node.shortcut("Escape"),
-            command_button("‹ Back", "Esc", PanelEvent::Back),
+            command_button(
+                &canopa_ui::direction::back_label(),
+                fl!("shell-key-escape"),
+                PanelEvent::Back,
+            ),
         );
     }
     semantic(
         node,
         control_hint(
             theme::action(
-                theme::strong_text("‹ Back").size(caption_size()),
+                theme::strong_text(canopa_ui::direction::back_label()).size(caption_size()),
                 Some(Message::Panel(PanelEvent::Back)),
                 canopa_ui::Action::Normal,
                 false,
             )
             .padding([6, 10]),
-            "Back",
+            fl!("shell-back"),
         ),
     )
 }
@@ -540,15 +558,17 @@ fn search<'a>(
     show_clear_shortcut: bool,
 ) -> Element<'a, Message> {
     let scope = model.launcher_input_scope;
-    let scoped_placeholder;
-    let placeholder = if let Some(scope) = scope {
-        scoped_placeholder = format!("Search {}", scope.label().to_ascii_lowercase());
-        &scoped_placeholder
-    } else if let Some(placeholder) = model.launcher_filter_placeholder {
-        placeholder
+    let placeholder: String = if let Some(scope) = scope {
+        scope.search_placeholder()
+    } else if let Some(placeholder) = &model.launcher_filter_placeholder {
+        placeholder.clone()
     } else {
-        model.menu_prompt.as_deref().unwrap_or("Search")
+        model
+            .menu_prompt
+            .clone()
+            .unwrap_or_else(|| fl!("shell-search"))
     };
+    let placeholder = placeholder.as_str();
     let prefix = scope.map_or("", |scope| scope.prefix());
     let query = visible_query(model);
     use canopa_theme::{ColorRole, ColorValue};
@@ -569,9 +589,9 @@ fn search<'a>(
     }
     let clearable = show_clear && !query.is_empty();
     if clearable {
-        padding.right += theme::text_width("Clear", caption_size()) + 27.0;
+        padding.right += theme::text_width(&fl!("shell-launcher-clear"), caption_size()) + 27.0;
         if show_clear_shortcut {
-            padding.right += theme::text_width("Esc", caption_size()) + 16.0;
+            padding.right += theme::text_width(&fl!("shell-key-escape"), caption_size()) + 16.0;
         }
     }
     let icon_inset = padding.left;
@@ -612,16 +632,16 @@ fn search<'a>(
     }
 
     let mut clear_label = row![
-        theme::strong_text("Clear")
+        theme::strong_text(fl!("shell-launcher-clear"))
             .size(caption_size())
             .style(canopa_ui::link)
     ]
     .spacing(6)
     .align_y(iced::Alignment::Center);
     if show_clear_shortcut {
-        clear_label = clear_label.push(keycap("Esc"));
+        clear_label = clear_label.push(keycap(fl!("shell-key-escape")));
     }
-    let clear_node = Node::button("Clear search")
+    let clear_node = Node::button(fl!("shell-launcher-clear-search"))
         .key("launcher-clear")
         .on_click(Some(Message::Panel(clear_query(session))));
     let clear_node = if show_clear_shortcut {
@@ -648,7 +668,10 @@ fn search<'a>(
             style.border.radius = 8.0.into();
             style
         }),
-        "Clear search · Esc",
+        fl!(
+            "shell-launcher-clear-search-hint",
+            key = fl!("shell-key-escape")
+        ),
     );
     stack![
         input,
@@ -702,7 +725,7 @@ fn scope_button(
     equal_width: bool,
 ) -> Element<'static, Message> {
     let selected = model.launcher_scope == scope;
-    let label = scope.map_or("All", |scope| scope.label());
+    let label = scope.map_or_else(|| fl!("shell-launcher-scope-all"), |scope| scope.label());
     let mut content = row![].spacing(6).align_y(iced::Alignment::Center);
     if equal_width {
         let glyph = match scope {
@@ -721,11 +744,11 @@ fn scope_button(
         content = content.push(theme::icon(glyph, 16.0, color));
     }
     content = content.push(if selected {
-        theme::strong_text(label)
+        theme::strong_text(label.clone())
             .size(caption_size())
             .style(canopa_ui::link)
     } else {
-        theme::text(label).size(caption_size())
+        theme::text(label.clone()).size(caption_size())
     });
     let width = if equal_width {
         Length::Fill
@@ -777,16 +800,16 @@ fn empty<'a>(
     height: Length,
 ) -> Element<'a, Message> {
     let title = if model.launcher_status.is_empty() {
-        "No matches".to_owned()
+        fl!("shell-launcher-no-matches")
     } else {
         model.launcher_status.clone()
     };
     let mut labels = column![theme::strong_text(title).size(theme::body_size() + 2.0)].spacing(5);
     if recovery {
         let advice = if model.launcher_scope.is_some() {
-            "Try another term or choose All."
+            fl!("shell-launcher-advice-scope")
         } else {
-            "Check the spelling or try a shorter query."
+            fl!("shell-launcher-advice-spelling")
         };
         labels = labels.push(muted_label(advice).size(theme::body_size()));
     }
@@ -802,11 +825,15 @@ fn empty<'a>(
     .align_y(iced::Alignment::Center);
     let contents: Element<'_, Message> = if recovery {
         let clear = semantic(
-            Node::button("Clear search")
+            Node::button(fl!("shell-launcher-clear-search"))
                 .key("launcher-clear-empty")
                 .shortcut("Escape")
                 .on_click(Some(Message::Panel(clear_query(session)))),
-            command_button("Clear search", "Esc", clear_query(session)),
+            command_button(
+                &fl!("shell-launcher-clear-search"),
+                fl!("shell-key-escape"),
+                clear_query(session),
+            ),
         );
         if width >= 445.0 {
             row![message, Space::new().width(Length::Fill), clear]
@@ -836,16 +863,17 @@ fn selected_target<'a>(model: &'a PanelRenderModel<'_>) -> Option<&'a Target> {
 
 fn result_count(model: &PanelRenderModel<'_>) -> String {
     let count = model.menu_entries.len();
-    if count == 1 {
-        return "1 match".into();
-    }
     let approximate = model.menu_entries.iter().filter(|entry| {
         matches!(&entry.target, PanelMenuEntryTarget::Launcher(target) if is_approximate(target))
     }).count();
-    if approximate > 0 && approximate < count {
-        format!("{count} matches · {approximate} approximate")
+    if count > 1 && approximate > 0 && approximate < count {
+        fl!(
+            "shell-launcher-match-count-approximate",
+            count = count,
+            approximate = approximate
+        )
     } else {
-        format!("{count} matches")
+        fl!("shell-launcher-match-count", count = count)
     }
 }
 
@@ -874,6 +902,7 @@ fn secondary_commands(target: &Target) -> Vec<Element<'static, Message>> {
         })
         .map(|(position, named)| {
             let shortcut = format!("Ctrl+{}", position + 1);
+            let shortcut_label = fl!("shell-key-ctrl-digit", digit = (position + 1).to_string());
             semantic(
                 Node::button(named.label.clone())
                     .key(format!("launcher-command-{position}"))
@@ -884,7 +913,7 @@ fn secondary_commands(target: &Target) -> Vec<Element<'static, Message>> {
                     )))),
                 command_button(
                     &named.label,
-                    shortcut,
+                    shortcut_label,
                     PanelEvent::ActivateLauncher(target.clone(), position),
                 ),
             )
@@ -948,7 +977,7 @@ fn keycap<'a>(label: impl iced::widget::text::IntoFragment<'a>) -> Element<'a, M
 }
 
 fn primary_keycap() -> Element<'static, Message> {
-    container(theme::text("Enter").size(theme::label_size() + 1.0))
+    container(theme::text(fl!("shell-key-enter")).size(theme::label_size() + 1.0))
         .padding([2, 5])
         .style(|theme| {
             let palette = canopa_ui::colors(theme);
@@ -987,7 +1016,7 @@ pub(super) fn scrollbar_gutter(model: &PanelRenderModel<'_>, height: Length) -> 
 }
 
 fn is_approximate(target: &Target) -> bool {
-    target.display_description.as_deref() == Some(APPROXIMATE_KEYWORD_MATCH)
+    target.approximate
 }
 
 fn default_selection(style: canopa_theme::ResolvedStyle) -> bool {
@@ -1103,7 +1132,9 @@ fn result_description(model: &PanelRenderModel<'_>, target: &Target) -> Option<S
     };
     if is_action {
         action_description(target)
-    } else if (!browsing || description != "Application") && !description.is_empty() {
+    } else if (!browsing || description != fl!("shell-launcher-application"))
+        && !description.is_empty()
+    {
         Some(description.to_owned())
     } else {
         None
@@ -1190,18 +1221,19 @@ fn result_content<'a>(
 fn action_description(target: &Target) -> Option<String> {
     let primary = target.result.actions.first()?;
     if matches!(primary.action, Action::Application { .. }) {
-        return Some(format!("Launch {}", target.result.description));
+        return Some(fl!(
+            "shell-launcher-launch",
+            name = target.result.description.clone()
+        ));
     }
-    action_hint(&primary.action).map(str::to_owned)
+    action_hint(&primary.action)
 }
 
-fn action_hint(action: &Action) -> Option<&'static str> {
+fn action_hint(action: &Action) -> Option<String> {
     Some(match action {
-        Action::TogglePin { shortcut } if shortcut.pinned => {
-            "Remove this result from launcher suggestions"
-        }
-        Action::TogglePin { .. } => "Keep this result in launcher suggestions",
-        Action::EditAlias { .. } => "Find this result with a custom search term",
+        Action::TogglePin { shortcut } if shortcut.pinned => fl!("shell-launcher-hint-unpin"),
+        Action::TogglePin { .. } => fl!("shell-launcher-hint-pin"),
+        Action::EditAlias { .. } => fl!("shell-launcher-hint-alias"),
         _ => return None,
     })
 }

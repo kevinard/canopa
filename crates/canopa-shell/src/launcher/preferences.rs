@@ -88,7 +88,7 @@ fn stream(key: &Key) -> std::pin::Pin<Box<dyn iced::futures::Stream<Item = Event
                     (result, catalog)
                 })
                 .await
-                .unwrap_or_else(|_| (Err("Launcher preferences worker stopped".into()), None));
+                .unwrap_or_else(|_| (Err(fl!("shell-launcher-preferences-stopped")), None));
                 previous_catalog = catalog;
                 if previous.as_ref() != Some(&result) {
                     previous = Some(result.clone());

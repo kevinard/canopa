@@ -83,7 +83,12 @@ impl Image {
             "image/webp" => "WebP",
             _ => unreachable!(),
         };
-        format!("{format} · {} × {}", self.0.width, self.0.height)
+        fl!(
+            "shell-clipboard-image-description",
+            format = format,
+            width = self.0.width,
+            height = self.0.height
+        )
     }
 
     pub async fn copy(&self) -> Result<(), String> {
@@ -98,11 +103,11 @@ impl Image {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|_| "Could not start wl-copy for the image")?;
+            .map_err(|_| fl!("shell-clipboard-image-copy-failed"))?;
         let mut input = child
             .stdin
             .take()
-            .ok_or("Could not write the clipboard image")?;
+            .ok_or_else(|| fl!("shell-clipboard-image-copy-failed"))?;
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             input.write_all(&self.0.bytes).await?;
             drop(input);
@@ -111,7 +116,7 @@ impl Image {
         .await;
         match result {
             Ok(Ok(status)) if status.success() => Ok(()),
-            _ => Err("Could not copy the image to the clipboard".into()),
+            _ => Err(fl!("shell-clipboard-image-copy-failed")),
         }
     }
 }

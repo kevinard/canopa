@@ -80,7 +80,7 @@ impl Entry {
             description: String::new(),
             icon: None,
             actions: vec![NamedAction {
-                label: "Copy".into(),
+                label: fl!("shell-clipboard-copy"),
                 action: Action::Copy {
                     text: self.glyph.into(),
                 },
@@ -116,14 +116,11 @@ pub(crate) fn search(kind: Kind, query: &str) -> Batch {
             .collect()
     };
     let status = if results.is_empty() {
-        "No matches"
+        fl!("shell-launcher-no-matches")
     } else {
-        "Search by name or keyword · Enter to copy"
+        fl!("shell-characters-help")
     };
-    Batch {
-        results,
-        status: status.into(),
-    }
+    Batch { results, status }
 }
 
 #[cfg(test)]

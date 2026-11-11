@@ -27,20 +27,20 @@ pub(crate) fn snapshot(state: &NiriState) -> Vec<Window> {
                 application: window.app_id.clone(),
                 workspace: workspace
                     .map(|workspace| {
-                        format!(
-                            "Workspace {}{}",
-                            workspace
-                                .name
-                                .clone()
-                                .unwrap_or_else(|| workspace.idx.to_string()),
-                            workspace
-                                .output
-                                .as_ref()
-                                .map(|output| format!(" · {output}"))
-                                .unwrap_or_default()
-                        )
+                        let name = workspace
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| workspace.idx.to_string());
+                        match &workspace.output {
+                            Some(output) => fl!(
+                                "shell-window-workspace-on-output",
+                                workspace = name,
+                                output = output.clone()
+                            ),
+                            None => fl!("shell-window-workspace", workspace = name),
+                        }
                     })
-                    .unwrap_or_else(|| "Workspace unavailable".into()),
+                    .unwrap_or_else(|| fl!("shell-window-workspace-unavailable")),
             }
         })
         .collect();
@@ -100,10 +100,11 @@ pub(crate) fn results(
             .application
             .as_deref()
             .and_then(|id| application(id, apps));
+        let fallback = fl!("shell-launcher-application");
         let name = app
             .map(|app| app.name.as_str())
             .or(window.application.as_deref())
-            .unwrap_or("Application");
+            .unwrap_or(&fallback);
         let label = if window.title.is_empty() {
             name
         } else {
@@ -125,7 +126,7 @@ pub(crate) fn results(
         ];
         if let Some(score) = best_match(&fields, query) {
             let mut actions = vec![NamedAction {
-                label: "Switch to window".into(),
+                label: fl!("shell-window-switch"),
                 action: Action::FocusWindow {
                     id: window.id,
                     application: app
@@ -135,7 +136,7 @@ pub(crate) fn results(
             }];
             if let Some(app) = app {
                 actions.push(NamedAction {
-                    label: "Launch application".into(),
+                    label: fl!("shell-window-launch-application"),
                     action: Action::Application { id: app.id.clone() },
                 });
             }
@@ -143,7 +144,11 @@ pub(crate) fn results(
                 item: ResultItem {
                     id: format!("window:{}", window.id),
                     label: label.into(),
-                    description: format!("Window · {name} · {}", window.workspace),
+                    description: fl!(
+                        "shell-window-description",
+                        application = name.to_owned(),
+                        workspace = window.workspace.clone()
+                    ),
                     icon: app.and_then(|app| app.icon.clone()),
                     actions,
                 },

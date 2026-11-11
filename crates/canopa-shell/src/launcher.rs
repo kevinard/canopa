@@ -171,7 +171,114 @@ pub(crate) enum Scope {
     Extension(usize),
 }
 
+/// A built-in scope keyword: English (`apps`, `clip`) always works, and the
+/// session language adds its own (`shell-keyword-*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Keyword {
+    Apps,
+    Files,
+    Windows,
+    Settings,
+    Clipboard,
+    Snippets,
+    Emoji,
+    Symbol,
+}
+
+impl Keyword {
+    fn scope(self) -> Scope {
+        match self {
+            Self::Apps => Scope::Apps,
+            Self::Files => Scope::Files,
+            Self::Windows => Scope::Windows,
+            Self::Settings => Scope::Settings,
+            Self::Clipboard => Scope::Clipboard,
+            Self::Snippets => Scope::Snippets,
+            Self::Emoji => Scope::Characters(characters::Kind::Emoji),
+            Self::Symbol => Scope::Characters(characters::Kind::Symbol),
+        }
+    }
+}
+
+/// The session language's keywords, lowercased; each message lists
+/// alternatives separated by spaces (`fenêtres fenetres`). English ones are
+/// left out: they are matched first.
+fn translated_keywords() -> Vec<(String, Keyword)> {
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<(u64, Vec<(String, Keyword)>)>> = Mutex::new(None);
+    let generation = canopa_i18n::generation();
+    let mut cache = CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some((cached, keywords)) = cache.as_ref()
+        && *cached == generation
+    {
+        return keywords.clone();
+    }
+    const ENGLISH: [&str; 8] = [
+        "apps", "files", "windows", "settings", "clip", "snip", "emoji", "symbol",
+    ];
+    let mut keywords = Vec::new();
+    for (text, keyword) in [
+        (fl!("shell-keyword-apps"), Keyword::Apps),
+        (fl!("shell-keyword-files"), Keyword::Files),
+        (fl!("shell-keyword-windows"), Keyword::Windows),
+        (fl!("shell-keyword-settings"), Keyword::Settings),
+        (fl!("shell-keyword-clipboard"), Keyword::Clipboard),
+        (fl!("shell-keyword-snippets"), Keyword::Snippets),
+        (fl!("shell-keyword-emoji"), Keyword::Emoji),
+        (fl!("shell-keyword-symbol"), Keyword::Symbol),
+    ] {
+        for word in text.split_whitespace() {
+            let word = word.to_lowercase();
+            // Pseudo-locale framing and isolation marks are not keywords.
+            if word.chars().all(|c| c.is_alphanumeric() || c == '-')
+                && !ENGLISH.contains(&word.as_str())
+            {
+                keywords.push((word, keyword));
+            }
+        }
+    }
+    *cache = Some((generation, keywords.clone()));
+    keywords
+}
+
 pub(crate) fn scope<'a>(query: &'a str, config: &Config) -> (Scope, &'a str) {
+    let (scope, rest) = english_scope(query, config);
+    if scope != Scope::All {
+        return (scope, rest);
+    }
+    // Then the session language's keywords; an extension's keyword wins.
+    let trimmed = query.trim_start();
+    let (keyword, rest) = trimmed
+        .split_once(char::is_whitespace)
+        .unwrap_or((trimmed, ""));
+    let keyword = keyword.to_lowercase();
+    if config
+        .extensions
+        .iter()
+        .any(|extension| extension.keyword == keyword)
+    {
+        return (Scope::All, query.trim());
+    }
+    match translated_keywords()
+        .into_iter()
+        .find(|(word, _)| *word == keyword)
+    {
+        // Like their English forms, scopes other than clipboard, snippets and
+        // characters need a space after the keyword.
+        Some((_, found))
+            if trimmed.len() > keyword.len()
+                || matches!(
+                    found,
+                    Keyword::Clipboard | Keyword::Snippets | Keyword::Emoji | Keyword::Symbol
+                ) =>
+        {
+            (found.scope(), rest.trim())
+        }
+        _ => (Scope::All, query.trim()),
+    }
+}
+
+fn english_scope<'a>(query: &'a str, config: &Config) -> (Scope, &'a str) {
     let trimmed = query.trim_start();
     if let Some(expression) = trimmed.strip_prefix('=') {
         return (Scope::Calculator, expression.trim());

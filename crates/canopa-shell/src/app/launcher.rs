@@ -29,12 +29,12 @@ pub enum QuickScope {
 }
 
 impl QuickScope {
-    pub(super) fn label(self) -> &'static str {
+    pub(super) fn label(self) -> String {
         match self {
-            Self::Apps => "Apps",
-            Self::Files => "Files",
-            Self::Windows => "Windows",
-            Self::Settings => "Settings",
+            Self::Apps => fl!("shell-launcher-scope-apps"),
+            Self::Files => fl!("shell-launcher-scope-files"),
+            Self::Windows => fl!("shell-launcher-scope-windows"),
+            Self::Settings => fl!("shell-launcher-scope-settings"),
         }
     }
 
@@ -44,6 +44,16 @@ impl QuickScope {
             Self::Files => "files ",
             Self::Windows => "windows ",
             Self::Settings => "settings ",
+        }
+    }
+
+    /// The search field's placeholder while this scope is selected.
+    pub(super) fn search_placeholder(self) -> String {
+        match self {
+            Self::Apps => fl!("shell-launcher-search-apps"),
+            Self::Files => fl!("shell-launcher-search-files"),
+            Self::Windows => fl!("shell-launcher-search-windows"),
+            Self::Settings => fl!("shell-launcher-search-settings"),
         }
     }
 
@@ -66,6 +76,8 @@ pub struct Target {
     pub result: Arc<ResultItem>,
     pub(super) display_description: Option<Arc<str>>,
     pub(super) display_detail: Option<Arc<str>>,
+    /// The description says the match is approximate (shown muted).
+    pub(super) approximate: bool,
     pub thumbnail: Option<iced::widget::image::Handle>,
 }
 
@@ -206,9 +218,11 @@ fn application_identities(app: &crate::desktop_apps::DesktopApplication) -> Vec<
     names
 }
 
-pub(super) const APPROXIMATE_KEYWORD_MATCH: &str = "Approximate keyword match";
-
-fn application_match_summary(app: &crate::desktop_apps::DesktopApplication, query: &str) -> String {
+/// Why an app matched `query`, and whether the match is approximate.
+fn application_match_summary(
+    app: &crate::desktop_apps::DesktopApplication,
+    query: &str,
+) -> (String, bool) {
     use super::panel_search::{SearchField, SearchText, best_match};
 
     let name = SearchText {
@@ -227,9 +241,9 @@ fn application_match_summary(app: &crate::desktop_apps::DesktopApplication, quer
                 .iter()
                 .all(|token| identities.iter().any(|name| name.contains(token)))
             {
-                "Matched app file or command name".into()
+                (fl!("shell-launcher-matched-command"), false)
             } else {
-                "Matched app description".into()
+                (fl!("shell-launcher-matched-description"), false)
             };
         }
         let name = app.name.to_ascii_lowercase();
@@ -238,12 +252,12 @@ fn application_match_summary(app: &crate::desktop_apps::DesktopApplication, quer
             .iter()
             .all(|token| name.contains(token) || keywords.contains(token))
         {
-            "Matched app keywords".into()
+            (fl!("shell-launcher-matched-keywords"), false)
         } else {
-            APPROXIMATE_KEYWORD_MATCH.into()
+            (fl!("shell-launcher-approximate-match"), true)
         };
     }
-    application_summary(app)
+    (application_summary(app), false)
 }
 
 fn application_summary(app: &crate::desktop_apps::DesktopApplication) -> String {
@@ -263,7 +277,7 @@ fn application_summary(app: &crate::desktop_apps::DesktopApplication) -> String 
             }
         })
         .find(|text| !text.is_empty() && !text.to_lowercase().contains(&name))
-        .unwrap_or_else(|| "Application".into())
+        .unwrap_or_else(|| fl!("shell-launcher-application"))
 }
 
 impl Session {
@@ -539,11 +553,11 @@ impl Session {
         Some(query)
     }
 
-    pub(super) fn filter_placeholder(&self) -> Option<&'static str> {
+    pub(super) fn filter_placeholder(&self) -> Option<String> {
         if self.actions_mode.is_some() {
-            Some("Filter actions")
+            Some(fl!("shell-launcher-filter-actions"))
         } else if self.open_with.is_some() {
-            Some("Filter applications")
+            Some(fl!("shell-launcher-filter-applications"))
         } else {
             None
         }
@@ -551,22 +565,29 @@ impl Session {
 
     pub fn prompt(&self) -> Option<String> {
         if self.naming.is_some() {
-            return Some("Snippet name".into());
+            return Some(fl!("shell-launcher-snippet-name"));
         }
         if let Some(mode) = &self.actions_mode {
-            return Some(format!("Actions for {}", mode.result.label));
+            return Some(fl!(
+                "shell-launcher-actions-for",
+                name = mode.result.label.clone()
+            ));
         }
         if let Some(mode) = &self.alias_mode {
-            return Some(format!("Alias for {}", mode.shortcut.label));
+            return Some(fl!(
+                "shell-launcher-alias-for",
+                name = mode.shortcut.label.clone()
+            ));
         }
         self.open_with.as_ref().map(|choice| {
-            format!(
-                "Open with — {}",
-                choice
+            fl!(
+                "shell-launcher-open-with-file",
+                file = choice
                     .path
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
+                    .into_owned()
             )
         })
     }
@@ -871,9 +892,14 @@ impl Session {
             Action::Application { id: app_id.clone() }
         };
         let app = entry.path.first().and_then(|&index| apps.get(index));
-        let display_description = summary
-            .map(Arc::<str>::from)
-            .or_else(|| app.map(|app| Arc::<str>::from(application_match_summary(app, text))));
+        let (display_description, approximate) = match (summary, app) {
+            (Some(summary), _) => (Some(Arc::<str>::from(summary)), false),
+            (None, Some(app)) => {
+                let (summary, approximate) = application_match_summary(app, text);
+                (Some(Arc::<str>::from(summary)), approximate)
+            }
+            (None, None) => (None, false),
+        };
         let display_detail = app
             .and_then(|app| app.comment.as_deref())
             .map(str::trim)
@@ -882,10 +908,15 @@ impl Session {
             })
             .map(Arc::<str>::from);
         let description = self.open_with.as_ref().map_or_else(
-            || "Application".into(),
-            |choice| format!("Open with · {}", choice.path.display()),
+            || fl!("shell-launcher-application"),
+            |choice| {
+                fl!(
+                    "shell-launcher-open-with-path",
+                    path = choice.path.display().to_string()
+                )
+            },
         );
-        self.entry_with_description(
+        let mut entry = self.entry_with_description(
             provider,
             ResultItem {
                 id,
@@ -893,13 +924,17 @@ impl Session {
                 description,
                 icon: entry.icon.clone(),
                 actions: vec![NamedAction {
-                    label: "Open".into(),
+                    label: fl!("shell-launcher-open"),
                     action,
                 }],
             },
             display_description,
             display_detail,
-        )
+        );
+        if let PanelMenuEntryTarget::Launcher(target) = &mut entry.target {
+            target.approximate = approximate;
+        }
+        entry
     }
 
     /// The empty-query list: pins and recent apps, then every app A–Z.
@@ -922,6 +957,7 @@ impl Session {
             } else {
                 Vec::new()
             };
+            let recent_label = fl!("shell-launcher-recent");
             rows.extend(
                 recent
                     .into_iter()
@@ -941,7 +977,7 @@ impl Session {
                             "",
                             PROVIDER_RECENT,
                             format!("recent:{id}"),
-                            Some("Recent"),
+                            Some(recent_label.as_str()),
                         )
                     }),
             );
@@ -991,7 +1027,7 @@ impl Session {
                     ResultItem {
                         id: format!("desktop-action:{}:{}", app.id, action.id),
                         label: format!("{} — {}", app.name, action.name),
-                        description: "Application action".into(),
+                        description: fl!("shell-launcher-application-action"),
                         icon,
                         actions: vec![NamedAction {
                             label: action.name.clone(),
@@ -1033,6 +1069,7 @@ impl Session {
                 result: Arc::new(result),
                 display_description,
                 display_detail,
+                approximate: false,
                 thumbnail: None,
             }),
             is_submenu: false,
@@ -1056,22 +1093,25 @@ impl Session {
 
     pub fn status(&self) -> String {
         if self.action_running {
-            return "Applying action…".into();
+            return fl!("shell-launcher-applying-action");
         }
         if !self.action_error.is_empty() {
             return self.action_error.clone();
         }
         if self.naming.is_some() {
-            return "Type a snippet name and press Enter to save".into();
+            return fl!("shell-launcher-snippet-name-help");
         }
         if self.alias_mode.is_some() {
-            return "Type a unique single-word alias, then Enter · empty removes the alias".into();
+            return fl!("shell-launcher-alias-help");
         }
         if self.actions_mode.is_some() {
             return String::new();
         }
         if self.query.len() > launcher::MAX_QUERY_BYTES {
-            return "Search is limited to 1024 bytes".into();
+            return fl!(
+                "shell-launcher-query-too-long",
+                bytes = launcher::MAX_QUERY_BYTES
+            );
         }
         let (scope, text) = self.query_scope();
         if matches!(scope, Scope::Clipboard | Scope::Snippets) {
@@ -1082,8 +1122,8 @@ impl Session {
         }
         if text.is_empty() {
             match scope {
-                Scope::Calculator => return "Enter an arithmetic expression".into(),
-                Scope::Files => return "Enter a file or folder name".into(),
+                Scope::Calculator => return fl!("shell-launcher-enter-expression"),
+                Scope::Files => return fl!("shell-launcher-enter-file-name"),
                 _ => {}
             }
         }
@@ -1092,7 +1132,7 @@ impl Session {
             .as_ref()
             .is_some_and(|choice| choice.apps.is_none())
         {
-            return "Finding applications…".into();
+            return fl!("shell-launcher-finding-applications");
         }
         let mut status: Vec<_> = self
             .batches
@@ -1100,36 +1140,39 @@ impl Session {
             .filter(|batch| {
                 !batch.status.is_empty()
                     && (scope == Scope::Files
-                        || batch.status != launcher::files::MATCH_LIMIT_STATUS)
+                        || batch.status != launcher::files::match_limit_status())
             })
             .map(|batch| batch.status.clone())
             .collect();
         if scope == Scope::Calculator && !text.is_empty() && !self.batches.contains_key(&0) {
-            status.push("Calculating…".into());
+            status.push(fl!("shell-launcher-calculating"));
         }
         if !text.is_empty() && self.app_results.len() > launcher::RESULT_LIMIT {
-            status.push("Showing the highest-ranked app matches.".into());
+            status.push(fl!("shell-launcher-top-matches"));
         }
         if matches!(scope, Scope::All | Scope::Files) && self.index.is_none() {
-            status.push("Indexing file names…".into());
+            status.push(fl!("shell-launcher-indexing-files"));
         }
         if !text.is_empty()
             && matches!(scope, Scope::All | Scope::Files)
             && self.index.is_some()
             && !self.batches.contains_key(&1)
         {
-            status.push("Searching files…".into());
+            status.push(fl!("shell-launcher-searching-files"));
         }
         for (position, extension) in self.config.extensions.iter().enumerate() {
             if (scope == Scope::Extension(position)
                 || scope == Scope::All && extension.global && !text.is_empty())
                 && !self.batches.contains_key(&(position + 2))
             {
-                status.push(format!("Searching {}…", extension.name));
+                status.push(fl!(
+                    "shell-launcher-searching-extension",
+                    name = extension.name.clone()
+                ));
             }
         }
         if status.is_empty() && self.entries().is_empty() {
-            status.push("No matches".into());
+            status.push(fl!("shell-launcher-no-matches"));
         }
         for error in [&self.preferences_error, &self.configuration_error]
             .into_iter()
@@ -1972,7 +2015,7 @@ async fn installed_application(id: String) -> Option<crate::desktop_apps::Deskto
 
 #[cfg(not(test))]
 fn unavailable_application() -> std::io::Error {
-    std::io::Error::other(LaunchFailure("Application is no longer available".into()))
+    std::io::Error::other(LaunchFailure(fl!("shell-launcher-application-gone")))
 }
 
 /// An action failure whose text the launcher status shows as is.
@@ -1992,7 +2035,11 @@ impl std::error::Error for LaunchFailure {}
 fn launch_failure(name: &str, error: &std::io::Error) -> std::io::Error {
     std::io::Error::new(
         error.kind(),
-        LaunchFailure(format!("Could not start {name}: {error}")),
+        LaunchFailure(fl!(
+            "shell-launcher-could-not-start",
+            name = name.to_owned(),
+            error = error.to_string()
+        )),
     )
 }
 
@@ -2001,7 +2048,7 @@ fn action_error_message(error: &std::io::Error) -> String {
         .get_ref()
         .and_then(|inner| inner.downcast_ref::<LaunchFailure>())
         .map_or_else(
-            || "Could not apply action; check the application or file is available".into(),
+            || fl!("shell-launcher-action-failed"),
             |failure| failure.0.clone(),
         )
 }
@@ -2185,6 +2232,48 @@ mod tests {
         assert_eq!(session.input_scope(), Some(QuickScope::Apps));
         assert_eq!(session.select_scope(None).as_deref(), Some("budget"));
         assert_eq!(session.input_scope(), None);
+    }
+
+    #[test]
+    fn french_scope_keywords_work_beside_english_ones() {
+        let mut config = Config {
+            extensions: vec![launcher::Extension {
+                id: "custom:Projects".into(),
+                name: "Projects".into(),
+                keyword: "symbole".into(),
+                global: false,
+                argv: vec!["fixture".into()],
+            }],
+            ..Config::default()
+        };
+        let _french = crate::i18n_testing::select("fr", false);
+        assert_eq!(
+            launcher::scope("fichiers budget", &config),
+            (Scope::Files, "budget")
+        );
+        assert_eq!(
+            launcher::scope("files budget", &config),
+            (Scope::Files, "budget")
+        );
+        assert_eq!(
+            launcher::scope("Fenêtres terminal", &config),
+            (Scope::Windows, "terminal")
+        );
+        assert_eq!(
+            launcher::scope("presse-papiers", &config).0,
+            Scope::Clipboard
+        );
+        assert_eq!(launcher::scope("fichiers", &config).0, Scope::All);
+        // An extension's keyword wins over a translated built-in keyword.
+        assert_eq!(
+            launcher::scope("symbole flèche", &config),
+            (Scope::Extension(0), "flèche")
+        );
+        config.extensions.clear();
+        assert_eq!(
+            launcher::scope("symbole flèche", &config),
+            (Scope::Characters(characters::Kind::Symbol), "flèche")
+        );
     }
 
     #[test]

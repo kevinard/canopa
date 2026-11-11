@@ -366,3 +366,243 @@ shell-power-balanced = Équilibré
 shell-power-performance = Performances
 shell-power-profiles-unavailable = Le service des modes d’alimentation est indisponible.
 shell-power-change-failed = Le système n’a pas pu appliquer la modification.
+
+## Launcher: scope keywords
+
+shell-keyword-apps = applis applications
+shell-keyword-files = fichiers
+shell-keyword-windows = fenêtres fenetres
+shell-keyword-settings = paramètres parametres
+shell-keyword-clipboard = presse-papiers pp
+shell-keyword-snippets = extraits
+shell-keyword-emoji = émoji émojis emojis
+shell-keyword-symbol = symbole symboles
+
+## Launcher: window, search field and results
+
+shell-launcher-scope-all = Tout
+shell-launcher-scope-apps = Applications
+shell-launcher-scope-files = Fichiers
+shell-launcher-scope-windows = Fenêtres
+shell-launcher-scope-settings = Paramètres
+shell-launcher-search-apps = Rechercher des applications
+shell-launcher-search-files = Rechercher des fichiers
+shell-launcher-search-windows = Rechercher des fenêtres
+shell-launcher-search-settings = Rechercher des paramètres
+shell-launcher-close = Fermer le lanceur
+shell-launcher-close-hint = Fermer le lanceur · { $key }
+shell-launcher-clear = Effacer
+shell-launcher-clear-search = Effacer la recherche
+shell-launcher-clear-search-hint = Effacer la recherche · { $key }
+shell-launcher-calculator = Calculatrice
+shell-launcher-calculate-before = Tapez
+shell-launcher-calculate-after = pour calculer
+shell-launcher-select = Sélectionner
+shell-launcher-installed-apps = Applications installées
+shell-launcher-browse = Parcourir
+shell-launcher-results = Résultats
+shell-launcher-actions = Actions
+shell-launcher-actions-for = Actions pour { $name }
+shell-launcher-open = Ouvrir
+shell-launcher-open-named = Ouvrir { $name }
+shell-launcher-launch = Lancer { $name }
+shell-launcher-no-matches = Aucun résultat
+shell-launcher-advice-scope = Essayez un autre terme ou choisissez Tout.
+shell-launcher-advice-spelling = Vérifiez l’orthographe ou essayez une recherche plus courte.
+shell-launcher-match-count = { $count ->
+        [one] { $count } résultat
+       *[other] { $count } résultats
+    }
+shell-launcher-match-count-approximate = { $count } résultats · { $approximate ->
+        [one] { $approximate } approximatif
+       *[other] { $approximate } approximatifs
+    }
+shell-launcher-hint-unpin = Retirer ce résultat des suggestions du lanceur
+shell-launcher-hint-pin = Garder ce résultat dans les suggestions du lanceur
+shell-launcher-hint-alias = Trouver ce résultat avec un terme de recherche personnalisé
+shell-key-escape = Échap
+shell-key-enter = Entrée
+shell-key-tab = Tab
+shell-key-ctrl-digit = Ctrl+{ $digit }
+
+## Launcher: sessions, apps and status
+
+shell-launcher-application = Application
+shell-launcher-application-action = Action de l’application
+shell-launcher-matched-command = Correspond au fichier ou à la commande de l’application
+shell-launcher-matched-description = Correspond à la description de l’application
+shell-launcher-matched-keywords = Correspond aux mots-clés de l’application
+shell-launcher-approximate-match = Correspondance approximative des mots-clés
+shell-launcher-open-with-path = Ouvrir avec · { $path }
+shell-launcher-open-with-file = Ouvrir avec — { $file }
+shell-launcher-recent = Récent
+shell-launcher-filter-actions = Filtrer les actions
+shell-launcher-filter-applications = Filtrer les applications
+shell-launcher-snippet-name = Nom de l’extrait
+shell-launcher-alias-for = Alias de { $name }
+shell-launcher-applying-action = Exécution de l’action…
+shell-launcher-snippet-name-help = Saisissez un nom d’extrait et appuyez sur Entrée pour l’enregistrer
+shell-launcher-alias-help = Saisissez un alias unique d’un seul mot, puis Entrée · laisser vide supprime l’alias
+shell-launcher-query-too-long = La recherche est limitée à { $bytes } octets
+shell-launcher-enter-expression = Saisissez une expression arithmétique
+shell-launcher-enter-file-name = Saisissez un nom de fichier ou de dossier
+shell-launcher-finding-applications = Recherche des applications…
+shell-launcher-calculating = Calcul…
+shell-launcher-top-matches = Affichage des applications les mieux classées.
+shell-launcher-indexing-files = Indexation des noms de fichiers…
+shell-launcher-searching-files = Recherche de fichiers…
+shell-launcher-searching-extension = Recherche dans { $name }…
+shell-launcher-application-gone = L’application n’est plus disponible
+shell-launcher-could-not-start = Impossible de démarrer { $name } : { $error }
+shell-launcher-action-failed = Impossible d’exécuter l’action ; vérifiez que l’application ou le fichier est disponible
+shell-launcher-more-matches = D’autres résultats existent ; affinez votre recherche
+shell-launcher-query-long = La recherche est trop longue
+shell-launcher-extension-error = { $name } : { $error }
+shell-launcher-preferences-stopped = Le service des préférences du lanceur s’est arrêté
+shell-launcher-remove-alias = Supprimer l’alias
+shell-launcher-save-alias = Enregistrer l’alias
+shell-launcher-save-alias-named = Enregistrer l’alias : { $alias }
+shell-launcher-pinned = Épinglé
+shell-launcher-shortcut = Raccourci
+shell-launcher-pinned-alias = Épinglé · { $alias }
+shell-launcher-shortcut-alias = Raccourci · { $alias }
+shell-launcher-switch-to = Basculer vers
+shell-launcher-new-window = Nouvelle fenêtre
+shell-launcher-running-application = Application en cours d’exécution
+shell-launcher-unpin = Détacher du lanceur
+shell-launcher-pin = Épingler dans le lanceur
+shell-launcher-set-alias = Définir un alias de recherche…
+shell-launcher-edit-alias = Modifier l’alias de recherche…
+shell-session-confirmed-label = { $action }…
+shell-session-row = Session
+shell-session-row-confirms = Session · demande une confirmation
+shell-session-lock-keywords = verrouiller verrouillage écran ecran session
+shell-session-log-out-keywords = déconnecter deconnecter déconnexion deconnexion quitter session
+shell-session-suspend-keywords = veille suspendre
+shell-session-hibernate-keywords = hiberner hibernation veille disque
+shell-session-reboot-keywords = redémarrer redemarrer redémarrage redemarrage
+shell-session-power-off-keywords = éteindre eteindre arrêter arreter arrêt arret extinction
+
+## Launcher: windows, files and controls
+
+shell-window-workspace = Espace de travail { $workspace }
+shell-window-workspace-on-output = Espace de travail { $workspace } · { $output }
+shell-window-workspace-unavailable = Espace de travail indisponible
+shell-window-switch = Basculer vers la fenêtre
+shell-window-launch-application = Lancer l’application
+shell-window-description = Fenêtre · { $application } · { $workspace }
+shell-files-index-partial = L’index des fichiers est partiel (limite d’analyse atteinte)
+shell-files-locations-unreadable = Certains emplacements de recherche n’ont pas pu être lus
+shell-files-top-matches = Affichage des fichiers les mieux classés.
+shell-files-folder-in = Dossier · { $parent }
+shell-files-file-in = Fichier · { $parent }
+shell-files-copy-path = Copier le chemin
+shell-files-open-folder = Ouvrir le dossier parent
+shell-files-open-with = Ouvrir avec…
+shell-files-quick-look = Aperçu rapide
+shell-control-description = Paramètres et commandes
+shell-control-wifi = Réseaux Wi-Fi
+shell-control-sound = Son et volume
+shell-control-notifications = Notifications et Ne pas déranger
+shell-control-settings = Paramètres de Canopa
+shell-control-clear-history = Effacer l’historique du lanceur
+shell-control-bluetooth = Périphériques Bluetooth
+shell-control-power = Alimentation et luminosité
+shell-control-wifi-keywords = réseau reseau sans-fil internet connexion
+shell-control-sound-keywords = son volume haut-parleur microphone sortie entrée
+shell-control-notifications-keywords = notifications ne pas déranger alertes centre
+shell-control-settings-keywords = paramètres parametres préférences preferences configuration bureau
+shell-control-clear-history-keywords = effacer oublier réinitialiser historique récents fréquents
+shell-control-bluetooth-keywords = bluetooth casque écouteurs associer reconnecter
+shell-control-power-keywords = luminosité luminosite rétroéclairage performances équilibré économie énergie alimentation mode
+shell-settings-page = Page des Paramètres
+shell-settings-page-label = { $page } — Paramètres
+shell-settings-not-installed = Les Paramètres de Canopa ne sont pas installés
+shell-settings-pages-timed-out = Les Paramètres de Canopa n’ont pas listé leurs pages à temps
+shell-settings-pages-failed = Les Paramètres de Canopa n’ont pas pu lister leurs pages
+shell-settings-pages-too-large = La liste des pages des Paramètres est trop longue
+shell-settings-pages-invalid = La liste des pages des Paramètres n’est pas valide
+shell-settings-no-such-page = Les Paramètres n’ont pas cette page
+
+## Launcher: calculator, characters and extensions
+
+shell-calculator-too-long = Les calculs sont limités à { $bytes } octets
+shell-calculator-target-unit = Choisissez une unité cible prise en charge
+shell-calculator-amount = Saisissez une quantité numérique complète
+shell-calculator-source-unit = Choisissez une unité source prise en charge
+shell-calculator-dimensions = Ces unités mesurent des grandeurs différentes
+shell-calculator-incomplete = Saisissez une expression arithmétique ou une conversion d’unités complète
+shell-calculator-no-result-in-unit = L’expression n’a pas de résultat réel fini dans l’unité demandée
+shell-calculator-no-result = L’expression n’a pas de résultat réel fini
+shell-calculator-description = Calculatrice · { $query }
+shell-calculator-copy-result = Copier le résultat
+shell-calculator-failed = Calculatrice : { $error } (nécessite qalc)
+shell-characters-help = Recherchez par nom ou mot-clé · Entrée pour copier
+shell-provider-unavailable = L’exécutable du fournisseur est indisponible
+shell-provider-io-unavailable = L’entrée ou la sortie du fournisseur est indisponible
+shell-provider-io-failed = L’entrée ou la sortie du fournisseur a échoué
+shell-provider-output-too-large = La sortie du fournisseur a dépassé 256 Kio
+shell-provider-process-failed = Le processus du fournisseur a échoué
+shell-provider-exit-failed = Le fournisseur s’est terminé avec une erreur
+shell-provider-timed-out = Le fournisseur n’a pas répondu à temps
+shell-extension-web = Web
+shell-extension-date-time = Date et heure
+shell-extension-web-search = Web · { $keyword }
+shell-extension-duplicate-keyword = Mot-clé d’extension en double : { $keyword }
+shell-extension-duplicate-search = Mot-clé de recherche en double : { $keyword }
+shell-extension-web-description = Collez une URL HTTP(S) ou utilisez le mot-clé pour rechercher. Les actions du navigateur ne s’exécutent qu’une fois sélectionnées.
+shell-extension-date-time-description = Dates locales, fuseaux horaires et horodatages Unix. Essayez (en anglais) time in Tokyo, 90 days from today ou timestamp now.
+shell-extension-configured-description = Extension exécutable configurée. Ses actions apparaissent ici une fois qu’elle a renvoyé des résultats.
+shell-extension-open-in-browser = Ouvrir dans le navigateur
+shell-extension-copy-url = Copier l’URL
+shell-extension-search-web = Rechercher sur le web : { $query }
+shell-extension-web-result = Ouvrir dans votre navigateur par défaut · les requêtes partent une fois sélectionné
+shell-extension-time-in = Heure à { $zone }
+shell-extension-unix-timestamp = Horodatage Unix · secondes
+shell-extension-timestamp-to-utc = Horodatage Unix en UTC
+shell-extension-date-to-timestamp = Date en horodatage Unix · secondes
+shell-extension-calendar-date = Date du calendrier · fuseau horaire local
+
+## Launcher: clipboard history and snippets
+
+shell-clipboard-copy = Copier
+shell-clipboard-remove = Retirer de l’historique
+shell-clipboard-recent-copy = Copie récente
+shell-clipboard-save-as-snippet = Enregistrer comme extrait…
+shell-clipboard-image = Image
+shell-clipboard-image-named = Image { $description }
+shell-clipboard-image-description = { $format } · { $width } × { $height }
+shell-clipboard-clear-history = Effacer l’historique du presse-papiers
+shell-clipboard-clear = Effacer l’historique
+shell-clipboard-turn-off = Désactiver l’historique du presse-papiers
+shell-clipboard-turn-on = Activer l’historique du presse-papiers
+shell-clipboard-keep-recent = Conserver les copies récentes pendant cette session
+shell-clipboard-rename-snippet = Renommer l’extrait…
+shell-clipboard-delete-snippet = Supprimer l’extrait
+shell-clipboard-new-snippet = Nouvel extrait depuis le presse-papiers
+shell-clipboard-name-snippet = Nommer l’extrait…
+shell-clipboard-loading = Chargement des préférences du presse-papiers…
+shell-clipboard-history-off = L’historique est désactivé · tapez snip pour les extraits enregistrés
+shell-clipboard-recording-text = Enregistrement du texte pour cette session · Entrée pour copier · Tab pour les actions
+shell-clipboard-recording-text-images = Enregistrement du texte et des images pour cette session · Entrée pour copier · Tab pour les actions
+shell-clipboard-snippets-help = Extraits enregistrés · Entrée pour copier · Tab pour renommer ou supprimer
+shell-clipboard-help = Entrée pour copier · Tab pour les actions
+shell-clipboard-save-snippet-named = Enregistrer l’extrait « { $name } »
+shell-clipboard-save-snippet = Enregistrer l’extrait
+shell-clipboard-entry-gone = Cette entrée du presse-papiers n’est plus disponible
+shell-clipboard-copy-text-first = Copiez du texte (16 Kio au maximum) avant de créer un extrait
+shell-clipboard-saving = Une modification du presse-papiers est en cours d’enregistrement
+shell-clipboard-preferences-unavailable = Les préférences du presse-papiers sont indisponibles
+shell-clipboard-save-stopped = L’enregistrement du presse-papiers s’est arrêté
+shell-clipboard-reader-failed = Impossible de démarrer le lecteur du presse-papiers
+shell-clipboard-wl-paste-failed = Impossible de démarrer wl-paste pour l’historique du presse-papiers
+shell-clipboard-watcher-unreadable = Impossible de lire la surveillance du presse-papiers
+shell-clipboard-text-watcher-stopped = La surveillance du texte copié s’est arrêtée. Vérifiez la prise en charge du contrôle des données Wayland
+shell-clipboard-image-watcher-stopped = La surveillance des images copiées s’est arrêtée. Vérifiez la prise en charge du contrôle des données Wayland
+shell-clipboard-preferences-stopped = La lecture des préférences du presse-papiers s’est arrêtée
+shell-clipboard-image-copy-failed = Impossible de copier l’image dans le presse-papiers
+shell-history-unreadable = L’historique du lanceur n’a pas pu être lu
+shell-history-invalid = L’historique du lanceur n’est pas valide
+shell-history-unsaved = L’historique du lanceur n’a pas pu être enregistré
+shell-history-unavailable = Le service d’historique du lanceur est indisponible
+shell-history-busy = L’historique du lanceur est occupé

@@ -7,11 +7,16 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
     if query.is_empty() && !scoped {
         return vec![];
     }
+    // English keywords always match; the session language adds its own.
+    let keywords = |english: &str, translated: String| format!("{english} {translated}");
     let controls = [
         (
             "wifi",
-            "Wi-Fi networks",
-            "wifi wi-fi wireless internet network connect",
+            fl!("shell-control-wifi"),
+            keywords(
+                "wifi wi-fi wireless internet network connect",
+                fl!("shell-control-wifi-keywords"),
+            ),
             "network-wireless",
             Action::Provider {
                 name: "wifi".into(),
@@ -19,8 +24,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         ),
         (
             "sound",
-            "Sound and volume",
-            "sound audio volume speaker microphone output input",
+            fl!("shell-control-sound"),
+            keywords(
+                "sound audio volume speaker microphone output input",
+                fl!("shell-control-sound-keywords"),
+            ),
             "audio-volume-high",
             Action::Provider {
                 name: "audio".into(),
@@ -28,8 +36,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         ),
         (
             "notifications",
-            "Notifications and Do Not Disturb",
-            "notifications do not disturb dnd alerts center",
+            fl!("shell-control-notifications"),
+            keywords(
+                "notifications do not disturb dnd alerts center",
+                fl!("shell-control-notifications-keywords"),
+            ),
             "preferences-system-notifications",
             Action::Provider {
                 name: "notifications".into(),
@@ -37,8 +48,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         ),
         (
             "settings",
-            "Canopa Settings",
-            "settings preferences desktop configuration",
+            fl!("shell-control-settings"),
+            keywords(
+                "settings preferences desktop configuration",
+                fl!("shell-control-settings-keywords"),
+            ),
             "preferences-system",
             Action::Launch {
                 argv: vec!["canopa-settings".into()],
@@ -46,15 +60,21 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         ),
         (
             "history",
-            "Clear launcher history",
-            "clear forget reset launcher history recent frequent ranking",
+            fl!("shell-control-clear-history"),
+            keywords(
+                "clear forget reset launcher history recent frequent ranking",
+                fl!("shell-control-clear-history-keywords"),
+            ),
             "edit-clear",
             Action::ClearHistory,
         ),
         (
             "bluetooth",
-            "Bluetooth devices",
-            "bluetooth headphones discover pair reconnect",
+            fl!("shell-control-bluetooth"),
+            keywords(
+                "bluetooth headphones discover pair reconnect",
+                fl!("shell-control-bluetooth-keywords"),
+            ),
             "bluetooth",
             Action::Provider {
                 name: "bluetooth".into(),
@@ -62,8 +82,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
         ),
         (
             "power-brightness",
-            "Power & brightness",
-            "brightness backlight performance balanced power saver profile",
+            fl!("shell-control-power"),
+            keywords(
+                "brightness backlight performance balanced power saver profile",
+                fl!("shell-control-power-keywords"),
+            ),
             "display-brightness",
             Action::Provider {
                 name: "power".into(),
@@ -78,11 +101,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
                 &[
                     SearchText {
                         field: SearchField::Label,
-                        text: label,
+                        text: &label,
                     },
                     SearchText {
                         field: SearchField::Label,
-                        text: keywords,
+                        text: &keywords,
                     },
                 ],
                 query,
@@ -92,11 +115,11 @@ pub(crate) fn results(query: &str, scoped: bool) -> Vec<ResultItem> {
                 score,
                 item: ResultItem {
                     id: format!("control:{id}"),
-                    label: label.into(),
-                    description: "Settings and controls".into(),
+                    label,
+                    description: fl!("shell-control-description"),
                     icon: Some(icon.into()),
                     actions: vec![NamedAction {
-                        label: "Open".into(),
+                        label: fl!("shell-launcher-open"),
                         action,
                     }],
                 },
