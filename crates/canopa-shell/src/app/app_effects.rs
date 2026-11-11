@@ -361,8 +361,7 @@ impl App {
                 .await;
                 if let Ok(Some(app)) = app {
                     if let Err(error) =
-                        crate::command::spawn_desktop_application_fire_and_forget(&app, None)
-                            .await
+                        crate::command::spawn_desktop_application_fire_and_forget(&app, None).await
                     {
                         tracing::warn!(target: "canopa_shell::launcher", %id, %error, "desktop application launch failed");
                     }

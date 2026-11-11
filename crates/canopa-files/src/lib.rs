@@ -42,11 +42,11 @@ mod process;
 #[cfg(feature = "local-runtime")]
 pub mod recovery_catalog;
 pub mod search;
-#[cfg(feature = "desktop")]
-pub mod thumbnails;
 mod state_io;
 pub mod storage;
 mod syntax;
+#[cfg(feature = "desktop")]
+pub mod thumbnails;
 mod time_serde;
 
 /// Cancellation is shared by a worker and its caller; clones refer to the same job.
