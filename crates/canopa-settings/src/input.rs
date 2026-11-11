@@ -48,7 +48,8 @@ impl Input {
     pub fn validate(&self) -> Result<()> {
         ensure!(
             !self.layouts.is_empty() && self.layouts.split(',').count() <= 8,
-            "choose one to eight keyboard layouts"
+            "{}",
+            fl!("settings-error-input-layouts")
         );
         for value in [&self.layouts, &self.variants, &self.options] {
             ensure!(
@@ -61,7 +62,8 @@ impl Input {
         }
         ensure!(
             (100..=2000).contains(&self.repeat_delay) && (1..=100).contains(&self.repeat_rate),
-            "repeat delay/rate are outside their supported range"
+            "{}",
+            fl!("settings-error-input-repeat")
         );
         ensure!(
             self.cursor_size
@@ -70,7 +72,8 @@ impl Input {
         );
         ensure!(
             (-1.0..=1.0).contains(&self.mouse_speed) && (-1.0..=1.0).contains(&self.touchpad_speed),
-            "pointer speed must be between -1 and 1"
+            "{}",
+            fl!("settings-error-input-speed")
         );
         let context = xkbcommon::xkb::Context::new(xkbcommon::xkb::CONTEXT_NO_FLAGS);
         ensure!(
@@ -137,7 +140,8 @@ impl Input {
             for field in cursor.children().map(|c| c.nodes()).unwrap_or_default() {
                 ensure!(
                     field.name().value() == "xcursor-size",
-                    "custom cursor settings are read-only; keep them in niri-custom.kdl"
+                    "{}",
+                    fl!("settings-error-input-cursor-custom")
                 );
                 let size = field
                     .get(0)
@@ -208,9 +212,7 @@ impl Input {
                         result.touchpad_natural_scroll = boolean(value)?
                     }
                     ("touchpad", "dwt") => result.touchpad_disable_while_typing = boolean(value)?,
-                    _ => anyhow::bail!(
-                        "input include has custom settings; move them to niri-custom.kdl before editing"
-                    ),
+                    _ => anyhow::bail!("{}", fl!("settings-error-input-custom")),
                 }
             }
         }
@@ -224,7 +226,7 @@ pub fn apply(
     source: &crate::storage::Snapshot,
     input: &Input,
 ) -> Result<crate::storage::Snapshot> {
-    ensure!(paths.active(), "log into Canopa to save input settings");
+    ensure!(paths.active(), "{}", fl!("settings-error-input-session"));
     Input::parse(&source.text)?;
     let client = crate::niri::Client::discover()?;
     let saved = source.save(&input.text()?, |path| {
@@ -232,7 +234,7 @@ pub fn apply(
     })?;
     if let Err(error) = client.reload() {
         saved.save(&source.text, |_| Ok(()))?;
-        return Err(error.context("input reload failed; previous settings restored"));
+        return Err(error.context(fl!("settings-error-input-reload")));
     }
     Ok(saved)
 }

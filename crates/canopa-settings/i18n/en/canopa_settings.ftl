@@ -1077,3 +1077,52 @@ settings-profiles-loading = Loading display profiles…
 settings-profiles-offer-title = Display profile available · { $name }
 settings-profiles-offer-body = The connected displays match a saved layout.
 settings-profiles-offer-review = Review layout
+
+## Errors and results of saving file-backed pages
+
+settings-displays-profile-applied = Display profile applied.
+settings-displays-saved = Display settings saved.
+settings-displays-reverted = Previous display settings restored.
+settings-error-display-one-enabled = At least one display must remain enabled.
+settings-error-display-select = Select at least one connected display.
+settings-error-display-select-mode = Select a monitor mode.
+settings-error-display-disconnected = A monitor was disconnected; reload displays.
+settings-error-display-identity = A monitor’s identity changed; reload displays.
+settings-error-display-session = Display settings are saved only in the Canopa session.
+settings-error-display-mode-gone = The selected monitor mode is no longer available.
+settings-error-display-profile-mismatch = The connected displays changed; choose a matching profile.
+settings-error-display-no-profile = No profile matches the connected displays.
+settings-error-display-not-applied = The saved display settings were not applied; the previous file was restored.
+settings-error-compositor-reload = Compositor reload failed. Previous settings restored.
+settings-error-busy = Another settings operation is active.
+settings-error-changed-outside = The settings changed outside this editor; reload before saving.
+settings-error-not-owned = The settings file must be a regular file you own; symlinked configuration is read-only.
+settings-error-too-large = The settings exceed the 1 MiB limit.
+settings-error-input-layouts = Choose one to eight keyboard layouts.
+settings-error-input-speed = Pointer speed must be between -1 and 1.
+settings-error-input-repeat = The repeat delay or rate is outside its supported range.
+settings-error-input-session = Log into Canopa to save input settings.
+settings-error-input-custom = The input include has custom settings; move them to niri-custom.kdl before editing.
+settings-error-input-cursor-custom = Custom cursor settings are read-only; keep them in niri-custom.kdl.
+settings-error-input-reload = Input reload failed; previous settings restored.
+settings-error-shortcuts-session = Log into the Canopa session to edit keyboard shortcuts.
+settings-error-shortcuts-no-source = No editable Canopa binding source. Custom Niri configurations are edited in KDL.
+settings-error-shortcuts-ambiguous = Ambiguous Canopa binding source. Edit this configuration in Niri’s KDL files.
+settings-error-shortcuts-includes-changed = Niri includes changed outside this editor. Reload before saving.
+# $key is a key combination such as Mod+T.
+settings-error-shortcut-in-include = { $key } is already assigned in a Niri include.
+settings-error-shortcut-duplicate = { $key } is assigned to more than one shortcut.
+# $action is a shortcut's name.
+settings-error-shortcut-invalid = { $action } needs a valid shortcut.
+settings-error-launcher-not-loaded = Load launcher preferences before saving.
+settings-error-history-limit = Enter a history limit from 1 to { $limit }.
+settings-error-bar-exists = A bar with that name already exists.
+settings-error-bar-name = Enter a bar name of 1 to 80 bytes.
+settings-error-bar-limit = This editor can create up to 32 bars.
+# $bar is a bar's name.
+settings-error-bar-no-monitor = Choose at least one monitor for the bar “{ $bar }”.
+settings-error-motion-edited = The compositor motion override was edited outside Settings.
+settings-error-motion-session = Log into the Canopa session to change compositor motion.
+# $reply is the idle manager's answer.
+settings-error-idle-no-ack = Stasis did not acknowledge the operation: { $reply }
+settings-error-idle-reload = Stasis rejected the reload; the previous file was restored.

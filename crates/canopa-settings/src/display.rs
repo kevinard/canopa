@@ -96,10 +96,11 @@ impl Monitor {
         let mode = self
             .mode
             .and_then(|index| self.modes.get(index))
-            .context("select a monitor mode")?;
+            .with_context(|| fl!("settings-error-display-select-mode"))?;
         ensure!(
             output.modes.contains(mode),
-            "the selected monitor mode is no longer available"
+            "{}",
+            fl!("settings-error-display-mode-gone")
         );
         let configured = ConfiguredMode {
             width: mode.width,
@@ -164,20 +165,23 @@ fn wait_for_outputs(
 pub fn validate(monitors: &[Monitor], outputs: &HashMap<String, Output>) -> Result<()> {
     ensure!(
         !monitors.is_empty() && monitors.len() <= 32,
-        "select at least one connected display"
+        "{}",
+        fl!("settings-error-display-select")
     );
     ensure!(
         monitors.iter().any(|m| m.enabled),
-        "at least one display must remain enabled"
+        "{}",
+        fl!("settings-error-display-one-enabled")
     );
     let mut names = HashSet::new();
     for monitor in monitors {
         let output = outputs
             .get(&monitor.name)
-            .context("a monitor was disconnected; reload displays")?;
+            .with_context(|| fl!("settings-error-display-disconnected"))?;
         ensure!(
             names.insert(&monitor.name) && monitor.identity(output),
-            "monitor identity changed; reload displays"
+            "{}",
+            fl!("settings-error-display-identity")
         );
         ensure!(
             (0.5..=4.).contains(&monitor.scale)
@@ -196,7 +200,8 @@ pub(crate) fn validate_profile(
 ) -> Result<()> {
     ensure!(
         monitors.len() == outputs.len(),
-        "connected displays changed; choose a matching profile"
+        "{}",
+        fl!("settings-error-display-profile-mismatch")
     );
     validate(monitors, outputs)
 }
@@ -380,7 +385,8 @@ pub fn guard(profile: Option<&str>, automatic: bool) -> Result<()> {
     };
     ensure!(
         paths.directory.is_absolute() && paths.active(),
-        "display persistence requires the Canopa session"
+        "{}",
+        fl!("settings-error-display-session")
     );
     let _lease = lease()?;
     let client = Client::discover()?;
@@ -393,7 +399,9 @@ pub fn guard(profile: Option<&str>, automatic: bool) -> Result<()> {
                 book.switching == Switching::Automatic,
                 "automatic switching was disabled"
             );
-            let (profile, layout) = book.matching(&outputs)?.context("no matching profile")?;
+            let (profile, layout) = book
+                .matching(&outputs)?
+                .with_context(|| fl!("settings-error-display-no-profile"))?;
             ensure!(profile.name == name, "the matching profile changed");
             layout
         } else {
@@ -519,9 +527,7 @@ pub fn guard(profile: Option<&str>, automatic: bool) -> Result<()> {
                         {
                             saved.save(&snapshot.text, |_| Ok(()))?;
                             let _ = client.reload();
-                            return Err(error.context(
-                                "saved display settings were not applied; previous file restored",
-                            ));
+                            return Err(error.context(fl!("settings-error-display-not-applied")));
                         }
                         return Ok(true);
                     }
@@ -684,9 +690,9 @@ impl TrialHandle {
         let reply = frame(&mut trial.output)?;
         let _ = trial.child.wait();
         match reply["state"].as_str() {
-            Some("kept") if trial.profile => Ok("Display profile applied.".into()),
-            Some("kept") => Ok("Display settings saved.".into()),
-            Some("reverted") => Ok("Previous display settings restored.".into()),
+            Some("kept") if trial.profile => Ok(fl!("settings-displays-profile-applied")),
+            Some("kept") => Ok(fl!("settings-displays-saved")),
+            Some("reverted") => Ok(fl!("settings-displays-reverted")),
             _ => anyhow::bail!(
                 "{}",
                 reply["message"].as_str().unwrap_or("display change failed")

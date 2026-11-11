@@ -385,7 +385,8 @@ impl Include {
     fn unchanged(&self) -> Result<()> {
         ensure!(
             Self::read(&self.path, self.text.is_none())? == self.text,
-            "Niri includes changed outside this editor. Reload before saving."
+            "{}",
+            fl!("settings-error-shortcuts-includes-changed")
         );
         Ok(())
     }
@@ -473,7 +474,8 @@ impl Editor {
         let main = Snapshot::load(paths.niri())?;
         ensure!(
             !main.text.is_empty(),
-            "Log into the Canopa session to edit keyboard shortcuts."
+            "{}",
+            fl!("settings-error-shortcuts-session")
         );
         Self::parse(paths, main, None)
     }
@@ -517,7 +519,8 @@ impl Editor {
             if let Some(found) = found {
                 ensure!(
                     source.is_none(),
-                    "Ambiguous Canopa binding source. Edit this configuration in Niri's KDL files."
+                    "{}",
+                    fl!("settings-error-shortcuts-ambiguous")
                 );
                 source = Some(found);
             }
@@ -555,7 +558,8 @@ impl Editor {
             None => {
                 ensure!(
                     root_binds.len() == 1,
-                    "No editable Canopa binding source. Custom Niri configurations are edited in KDL."
+                    "{}",
+                    fl!("settings-error-shortcuts-no-source")
                 );
                 legacy(&document, root_binds[0])?
             }
@@ -602,11 +606,16 @@ impl Editor {
             if key.is_empty() {
                 continue;
             }
-            let normalized =
-                normalize(key).with_context(|| format!("{} needs a valid shortcut", row.label))?;
+            let normalized = normalize(key).with_context(|| {
+                fl!(
+                    "settings-error-shortcut-invalid",
+                    action = row.label.to_string()
+                )
+            })?;
             ensure!(
                 keys.insert(normalized),
-                "{key} is assigned to more than one shortcut."
+                "{}",
+                fl!("settings-error-shortcut-duplicate", key = key.to_string())
             );
         }
         let claimed = self
@@ -643,7 +652,8 @@ impl Editor {
             if !key.is_empty() && normalize(key) != normalize(&row.saved_key) {
                 ensure!(
                     !self.external_keys.contains(&key_id_of(key)),
-                    "{key} is already assigned in a Niri include."
+                    "{}",
+                    fl!("settings-error-shortcut-in-include", key = key.to_string())
                 );
             }
             delta.removed.retain(|node| plain(node) != action);
@@ -830,7 +840,8 @@ impl Editor {
     pub fn save(&self, paths: &Paths) -> Result<Self> {
         ensure!(
             paths.active() && self.main.path == paths.niri(),
-            "Log into the Canopa session to edit keyboard shortcuts."
+            "{}",
+            fl!("settings-error-shortcuts-session")
         );
         let delta = self.changes()?;
         self.unchanged()?;

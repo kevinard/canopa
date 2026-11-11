@@ -135,8 +135,8 @@ impl Bar {
         };
         ensure!(
             !output.is_empty(),
-            "choose at least one monitor for bar {:?}",
-            self.name
+            "{}",
+            fl!("settings-error-bar-no-monitor", bar = self.name.as_str())
         );
         let existing = strings(doc.get("output"))?;
         if (self.target != Target::All || doc.get("output").is_some())
@@ -242,14 +242,16 @@ impl Editor {
     }
 
     pub(crate) fn duplicate_bar(&mut self, index: usize, name: &str) -> Result<usize> {
-        ensure!(self.bars.len() < 32, "this editor can create up to 32 bars");
+        ensure!(self.bars.len() < 32, "{}", fl!("settings-error-bar-limit"));
         ensure!(
             !name.is_empty() && name.len() <= 80 && !name.chars().any(char::is_control),
-            "enter a bar name of 1 to 80 bytes"
+            "{}",
+            fl!("settings-error-bar-name")
         );
         ensure!(
             !self.bars.iter().any(|bar| bar.name == name),
-            "a bar with that name already exists"
+            "{}",
+            fl!("settings-error-bar-exists")
         );
         let mut bar = self.bars[index].clone();
         bar.name = name.into();

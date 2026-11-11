@@ -30,7 +30,7 @@ impl Model {
         self.save_at(&canopa_launcher::preferences_path()?)
     }
     pub fn save_at(&self, path: &Path) -> Result<Self> {
-        ensure!(self.loaded, "Load launcher preferences before saving");
+        ensure!(self.loaded, "{}", fl!("settings-error-launcher-not-loaded"));
         let saved = Preferences::update(path, |current| {
             if current.extensions != self.saved.extensions
                 || current.web_template != self.saved.web_template
@@ -128,8 +128,11 @@ impl ClipboardEditor {
         let limit = self.limit.parse().unwrap_or_default();
         ensure!(
             (1..=clipboard::HISTORY_LIMIT).contains(&limit),
-            "Enter a history limit from 1 to {}",
-            clipboard::HISTORY_LIMIT,
+            "{}",
+            fl!(
+                "settings-error-history-limit",
+                limit = clipboard::HISTORY_LIMIT.to_string()
+            ),
         );
         let options = clipboard::Options {
             recording: self.recording,

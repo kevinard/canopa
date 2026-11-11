@@ -352,7 +352,7 @@ impl IdleTimes {
         }
         if let Err(error) = idle_command(&["reload".into()]) {
             saved.save(&snapshot.text, |_| Ok(()))?;
-            return Err(error.context("Stasis rejected the reload; the previous file was restored"));
+            return Err(error.context(fl!("settings-error-idle-reload")));
         }
         Ok(saved)
     }
@@ -418,7 +418,8 @@ pub fn validate_idle_reply(reply: &str) -> Result<()> {
         !text.is_empty()
             && !text.to_ascii_uppercase().starts_with("ERROR:")
             && !text.to_ascii_lowercase().contains("not running"),
-        "Stasis did not acknowledge the operation: {text}"
+        "{}",
+        fl!("settings-error-idle-no-ack", reply = text)
     );
     Ok(())
 }

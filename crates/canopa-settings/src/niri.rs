@@ -138,17 +138,15 @@ pub(crate) fn reduced_motion(source: &crate::storage::Snapshot) -> Result<bool> 
             || !source
                 .text
                 .contains("// Canopa Settings: reduce window and workspace motion."),
-        "The compositor motion override was edited outside Settings."
+        "{}",
+        fl!("settings-error-motion-edited")
     );
     Ok(enabled)
 }
 
 #[cfg(feature = "desktop")]
 pub(crate) fn set_reduced_motion(paths: &crate::session::Paths, enabled: bool) -> Result<()> {
-    ensure!(
-        paths.active(),
-        "Log into the Canopa session to change compositor motion."
-    );
+    ensure!(paths.active(), "{}", fl!("settings-error-motion-session"));
     let source = crate::storage::Snapshot::load(paths.niri())?;
     if reduced_motion(&source)? == enabled {
         return Ok(());
@@ -180,7 +178,7 @@ pub(crate) fn save_main(
     if let Err(error) = client.reload() {
         saved.save(&source.text, validate)?;
         let _ = client.reload();
-        return Err(error.context("Compositor reload failed. Previous settings restored."));
+        return Err(error.context(fl!("settings-error-compositor-reload")));
     }
     Ok(saved)
 }

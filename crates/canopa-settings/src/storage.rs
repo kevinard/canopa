@@ -30,7 +30,8 @@ impl Snapshot {
         let (text, identity) = if let Some(metadata) = metadata {
             ensure!(
                 metadata.is_file() && metadata.uid() == unsafe { libc::geteuid() },
-                "settings source must be an owned regular file; symlinked configuration is read-only"
+                "{}",
+                fl!("settings-error-not-owned")
             );
             let text = String::from_utf8(canopa_file::read_canonical_bounded(&path, MAX_BYTES)?)?;
             let after = std::fs::symlink_metadata(&path)?;
@@ -63,7 +64,8 @@ impl Snapshot {
         let now = Self::load(&self.path)?;
         ensure!(
             now.identity == self.identity && now.text == self.text,
-            "settings changed outside this editor; reload before saving"
+            "{}",
+            fl!("settings-error-changed-outside")
         );
         Ok(())
     }
@@ -77,7 +79,8 @@ impl Snapshot {
     ) -> Result<Self> {
         ensure!(
             candidate.len() <= MAX_BYTES,
-            "settings exceed the 1 MiB limit"
+            "{}",
+            fl!("settings-error-too-large")
         );
         let parent = self
             .path
@@ -128,7 +131,8 @@ pub fn lock(path: &Path) -> Result<File> {
         }
         ensure!(
             std::time::Instant::now() < deadline,
-            "another settings operation is active"
+            "{}",
+            fl!("settings-error-busy")
         );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
