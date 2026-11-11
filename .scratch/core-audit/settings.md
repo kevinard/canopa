@@ -92,7 +92,7 @@ Sizes: **S** is under a week, **M** is 1–3 weeks, **L** is more than 3 weeks o
 | | Autostart | missing | – (Background portal owns modern autostart, `canopa-portal/src/background/service.rs:1`) | none | No list or toggle of login apps |
 | Date & time | Time zone, NTP, 12/24 h | missing | K (clock format strings) | none | **Fixed in ef645c5:** Settings Date & time page: time zone search, zone from location once (GeoClue), NTP, manual date and time, 12/24 h in the Shell and lock clock formats with custom patterns kept (ADR 0142). Continuous automatic time zone still open. |
 | Region & language | Locale, formats | missing | – | none (PRD W5) | **Fixed in 53a8820:** Settings Region & language page: user language and formats in `~/.config/locale.conf` (and AccountsService) with a preview, system language and keyboard through localed. Translations (W5) still open. |
-| Users | Accounts | missing | – | AccountsService reader exists only in `canopa-greeter/src/accounts.rs` | |
+| Users | Accounts | missing | – | AccountsService reader exists only in `canopa-greeter/src/accounts.rs` | **Fixed in 27fa4ad:** Settings Users page over AccountsService: list, add, remove keeping or deleting files, full name, administrator, picture with the greeter's limits, own password through `passwd`/PAM, others' password at next login (ADR 0143). Automatic login not offered (greeter lacks it). |
 | Privacy | Lockdown switches | missing | CLI (`busctl`) | `docs/lockdown-portal.md` | Switches exist, but there's no UI |
 | | Portal permissions / screen-share history | missing | – | none | |
 | Accessibility | Text size, reduced motion | partial | S | see Appearance | |
