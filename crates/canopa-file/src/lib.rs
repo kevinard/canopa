@@ -1,7 +1,9 @@
 //! Descriptor-safe, content-free bounded reads for local assets and configuration,
 //! upgrade-safe paths for re-executing the running program, and the XDG desktop
-//! data built on those reads: shared-mime-info types and the selected icon theme.
+//! data built on those reads: shared-mime-info types, the selected icon theme
+//! and the GTK bookmarks file.
 pub mod executable;
+pub mod gtk_bookmarks;
 pub mod icon_theme;
 pub mod mime;
 pub mod private_state;
