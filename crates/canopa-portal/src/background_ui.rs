@@ -3,7 +3,7 @@ use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::background::{BackgroundRequest, Decision};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, row, scrollable, text},
+    widget::{column, container, scrollable, text},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -50,7 +50,7 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
+    .title(|_: &Dialog, _| window_title())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -61,7 +61,12 @@ pub fn run(
 
 /// The AT-SPI window of the background question and its title.
 const WINDOW_KEY: &str = "background";
-const WINDOW_TITLE: &str = "Background activity — Canopa";
+fn window_title() -> String {
+    fl!(
+        "portal-window-title",
+        title = fl!("portal-background-window")
+    )
+}
 
 struct Dialog {
     request: BackgroundRequest,
@@ -126,7 +131,7 @@ impl Dialog {
             Message::Opened => {
                 let window = self.window;
                 if let Some(state) = &mut self.accessibility {
-                    state.opened(WINDOW_TITLE, window);
+                    state.opened(&window_title(), window);
                 }
             }
             Message::Decide(decision) => {
@@ -155,52 +160,53 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        const QUESTION: &str = "Allow background activity?";
-        const EXPLANATION: &str = "This app is running without open windows. Allow once applies only to its current run. Block stops the current run.";
+        let question = fl!("portal-background-question");
         let content = column![
-            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(22)),
+            semantic(
+                Node::heading(question.clone(), 1),
+                text(question.clone()).size(22)
+            ),
             text(&self.request.name).size(18),
             text(&self.request.app_id).style(canopa_ui::muted),
-            text(EXPLANATION),
-            text("Closing this question keeps the current run without changing its permission.")
-                .style(canopa_ui::muted),
+            text(fl!("portal-background-explanation")),
+            text(fl!("portal-background-closing")).style(canopa_ui::muted),
         ]
         .spacing(14)
         .width(Length::Fill);
-        let choice = |key: &'static str, label: &'static str, message: Message, treatment| {
+        let choice = |key: &'static str, label: String, message: Message, treatment| {
             a11y::button(
                 key,
-                label,
+                label.clone(),
                 Some(message.clone()),
                 canopa_ui::action(text(label), Some(message), treatment, false).width(Length::Fill),
             )
         };
-        let choices = row![
+        let choices = canopa_ui::direction::row([
             choice(
                 "background-block",
-                "Block",
+                fl!("portal-background-block"),
                 Message::Decide(Decision::Forbid),
-                canopa_ui::Action::Normal
+                canopa_ui::Action::Normal,
             ),
             choice(
                 "background-allow-once",
-                "Allow once",
+                fl!("portal-background-allow-once"),
                 Message::Decide(Decision::AllowOnce),
-                canopa_ui::Action::Normal
+                canopa_ui::Action::Normal,
             ),
             choice(
                 "background-allow",
-                "Allow",
+                fl!("portal-background-allow"),
                 Message::Decide(Decision::Allow),
-                canopa_ui::Action::Normal
+                canopa_ui::Action::Normal,
             ),
-        ]
+        ])
         .spacing(12);
         let footer = column![
             choices,
             choice(
                 "background-cancel",
-                "Cancel",
+                fl!("portal-cancel"),
                 Message::Cancel,
                 canopa_ui::Action::Quiet
             )
@@ -208,10 +214,13 @@ impl Dialog {
         .spacing(8);
         a11y::dialog_window(
             WINDOW_KEY,
-            WINDOW_TITLE,
-            Node::alert_dialog(QUESTION)
+            window_title(),
+            Node::alert_dialog(question)
                 .key("background-dialog")
-                .description(format!("{}. {EXPLANATION}", self.request.name)),
+                .description(fl!(
+                    "portal-background-description",
+                    name = self.request.name.as_str()
+                )),
             container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
                 .padding(20)
                 .width(Length::Fill)

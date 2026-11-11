@@ -106,9 +106,17 @@ fn value(value: impl Into<Value<'static>>) -> OwnedValue {
 }
 fn content(request: &BackgroundRequest) -> HashMap<String, OwnedValue> {
     let buttons = [
-        ("Block", "canopa.background.forbid", 0u32),
-        ("Allow once", "canopa.background.once", 2),
-        ("Allow", "canopa.background.allow", 1),
+        (
+            fl!("portal-background-block"),
+            "canopa.background.forbid",
+            0u32,
+        ),
+        (
+            fl!("portal-background-allow-once"),
+            "canopa.background.once",
+            2,
+        ),
+        (fl!("portal-background-allow"), "canopa.background.allow", 1),
     ]
     .into_iter()
     .map(|(label, action, target)| {
@@ -122,16 +130,16 @@ fn content(request: &BackgroundRequest) -> HashMap<String, OwnedValue> {
     HashMap::from([
         (
             "title".into(),
-            value(format!(
-                "{} is running in the background",
-                request.name.chars().take(120).collect::<String>()
+            value(fl!(
+                "portal-background-notification-title",
+                name = request.name.chars().take(120).collect::<String>()
             )),
         ),
         (
             "body".into(),
-            value(format!(
-                "Allow {} to keep running without open windows? Choose Allow once for its current run only.",
-                request.app_id
+            value(fl!(
+                "portal-background-notification-body",
+                app = request.app_id.as_str()
             )),
         ),
         ("priority".into(), value("normal")),

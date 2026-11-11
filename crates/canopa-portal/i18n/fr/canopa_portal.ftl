@@ -250,3 +250,16 @@ portal-sharing-clipboard = Presse-papiers · Lire et remplacer le contenu copié
 portal-sharing-input-to = Les entrées peuvent être envoyées à { $requester }
 portal-sharing-control-to = Contrôle accordé à { $requester }
 portal-sharing-with = Partage avec { $requester }
+
+## Background activity
+
+portal-background-window = Activité en arrière-plan
+portal-background-question = Autoriser l’activité en arrière-plan ?
+portal-background-explanation = Cette application s’exécute sans fenêtre ouverte. « Autoriser une fois » ne s’applique qu’à son exécution en cours. « Bloquer » arrête l’exécution en cours.
+portal-background-description = { $name }. Cette application s’exécute sans fenêtre ouverte. « Autoriser une fois » ne s’applique qu’à son exécution en cours. « Bloquer » arrête l’exécution en cours.
+portal-background-closing = Fermer cette question conserve l’exécution en cours sans modifier son autorisation.
+portal-background-block = Bloquer
+portal-background-allow-once = Autoriser une fois
+portal-background-allow = Autoriser
+portal-background-notification-title = { $name } s’exécute en arrière-plan
+portal-background-notification-body = Autoriser { $app } à continuer de s’exécuter sans fenêtre ouverte ? Choisissez « Autoriser une fois » pour son exécution en cours uniquement.

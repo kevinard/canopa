@@ -283,3 +283,21 @@ portal-sharing-clipboard = Clipboard · Read and replace copied content
 portal-sharing-input-to = Input may be sent to { $requester }
 portal-sharing-control-to = Control granted to { $requester }
 portal-sharing-with = Sharing with { $requester }
+
+## Background activity
+
+portal-background-window = Background activity
+portal-background-question = Allow background activity?
+portal-background-explanation = This app is running without open windows. Allow once applies only to its current run. Block stops the current run.
+# Accessible description; $name is the app's name.
+portal-background-description = { $name }. This app is running without open windows. Allow once applies only to its current run. Block stops the current run.
+portal-background-closing = Closing this question keeps the current run without changing its permission.
+# Buttons of the dialog and of the notification. "Allow once" and "Block" are
+# also named in the explanations above.
+portal-background-block = Block
+portal-background-allow-once = Allow once
+portal-background-allow = Allow
+# Notification title; $name is the app's name.
+portal-background-notification-title = { $name } is running in the background
+# Notification body; $app is the app's ID.
+portal-background-notification-body = Allow { $app } to keep running without open windows? Choose Allow once for its current run only.
