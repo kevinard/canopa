@@ -114,6 +114,11 @@ def stage(destination, binaries, compositor=None, component="desktop", frontend=
     target = install(ROOT / "packaging/file-manager" / service, f"usr/share/canopa/dbus-1/services/{service}")
     target.write_text(target.read_text().replace(
         "Exec=/usr/bin/env canopa-files", "Exec=/usr/bin/canopa-files"))
+    # Settings' single-instance name is Canopa's own, so it is activatable everywhere.
+    service = "org.canopa.Settings.service"
+    target = install(ROOT / "packaging/settings" / service, f"usr/share/dbus-1/services/{service}")
+    target.write_text(target.read_text().replace(
+        "Exec=/usr/bin/env canopa-settings", "Exec=/usr/bin/canopa-settings"))
     install(ROOT / "packaging/canopa-notify.1", "usr/share/man/man1/canopa-notify.1")
     install(ROOT / "LICENSES.md", "usr/share/licenses/canopa/LICENSES.md")
     subprocess.run(["python3", str(ROOT / "scripts/package-documentation.py"), str(destination / "usr")], check=True)

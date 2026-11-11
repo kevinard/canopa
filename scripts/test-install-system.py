@@ -102,6 +102,9 @@ class SystemInstallTests(unittest.TestCase):
         self.assertIn('Name=org.freedesktop.FileManager1\n', activation)
         self.assertIn('Exec=/usr/bin/canopa-files --daemon\n', activation)
         self.assertTrue((destination / 'usr/share/applications/org.canopa.Files.desktop').is_file())
+        settings = (destination / 'usr/share/dbus-1/services/org.canopa.Settings.service').read_text()
+        self.assertIn('Name=org.canopa.Settings\n', settings)
+        self.assertIn('Exec=/usr/bin/canopa-settings\n', settings)
         self.assertTrue((destination / 'etc/pam.d/canopa-lock').is_file())
         self.assertFalse((destination / 'etc/greetd/config.toml').exists())
         data = destination / 'usr/share/xdg-desktop-portal'

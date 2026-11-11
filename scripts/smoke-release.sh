@@ -131,6 +131,8 @@ test -s "$bundle/share/dbus-1/services/org.freedesktop.impl.portal.desktop.canop
 test -s "$bundle/share/dbus-1/services/org.freedesktop.FileManager1.service"
 rg -Fx 'Name=org.freedesktop.FileManager1' "$bundle/share/dbus-1/services/org.freedesktop.FileManager1.service"
 rg -Fx 'Exec=/usr/bin/env canopa-files --daemon' "$bundle/share/dbus-1/services/org.freedesktop.FileManager1.service"
+rg -Fx 'Name=org.canopa.Settings' "$bundle/share/dbus-1/services/org.canopa.Settings.service"
+rg -Fx 'Exec=/usr/bin/env canopa-settings' "$bundle/share/dbus-1/services/org.canopa.Settings.service"
 test -s "$bundle/share/systemd/user/xdg-desktop-portal-canopa.service"
 test -s "$bundle/share/canopa/dependency-attributions.md"
 test -s "$bundle/share/canopa-notify/LICENSE-MIT"

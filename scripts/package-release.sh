@@ -83,6 +83,7 @@ if [[ -n $niri_receipt ]]; then
 fi
 install -m644 packaging/portal/*.service "$dest/share/dbus-1/services/"
 install -m644 packaging/file-manager/org.freedesktop.FileManager1.service "$dest/share/dbus-1/services/"
+install -m644 packaging/settings/org.canopa.Settings.service "$dest/share/dbus-1/services/"
 install -m644 packaging/systemd/xdg-desktop-portal-canopa.service "$dest/share/systemd/user/"
 install -m644 packaging/applications/org.canopa.Files.desktop "$dest/share/applications/"
 install -m644 packaging/applications/org.canopa.Settings.desktop "$dest/share/applications/"
