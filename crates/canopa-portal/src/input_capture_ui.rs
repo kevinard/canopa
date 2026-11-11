@@ -1,4 +1,5 @@
 //! Fresh unchecked input-capture consent in the shared Iced appearance.
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::input_capture::DialogInput;
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
@@ -31,7 +32,7 @@ pub fn run(
     let font = canopa_ui::font(&appearance);
     iced::daemon(
         move || {
-            let (_, opening) = window::open_dialog_with_activation(
+            let (window, opening) = window::open_dialog_with_activation(
                 input
                     .parent_window
                     .strip_prefix("wayland:")
@@ -54,15 +55,16 @@ pub fn run(
                     ..Default::default()
                 },
             );
-            (
-                Dialog::new(input.clone(), theme.clone(), output.clone()),
-                opening.map(|_| Message::Opened),
-            )
+            let mut dialog = Dialog::new(input.clone(), theme.clone(), output.clone());
+            dialog.window = window;
+            dialog.accessibility =
+                Some(a11y::Accessibility::new("canopa-input-capture", WINDOW_KEY));
+            (dialog, opening.map(|_| Message::Opened))
         },
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| "Input capture — Canopa".to_owned())
+    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -70,6 +72,11 @@ pub fn run(
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     Ok(result.lock().expect("capture consent").take())
 }
+/// The AT-SPI window of the capture question and its title.
+const WINDOW_KEY: &str = "input-capture";
+const WINDOW_TITLE: &str = "Input capture — Canopa";
+const QUESTION: &str = "Allow input capture?";
+
 struct Dialog {
     input: DialogInput,
     theme: Theme,
@@ -78,6 +85,8 @@ struct Dialog {
     clipboard: bool,
     output: Arc<Mutex<Option<Selection>>>,
     completed: bool,
+    window: window::Id,
+    accessibility: Option<a11y::Accessibility<Message>>,
 }
 #[derive(Clone, Debug)]
 enum Message {
@@ -88,6 +97,13 @@ enum Message {
     Allow,
     Cancel,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
+}
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
 }
 impl Dialog {
     fn new(input: DialogInput, theme: Theme, output: Arc<Mutex<Option<Selection>>>) -> Self {
@@ -99,19 +115,46 @@ impl Dialog {
             clipboard: false,
             output,
             completed: false,
+            window: window::Id::unique(),
+            accessibility: None,
         }
     }
     fn selected(&self) -> u32 {
         (u32::from(self.keyboard) | u32::from(self.pointer) << 1) & self.input.capabilities
     }
     fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen().map(Message::Event)
+        let input = iced::event::listen().map(Message::Event);
+        match &self.accessibility {
+            Some(state) => Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
     }
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+    fn exit(&mut self) -> Task<Message> {
+        self.completed = true;
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if self.completed {
             return Task::none();
         }
         match message {
+            Message::Opened => {
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(WINDOW_TITLE, window);
+                }
+            }
             Message::Pointer(value) if self.input.capabilities & 2 != 0 => self.pointer = value,
             Message::Keyboard(value) if self.input.capabilities & 1 != 0 => self.keyboard = value,
             Message::Clipboard(value) if self.input.clipboard => self.clipboard = value,
@@ -120,27 +163,25 @@ impl Dialog {
                     capabilities: self.selected(),
                     clipboard: self.clipboard,
                 });
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Cancel | Message::Event(Event::Window(window::Event::CloseRequested)) => {
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key, modifiers, ..
             })) => {
                 if key == keyboard::Key::Named(keyboard::key::Named::Escape) {
-                    return self.update(Message::Cancel);
+                    return self.apply(Message::Cancel);
                 }
                 if modifiers.alt()
                     && let keyboard::Key::Character(value) = key
                 {
                     match value.as_str() {
-                        "p" | "P" => return self.update(Message::Pointer(!self.pointer)),
-                        "k" | "K" => return self.update(Message::Keyboard(!self.keyboard)),
-                        "c" | "C" => return self.update(Message::Clipboard(!self.clipboard)),
-                        "a" | "A" => return self.update(Message::Allow),
+                        "p" | "P" => return self.apply(Message::Pointer(!self.pointer)),
+                        "k" | "K" => return self.apply(Message::Keyboard(!self.keyboard)),
+                        "c" | "C" => return self.apply(Message::Clipboard(!self.clipboard)),
+                        "a" | "A" => return self.apply(Message::Allow),
                         _ => {}
                     }
                 }
@@ -150,47 +191,109 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
+        const EXPLANATION: &str = "Moving the pointer across a screen edge chosen by the application activates capture of the input you approve.";
         let requester = if self.input.app_id.is_empty() {
             "An application"
         } else {
             &self.input.app_id
         };
+        let request = format!("{requester} wants to receive input from this desktop.");
         let mut content = column![
-            text("Allow input capture?").size(24),
-            text(format!("{requester} wants to receive input from this desktop.")).size(16),
-            text("Moving the pointer across a screen edge chosen by the application activates capture of the input you approve.").size(14),
-        ].spacing(18);
-        if self.input.capabilities & 2 != 0 {
-            content = content.push(
-                checkbox(self.pointer)
-                    .label("Allow pointer input (Alt+P)")
+            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(24)),
+            text(request.clone()).size(16),
+            text(EXPLANATION).size(14),
+        ]
+        .spacing(18);
+        let choice = |key: &'static str,
+                      label: &'static str,
+                      shortcut: &'static str,
+                      checked: bool,
+                      toggle: fn(bool) -> Message| {
+            semantic(
+                Node::check_box(label, checked)
+                    .key(key)
+                    .shortcut(shortcut)
+                    .on_click(Some(toggle(!checked))),
+                checkbox(checked)
+                    .label(format!("{label} ({shortcut})"))
                     .style(canopa_ui::checkbox_style)
-                    .on_toggle(Message::Pointer),
-            );
+                    .on_toggle(toggle),
+            )
+        };
+        if self.input.capabilities & 2 != 0 {
+            content = content.push(choice(
+                "input-capture-pointer",
+                "Allow pointer input",
+                "Alt+P",
+                self.pointer,
+                Message::Pointer,
+            ));
         }
         if self.input.capabilities & 1 != 0 {
-            content = content.push(
-                checkbox(self.keyboard)
-                    .label("Allow keyboard input (Alt+K)")
-                    .style(canopa_ui::checkbox_style)
-                    .on_toggle(Message::Keyboard),
-            );
+            content = content.push(choice(
+                "input-capture-keyboard",
+                "Allow keyboard input",
+                "Alt+K",
+                self.keyboard,
+                Message::Keyboard,
+            ));
         }
         if self.input.clipboard {
-            content = content.push(
-                checkbox(self.clipboard)
-                    .label("Share clipboard while input is captured (Alt+C)")
-                    .style(canopa_ui::checkbox_style)
-                    .on_toggle(Message::Clipboard),
-            );
+            content = content.push(choice(
+                "input-capture-clipboard",
+                "Share clipboard while input is captured",
+                "Alt+C",
+                self.clipboard,
+                Message::Clipboard,
+            ));
         }
-        container(content.extend([
-            text("Ctrl+Alt+Esc pauses capture. You can end this session from its control window.").size(12).style(canopa_ui::muted).into(),
+        let allow = (self.selected() != 0).then_some(Message::Allow);
+        let content = content.extend([
+            text("Ctrl+Alt+Esc pauses capture. You can end this session from its control window.")
+                .size(12)
+                .style(canopa_ui::muted)
+                .into(),
             row![
-                canopa_ui::action(text("Cancel"),Some(Message::Cancel),canopa_ui::Action::Quiet,false),
-                canopa_ui::action(text("Allow input capture (Alt+A)"),(self.selected() != 0).then_some(Message::Allow),canopa_ui::Action::Normal,false),
-            ].spacing(12).into()
-        ])).padding(24).width(Length::Fill).height(Length::Fill).style(canopa_ui::surface).into()
+                a11y::button(
+                    "input-capture-cancel",
+                    "Cancel",
+                    Some(Message::Cancel),
+                    canopa_ui::action(
+                        text("Cancel"),
+                        Some(Message::Cancel),
+                        canopa_ui::Action::Quiet,
+                        false
+                    )
+                ),
+                semantic(
+                    Node::button("Allow input capture")
+                        .key("input-capture-allow")
+                        .shortcut("Alt+A")
+                        .disabled(allow.is_none())
+                        .on_click(allow.clone()),
+                    canopa_ui::action(
+                        text("Allow input capture (Alt+A)"),
+                        allow,
+                        canopa_ui::Action::Normal,
+                        false
+                    )
+                ),
+            ]
+            .spacing(12)
+            .into(),
+        ]);
+        a11y::dialog_window(
+            WINDOW_KEY,
+            WINDOW_TITLE,
+            Node::alert_dialog(QUESTION)
+                .key("input-capture-dialog")
+                .description(format!("{request} {EXPLANATION}")),
+            container(content)
+                .padding(24)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(canopa_ui::surface),
+        )
     }
 }
 
