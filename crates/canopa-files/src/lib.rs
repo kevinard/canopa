@@ -23,6 +23,8 @@ pub mod local_actions;
 pub mod local_activity;
 #[cfg(feature = "local-runtime")]
 pub mod local_volumes;
+pub mod mounts;
+pub mod opening;
 #[cfg(feature = "background-operations")]
 pub mod operation_attention;
 pub mod operation_jobs;
@@ -40,6 +42,8 @@ mod process;
 #[cfg(feature = "local-runtime")]
 pub mod recovery_catalog;
 pub mod search;
+#[cfg(feature = "desktop")]
+pub mod thumbnails;
 mod state_io;
 pub mod storage;
 mod syntax;
