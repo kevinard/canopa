@@ -1,7 +1,7 @@
 # 0165: Batched Copy durability, write-behind and transfer estimates
 
-Status: implemented 2026-11-11 (`875f445`, `9fc93b7` and the barrier-failure
-follow-up for the engine; `7ef8021` progress; `5a8883b` benchmark). Verified
+Status: implemented 2026-11-11 (`875f445`, `9fc93b7` and `98380a5` engine;
+`7ef8021` progress; `5a8883b` benchmark). Verified
 with the Files library, the transfer/Undo/Recovery integration cases and an
 optimized headless benchmark. Not yet measured on removable media or in a native
 session. Continues ADR0006 (full-sync transactions), ADR0153/0155/0156 (the
