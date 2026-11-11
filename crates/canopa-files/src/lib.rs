@@ -18,6 +18,7 @@ pub mod file_clipboard;
 pub mod file_manager;
 pub mod file_properties;
 pub mod folder_watch;
+pub mod history_labels;
 pub mod interface;
 mod interface_config;
 #[cfg(feature = "background-actions")]

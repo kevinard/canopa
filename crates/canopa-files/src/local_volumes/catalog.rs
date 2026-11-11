@@ -23,11 +23,21 @@ pub enum Removal {
 }
 
 impl Removal {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::PowerOff => "Power off",
-            Self::Eject => "Eject",
-            Self::Unmount => "Unmount",
+            Self::PowerOff => fl!("files-device-power-off"),
+            Self::Eject => fl!("files-device-eject"),
+            Self::Unmount => fl!("files-device-unmount"),
+        }
+    }
+
+    /// The menu item that removes the device named `device`.
+    pub fn action_label(self, device: &str) -> String {
+        let device = device.to_owned();
+        match self {
+            Self::PowerOff => fl!("files-device-power-off-named", device = device),
+            Self::Eject => fl!("files-device-eject-named", device = device),
+            Self::Unmount => fl!("files-device-unmount-named", device = device),
         }
     }
 }

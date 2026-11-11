@@ -74,17 +74,17 @@ impl OperationAttention {
                     for attention in observer.take_pending() {
                         let (title, body) = match &attention.status {
                             AttentionStatus::Decision { .. } => (
-                                "Operation needs a decision".into(),
-                                format!("{} · Open Operations to review.", attention.title),
+                                fl!("files-notification-decision"),
+                                fl!("files-notification-decision-body", operation = crate::history_labels::title(&attention.title)),
                             ),
-                            AttentionStatus::Outcome { detail, .. } => (attention.title.clone(), detail.clone()),
+                            AttentionStatus::Outcome { detail, .. } => (crate::history_labels::title(&attention.title), detail.clone()),
                         };
                         let result = notifications.as_ref().map_err(Clone::clone).and_then(|worker| {
                             worker.send(title, body).map_err(|error| error.to_string())
                         });
                         match result {
                             Ok(reply) => pending.push(async move {
-                                (attention, reply.await.unwrap_or_else(|_| Err("Desktop notification worker stopped before replying.".into())))
+                                (attention, reply.await.unwrap_or_else(|_| Err(fl!("files-notification-worker-stopped"))))
                             }),
                             Err(error) => {
                                 finish(&worker_failures, &worker_jobs, &observer, attention, Err(error));

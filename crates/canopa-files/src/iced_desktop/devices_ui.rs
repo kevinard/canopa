@@ -115,7 +115,7 @@ impl State {
     pub fn summary(&self) -> Option<String> {
         self.error
             .as_ref()
-            .map(|error| format!("Devices: {error}"))
+            .map(|error| fl!("files-devices-error", error = error.clone()))
             .or_else(|| {
                 self.requests
                     .iter()
@@ -127,30 +127,33 @@ impl State {
 }
 
 pub(super) fn status(job: &DeviceRequestSnapshot) -> String {
+    use crate::local_volumes::{DeviceOperation, Removal};
     if job.phase == DevicePhase::Cancelling {
-        return "Cancelling…".into();
+        return fl!("files-device-cancelling");
     }
     if job.question.is_some() {
-        return "Needs a decision".into();
+        return fl!("files-device-needs-decision");
     }
     if job.phase == DevicePhase::Running {
         return match job.operation {
-            crate::local_volumes::DeviceOperation::Mount => "Mounting…".into(),
-            crate::local_volumes::DeviceOperation::Remove(kind) => format!("{}…", kind.label()),
-            crate::local_volumes::DeviceOperation::Connect => "Connecting…".into(),
+            DeviceOperation::Mount => fl!("files-device-mounting"),
+            DeviceOperation::Remove(Removal::PowerOff) => fl!("files-device-powering-off"),
+            DeviceOperation::Remove(Removal::Eject) => fl!("files-device-ejecting"),
+            DeviceOperation::Remove(Removal::Unmount) => fl!("files-device-unmounting"),
+            DeviceOperation::Connect => fl!("files-device-connecting"),
         };
     }
     match &job.outcome {
-        Some(DeviceOutcome::Mounted { .. }) => "Mounted".into(),
-        Some(DeviceOutcome::Connected { .. }) => "Connected".into(),
-        Some(DeviceOutcome::ConnectedRemote { .. }) => {
-            "Connected without a local folder: GVFS's FUSE daemon (gvfsd-fuse) is not running, so only a read-only listing is available".into()
+        Some(DeviceOutcome::Mounted { .. }) => fl!("files-device-mounted"),
+        Some(DeviceOutcome::Connected { .. }) => fl!("files-device-connected"),
+        Some(DeviceOutcome::ConnectedRemote { .. }) => fl!("files-device-connected-remote"),
+        Some(DeviceOutcome::Removed) => fl!("files-device-removed"),
+        Some(DeviceOutcome::Cancelled) => fl!("files-device-cancelled"),
+        Some(DeviceOutcome::Failed { message }) => {
+            fl!("files-device-failed", error = message.clone())
         }
-        Some(DeviceOutcome::Removed) => "Removed".into(),
-        Some(DeviceOutcome::Cancelled) => "Cancelled".into(),
-        Some(DeviceOutcome::Failed { message }) => format!("Could not finish: {message}"),
         Some(DeviceOutcome::Uncertain { message }) => message.clone(),
-        None => "Finished".into(),
+        None => fl!("files-device-finished"),
     }
 }
 
@@ -178,7 +181,7 @@ impl Desktop {
                 self.devices.error = None;
                 let result = self
                     .device_runtime()
-                    .ok_or_else(|| io::Error::other("Devices are unavailable."))
+                    .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
                     .and_then(|runtime| runtime.device_requests().open(token));
                 match result {
                     Ok(Opened::Root(root)) => {
@@ -202,7 +205,7 @@ impl Desktop {
                 }
                 let result = self
                     .device_runtime()
-                    .ok_or_else(|| io::Error::other("Devices are unavailable."))
+                    .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
                     .and_then(|runtime| runtime.device_requests().remove(token));
                 match result {
                     Ok(id) => {
@@ -225,7 +228,7 @@ impl Desktop {
             Event::OpenResult(id) => {
                 let result = self
                     .device_runtime()
-                    .ok_or_else(|| io::Error::other("Devices are unavailable."))
+                    .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
                     .and_then(|runtime| runtime.device_requests().mounted_root(id));
                 return match result {
                     Ok(root) => self.new_window(vec![root]),
@@ -338,7 +341,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     let appearance = &desktop.configuration.appearance;
     let size = appearance.typography().body_size.px();
     let font = canopa_ui::font(appearance);
-    let mut body = column![chrome::section(appearance, "Devices")].spacing(2);
+    let mut body = column![chrome::section(appearance, fl!("files-devices"))].spacing(2);
     let ready = desktop.devices.catalog.status == DeviceStatus::Ready;
     let origin = Origin::capture(desktop, window);
     let model = super::network_ui::sidebar(&desktop.devices.catalog, &desktop.network.bookmarks);
@@ -366,14 +369,14 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             .disabled(open.is_none())
             .on_click(open.clone());
         let open = canopa_ui::styled_action(
-            row![
+            canopa_ui::direction::row([
                 desktop.icons.chrome(
                     super::network_ui::kind_icon(device.kind),
                     17.0,
-                    if open.is_some() { 0.74 } else { 0.35 }
+                    if open.is_some() { 0.74 } else { 0.35 },
                 ),
-                label
-            ]
+                label,
+            ])
             .spacing(9)
             .align_y(Alignment::Center),
             open,
@@ -408,7 +411,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             .padding([7, 8]);
             item = item.push(super::accessibility_ui::named_button(
                 format!("files-device-{:?}-remove", device.id()),
-                format!("{} {}", kind.label(), device.name),
+                kind.action_label(&device.name),
                 remove,
                 tooltip(
                     button,
@@ -431,7 +434,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
         body = body.push(text(error).size(size));
     }
     super::accessibility_ui::semantic(
-        super::accessibility_ui::Node::list("Devices").key("files-devices"),
+        super::accessibility_ui::Node::list(fl!("files-devices")).key("files-devices"),
         body,
     )
 }
@@ -449,7 +452,7 @@ pub(super) fn rows(
     if !desktop.devices.visible() {
         return (body.into(), order);
     }
-    body = body.push(text("Devices").size(size).font(font));
+    body = body.push(text(fl!("files-devices")).size(size).font(font));
     for error in [&desktop.devices.error, &desktop.devices.notification_error]
         .into_iter()
         .flatten()
@@ -457,7 +460,7 @@ pub(super) fn rows(
         body = body.push(text(error).size(small).font(font));
     }
     for job in &desktop.devices.requests {
-        let mut button = |label: &'static str, name: &str, event: Option<Event>| {
+        let mut button = |label: String, name: &str, event: Option<Event>| {
             let id =
                 iced::widget::Id::from(format!("files-device-row-{window:?}-{:?}-{name}", job.id));
             let message = event.map(Message::Device);
@@ -479,9 +482,17 @@ pub(super) fn rows(
         };
         let mut controls = row![].spacing(8);
         if job.phase == DevicePhase::Running {
-            controls = controls.push(button("Cancel", "cancel", Some(Event::Cancel(job.id))));
+            controls = controls.push(button(
+                fl!("files-cancel"),
+                "cancel",
+                Some(Event::Cancel(job.id)),
+            ));
             if job.question.is_some() {
-                controls = controls.push(button("Review", "review", Some(Event::Review(job.id))));
+                controls = controls.push(button(
+                    fl!("files-review"),
+                    "review",
+                    Some(Event::Review(job.id)),
+                ));
             }
         }
         let available = matches!(
@@ -492,7 +503,7 @@ pub(super) fn rows(
             .is_some_and(|runtime| runtime.device_requests().mounted_root(job.id).is_ok());
         if available {
             controls = controls.push(button(
-                "Open folder",
+                fl!("files-open-folder"),
                 "open",
                 Some(Event::OpenResult(job.id)),
             ));

@@ -7,7 +7,7 @@ use crate::{operation_jobs::Request, trash::TrashItem};
 use canopa_theme::UiKind;
 use iced::{
     Length,
-    widget::{column, container, row, text},
+    widget::{column, container, text},
 };
 
 pub(super) enum Target {
@@ -41,12 +41,8 @@ fn control(id: window::Id, name: &str) -> iced::widget::Id {
     iced::widget::Id::from(format!("files-delete-{id:?}-{name}"))
 }
 
-fn count(count: usize) -> String {
-    format!("{count} {}", if count == 1 { "item" } else { "items" })
-}
-
-fn quoted(name: &std::ffi::OsStr) -> String {
-    format!("“{}”", name.to_string_lossy())
+fn display(name: &std::ffi::OsStr) -> String {
+    name.to_string_lossy().into_owned()
 }
 
 impl Dialog {
@@ -64,13 +60,13 @@ impl Dialog {
         }
     }
 
-    pub fn title(&self) -> &'static str {
+    pub fn title(&self) -> String {
         match &self.target {
             Target::Selection {
                 unavailable: true, ..
-            } => "Can't move to Trash",
-            Target::Trash { empty: true, .. } => "Empty Trash?",
-            _ => "Delete permanently?",
+            } => fl!("files-delete-title-no-trash"),
+            Target::Trash { empty: true, .. } => fl!("files-delete-title-empty-trash"),
+            _ => fl!("files-delete-title"),
         }
     }
 
@@ -83,44 +79,36 @@ impl Dialog {
 
     /// The confirmation names exactly what will be removed.
     fn message(&self) -> String {
-        let warning = "This can't be undone.";
         match &self.target {
             Target::Selection {
                 paths, unavailable, ..
-            } => {
-                let subject = match paths.as_slice() {
-                    [path] => quoted(path.file_name().unwrap_or(path.as_os_str())),
-                    paths => count(paths.len()),
-                };
-                if *unavailable {
-                    let (verb, pronoun) = if paths.len() == 1 {
-                        ("is", "it")
-                    } else {
-                        ("are", "them")
-                    };
-                    format!(
-                        "{subject} {verb} on a volume without a usable Trash, so {pronoun} cannot be moved to Trash. Delete {pronoun} permanently instead? {warning}"
-                    )
-                } else {
-                    format!("Permanently delete {subject}? {warning}")
-                }
-            }
+            } => match (paths.as_slice(), *unavailable) {
+                ([path], true) => fl!(
+                    "files-delete-no-trash-one",
+                    name = display(path.file_name().unwrap_or(path.as_os_str()))
+                ),
+                (paths, true) => fl!("files-delete-no-trash-many", count = paths.len()),
+                ([path], false) => fl!(
+                    "files-delete-one",
+                    name = display(path.file_name().unwrap_or(path.as_os_str()))
+                ),
+                (paths, false) => fl!("files-delete-many", count = paths.len()),
+            },
             Target::Trash {
                 items,
                 empty: true,
                 main,
-            } => format!(
-                "Permanently delete all {} in {}? {warning}",
-                count(items.len()),
-                if *main { "Main Trash" } else { "Trash" }
-            ),
-            Target::Trash { items, .. } => {
-                let subject = match items.as_slice() {
-                    [item] => quoted(item.name()),
-                    items => count(items.len()),
-                };
-                format!("Permanently delete {subject} from Trash? {warning}")
+            } => {
+                if *main {
+                    fl!("files-delete-empty-main-trash", count = items.len())
+                } else {
+                    fl!("files-delete-empty-trash", count = items.len())
+                }
             }
+            Target::Trash { items, .. } => match items.as_slice() {
+                [item] => fl!("files-delete-from-trash-one", name = display(item.name())),
+                items => fl!("files-delete-from-trash-many", count = items.len()),
+            },
         }
     }
 
@@ -131,10 +119,10 @@ impl Dialog {
 
     fn confirm_label(&self) -> String {
         match &self.target {
-            Target::Trash { empty: true, .. } => "Empty Trash".into(),
+            Target::Trash { empty: true, .. } => fl!("files-empty-trash"),
             _ => match self.paths().len() {
-                1 => "Delete permanently".into(),
-                count => format!("Delete {count} items"),
+                1 => fl!("files-command-delete-permanently"),
+                count => fl!("files-delete-items", count = count),
             },
         }
     }
@@ -271,7 +259,7 @@ impl Desktop {
         match event {
             Event::Opened(_, None) => {
                 self.delete_dialog = None;
-                self.file_operations.error = Some("Could not open the confirmation.".into());
+                self.file_operations.error = Some(fl!("files-confirmation-failed"));
                 Task::none()
             }
             Event::Opened(..) => {
@@ -345,10 +333,10 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .size(size)
             .wrapping(text::Wrapping::WordOrGlyph),
         iced::widget::space().height(Length::Fill),
-        row![
-            iced::widget::space().width(Length::Fill),
+        canopa_ui::direction::row([
+            iced::widget::space().width(Length::Fill).into(),
             action(
-                "Cancel".into(),
+                fl!("files-cancel"),
                 "cancel",
                 Message::DeleteDialog(Event::Cancel(id)),
                 canopa_ui::Action::Quiet,
@@ -359,7 +347,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 Message::DeleteDialog(Event::Confirm(id)),
                 canopa_ui::Action::Destructive,
             ),
-        ]
+        ])
         .spacing(8),
     ]
     .spacing(12);

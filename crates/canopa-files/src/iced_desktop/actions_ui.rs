@@ -149,21 +149,24 @@ impl Desktop {
                 };
                 let mut items = Vec::new();
                 if !source.paths.is_empty() {
-                    items.push(("Open".into(), Item::Command(Command::Open)));
+                    items.push((fl!("files-menu-open"), Item::Command(Command::Open)));
                     if source.entries.len() == source.paths.len()
                         && source.entries.iter().all(|entry| !entry.is_directory())
                     {
-                        items.push(("Open With…".into(), Item::OpenWith));
+                        items.push((fl!("files-menu-open-with"), Item::OpenWith));
                     }
-                    items.push(("Quick Look".into(), Item::Command(Command::QuickLook)));
+                    items.push((
+                        fl!("files-command-quick-look"),
+                        Item::Command(Command::QuickLook),
+                    ));
                 }
                 if self.file_clipboard.ready()
                     && self.file_operations.storage.is_some()
                     && self.file_operations.storage_error.is_none()
                     && !source.paths.is_empty()
                 {
-                    items.push(("Copy".into(), Item::Command(Command::Copy)));
-                    items.push(("Cut".into(), Item::Command(Command::Cut)));
+                    items.push((fl!("files-command-copy"), Item::Command(Command::Copy)));
+                    items.push((fl!("files-command-cut"), Item::Command(Command::Cut)));
                 }
                 for action in &self.configuration.actions {
                     if self.action_applicable(&source, action) {
@@ -172,38 +175,53 @@ impl Desktop {
                 }
                 if self.file_operations.ready() {
                     if self.file_clipboard.can_paste() {
-                        items.push(("Paste".into(), Item::Command(Command::Paste)));
+                        items.push((fl!("files-command-paste"), Item::Command(Command::Paste)));
                     }
-                    items.push(("New folder…".into(), Item::Command(Command::NewFolder)));
+                    items.push((
+                        fl!("files-menu-new-folder"),
+                        Item::Command(Command::NewFolder),
+                    ));
                     if source.paths.len() == 1 {
-                        items.push(("Rename…".into(), Item::Command(Command::Rename)));
+                        items.push((fl!("files-menu-rename"), Item::Command(Command::Rename)));
                     }
                     if !source.paths.is_empty() {
-                        items.push(("Move to Trash".into(), Item::Command(Command::Trash)));
+                        items.push((fl!("files-command-trash"), Item::Command(Command::Trash)));
                         items.push((
-                            "Delete permanently…".into(),
+                            fl!("files-menu-delete-permanently"),
                             Item::Command(Command::DeletePermanently),
                         ));
                     }
                     if !self.file_operations.has_active()
                         && let Some(undo) = &self.file_operations.snapshot.undo
                     {
-                        items.push((undo.label.clone(), Item::Command(Command::Undo)));
+                        items.push((
+                            crate::history_labels::display(&undo.label),
+                            Item::Command(Command::Undo),
+                        ));
                     }
                 }
                 items.push((
-                    "Edit custom actions…".into(),
+                    fl!("files-menu-edit-custom-actions"),
                     Item::Command(Command::CustomActions),
                 ));
-                items.push(("Operations".into(), Item::Command(Command::Operations)));
-                items.push(("Open Trash".into(), Item::Command(Command::ShowTrash)));
-                items.push(("Preferences…".into(), Item::Command(Command::Preferences)));
                 items.push((
-                    "Bookmark this folder…".into(),
+                    fl!("files-command-operations"),
+                    Item::Command(Command::Operations),
+                ));
+                items.push((
+                    fl!("files-command-show-trash"),
+                    Item::Command(Command::ShowTrash),
+                ));
+                items.push((
+                    fl!("files-menu-preferences"),
+                    Item::Command(Command::Preferences),
+                ));
+                items.push((
+                    fl!("files-menu-bookmark-folder"),
                     Item::Command(Command::BookmarkFolder),
                 ));
-                items.push(("Locations…".into(), Item::Locations));
-                items.push(("View options…".into(), Item::FolderOptions));
+                items.push((fl!("files-menu-locations"), Item::Locations));
+                items.push((fl!("files-menu-view-options"), Item::FolderOptions));
                 return self.present_menu(source, items);
             }
             Event::Locations(id) => {
@@ -290,8 +308,10 @@ impl Desktop {
                 };
                 if !self.action_applicable(&source, &action) {
                     if let Some(tab) = self.active_mut(source.window) {
-                        tab.error =
-                            Some(format!("{} does not apply to this selection.", action.name));
+                        tab.error = Some(fl!(
+                            "files-action-not-applicable",
+                            action = action.name.clone()
+                        ));
                     }
                     return Task::none();
                 }
@@ -307,16 +327,19 @@ impl Desktop {
                 if !self.matches_source(&source) {
                     return Task::none();
                 }
-                let mut items = vec![("Back".into(), Item::Back)];
+                let mut items = vec![(fl!("files-command-back"), Item::Back)];
                 for (index, app) in apps.iter().enumerate() {
                     let label = if index == 0 {
-                        format!("{} (default)", app.name)
+                        fl!(
+                            "files-menu-default-application",
+                            application = app.name.clone()
+                        )
                     } else {
                         app.name.clone()
                     };
                     items.push((label, Item::Application(app.clone())));
                 }
-                items.push(("Other Application…".into(), Item::OtherApplication));
+                items.push((fl!("files-menu-other-application"), Item::OtherApplication));
                 return self.present_menu(source, items);
             }
             Event::MenuItem(source, index) => {
@@ -417,7 +440,7 @@ impl Desktop {
 
         let mut items = Vec::new();
         if back {
-            items.push(("Back".into(), Item::Back));
+            items.push((fl!("files-command-back"), Item::Back));
         }
         for place in &self.configuration.settings.places {
             let item = match place {
@@ -426,25 +449,23 @@ impl Desktop {
                 _ => self.place_path(place).map(Item::Place),
             };
             if let Some(item) = item {
-                items.push((place.label().to_owned(), item));
+                items.push((place.label(), item));
             }
         }
         if self.devices.catalog.status == crate::local_volumes::DeviceStatus::Ready {
             for device in &self.devices.catalog.devices {
                 if device.root.is_some() || device.can_mount {
-                    let verb = if device.root.is_some() {
-                        "Open"
+                    let device_name = device.name.clone();
+                    let label = if device.root.is_some() {
+                        fl!("files-device-open-named", device = device_name)
                     } else {
-                        "Mount"
+                        fl!("files-device-mount-named", device = device_name)
                     };
-                    items.push((
-                        format!("{verb} {}", device.name),
-                        Item::Device(device.token, false),
-                    ));
+                    items.push((label, Item::Device(device.token, false)));
                 }
                 if let Some(kind) = device.removal {
                     items.push((
-                        format!("{} {}", kind.label(), device.name),
+                        kind.action_label(&device.name),
                         Item::Device(device.token, true),
                     ));
                 }
@@ -612,7 +633,7 @@ pub(super) fn overlay<'a>(
         )
         .push(
             container(opaque(super::accessibility_ui::semantic(
-                super::accessibility_ui::Node::menu("Actions").key("files-menu"),
+                super::accessibility_ui::Node::menu(fl!("files-toolbar-actions")).key("files-menu"),
                 menu,
             )))
             .padding([74, 10])

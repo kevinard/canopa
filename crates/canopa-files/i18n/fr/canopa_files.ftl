@@ -265,3 +265,402 @@ files-title-searching = Recherche en cours : { $query } — { $folder }
 files-title-search-stopping = Arrêt de la recherche : { $query } — { $folder }
 files-title-search-stopped = Recherche arrêtée : { $query } — { $folder }
 files-operations-save-before-closing = Enregistrez le résultat de l’opération avant de fermer la dernière fenêtre.
+
+## Actions menu (toolbar menu and context menu)
+
+files-menu-open = Ouvrir
+files-menu-open-with = Ouvrir avec…
+files-menu-new-folder = Nouveau dossier…
+files-menu-rename = Renommer…
+files-menu-delete-permanently = Supprimer définitivement…
+files-menu-edit-custom-actions = Modifier les actions personnalisées…
+files-menu-preferences = Préférences…
+files-menu-bookmark-folder = Ajouter ce dossier aux signets…
+files-menu-locations = Emplacements…
+files-menu-view-options = Options d’affichage…
+files-menu-other-application = Autre application…
+files-menu-default-application = { $application } (par défaut)
+files-action-not-applicable = « { $action } » ne s’applique pas à cette sélection.
+
+## Devices: removal and menu items ($device is a device name)
+
+files-device-power-off = Éteindre
+files-device-eject = Éjecter
+files-device-unmount = Démonter
+files-device-open-named = Ouvrir { $device }
+files-device-mount-named = Monter { $device }
+files-device-power-off-named = Éteindre { $device }
+files-device-eject-named = Éjecter { $device }
+files-device-unmount-named = Démonter { $device }
+
+## Devices: sidebar and requests
+
+files-devices = Périphériques
+files-devices-unavailable = Les périphériques sont indisponibles.
+files-devices-error = Périphériques : { $error }
+files-cancel = Annuler
+files-review = Examiner
+files-open-folder = Ouvrir le dossier
+files-device-cancelling = Annulation…
+files-device-needs-decision = Une décision est nécessaire
+files-device-mounting = Montage…
+files-device-powering-off = Mise hors tension…
+files-device-ejecting = Éjection…
+files-device-unmounting = Démontage…
+files-device-connecting = Connexion…
+files-device-mounted = Monté
+files-device-connected = Connecté
+files-device-connected-remote = Connecté sans dossier local : le démon FUSE de GVFS (gvfsd-fuse) n’est pas lancé, seule une liste en lecture seule est disponible
+files-device-removed = Retiré
+files-device-cancelled = Annulé
+files-device-failed = Impossible de terminer : { $error }
+files-device-finished = Terminé
+
+## New folder and Rename dialog
+
+files-new-folder-name = Nouveau dossier
+files-create = Créer
+files-name-full-name = Nom complet
+files-name-folder-name = Nom du dossier
+files-name-invalid = Saisissez un seul nom, sans barre oblique. Les noms . et .. sont réservés.
+files-name-dialog-failed = Impossible d’ouvrir la boîte de dialogue du nom.
+files-rename-worker-stopped = Le service des opérations s’est arrêté avant de préparer le renommage.
+files-operation-queue-unavailable = La file des opérations est indisponible.
+files-accepting-operation = Acceptation de l’opération…
+files-home-path = Dossier personnel / { $path }
+
+## Permanent deletion confirmation
+
+files-delete-title = Supprimer définitivement ?
+files-delete-title-empty-trash = Vider la corbeille ?
+files-delete-title-no-trash = Impossible de mettre à la corbeille
+files-delete-one = Supprimer définitivement « { $name } » ? Cette action est irréversible.
+files-delete-many = { $count ->
+    [one] Supprimer définitivement { $count } élément ? Cette action est irréversible.
+   *[other] Supprimer définitivement { $count } éléments ? Cette action est irréversible.
+}
+files-delete-no-trash-one = « { $name } » se trouve sur un volume sans corbeille utilisable et ne peut donc pas être mis à la corbeille. Le supprimer définitivement à la place ? Cette action est irréversible.
+files-delete-no-trash-many = { $count ->
+    [one] { $count } élément se trouve sur un volume sans corbeille utilisable et ne peut donc pas être mis à la corbeille. Le supprimer définitivement à la place ? Cette action est irréversible.
+   *[other] { $count } éléments se trouvent sur un volume sans corbeille utilisable et ne peuvent donc pas être mis à la corbeille. Les supprimer définitivement à la place ? Cette action est irréversible.
+}
+files-delete-empty-trash = { $count ->
+    [one] Supprimer définitivement l’unique élément de la corbeille ? Cette action est irréversible.
+   *[other] Supprimer définitivement les { $count } éléments de la corbeille ? Cette action est irréversible.
+}
+files-delete-empty-main-trash = { $count ->
+    [one] Supprimer définitivement l’unique élément de la corbeille principale ? Cette action est irréversible.
+   *[other] Supprimer définitivement les { $count } éléments de la corbeille principale ? Cette action est irréversible.
+}
+files-delete-from-trash-one = Supprimer définitivement « { $name } » de la corbeille ? Cette action est irréversible.
+files-delete-from-trash-many = { $count ->
+    [one] Supprimer définitivement { $count } élément de la corbeille ? Cette action est irréversible.
+   *[other] Supprimer définitivement { $count } éléments de la corbeille ? Cette action est irréversible.
+}
+files-empty-trash = Vider la corbeille
+files-delete-items = { $count ->
+    [one] Supprimer { $count } élément
+   *[other] Supprimer { $count } éléments
+}
+files-confirmation-failed = Impossible d’ouvrir la confirmation.
+
+## Dates
+
+files-date-time = { $date } · { $time }
+files-unknown = Inconnue
+
+## Operation questions: conflicts and Undo decisions
+
+files-question-undo = L’annulation nécessite une décision
+files-question-recovery = La copie de récupération nécessite une décision
+files-question-folder-conflict = Conflit de dossiers
+files-question-file-conflict = Conflit de fichiers
+files-question-destination-unavailable = Destination indisponible
+files-question-failed = Impossible d’ouvrir la question de l’opération. Consultez l’opération pour réessayer.
+files-conflict-folder-exists = Un dossier nommé « { $name } » existe déjà dans la destination.
+files-conflict-item-exists = Un élément nommé « { $name } » existe déjà dans la destination.
+files-conflict-merge-explanation = Fusionner combine ces dossiers et demande quoi faire pour chaque collision. Conserver les deux renomme le dossier entrant. Ignorer le laisse intact.
+files-conflict-recovery-explanation = « Conserver les deux » copie l’élément enregistré sous un nouveau nom. « Ignorer » laisse les deux éléments intacts.
+files-conflict-replace-explanation = Remplacer enregistre le fichier existant pour pouvoir annuler. Conserver les deux renomme le fichier entrant. Ignorer laisse les deux intacts.
+files-conflict-kind-explanation = Ce nom est déjà utilisé par un élément d’un autre type. Conserver les deux donne un autre nom à l’élément entrant. Ignorer laisse les deux éléments intacts.
+files-conflict-saved-version = Version enregistrée dans Récupération
+files-conflict-incoming = Entrant
+files-conflict-existing = Existant
+files-conflict-replace = Remplacer
+files-conflict-merge = Fusionner
+files-conflict-keep-both = Conserver les deux
+files-conflict-skip = Ignorer
+files-conflict-apply-folders = Appliquer aux conflits de dossiers restants
+files-conflict-apply-files = Appliquer aux conflits de fichiers restants
+files-transfer-paused = Le transfert est en pause
+files-transfer-unavailable-explanation = Rétablissez l’accès à la destination, puis choisissez Réessayer. Annuler conserve les fichiers source non terminés.
+files-destination = Destination
+files-system-details = Détails système · { $details }
+files-kind-special = Élément spécial
+files-entry-metadata = { $bytes ->
+    [one] { $kind } · { $bytes } octet
+   *[other] { $kind } · { $bytes } octets
+}
+    Modifié le { $modified }
+files-entry-metadata-folder = { $kind }
+    Modifié le { $modified }
+files-undo-keep-item = Conserver l’élément
+files-undo-finish-step = Terminer l’étape
+files-undo-move-remaining = Déplacer les éléments restants
+files-undo-keep-remaining = Conserver les éléments restants
+files-undo-finish-merge = Terminer cette fusion
+files-undo-move-to-recovery = Déplacer l’élément modifié vers Récupération
+files-undo-use-saved-version = Utiliser la version enregistrée
+files-undo-return-item = Rétablir l’élément
+files-undo-restore-previous = Restaurer la destination précédente
+files-undo-restoring-from-trash = Restauration depuis la corbeille
+files-undo-saved-previous = Destination précédente enregistrée
+files-undo-existing-item = Élément existant
+files-undo-unavailable = Indisponible · { $error }
+files-undo-destination = Destination · { $location }
+files-undo-return-to = Rétablir vers · { $location }
+files-undo-explain-current = L’annulation ramènerait cet élément à un nom déjà utilisé. Examinez les deux versions avant de choisir. Remplacer conserve l’élément déplacé dans Récupération ; Conserver les deux le rétablit sous un nouveau nom. Ignorer laisse cette étape disponible pour plus tard.
+files-undo-explain-trash = Un élément de la corbeille doit retrouver un nom déjà utilisé. Examinez les deux versions. Conserver les deux le restaure sous un autre nom ; Ignorer le garde disponible pour plus tard.
+files-undo-explain-previous-destination = L’annulation restaure une destination précédente enregistrée, mais son nom d’origine est utilisé. Examinez les deux versions. Les éléments remplacés restent protégés dans Récupération.
+files-undo-explain-nonempty-folder = Ce dossier créé contient maintenant des travaux plus récents. Conserver l’élément laisse le dossier et son contenu en place et termine son étape de création. Ignorer garde l’étape disponible pour plus tard.
+files-undo-explain-changed-created-folder = Le dossier créé a été modifié, déplacé ou remplacé. Conserver l’élément laisse l’élément actuel intact et termine cette étape de création. Ignorer vous permet de décider plus tard.
+files-undo-explain-unavailable-created-folder = Le dossier créé ne peut pas être examiné. Rétablissez son emplacement ou son accès avant de réessayer. Terminer l’étape laisse les fichiers intacts et abandonne cette étape de suppression ; Ignorer la garde pour plus tard.
+files-undo-explain-merge-remainder = Des éléments restent dans la destination fusionnée. Déplacer les éléments restants poursuit le retour en traitant les nouveaux conflits. Conserver les éléments restants les laisse ici et termine cette branche. Ignorer vous permet de décider plus tard.
+files-undo-explain-merge = Un dossier utilisé par cette fusion partielle a été déplacé, modifié ou ne peut pas être examiné. Rétablissez son emplacement d’origine ou son accès pour continuer. Terminer cette fusion laisse les fichiers en place et conserve les destinations précédentes enregistrées dans Récupération. Les éléments déjà rétablis restent où ils sont.
+files-undo-explain-changed-copy = Cet élément copié a changé depuis la copie. Déplacer l’élément modifié vers Récupération préserve son contenu plus récent avant d’annuler la copie. Conserver l’élément le laisse ici et termine son étape de copie ; Ignorer vous permet de décider plus tard.
+files-undo-explain-changed-retained = La version enregistrée a changé. Examinez l’élément enregistré et l’élément actuel avant de choisir de l’utiliser. Conserver l’élément préserve l’élément actuel et termine cette étape, en gardant les versions protégées dans Récupération.
+files-undo-explain-changed-move = L’élément déplacé ou sa destination a changé. Rétablir l’élément ramène l’élément actuel examiné et préserve toute destination précédente enregistrée. Conserver l’élément laisse l’élément actuel en place et termine cette étape. Ignorer la garde pour plus tard.
+files-undo-explain-unavailable-move = L’élément déplacé ne peut pas être examiné. Rétablissez son emplacement ou son accès avant de continuer. Restaurer la destination précédente ne rétablit que cette version enregistrée, si elle est disponible. Terminer l’étape laisse l’élément déplacé intact et préserve les données protégées dans Récupération.
+files-undo-explain-unavailable-retained = Une version précédente enregistrée ne peut pas être examinée. Rétablissez son emplacement ou son accès pour réessayer. Rétablir l’élément n’effectue que le retour disponible, s’il est proposé. Terminer l’étape laisse les fichiers actuels intacts et conserve les données protégées enregistrées dans Récupération.
+
+## Operation queue messages
+
+files-jobs-admission-full = La file d’admission des opérations est pleine pendant le retrait d’un périphérique. Réessayez une fois le retrait terminé.
+files-jobs-cancelled-before-start = Annulée avant le démarrage
+files-jobs-startup-stopped = Le démarrage de l’opération a été arrêté.
+files-jobs-queue-full = La file des opérations est indisponible ou pleine. Réessayez.
+files-jobs-volume-worker-stopped = Le service des volumes s’est arrêté avant sa première observation.
+files-jobs-recovery-busy = Le lecteur de Récupération est indisponible ou occupé. Réessayez.
+files-jobs-interrupted-needs-review = Un travail interrompu doit être examiné dans Récupération avant d’autres modifications.
+files-jobs-recovery-cancelled-removal = Examen de Récupération annulé pendant l’attente du retrait d’un périphérique.
+files-jobs-drag-cancelled-removal = Préparation du glisser annulée pendant l’attente du retrait d’un périphérique.
+files-jobs-close-worker-busy = Terminez ou annulez le travail en cours, reprenez ou abandonnez les transferts arrêtés et enregistrez chaque résultat avant de fermer le service des opérations.
+files-jobs-needs-reconciliation = Une opération doit être réconciliée avant d’autres modifications.
+files-jobs-kept-in-recovery = Élément conservé dans Récupération. Le travail interrompu est préservé ; récupérez une copie si nécessaire.
+files-jobs-retry-interrupted = Réessayer l’opération interrompue
+files-jobs-journals-rechecked = Journaux des opérations interrompues revérifiés.
+files-jobs-worker-stopped = Le service des opérations s’est arrêté de manière inattendue
+files-jobs-reconciliation-retained = réconciliation du journal terminée ; résultat enregistré conservé
+files-jobs-interrupted-steps = Opération de fichiers n° { $operation } : { $steps } étapes confirmées restent dans l’historique. Examinez le travail effectué avant de lancer une nouvelle demande ; cette demande enregistrée ne sera pas relancée.
+files-jobs-interrupted-journal = Opération de fichiers n° { $operation } : { $steps } étapes confirmées restent dans l’historique ; son journal doit encore être examiné dans Récupération. Examinez le travail effectué avant de lancer une nouvelle demande ; cette demande enregistrée ne sera pas relancée.
+files-jobs-interrupted-no-history = Opération de fichiers n° { $operation } : { $steps } étapes confirmées restent dans l’historique ; son historique d’annulation n’est plus disponible. Examinez le travail effectué avant de lancer une nouvelle demande ; cette demande enregistrée ne sera pas relancée.
+files-jobs-some-work-cannot-continue = Une partie du travail enregistré ne peut pas encore continuer : { $error }
+files-jobs-transfer-cannot-continue = Le transfert enregistré ne peut pas encore continuer : { $error }
+files-jobs-reconciliation-not-saved = Résultat de la réconciliation non enregistré : { $error }
+files-jobs-result-not-saved = Résultat non enregistré : { $error }
+files-jobs-save-failed = Impossible d’enregistrer l’opération : { $error }
+files-undo-outcome = { $reversed } annulé(s) · { $kept } conservé(s) · { $skipped } ignoré(s) · { $dismissed } étape(s) écartée(s) · { $unrestored } destination(s) précédente(s) non restaurée(s) · { $unremoved } élément(s) non supprimé(s) · { $remaining } restant(s)
+files-undo-outcome-cancelled = { $outcome } · annulé
+
+## Operation titles ($name is a file name, $destination a folder name)
+
+files-job-keep-in-recovery = Conserver { $name } dans Récupération
+files-job-recover = Récupérer { $name }
+files-job-create-folder = Créer le dossier { $name }
+files-job-rename = Renommer { $source } en { $destination }
+files-job-restore = Restaurer { $name }
+files-job-trash = { $count ->
+    [one] Mettre { $count } élément à la corbeille
+   *[other] Mettre { $count } éléments à la corbeille
+}
+files-job-delete = { $count ->
+    [one] Supprimer définitivement { $count } élément
+   *[other] Supprimer définitivement { $count } éléments
+}
+files-job-empty-trash = { $count ->
+    [one] Vider la corbeille ({ $count } élément)
+   *[other] Vider la corbeille ({ $count } éléments)
+}
+files-job-delete-from-trash = { $count ->
+    [one] Supprimer définitivement { $count } élément de la corbeille
+   *[other] Supprimer définitivement { $count } éléments de la corbeille
+}
+files-job-copy = { $count ->
+    [one] Copier { $count } élément vers { $destination }
+   *[other] Copier { $count } éléments vers { $destination }
+}
+files-job-move = { $count ->
+    [one] Déplacer { $count } élément vers { $destination }
+   *[other] Déplacer { $count } éléments vers { $destination }
+}
+
+## Operation history records (src/history_labels.rs)
+## Lower-case phrases that name a recorded operation; $operation is one of them.
+
+files-history-undo = Annuler : { $operation }
+files-history-interrupted = Interrompu : { $operation }
+files-history-preserved-undo = Préservé par l’annulation : { $operation }
+files-history-preserved-kept-item = Préservé en conservant un élément pendant l’annulation : { $operation }
+files-history-preserved-unavailable-item = Préservé après avoir terminé un élément indisponible pendant l’annulation : { $operation }
+files-history-preserved-unavailable-saved = Préservé après avoir terminé une version enregistrée indisponible pendant l’annulation : { $operation }
+files-history-operation = opération
+files-history-restore-permissions = Restaurer les permissions du dossier
+files-history-kept-undo-folder = Dossier de travail d’annulation interrompue conservé
+files-history-create-folder = création du dossier { $name }
+files-history-rename = renommage de { $source } en { $destination }
+files-history-copy = copie vers { $destination }
+files-history-move = déplacement vers { $destination }
+files-history-trash = { $count ->
+    [one] mise à la corbeille de { $count } élément
+   *[other] mise à la corbeille de { $count } éléments
+}
+files-history-restore = restauration de { $name }
+files-history-recover = récupération de { $name }
+
+## Desktop notifications
+
+files-notifications-unavailable = Les notifications du bureau sont indisponibles.
+files-notification-timed-out = La notification du bureau a expiré.
+files-notification-not-sent = La notification du bureau n’a pas pu être envoyée.
+files-notifications-busy = Les notifications du bureau sont occupées ou indisponibles.
+files-app-full-name = Fichiers Canopa
+files-notification-decision = Une opération nécessite une décision
+files-notification-worker-stopped = Le service des notifications du bureau s’est arrêté avant de répondre.
+files-completed-detail = Terminée.
+files-notification-decision-body = { $operation } · Ouvrez Opérations pour l’examiner.
+
+## File operations window
+
+files-recovery-reader-stopped = Le lecteur de Récupération s’est arrêté avant de répondre.
+files-operation-queue-unavailable-short = La file des opérations est indisponible
+files-operation-worker-stopped-acceptance = Le service des opérations s’est arrêté avant de confirmer l’acceptation.
+files-abandon-not-saved = La file des opérations s’est arrêtée avant l’enregistrement de l’abandon.
+files-dismissal-not-saved = La file des opérations s’est arrêtée avant l’enregistrement du rejet.
+files-history-heading = Historique des fichiers
+files-history-latest = Plus récentes
+files-history-older = Plus anciennes
+files-history-preparing = Préparation des opérations sur les fichiers…
+files-history-empty = Aucune opération sur les fichiers pour l’instant
+files-history-empty-description = Les modifications de fichiers effectuées dans Fichiers apparaîtront ici.
+files-history-moved-to-trash = Mis à la corbeille
+files-history-renamed = Renommé
+files-history-created-folder = Dossier créé
+files-details = Détails
+files-retry-save = Réessayer l’enregistrement
+files-retry-failed-items = Réessayer les éléments en échec
+files-continue-remaining = Poursuivre le travail restant
+files-abandon-unfinished = Abandonner le travail inachevé
+files-dismiss-request = Écarter la demande
+files-dismiss-request-description = Écarter libère cette demande enregistrée. Le travail effectué et l’annulation restent disponibles.
+files-retry-failed-recovery = Réessayer les copies de récupération en échec
+files-continue-recovery = Poursuivre la copie de récupération
+files-phase-completed = Terminée
+files-recent-activity = Activité récente
+files-phase-queued = En attente
+files-phase-running = En cours
+files-phase-awaiting-review = Non démarrée · examen nécessaire
+files-phase-interrupted = Interrompue · examen nécessaire
+files-phase-failed = Impossible de terminer
+files-phase-stopped = Arrêtée · examen nécessaire
+files-phase-start-save-failed = Non démarrée · enregistrement impossible
+files-phase-save-failed = Résultat non enregistré
+files-operation-summary = { $status } · { $operation }
+files-operation-announcement = { $operation } : { $status }
+files-operation-announcement-error = { $operation } : { $status }. { $error }
+files-history-renamed-to = Renommé en { $name }
+files-history-previously = Anciennement { $name }
+files-history-accepted = Demande acceptée le { $date }
+files-history-count = { $count ->
+    [one] { $count } opération
+   *[other] { $count } opérations
+}
+files-history-count-latest-first = { $count ->
+    [one] { $count } opération  ·  Plus récentes d’abord
+   *[other] { $count } opérations  ·  Plus récentes d’abord
+}
+
+## Transfer details and progress
+
+files-details-completed = Destinations terminées ({ $count })
+files-details-failed = Éléments en échec ({ $count })
+files-details-skipped = Éléments ignorés ({ $count })
+files-details-remaining = Éléments restants ({ $count })
+files-details-sources = Dossiers source à examiner ({ $count })
+files-details-completed-short = Terminés ({ $count })
+files-details-failed-short = Échecs ({ $count })
+files-details-skipped-short = Ignorés ({ $count })
+files-details-remaining-short = Restants ({ $count })
+files-details-sources-short = Sources ({ $count })
+files-details-failure = Source
+    { $source }
+    Destination
+    { $destination }
+    { $error }
+files-details-truncated = … (tronqué)
+files-details-failed-to-open = Impossible d’ouvrir les détails du transfert. Réessayez Détails dans Opérations.
+files-review-decision = Examiner la décision
+files-details-section-empty = Aucun élément dans cette section.
+files-details-entry = { $number }. { $entry }
+files-details-page = Éléments { $first } à { $last } sur { $count }
+files-details-gone = Cette opération n’est plus disponible.
+files-previous = Précédent
+files-next = Suivant
+files-progress-paused-at = En pause sur { $name }
+files-progress-checking = Vérification de { $name }
+files-progress-transferring = Transfert de { $name }
+files-progress-counts = { $total ->
+    [one] { $done } sur { $total } élément · { $bytes } sur { $total_bytes }
+   *[other] { $done } sur { $total } éléments · { $bytes } sur { $total_bytes }
+}
+files-progress-counting = { $total ->
+    [one] { $done } sur { $total }+ élément · { $bytes } · comptage…
+   *[other] { $done } sur { $total }+ éléments · { $bytes } · comptage…
+}
+files-progress-running-counts = { $done ->
+    [one] { $done } élément · { $bytes }
+   *[other] { $done } éléments · { $bytes }
+}
+files-progress-rate = { $size }/s
+files-progress-time-left = environ { $duration } restantes
+files-progress-few-seconds-left = encore quelques secondes
+files-progress-rate-and-time = { $rate } · { $left }
+
+## Operations window and custom commands
+
+files-phase-waiting-for-device = En attente du retrait d’un périphérique…
+files-output-stdout = Sortie standard
+files-output-stderr = Sortie d’erreur
+files-output-empty = (vide)
+files-output-truncated = [La sortie a été tronquée]
+files-actions-runtime-unavailable = Le service des actions personnalisées est indisponible.
+files-actions-runtime-stopped-admission = Le service des actions personnalisées s’est arrêté avant de répondre à l’admission.
+files-new-browser = Nouveau navigateur
+files-operations-subtitle = Modifications de fichiers, transferts et résultats des commandes
+files-custom-commands = Commandes personnalisées
+files-latest-commands = Commandes récentes
+files-older-commands = Commandes plus anciennes
+files-hide-output = Masquer la sortie
+files-show-output = Afficher la sortie
+files-previous-page = Page précédente
+files-next-page = Page suivante
+files-copy-all-output = Copier toute la sortie
+
+## Custom action commands
+
+files-action-folder-changed = Le dossier d’origine de l’action a changé. Retournez dans ce dossier et lancez de nouveau l’action.
+files-action-command-terminated = Commande interrompue
+files-action-runtime-stopped = Le service des actions personnalisées s’est arrêté.
+files-action-queue-full = La file des actions personnalisées est indisponible ou pleine. Réessayez.
+files-action-close-busy = Terminez ou annulez les commandes acceptées et transmettez leurs avis de fin avant d’arrêter le service des actions personnalisées.
+files-action-invalid-request = Une action personnalisée nécessite des chemins sélectionnés absolus et son dossier de travail d’origine.
+files-action-too-many = Trop de commandes inachevées ou de résultats non remis. Terminez ou annulez le travail et récupérez ses avis de fin avant d’en lancer un autre.
+files-action-sequence-exhausted = La séquence des actions personnalisées est épuisée.
+files-action-worker-stopped = Le service des commandes s’est arrêté de manière inattendue.
+files-output-heading = { $stream } :
+files-custom-actions-error = Actions personnalisées : { $error }
+files-command-job-folder = { $folder }  ·  { $count ->
+    [one] { $count } sélectionné
+   *[other] { $count } sélectionnés
+}
+files-action-exit-code = Échec · code de sortie { $code }
+files-action-could-not-run = Exécution impossible : { $error }

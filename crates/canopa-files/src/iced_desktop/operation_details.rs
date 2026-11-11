@@ -36,23 +36,23 @@ impl Section {
         Self::Sources,
     ];
 
-    fn label(self) -> &'static str {
+    fn label(self, count: usize) -> String {
         match self {
-            Self::Completed => "Completed destinations",
-            Self::Failed => "Failed items",
-            Self::Skipped => "Skipped items",
-            Self::Remaining => "Remaining items",
-            Self::Sources => "Source folders to review",
+            Self::Completed => fl!("files-details-completed", count = count),
+            Self::Failed => fl!("files-details-failed", count = count),
+            Self::Skipped => fl!("files-details-skipped", count = count),
+            Self::Remaining => fl!("files-details-remaining", count = count),
+            Self::Sources => fl!("files-details-sources", count = count),
         }
     }
 
-    fn compact_label(self) -> &'static str {
+    fn compact_label(self, count: usize) -> String {
         match self {
-            Self::Completed => "Completed",
-            Self::Failed => "Failed",
-            Self::Skipped => "Skipped",
-            Self::Remaining => "Remaining",
-            Self::Sources => "Sources",
+            Self::Completed => fl!("files-details-completed-short", count = count),
+            Self::Failed => fl!("files-details-failed-short", count = count),
+            Self::Skipped => fl!("files-details-skipped-short", count = count),
+            Self::Remaining => fl!("files-details-remaining-short", count = count),
+            Self::Sources => fl!("files-details-sources-short", count = count),
         }
     }
 
@@ -77,11 +77,11 @@ impl Section {
         let paths = match self {
             Self::Failed => {
                 let failure = &report.failures[index];
-                return format!(
-                    "Source\n{}\nDestination\n{}\n{}",
-                    display(&failure.source),
-                    display(&failure.destination),
-                    bounded(&failure.message, false)
+                return fl!(
+                    "files-details-failure",
+                    source = display(&failure.source),
+                    destination = display(&failure.destination),
+                    error = bounded(&failure.message, false)
                 );
             }
             Self::Completed => &report.destinations,
@@ -109,7 +109,7 @@ fn bounded(label: &str, more: bool) -> String {
     let mut chars = label.chars();
     let mut label: String = chars.by_ref().take(4096).collect();
     if more || chars.next().is_some() {
-        label.push_str("… (truncated)");
+        label.push_str(&fl!("files-details-truncated"));
     }
     label
 }
@@ -129,26 +129,23 @@ pub(super) fn progress<'a>(
         return None;
     }
     let progress = job.progress.as_ref()?;
-    let stage = if job.phase == Phase::Waiting {
-        "Paused at"
-    } else if progress.verifying {
-        "Checking"
-    } else {
-        "Transferring"
-    };
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().label_size.px();
-    let title = format!(
-        "{stage} {}",
-        bounded(
-            &progress
-                .path
-                .file_name()
-                .unwrap_or(progress.path.as_os_str())
-                .to_string_lossy(),
-            false
-        )
+    let name = bounded(
+        &progress
+            .path
+            .file_name()
+            .unwrap_or(progress.path.as_os_str())
+            .to_string_lossy(),
+        false,
     );
+    let title = if job.phase == Phase::Waiting {
+        fl!("files-progress-paused-at", name = name)
+    } else if progress.verifying {
+        fl!("files-progress-checking", name = name)
+    } else {
+        fl!("files-progress-transferring", name = name)
+    };
     let mut description = vec![progress_counts(progress)];
     description.extend(progress_rate(progress));
     let fraction = progress_fraction(progress);
@@ -206,49 +203,59 @@ fn progress_fraction(progress: &TransferProgress) -> Option<f32> {
         .then(|| (work(progress.completed as u64, progress.bytes) / all).clamp(0.0, 1.0) as f32)
 }
 
-fn items(count: u64) -> &'static str {
-    if count == 1 { "item" } else { "items" }
-}
-
 /// "X of Y items · A of B", or the running counts while the scan continues.
 pub(super) fn progress_counts(progress: &TransferProgress) -> String {
     let done = progress.completed as u64;
     let size = super::listing_ui::size;
     match progress.total {
-        Some(total) if total.complete => format!(
-            "{done} of {} {} · {} of {}",
-            total.items.max(done),
-            items(total.items.max(done)),
-            size(progress.bytes),
-            size(total.bytes.max(progress.bytes)),
+        Some(total) if total.complete => fl!(
+            "files-progress-counts",
+            done = done,
+            total = total.items.max(done),
+            bytes = size(progress.bytes),
+            total_bytes = size(total.bytes.max(progress.bytes))
         ),
-        Some(total) => format!(
-            "{done} of {}+ {} · {} · counting…",
-            total.items.max(done),
-            items(total.items.max(done)),
-            size(progress.bytes),
+        Some(total) => fl!(
+            "files-progress-counting",
+            done = done,
+            total = total.items.max(done),
+            bytes = size(progress.bytes)
         ),
-        None => format!("{done} {} · {}", items(done), size(progress.bytes)),
+        None => fl!(
+            "files-progress-running-counts",
+            done = done,
+            bytes = size(progress.bytes)
+        ),
     }
 }
 
 /// "12.0 MiB/s · about 2 min left" once the estimate has settled.
 pub(super) fn progress_rate(progress: &TransferProgress) -> Option<String> {
-    let rate = progress
-        .bytes_per_second
-        .map(|rate| format!("{}/s", super::listing_ui::size(rate as u64)));
+    let rate = progress.bytes_per_second.map(|rate| {
+        fl!(
+            "files-progress-rate",
+            size = super::listing_ui::size(rate as u64)
+        )
+    });
     let remaining = progress.remaining.map(|left| {
         let seconds = left.as_secs();
-        let label = match seconds {
-            0..5 => "a few seconds".to_owned(),
-            5..60 => format!("{} s", seconds.div_ceil(5) * 5),
-            60..3600 => format!("{} min", seconds.div_ceil(60)),
-            _ => format!("{} h {} min", seconds / 3600, (seconds % 3600) / 60),
+        let rounded = match seconds {
+            0..5 => return fl!("files-progress-few-seconds-left"),
+            5..60 => seconds.div_ceil(5) * 5,
+            60..3600 => seconds.div_ceil(60) * 60,
+            _ => seconds,
         };
-        format!("about {label} left")
+        fl!(
+            "files-progress-time-left",
+            duration = canopa_i18n::format::duration(rounded)
+        )
     });
     match (rate, remaining) {
-        (Some(rate), Some(left)) => Some(format!("{rate} · {left}")),
+        (Some(rate), Some(left)) => Some(fl!(
+            "files-progress-rate-and-time",
+            rate = rate,
+            left = left
+        )),
         (rate, left) => rate.or(left),
     }
 }
@@ -325,8 +332,7 @@ impl Desktop {
         }
         if opened.is_none() {
             self.file_operations.details = None;
-            self.file_operations.error =
-                Some("Could not open transfer details. Try Details again in Operations.".into());
+            self.file_operations.error = Some(fl!("files-details-failed-to-open"));
             return self.exit_if_empty();
         }
         iced::widget::operation::focus(control(id, 0)).chain(window::gain_focus(id))
@@ -463,9 +469,14 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
     let font = canopa_ui::font(appearance);
     let small = appearance.typography().label_size.px();
     let title: Element<'_, Message> = if compact {
-        chrome::section_title(appearance, "Transfer details").into()
+        chrome::section_title(appearance, fl!("files-transfer-details-title")).into()
     } else {
-        chrome::dialog_heading(desktop, chrome::Icon::Activity, "Transfer details", "")
+        chrome::dialog_heading(
+            desktop,
+            chrome::Icon::Activity,
+            fl!("files-transfer-details-title"),
+            "",
+        )
     };
     let mut facts = column![title].spacing(12);
     let mut sections = row![].spacing(8);
@@ -481,9 +492,12 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
     {
         let mut overview = column![
             row![
-                chrome::section_title(appearance, bounded(&job.title, false))
-                    .width(Length::Fill)
-                    .wrapping(text::Wrapping::WordOrGlyph),
+                chrome::section_title(
+                    appearance,
+                    bounded(&crate::history_labels::title(&job.title), false)
+                )
+                .width(Length::Fill)
+                .wrapping(text::Wrapping::WordOrGlyph),
                 super::file_operation_rows::phase_badge(appearance, job)
             ]
             .spacing(8)
@@ -508,7 +522,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
         if let Some(destination) = destination {
             let path = super::question_dialog::display_location(&desktop.home, destination);
             overview = overview.push(
-                text(format!("Destination · {path}"))
+                text(fl!("files-undo-destination", location = path))
                     .font(font)
                     .size(small)
                     .style(canopa_ui::muted)
@@ -524,7 +538,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
                 Some(message.clone()),
                 appearance,
                 canopa_ui::styled_action(
-                    text("Review decision").font(font).size(small),
+                    text(fl!("files-review-decision")).font(font).size(small),
                     Some(message),
                     canopa_ui::Action::Primary,
                     false,
@@ -552,18 +566,26 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             let start = page * PAGE_SIZE;
             let end = start.saturating_add(PAGE_SIZE).min(count);
             facts = facts.push(
-                chrome::section_title(appearance, format!("{} ({count})", section.label()))
+                chrome::section_title(appearance, section.label(count))
                     .wrapping(text::Wrapping::WordOrGlyph),
             );
             if count == 0 {
-                facts = facts.push(text("No items in this section.").font(font).size(small));
+                facts = facts.push(
+                    text(fl!("files-details-section-empty"))
+                        .font(font)
+                        .size(small),
+                );
             }
             for index in start..end {
                 facts = facts.push(
-                    text(format!("{}. {}", index + 1, section.entry(report, index)))
-                        .font(font)
-                        .size(small)
-                        .wrapping(text::Wrapping::WordOrGlyph),
+                    text(fl!(
+                        "files-details-entry",
+                        number = index.saturating_add(1),
+                        entry = section.entry(report, index)
+                    ))
+                    .font(font)
+                    .size(small)
+                    .wrapping(text::Wrapping::WordOrGlyph),
                 );
             }
             for (index, choice) in Section::ALL.into_iter().enumerate() {
@@ -579,15 +601,11 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
                     Some(message.clone()),
                     appearance,
                     canopa_ui::styled_action(
-                        text(format!(
-                            "{} ({})",
-                            if compact {
-                                choice.compact_label()
-                            } else {
-                                choice.label()
-                            },
-                            choice.count(report)
-                        ))
+                        text(if compact {
+                            choice.compact_label(choice.count(report))
+                        } else {
+                            choice.label(choice.count(report))
+                        })
                         .font(font)
                         .size(small),
                         Some(message),
@@ -603,9 +621,14 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             }
             let mut controls = row![
                 text(if count == 0 {
-                    "0 items".into()
+                    fl!("files-status-items", count = 0_usize)
                 } else {
-                    format!("Items {}–{end} of {count}", start + 1)
+                    fl!(
+                        "files-details-page",
+                        first = start.saturating_add(1),
+                        last = end,
+                        count = count
+                    )
                 })
                 .font(font)
                 .size(small)
@@ -613,8 +636,8 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             .spacing(8)
             .align_y(iced::Alignment::Center);
             for (index, label, target) in [
-                (6, "Previous", (page > 0).then(|| page - 1)),
-                (7, "Next", (page < last).then_some(page + 1)),
+                (6, fl!("files-previous"), (page > 0).then(|| page - 1)),
+                (7, fl!("files-next"), (page < last).then_some(page + 1)),
             ] {
                 let id = control(dialog.window, index);
                 let message = target.map(|page| {
@@ -644,11 +667,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             pagination = Some(controls.wrap());
         }
     } else {
-        facts = facts.push(
-            text("This operation is no longer available.")
-                .font(font)
-                .size(small),
-        );
+        facts = facts.push(text(fl!("files-details-gone")).font(font).size(small));
     }
     let message = Message::FileOperation(Event::DetailsClose(dialog.window));
     let close = super::focus::button(
@@ -656,7 +675,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
         Some(message.clone()),
         appearance,
         canopa_ui::styled_action(
-            text("Close").font(font).size(small),
+            text(fl!("files-close")).font(font).size(small),
             Some(message),
             canopa_ui::Action::Normal,
             false,

@@ -144,6 +144,16 @@ fn detail_value(entry: &Entry, detail: Detail) -> Option<String> {
     }
 }
 /// The local modification time as the Modified detail shows it.
+/// A date and time with seconds, as dialogs and properties show it.
+pub(super) fn date_time_seconds(time: chrono::NaiveDateTime) -> String {
+    use canopa_i18n::format;
+    fl!(
+        "files-date-time",
+        date = format::date(time.date()),
+        time = format::time_with(time.time(), true, format::HourCycleChoice::Locale)
+    )
+}
+
 pub(super) fn modified(entry: &Entry) -> Option<String> {
     entry.modified.and_then(local_time).map(|time| {
         canopa_i18n::format::date_time_with(time, canopa_i18n::format::DateStyle::Short)

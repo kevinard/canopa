@@ -4,7 +4,7 @@ use crate::{operation_jobs::Request, operations::OperationRequest};
 use canopa_theme::UiKind;
 use iced::{
     Length,
-    widget::{column, container, row, text, text_input},
+    widget::{column, container, text, text_input},
 };
 
 pub(super) struct Dialog {
@@ -18,11 +18,11 @@ pub(super) struct Dialog {
     prepared: Option<crate::operation_jobs::PreparedRename>,
 }
 impl Dialog {
-    pub fn title(&self) -> &'static str {
+    pub fn title(&self) -> String {
         if self.original.is_some() {
-            "Rename"
+            fl!("files-command-rename")
         } else {
-            "New folder"
+            fl!("files-command-new-folder")
         }
     }
 }
@@ -60,9 +60,9 @@ impl Desktop {
                     self.file_operations.preparing_name = Some(origin.clone());
                     return Task::perform(
                         async move {
-                            receiver.await.unwrap_or_else(|_| {
-                                Err("The operation worker stopped before preparing Rename.".into())
-                            })
+                            receiver
+                                .await
+                                .unwrap_or_else(|_| Err(fl!("files-rename-worker-stopped")))
                         },
                         move |result| {
                             Message::FileOperation(Event::RenamePrepared(origin.clone(), result))
@@ -113,7 +113,7 @@ impl Desktop {
             .as_deref()
             .and_then(Path::file_name)
             .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "New folder".into());
+            .unwrap_or_else(|| fl!("files-new-folder-name"));
         let (window, opened) = window::open_transient(
             owner,
             window::Settings {
@@ -155,7 +155,7 @@ impl Desktop {
         }
         if opened.is_none() {
             self.file_operations.name = None;
-            self.file_operations.error = Some("Could not open the name dialog.".into());
+            self.file_operations.error = Some(fl!("files-name-dialog-failed"));
             return Task::none();
         }
         iced::widget::operation::focus(control(id, "name"))
@@ -179,8 +179,7 @@ impl Desktop {
             || matches!(dialog.value.as_str(), "." | "..")
             || dialog.value.contains(['/', '\0'])
         {
-            dialog.error =
-                Some("Enter one name, without a slash. The names . and .. are reserved.".into());
+            dialog.error = Some(fl!("files-name-invalid"));
             return Task::none();
         }
         let directory = dialog
@@ -208,7 +207,7 @@ impl Desktop {
                 .file_operations
                 .service
                 .as_ref()
-                .ok_or_else(|| io::Error::other("The operation queue is unavailable."))
+                .ok_or_else(|| io::Error::other(fl!("files-operation-queue-unavailable")))
                 .and_then(|service| {
                     service.submit_rename(prepared.clone(), dialog.value.clone().into())
                 });
@@ -270,7 +269,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
-    let mut input = text_input("Name", &dialog.value)
+    let placeholder = fl!("files-column-name");
+    let mut input = text_input(&placeholder, &dialog.value)
         .id(control(id, "name"))
         .font(font)
         .size(size)
@@ -296,12 +296,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         (Some(error), _) => {
             super::accessibility_ui::Node::alert(error.clone()).key("files-name-error")
         }
-        (None, true) => {
-            super::accessibility_ui::Node::status("Accepting operation…").key("files-name-busy")
-        }
+        (None, true) => super::accessibility_ui::Node::status(fl!("files-accepting-operation"))
+            .key("files-name-busy"),
         (None, false) => super::accessibility_ui::Node::status("").key("files-name-busy"),
     };
-    let action = |label, name, event| {
+    let action = |label: String, name, event| {
         let message = (!dialog.busy).then_some(Message::FileOperation(event));
         super::focus::button(
             control(id, name),
@@ -329,9 +328,12 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         |_| folder.to_string_lossy().into_owned(),
         |path| {
             if path.as_os_str().is_empty() {
-                "Home".into()
+                fl!("files-place-home")
             } else {
-                format!("Home / {}", path.to_string_lossy().replace('/', " / "))
+                fl!(
+                    "files-home-path",
+                    path = path.to_string_lossy().replace('/', " / ")
+                )
             }
         },
     );
@@ -357,9 +359,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             chrome::section_title(
                 appearance,
                 if dialog.original.is_some() {
-                    "Full name"
+                    fl!("files-name-full-name")
                 } else {
-                    "Folder name"
+                    fl!("files-name-folder-name")
                 },
             )
             .size(small + 1.0),
@@ -369,10 +371,12 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         super::accessibility_ui::semantic(
             feedback,
             container(
-                text(dialog.error.as_deref().unwrap_or(if dialog.busy {
-                    "Accepting operation…"
-                } else {
-                    ""
+                text(dialog.error.clone().unwrap_or_else(|| {
+                    if dialog.busy {
+                        fl!("files-accepting-operation")
+                    } else {
+                        String::new()
+                    }
                 }))
                 .font(font)
                 .size(small)
@@ -391,19 +395,19 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 1
             })
         ),
-        row![
-            iced::widget::space().width(Length::Fill),
-            action("Cancel", "cancel", Event::NameCancel(id)),
+        canopa_ui::direction::row([
+            iced::widget::space().width(Length::Fill).into(),
+            action(fl!("files-cancel"), "cancel", Event::NameCancel(id)),
             action(
                 if dialog.original.is_some() {
-                    "Rename"
+                    fl!("files-command-rename")
                 } else {
-                    "Create"
+                    fl!("files-create")
                 },
                 "submit",
-                Event::NameSubmit(id)
-            )
-        ]
+                Event::NameSubmit(id),
+            ),
+        ])
         .spacing(8),
     ]
     .spacing(10);

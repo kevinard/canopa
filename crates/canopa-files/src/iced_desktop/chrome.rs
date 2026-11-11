@@ -571,3 +571,18 @@ impl Icon {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Icon;
+
+    #[test]
+    fn arrows_and_chevrons_point_the_other_way_right_to_left() {
+        assert_eq!(Icon::Back.directional(), Icon::Back);
+        let _rtl = crate::i18n::tests::Selected::pseudo();
+        assert_eq!(Icon::Back.directional(), Icon::Forward);
+        assert_eq!(Icon::Forward.directional(), Icon::Back);
+        assert_eq!(Icon::ActiveForward.directional(), Icon::ActiveBack);
+        assert_eq!(Icon::Home.directional(), Icon::Home);
+    }
+}

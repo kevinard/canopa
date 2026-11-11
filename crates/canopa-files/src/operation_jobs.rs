@@ -322,8 +322,8 @@ impl Control {
     }
 
     fn refuse_admission(self) {
-        let message = "The operation admission queue is full while device removal is in progress. Try again after removal finishes.";
-        self.refuse_preparation(message);
+        let message = fl!("files-jobs-admission-full");
+        self.refuse_preparation(&message);
     }
 
     fn refuse_preparation(self, message: &str) {
@@ -486,7 +486,7 @@ impl Completion {
         let mut completion = Self {
             summary: OperationSummary {
                 id: 0,
-                label: "Cancelled before starting".into(),
+                label: fl!("files-jobs-cancelled-before-start"),
                 paths: Vec::new(),
             },
             detail: None,
@@ -575,7 +575,7 @@ fn check_startup(stopped: &AtomicBool) -> io::Result<()> {
     if stopped.load(Ordering::Acquire) {
         Err(io::Error::new(
             io::ErrorKind::Interrupted,
-            "Operation startup was stopped.",
+            fl!("files-jobs-startup-stopped"),
         ))
     } else {
         Ok(())
@@ -615,7 +615,7 @@ impl OperationJobs {
         self.send_work(Control::PrepareClipboard(
             selection, placement, previous, sender,
         ))
-        .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))?;
+        .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -634,7 +634,7 @@ impl OperationJobs {
             binding,
             sender,
         ))
-        .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))?;
+        .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -680,9 +680,7 @@ impl OperationJobs {
                 match ready.recv_timeout(std::time::Duration::from_millis(100)) {
                     Ok(result) => return result.map_err(io::Error::other),
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        return Err(io::Error::other(
-                            "The volume worker stopped before its first observation.",
-                        ));
+                        return Err(io::Error::other(fl!("files-jobs-volume-worker-stopped")));
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
@@ -789,9 +787,7 @@ impl OperationJobs {
     ) -> io::Result<oneshot::Receiver<Result<u64, String>>> {
         let (sender, receiver) = oneshot::channel();
         self.send_work(Control::Submit(request, source, None, None, sender))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -800,9 +796,7 @@ impl OperationJobs {
     pub fn needs_recovery_review(&self) -> io::Result<oneshot::Receiver<Result<bool, String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::NeedsRecoveryReview(reply))
-            .map_err(|_| {
-                io::Error::other("The Recovery reader is unavailable or busy. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-recovery-busy")))?;
         Ok(receiver)
     }
 
@@ -814,9 +808,7 @@ impl OperationJobs {
     ) -> io::Result<oneshot::Receiver<Result<crate::operations::RecoveryPage, String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::RecoveryPage(cursor, cancellation, reply))
-            .map_err(|_| {
-                io::Error::other("The Recovery reader is unavailable or busy. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-recovery-busy")))?;
         Ok(receiver)
     }
 
@@ -867,7 +859,7 @@ impl OperationJobs {
             retained,
             sender,
         ))
-        .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))?;
+        .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -879,9 +871,7 @@ impl OperationJobs {
     ) -> io::Result<oneshot::Receiver<Result<RetainedSourceLease, String>>> {
         let (sender, receiver) = oneshot::channel();
         self.send_work(Control::LeaseSources(paths, sender))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -901,7 +891,7 @@ impl OperationJobs {
         self.0
             .sender
             .try_send(Control::Resolve(id, generation, Answer::Undo(choice)))
-            .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))
     }
 
     pub fn resolve_transfer(
@@ -913,14 +903,14 @@ impl OperationJobs {
         self.0
             .sender
             .try_send(Control::Resolve(id, generation, Answer::Transfer(choice)))
-            .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))
     }
 
     pub fn cancel(&self, id: u64) -> io::Result<()> {
         self.0
             .sender
             .try_send(Control::Cancel(id))
-            .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))
     }
 
     /// Save the retained stopped result, without executing its original task.
@@ -929,7 +919,7 @@ impl OperationJobs {
         self.0
             .sender
             .try_send(Control::RetrySave(id))
-            .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))
     }
 
     /// Orderly shutdown is refused while any admitted work or unsaved result
@@ -939,9 +929,7 @@ impl OperationJobs {
         self.0
             .sender
             .try_send(Control::Shutdown(reply))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -949,7 +937,7 @@ impl OperationJobs {
         self.0
             .sender
             .try_send(Control::Guarded(Box::new(control), self.0.activity.work()))
-            .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))
     }
 }
 
@@ -968,9 +956,7 @@ impl Worker {
             work: startup,
         } = start;
         let engine = Arc::new(OperationEngine::open_with_recovery_check(history, |_| {
-            Err(io::Error::other(
-                "Interrupted work needs Recovery review before more changes.",
-            ))
+            Err(io::Error::other(fl!("files-jobs-interrupted-needs-review")))
         })?);
         let mut worker = Self {
             engine,
@@ -1032,18 +1018,27 @@ impl Worker {
                 if phase == Phase::Interrupted {
                     let effects = worker.engine.request_effects(&record)?;
                     for effect in effects {
-                        let note = format!(
-                            "Filesystem operation #{}: {} confirmed steps remain in history{}. Review its completed work before starting a new request; this saved request will not run again.",
-                            effect.operation,
-                            effect.confirmed_steps,
-                            if effect.journal_pending {
-                                "; its journal still needs Recovery review"
-                            } else if !effect.history_available {
-                                "; its Undo history is no longer available"
-                            } else {
-                                ""
-                            }
-                        );
+                        let (operation, steps) =
+                            (effect.operation.to_string(), effect.confirmed_steps);
+                        let note = if effect.journal_pending {
+                            fl!(
+                                "files-jobs-interrupted-journal",
+                                operation = operation,
+                                steps = steps
+                            )
+                        } else if !effect.history_available {
+                            fl!(
+                                "files-jobs-interrupted-no-history",
+                                operation = operation,
+                                steps = steps
+                            )
+                        } else {
+                            fl!(
+                                "files-jobs-interrupted-steps",
+                                operation = operation,
+                                steps = steps
+                            )
+                        };
                         let detail = snapshot.detail.get_or_insert_with(String::new);
                         if !detail.is_empty() {
                             detail.push('\n');
@@ -1063,15 +1058,18 @@ impl Worker {
                                 };
                                 snapshot.transfer_actions = pending.actions();
                                 if let Some(error) = parts.error {
-                                    snapshot.error = Some(format!(
-                                        "Some saved work cannot yet continue: {error}"
+                                    snapshot.error = Some(fl!(
+                                        "files-jobs-some-work-cannot-continue",
+                                        error = error.to_string()
                                     ));
                                 }
                                 (!pending.empty()).then_some(pending)
                             }
                             Err(error) => {
-                                snapshot.error =
-                                    Some(format!("Saved transfer cannot yet continue: {error}"));
+                                snapshot.error = Some(fl!(
+                                    "files-jobs-transfer-cannot-continue",
+                                    error = error.to_string()
+                                ));
                                 None
                             }
                         }
@@ -1173,11 +1171,11 @@ impl Worker {
                 let (control, work) = pending.pop_front().unwrap();
                 if control.preparation_cancelled() {
                     let message = if matches!(&*control, Control::RecoveryPage(..)) {
-                        "Recovery inspection cancelled while waiting for device removal."
+                        fl!("files-jobs-recovery-cancelled-removal")
                     } else {
-                        "Drag preparation cancelled while waiting for device removal."
+                        fl!("files-jobs-drag-cancelled-removal")
                     };
-                    control.refuse_preparation(message);
+                    control.refuse_preparation(&message);
                 } else {
                     pending.push_back((control, work));
                 }
@@ -1440,7 +1438,7 @@ impl Worker {
                 Control::RetrySave(id) => self.retry_save(id),
                 Control::Shutdown(reply) => {
                     if !pending.is_empty() || self.state().holds_application() {
-                        let _ = reply.send(Err("Finish or cancel active work, resume or abandon stopped transfers, and save every result before closing the operation worker.".into()));
+                        let _ = reply.send(Err(fl!("files-jobs-close-worker-busy")));
                     } else {
                         return Ok(Some(reply));
                     }
@@ -1721,7 +1719,7 @@ impl Worker {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let execution = engine.execution(&execution_record);
                 if uncertain_operation && !is_recovery && !is_reconciliation {
-                    return Err(io::Error::other("An operation needs reconciliation before more changes."));
+                    return Err(io::Error::other(fl!("files-jobs-needs-reconciliation")));
                 }
                     let mut accesses = request.accesses(&engine)?;
                     if let Some(plan) = &recovery_execution { accesses.extend(plan.storage_destinations().map(Access::entry)); }
@@ -1731,20 +1729,20 @@ impl Worker {
                     result => result?,
                 };
                 if !interrupted.is_empty() && !is_recovery && !is_reconciliation {
-                    return Err(io::Error::other("Interrupted work needs Recovery review before more changes."));
+                    return Err(io::Error::other(fl!("files-jobs-interrupted-needs-review")));
                 }
                 match request {
                     Request::KeepRecovery { item } => {
                         engine.keep_in_recovery(&item, &cancellation)?;
-                        Ok(Completion { summary: OperationSummary { id: 0, label: format!("Keep {} in Recovery", item.name().to_string_lossy()), paths: item.entry.iter().map(|entry| entry.path.clone()).collect() }, detail: Some("Entry kept in Recovery. The interrupted work is preserved; recover a copy when needed.".into()), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
+                        Ok(Completion { summary: OperationSummary { id: 0, label: fl!("files-job-keep-in-recovery", name = item.name().to_string_lossy().into_owned()), paths: item.entry.iter().map(|entry| entry.path.clone()).collect() }, detail: Some(fl!("files-jobs-kept-in-recovery")), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Reconcile => {
                         let observed = reconciliation.ok_or_else(|| io::Error::other("This owner has no original journal observation. Refresh Recovery before retrying."))?;
                         engine.reconcile_with_check(&observed.journals, &cancellation, |paths| placement.check(&paths.iter().cloned().map(Access::entry).collect::<Vec<_>>()))?;
-                        Ok(Completion { summary: OperationSummary { id: 0, label: "Retry interrupted operation".into(), paths: observed.journals.paths().to_vec() }, detail: Some("Interrupted operation journals rechecked.".into()), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
+                        Ok(Completion { summary: OperationSummary { id: 0, label: fl!("files-jobs-retry-interrupted"), paths: observed.journals.paths().to_vec() }, detail: Some(fl!("files-jobs-journals-rechecked")), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Recover { item, destination } => {
-                        let title = format!("Recover {}", item.name().to_string_lossy());
+                        let title = fl!("files-job-recover", name = item.name().to_string_lossy().into_owned());
                         let report = recovery::run(&engine, &item, &destination, &cancellation, recovery::Placement { source: &source_placement, destination: &placement }, transfer::Publication { id, snapshot, notice, sender: sender.clone() }, recovery_execution.as_ref());
                         Ok(Completion { summary: OperationSummary { id: report.report.transfer.operation.unwrap_or(0), label: title, paths: report.report.transfer.destinations.clone() }, detail: Some(report.report.detail()), recovery: Some(report), transfer: None, trash: None, restore: None, delete: None, mutation_confirmation: None })
                     }
@@ -1773,7 +1771,7 @@ impl Worker {
                             }
                         };
                         Ok(Completion {
-                            summary: OperationSummary { id: report.operation.unwrap_or(0), label: format!("Move {} {} to Trash", sources.len(), if sources.len() == 1 { "item" } else { "items" }), paths: report.completed.clone() },
+                            summary: OperationSummary { id: report.operation.unwrap_or(0), label: fl!("files-job-trash", count = sources.len()), paths: report.completed.clone() },
                             detail: Some(report.detail()), transfer: None, trash: Some(report), restore: None, delete: None, recovery: None, mutation_confirmation: None,
                         })
                     }
@@ -1785,7 +1783,7 @@ impl Worker {
                             Err(failure) => RestoreReport::from_failure(item.path.clone(), failure, &cancellation),
                         };
                         Ok(Completion {
-                            summary: OperationSummary { id: report.operation.unwrap_or(0), label: format!("Restore {}", item.name().to_string_lossy()), paths: report.restored.iter().cloned().collect() },
+                            summary: OperationSummary { id: report.operation.unwrap_or(0), label: fl!("files-job-restore", name = item.name().to_string_lossy().into_owned()), paths: report.restored.iter().cloned().collect() },
                             detail: Some(report.detail()), transfer: None, trash: None, restore: Some(report), delete: None, recovery: None, mutation_confirmation: None,
                         })
                     }
@@ -1829,12 +1827,20 @@ impl Worker {
                                 }
                             }
                         })?;
-                        Ok(Completion { summary: outcome.summary, detail: Some(format!(
-                            "{} reversed · {} kept · {} skipped · {} steps dismissed · {} previous destinations not restored · {} items not removed · {} remaining{}",
-                            outcome.completed, outcome.kept.len(), outcome.skipped.len(), outcome.dismissed.len(),
-                            outcome.unrestored_previous.len(), outcome.unremoved.len(), outcome.remaining,
-                            if outcome.cancelled { " · cancelled" } else { "" },
-                        )), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
+                        let mut detail = fl!(
+                            "files-undo-outcome",
+                            reversed = outcome.completed,
+                            kept = outcome.kept.len(),
+                            skipped = outcome.skipped.len(),
+                            dismissed = outcome.dismissed.len(),
+                            unrestored = outcome.unrestored_previous.len(),
+                            unremoved = outcome.unremoved.len(),
+                            remaining = outcome.remaining
+                        );
+                        if outcome.cancelled {
+                            detail = fl!("files-undo-outcome-cancelled", outcome = detail);
+                        }
+                        Ok(Completion { summary: outcome.summary, detail: Some(detail), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Transfer(request) => {
                         let title = Request::Transfer(request.clone()).title();
@@ -1851,7 +1857,7 @@ impl Worker {
             }));
             let result = match result {
                 Ok(result) => result.map_err(|error| if is_recovery || is_transfer || is_trash || is_restore || is_delete { Failure::BeforeExecution(error.to_string()) } else { Failure::DuringExecution(error.to_string()) }),
-                Err(_) => Err(Failure::DuringExecution("The operation worker stopped unexpectedly".into())),
+                Err(_) => Err(Failure::DuringExecution(fl!("files-jobs-worker-stopped"))),
             };
             drop(engine);
             let _ = sender.send(Control::Complete(id, Box::new(result)));
@@ -1952,7 +1958,10 @@ impl Worker {
                 }
                 Err(error) => (
                     Phase::SaveFailed,
-                    Some(format!("Reconciliation result not saved: {error}")),
+                    Some(fl!(
+                        "files-jobs-reconciliation-not-saved",
+                        error = error.to_string()
+                    )),
                 ),
             };
             if phase.needs_save() {
@@ -2213,7 +2222,10 @@ impl Worker {
             Ok(_) => (phase, error),
             Err(error) => (
                 Phase::SaveFailed,
-                Some(format!("Result not saved: {error}")),
+                Some(fl!(
+                    "files-jobs-result-not-saved",
+                    error = error.to_string()
+                )),
             ),
         };
         if !phase.needs_save() && self.jobs[&id].transfer_pending.is_none() {
@@ -2262,12 +2274,17 @@ impl Worker {
                             };
                             job.transfer_pending = (!pending.empty()).then_some(pending);
                             if let Some(reason) = parts.error {
-                                error =
-                                    Some(format!("Some saved work cannot yet continue: {reason}"));
+                                error = Some(fl!(
+                                    "files-jobs-some-work-cannot-continue",
+                                    error = reason.to_string()
+                                ));
                             }
                         }
                         Err(reason) => {
-                            error = Some(format!("Saved transfer cannot yet continue: {reason}"));
+                            error = Some(fl!(
+                                "files-jobs-transfer-cannot-continue",
+                                error = reason.to_string()
+                            ));
                         }
                     }
                 }
@@ -2292,7 +2309,7 @@ impl Worker {
                 } else {
                     Phase::SaveFailed
                 },
-                Some(format!("Could not save operation: {error}")),
+                Some(fl!("files-jobs-save-failed", error = error.to_string())),
             ),
         }
     }
@@ -2334,71 +2351,55 @@ impl Request {
     }
 
     fn title(&self) -> String {
+        let name = |path: &std::path::Path| {
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        };
         match self {
-            Self::Reconcile => "Retry interrupted operation".into(),
-            Self::KeepRecovery { item } => {
-                format!("Keep {} in Recovery", item.name().to_string_lossy())
-            }
-            Self::Recover { item, .. } => format!("Recover {}", item.name().to_string_lossy()),
-            Self::Mutation(OperationRequest::CreateFolder { path }) => format!(
-                "Create folder {}",
-                path.file_name().unwrap_or_default().to_string_lossy()
+            Self::Reconcile => fl!("files-jobs-retry-interrupted"),
+            Self::KeepRecovery { item } => fl!(
+                "files-job-keep-in-recovery",
+                name = item.name().to_string_lossy().into_owned()
             ),
+            Self::Recover { item, .. } => fl!(
+                "files-job-recover",
+                name = item.name().to_string_lossy().into_owned()
+            ),
+            Self::Mutation(OperationRequest::CreateFolder { path }) => {
+                fl!("files-job-create-folder", name = name(path))
+            }
             Self::Mutation(OperationRequest::Rename {
                 source,
                 destination,
-            }) => format!(
-                "Rename {} to {}",
-                source.file_name().unwrap_or_default().to_string_lossy(),
-                destination
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
+            }) => fl!(
+                "files-job-rename",
+                source = name(source),
+                destination = name(destination)
             ),
-            Self::Undo { .. } => "Undo".into(),
-            Self::Restore { item, .. } => format!("Restore {}", item.name().to_string_lossy()),
-            Self::Trash { sources, .. } => format!(
-                "Move {} {} to Trash",
-                sources.len(),
-                if sources.len() == 1 { "item" } else { "items" }
+            Self::Undo { .. } => fl!("files-command-undo"),
+            Self::Restore { item, .. } => fl!(
+                "files-job-restore",
+                name = item.name().to_string_lossy().into_owned()
             ),
-            Self::Delete { sources } => format!(
-                "Delete {} {} permanently",
-                sources.len(),
-                if sources.len() == 1 { "item" } else { "items" }
-            ),
-            Self::DeleteTrash { items, empty: true } => format!(
-                "Empty Trash ({} {})",
-                items.len(),
-                if items.len() == 1 { "item" } else { "items" }
-            ),
+            Self::Trash { sources, .. } => fl!("files-job-trash", count = sources.len()),
+            Self::Delete { sources } => fl!("files-job-delete", count = sources.len()),
+            Self::DeleteTrash { items, empty: true } => {
+                fl!("files-job-empty-trash", count = items.len())
+            }
             Self::DeleteTrash {
                 items,
                 empty: false,
-            } => format!(
-                "Delete {} {} from Trash permanently",
-                items.len(),
-                if items.len() == 1 { "item" } else { "items" }
-            ),
-            Self::Transfer(request) => format!(
-                "{} {} {} to {}",
+            } => fl!("files-job-delete-from-trash", count = items.len()),
+            Self::Transfer(request) => {
+                let (count, destination) = (request.sources.len(), name(&request.destination));
                 if request.kind == TransferKind::Copy {
-                    "Copy"
+                    fl!("files-job-copy", count = count, destination = destination)
                 } else {
-                    "Move"
-                },
-                request.sources.len(),
-                if request.sources.len() == 1 {
-                    "item"
-                } else {
-                    "items"
-                },
-                request
-                    .destination
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-            ),
+                    fl!("files-job-move", count = count, destination = destination)
+                }
+            }
         }
     }
     fn paths(&self) -> Vec<PathBuf> {
@@ -2689,7 +2690,7 @@ impl Saved {
                 if !detail.is_empty() {
                     detail.push_str(" · ");
                 }
-                detail.push_str("journal reconciliation completed; recorded result retained");
+                detail.push_str(&fl!("files-jobs-reconciliation-retained"));
             }
             Self::Plan {
                 version: 1,

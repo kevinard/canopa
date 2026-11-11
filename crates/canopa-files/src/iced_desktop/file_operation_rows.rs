@@ -87,27 +87,27 @@ pub(super) fn rows(
     });
     let mut tools = row![].spacing(8);
     if let Some(head) = undo.filter(|_| undo_row.is_none()) {
-        tools = tools.push(button(head.label.clone(), "undo".into(), undo_event()));
+        tools = tools.push(button(
+            crate::history_labels::display(&head.label),
+            "undo".into(),
+            undo_event(),
+        ));
     }
     let recovery = button(
-        "Recovery".into(),
+        fl!("files-command-recovery"),
         "recovery".into(),
         files.service.as_ref().map(|_| Event::Recovery),
     );
     let count = page.len();
-    let count_label = if count == 1 {
-        "1 operation".into()
-    } else {
-        format!("{count} operations")
-    };
+    let count_label = fl!("files-history-count", count = count);
     let mut body = column![
         row![
-            chrome::section_title(appearance, "File history"),
+            chrome::section_title(appearance, fl!("files-history-heading")),
             space().width(Length::Fill),
             text(if count < 2 || !wide {
                 count_label
             } else {
-                format!("{count_label}  ·  Latest first")
+                fl!("files-history-count-latest-first", count = count)
             })
             .font(font)
             .size(small)
@@ -122,12 +122,12 @@ pub(super) fn rows(
         body = body.push(
             row![
                 button(
-                    "Latest".into(),
+                    fl!("files-history-latest"),
                     "newest".into(),
                     files.before.map(|_| Event::Newest)
                 ),
                 button(
-                    "Older".into(),
+                    fl!("files-history-older"),
                     "older".into(),
                     files.has_older().then_some(Event::Older)
                 ),
@@ -138,7 +138,7 @@ pub(super) fn rows(
         );
     }
     if files.starting() {
-        body = body.push(text("Preparing file operations…").font(font).size(small));
+        body = body.push(text(fl!("files-history-preparing")).font(font).size(small));
     }
     for error in [&files.error, &files.storage_error, &files.snapshot.error]
         .into_iter()
@@ -155,8 +155,8 @@ pub(super) fn rows(
             row![
                 desktop.icons.chrome(chrome::Icon::Activity, 21.0, 0.9),
                 column![
-                    chrome::section_title(appearance, "No file operations yet"),
-                    text("File changes made in Files will appear here.")
+                    chrome::section_title(appearance, fl!("files-history-empty")),
+                    text(fl!("files-history-empty-description"))
                         .font(font)
                         .size(small)
                         .style(canopa_ui::muted)
@@ -189,10 +189,8 @@ pub(super) fn rows(
         let identity = container(desktop.icons.chrome(icon, 18.0, 0.9))
             .padding(8)
             .style(move |_| chrome::highlight(appearance, ColorRole::AccentSurface));
-        let mut title = job.title.clone();
-        if let Some(initial) = title.get_mut(..1) {
-            initial.make_ascii_uppercase();
-        }
+        let mut title = crate::history_labels::title(&job.title);
+        let mut moved_to_trash = false;
         let folder = job.paths.first().and_then(|path| path.parent());
         let mut subtitle = job.detail.clone();
         if let Some(report) = job.trash.as_ref().filter(|report| {
@@ -204,7 +202,8 @@ pub(super) fn rows(
             if let [path] = report.completed.as_slice()
                 && let Some(name) = path.file_name()
             {
-                title = "Moved to Trash".into();
+                title = fl!("files-history-moved-to-trash");
+                moved_to_trash = true;
                 subtitle = Some(name.to_string_lossy().into_owned());
             }
         } else if let Some(change) = renamed {
@@ -216,17 +215,17 @@ pub(super) fn rows(
                 Some((previous, current))
             });
             if let Some((previous, current)) = names {
-                title = format!("Renamed to {current}");
-                subtitle = Some(format!("Previously {previous}"));
+                title = fl!("files-history-renamed-to", name = current.into_owned());
+                subtitle = Some(fl!("files-history-previously", name = previous.to_owned()));
             } else {
-                title = "Renamed".into();
+                title = fl!("files-history-renamed");
                 subtitle = Some(change.to_owned());
             }
         } else if let Some(name) = created {
-            title = "Created folder".into();
+            title = fl!("files-history-created-folder");
             subtitle = Some(name.to_owned());
         }
-        let mut description = vec![phase_label(job).to_owned()];
+        let mut description = vec![phase_label(job)];
         description.extend(subtitle.clone());
         description.extend(job.error.clone());
         let node = super::accessibility_ui::Node::new(super::accessibility_ui::Role::ListItem)
@@ -235,7 +234,7 @@ pub(super) fn rows(
             .description(description.join(", "))
             .position(index + 1, count);
         let location = folder
-            .filter(|_| renamed.is_some() || created.is_some() || title == "Moved to Trash")
+            .filter(|_| renamed.is_some() || created.is_some() || moved_to_trash)
             .map(|path| super::question_dialog::display_location(&desktop.home, path));
         let muted = Some(chrome::ink(appearance, ColorRole::Muted));
         let mut labels =
@@ -250,19 +249,27 @@ pub(super) fn rows(
             .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
             .map(|time| {
                 let local = time.with_timezone(&chrono::Local);
+                let naive = local.naive_local();
                 let visible = if local.date_naive() == today {
-                    local.format("%H:%M").to_string()
+                    canopa_i18n::format::time(naive.time())
                 } else {
-                    local.format("%b %-d · %H:%M").to_string()
+                    fl!(
+                        "files-date-time",
+                        date = canopa_i18n::format::date_with(
+                            naive.date(),
+                            canopa_i18n::format::DateStyle::Short
+                        ),
+                        time = canopa_i18n::format::time(naive.time())
+                    )
                 };
                 iced::widget::tooltip(
                     text(visible)
                         .font(font)
                         .size(small + 1.0)
                         .style(canopa_ui::muted),
-                    text(format!(
-                        "Request accepted {}",
-                        local.format("%b %-d, %Y · %H:%M:%S")
+                    text(fl!(
+                        "files-history-accepted",
+                        date = super::listing_ui::date_time_seconds(naive)
                     ))
                     .font(font)
                     .size(small),
@@ -302,34 +309,35 @@ pub(super) fn rows(
         }
         let mut controls = row![].spacing(8);
         let row_undo = undo_row == Some(job.id);
-        let mut undo = row_undo.then(|| button("Undo".into(), "undo".into(), undo_event()));
+        let mut undo =
+            row_undo.then(|| button(fl!("files-command-undo"), "undo".into(), undo_event()));
         if !wide {
             controls = controls.push(undo.take());
         }
         if job.progress.is_some() || job.transfer.is_some() {
             controls = controls.push(button(
-                "Details".into(),
+                fl!("files-details"),
                 format!("details-{}", job.id),
                 Some(Event::Details(job.id)),
             ));
         }
         if matches!(job.phase, Phase::Queued | Phase::Running | Phase::Waiting) {
             controls = controls.push(button(
-                "Cancel".into(),
+                fl!("files-cancel"),
                 format!("cancel-{}", job.id),
                 Some(Event::Cancel(job.id)),
             ));
         }
         if job.decision.is_some() {
             controls = controls.push(button(
-                "Review".into(),
+                fl!("files-review"),
                 format!("review-{}", job.id),
                 Some(Event::Review(job.id)),
             ));
         }
         if job.phase.needs_save() {
             controls = controls.push(button(
-                "Retry Save".into(),
+                fl!("files-retry-save"),
                 format!("save-{}", job.id),
                 Some(Event::RetrySave(job.id)),
             ));
@@ -337,18 +345,18 @@ pub(super) fn rows(
         for (enabled, label, part) in [
             (
                 job.transfer_actions.retry,
-                "Retry failed items",
+                fl!("files-retry-failed-items"),
                 crate::operation_jobs::TransferPart::Failed,
             ),
             (
                 job.transfer_actions.remaining,
-                "Continue remaining work",
+                fl!("files-continue-remaining"),
                 crate::operation_jobs::TransferPart::Remaining,
             ),
         ] {
             if enabled {
                 controls = controls.push(button(
-                    label.into(),
+                    label,
                     format!("transfer-{part:?}-{}", job.id),
                     Some(Event::ResumeTransfer(job.id, part)),
                 ));
@@ -356,40 +364,38 @@ pub(super) fn rows(
         }
         if job.transfer_actions.abandon {
             controls = controls.push(button(
-                "Abandon unfinished work".into(),
+                fl!("files-abandon-unfinished"),
                 format!("abandon-{}", job.id),
                 Some(Event::AbandonTransfer(job.id)),
             ));
         }
         if job.dismissible {
             controls = controls.push(button(
-                "Dismiss request".into(),
+                fl!("files-dismiss-request"),
                 format!("dismiss-{}", job.id),
                 Some(Event::DismissRequest(job.id)),
             ));
             content = content.push(
-                text(
-                    "Dismiss releases this saved request. Completed work and Undo stay available.",
-                )
-                .font(font)
-                .size(small),
+                text(fl!("files-dismiss-request-description"))
+                    .font(font)
+                    .size(small),
             );
         }
         for (enabled, label, part) in [
             (
                 job.recovery_actions.retry,
-                "Retry failed Recovery copies",
+                fl!("files-retry-failed-recovery"),
                 crate::operation_jobs::RecoveryPart::Failed,
             ),
             (
                 job.recovery_actions.remaining,
-                "Continue Recovery copy",
+                fl!("files-continue-recovery"),
                 crate::operation_jobs::RecoveryPart::Remaining,
             ),
         ] {
             if enabled {
                 controls = controls.push(button(
-                    label.into(),
+                    label,
                     format!("recovery-{part:?}-{}", job.id),
                     Some(Event::ResumeRecovery(job.id, part)),
                 ));
@@ -397,7 +403,7 @@ pub(super) fn rows(
         }
         let folder = folder.map(|_| {
             button(
-                "Open folder".into(),
+                fl!("files-open-folder"),
                 format!("open-{}", job.id),
                 Some(Event::OpenFolder(job.id)),
             )
@@ -434,7 +440,7 @@ pub(super) fn rows(
     }
     let history = super::accessibility_ui::semantic(
         super::accessibility_ui::Node::new(super::accessibility_ui::Role::List)
-            .label("File history")
+            .label(fl!("files-history-heading"))
             .key("files-operations-history"),
         history,
     );
@@ -499,9 +505,9 @@ pub(super) fn completed(job: &crate::operation_jobs::JobSnapshot) -> bool {
 }
 
 /// What a job's badge says: "Completed", "Running", "Could not finish"…
-pub(super) fn phase_label(job: &crate::operation_jobs::JobSnapshot) -> &'static str {
+pub(super) fn phase_label(job: &crate::operation_jobs::JobSnapshot) -> String {
     if completed(job) {
-        "Completed"
+        fl!("files-phase-completed")
     } else {
         file_operations::status(job.phase)
     }

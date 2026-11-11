@@ -271,3 +271,421 @@ files-title-searching = Searching: { $query } — { $folder }
 files-title-search-stopping = Stopping search: { $query } — { $folder }
 files-title-search-stopped = Stopped search: { $query } — { $folder }
 files-operations-save-before-closing = Save the operation result before closing the last window.
+
+## Actions menu (toolbar menu and context menu)
+
+files-menu-open = Open
+files-menu-open-with = Open With…
+files-menu-new-folder = New folder…
+files-menu-rename = Rename…
+files-menu-delete-permanently = Delete permanently…
+files-menu-edit-custom-actions = Edit custom actions…
+files-menu-preferences = Preferences…
+files-menu-bookmark-folder = Bookmark this folder…
+files-menu-locations = Locations…
+files-menu-view-options = View options…
+files-menu-other-application = Other Application…
+# The first application in the Open With menu.
+files-menu-default-application = { $application } (default)
+# $action is a custom action's name.
+files-action-not-applicable = { $action } does not apply to this selection.
+
+## Devices: removal and menu items ($device is a device name)
+
+files-device-power-off = Power off
+files-device-eject = Eject
+files-device-unmount = Unmount
+files-device-open-named = Open { $device }
+files-device-mount-named = Mount { $device }
+files-device-power-off-named = Power off { $device }
+files-device-eject-named = Eject { $device }
+files-device-unmount-named = Unmount { $device }
+
+## Devices: sidebar and requests
+
+files-devices = Devices
+files-devices-unavailable = Devices are unavailable.
+files-devices-error = Devices: { $error }
+files-cancel = Cancel
+files-review = Review
+files-open-folder = Open folder
+files-device-cancelling = Cancelling…
+files-device-needs-decision = Needs a decision
+files-device-mounting = Mounting…
+files-device-powering-off = Powering off…
+files-device-ejecting = Ejecting…
+files-device-unmounting = Unmounting…
+files-device-connecting = Connecting…
+files-device-mounted = Mounted
+files-device-connected = Connected
+files-device-connected-remote = Connected without a local folder: GVFS’s FUSE daemon (gvfsd-fuse) is not running, so only a read-only listing is available
+files-device-removed = Removed
+files-device-cancelled = Cancelled
+files-device-failed = Could not finish: { $error }
+files-device-finished = Finished
+
+## New folder and Rename dialog
+
+# The name a new folder starts with.
+files-new-folder-name = New folder
+files-create = Create
+files-name-full-name = Full name
+files-name-folder-name = Folder name
+files-name-invalid = Enter one name, without a slash. The names . and .. are reserved.
+files-name-dialog-failed = Could not open the name dialog.
+files-rename-worker-stopped = The operation worker stopped before preparing Rename.
+files-operation-queue-unavailable = The operation queue is unavailable.
+files-accepting-operation = Accepting operation…
+# A folder inside the home folder, such as "Home / Documents / Work".
+files-home-path = Home / { $path }
+
+## Permanent deletion confirmation
+
+files-delete-title = Delete permanently?
+files-delete-title-empty-trash = Empty Trash?
+files-delete-title-no-trash = Can't move to Trash
+files-delete-one = Permanently delete “{ $name }”? This can't be undone.
+files-delete-many = { $count ->
+    [one] Permanently delete { $count } item? This can't be undone.
+   *[other] Permanently delete { $count } items? This can't be undone.
+}
+files-delete-no-trash-one = “{ $name }” is on a volume without a usable Trash, so it cannot be moved to Trash. Delete it permanently instead? This can't be undone.
+files-delete-no-trash-many = { $count ->
+    [one] { $count } item is on a volume without a usable Trash, so it cannot be moved to Trash. Delete it permanently instead? This can't be undone.
+   *[other] { $count } items are on a volume without a usable Trash, so they cannot be moved to Trash. Delete them permanently instead? This can't be undone.
+}
+files-delete-empty-trash = { $count ->
+    [one] Permanently delete all { $count } item in Trash? This can't be undone.
+   *[other] Permanently delete all { $count } items in Trash? This can't be undone.
+}
+files-delete-empty-main-trash = { $count ->
+    [one] Permanently delete all { $count } item in Main Trash? This can't be undone.
+   *[other] Permanently delete all { $count } items in Main Trash? This can't be undone.
+}
+files-delete-from-trash-one = Permanently delete “{ $name }” from Trash? This can't be undone.
+files-delete-from-trash-many = { $count ->
+    [one] Permanently delete { $count } item from Trash? This can't be undone.
+   *[other] Permanently delete { $count } items from Trash? This can't be undone.
+}
+files-empty-trash = Empty Trash
+files-delete-items = { $count ->
+    [one] Delete { $count } item
+   *[other] Delete { $count } items
+}
+files-confirmation-failed = Could not open the confirmation.
+
+## Dates
+
+# A date and time with seconds: "Nov 11, 2026 · 2:30:05 PM".
+files-date-time = { $date } · { $time }
+files-unknown = Unknown
+
+## Operation questions: conflicts and Undo decisions
+
+files-question-undo = Undo needs a decision
+files-question-recovery = Recovery copy needs a decision
+files-question-folder-conflict = Folder conflict
+files-question-file-conflict = File conflict
+files-question-destination-unavailable = Destination unavailable
+files-question-failed = Could not open the operation question. Review the operation to try again.
+files-conflict-folder-exists = A folder named “{ $name }” already exists in the destination.
+files-conflict-item-exists = An item named “{ $name }” already exists in the destination.
+files-conflict-merge-explanation = Merge combines these folders and asks about individual collisions. Keep both renames the incoming folder. Skip leaves it untouched.
+files-conflict-recovery-explanation = “Keep both” copies the saved item under a new name. “Skip” leaves both items untouched.
+files-conflict-replace-explanation = Replace saves the existing file for Undo. Keep both renames the incoming file. Skip leaves both untouched.
+files-conflict-kind-explanation = This name is already used by a different kind of item. Keep both gives the incoming item another name. Skip leaves both items untouched.
+files-conflict-saved-version = Saved version in Recovery
+files-conflict-incoming = Incoming
+files-conflict-existing = Existing
+files-conflict-replace = Replace
+files-conflict-merge = Merge
+files-conflict-keep-both = Keep both
+files-conflict-skip = Skip
+files-conflict-apply-folders = Apply to remaining folder conflicts
+files-conflict-apply-files = Apply to remaining file conflicts
+files-transfer-paused = The transfer is paused
+files-transfer-unavailable-explanation = Restore access to the destination, then choose Retry. Cancel keeps the unfinished source files.
+files-destination = Destination
+# Technical details of an error, from the system.
+files-system-details = System details · { $details }
+files-kind-special = Special item
+# A file's kind, size in bytes and modification date, on two lines.
+files-entry-metadata = { $bytes ->
+    [one] { $kind } · { $bytes } byte
+   *[other] { $kind } · { $bytes } bytes
+}
+    Modified { $modified }
+files-entry-metadata-folder = { $kind }
+    Modified { $modified }
+files-undo-keep-item = Keep item
+files-undo-finish-step = Finish step
+files-undo-move-remaining = Move remaining items
+files-undo-keep-remaining = Keep remaining items
+files-undo-finish-merge = Finish this Merge
+files-undo-move-to-recovery = Move changed item to Recovery
+files-undo-use-saved-version = Use saved version
+files-undo-return-item = Return item
+files-undo-restore-previous = Restore previous destination
+files-undo-restoring-from-trash = Restoring from Trash
+files-undo-saved-previous = Saved previous destination
+files-undo-existing-item = Existing item
+files-undo-unavailable = Unavailable · { $error }
+files-undo-destination = Destination · { $location }
+files-undo-return-to = Return to · { $location }
+files-undo-explain-current = Undo would return this item to a name that is already in use. Review both versions before choosing. Replace retains the displaced item in Recovery; Keep both returns under a new name. Skip leaves this step available for later.
+files-undo-explain-trash = An item from Trash needs to return to a name that is already in use. Review both versions. Keep both restores it under another name; Skip keeps it available for later.
+files-undo-explain-previous-destination = Undo is restoring a saved previous destination, but its original name is in use. Review both versions. Replacements remain protected in Recovery.
+files-undo-explain-nonempty-folder = This created folder now contains later work. Keep item leaves the folder and its contents in place and finishes its creation step. Skip keeps the step available for later.
+files-undo-explain-changed-created-folder = The created folder has changed, moved or been replaced. Keep item leaves the current item untouched and finishes this creation step. Skip lets you decide later.
+files-undo-explain-unavailable-created-folder = The created folder cannot be inspected. Restore its location or access before trying again. Finish step leaves files untouched and gives up this removal step; Skip keeps it for later.
+files-undo-explain-merge-remainder = Items remain in the merged destination. Move remaining items continues the return while handling new conflicts. Keep remaining items leaves them here and finishes this branch. Skip lets you decide later.
+files-undo-explain-merge = A folder used by this partial Merge has moved, changed or cannot be inspected. Restore its original location or access to continue. Finish this Merge leaves files in place and preserves saved previous destinations in Recovery. Already returned items stay where they are.
+files-undo-explain-changed-copy = This copied item has changed since the copy. Move changed item to Recovery preserves its newer contents before undoing the copy. Keep item leaves it here and finishes its copy step; Skip lets you decide later.
+files-undo-explain-changed-retained = The saved version has changed. Review the saved and current items before choosing to use it. Keep item preserves the current item and finishes this step, retaining protected versions in Recovery.
+files-undo-explain-changed-move = The moved item or its destination has changed. Return item returns the reviewed current item and preserves any saved previous destination. Keep item leaves the current item in place and finishes this step. Skip keeps it for later.
+files-undo-explain-unavailable-move = The moved item cannot be inspected. Restore its location or access before continuing. Restore previous destination returns only that saved version when available. Finish step leaves the moved item untouched and preserves protected data in Recovery.
+files-undo-explain-unavailable-retained = A saved previous version cannot be inspected. Restore its location or access to retry. Return item performs only the available return when offered. Finish step leaves current files untouched and retains protected saved data in Recovery.
+
+## Operation queue messages
+
+files-jobs-admission-full = The operation admission queue is full while device removal is in progress. Try again after removal finishes.
+files-jobs-cancelled-before-start = Cancelled before starting
+files-jobs-startup-stopped = Operation startup was stopped.
+files-jobs-queue-full = The operation queue is unavailable or full. Try again.
+files-jobs-volume-worker-stopped = The volume worker stopped before its first observation.
+files-jobs-recovery-busy = The Recovery reader is unavailable or busy. Try again.
+files-jobs-interrupted-needs-review = Interrupted work needs Recovery review before more changes.
+files-jobs-recovery-cancelled-removal = Recovery inspection cancelled while waiting for device removal.
+files-jobs-drag-cancelled-removal = Drag preparation cancelled while waiting for device removal.
+files-jobs-close-worker-busy = Finish or cancel active work, resume or abandon stopped transfers, and save every result before closing the operation worker.
+files-jobs-needs-reconciliation = An operation needs reconciliation before more changes.
+files-jobs-kept-in-recovery = Entry kept in Recovery. The interrupted work is preserved; recover a copy when needed.
+files-jobs-retry-interrupted = Retry interrupted operation
+files-jobs-journals-rechecked = Interrupted operation journals rechecked.
+files-jobs-worker-stopped = The operation worker stopped unexpectedly
+files-jobs-reconciliation-retained = journal reconciliation completed; recorded result retained
+# $operation is an operation number, $steps a count of completed steps.
+files-jobs-interrupted-steps = Filesystem operation #{ $operation }: { $steps } confirmed steps remain in history. Review its completed work before starting a new request; this saved request will not run again.
+files-jobs-interrupted-journal = Filesystem operation #{ $operation }: { $steps } confirmed steps remain in history; its journal still needs Recovery review. Review its completed work before starting a new request; this saved request will not run again.
+files-jobs-interrupted-no-history = Filesystem operation #{ $operation }: { $steps } confirmed steps remain in history; its Undo history is no longer available. Review its completed work before starting a new request; this saved request will not run again.
+files-jobs-some-work-cannot-continue = Some saved work cannot yet continue: { $error }
+files-jobs-transfer-cannot-continue = Saved transfer cannot yet continue: { $error }
+files-jobs-reconciliation-not-saved = Reconciliation result not saved: { $error }
+files-jobs-result-not-saved = Result not saved: { $error }
+files-jobs-save-failed = Could not save operation: { $error }
+# What an Undo did, as counts.
+files-undo-outcome = { $reversed } reversed · { $kept } kept · { $skipped } skipped · { $dismissed } steps dismissed · { $unrestored } previous destinations not restored · { $unremoved } items not removed · { $remaining } remaining
+files-undo-outcome-cancelled = { $outcome } · cancelled
+
+## Operation titles ($name is a file name, $destination a folder name)
+
+files-job-keep-in-recovery = Keep { $name } in Recovery
+files-job-recover = Recover { $name }
+files-job-create-folder = Create folder { $name }
+files-job-rename = Rename { $source } to { $destination }
+files-job-restore = Restore { $name }
+files-job-trash = { $count ->
+    [one] Move { $count } item to Trash
+   *[other] Move { $count } items to Trash
+}
+files-job-delete = { $count ->
+    [one] Delete { $count } item permanently
+   *[other] Delete { $count } items permanently
+}
+files-job-empty-trash = { $count ->
+    [one] Empty Trash ({ $count } item)
+   *[other] Empty Trash ({ $count } items)
+}
+files-job-delete-from-trash = { $count ->
+    [one] Delete { $count } item from Trash permanently
+   *[other] Delete { $count } items from Trash permanently
+}
+files-job-copy = { $count ->
+    [one] Copy { $count } item to { $destination }
+   *[other] Copy { $count } items to { $destination }
+}
+files-job-move = { $count ->
+    [one] Move { $count } item to { $destination }
+   *[other] Move { $count } items to { $destination }
+}
+
+## Operation history records (src/history_labels.rs)
+## Lower-case phrases that name a recorded operation; $operation is one of them.
+
+files-history-undo = Undo { $operation }
+files-history-interrupted = Interrupted { $operation }
+files-history-preserved-undo = Preserved by Undo { $operation }
+files-history-preserved-kept-item = Preserved by keeping an item during Undo { $operation }
+files-history-preserved-unavailable-item = Preserved after finishing an unavailable item during Undo { $operation }
+files-history-preserved-unavailable-saved = Preserved after finishing an unavailable saved version during Undo { $operation }
+files-history-operation = operation
+files-history-restore-permissions = Restore folder permissions
+files-history-kept-undo-folder = Kept interrupted Undo work folder
+files-history-create-folder = create folder { $name }
+files-history-rename = rename { $source } to { $destination }
+files-history-copy = copy to { $destination }
+files-history-move = move to { $destination }
+files-history-trash = { $count ->
+    [one] move { $count } item to Trash
+   *[other] move { $count } items to Trash
+}
+files-history-restore = restore { $name }
+files-history-recover = recover { $name }
+
+## Desktop notifications
+
+files-notifications-unavailable = Desktop notifications are unavailable.
+files-notification-timed-out = Desktop notification timed out.
+files-notification-not-sent = Desktop notification could not be sent.
+files-notifications-busy = Desktop notifications are busy or unavailable.
+# The application name the notification server shows.
+files-app-full-name = Canopa Files
+files-notification-decision = Operation needs a decision
+files-notification-worker-stopped = Desktop notification worker stopped before replying.
+files-completed-detail = Completed.
+# Body of the notification for an operation that waits for a decision.
+files-notification-decision-body = { $operation } · Open Operations to review.
+
+## File operations window
+
+files-recovery-reader-stopped = The Recovery reader stopped before replying.
+files-operation-queue-unavailable-short = The operation queue is unavailable
+files-operation-worker-stopped-acceptance = The operation worker stopped before confirming acceptance.
+files-abandon-not-saved = The operation queue stopped before abandonment was saved.
+files-dismissal-not-saved = The operation queue stopped before dismissal was saved.
+files-history-heading = File history
+files-history-latest = Latest
+files-history-older = Older
+files-history-preparing = Preparing file operations…
+files-history-empty = No file operations yet
+files-history-empty-description = File changes made in Files will appear here.
+files-history-moved-to-trash = Moved to Trash
+files-history-renamed = Renamed
+files-history-created-folder = Created folder
+files-details = Details
+files-retry-save = Retry Save
+files-retry-failed-items = Retry failed items
+files-continue-remaining = Continue remaining work
+files-abandon-unfinished = Abandon unfinished work
+files-dismiss-request = Dismiss request
+files-dismiss-request-description = Dismiss releases this saved request. Completed work and Undo stay available.
+files-retry-failed-recovery = Retry failed Recovery copies
+files-continue-recovery = Continue Recovery copy
+files-phase-completed = Completed
+files-recent-activity = Recent activity
+files-phase-queued = Queued
+files-phase-running = Running
+files-phase-awaiting-review = Not started · review needed
+files-phase-interrupted = Interrupted · review needed
+files-phase-failed = Could not finish
+files-phase-stopped = Stopped · review needed
+files-phase-start-save-failed = Not started · could not save
+files-phase-save-failed = Result not saved
+# $status is a phase such as "Running", $operation the operation's name.
+files-operation-summary = { $status } · { $operation }
+files-operation-announcement = { $operation }: { $status }
+files-operation-announcement-error = { $operation }: { $status }. { $error }
+files-history-renamed-to = Renamed to { $name }
+files-history-previously = Previously { $name }
+files-history-accepted = Request accepted { $date }
+files-history-count = { $count ->
+    [one] { $count } operation
+   *[other] { $count } operations
+}
+files-history-count-latest-first = { $count ->
+    [one] { $count } operation  ·  Latest first
+   *[other] { $count } operations  ·  Latest first
+}
+
+## Transfer details and progress
+
+files-details-completed = Completed destinations ({ $count })
+files-details-failed = Failed items ({ $count })
+files-details-skipped = Skipped items ({ $count })
+files-details-remaining = Remaining items ({ $count })
+files-details-sources = Source folders to review ({ $count })
+files-details-completed-short = Completed ({ $count })
+files-details-failed-short = Failed ({ $count })
+files-details-skipped-short = Skipped ({ $count })
+files-details-remaining-short = Remaining ({ $count })
+files-details-sources-short = Sources ({ $count })
+# A failed item: its source path, destination path and the error, on separate lines.
+files-details-failure = Source
+    { $source }
+    Destination
+    { $destination }
+    { $error }
+# Appended to a label cut to its maximum length.
+files-details-truncated = … (truncated)
+files-details-failed-to-open = Could not open transfer details. Try Details again in Operations.
+files-review-decision = Review decision
+files-details-section-empty = No items in this section.
+# A numbered item of a details list.
+files-details-entry = { $number }. { $entry }
+files-details-page = Items { $first }–{ $last } of { $count }
+files-details-gone = This operation is no longer available.
+files-previous = Previous
+files-next = Next
+# $name is the file being transferred.
+files-progress-paused-at = Paused at { $name }
+files-progress-checking = Checking { $name }
+files-progress-transferring = Transferring { $name }
+# $bytes and $total_bytes are sizes such as "2.0 KiB".
+files-progress-counts = { $total ->
+    [one] { $done } of { $total } item · { $bytes } of { $total_bytes }
+   *[other] { $done } of { $total } items · { $bytes } of { $total_bytes }
+}
+files-progress-counting = { $total ->
+    [one] { $done } of { $total }+ item · { $bytes } · counting…
+   *[other] { $done } of { $total }+ items · { $bytes } · counting…
+}
+files-progress-running-counts = { $done ->
+    [one] { $done } item · { $bytes }
+   *[other] { $done } items · { $bytes }
+}
+# A transfer speed; $size is a size such as "12.0 MiB".
+files-progress-rate = { $size }/s
+# $duration is a duration such as "2 min".
+files-progress-time-left = about { $duration } left
+files-progress-few-seconds-left = about a few seconds left
+files-progress-rate-and-time = { $rate } · { $left }
+
+## Operations window and custom commands
+
+files-phase-waiting-for-device = Waiting for device removal…
+files-output-stdout = Standard output
+files-output-stderr = Standard error
+files-output-empty = (empty)
+files-output-truncated = [Output was truncated]
+files-actions-runtime-unavailable = The custom-action runtime is unavailable.
+files-actions-runtime-stopped-admission = The custom-action runtime stopped before replying to admission.
+files-new-browser = New browser
+files-operations-subtitle = File changes, transfers, and command results
+files-custom-commands = Custom commands
+files-latest-commands = Latest commands
+files-older-commands = Older commands
+files-hide-output = Hide output
+files-show-output = Show output
+files-previous-page = Previous page
+files-next-page = Next page
+files-copy-all-output = Copy all output
+
+## Custom action commands
+
+files-action-folder-changed = The action's original folder changed. Return to that folder and invoke the action again.
+files-action-command-terminated = Command terminated
+files-action-runtime-stopped = The custom-action runtime has stopped.
+files-action-queue-full = The custom-action queue is unavailable or full. Try again.
+files-action-close-busy = Finish or cancel accepted commands and hand off completion notices before stopping the custom-action runtime.
+files-action-invalid-request = A custom action requires absolute selected paths and its original working-folder binding.
+files-action-too-many = Too many unfinished commands or undelivered results. Finish or cancel work and collect its completion notices before starting another.
+files-action-sequence-exhausted = The custom-action sequence is exhausted.
+files-action-worker-stopped = The command worker stopped unexpectedly.
+# Heading of a command's output stream, followed by its text.
+files-output-heading = { $stream }:
+files-custom-actions-error = Custom actions: { $error }
+# A custom command's folder and how many items it was given.
+files-command-job-folder = { $folder }  ·  { $count } selected
+# $code is a process exit code.
+files-action-exit-code = Failed · exit code { $code }
+files-action-could-not-run = Could not run: { $error }

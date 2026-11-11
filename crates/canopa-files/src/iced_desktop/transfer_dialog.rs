@@ -25,7 +25,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let font = canopa_ui::font(appearance);
     let small = appearance.typography().label_size.px();
     let mut facts = column![].spacing(12);
-    let mut choices = vec![("Cancel", TransferReply::Cancel)];
+    use canopa_ui::Action;
+    // Caption, reply, button style and whether the caption warns of data loss.
+    let mut choices = vec![(
+        fl!("files-cancel"),
+        TransferReply::Cancel,
+        Action::Quiet,
+        false,
+    )];
     match question {
         TransferQuestion::Conflict {
             source,
@@ -33,13 +40,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ..
         } => {
             let explanation = if question.can_merge() {
-                "Merge combines these folders and asks about individual collisions. Keep both renames the incoming folder. Skip leaves it untouched."
+                fl!("files-conflict-merge-explanation")
             } else if recovery {
-                "“Keep both” copies the saved item under a new name. “Skip” leaves both items untouched."
+                fl!("files-conflict-recovery-explanation")
             } else if question.can_replace() {
-                "Replace saves the existing file for Undo. Keep both renames the incoming file. Skip leaves both untouched."
+                fl!("files-conflict-replace-explanation")
             } else {
-                "This name is already used by a different kind of item. Keep both gives the incoming item another name. Skip leaves both items untouched."
+                fl!("files-conflict-kind-explanation")
             };
             let text_size = appearance.typography().body_size.px();
             let filename = source.name().into_owned();
@@ -47,7 +54,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 display_location(&desktop.home, entry.path.parent().unwrap_or(&entry.path))
             };
             let original = if recovery {
-                "Saved version in Recovery".into()
+                fl!("files-conflict-saved-version")
             } else {
                 path(source)
             };
@@ -98,8 +105,10 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                     appearance,
                     column![
                         pair(
-                            chrome::section_title(appearance, "Incoming").into(),
-                            chrome::section_title(appearance, "Existing").into()
+                            chrome::section_title(appearance, fl!("files-conflict-incoming"))
+                                .into(),
+                            chrome::section_title(appearance, fl!("files-conflict-existing"))
+                                .into()
                         ),
                         pair(field(original), field(path(destination))),
                         pair(details(source), details(destination)),
@@ -111,14 +120,34 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 apply_to_remaining: false,
             };
             if !recovery && question.can_replace() {
-                choices.push(("Replace", resolve(ConflictChoice::Replace)));
+                choices.push((
+                    fl!("files-conflict-replace"),
+                    resolve(ConflictChoice::Replace),
+                    Action::Normal,
+                    true,
+                ));
             }
             if question.can_merge() {
-                choices.push(("Merge", resolve(ConflictChoice::Merge)));
+                choices.push((
+                    fl!("files-conflict-merge"),
+                    resolve(ConflictChoice::Merge),
+                    Action::Normal,
+                    false,
+                ));
             }
             choices.extend([
-                ("Keep both", resolve(ConflictChoice::KeepBoth)),
-                ("Skip", resolve(ConflictChoice::Skip)),
+                (
+                    fl!("files-conflict-keep-both"),
+                    resolve(ConflictChoice::KeepBoth),
+                    Action::Primary,
+                    false,
+                ),
+                (
+                    fl!("files-conflict-skip"),
+                    resolve(ConflictChoice::Skip),
+                    Action::Quiet,
+                    false,
+                ),
             ]);
         }
         TransferQuestion::Unavailable {
@@ -126,21 +155,40 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             message,
         } => {
             facts = facts
-                .push(chrome::dialog_heading(desktop, chrome::Icon::Drive, dialog.title(), "The transfer is paused"))
-                .push(text("Restore access to the destination, then choose Retry. Cancel keeps the unfinished source files.")
-                    .font(font).size(appearance.typography().body_size.px())
-                    .wrapping(text::Wrapping::WordOrGlyph))
+                .push(chrome::dialog_heading(
+                    desktop,
+                    chrome::Icon::Drive,
+                    dialog.title(),
+                    fl!("files-transfer-paused"),
+                ))
+                .push(
+                    text(fl!("files-transfer-unavailable-explanation"))
+                        .font(font)
+                        .size(appearance.typography().body_size.px())
+                        .wrapping(text::Wrapping::WordOrGlyph),
+                )
                 .push(chrome::card(
                     appearance,
                     column![
-                        chrome::section_title(appearance, "Destination"),
-                        text(display_location(&desktop.home, destination)).font(font).size(small)
+                        chrome::section_title(appearance, fl!("files-destination")),
+                        text(display_location(&desktop.home, destination))
+                            .font(font)
+                            .size(small)
                             .wrapping(text::Wrapping::WordOrGlyph),
-                        text(format!("System details · {message}")).font(font).size(small).style(canopa_ui::muted)
+                        text(fl!("files-system-details", details = message.clone()))
+                            .font(font)
+                            .size(small)
+                            .style(canopa_ui::muted)
                             .wrapping(text::Wrapping::WordOrGlyph),
-                    ].spacing(6),
+                    ]
+                    .spacing(6),
                 ));
-            choices.push(("Retry", TransferReply::Retry));
+            choices.push((
+                fl!("files-retry"),
+                TransferReply::Retry,
+                Action::Primary,
+                false,
+            ));
         }
     }
     if let Some(error) = desktop
@@ -162,31 +210,25 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let mut order: Vec<_> = (0..choices.len())
         .map(|index| control(dialog.window, index))
         .collect();
-    let mut buttons = row![].spacing(8);
-    for (index, (label, choice)) in choices.iter().enumerate() {
+    let mut buttons = Vec::new();
+    for (index, (label, choice, kind, danger)) in choices.iter().enumerate() {
         let message = Message::FileOperation(Event::TransferAnswer(
             dialog.job,
             dialog.generation,
             *choice,
         ));
-        buttons = buttons.push(super::focus::button(
+        buttons.push(super::focus::button(
             control(dialog.window, index),
             Some(message.clone()),
             appearance,
             canopa_ui::styled_action(
-                text(*label)
+                text(label.clone())
                     .font(font)
                     .wrapping(text::Wrapping::WordOrGlyph)
                     .size(small)
-                    .color_maybe(
-                        (*label == "Replace").then(|| chrome::ink(appearance, ColorRole::Danger)),
-                    ),
+                    .color_maybe(danger.then(|| chrome::ink(appearance, ColorRole::Danger))),
                 Some(message),
-                match *label {
-                    "Retry" | "Keep both" => canopa_ui::Action::Primary,
-                    "Replace" | "Merge" => canopa_ui::Action::Normal,
-                    _ => canopa_ui::Action::Quiet,
-                },
+                *kind,
                 false,
                 appearance,
             ),
@@ -207,9 +249,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             appearance,
             checkbox(dialog.apply)
                 .label(if source.is_directory() {
-                    "Apply to remaining folder conflicts"
+                    fl!("files-conflict-apply-folders")
                 } else {
-                    "Apply to remaining file conflicts"
+                    fl!("files-conflict-apply-files")
                 })
                 .font(font)
                 .text_wrapping(text::Wrapping::WordOrGlyph)
@@ -230,7 +272,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                         .spacing(4),
                 ))
                 .height(Length::Fill),
-            decision_actions(buttons, scope)
+            decision_actions(canopa_ui::direction::row(buttons).spacing(8), scope)
         ]
         .spacing(12),
     )

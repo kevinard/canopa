@@ -24,7 +24,7 @@ impl Worker {
                     .build();
                 while let Ok(notice) = receiver.recv() {
                     let result = match &runtime {
-                        Err(_) => Err("Desktop notifications are unavailable.".into()),
+                        Err(_) => Err(fl!("files-notifications-unavailable")),
                         Ok(runtime) => runtime.block_on(async {
                             tokio::time::timeout(Duration::from_secs(2), async {
                                 let connection = zbus::Connection::session().await?;
@@ -39,7 +39,7 @@ impl Worker {
                                         Some("org.freedesktop.Notifications"),
                                         "Notify",
                                         &(
-                                            "Canopa Files",
+                                            fl!("files-app-full-name"),
                                             0_u32,
                                             "system-run-symbolic",
                                             notice.title.as_str(),
@@ -54,8 +54,8 @@ impl Worker {
                                 Ok::<(), zbus::Error>(())
                             })
                             .await
-                            .map_err(|_| "Desktop notification timed out.".to_owned())?
-                            .map_err(|_| "Desktop notification could not be sent.".to_owned())
+                            .map_err(|_| fl!("files-notification-timed-out"))?
+                            .map_err(|_| fl!("files-notification-not-sent"))
                         }),
                     };
                     let _ = notice.reply.send(result);
@@ -72,7 +72,7 @@ impl Worker {
         let (reply, receiver) = oneshot::channel();
         self.requests
             .try_send(Notice { title, body, reply })
-            .map_err(|_| io::Error::other("Desktop notifications are busy or unavailable."))?;
+            .map_err(|_| io::Error::other(fl!("files-notifications-busy")))?;
         Ok(receiver)
     }
 }

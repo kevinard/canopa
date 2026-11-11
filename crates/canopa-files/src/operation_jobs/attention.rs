@@ -150,7 +150,7 @@ impl Worker {
                     .error
                     .clone()
                     .or(job.detail.clone())
-                    .unwrap_or_else(|| "Completed.".into()),
+                    .unwrap_or_else(|| fl!("files-completed-detail")),
             }
         } else {
             // A resolved question or retried save no longer needs that unread

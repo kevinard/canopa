@@ -9,7 +9,7 @@ use crate::{
 use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Length,
-    widget::{column, container, row, scrollable, text},
+    widget::{column, container, scrollable, text},
 };
 
 pub(super) struct Dialog {
@@ -27,19 +27,19 @@ pub(super) enum Reply {
     Transfer(TransferReply),
 }
 impl Dialog {
-    pub fn title(&self) -> &'static str {
+    pub fn title(&self) -> String {
         match &self.question {
-            Question::Undo(_) => "Undo needs a decision",
-            Question::Recovery(_) => "Recovery copy needs a decision",
+            Question::Undo(_) => fl!("files-question-undo"),
+            Question::Recovery(_) => fl!("files-question-recovery"),
             Question::Transfer(crate::operation_jobs::TransferQuestion::Conflict {
                 folders: true,
                 ..
-            }) => "Folder conflict",
+            }) => fl!("files-question-folder-conflict"),
             Question::Transfer(crate::operation_jobs::TransferQuestion::Conflict { .. }) => {
-                "File conflict"
+                fl!("files-question-file-conflict")
             }
             Question::Transfer(crate::operation_jobs::TransferQuestion::Unavailable { .. }) => {
-                "Destination unavailable"
+                fl!("files-question-destination-unavailable")
             }
         }
     }
@@ -53,112 +53,114 @@ pub(super) fn control(window: window::Id, index: usize) -> iced::widget::Id {
     iced::widget::Id::from(format!("files-question-{window:?}-{index}"))
 }
 
-fn choices(conflict: &UndoConflict) -> Vec<(&'static str, UndoChoice)> {
+fn choices(conflict: &UndoConflict) -> Vec<(String, UndoChoice)> {
     use UndoChoice::*;
     use UndoSource::*;
-    let mut choices = vec![("Cancel", Cancel)];
+    let mut choices = vec![(fl!("files-cancel"), Cancel)];
     match conflict.source {
         Current | Trash | PreviousDestination => {
             if conflict.can_merge() {
-                choices.push(("Merge", Merge));
+                choices.push((fl!("files-conflict-merge"), Merge));
             }
             if conflict.can_replace() {
-                choices.push(("Replace", Replace));
+                choices.push((fl!("files-conflict-replace"), Replace));
             }
-            choices.extend([("Keep both", KeepBoth), ("Skip", Skip)]);
+            choices.extend([
+                (fl!("files-conflict-keep-both"), KeepBoth),
+                (fl!("files-conflict-skip"), Skip),
+            ]);
         }
-        NonemptyFolder | ChangedCreatedFolder => {
-            choices.extend([("Keep item", KeepItem), ("Skip", Skip)])
-        }
-        UnavailableCreatedFolder => choices.extend([("Finish step", FinishStep), ("Skip", Skip)]),
-        MergeRemainder => choices.extend([
-            ("Move remaining items", Merge),
-            ("Keep remaining items", KeepItem),
-            ("Skip", Skip),
+        NonemptyFolder | ChangedCreatedFolder => choices.extend([
+            (fl!("files-undo-keep-item"), KeepItem),
+            (fl!("files-conflict-skip"), Skip),
         ]),
-        MergeSource | MergeDestination => {
-            choices.extend([("Finish this Merge", FinishStep), ("Skip", Skip)])
-        }
+        UnavailableCreatedFolder => choices.extend([
+            (fl!("files-undo-finish-step"), FinishStep),
+            (fl!("files-conflict-skip"), Skip),
+        ]),
+        MergeRemainder => choices.extend([
+            (fl!("files-undo-move-remaining"), Merge),
+            (fl!("files-undo-keep-remaining"), KeepItem),
+            (fl!("files-conflict-skip"), Skip),
+        ]),
+        MergeSource | MergeDestination => choices.extend([
+            (fl!("files-undo-finish-merge"), FinishStep),
+            (fl!("files-conflict-skip"), Skip),
+        ]),
         ChangedCopy => {
             if conflict.can_move_to_recovery() {
-                choices.push(("Move changed item to Recovery", MoveToRecovery));
+                choices.push((fl!("files-undo-move-to-recovery"), MoveToRecovery));
             }
-            choices.extend([("Keep item", KeepItem), ("Skip", Skip)]);
+            choices.extend([
+                (fl!("files-undo-keep-item"), KeepItem),
+                (fl!("files-conflict-skip"), Skip),
+            ]);
         }
         ChangedRetained => {
             if conflict.can_use_saved_version() {
-                choices.push(("Use saved version", UseSavedVersion));
+                choices.push((fl!("files-undo-use-saved-version"), UseSavedVersion));
             }
-            choices.extend([("Keep item", KeepItem), ("Skip", Skip)]);
+            choices.extend([
+                (fl!("files-undo-keep-item"), KeepItem),
+                (fl!("files-conflict-skip"), Skip),
+            ]);
         }
         ChangedMove | ChangedCrossMove => {
             if conflict.can_return_item() {
-                choices.push(("Return item", ReturnItem));
+                choices.push((fl!("files-undo-return-item"), ReturnItem));
             }
-            choices.extend([("Keep item", KeepItem), ("Skip", Skip)]);
+            choices.extend([
+                (fl!("files-undo-keep-item"), KeepItem),
+                (fl!("files-conflict-skip"), Skip),
+            ]);
         }
         UnavailableMove | UnavailableCrossMove | UnavailableRetained | UnavailableMergeRetained => {
             if conflict.can_restore_previous_destination() {
-                choices.push(("Restore previous destination", RestorePreviousDestination));
+                choices.push((
+                    fl!("files-undo-restore-previous"),
+                    RestorePreviousDestination,
+                ));
             }
             if conflict.can_return_item() {
-                choices.push(("Return item", ReturnItem));
+                choices.push((fl!("files-undo-return-item"), ReturnItem));
             }
-            choices.extend([("Finish step", FinishStep), ("Skip", Skip)]);
+            choices.extend([
+                (fl!("files-undo-finish-step"), FinishStep),
+                (fl!("files-conflict-skip"), Skip),
+            ]);
         }
     }
     choices
 }
 
-fn explanation(source: UndoSource) -> &'static str {
+fn explanation(source: UndoSource) -> String {
     use UndoSource::*;
     match source {
-        Current => {
-            "Undo would return this item to a name that is already in use. Review both versions before choosing. Replace retains the displaced item in Recovery; Keep both returns under a new name. Skip leaves this step available for later."
-        }
-        Trash => {
-            "An item from Trash needs to return to a name that is already in use. Review both versions. Keep both restores it under another name; Skip keeps it available for later."
-        }
-        PreviousDestination => {
-            "Undo is restoring a saved previous destination, but its original name is in use. Review both versions. Replacements remain protected in Recovery."
-        }
-        NonemptyFolder => {
-            "This created folder now contains later work. Keep item leaves the folder and its contents in place and finishes its creation step. Skip keeps the step available for later."
-        }
-        ChangedCreatedFolder => {
-            "The created folder has changed, moved or been replaced. Keep item leaves the current item untouched and finishes this creation step. Skip lets you decide later."
-        }
-        UnavailableCreatedFolder => {
-            "The created folder cannot be inspected. Restore its location or access before trying again. Finish step leaves files untouched and gives up this removal step; Skip keeps it for later."
-        }
-        MergeRemainder => {
-            "Items remain in the merged destination. Move remaining items continues the return while handling new conflicts. Keep remaining items leaves them here and finishes this branch. Skip lets you decide later."
-        }
-        MergeSource | MergeDestination => {
-            "A folder used by this partial Merge has moved, changed or cannot be inspected. Restore its original location or access to continue. Finish this Merge leaves files in place and preserves saved previous destinations in Recovery. Already returned items stay where they are."
-        }
-        ChangedCopy => {
-            "This copied item has changed since the copy. Move changed item to Recovery preserves its newer contents before undoing the copy. Keep item leaves it here and finishes its copy step; Skip lets you decide later."
-        }
-        ChangedRetained => {
-            "The saved version has changed. Review the saved and current items before choosing to use it. Keep item preserves the current item and finishes this step, retaining protected versions in Recovery."
-        }
-        ChangedMove | ChangedCrossMove => {
-            "The moved item or its destination has changed. Return item returns the reviewed current item and preserves any saved previous destination. Keep item leaves the current item in place and finishes this step. Skip keeps it for later."
-        }
-        UnavailableMove | UnavailableCrossMove => {
-            "The moved item cannot be inspected. Restore its location or access before continuing. Restore previous destination returns only that saved version when available. Finish step leaves the moved item untouched and preserves protected data in Recovery."
-        }
+        Current => fl!("files-undo-explain-current"),
+        Trash => fl!("files-undo-explain-trash"),
+        PreviousDestination => fl!("files-undo-explain-previous-destination"),
+        NonemptyFolder => fl!("files-undo-explain-nonempty-folder"),
+        ChangedCreatedFolder => fl!("files-undo-explain-changed-created-folder"),
+        UnavailableCreatedFolder => fl!("files-undo-explain-unavailable-created-folder"),
+        MergeRemainder => fl!("files-undo-explain-merge-remainder"),
+        MergeSource | MergeDestination => fl!("files-undo-explain-merge"),
+        ChangedCopy => fl!("files-undo-explain-changed-copy"),
+        ChangedRetained => fl!("files-undo-explain-changed-retained"),
+        ChangedMove | ChangedCrossMove => fl!("files-undo-explain-changed-move"),
+        UnavailableMove | UnavailableCrossMove => fl!("files-undo-explain-unavailable-move"),
         UnavailableRetained | UnavailableMergeRetained => {
-            "A saved previous version cannot be inspected. Restore its location or access to retry. Return item performs only the available return when offered. Finish step leaves current files untouched and retains protected saved data in Recovery."
+            fl!("files-undo-explain-unavailable-retained")
         }
     }
 }
 
 pub(super) fn display_location(home: &Path, path: &Path) -> String {
     match path.strip_prefix(home) {
-        Ok(relative) if relative.as_os_str().is_empty() => "Home".into(),
-        Ok(relative) => format!("Home / {}", relative.to_string_lossy().replace('/', " / ")),
+        Ok(relative) if relative.as_os_str().is_empty() => fl!("files-place-home"),
+        Ok(relative) => fl!(
+            "files-home-path",
+            path = relative.to_string_lossy().replace('/', " / ")
+        ),
         Err(_) => path.to_string_lossy().into_owned(),
     }
 }
@@ -166,21 +168,29 @@ pub(super) fn display_location(home: &Path, path: &Path) -> String {
 pub(super) fn entry_metadata(entry: &crate::browse::Entry) -> String {
     let modified = entry
         .modified
-        .map(chrono::DateTime::<chrono::Local>::from)
-        .map(|time| time.format("%b %-d, %Y · %H:%M:%S").to_string())
-        .unwrap_or_else(|| "Unknown".into());
+        .and_then(super::listing_ui::local_time)
+        .map(super::listing_ui::date_time_seconds)
+        .unwrap_or_else(|| fl!("files-unknown"));
     let kind = match entry.kind {
-        crate::browse::EntryKind::Directory => "Folder",
-        crate::browse::EntryKind::File => "File",
-        crate::browse::EntryKind::Symlink => "Link",
-        crate::browse::EntryKind::Other => "Special item",
+        crate::browse::EntryKind::Directory => fl!("files-kind-folder"),
+        crate::browse::EntryKind::File => fl!("files-kind-file"),
+        crate::browse::EntryKind::Symlink => fl!("files-kind-link"),
+        crate::browse::EntryKind::Other => fl!("files-kind-special"),
     };
-    let bytes = if entry.kind == crate::browse::EntryKind::Directory {
-        String::new()
+    if entry.kind == crate::browse::EntryKind::Directory {
+        fl!(
+            "files-entry-metadata-folder",
+            kind = kind,
+            modified = modified
+        )
     } else {
-        format!(" · {} bytes", entry.size)
-    };
-    format!("{kind}{bytes}\nModified {modified}")
+        fl!(
+            "files-entry-metadata",
+            kind = kind,
+            bytes = entry.size,
+            modified = modified
+        )
+    }
 }
 
 pub(super) fn decision_actions<'a>(
@@ -192,7 +202,7 @@ pub(super) fn decision_actions<'a>(
         iced::widget::rule::horizontal(1).style(chrome::divider),
         container(buttons.wrap())
             .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
+            .align_x(canopa_ui::direction::end()),
     ]
     .spacing(8)
     .into()
@@ -321,9 +331,7 @@ impl Desktop {
         }
         if opened.is_none() {
             self.file_operations.question = None;
-            self.file_operations.error = Some(
-                "Could not open the operation question. Review the operation to try again.".into(),
-            );
+            self.file_operations.error = Some(fl!("files-question-failed"));
             return Task::none();
         }
         iced::widget::operation::focus(control(id, 0)).chain(window::gain_focus(id))
@@ -443,17 +451,16 @@ impl Desktop {
 fn summary(dialog: &Dialog) -> String {
     use crate::operation_jobs::TransferQuestion;
     match &dialog.question {
-        Question::Undo(conflict) => explanation(conflict.source).to_owned(),
+        Question::Undo(conflict) => explanation(conflict.source),
         Question::Transfer(TransferQuestion::Conflict { source, .. })
-        | Question::Recovery(TransferQuestion::Conflict { source, .. }) => format!(
-            "{} “{}” already exists in the destination.",
+        | Question::Recovery(TransferQuestion::Conflict { source, .. }) => {
+            let name = source.name().into_owned();
             if source.is_directory() {
-                "A folder named"
+                fl!("files-conflict-folder-exists", name = name)
             } else {
-                "An item named"
-            },
-            source.name()
-        ),
+                fl!("files-conflict-item-exists", name = name)
+            }
+        }
         Question::Transfer(TransferQuestion::Unavailable { message, .. })
         | Question::Recovery(TransferQuestion::Unavailable { message, .. }) => message.clone(),
     }
@@ -477,18 +484,19 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
     let font = canopa_ui::font(appearance);
     let small = appearance.typography().label_size.px();
     let logical = match conflict.source {
-        UndoSource::Trash => Some("Restoring from Trash"),
+        UndoSource::Trash => Some(fl!("files-undo-restoring-from-trash")),
         UndoSource::PreviousDestination
         | UndoSource::ChangedRetained
         | UndoSource::UnavailableRetained
-        | UndoSource::UnavailableMergeRetained => Some("Saved previous destination"),
+        | UndoSource::UnavailableMergeRetained => Some(fl!("files-undo-saved-previous")),
         _ => None,
     };
     let (path, detail) = match &conflict.incoming {
         UndoItem::Available(entry) => (entry.path.as_path(), entry_metadata(entry)),
-        UndoItem::Unavailable { path, message, .. } => {
-            (path.as_path(), format!("Unavailable · {message}"))
-        }
+        UndoItem::Unavailable { path, message, .. } => (
+            path.as_path(),
+            fl!("files-undo-unavailable", error = message.clone()),
+        ),
     };
     let name = |path: &Path| {
         path.file_name()
@@ -523,17 +531,22 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         )),
     ]
     .spacing(5);
-    if let Some(label) = logical {
-        item = item.push(detail_text(label.into()));
+    if let Some(label) = &logical {
+        item = item.push(detail_text(label.clone()));
     }
     if path != conflict.destination && logical.is_none() {
-        item = item.push(detail_text(format!(
-            "Destination · {}",
-            display_location(&desktop.home, &conflict.destination)
+        item = item.push(detail_text(fl!(
+            "files-undo-destination",
+            location = display_location(&desktop.home, &conflict.destination)
         )));
     }
     let mut facts = column![
-        chrome::dialog_heading(desktop, chrome::Icon::Recovery, "Undo needs a decision", ""),
+        chrome::dialog_heading(
+            desktop,
+            chrome::Icon::Recovery,
+            fl!("files-question-undo"),
+            ""
+        ),
         text(explanation(conflict.source))
             .font(font)
             .size(appearance.typography().body_size.px())
@@ -542,9 +555,9 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
     ]
     .spacing(12);
     for (label, entry, path) in [
-        ("Existing item", &conflict.existing, None),
+        (fl!("files-undo-existing-item"), &conflict.existing, None),
         (
-            "Saved previous destination",
+            fl!("files-undo-saved-previous"),
             &conflict.saved_previous,
             Some(conflict.destination.as_path()),
         ),
@@ -562,9 +575,9 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         }
     }
     if let Some(path) = &conflict.return_destination {
-        facts = facts.push(detail_text(format!(
-            "Return to · {}",
-            display_location(&desktop.home, path)
+        facts = facts.push(detail_text(fl!(
+            "files-undo-return-to",
+            location = display_location(&desktop.home, path)
         )));
     }
     if let Some(error) = desktop
@@ -582,7 +595,7 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         );
     }
     let choices = if desktop.file_operations.storage_error.is_some() {
-        vec![("Cancel", UndoChoice::Cancel)]
+        vec![(fl!("files-cancel"), UndoChoice::Cancel)]
     } else {
         choices(conflict)
     };
@@ -591,10 +604,10 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         .enumerate()
         .map(|(index, _)| control(dialog.window, index))
         .collect();
-    let mut buttons = row![].spacing(8);
+    let mut buttons = Vec::new();
     for (index, (label, choice)) in choices.into_iter().enumerate() {
         let message = Message::FileOperation(Event::Answer(dialog.job, dialog.generation, choice));
-        buttons = buttons.push(super::focus::button(
+        buttons.push(super::focus::button(
             control(dialog.window, index),
             Some(message.clone()),
             appearance,
@@ -626,7 +639,7 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
                         .spacing(4),
                 ))
                 .height(Length::Fill),
-            decision_actions(buttons, None)
+            decision_actions(canopa_ui::direction::row(buttons).spacing(8), None)
         ]
         .spacing(12),
     )

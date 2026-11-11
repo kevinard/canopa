@@ -31,12 +31,12 @@ impl Job {
     }
     fn status(&self) -> String {
         match self.state.phase {
-            Phase::Queued => "Queued".into(),
-            Phase::WaitingForDevice => "Waiting for device removal…".into(),
-            Phase::Running => "Running".into(),
-            Phase::Cancelling => "Cancelling…".into(),
+            Phase::Queued => fl!("files-phase-queued"),
+            Phase::WaitingForDevice => fl!("files-phase-waiting-for-device"),
+            Phase::Running => fl!("files-phase-running"),
+            Phase::Cancelling => fl!("files-device-cancelling"),
             Phase::Finished => self.state.completion_status().map_or_else(
-                || "Cancelled before starting".into(),
+                || fl!("files-jobs-cancelled-before-start"),
                 |status| status.description(),
             ),
         }
@@ -47,18 +47,27 @@ impl Job {
         };
         let mut output = String::new();
         for (name, bytes, truncated) in [
-            ("Standard output", &outcome.stdout, outcome.stdout_truncated),
-            ("Standard error", &outcome.stderr, outcome.stderr_truncated),
+            (
+                fl!("files-output-stdout"),
+                &outcome.stdout,
+                outcome.stdout_truncated,
+            ),
+            (
+                fl!("files-output-stderr"),
+                &outcome.stderr,
+                outcome.stderr_truncated,
+            ),
         ] {
-            output.push_str(name);
-            output.push_str(":\n");
+            output.push_str(&fl!("files-output-heading", stream = name));
+            output.push('\n');
             if bytes.is_empty() {
-                output.push_str("(empty)");
+                output.push_str(&fl!("files-output-empty"));
             } else {
                 output.push_str(&String::from_utf8_lossy(bytes));
             }
             if truncated {
-                output.push_str("\n[Output was truncated]");
+                output.push('\n');
+                output.push_str(&fl!("files-output-truncated"));
             }
             output.push_str("\n\n");
         }
@@ -149,8 +158,8 @@ impl Jobs {
         self.service.as_ref().ok_or_else(|| {
             io::Error::other(
                 self.error
-                    .as_deref()
-                    .unwrap_or("The custom-action runtime is unavailable."),
+                    .clone()
+                    .unwrap_or_else(|| fl!("files-actions-runtime-unavailable")),
             )
         })
     }
@@ -189,11 +198,15 @@ impl Jobs {
     pub fn summary(&self) -> Option<String> {
         self.error
             .as_ref()
-            .map(|error| format!("Custom actions: {error}"))
+            .map(|error| fl!("files-custom-actions-error", error = error.clone()))
             .or_else(|| {
-                self.entries
-                    .last_key_value()
-                    .map(|(_, job)| format!("{}: {}", job.state.title, job.status()))
+                self.entries.last_key_value().map(|(_, job)| {
+                    fl!(
+                        "files-operation-announcement",
+                        operation = job.state.title.clone(),
+                        status = job.status()
+                    )
+                })
             })
     }
     fn page(&self) -> Vec<(u64, &Job)> {
@@ -326,9 +339,9 @@ impl Desktop {
             Event::Poll => return self.sync_command_jobs(),
             Event::Admitted(result) => {
                 self.jobs.admissions = self.jobs.admissions.saturating_sub(1);
-                if let Err(error) = result.unwrap_or_else(|| {
-                    Err("The custom-action runtime stopped before replying to admission.".into())
-                }) {
+                if let Err(error) =
+                    result.unwrap_or_else(|| Err(fl!("files-actions-runtime-stopped-admission")))
+                {
                     let _ = self.command_admission_error(&error);
                 }
                 return self.sync_command_jobs();
@@ -480,7 +493,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
     let small = appearance.typography().label_size.px();
     let font = canopa_ui::font(appearance);
     let window = desktop.operations_window.unwrap();
-    let action = |label: &'static str, control, message: Option<Message>| {
+    let action = |label: String, control, message: Option<Message>| {
         let label = text(label).size(small).font(font);
         let content: Element<'_, Message> = if control == Control::NewBrowser {
             row![
@@ -514,20 +527,20 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
         super::file_operation_rows::rows(desktop, window, history_wide);
     let tools = row![
         action(
-            "New browser",
+            fl!("files-new-browser"),
             Control::NewBrowser,
             Some(Message::NewBrowser(window))
         ),
         recovery,
     ]
     .spacing(6);
-    let subtitle = "File changes, transfers, and command results";
+    let subtitle = fl!("files-operations-subtitle");
     let heading: Element<'_, Message> = if wide {
         chrome::heading_with_action(
             desktop,
             chrome::Icon::Activity,
-            "Operations",
-            subtitle,
+            fl!("files-command-operations"),
+            subtitle.clone(),
             Some(
                 tools
                     .push(chrome::dismiss(desktop, window))
@@ -540,7 +553,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
             chrome::heading_with_action(
                 desktop,
                 chrome::Icon::Activity,
-                "Operations",
+                fl!("files-command-operations"),
                 subtitle,
                 Some(chrome::dismiss(desktop, window))
             ),
@@ -565,17 +578,20 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
     if !desktop.jobs.entries.is_empty() {
         rows = rows
             .push(iced::widget::rule::horizontal(1).style(chrome::divider))
-            .push(chrome::section_title(appearance, "Custom commands"));
+            .push(chrome::section_title(
+                appearance,
+                fl!("files-custom-commands"),
+            ));
         if desktop.jobs.before.is_some() || more {
             rows = rows.push(
                 row![
                     action(
-                        "Latest commands",
+                        fl!("files-latest-commands"),
                         Control::Newest,
                         desktop.jobs.before.map(|_| Message::Job(Event::Newest))
                     ),
                     action(
-                        "Older commands",
+                        fl!("files-older-commands"),
                         Control::Older,
                         more.then_some(Message::Job(Event::Older))
                     )
@@ -596,11 +612,15 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
             column![
                 chrome::section_title(appearance, job.state.title.clone())
                     .wrapping(text::Wrapping::WordOrGlyph),
-                text(format!("{folder}  ·  {} selected", job.state.count))
-                    .size(small)
-                    .font(font)
-                    .style(canopa_ui::muted)
-                    .wrapping(text::Wrapping::WordOrGlyph),
+                text(fl!(
+                    "files-command-job-folder",
+                    folder = folder,
+                    count = job.state.count
+                ))
+                .size(small)
+                .font(font)
+                .style(canopa_ui::muted)
+                .wrapping(text::Wrapping::WordOrGlyph),
             ]
             .spacing(3)
             .width(Length::Fill),
@@ -619,16 +639,16 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
         let primary = if job.state.phase == Phase::Finished {
             action(
                 if job.output.is_some() {
-                    "Hide output"
+                    fl!("files-hide-output")
                 } else {
-                    "Show output"
+                    fl!("files-show-output")
                 },
                 Control::Output(id),
                 Some(Message::Job(Event::Output(id))),
             )
         } else {
             action(
-                "Cancel",
+                fl!("files-cancel"),
                 Control::Cancel(id),
                 Some(Message::Job(Event::Cancel(id))),
             )
@@ -638,7 +658,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
             row![
                 primary,
                 action(
-                    "Open folder",
+                    fl!("files-open-folder"),
                     Control::OpenFolder(id),
                     Some(Message::Job(Event::OpenFolder(id))),
                 )
@@ -654,7 +674,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
             content = content.push(
                 row![
                     action(
-                        "Previous page",
+                        fl!("files-previous-page"),
                         Control::PreviousOutput(id),
                         (job.output_page > 0).then_some(Message::Job(Event::OutputPage(id, false)))
                     ),
@@ -662,13 +682,13 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
                         .size(small)
                         .font(font),
                     action(
-                        "Next page",
+                        fl!("files-next-page"),
                         Control::NextOutput(id),
                         (job.output_page + 1 < job.output_pages())
                             .then_some(Message::Job(Event::OutputPage(id, true)))
                     ),
                     action(
-                        "Copy all output",
+                        fl!("files-copy-all-output"),
                         Control::CopyOutput(id),
                         Some(Message::Job(Event::CopyOutput(id)))
                     ),

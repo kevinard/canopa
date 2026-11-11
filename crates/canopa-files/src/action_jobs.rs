@@ -52,9 +52,7 @@ impl Execution {
         }
         let request = &self.request;
         if std::fs::canonicalize(&request.directory)? != request.resolved_directory {
-            return Err(io::Error::other(
-                "The action's original folder changed. Return to that folder and invoke the action again.",
-            ));
+            return Err(io::Error::other(fl!("files-action-folder-changed")));
         }
         let prepared = request.action.prepare(&request.paths, &request.directory)?;
         if let Some(placement) = &self.placement {
@@ -123,11 +121,11 @@ pub enum CompletionStatus {
 impl CompletionStatus {
     pub fn description(&self) -> String {
         match self {
-            Self::Success => "Finished".into(),
-            Self::Cancelled => "Cancelled".into(),
-            Self::Exited(Some(code)) => format!("Failed · exit code {code}"),
-            Self::Exited(None) => "Command terminated".into(),
-            Self::Unavailable(error) => format!("Could not run: {error}"),
+            Self::Success => fl!("files-device-finished"),
+            Self::Cancelled => fl!("files-device-cancelled"),
+            Self::Exited(Some(code)) => fl!("files-action-exit-code", code = code.to_string()),
+            Self::Exited(None) => fl!("files-action-command-terminated"),
+            Self::Unavailable(error) => fl!("files-action-could-not-run", error = error.clone()),
         }
     }
 }
@@ -361,11 +359,12 @@ impl ActionJobs {
 
     fn send(&self, control: Control) -> io::Result<()> {
         if self.0.stopped.load(Ordering::Acquire) {
-            return Err(io::Error::other("The custom-action runtime has stopped."));
+            return Err(io::Error::other(fl!("files-action-runtime-stopped")));
         }
-        self.0.sender.try_send(control).map_err(|_| {
-            io::Error::other("The custom-action queue is unavailable or full. Try again.")
-        })
+        self.0
+            .sender
+            .try_send(control)
+            .map_err(|_| io::Error::other(fl!("files-action-queue-full")))
     }
 }
 
@@ -403,7 +402,7 @@ impl Worker {
                             .unwrap_or_else(|error| error.into_inner())
                             .is_empty()
                     {
-                        let _ = reply.send(Err("Finish or cancel accepted commands and hand off completion notices before stopping the custom-action runtime.".into()));
+                        let _ = reply.send(Err(fl!("files-action-close-busy")));
                     } else {
                         return Some(reply);
                     }
@@ -429,7 +428,7 @@ impl Worker {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "A custom action requires absolute selected paths and its original working-folder binding.",
+                fl!("files-action-invalid-request"),
             ));
         }
         request.action.validate()?;
@@ -441,15 +440,13 @@ impl Worker {
                 .len()
             >= UNFINISHED_LIMIT
         {
-            return Err(io::Error::other(
-                "Too many unfinished commands or undelivered results. Finish or cancel work and collect its completion notices before starting another.",
-            ));
+            return Err(io::Error::other(fl!("files-action-too-many")));
         }
 
         let id = self
             .next
             .checked_add(1)
-            .ok_or_else(|| io::Error::other("The custom-action sequence is exhausted."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-action-sequence-exhausted")))?;
         self.next = id;
         self.jobs.insert(
             id,
@@ -522,9 +519,7 @@ impl Worker {
                         }
                         request.run(&cancellation)
                     }))
-                    .unwrap_or_else(|_| {
-                        Err(io::Error::other("The command worker stopped unexpectedly."))
-                    })
+                    .unwrap_or_else(|_| Err(io::Error::other(fl!("files-action-worker-stopped"))))
                     .map_err(|error| error.to_string());
                     if let Some(sender) = sender.upgrade() {
                         let _ = sender.send(Control::Complete(id, Arc::new(outcome)));

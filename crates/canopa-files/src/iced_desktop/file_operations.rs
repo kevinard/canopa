@@ -273,9 +273,13 @@ impl State {
             .max_by_key(|job| job.id)
             .map(|job| {
                 if job.phase == Phase::Finished {
-                    "Recent activity".into()
+                    fl!("files-recent-activity")
                 } else {
-                    format!("{} · {}", status(job.phase), job.title)
+                    fl!(
+                        "files-operation-summary",
+                        status = status(job.phase),
+                        operation = crate::history_labels::display(&job.title)
+                    )
                 }
             })
     }
@@ -286,34 +290,41 @@ impl State {
     /// attention now: "Copy 3 items: Completed", "…: Could not finish. …".
     pub fn announcement(&self) -> Option<(String, bool)> {
         let job = self.snapshot.jobs.iter().max_by_key(|job| job.id)?;
-        let mut title = job.title.clone();
-        if let Some(initial) = title.get_mut(..1) {
-            initial.make_ascii_uppercase();
-        }
+        let title = crate::history_labels::title(&job.title);
         let failed = matches!(
             job.phase,
             Phase::Failed | Phase::StartSaveFailed | Phase::SaveFailed
         );
-        let mut text = format!("{title}: {}", super::file_operation_rows::phase_label(job));
-        if failed && let Some(error) = &job.error {
-            text = format!("{text}. {error}");
-        }
+        let phase = super::file_operation_rows::phase_label(job);
+        let text = match (&job.error, failed) {
+            (Some(error), true) => fl!(
+                "files-operation-announcement-error",
+                operation = title,
+                status = phase,
+                error = error.clone()
+            ),
+            _ => fl!(
+                "files-operation-announcement",
+                operation = title,
+                status = phase
+            ),
+        };
         Some((text, failed))
     }
 }
 
-pub(super) fn status(phase: Phase) -> &'static str {
+pub(super) fn status(phase: Phase) -> String {
     match phase {
-        Phase::Queued => "Queued",
-        Phase::Running => "Running",
-        Phase::Waiting => "Needs a decision",
-        Phase::AwaitingReview => "Not started · review needed",
-        Phase::Interrupted => "Interrupted · review needed",
-        Phase::Failed => "Could not finish",
-        Phase::Stopped => "Stopped · review needed",
-        Phase::StartSaveFailed => "Not started · could not save",
-        Phase::SaveFailed => "Result not saved",
-        Phase::Finished => "Finished",
+        Phase::Queued => fl!("files-phase-queued"),
+        Phase::Running => fl!("files-phase-running"),
+        Phase::Waiting => fl!("files-device-needs-decision"),
+        Phase::AwaitingReview => fl!("files-phase-awaiting-review"),
+        Phase::Interrupted => fl!("files-phase-interrupted"),
+        Phase::Failed => fl!("files-phase-failed"),
+        Phase::Stopped => fl!("files-phase-stopped"),
+        Phase::StartSaveFailed => fl!("files-phase-start-save-failed"),
+        Phase::SaveFailed => fl!("files-phase-save-failed"),
+        Phase::Finished => fl!("files-device-finished"),
     }
 }
 
@@ -346,9 +357,9 @@ impl Desktop {
                     match review {
                         Ok(receiver) => Task::perform(
                             async move {
-                                receiver.await.unwrap_or_else(|_| {
-                                    Err("The Recovery reader stopped before replying.".into())
-                                })
+                                receiver
+                                    .await
+                                    .unwrap_or_else(|_| Err(fl!("files-recovery-reader-stopped")))
                             },
                             |result| Message::FileOperation(Event::InitialRecovery(result)),
                         ),
@@ -438,7 +449,7 @@ impl Desktop {
             .file_operations
             .service
             .as_ref()
-            .ok_or_else(|| io::Error::other("The operation queue is unavailable"))
+            .ok_or_else(|| io::Error::other(fl!("files-operation-queue-unavailable-short")))
             .and_then(|service| service.submit_drop(choice));
         self.file_operations.admissions += 1;
         let submission = Arc::new(submission);
@@ -547,9 +558,9 @@ impl Desktop {
             }
             Event::Admitted(submission, result) => {
                 self.file_operations.admissions = self.file_operations.admissions.saturating_sub(1);
-                match result.unwrap_or_else(|| {
-                    Err("The operation worker stopped before confirming acceptance.".into())
-                }) {
+                match result
+                    .unwrap_or_else(|| Err(fl!("files-operation-worker-stopped-acceptance")))
+                {
                     Ok(id) => {
                         self.file_operations.inflight.insert(id, submission.clone());
                         let close = submission.dialog.map_or_else(Task::none, |dialog| {
@@ -658,7 +669,9 @@ impl Desktop {
                     Ok(receiver) => {
                         return Task::perform(
                             async move {
-                                receiver.await.unwrap_or_else(|_| Err("The operation queue stopped before abandonment was saved.".into()))
+                                receiver
+                                    .await
+                                    .unwrap_or_else(|_| Err(fl!("files-abandon-not-saved")))
                             },
                             |result| Message::FileOperation(Event::TransferAbandoned(result)),
                         );
@@ -677,7 +690,9 @@ impl Desktop {
                     Ok(receiver) => {
                         return Task::perform(
                             async move {
-                                receiver.await.unwrap_or_else(|_| Err("The operation queue stopped before dismissal was saved.".into()))
+                                receiver
+                                    .await
+                                    .unwrap_or_else(|_| Err(fl!("files-dismissal-not-saved")))
                             },
                             |result| Message::FileOperation(Event::RequestDismissed(result)),
                         );
