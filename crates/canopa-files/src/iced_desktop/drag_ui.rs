@@ -337,28 +337,24 @@ impl State {
             let bounds = incoming.bounds?;
             let target = incoming.target.as_ref()?;
             let snapshot = incoming.offer.snapshot();
+            let folder = target
+                .directory
+                .file_name()
+                .unwrap_or(target.directory.as_os_str())
+                .to_string_lossy()
+                .into_owned();
             let label = if incoming.hover_cancel.is_cancelled() {
-                "Cannot drop into"
+                fl!("files-drop-refused", folder = folder)
             } else if incoming.hover.is_some() {
                 match snapshot.selected {
-                    Some(native::Action::Copy) => "Copy to",
-                    Some(native::Action::Move) => "Move to",
-                    None => "Cannot drop into",
+                    Some(native::Action::Copy) => fl!("files-drop-copy", folder = folder),
+                    Some(native::Action::Move) => fl!("files-drop-move", folder = folder),
+                    None => fl!("files-drop-refused", folder = folder),
                 }
             } else {
-                "Checking"
+                fl!("files-drop-checking", folder = folder)
             };
-            Some((
-                bounds,
-                format!(
-                    "{label} {}",
-                    target
-                        .directory
-                        .file_name()
-                        .unwrap_or(target.directory.as_os_str())
-                        .to_string_lossy()
-                ),
-            ))
+            Some((bounds, label))
         })
     }
 }
@@ -401,7 +397,7 @@ async fn receive<T: Send + 'static>(
 ) -> Result<T, String> {
     receiver
         .await
-        .unwrap_or_else(|_| Err("The drag preparation worker stopped before replying".into()))
+        .unwrap_or_else(|_| Err(fl!("files-drag-worker-stopped")))
 }
 
 impl State {
@@ -579,7 +575,7 @@ impl State {
                                 incoming.confirmed = true;
                             } else {
                                 incoming.choice = None;
-                                desktop.file_operations.error=Some("The dragged file list changed or was cancelled. Start a new drag.".into());
+                                desktop.file_operations.error = Some(fl!("files-drag-changed"));
                             }
                         }
                         Ok(Some(paths)) => {
@@ -608,7 +604,7 @@ impl State {
                             incoming.cancellation.cancel();
                             incoming.choice = None;
                             desktop.file_operations.error =
-                                Some(format!("Could not read the dragged files: {error}"));
+                                Some(fl!("files-drag-read-failed", error = error.to_string()));
                         }
                     }
                 }
@@ -694,7 +690,7 @@ impl State {
                 .and_then(|selection| selection.encode(URIS));
             match endpoint
                 .zip(content.ok())
-                .ok_or_else(|| "The native drag origin is unavailable".to_owned())
+                .ok_or_else(|| fl!("files-drag-origin-unavailable"))
                 .and_then(|(endpoint, bytes)| {
                     endpoint.start(
                         gesture.native.unwrap(),
@@ -968,7 +964,7 @@ impl State {
                     !snapshot.jobs.iter().any(|job| Some(job.id) == incoming.job)
                 })
             {
-                desktop.file_operations.error=Some("The drop's transfer status is no longer available. Inspect Operations for its result.".into());
+                desktop.file_operations.error = Some(fl!("files-drop-status-gone"));
                 self.retire(incoming, false);
                 continue;
             }

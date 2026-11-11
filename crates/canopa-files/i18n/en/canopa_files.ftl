@@ -901,3 +901,137 @@ files-network-no-servers = No servers were found. Enter an address above.
 files-network-empty = This location is empty.
 files-network-truncated = Only the first entries are shown.
 files-network-connect = Connect
+
+## Clipboard, drag and drop, search
+
+files-clipboard-cut-update-stopped = The file clipboard stopped before updating the Cut selection
+files-clipboard-unavailable-retry = The file clipboard is starting or unavailable. Try again.
+files-clipboard-storage-not-ready = Source storage is not ready. Try again after it becomes available.
+files-clipboard-identities-exhausted = Clipboard identities exhausted. Restart Files.
+files-clipboard-prepare-stopped = The operation worker stopped before preparing the selection
+files-clipboard-nothing-ready = The clipboard contains no ready file selection. Wait for Copy or Cut to finish, then try again.
+files-clipboard-stopped = The file clipboard stopped before replying
+files-clipboard-selection-gone = The prepared selection is no longer available
+files-clipboard-unavailable = The file clipboard is unavailable
+files-clipboard-not-accepted = The file clipboard stopped before accepting the selection
+files-clipboard-original-gone = The original selection is unavailable. Copy or Cut the files again.
+files-drag-worker-stopped = The drag preparation worker stopped before replying
+files-drag-changed = The dragged file list changed or was cancelled. Start a new drag.
+files-drag-origin-unavailable = The native drag origin is unavailable
+files-drop-status-gone = The drop's transfer status is no longer available. Inspect Operations for its result.
+files-quick-look-unavailable = The requested Quick Look file is unavailable
+files-search-could-not-start = Search could not start: { $error }
+files-drag-read-failed = Could not read the dragged files: { $error }
+files-clipboard-cut-not-updated = The move finished, but its Cut selection could not be updated: { $error }. Copy or Cut the remaining files again.
+# Feedback while dragging over the folder $folder.
+files-drop-copy = Copy to { $folder }
+files-drop-move = Move to { $folder }
+files-drop-refused = Cannot drop into { $folder }
+files-drop-checking = Checking { $folder }
+
+## View options for one folder
+
+files-view-state-worker-stopped = The view-state worker stopped before saving.
+# A column width in pixels.
+files-pixels = { $pixels } px
+files-folder-reverse-order = Reverse order
+files-folder-modified-time = Modified time
+files-folder-list-details = List details
+files-folder-remembered = Choices are remembered for this folder.
+
+## Custom Actions editor
+
+# $action is a custom action's name, $field a field name.
+files-actions-count-invalid = { $action }: { $field } must be a nonnegative whole number.
+files-actions-error = { $action }: { $error }
+files-actions-minimum = Minimum items
+files-actions-maximum = Maximum items
+files-actions-status-initial = Configure an action, then save. Ctrl+S saves all actions.
+files-actions-saved = Saved. Actions are ready in all Files windows.
+files-actions-reloaded = Reloaded. Your saved actions are ready.
+# The name a new custom action starts with.
+files-actions-new-name = New action
+files-actions-recording = Press a shortcut. Escape cancels; Backspace clears.
+files-actions-shortcut-modifier = Use Ctrl, Alt, Super or a function key for an action shortcut.
+files-actions-subtitle = Commands for files and folders
+files-actions-changed-outside = Configuration changed outside this editor. Your draft is kept; Reload to use the saved configuration.
+files-actions-add = Add action
+files-actions-delete = Delete
+files-actions-discard-question = Discard unsaved action changes?
+files-actions-reload-question = Reload and discard unsaved action changes?
+files-actions-details = Action details
+# An example action name, shown in the empty Name field.
+files-actions-name-example = Resize images
+files-actions-icon = Icon (optional)
+files-actions-command = Command
+# Keep the % codes; they are the command's placeholders.
+files-actions-command-hint = %f first path · %F all paths · %n first name · %N all names
+    %d current folder · %% percent
+    Quote arguments with spaces. Call a shell explicitly when a command needs one.
+files-actions-availability = Availability
+files-actions-patterns = Filename patterns
+files-actions-patterns-hint = Separate patterns with a semicolon.
+files-actions-files = Files
+files-actions-folders = Folders
+files-actions-count-hint = A minimum of 0 allows an empty selection. A maximum of 0 allows any number of items.
+files-actions-ways-to-run = Ways to run it
+files-actions-shortcut = Shortcut (optional)
+files-actions-record = Record shortcut…
+files-actions-toolbar = Show in the toolbar
+files-actions-undo-note = Custom commands run outside Files’ Undo history.
+files-actions-empty = No custom actions yet
+files-actions-empty-description = Add a command to the context menu or assign a keyboard shortcut.
+files-actions-save = Save actions
+
+## Quick Look and media playback
+
+files-preview-window-failed-browser = Could not open a floating preview for this browser
+files-preview-window-failed-trash = Could not open a floating preview for Trash
+files-preview-window-failed-recovery = Could not open a floating preview for Recovery
+files-preview-stopped = Preview preparation stopped
+# Window title content for a previewed file.
+files-preview-title = Quick Look: { $name }
+files-preview-close = Close preview
+files-preview-zoom-out = Zoom out
+files-preview-fit = Fit to window
+files-preview-actual-size = Actual size
+files-preview-zoom-in = Zoom in
+# Caption of the Fit to window button.
+files-preview-fit-short = Fit
+files-preview-page = { $page } / { $pages }
+files-preview-preparing = Preparing preview…
+files-preview-unavailable = Preview unavailable: { $error }
+files-preview-folder = { $count ->
+    [one] Folder · { $count } item
+   *[other] Folder · { $count } items
+}
+files-preview-media-unavailable = Media preview is unavailable. Open in your usual application.
+files-preview-none = No preview available. Open in the normal application.
+files-preview-select = Select a file to preview
+files-preview-text-truncated = Text truncated
+files-preview-preparing-short = Preparing…
+files-preview-text = Text preview
+files-preview-image = Image preview
+files-preview-pdf = PDF preview
+files-preview-audio = Audio preview
+files-preview-audio-short = Audio
+files-preview-video = Video preview
+files-preview-video-short = Video
+files-media-preparing = Preparing media…
+files-media-stopped = Media preview stopped.
+files-media-preparing-frame = Preparing video frame…
+files-media-playing = Playing audio
+files-media-ended = Playback finished
+files-media-paused = Playback paused
+files-media-ready = Ready to play
+files-media-play = Play
+files-media-pause = Pause
+files-media-mute = Mute
+files-media-unmute = Unmute
+# $elapsed and $total are times such as 1:05.
+files-media-time = { $elapsed } / { $total }
+files-media-time-seeking = { $elapsed } / { $total } · Seeking…
+files-media-seek = Seek
+files-media-seek-unavailable = Seek unavailable
+# $volume is a percentage such as "80%".
+files-media-volume = Volume { $volume }

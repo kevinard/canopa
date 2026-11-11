@@ -244,18 +244,18 @@ impl State {
         let body_size = appearance.typography().body_size.px();
         let font = canopa_ui::font(appearance);
         let notice = match &self.snapshot.phase {
-            playback::Phase::Preparing => "Preparing media…",
-            playback::Phase::Failed(error) => error,
-            playback::Phase::Stopped => "Media preview stopped.",
-            _ if video => "Preparing video frame…",
+            playback::Phase::Preparing => fl!("files-media-preparing"),
+            playback::Phase::Failed(error) => error.clone(),
+            playback::Phase::Stopped => fl!("files-media-stopped"),
+            _ if video => fl!("files-media-preparing-frame"),
             phase => {
                 let title = match phase {
-                    playback::Phase::Playing => "Playing audio",
-                    playback::Phase::Ended => "Playback finished",
+                    playback::Phase::Playing => fl!("files-media-playing"),
+                    playback::Phase::Ended => fl!("files-media-ended"),
                     playback::Phase::Paused if !self.snapshot.position.is_zero() => {
-                        "Playback paused"
+                        fl!("files-media-paused")
                     }
-                    _ => "Ready to play",
+                    _ => fl!("files-media-ready"),
                 };
                 let icon = container(desktop.icons.chrome(chrome::Icon::Activity, 32.0, 1.0))
                     .padding(14)
@@ -289,13 +289,19 @@ impl State {
         let label_size = appearance.typography().label_size.px();
         let font = canopa_ui::font(appearance);
         let padding = canopa_ui::content_padding(appearance.style(canopa_theme::UiKind::Button));
-        let play_width =
-            chrome::text_width("Pause", font, label_size) + padding.left + padding.right + 2.0;
-        let button = |label: &'static str, control| {
+        let pause = fl!("files-media-pause");
+        let play_width = chrome::text_width(&pause, font, label_size).max(chrome::text_width(
+            &fl!("files-media-play"),
+            font,
+            label_size,
+        )) + padding.left
+            + padding.right
+            + 2.0;
+        let button = |label: String, control| {
             let message = controls.contains(&control).then_some(Message::Preview(
                 preview_ui::Event::Activate(id, revision, control),
             ));
-            let node = super::accessibility_ui::Node::button(label)
+            let node = super::accessibility_ui::Node::button(label.clone())
                 .key(format!("files-media-{control:?}"))
                 .focused(focused == Some(control))
                 .disabled(message.is_none())
@@ -336,25 +342,23 @@ impl State {
         let position = self
             .seek_draft
             .unwrap_or(self.snapshot.position.as_secs_f64());
-        let time = text(format!(
-            "{} / {}{}",
-            time(position as u64),
-            self.snapshot
-                .duration
-                .map_or_else(|| "—".into(), |d| time(d.as_secs())),
-            if self.snapshot.seeking {
-                " · Seeking…"
-            } else {
-                ""
-            }
-        ))
+        let elapsed = time(position as u64);
+        let total = self
+            .snapshot
+            .duration
+            .map_or_else(|| "—".into(), |d| time(d.as_secs()));
+        let time = text(if self.snapshot.seeking {
+            fl!("files-media-time-seeking", elapsed = elapsed, total = total)
+        } else {
+            fl!("files-media-time", elapsed = elapsed, total = total)
+        })
         .font(font)
         .size(label_size);
         let mut transport = column![].spacing(6);
         if controls.contains(&Control::Seek) {
             transport = transport.push(
                 row![
-                    text("Seek").font(font).size(label_size),
+                    text(fl!("files-media-seek")).font(font).size(label_size),
                     super::accessibility_ui::semantic(
                         slider_node(Control::Seek, position, self.duration(), 0.1),
                         focus_frame(
@@ -376,7 +380,7 @@ impl State {
         } else {
             transport = transport.push(
                 row![
-                    text("Seek unavailable")
+                    text(fl!("files-media-seek-unavailable"))
                         .font(font)
                         .size(label_size)
                         .style(canopa_ui::muted)
@@ -389,23 +393,23 @@ impl State {
         let mut actions = row![
             button(
                 if self.snapshot.phase == playback::Phase::Playing {
-                    "Pause"
+                    pause.clone()
                 } else {
-                    "Play"
+                    fl!("files-media-play")
                 },
                 Control::Play,
             ),
             button(
                 if self.snapshot.muted {
-                    "Unmute"
+                    fl!("files-media-unmute")
                 } else {
-                    "Mute"
+                    fl!("files-media-mute")
                 },
                 Control::Mute
             ),
-            text(format!(
-                "Volume {}%",
-                (self.snapshot.volume * 100.0).round() as u32
+            text(fl!(
+                "files-media-volume",
+                volume = canopa_i18n::format::percent((self.snapshot.volume * 100.0).round())
             ))
             .font(font)
             .size(label_size),

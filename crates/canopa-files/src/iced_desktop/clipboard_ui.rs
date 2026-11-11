@@ -193,9 +193,7 @@ impl Desktop {
                     .replace_cut(intent, snapshot.selection)
                     .map_err(|error| error.to_string())?
                     .await
-                    .map_err(|_| {
-                        "The file clipboard stopped before updating the Cut selection".to_string()
-                    })?
+                    .map_err(|_| fl!("files-clipboard-cut-update-stopped"))?
             },
             move |result| Message::FileClipboard(Event::CutUpdated(cut.clone(), result)),
         )
@@ -232,9 +230,11 @@ impl Desktop {
 
     fn copy_selection(&mut self, origin: CopyOrigin, cut: bool) -> Task<Message> {
         if !self.file_clipboard.ready() || self.file_clipboard.pending >= 8 {
-            let message = self.file_clipboard.error.clone().unwrap_or_else(|| {
-                "The file clipboard is starting or unavailable. Try again.".into()
-            });
+            let message = self
+                .file_clipboard
+                .error
+                .clone()
+                .unwrap_or_else(|| fl!("files-clipboard-unavailable-retry"));
             self.copy_error(&origin, message);
             return Task::none();
         };
@@ -244,10 +244,7 @@ impl Desktop {
             .as_ref()
             .filter(|_| self.file_operations.storage_error.is_none())
         else {
-            self.copy_error(
-                &origin,
-                "Source storage is not ready. Try again after it becomes available.".into(),
-            );
+            self.copy_error(&origin, fl!("files-clipboard-storage-not-ready"));
             return Task::none();
         };
         let Some(operations) = self.file_operations.service.clone() else {
@@ -258,10 +255,7 @@ impl Desktop {
             placement.bind_folder(origin.directory.clone(), origin.resolved.clone());
         }
         let Some(serial) = self.file_clipboard.latest.checked_add(1) else {
-            self.copy_error(
-                &origin,
-                "Clipboard identities exhausted. Restart Files.".into(),
-            );
+            self.copy_error(&origin, fl!("files-clipboard-identities-exhausted"));
             return Task::none();
         };
         self.file_clipboard.latest = serial;
@@ -293,9 +287,7 @@ impl Desktop {
                 }
                 .map_err(|error| error.to_string())?
                 .await
-                .map_err(|_| {
-                    "The operation worker stopped before preparing the selection".to_string()
-                })?
+                .map_err(|_| fl!("files-clipboard-prepare-stopped"))?
             },
             move |result| Message::FileClipboard(Event::Prepared(serial, origin.clone(), result)),
         )
@@ -309,7 +301,7 @@ impl Desktop {
             return self.show_operations();
         }
         if !self.file_clipboard.can_paste() {
-            self.clipboard_error(&origin, "The clipboard contains no ready file selection. Wait for Copy or Cut to finish, then try again.".into());
+            self.clipboard_error(&origin, fl!("files-clipboard-nothing-ready"));
             return Task::none();
         }
         let Some(storage) = self.file_operations.storage.as_ref() else {
@@ -325,11 +317,7 @@ impl Desktop {
             Ok(receiver) => {
                 self.file_clipboard.pending += 1;
                 Task::perform(
-                    async move {
-                        receiver
-                            .await
-                            .map_err(|_| "The file clipboard stopped before replying".to_string())?
-                    },
+                    async move { receiver.await.map_err(|_| fl!("files-clipboard-stopped"))? },
                     move |result| Message::FileClipboard(Event::Read(context.clone(), result)),
                 )
             }
@@ -373,9 +361,10 @@ impl Desktop {
                 self.file_clipboard.pending = self.file_clipboard.pending.saturating_sub(1);
                 if serial == self.file_clipboard.latest {
                     let publication = result.and_then(|prepared| {
-                        let selection = prepared.snapshot().selection.ok_or_else(|| {
-                            "The prepared selection is no longer available".to_string()
-                        })?;
+                        let selection = prepared
+                            .snapshot()
+                            .selection
+                            .ok_or_else(|| fl!("files-clipboard-selection-gone"))?;
                         let source = Arc::new(Source {
                             serial,
                             origin: origin.clone(),
@@ -385,7 +374,7 @@ impl Desktop {
                             .file_clipboard
                             .service
                             .as_ref()
-                            .ok_or_else(|| "The file clipboard is unavailable".to_string())?
+                            .ok_or_else(|| fl!("files-clipboard-unavailable"))?
                             .publish(selection)
                             .map_err(|error| error.to_string())?;
                         Ok((source, receiver))
@@ -395,7 +384,9 @@ impl Desktop {
                             self.file_clipboard.pending += 1;
                             return Task::perform(
                                 async move {
-                                    receiver.await.map_err(|_| "The file clipboard stopped before accepting the selection".to_string())?
+                                    receiver
+                                        .await
+                                        .map_err(|_| fl!("files-clipboard-not-accepted"))?
                                 },
                                 move |result| {
                                     Message::FileClipboard(Event::Published(source.clone(), result))
@@ -452,10 +443,14 @@ impl Desktop {
                 self.file_clipboard.pending = self.file_clipboard.pending.saturating_sub(1);
                 let result = result.and_then(|received| {
                     let prepared = match received.owned {
-                        Some(intent) => Some(context.owned.as_ref()
-                            .filter(|(token, _)| *token == intent)
-                            .map(|(_, source)| source.prepared.clone())
-                            .ok_or_else(|| "The original selection is unavailable. Copy or Cut the files again.".to_string())?),
+                        Some(intent) => Some(
+                            context
+                                .owned
+                                .as_ref()
+                                .filter(|(token, _)| *token == intent)
+                                .map(|(_, source)| source.prepared.clone())
+                                .ok_or_else(|| fl!("files-clipboard-original-gone"))?,
+                        ),
                         None => None,
                     };
                     Ok((received.selection, prepared))
@@ -499,7 +494,10 @@ impl Desktop {
                         .as_ref()
                         .is_some_and(|service| service.snapshot().owned == Some(cut.intent))
                 {
-                    self.copy_error(&cut.origin, format!("The move finished, but its Cut selection could not be updated: {error}. Copy or Cut the remaining files again."));
+                    self.copy_error(
+                        &cut.origin,
+                        fl!("files-clipboard-cut-not-updated", error = error.to_string()),
+                    );
                 }
             }
         }

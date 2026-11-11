@@ -98,7 +98,7 @@ async fn persist(path: PathBuf, snapshot: PreferenceStore) -> Result<(), String>
         .map_err(|error| error.to_string())?;
     receive
         .await
-        .map_err(|_| "The view-state worker stopped before saving.".to_owned())?
+        .map_err(|_| fl!("files-view-state-worker-stopped"))?
 }
 
 impl Desktop {
@@ -279,7 +279,7 @@ pub(super) fn overlay<'a>(
     let mut order = Vec::new();
     let mut reveal = Vec::new();
     let mut next = 0;
-    let mut action = |title: &'a str,
+    let mut action = |title: String,
                       change: Option<Change>,
                       selected: bool,
                       enabled: bool,
@@ -314,24 +314,24 @@ pub(super) fn overlay<'a>(
             ),
         )
     };
-    let close = action("Close", None, false, true, false);
+    let close = action(fl!("files-close"), None, false, true, false);
     let mode = row![
         action(
-            "Columns",
+            fl!("files-view-columns"),
             Some(Change::Mode(ViewMode::Columns)),
             settings.mode == ViewMode::Columns,
             true,
             true
         ),
         action(
-            "List",
+            fl!("files-view-list"),
             Some(Change::Mode(ViewMode::List)),
             settings.mode == ViewMode::List,
             true,
             true
         ),
         action(
-            "Icons",
+            fl!("files-view-icons"),
             Some(Change::Mode(ViewMode::Icons)),
             settings.mode == ViewMode::Icons,
             true,
@@ -342,14 +342,14 @@ pub(super) fn overlay<'a>(
     let sort = column![
         row![
             action(
-                "Name",
+                fl!("files-column-name"),
                 Some(Change::Sort(SortField::Name)),
                 settings.sort == SortField::Name,
                 true,
                 true
             ),
             action(
-                "Size",
+                fl!("files-column-size"),
                 Some(Change::Sort(SortField::Size)),
                 settings.sort == SortField::Size,
                 true,
@@ -359,14 +359,14 @@ pub(super) fn overlay<'a>(
         .spacing(4),
         row![
             action(
-                "Modified",
+                fl!("files-column-modified"),
                 Some(Change::Sort(SortField::Modified)),
                 settings.sort == SortField::Modified,
                 true,
                 true
             ),
             action(
-                "Kind",
+                fl!("files-column-kind"),
                 Some(Change::Sort(SortField::Kind)),
                 settings.sort == SortField::Kind,
                 true,
@@ -378,20 +378,20 @@ pub(super) fn overlay<'a>(
     .spacing(4);
     let widths = row![
         action(
-            "−",
+            "−".to_owned(),
             Some(Change::Width(-20)),
             false,
             settings.column_width > 160,
             true
         ),
         container(
-            text(format!("{} px", settings.column_width))
+            text(fl!("files-pixels", pixels = settings.column_width))
                 .size(size)
                 .font(font)
         )
         .width(Length::Fill),
         action(
-            "+",
+            "+".to_owned(),
             Some(Change::Width(20)),
             false,
             settings.column_width < 640,
@@ -401,13 +401,13 @@ pub(super) fn overlay<'a>(
     .spacing(6)
     .align_y(iced::Alignment::Center);
     let reset = action(
-        "Use defaults",
+        fl!("files-preferences-use-defaults"),
         Some(Change::Defaults),
         false,
         desktop.preferences.folder_override(&target.path).is_some(),
         true,
     );
-    let mut check = |title: &'a str, value: bool, change: Change| -> Element<'a, Message> {
+    let mut check = |title: String, value: bool, change: Change| -> Element<'a, Message> {
         let id = control_id(target, next);
         next += 1;
         order.push(id.clone());
@@ -428,15 +428,15 @@ pub(super) fn overlay<'a>(
         )
     };
     let reverse = check(
-        "Reverse order",
+        fl!("files-folder-reverse-order"),
         settings.descending,
         Change::Descending(!settings.descending),
     );
     let mut details = column![].spacing(8);
     for (title, detail) in [
-        ("Size", Detail::Size),
-        ("Modified time", Detail::Modified),
-        ("Kind", Detail::Kind),
+        (fl!("files-column-size"), Detail::Size),
+        (fl!("files-folder-modified-time"), Detail::Modified),
+        (fl!("files-column-kind"), Detail::Kind),
     ] {
         let shown = settings.details.contains(&detail);
         details = details.push(check(title, shown, Change::Detail(detail, !shown)));
@@ -451,21 +451,23 @@ pub(super) fn overlay<'a>(
     });
     let form = column![
         text(display_location(&target.path)).size(label).font(font),
-        text("View").size(size).font(font),
+        text(fl!("files-view")).size(size).font(font),
         mode,
-        text("Sort by").size(size).font(font),
+        text(fl!("files-preferences-sort-by")).size(size).font(font),
         sort,
         reverse,
-        text("Column width").size(size).font(font),
+        text(fl!("files-preferences-column-width"))
+            .size(size)
+            .font(font),
         widths,
-        text("List details").size(size).font(font),
+        text(fl!("files-folder-list-details")).size(size).font(font),
         details,
         reset
     ]
     .spacing(10);
     let panel = column![
         row![
-            text("This folder")
+            text(fl!("files-this-folder"))
                 .size(size)
                 .font(font)
                 .width(Length::Fill),
@@ -473,9 +475,7 @@ pub(super) fn overlay<'a>(
         ]
         .align_y(iced::Alignment::Center),
         scrollable(form).id(scroll.clone()).height(Length::Fill),
-        text("Choices are remembered for this folder.")
-            .size(label)
-            .font(font)
+        text(fl!("files-folder-remembered")).size(label).font(font)
     ]
     .spacing(8);
     let styled = appearance.clone();

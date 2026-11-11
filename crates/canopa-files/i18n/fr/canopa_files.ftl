@@ -870,3 +870,127 @@ files-network-no-servers = Aucun serveur n’a été trouvé. Saisissez une adre
 files-network-empty = Cet emplacement est vide.
 files-network-truncated = Seules les premières entrées sont affichées.
 files-network-connect = Se connecter
+
+## Clipboard, drag and drop, search
+
+files-clipboard-cut-update-stopped = Le presse-papiers de fichiers s’est arrêté avant de mettre à jour la sélection coupée
+files-clipboard-unavailable-retry = Le presse-papiers de fichiers démarre ou est indisponible. Réessayez.
+files-clipboard-storage-not-ready = Le stockage source n’est pas prêt. Réessayez lorsqu’il sera disponible.
+files-clipboard-identities-exhausted = Identifiants du presse-papiers épuisés. Redémarrez Fichiers.
+files-clipboard-prepare-stopped = Le service des opérations s’est arrêté avant de préparer la sélection
+files-clipboard-nothing-ready = Le presse-papiers ne contient aucune sélection de fichiers prête. Attendez la fin de Copier ou Couper, puis réessayez.
+files-clipboard-stopped = Le presse-papiers de fichiers s’est arrêté avant de répondre
+files-clipboard-selection-gone = La sélection préparée n’est plus disponible
+files-clipboard-unavailable = Le presse-papiers de fichiers est indisponible
+files-clipboard-not-accepted = Le presse-papiers de fichiers s’est arrêté avant d’accepter la sélection
+files-clipboard-original-gone = La sélection d’origine est indisponible. Copiez ou coupez de nouveau les fichiers.
+files-drag-worker-stopped = Le service de préparation du glisser s’est arrêté avant de répondre
+files-drag-changed = La liste des fichiers glissés a changé ou a été annulée. Commencez un nouveau glisser.
+files-drag-origin-unavailable = L’origine native du glisser est indisponible
+files-drop-status-gone = L’état du transfert déposé n’est plus disponible. Consultez Opérations pour son résultat.
+files-quick-look-unavailable = Le fichier demandé pour l’aperçu rapide est indisponible
+files-search-could-not-start = La recherche n’a pas pu démarrer : { $error }
+files-drag-read-failed = Impossible de lire les fichiers glissés : { $error }
+files-clipboard-cut-not-updated = Le déplacement est terminé, mais sa sélection coupée n’a pas pu être mise à jour : { $error }. Copiez ou coupez de nouveau les fichiers restants.
+files-drop-copy = Copier vers { $folder }
+files-drop-move = Déplacer vers { $folder }
+files-drop-refused = Impossible de déposer dans { $folder }
+files-drop-checking = Vérification de { $folder }
+
+## View options for one folder
+
+files-view-state-worker-stopped = Le service d’état d’affichage s’est arrêté avant l’enregistrement.
+files-pixels = { $pixels } px
+files-folder-reverse-order = Ordre inversé
+files-folder-modified-time = Heure de modification
+files-folder-list-details = Détails de la liste
+files-folder-remembered = Les choix sont mémorisés pour ce dossier.
+
+## Custom Actions editor
+
+files-actions-count-invalid = { $action } : { $field } doit être un nombre entier positif ou nul.
+files-actions-error = { $action } : { $error }
+files-actions-minimum = Éléments minimum
+files-actions-maximum = Éléments maximum
+files-actions-status-initial = Configurez une action, puis enregistrez. Ctrl+S enregistre toutes les actions.
+files-actions-saved = Enregistré. Les actions sont prêtes dans toutes les fenêtres de Fichiers.
+files-actions-reloaded = Rechargé. Vos actions enregistrées sont prêtes.
+files-actions-new-name = Nouvelle action
+files-actions-recording = Appuyez sur un raccourci. Échap annule ; Retour arrière efface.
+files-actions-shortcut-modifier = Utilisez Ctrl, Alt, Super ou une touche de fonction pour le raccourci d’une action.
+files-actions-subtitle = Commandes pour les fichiers et les dossiers
+files-actions-changed-outside = La configuration a été modifiée en dehors de cet éditeur. Votre brouillon est conservé ; rechargez pour utiliser la configuration enregistrée.
+files-actions-add = Ajouter une action
+files-actions-delete = Supprimer
+files-actions-discard-question = Abandonner les modifications non enregistrées des actions ?
+files-actions-reload-question = Recharger et abandonner les modifications non enregistrées des actions ?
+files-actions-details = Détails de l’action
+files-actions-name-example = Redimensionner les images
+files-actions-icon = Icône (facultative)
+files-actions-command = Commande
+files-actions-command-hint = %f premier chemin · %F tous les chemins · %n premier nom · %N tous les noms
+    %d dossier actuel · %% pourcentage
+    Mettez entre guillemets les arguments contenant des espaces. Appelez explicitement un shell lorsqu’une commande en a besoin.
+files-actions-availability = Disponibilité
+files-actions-patterns = Motifs de noms de fichiers
+files-actions-patterns-hint = Séparez les motifs par un point-virgule.
+files-actions-files = Fichiers
+files-actions-folders = Dossiers
+files-actions-count-hint = Un minimum de 0 autorise une sélection vide. Un maximum de 0 autorise n’importe quel nombre d’éléments.
+files-actions-ways-to-run = Façons de l’exécuter
+files-actions-shortcut = Raccourci (facultatif)
+files-actions-record = Enregistrer un raccourci…
+files-actions-toolbar = Afficher dans la barre d’outils
+files-actions-undo-note = Les commandes personnalisées s’exécutent en dehors de l’historique d’annulation de Fichiers.
+files-actions-empty = Aucune action personnalisée pour l’instant
+files-actions-empty-description = Ajoutez une commande au menu contextuel ou attribuez-lui un raccourci clavier.
+files-actions-save = Enregistrer les actions
+
+## Quick Look and media playback
+
+files-preview-window-failed-browser = Impossible d’ouvrir un aperçu flottant pour ce navigateur
+files-preview-window-failed-trash = Impossible d’ouvrir un aperçu flottant pour la corbeille
+files-preview-window-failed-recovery = Impossible d’ouvrir un aperçu flottant pour Récupération
+files-preview-stopped = La préparation de l’aperçu s’est arrêtée
+files-preview-title = Aperçu rapide : { $name }
+files-preview-close = Fermer l’aperçu
+files-preview-zoom-out = Zoom arrière
+files-preview-fit = Ajuster à la fenêtre
+files-preview-actual-size = Taille réelle
+files-preview-zoom-in = Zoom avant
+files-preview-fit-short = Ajuster
+files-preview-page = { $page } / { $pages }
+files-preview-preparing = Préparation de l’aperçu…
+files-preview-unavailable = Aperçu indisponible : { $error }
+files-preview-folder = { $count ->
+    [one] Dossier · { $count } élément
+   *[other] Dossier · { $count } éléments
+}
+files-preview-media-unavailable = L’aperçu du média est indisponible. Ouvrez-le dans votre application habituelle.
+files-preview-none = Aucun aperçu disponible. Ouvrez-le dans l’application habituelle.
+files-preview-select = Sélectionnez un fichier à prévisualiser
+files-preview-text-truncated = Texte tronqué
+files-preview-preparing-short = Préparation…
+files-preview-text = Aperçu du texte
+files-preview-image = Aperçu de l’image
+files-preview-pdf = Aperçu du PDF
+files-preview-audio = Aperçu audio
+files-preview-audio-short = Audio
+files-preview-video = Aperçu vidéo
+files-preview-video-short = Vidéo
+files-media-preparing = Préparation du média…
+files-media-stopped = Aperçu du média arrêté.
+files-media-preparing-frame = Préparation de l’image vidéo…
+files-media-playing = Lecture audio
+files-media-ended = Lecture terminée
+files-media-paused = Lecture en pause
+files-media-ready = Prêt à lire
+files-media-play = Lire
+files-media-pause = Pause
+files-media-mute = Couper le son
+files-media-unmute = Rétablir le son
+files-media-time = { $elapsed } / { $total }
+files-media-time-seeking = { $elapsed } / { $total } · Déplacement…
+files-media-seek = Position
+files-media-seek-unavailable = Déplacement impossible
+files-media-volume = Volume { $volume }

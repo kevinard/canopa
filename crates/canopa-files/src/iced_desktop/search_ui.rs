@@ -324,7 +324,7 @@ impl Desktop {
                 Err(error) => {
                     return self.search_event(Event::Failed(
                         ticket,
-                        format!("Search could not start: {error}"),
+                        fl!("files-search-could-not-start", error = error.to_string()),
                     ));
                 }
             }

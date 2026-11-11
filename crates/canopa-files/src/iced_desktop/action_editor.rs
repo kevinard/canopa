@@ -108,20 +108,23 @@ impl Draft {
     }
 
     fn action(&self) -> Result<CustomAction, String> {
-        let count = |value: &str, label| {
-            value
-                .trim()
-                .parse::<usize>()
-                .map_err(|_| format!("{}: {label} must be a nonnegative whole number.", self.name))
+        let count = |value: &str, label: String| {
+            value.trim().parse::<usize>().map_err(|_| {
+                fl!(
+                    "files-actions-count-invalid",
+                    action = self.name.clone(),
+                    field = label
+                )
+            })
         };
-        let maximum = count(&self.maximum, "Maximum items")?;
+        let maximum = count(&self.maximum, fl!("files-actions-maximum"))?;
         let action = CustomAction {
             id: self.id.clone(),
             name: self.name.clone(),
             icon: optional(&self.icon),
             command: self.command.clone(),
             conditions: ActionConditions {
-                minimum_selection: count(&self.minimum, "Minimum items")?,
+                minimum_selection: count(&self.minimum, fl!("files-actions-minimum"))?,
                 maximum_selection: (maximum > 0).then_some(maximum),
                 files: self.files,
                 directories: self.folders,
@@ -137,14 +140,24 @@ impl Draft {
                 .map(|value| {
                     KeyChord::parse(&value)
                         .map(|key| key.accelerator())
-                        .map_err(|error| format!("{}: {error}", self.name))
+                        .map_err(|error| {
+                            fl!(
+                                "files-actions-error",
+                                action = self.name.clone(),
+                                error = error.to_string()
+                            )
+                        })
                 })
                 .transpose()?,
             toolbar: self.toolbar,
         };
-        action
-            .validate()
-            .map_err(|error| format!("{}: {error}", self.name))?;
+        action.validate().map_err(|error| {
+            fl!(
+                "files-actions-error",
+                action = self.name.clone(),
+                error = error.to_string()
+            )
+        })?;
         Ok(action)
     }
 }
@@ -188,7 +201,7 @@ impl Editor {
             confirmation: None,
             recording: false,
             recording_activation: false,
-            status: "Configure an action, then save. Ctrl+S saves all actions.".into(),
+            status: fl!("files-actions-status-initial"),
         }
     }
 
@@ -339,7 +352,7 @@ impl Desktop {
             return Task::none();
         };
         if !forced && editor.busy {
-            editor.status = "Wait for the configuration change to finish.".into();
+            editor.status = fl!("files-preferences-wait");
             return Task::none();
         }
         if !forced && editor.dirty {
@@ -360,11 +373,11 @@ impl Desktop {
             return Task::none();
         };
         if self.configuration_pending.is_some() {
-            editor.status = "Another configuration change is still in progress.".into();
+            editor.status = fl!("files-preferences-another-change");
             return Task::none();
         }
         let Some(worker) = &self.configuration_worker else {
-            editor.status = "The configuration worker is unavailable.".into();
+            editor.status = fl!("files-preferences-worker-unavailable");
             return Task::none();
         };
         let receiver = match operation {
@@ -390,11 +403,10 @@ impl Desktop {
         editor.busy = true;
         editor.recording = false;
         editor.status = if operation == Operation::Save {
-            "Saving…"
+            fl!("files-preferences-saving")
         } else {
-            "Reloading…"
-        }
-        .into();
+            fl!("files-preferences-reloading")
+        };
         Task::perform(
             async move { receiver.await.ok().map(Arc::new) },
             move |result| Message::ActionEditor(Event::Finished(request, result)),
@@ -413,7 +425,7 @@ impl Desktop {
             let result = result
                 .as_deref()
                 .cloned()
-                .unwrap_or_else(|| Err("The configuration worker stopped before replying.".into()));
+                .unwrap_or_else(|| Err(fl!("files-preferences-worker-stopped")));
             let install = if let Ok(published) = &result {
                 self.install_configuration(published.clone())
             } else {
@@ -449,11 +461,10 @@ impl Desktop {
                         editor.base = (*snapshot).clone();
                         editor.dirty = false;
                         editor.status = if operation == Operation::Save {
-                            "Saved. Actions are ready in all Files windows."
+                            fl!("files-actions-saved")
                         } else {
-                            "Reloaded. Your saved actions are ready."
-                        }
-                        .into();
+                            fl!("files-actions-reloaded")
+                        };
                     }
                     Err(error) => editor.status = error,
                 }
@@ -508,9 +519,10 @@ impl Desktop {
                     .unwrap();
                 editor.next_entry += 1;
                 let serial = editor.next_entry;
-                editor
-                    .drafts
-                    .push(Draft::new(serial, &CustomAction::new(id, "New action", "")));
+                editor.drafts.push(Draft::new(
+                    serial,
+                    &CustomAction::new(id, fl!("files-actions-new-name"), ""),
+                ));
                 editor.select(Some(serial));
                 editor.dirty = true;
             }
@@ -553,7 +565,7 @@ impl Desktop {
                     _ => 256,
                 };
                 if value.len() > maximum {
-                    editor.status = format!("This field is limited to {maximum} bytes.");
+                    editor.status = fl!("files-preferences-field-too-long", max = maximum);
                     return Task::none();
                 }
                 if let Some(draft) = editor.selected_mut(target) {
@@ -592,7 +604,7 @@ impl Desktop {
             Event::Record(_) | Event::RecordKeyboard(_) if editor.selected.is_some() => {
                 editor.recording_activation = matches!(event, Event::RecordKeyboard(_));
                 editor.recording = true;
-                editor.status = "Press a shortcut. Escape cancels; Backspace clears.".into();
+                editor.status = fl!("files-actions-recording");
             }
             _ => {}
         }
@@ -625,7 +637,7 @@ impl Desktop {
             match &key {
                 keyboard::Key::Named(keyboard::key::Named::Escape) => {
                     editor.recording = false;
-                    editor.status = "Shortcut recording cancelled.".into();
+                    editor.status = fl!("files-preferences-recording-cancelled");
                 }
                 keyboard::Key::Named(keyboard::key::Named::Backspace) if modifiers.is_empty() => {
                     editor.recording = false;
@@ -650,9 +662,7 @@ impl Desktop {
                                 ));
                             }
                         } else {
-                            editor.status =
-                                "Use Ctrl, Alt, Super or a function key for an action shortcut."
-                                    .into();
+                            editor.status = fl!("files-actions-shortcut-modifier");
                         }
                     }
                 }
@@ -693,7 +703,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     let font = canopa_ui::font(appearance);
     let id = editor.window;
     let enabled = !editor.busy && editor.confirmation.is_none() && !editor.recording;
-    let action = |label: &'static str, event: Option<Event>| -> Element<'a, Message> {
+    let action = |label: String, event: Option<Event>| -> Element<'a, Message> {
         let focus = event.as_ref().and_then(|event| {
             Some(match event {
                 Event::Add(_) => Focus::Add,
@@ -767,11 +777,14 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         chrome::heading_with_action(
             desktop,
             chrome::Icon::Terminal,
-            "Custom Actions",
-            "Commands for files and folders",
+            fl!("files-custom-actions-title"),
+            fl!("files-actions-subtitle"),
             Some(
                 row![
-                    action("Reload", enabled.then_some(Event::Reload(id))),
+                    action(
+                        fl!("files-preferences-reload"),
+                        enabled.then_some(Event::Reload(id))
+                    ),
                     chrome::dismiss(desktop, id),
                 ]
                 .spacing(4)
@@ -787,12 +800,18 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     ]
     .spacing(8);
     let notice: Element<'a, Message> = if let Some(error) = &desktop.configuration_error {
-        text(format!("Configuration was not applied: {error}"))
+        text(fl!(
+            "files-configuration-not-applied",
+            error = error.to_string()
+        ))
+        .size(label_size)
+        .font(font)
+        .into()
+    } else if !editor.base.same_source(&desktop.configuration) {
+        text(fl!("files-actions-changed-outside"))
             .size(label_size)
             .font(font)
             .into()
-    } else if !editor.base.same_source(&desktop.configuration) {
-        text("Configuration changed outside this editor. Your draft is kept; Reload to use the saved configuration.").size(label_size).font(font).into()
     } else {
         iced::widget::space().height(0).into()
     };
@@ -805,7 +824,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         .iter()
         .position(|draft| Some(draft.serial) == editor.selected);
     let add = action(
-        "Add action",
+        fl!("files-actions-add"),
         (enabled && editor.drafts.len() < 256).then_some(Event::Add(id)),
     );
     let empty_action = if editor.drafts.is_empty() {
@@ -814,15 +833,18 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         body = body.push(
             row![
                 add,
-                action("Delete", target.filter(|_| enabled).map(Event::Remove)),
                 action(
-                    "Earlier",
+                    fl!("files-actions-delete"),
+                    target.filter(|_| enabled).map(Event::Remove)
+                ),
+                action(
+                    fl!("files-preferences-earlier"),
                     target
                         .filter(|_| enabled && index.is_some_and(|n| n > 0))
                         .map(|target| Event::Move(target, true))
                 ),
                 action(
-                    "Later",
+                    fl!("files-preferences-later"),
                     target
                         .filter(|_| enabled && index.is_some_and(|n| n + 1 < editor.drafts.len()))
                         .map(|target| Event::Move(target, false))
@@ -837,19 +859,22 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         body = body.push(
             container(column![
                 text(if confirmation == Confirmation::Close {
-                    "Discard unsaved action changes?"
+                    fl!("files-actions-discard-question")
                 } else {
-                    "Reload and discard unsaved action changes?"
+                    fl!("files-actions-reload-question")
                 })
                 .size(size)
                 .font(font),
                 row![
-                    action("Keep editing", Some(Event::Confirm(id, false))),
+                    action(
+                        fl!("files-preferences-keep-editing"),
+                        Some(Event::Confirm(id, false))
+                    ),
                     action(
                         if confirmation == Confirmation::Close {
-                            "Discard"
+                            fl!("files-preferences-discard")
                         } else {
-                            "Reload"
+                            fl!("files-preferences-reload")
                         },
                         Some(Event::Confirm(id, true))
                     )
@@ -866,9 +891,9 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         .find(|draft| Some(draft.serial) == editor.selected)
     {
         let target = target.unwrap();
-        let field = |label: &'static str, hint: &'static str, value: &'a str, which| {
+        let field = |label: String, hint: String, value: &'a str, which| {
             let input_appearance = appearance.clone();
-            let mut input = text_input(hint, value)
+            let mut input = text_input(&hint, value)
                 .id(editor.focus_id(Focus::Field(which)))
                 .size(size)
                 .font(if which == Field::Command {
@@ -885,9 +910,9 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             }
             column![text(label).size(label_size).font(font), input].spacing(4)
         };
-        let section = |label| chrome::section_title(appearance, label);
+        let section = |label: String| chrome::section_title(appearance, label);
         let divider = || iced::widget::rule::horizontal(1).style(chrome::divider);
-        let hint = |label: &'static str| {
+        let hint = |label: String| {
             text(label)
                 .size(label_size)
                 .font(font)
@@ -895,24 +920,40 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
                 .wrapping(text::Wrapping::WordOrGlyph)
         };
         let details = column![
-            section("Action details"),
-            field("Name", "Resize images", &draft.name, Field::Name),
-            field("Icon (optional)", "image-x-generic-symbolic", &draft.icon, Field::Icon),
-            field("Command", "my-script %F", &draft.command, Field::Command),
-            hint("%f first path · %F all paths · %n first name · %N all names\n%d current folder · %% percent\nQuote arguments with spaces. Call a shell explicitly when a command needs one."),
-        ].spacing(12);
-        let conditions = column![
-            section("Availability"),
+            section(fl!("files-actions-details")),
             field(
-                "Filename patterns",
-                "*.png; *.jpg",
+                fl!("files-column-name"),
+                fl!("files-actions-name-example"),
+                &draft.name,
+                Field::Name
+            ),
+            field(
+                fl!("files-actions-icon"),
+                "image-x-generic-symbolic".into(),
+                &draft.icon,
+                Field::Icon
+            ),
+            field(
+                fl!("files-actions-command"),
+                "my-script %F".into(),
+                &draft.command,
+                Field::Command
+            ),
+            hint(fl!("files-actions-command-hint")),
+        ]
+        .spacing(12);
+        let conditions = column![
+            section(fl!("files-actions-availability")),
+            field(
+                fl!("files-actions-patterns"),
+                "*.png; *.jpg".into(),
                 &draft.patterns,
                 Field::Patterns
             ),
-            hint("Separate patterns with a semicolon."),
+            hint(fl!("files-actions-patterns-hint")),
         ]
         .spacing(12);
-        let toggle = |label: &'static str, value, which| {
+        let toggle = |label: String, value, which| {
             let mut control = checkbox(value)
                 .label(label)
                 .text_size(size)
@@ -932,21 +973,51 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             )
         };
         let conditions = conditions
-            .push(row![
-                toggle("Files", draft.files, Check::Files),
-                toggle("Folders", draft.folders, Check::Folders)
-            ].spacing(16))
-            .push(row![
-                container(field("Minimum items", "1", &draft.minimum, Field::Minimum)).width(Length::FillPortion(1)),
-                container(field("Maximum items", "0", &draft.maximum, Field::Maximum)).width(Length::FillPortion(1)),
-            ].spacing(10))
-            .push(hint("A minimum of 0 allows an empty selection. A maximum of 0 allows any number of items."))
+            .push(
+                row![
+                    toggle(fl!("files-actions-files"), draft.files, Check::Files),
+                    toggle(fl!("files-actions-folders"), draft.folders, Check::Folders)
+                ]
+                .spacing(16),
+            )
+            .push(
+                row![
+                    container(field(
+                        fl!("files-actions-minimum"),
+                        "1".into(),
+                        &draft.minimum,
+                        Field::Minimum
+                    ))
+                    .width(Length::FillPortion(1)),
+                    container(field(
+                        fl!("files-actions-maximum"),
+                        "0".into(),
+                        &draft.maximum,
+                        Field::Maximum
+                    ))
+                    .width(Length::FillPortion(1)),
+                ]
+                .spacing(10),
+            )
+            .push(hint(fl!("files-actions-count-hint")))
             .push(divider())
-            .push(section("Ways to run it"))
-            .push(field("Shortcut (optional)", "<Control><Alt>i", &draft.shortcut, Field::Shortcut))
-            .push(action("Record shortcut…", enabled.then_some(Event::Record(id))))
-            .push(toggle("Show in the toolbar", draft.toolbar, Check::Toolbar))
-            .push(hint("Custom commands run outside Files’ Undo history."));
+            .push(section(fl!("files-actions-ways-to-run")))
+            .push(field(
+                fl!("files-actions-shortcut"),
+                "<Control><Alt>i".into(),
+                &draft.shortcut,
+                Field::Shortcut,
+            ))
+            .push(action(
+                fl!("files-actions-record"),
+                enabled.then_some(Event::Record(id)),
+            ))
+            .push(toggle(
+                fl!("files-actions-toolbar"),
+                draft.toolbar,
+                Check::Toolbar,
+            ))
+            .push(hint(fl!("files-actions-undo-note")));
         form = if wide {
             column![
                 row![
@@ -963,8 +1034,8 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         body = body.push(chrome::empty_state(
             desktop,
             chrome::Icon::Edit,
-            "No custom actions yet",
-            "Add a command to the context menu or assign a keyboard shortcut.",
+            fl!("files-actions-empty"),
+            fl!("files-actions-empty-description"),
             empty_action,
         ));
     } else {
@@ -980,8 +1051,8 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
                 .height(Length::Fill),
         );
     }
-    let status = if editor.drafts.is_empty()
-        && editor.status == "Configure an action, then save. Ctrl+S saves all actions."
+    // The initial guidance is not shown before there is an action to configure.
+    let status = if editor.drafts.is_empty() && editor.status == fl!("files-actions-status-initial")
     {
         ""
     } else {
@@ -998,7 +1069,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     .align_y(iced::Alignment::Center);
     if !editor.drafts.is_empty() || editor.dirty {
         footer = footer.push(action(
-            "Save actions",
+            fl!("files-actions-save"),
             (enabled && editor.dirty).then_some(Event::Save(id)),
         ));
     }

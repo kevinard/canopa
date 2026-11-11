@@ -502,21 +502,19 @@ impl Desktop {
                 if opened.is_none() {
                     self.previews.remove(&id);
                     if let Some(tab) = source.and_then(|source| self.active_mut(source)) {
-                        tab.error =
-                            Some("Could not open a floating preview for this browser".into());
+                        tab.error = Some(fl!("files-preview-window-failed-browser"));
                     } else if let Some(trash) = self
                         .trash_window
                         .as_mut()
                         .filter(|trash| Some(trash.window) == source)
                     {
-                        trash.error = Some("Could not open a floating preview for Trash".into());
+                        trash.error = Some(fl!("files-preview-window-failed-trash"));
                     } else if let Some(recovery) = self
                         .recovery_window
                         .as_mut()
                         .filter(|w| Some(w.window) == source)
                     {
-                        recovery.error =
-                            Some("Could not open a floating preview for Recovery".into());
+                        recovery.error = Some(fl!("files-preview-window-failed-recovery"));
                     }
                 } else if source.is_none_or(|source| !self.preview_source_exists(source)) {
                     self.previews.remove(&id);
@@ -531,8 +529,7 @@ impl Desktop {
                 else {
                     return Task::none();
                 };
-                let result =
-                    result.unwrap_or_else(|| Arc::new(Err("Preview preparation stopped".into())));
+                let result = result.unwrap_or_else(|| Arc::new(Err(fl!("files-preview-stopped"))));
                 preview.loading = false;
                 preview.bitmap = None;
                 preview.text = None;
@@ -743,16 +740,23 @@ impl Desktop {
 
 pub(super) fn title(preview: &PreviewWindow) -> String {
     preview.target.as_ref().map_or_else(
-        || "Quick Look — Canopa Files".into(),
+        || {
+            fl!(
+                "files-window-title",
+                title = fl!("files-command-quick-look")
+            )
+        },
         |target| {
-            format!(
-                "Quick Look: {} — Canopa Files",
-                target
-                    .name_hint
-                    .as_deref()
-                    .or_else(|| target.path.file_name())
-                    .unwrap_or(target.path.as_os_str())
-                    .to_string_lossy()
+            let name = target
+                .name_hint
+                .as_deref()
+                .or_else(|| target.path.file_name())
+                .unwrap_or(target.path.as_os_str())
+                .to_string_lossy()
+                .into_owned();
+            fl!(
+                "files-window-title",
+                title = fl!("files-preview-title", name = name)
             )
         },
     )
@@ -767,11 +771,13 @@ pub(super) fn view<'a>(
     let appearance = &desktop.configuration.appearance;
     let body_size = appearance.typography().body_size.px();
     let controls = preview.controls();
-    let raw = |label: &'static str, control: Control| {
+    let raw = |label: String, control: Control| {
+        // The close symbol is drawn larger than captions.
+        let symbol = label == "×";
         canopa_ui::styled_action(
-            text(label).font(canopa_ui::font(appearance)).size(
-                appearance.typography().label_size.px() + if label == "×" { 5.0 } else { 0.0 },
-            ),
+            text(label)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px() + if symbol { 5.0 } else { 0.0 }),
             controls
                 .contains(&control)
                 .then_some(Message::Preview(Event::Activate(
@@ -791,15 +797,15 @@ pub(super) fn view<'a>(
     // Symbols and abbreviations get spoken names; focus is held in the model.
     let semantics = |control: Control| {
         let name = match control {
-            Control::Open => "Open",
-            Control::Close => "Close preview",
-            Control::ZoomOut => "Zoom out",
-            Control::Fit => "Fit to window",
-            Control::Actual => "Actual size",
-            Control::ZoomIn => "Zoom in",
-            Control::Previous => "Previous page",
-            Control::Next => "Next page",
-            _ => "",
+            Control::Open => fl!("files-menu-open"),
+            Control::Close => fl!("files-preview-close"),
+            Control::ZoomOut => fl!("files-preview-zoom-out"),
+            Control::Fit => fl!("files-preview-fit"),
+            Control::Actual => fl!("files-preview-actual-size"),
+            Control::ZoomIn => fl!("files-preview-zoom-in"),
+            Control::Previous => fl!("files-previous-page"),
+            Control::Next => fl!("files-next-page"),
+            _ => String::new(),
         };
         let message = controls
             .contains(&control)
@@ -814,22 +820,26 @@ pub(super) fn view<'a>(
             .disabled(message.is_none())
             .on_click(message)
     };
-    let button = |label: &'static str, control: Control| {
+    let button = |label: String, control: Control| {
         super::accessibility_ui::semantic(semantics(control), raw(label, control))
     };
     let mut controls_row = row![].spacing(6);
     if preview.bitmap.is_some() {
         controls_row = controls_row
-            .push(button("−", Control::ZoomOut))
-            .push(button("Fit", Control::Fit))
-            .push(button("100%", Control::Actual))
-            .push(button("+", Control::ZoomIn));
+            .push(button("−".into(), Control::ZoomOut))
+            .push(button(fl!("files-preview-fit-short"), Control::Fit))
+            .push(button(canopa_i18n::format::percent(100.0), Control::Actual))
+            .push(button("+".into(), Control::ZoomIn));
     }
     if let Some(PreviewContent::Pdf { page, pages, .. }) = preview.content() {
         controls_row = controls_row
-            .push(button("Previous", Control::Previous))
-            .push(text(format!("{page} / {pages}")))
-            .push(button("Next", Control::Next));
+            .push(button(fl!("files-previous"), Control::Previous))
+            .push(text(fl!(
+                "files-preview-page",
+                page = u64::from(*page),
+                pages = u64::from(*pages)
+            )))
+            .push(button(fl!("files-next"), Control::Next));
     }
     let content: Element<'a, Message> = if let Some(media) = &preview.media {
         media.body(
@@ -891,20 +901,25 @@ pub(super) fn view<'a>(
         .into()
     } else {
         let notice = if preview.loading {
-            "Preparing preview…".into()
+            fl!("files-preview-preparing")
         } else if let Some(result) = &preview.result {
             match result.as_ref() {
-                Err(error) => format!("Preview unavailable: {error}"),
+                Err(error) => fl!("files-preview-unavailable", error = error.clone()),
                 Ok(prepared) => match &prepared.preview.content {
-                    PreviewContent::Folder { items } => format!("Folder · {items} items"),
-                    PreviewContent::Audio(_) | PreviewContent::Video(_) => {
-                        "Media preview is unavailable. Open in your usual application.".into()
+                    PreviewContent::Folder { items } => {
+                        fl!(
+                            "files-preview-folder",
+                            count = u64::try_from(*items).unwrap_or(u64::MAX)
+                        )
                     }
-                    _ => "No preview available. Open in the normal application.".into(),
+                    PreviewContent::Audio(_) | PreviewContent::Video(_) => {
+                        fl!("files-preview-media-unavailable")
+                    }
+                    _ => fl!("files-preview-none"),
                 },
             }
         } else {
-            "Select a file to preview".into()
+            fl!("files-preview-select")
         };
         container(text(notice).size(body_size))
             .padding(20)
@@ -917,30 +932,22 @@ pub(super) fn view<'a>(
         .as_deref()
         .and_then(|result| result.as_ref().ok())
         .map_or_else(String::new, |prepared| {
-            let extra = if matches!(
+            // Independent facts, joined like the rest of the subtitle.
+            let mut parts =
+                vec![super::listing_ui::size(prepared.preview.size).replace(' ', "\u{a0}")];
+            if matches!(
                 &prepared.preview.content,
                 PreviewContent::Text {
                     truncated: true,
                     ..
                 }
             ) {
-                " · Text truncated"
-            } else {
-                ""
-            };
-            format!(
-                "{}{extra}{}",
-                match prepared.preview.size {
-                    1 => "1\u{a0}byte".to_owned(),
-                    bytes @ 0..=1023 => format!("{bytes}\u{a0}bytes"),
-                    bytes => super::listing_ui::size(bytes).replace(' ', "\u{a0}"),
-                },
-                if preview.loading {
-                    " · Preparing…"
-                } else {
-                    ""
-                }
-            )
+                parts.push(fl!("files-preview-text-truncated"));
+            }
+            if preview.loading {
+                parts.push(fl!("files-preview-preparing-short"));
+            }
+            parts.join(" · ")
         });
     let appearance = appearance.clone();
     let revision = preview.revision;
@@ -949,7 +956,7 @@ pub(super) fn view<'a>(
         .on_show(move |size| Message::Preview(Event::Viewport(id, revision, size)))
         .on_resize(move |size| Message::Preview(Event::Viewport(id, revision, size)));
     let filename = preview.target.as_ref().map_or_else(
-        || "Quick Look".into(),
+        || fl!("files-command-quick-look"),
         |target| {
             target
                 .name_hint
@@ -968,36 +975,36 @@ pub(super) fn view<'a>(
     };
     let compact = preview.viewport.width < 360.0;
     let kind = match preview.content() {
-        Some(PreviewContent::Text { .. }) => "Text preview",
-        Some(PreviewContent::Image(_)) => "Image preview",
-        Some(PreviewContent::Pdf { .. }) => "PDF preview",
+        Some(PreviewContent::Text { .. }) => fl!("files-preview-text"),
+        Some(PreviewContent::Image(_)) => fl!("files-preview-image"),
+        Some(PreviewContent::Pdf { .. }) => fl!("files-preview-pdf"),
         Some(PreviewContent::Audio(_)) => {
             if compact {
-                "Audio"
+                fl!("files-preview-audio-short")
             } else {
-                "Audio preview"
+                fl!("files-preview-audio")
             }
         }
         Some(PreviewContent::Video(_)) => {
             if compact {
-                "Video"
+                fl!("files-preview-video-short")
             } else {
-                "Video preview"
+                fl!("files-preview-video")
             }
         }
-        _ => "Quick Look",
+        _ => fl!("files-command-quick-look"),
     };
     let subtitle = if information.is_empty() {
-        kind.to_owned()
+        kind
     } else {
         format!("{kind} · {information}")
     };
     let close = iced::widget::tooltip(
         super::accessibility_ui::semantic(
             semantics(Control::Close),
-            raw("×", Control::Close).width(32).padding(4),
+            raw("×".into(), Control::Close).width(32).padding(4),
         ),
-        text("Close preview")
+        text(fl!("files-preview-close"))
             .font(canopa_ui::font(&appearance))
             .size(appearance.typography().label_size.px()),
         iced::widget::tooltip::Position::Bottom,
@@ -1007,7 +1014,7 @@ pub(super) fn view<'a>(
         icon,
         filename,
         subtitle,
-        row![button("Open", Control::Open), close]
+        canopa_ui::direction::row([button(fl!("files-menu-open"), Control::Open), close.into()])
             .spacing(4)
             .align_y(iced::Alignment::Center)
             .into(),

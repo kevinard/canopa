@@ -57,7 +57,7 @@ impl Desktop {
             != Some(path.as_path())
         {
             if let Some(tab) = self.active_mut(id) {
-                tab.error = Some("The requested Quick Look file is unavailable".into());
+                tab.error = Some(fl!("files-quick-look-unavailable"));
             }
             return Task::none();
         }
