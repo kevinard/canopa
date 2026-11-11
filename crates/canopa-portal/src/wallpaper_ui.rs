@@ -1,6 +1,7 @@
 //! Review only: the backend keeps the full frozen image and installs after Apply.
 use std::sync::{Arc, Mutex};
 
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
     widget::{column, container, image, row, scrollable, text},
@@ -41,7 +42,7 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
                 .parent_window
                 .strip_prefix("wayland:")
                 .unwrap_or_default();
-            let (_, open) = window::open_dialog(parent.to_owned(), true, settings);
+            let (window, open) = window::open_dialog(parent.to_owned(), true, settings);
             (
                 Dialog {
                     app_id: input.app_id.clone(),
@@ -51,6 +52,8 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
                     theme: theme.clone(),
                     output: output.clone(),
                     completed: false,
+                    window,
+                    accessibility: Some(a11y::Accessibility::new("canopa-wallpaper", WINDOW_KEY)),
                 },
                 open.map(|_| Message::Opened),
             )
@@ -58,7 +61,7 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| "Set wallpaper — Canopa".to_owned())
+    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
     .theme(|app: &Dialog, _| app.theme.clone())
     .subscription(Dialog::subscription)
     .default_font(font)
@@ -80,6 +83,8 @@ mod tests {
             theme: canopa_ui::theme(canopa_theme::Appearance::default()),
             output: Arc::new(Mutex::new(false)),
             completed: false,
+            window: window::Id::unique(),
+            accessibility: None,
         }
     }
 
@@ -98,6 +103,11 @@ mod tests {
     }
 }
 
+/// The AT-SPI window of the wallpaper review and its title.
+const WINDOW_KEY: &str = "wallpaper";
+const WINDOW_TITLE: &str = "Set wallpaper — Canopa";
+const QUESTION: &str = "Change wallpaper?";
+
 struct Dialog {
     app_id: String,
     destination: crate::wallpaper::Destination,
@@ -106,6 +116,8 @@ struct Dialog {
     theme: Theme,
     output: Arc<Mutex<bool>>,
     completed: bool,
+    window: window::Id,
+    accessibility: Option<a11y::Accessibility<Message>>,
 }
 
 #[derive(Clone, Debug)]
@@ -114,11 +126,18 @@ enum Message {
     Apply,
     Cancel,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
+}
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
 }
 
 impl Dialog {
     fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(|event, status, _| {
+        let input = iced::event::listen_with(|event, status, _| {
             let escape = matches!(
                 &event,
                 Event::Keyboard(keyboard::Event::KeyPressed {
@@ -127,28 +146,53 @@ impl Dialog {
                 })
             );
             (escape || status == iced::event::Status::Ignored).then_some(Message::Event(event))
-        })
+        });
+        match &self.accessibility {
+            Some(state) => Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
     }
 
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+
+    fn exit(&mut self) -> Task<Message> {
+        self.completed = true;
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if self.completed {
             return Task::none();
         }
         match message {
+            Message::Opened => {
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(WINDOW_TITLE, window);
+                }
+            }
             Message::Apply => {
                 *self.output.lock().expect("wallpaper result") = true;
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Cancel | Message::Event(Event::Window(window::Event::CloseRequested)) => {
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key, modifiers, ..
             })) => {
                 if key == keyboard::Key::Named(keyboard::key::Named::Escape) {
-                    return self.update(Message::Cancel);
+                    return self.apply(Message::Cancel);
                 }
                 if key == keyboard::Key::Named(keyboard::key::Named::Tab) {
                     return if modifiers.shift() {
@@ -169,15 +213,18 @@ impl Dialog {
         } else {
             &self.app_id
         };
-        let preview = container(
-            image(self.preview.clone())
-                .content_fit(iced::ContentFit::Contain)
-                .width(Length::Fill)
-                .height(300),
-        )
-        .style(|_| container::Style::default().background(iced::Color::BLACK));
+        let preview = semantic(
+            Node::image("Wallpaper preview").key("wallpaper-preview"),
+            container(
+                image(self.preview.clone())
+                    .content_fit(iced::ContentFit::Contain)
+                    .width(Length::Fill)
+                    .height(300),
+            )
+            .style(|_| container::Style::default().background(iced::Color::BLACK)),
+        );
         let mut content = column![
-            text("Change wallpaper?").size(22),
+            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(22)),
             text(format!("Requested by {requester}")).style(canopa_ui::muted),
             preview,
             text(self.destination.label()).size(18),
@@ -195,28 +242,36 @@ impl Dialog {
                     .style(canopa_ui::muted),
             );
         }
+        let action = |key: &'static str, label: &'static str, message: Message| {
+            a11y::button(
+                key,
+                label,
+                Some(message.clone()),
+                canopa_ui::action(text(label), Some(message), canopa_ui::Action::Normal, false)
+                    .width(Length::Fill),
+            )
+        };
         let actions = row![
-            canopa_ui::action(
-                text("Cancel"),
-                Some(Message::Cancel),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill),
-            canopa_ui::action(
-                text("Apply"),
-                Some(Message::Apply),
-                canopa_ui::Action::Normal,
-                false
-            )
-            .width(Length::Fill)
+            action("wallpaper-cancel", "Cancel", Message::Cancel),
+            action("wallpaper-apply", "Apply", Message::Apply),
         ]
         .spacing(12);
-        container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        a11y::dialog_window(
+            WINDOW_KEY,
+            WINDOW_TITLE,
+            Node::dialog(QUESTION)
+                .key("wallpaper-dialog")
+                .description(format!(
+                    "Requested by {requester}. {}, {} × {} pixels.",
+                    self.destination.label(),
+                    self.dimensions.0,
+                    self.dimensions.1
+                )),
+            container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
+                .padding(20)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(canopa_ui::surface),
+        )
     }
 }
