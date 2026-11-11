@@ -18,6 +18,8 @@ use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use std::{path::PathBuf, time::Duration};
 
 const NOT_RUNNING: &str = "Canopa Notify is not running.";
+const TOO_OLD: &str =
+    "The running Canopa Notify has no preferences control yet; restart it after updating Canopa.";
 /// How often the page re-reads rules nobody announces.
 const REREAD: Duration = Duration::from_secs(10);
 
@@ -89,7 +91,15 @@ impl NotificationService {
     }
 
     async fn read(&self) -> Result<NotificationPreferences, ServiceError> {
-        preferences::read(&self.socket()?).await.map_err(failure)
+        preferences::read(&self.socket()?)
+            .await
+            .map_err(|error| match error {
+                // An older Notify answers, without the preferences control.
+                RequestError::Refused(reason) if reason.contains("unsupported") => {
+                    ServiceError::Unavailable(TOO_OLD.into())
+                }
+                other => failure(other),
+            })
     }
 
     async fn run(&self, action: NotificationAction) -> Result<(), ServiceError> {
@@ -450,6 +460,30 @@ mod tests {
         assert!(matches!(
             service.snapshot().await,
             Err(ServiceError::Unavailable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_older_notify_is_a_calm_unavailable_state() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("control.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = tokio::io::BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            reader
+                .get_mut()
+                .write_all(b"error unsupported control request\n")
+                .await
+                .unwrap();
+        });
+        let service = NotificationService::with_socket(socket);
+        assert!(matches!(
+            service.snapshot().await,
+            Err(ServiceError::Unavailable(message)) if message == TOO_OLD
         ));
     }
 

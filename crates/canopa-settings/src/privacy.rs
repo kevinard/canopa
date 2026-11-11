@@ -239,8 +239,28 @@ fn desktop_files(dir: &Path) -> Vec<(String, PathBuf)> {
     files
 }
 
-/// Autostart entries: the user's folder over the system folders.
-pub fn autostart(user: &Path, system: &[PathBuf]) -> Vec<Autostart> {
+/// Whether an entry starts in a desktop named by `desktops` (lowercase
+/// `XDG_CURRENT_DESKTOP` names), following `OnlyShowIn` and `NotShowIn`.
+fn shown(keys: &HashMap<String, String>, desktops: &[String]) -> bool {
+    let names = |key: &str| -> Vec<String> {
+        keys.get(key)
+            .map(|value| {
+                value
+                    .split(';')
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_lowercase)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let only = names("OnlyShowIn");
+    let not = names("NotShowIn");
+    (only.is_empty() || only.iter().any(|name| desktops.contains(name)))
+        && !not.iter().any(|name| desktops.contains(name))
+}
+
+/// Autostart entries for `desktops`: the user's folder over the system folders.
+pub fn autostart(user: &Path, system: &[PathBuf], desktops: &[String]) -> Vec<Autostart> {
     let mut found: Vec<Autostart> = Vec::new();
     let mut user_ids = Vec::new();
     for (id, path) in desktop_files(user) {
@@ -249,6 +269,9 @@ pub fn autostart(user: &Path, system: &[PathBuf]) -> Vec<Autostart> {
         };
         let keys = entry_keys(&text);
         user_ids.push(id.clone());
+        if !shown(&keys, desktops) {
+            continue;
+        }
         found.push(Autostart {
             name: keys.get("Name").cloned().unwrap_or_else(|| id.clone()),
             enabled: keys.get("Hidden").map(String::as_str) != Some("true"),
@@ -259,6 +282,10 @@ pub fn autostart(user: &Path, system: &[PathBuf]) -> Vec<Autostart> {
     }
     for dir in system {
         for (id, path) in desktop_files(dir) {
+            if user_ids.contains(&id) && !found.iter().any(|entry| entry.id == id) {
+                // A user entry for another desktop hides it here too.
+                continue;
+            }
             if found.iter().any(|entry| entry.id == id) {
                 // A user entry with the same name overrides it.
                 if let Some(entry) = found.iter_mut().find(|entry| entry.id == id)
@@ -272,6 +299,9 @@ pub fn autostart(user: &Path, system: &[PathBuf]) -> Vec<Autostart> {
                 continue;
             };
             let keys = entry_keys(&text);
+            if !shown(&keys, desktops) {
+                continue;
+            }
             found.push(Autostart {
                 name: keys.get("Name").cloned().unwrap_or_else(|| id.clone()),
                 enabled: keys.get("Hidden").map(String::as_str) != Some("true"),
@@ -292,6 +322,17 @@ pub struct PrivacyService {
     names: Arc<tokio::sync::OnceCell<Arc<HashMap<String, String>>>>,
     autostart_user: Option<PathBuf>,
     autostart_system: Vec<PathBuf>,
+    desktops: Vec<String>,
+}
+
+/// This session's lowercase `XDG_CURRENT_DESKTOP` names.
+fn current_desktops() -> Vec<String> {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|name| !name.is_empty())
+        .map(str::to_lowercase)
+        .collect()
 }
 
 impl Default for PrivacyService {
@@ -308,6 +349,7 @@ impl Default for PrivacyService {
                 .filter(|path| path.is_absolute())
                 .map(|path| path.join("autostart"))
                 .collect(),
+            desktops: current_desktops(),
         }
     }
 }
@@ -335,6 +377,7 @@ impl PrivacyService {
             names: Arc::new(tokio::sync::OnceCell::new_with(Some(Arc::default()))),
             autostart_user: Some(user),
             autostart_system: system,
+            desktops: vec!["canopa".into()],
         }
     }
 
@@ -382,8 +425,9 @@ impl PrivacyService {
             None => None,
         };
         let (user, system) = (self.autostart_user.clone(), self.autostart_system.clone());
+        let desktops = self.desktops.clone();
         let autostart = tokio::task::spawn_blocking(move || match user {
-            Some(user) => autostart(&user, &system),
+            Some(user) => autostart(&user, &system, &desktops),
             None => Vec::new(),
         })
         .await
@@ -581,8 +625,20 @@ mod tests {
             names: Arc::default(),
             autostart_user: Some(user.clone()),
             autostart_system: vec![system.clone()],
+            desktops: vec!["canopa".into()],
         };
-        let entries = autostart(&user, std::slice::from_ref(&system));
+        let canopa = ["canopa".to_owned()];
+        std::fs::write(
+            system.join("gnome-only.desktop"),
+            "[Desktop Entry]\nName=GNOME thing\nOnlyShowIn=GNOME;\n",
+        )
+        .unwrap();
+        std::fs::write(
+            system.join("not-here.desktop"),
+            "[Desktop Entry]\nName=Not here\nNotShowIn=Canopa;\n",
+        )
+        .unwrap();
+        let entries = autostart(&user, std::slice::from_ref(&system), &canopa);
         assert_eq!(entries.len(), 2);
         assert!(entries[0].system && entries[0].enabled && entries[0].name == "Agent");
         assert!(entries[1].sandboxed && !entries[1].system);
@@ -590,14 +646,14 @@ mod tests {
         service.set_autostart("agent.desktop", false).unwrap();
         let override_text = std::fs::read_to_string(user.join("agent.desktop")).unwrap();
         assert!(override_text.contains("Hidden=true") && override_text.contains("Exec=agent"));
-        assert!(!autostart(&user, std::slice::from_ref(&system))[0].enabled);
+        assert!(!autostart(&user, std::slice::from_ref(&system), &canopa)[0].enabled);
         service.set_autostart("agent.desktop", true).unwrap();
         assert!(
             !user.join("agent.desktop").exists(),
             "the override is removed"
         );
         service.set_autostart("chat.desktop", false).unwrap();
-        let chat = autostart(&user, &[])
+        let chat = autostart(&user, &[], &canopa)
             .into_iter()
             .find(|e| e.id == "chat.desktop")
             .unwrap();
