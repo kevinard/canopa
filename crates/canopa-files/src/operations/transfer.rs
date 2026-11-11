@@ -834,7 +834,14 @@ pub(super) fn run_transfer(
         )
     });
     let flushed = session.map_or(Ok(()), super::durability::Session::flush);
-    let result = result.and(flushed).and_then(|()| state.trim());
+    if let Err(error) = flushed
+        && result.is_ok()
+    {
+        // Keep the outcome and its continuation; the user decides what next.
+        outcome.needs_attention = true;
+        outcome.attention = Some(unconfirmed(&error));
+    }
+    let result = result.and_then(|()| state.trim());
     match result {
         Ok(()) => Ok(outcome),
         Err(error) => Err(io::Error::new(
@@ -979,7 +986,11 @@ fn run_transfer_inner(
             break;
         }
         while let Err(error) = destination_observation.check() {
-            super::durability::flush()?;
+            if let Err(error) = super::durability::flush() {
+                result.needs_attention = true;
+                result.attention = Some(unconfirmed(&error));
+                break;
+            }
             match interact(TransferEvent::Unavailable {
                 destination: request.destination.clone(),
                 message: format!("The destination folder is unavailable or has changed: {error}"),
@@ -1020,6 +1031,8 @@ fn run_transfer_inner(
             Ok(())
         };
         let mut reconciled = None;
+        // Content bytes of a committed deferred item, accounted after the step.
+        let mut deferred_item = None;
         let operation = (|| -> io::Result<bool> {
             if let Some(receipt) = saved_receipts.get(&source).copied()
                 && state.saved_move_completed(&receipt, &source, &destination)?
@@ -1538,7 +1551,7 @@ fn run_transfer_inner(
                             },
                         )
                     })?;
-                    super::durability::completed(0)?;
+                    deferred_item = Some(0);
                     #[cfg(test)]
                     directory_boundary::boundary("appended", &source, &destination);
                     result.completed += 1;
@@ -1677,7 +1690,7 @@ fn run_transfer_inner(
                             Ok(())
                         })
                     })?;
-                    super::durability::completed(result.bytes - bytes_before)?;
+                    deferred_item = Some(result.bytes - bytes_before);
                 }
                 #[cfg(test)]
                 copy_boundary::after_copy(&source, &destination);
@@ -1746,8 +1759,9 @@ fn run_transfer_inner(
             Ok(true)
         })();
         if operation.is_err() {
-            // Failure handling restores or retains data with full syncs.
-            super::durability::flush()?;
+            // Failure handling restores or retains data with full syncs. A
+            // failed barrier stays pending; the final barrier reports it.
+            let _ = super::durability::flush();
         }
         match operation {
             Ok(committed) => {
@@ -1853,6 +1867,13 @@ fn run_transfer_inner(
                 }
             }
         }
+        if let Some(bytes) = deferred_item
+            && let Err(error) = super::durability::completed(bytes)
+        {
+            result.needs_attention = true;
+            result.attention = Some(unconfirmed(&error));
+            break;
+        }
         if interact(TransferEvent::Progress {
             path: source,
             completed: result.completed,
@@ -1932,6 +1953,10 @@ fn run_transfer_inner(
     }
     state.discard_empty(id)?;
     Ok(())
+}
+
+fn unconfirmed(error: &io::Error) -> String {
+    format!("Files could not confirm that the copied data reached the device: {error}")
 }
 
 #[derive(Debug)]

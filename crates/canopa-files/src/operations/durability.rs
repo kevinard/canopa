@@ -197,17 +197,33 @@ pub(super) fn flush() -> io::Result<()> {
     };
     #[cfg(test)]
     COUNTS.set((COUNTS.get().0, COUNTS.get().1 + 1));
-    for (_, file) in &filesystems {
-        rustix::fs::syncfs(file)?;
+    let synced = filesystems
+        .iter()
+        .try_for_each(|(_, file)| rustix::fs::syncfs(file).map_err(io::Error::from))
+        .and_then(|()| {
+            journal
+                .iter()
+                .try_for_each(|path| match fs::File::open(path) {
+                    Ok(file) => file.sync_all(),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                    Err(error) => Err(error),
+                })
+        });
+    if synced.is_err() {
+        // Stay pending: a later barrier, at the latest the transfer's final
+        // one, retries and reports the failure instead of forgetting it.
+        SESSION.with(|session| {
+            if let Some(batch) = session.borrow_mut().as_mut() {
+                batch.since.get_or_insert_with(Instant::now);
+                for entry in filesystems {
+                    if !batch.filesystems.iter().any(|(known, _)| *known == entry.0) {
+                        batch.filesystems.push(entry);
+                    }
+                }
+            }
+        });
     }
-    for path in journal {
-        match fs::File::open(&path) {
-            Ok(file) => file.sync_all()?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(())
+    synced
 }
 
 /// Deferred syncs and batch barriers on this thread since the last call.
@@ -245,6 +261,33 @@ mod tests {
         session.flush().unwrap();
         assert!(!batching());
         assert_eq!(take_counts(), (0, 0), "nothing was deferred since");
+    }
+
+    #[test]
+    fn a_failed_barrier_stays_pending_until_it_succeeds() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path().join("history-wal");
+        fs::write(&journal, b"").unwrap();
+        fs::set_permissions(&journal, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::File::open(&journal).is_ok() {
+            return; // Privileged runners can open any file.
+        }
+        let file = fs::File::create(root.path().join("payload")).unwrap();
+        let session = Session::begin(vec![journal.clone()]);
+        {
+            let _span = enter().unwrap();
+            sync(&file).unwrap();
+        }
+        take_counts();
+        assert!(flush().is_err());
+        assert!(flush().is_err(), "the failure is not forgotten");
+        fs::set_permissions(&journal, fs::Permissions::from_mode(0o600)).unwrap();
+        flush().unwrap();
+        assert_eq!(take_counts(), (0, 3));
+        flush().unwrap();
+        assert_eq!(take_counts(), (0, 0), "nothing is pending afterwards");
+        session.flush().unwrap();
     }
 
     #[test]
