@@ -18,8 +18,12 @@
 //! let system = canopa_services::bus::system().await?;
 //! let (_agent, mut requests) = secret_agent::register(&system, "org.canopa.Settings").await?;
 //! while let Some(request) = requests.recv().await {
-//!     let answers = request.fields.iter().map(|field| (field.key.clone(), "typed".into()));
-//!     request.answer(answers.collect());
+//!     let answers = request
+//!         .fields
+//!         .iter()
+//!         .map(|field| (field.key.clone(), "typed".to_owned()))
+//!         .collect();
+//!     request.answer(answers);
 //! }
 //! # Ok(()) }
 //! ```
