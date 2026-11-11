@@ -20,6 +20,7 @@ members = [
   "crates/canopa-ui",
   "crates/canopa-notify-client",
   "crates/canopa-panel-protocol",
+  "crates/canopa-services",
   "crates/canopa-notify",
   "crates/canopa-shell",
 ]
@@ -46,6 +47,7 @@ uucore = { version = "=0.12.0", features = ["buf-copy"] }
 reis = "=0.7.1"
 shlex = "2"
 canopa-panel-protocol = { path = "crates/canopa-panel-protocol" }
+canopa-services = { path = "crates/canopa-services" }
 chrono = { version = "0.4", features = ["clock"] }
 libpulse-binding = "2.30.1"
 miette = { version = "7.6.0", default-features = false, features = ["fancy"] }

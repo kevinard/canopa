@@ -1147,6 +1147,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "canopa-services"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "libpulse-binding",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "canopa-session"
 version = "0.1.0"
 dependencies = [
@@ -1246,6 +1259,7 @@ dependencies = [
  "canopa-launcher",
  "canopa-notify-client",
  "canopa-panel-protocol",
+ "canopa-services",
  "canopa-theme",
  "canopa-ui",
  "canopa-widgets",
@@ -1291,6 +1305,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "canopa-file",
+ "canopa-services",
  "futures-util",
  "libc",
  "serde",
