@@ -917,6 +917,7 @@ dependencies = [
 name = "canopa-files"
 version = "0.1.0"
 dependencies = [
+ "canopa-apps",
  "canopa-assets",
  "canopa-config",
  "canopa-file",
