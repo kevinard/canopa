@@ -265,3 +265,148 @@ settings-live-dismiss = Dismiss
 settings-error-not-authorized = The system did not allow this change.
 settings-error-timed-out = The system did not answer in time.
 settings-error-bus = The system bus is not reachable.
+
+## Service errors. "Invalid" messages repeat what a system service refused.
+
+settings-error-setting-changed = The setting changed. Try again.
+# $what is the English name of a value, used only for values Canopa does not know.
+settings-error-invalid-value = That is not a valid { $what }.
+settings-invalid-device-name = That is not a valid device name.
+settings-invalid-host-name = That is not a valid host name.
+settings-invalid-full-name = That is not a valid full name.
+settings-invalid-user-name = That is not a valid user name.
+settings-invalid-picture = That is not a valid picture.
+settings-invalid-language = That is not a valid language.
+settings-invalid-formats = Those are not valid formats.
+settings-invalid-keyboard-layout = That is not a valid keyboard layout.
+settings-invalid-printer-name = That is not a valid printer name.
+settings-invalid-printer-address = That is not a valid printer address.
+settings-invalid-time-zone = That is not a valid time zone.
+settings-invalid-time-before-1970 = The time cannot be before 1970.
+settings-invalid-request = The request was not valid.
+settings-invalid-dns = A DNS server is not a valid address.
+settings-invalid-wifi-password = A Wi-Fi password has 8 to 63 characters.
+settings-invalid-hotspot-password = A hotspot password has 8 to 63 characters.
+settings-invalid-network-name = A network name has 1 to 32 bytes.
+settings-invalid-preshared-key = A preshared key is not a WireGuard key.
+settings-invalid-tunnel-peer = A tunnel needs a peer.
+settings-invalid-address = An address is not valid.
+settings-invalid-brightness = Brightness must be between 1% and 100%.
+settings-invalid-certificate-path = Certificate paths must be UTF-8.
+settings-invalid-eap-method = Choose an authentication method.
+settings-invalid-password-missing = Enter the password.
+settings-invalid-identity-missing = Enter your identity (user name).
+# ListenPort, MTU and PersistentKeepalive are WireGuard setting names.
+settings-invalid-listen-port = ListenPort is not a port.
+settings-invalid-mtu = MTU is not a number.
+settings-invalid-manual-address = Manual addressing needs an address.
+settings-invalid-connection-name = Name the connection.
+settings-invalid-keepalive = PersistentKeepalive is not a number.
+settings-invalid-peer-setting = The file has an unknown peer setting.
+settings-invalid-section = The file has an unknown section.
+settings-invalid-wireguard-file = The file is not a WireGuard configuration.
+settings-invalid-gateway = The gateway is not a valid address.
+settings-invalid-prefix = The prefix must be a number.
+settings-invalid-private-key = The private key is not a WireGuard key.
+settings-invalid-address-method = Unknown address method.
+settings-invalid-proxy = Write the proxy as host:port.
+settings-invalid-wayland-login = A Wayland login is required.
+settings-invalid-local-login = An active local login is required.
+
+## Region & language
+
+settings-region-yours = Your language and formats
+settings-region-system = System
+settings-region-language = Language
+settings-region-formats = Formats (dates, numbers, money)
+# The name of the C locale, which has no language or country.
+settings-region-unspecified-locale = Unspecified (C)
+settings-region-only-c = Only the C locale is installed. An administrator adds languages by enabling them in /etc/locale.gen and running locale-gen.
+settings-region-preview-date = Date
+settings-region-preview-time = Time
+settings-region-preview-number = Number
+settings-region-preview-money = Money
+settings-region-preview-measurement = Measurement
+# $long is a full date, $short the same date in numbers.
+settings-region-preview-dates = { $long } · { $short }
+settings-region-metric = Metric
+settings-region-us-customary = US customary
+# $file is a path.
+settings-region-applies = Settings changes at once. Files, Notify and the Shell follow when they restart, and other applications at your next login. Saved in { $file }.
+settings-region-no-localed = systemd-localed is not running, so the system language and keyboard cannot be shown or changed here.
+# $layout is an XKB layout name.
+settings-region-keyboard-unset = Not set ({ $layout })
+settings-region-system-language = Login screen and new users
+settings-region-system-keyboard = System keyboard
+settings-region-your-layouts = Your layouts
+settings-region-use-my-layouts = Use my layouts for the login screen and console
+settings-region-change-layouts = Change my layouts…
+settings-region-system-permission = System changes ask for an administrator’s permission.
+# The name of a language Canopa is translated into, written in the current language. $code is its code.
+settings-language-name = { $code ->
+    [fr] French
+   *[en] English
+}
+# After the person chooses a language. $language is from settings-language-name.
+settings-region-language-applied = Settings now uses { $language }. Restart Files, Notify and the Shell, or log out, to see the change everywhere; other applications follow at your next login.
+# $locale is a locale name such as "German (Germany)".
+settings-region-language-untranslated = Canopa is not translated into this language ({ $locale }) yet, so Settings stays in English. Other applications follow your choice at your next login.
+# $formats is a locale name such as "French (France)".
+settings-region-formats-applied = Settings now shows dates and numbers in the { $formats } formats. Restart Files, Notify and the Shell, or log out, to see the change everywhere; other applications follow at your next login.
+settings-region-error-no-localed = systemd-localed is not available.
+settings-region-error-no-config = There is no configuration folder.
+settings-region-error-save = locale.conf could not be saved: { $error }
+settings-region-error-not-installed = That language is not installed.
+
+## Date & time
+
+settings-date-time-zone = Time zone
+# $zone is a time zone name such as "Europe/Paris".
+settings-date-time-zone-current = Time zone: { $zone }
+settings-date-time-zone-unset = Not set (UTC)
+# The current date and time. $date is a full date, $time a time with seconds.
+settings-date-time-now = { $date } · { $time }
+settings-date-time-locate = Use my location
+settings-date-time-locate-hint = Sets the time zone of this computer’s location once, through GeoClue.
+settings-date-time-zone-search = Find a time zone (city or region)
+settings-date-time-zone-none = No time zone matches.
+settings-date-time-zone-in-use = In use
+settings-date-time-zone-use = Use
+settings-date-time-clock = Date and time
+settings-date-time-ntp = Set the time automatically from the network
+settings-date-time-ntp-off = Off: the clock keeps the time set below.
+settings-date-time-ntp-synchronized = The clock is synchronized.
+settings-date-time-ntp-waiting = Waiting for a time server…
+settings-date-time-ntp-missing = No network time service (systemd-timesyncd, chrony or ntpd) is installed.
+# The fields take these exact forms whatever the language.
+settings-date-time-date-field = Date (YYYY-MM-DD)
+settings-date-time-time-field = Time (HH:MM)
+settings-date-time-set = Set date and time
+settings-date-time-bad-entry = Enter the date as YYYY-MM-DD and the time as HH:MM.
+settings-date-time-local-rtc = The hardware clock keeps local time, as Windows does; this can confuse daylight saving changes.
+settings-date-time-not-running = systemd-timedated did not answer.
+settings-date-time-location-denied = Location access is not allowed for Canopa Settings.
+settings-date-time-location-timeout = The location could not be found in time.
+settings-date-time-location-unavailable = The location is not available.
+settings-date-time-no-tzdata = The time zone table (tzdata) is not installed.
+settings-date-time-no-zone-here = No time zone matches this location.
+
+## Clock format (Date & time page)
+
+settings-clock-format = Clock format
+settings-clock-reading = Reading config.kdl…
+settings-clock-unreadable = The clock formats are set in config.kdl, which could not be read: { $error }
+# Clocks follow the language's formats chosen on Region & language.
+settings-clock-automatic = Automatic
+# $example is 2:30 PM written as the choice writes it.
+settings-clock-24 = 24-hour ({ $example })
+settings-clock-12 = 12-hour ({ $example })
+settings-clock-automatic-24 = Automatic follows Region & language, which uses a 24-hour clock ({ $example }).
+settings-clock-automatic-12 = Automatic follows Region & language, which uses a 12-hour clock ({ $example }).
+settings-clock-applies = For the bar clock and the lock screen. Applies at once.
+# $place is settings-clock-place-shell or settings-clock-place-lock; $format a pattern such as %H.%M.
+settings-clock-custom = { $place } uses its own format, { $format }, which is kept.
+# $name is the clock module's name in config.kdl.
+settings-clock-place-shell = Shell clock “{ $name }”
+settings-clock-place-lock = Lock screen
+settings-clock-updated = Clock format updated.

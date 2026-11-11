@@ -6,7 +6,9 @@ Closing the window leaves the independent desktop services running.
 
 The sidebar groups pages under Devices, Appearance, System and Desktop. Type in
 **Search settings** to list the pages whose name or keywords match, for example
-`touchpad`, `wallpaper` or `suspend`; Enter opens the best match. Ctrl+F moves to
+`touchpad`, `wallpaper` or `suspend`; Enter opens the best match. Search
+matches the pages' names and keywords in your language and in English, and
+ignores accents. Ctrl+F moves to
 the search field. Tab/Shift+Tab navigate controls. On a sidebar page, Up and Down
 move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
@@ -189,19 +191,29 @@ for permission through the polkit agent.
   Settings may know the location.
 - **Set the time automatically from the network** turns network time on or off
   (systemd-timesyncd, chrony or ntpd). When it is off, set the date and time.
-- **Clock format**: 24-hour or 12-hour for the bar clocks and the lock screen,
-  applied at once to `config.kdl`. A clock with a pattern of your own (for
-  example `%a %H:%M`) keeps it; see
+- **Clock format**: **Automatic**, 24-hour or 12-hour for the bar clocks and
+  the lock screen, applied at once to `config.kdl`. Automatic follows the
+  formats chosen on Region & language (the page says which cycle that gives
+  now) and removes the 24- or 12-hour patterns Settings wrote; the other two
+  write an explicit pattern. A clock with a pattern of your own (for example
+  `%a %H:%M`) keeps it; see
   [ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md).
 
 ## Region & language
 
 **Language** and **Formats** (dates, numbers, money, measurement and paper)
 are yours: they are saved in `~/.config/locale.conf` (`LANG` and the `LC_*`
-format variables) and apply the next time you log in; the login shell profile
-reads that file when the Canopa session starts. AccountsService records the
-same language, and the formats where it supports them, for other display
-managers. A preview shows the chosen formats.
+format variables). Settings switches to the new language or formats at once
+and says what else follows: Canopa's Files, Notify and Shell read
+`locale.conf` when they start, so restart them (or log out) to see the change
+there; other applications follow at your next login, when the login shell
+profile reads that file. A language Canopa is not translated into keeps
+Settings in English. AccountsService records the same language, and the
+formats where it supports them, for other display managers.
+
+A preview shows the chosen formats: the date, time and number as Canopa
+writes them (ICU), and money and measurement from the installed locale.
+Locale names come from the installed locales and are in English.
 
 **Login screen and new users** sets the system language through
 systemd-localed. The system keyboard shows the login screen's and console's

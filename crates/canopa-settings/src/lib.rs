@@ -24,6 +24,7 @@ pub mod profile_watch;
 pub mod profiles;
 pub mod region;
 pub mod registry;
+pub mod service_text;
 pub mod session;
 pub mod shortcuts;
 pub mod sound;

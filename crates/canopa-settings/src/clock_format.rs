@@ -1,22 +1,32 @@
-//! The 12/24-hour clock preference for Canopa (ADR 0142).
+//! The 12/24-hour clock preference for Canopa (ADR 0142, amended by ADR 0145).
 //!
 //! The preference has no key of its own: it is the hour directive of the
 //! existing format strings, each Shell clock module's `time-format` and the
-//! lock screen's `clock-format` in `config.kdl`. Settings recognizes the
-//! usual 24- and 12-hour patterns and switches between them, with or without
-//! seconds; any other pattern is the person's own and is never rewritten.
+//! lock screen's `clock-format` in `config.kdl`. Without a pattern a clock
+//! follows the language's formats (Region & language): that is Automatic.
+//! Settings recognizes the usual 24- and 12-hour patterns, switches between
+//! them with or without seconds, and removes them for Automatic; any other
+//! pattern is the person's own and is never rewritten.
 use anyhow::{Context, Result};
 use kdl::{KdlDocument, KdlNode};
 
 /// The Shell's shipped configuration, used when `config.kdl` has no `shell`.
+/// Its clocks may or may not set `time-format`; both are handled.
 const SHELL_DEFAULTS: &str = include_str!("../../canopa-shell/config/default.kdl");
-/// The format clocks use when none is configured.
-const DEFAULT_FORMAT: &str = "%H:%M";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HourCycle {
     H24,
     H12,
+}
+
+/// What the Date & time page offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockChoice {
+    /// No pattern: the clocks follow the language's formats.
+    Automatic,
+    /// A recognized pattern of this cycle.
+    Fixed(HourCycle),
 }
 
 const H24: &[&str] = &["%H:%M", "%R", "%k:%M"];
@@ -47,12 +57,30 @@ pub fn pattern(cycle: HourCycle, seconds: bool) -> &'static str {
     }
 }
 
+/// Which clock a format belongs to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// A Shell clock module, by its name.
+    Shell(String),
+    LockScreen,
+}
+
+impl Place {
+    /// "Shell clock “clock”" or "Lock screen", for the page.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Shell(name) => fl!("settings-clock-place-shell", name = name.as_str()),
+            Self::LockScreen => fl!("settings-clock-place-lock"),
+        }
+    }
+}
+
 /// Where a clock's format comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClockFormat {
-    /// "Shell clock “clock”" or "Lock screen", for the page.
-    pub place: String,
-    pub format: String,
+    pub place: Place,
+    /// `None` when unset: the clock follows the language.
+    pub format: Option<String>,
 }
 
 /// The clocks of `config.kdl`.
@@ -62,22 +90,31 @@ pub struct ClockFormats {
 }
 
 impl ClockFormats {
-    /// The common cycle when every clock uses a recognized pattern of it.
-    pub fn cycle(&self) -> Option<HourCycle> {
-        let mut cycles = self
-            .clocks
-            .iter()
-            .map(|clock| classify(&clock.format).map(|(cycle, _)| cycle));
-        let first = cycles.next().flatten()?;
-        cycles.all(|cycle| cycle == Some(first)).then_some(first)
+    /// The common choice: Automatic when no clock has a pattern, a cycle
+    /// when every clock uses a recognized pattern of it, else `None`.
+    pub fn choice(&self) -> Option<ClockChoice> {
+        let mut choices = self.clocks.iter().map(|clock| match &clock.format {
+            None => Some(ClockChoice::Automatic),
+            Some(format) => classify(format).map(|(cycle, _)| ClockChoice::Fixed(cycle)),
+        });
+        let first = choices.next().flatten()?;
+        choices.all(|choice| choice == Some(first)).then_some(first)
     }
 
     /// Clocks with a pattern of the person's own.
     pub fn custom(&self) -> impl Iterator<Item = &ClockFormat> {
-        self.clocks
-            .iter()
-            .filter(|clock| classify(&clock.format).is_none())
+        self.clocks.iter().filter(|clock| {
+            clock
+                .format
+                .as_deref()
+                .is_some_and(|format| classify(format).is_none())
+        })
     }
+}
+
+/// A clock's pattern; an empty one is unset.
+fn format_of(value: Option<&str>) -> Option<String> {
+    value.filter(|format| !format.is_empty()).map(str::to_owned)
 }
 
 fn document(text: &str) -> Result<KdlDocument> {
@@ -126,25 +163,23 @@ impl ClockFormats {
             .iter()
             .filter(|node| is_clock(node))
             .map(|node| ClockFormat {
-                place: format!("Shell clock “{}”", string(node).unwrap_or("clock")),
-                format: child_string(node, "time-format")
-                    .unwrap_or(DEFAULT_FORMAT)
-                    .to_owned(),
+                place: Place::Shell(string(node).unwrap_or("clock").to_owned()),
+                format: format_of(child_string(node, "time-format")),
             })
             .collect();
         if clocks.is_empty() {
             clocks.push(ClockFormat {
-                place: "Shell clock “clock”".into(),
-                format: DEFAULT_FORMAT.into(),
+                place: Place::Shell("clock".into()),
+                format: None,
             });
         }
         clocks.push(ClockFormat {
-            place: "Lock screen".into(),
-            format: document
-                .get("lockscreen")
-                .and_then(|lock| child_string(lock, "clock-format"))
-                .unwrap_or(DEFAULT_FORMAT)
-                .to_owned(),
+            place: Place::LockScreen,
+            format: format_of(
+                document
+                    .get("lockscreen")
+                    .and_then(|lock| child_string(lock, "clock-format")),
+            ),
         });
         Ok(Self { clocks })
     }
@@ -165,20 +200,44 @@ fn set_string(parent: &mut KdlDocument, name: &str, value: &str) {
     }
 }
 
-/// The new pattern for a clock showing `current`, or `None` to keep it.
-fn switched(current: Option<&str>, cycle: HourCycle) -> Option<&'static str> {
-    let (from, seconds) = classify(current.unwrap_or(DEFAULT_FORMAT))?;
-    // An unset 24-hour default stays unset.
-    if current.is_none() && from == cycle {
-        return None;
-    }
-    let next = pattern(cycle, seconds);
-    (current != Some(next)).then_some(next)
+/// What becomes of one clock's pattern.
+#[derive(Debug, PartialEq, Eq)]
+enum Change {
+    Keep,
+    Set(&'static str),
+    Remove,
 }
 
-/// `text` with every recognized clock pattern switched to `cycle`. Custom
+/// The change for a clock showing `current` (empty is unset).
+fn switched(current: Option<&str>, choice: ClockChoice) -> Change {
+    let current = current.filter(|format| !format.is_empty());
+    let recognized = match current {
+        None => None,
+        Some(format) => match classify(format) {
+            Some(found) => Some(found),
+            // The person's own pattern.
+            None => return Change::Keep,
+        },
+    };
+    match (choice, recognized) {
+        (ClockChoice::Automatic, None) => Change::Keep,
+        (ClockChoice::Automatic, Some(_)) => Change::Remove,
+        (ClockChoice::Fixed(cycle), found) => {
+            let seconds = found.is_some_and(|(_, seconds)| seconds);
+            let next = pattern(cycle, seconds);
+            if current == Some(next) {
+                Change::Keep
+            } else {
+                Change::Set(next)
+            }
+        }
+    }
+}
+
+/// `text` with every clock set to `choice`: recognized patterns (and, for a
+/// cycle, unset ones) switched to it, or removed for Automatic. Custom
 /// patterns, comments and every other setting are kept.
-pub fn with_hour_cycle(text: &str, cycle: HourCycle) -> Result<String> {
+pub fn with_choice(text: &str, choice: ClockChoice) -> Result<String> {
     let mut document = document(text)?;
     let had_shell = document.get("shell").is_some();
     let mut shell = shell(&document)?;
@@ -194,19 +253,30 @@ pub fn with_hour_cycle(text: &str, cycle: HourCycle) -> Result<String> {
     let mut any_clock = false;
     for module in modules.nodes_mut().iter_mut().filter(|node| is_clock(node)) {
         any_clock = true;
-        if let Some(next) = switched(child_string(module, "time-format"), cycle) {
-            if module.children().is_none() {
-                module.set_children(KdlDocument::new());
+        match switched(child_string(module, "time-format"), choice) {
+            Change::Keep => {}
+            Change::Set(next) => {
+                if module.children().is_none() {
+                    module.set_children(KdlDocument::new());
+                }
+                set_string(
+                    module.children_mut().as_mut().expect("children installed"),
+                    "time-format",
+                    next,
+                );
+                shell_changed = true;
             }
-            set_string(
-                module.children_mut().as_mut().expect("children installed"),
-                "time-format",
-                next,
-            );
-            shell_changed = true;
+            Change::Remove => {
+                if let Some(children) = module.children_mut() {
+                    children
+                        .nodes_mut()
+                        .retain(|node| node.name().value() != "time-format");
+                }
+                shell_changed = true;
+            }
         }
     }
-    if !any_clock && let Some(next) = switched(None, cycle) {
+    if !any_clock && let Change::Set(next) = switched(None, choice) {
         let mut module = KdlNode::new("module");
         module.push("clock");
         let mut children = KdlDocument::new();
@@ -228,30 +298,39 @@ pub fn with_hour_cycle(text: &str, cycle: HourCycle) -> Result<String> {
         .get("lockscreen")
         .and_then(|lock| child_string(lock, "clock-format"))
         .map(str::to_owned);
-    if let Some(next) = switched(lock_format.as_deref(), cycle) {
-        let lock = crate::preferences::block(&mut document, "lockscreen")?;
-        set_string(lock, "clock-format", next);
+    match switched(lock_format.as_deref(), choice) {
+        Change::Keep => {}
+        Change::Set(next) => {
+            let lock = crate::preferences::block(&mut document, "lockscreen")?;
+            set_string(lock, "clock-format", next);
+        }
+        Change::Remove => {
+            let lock = crate::preferences::block(&mut document, "lockscreen")?;
+            lock.nodes_mut()
+                .retain(|node| node.name().value() != "clock-format");
+        }
     }
     Ok(document.to_string())
 }
 
-/// The lock screen's clock format in `text`, after [`with_hour_cycle`].
+/// The lock screen's clock format in `text` (empty when unset), after
+/// [`with_choice`].
 pub fn lock_format(text: &str) -> Option<String> {
     ClockFormats::read(text)
         .ok()?
         .clocks
         .pop()
-        .map(|clock| clock.format)
+        .map(|clock| clock.format.unwrap_or_default())
 }
 
-/// Switch the clocks in `config.kdl`: validate and save it. Returns the
+/// Set the clocks in `config.kdl`: validate and save it. Returns the
 /// replaced and the saved versions, for the pages that share the file.
-pub fn set_hour_cycle(
+pub fn set_choice(
     paths: &crate::session::Paths,
-    cycle: HourCycle,
+    choice: ClockChoice,
 ) -> Result<(crate::storage::Snapshot, crate::storage::Snapshot)> {
     let source = crate::storage::Snapshot::load(paths.common())?;
-    let text = with_hour_cycle(&source.text, cycle)?;
+    let text = with_choice(&source.text, choice)?;
     let saved = crate::preferences::save_common(&source, &text)?;
     Ok((source, saved))
 }
@@ -259,6 +338,16 @@ pub fn set_hour_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ClockChoice::{Automatic, Fixed};
+
+    fn formats(text: &str) -> Vec<Option<String>> {
+        ClockFormats::read(text)
+            .unwrap()
+            .clocks
+            .into_iter()
+            .map(|clock| clock.format)
+            .collect()
+    }
 
     #[test]
     fn known_patterns_switch_and_custom_ones_stay() {
@@ -268,21 +357,25 @@ mod tests {
         assert_eq!(classify("%H.%M"), None);
 
         let text = "schema-version 1\n// keep\nshell {\n    bar \"main\" { modules { end \"clock\"; } }\n    modules {\n        module \"clock\" { format \"{time}\"; time-format \"%H:%M:%S\"; }\n        module \"world\" { type \"clock\"; time-format \"%H.%M UTC\"; }\n    }\n}\nlockscreen {\n    dim 40\n}\n";
-        let formats = ClockFormats::read(text).unwrap();
-        assert_eq!(formats.clocks.len(), 3);
-        assert_eq!(formats.cycle(), None, "one clock is custom");
-        assert_eq!(formats.custom().count(), 1);
+        let read = ClockFormats::read(text).unwrap();
+        assert_eq!(read.clocks.len(), 3);
+        assert_eq!(read.choice(), None, "one clock is custom");
+        assert_eq!(read.custom().count(), 1);
+        assert_eq!(read.clocks[1].place, Place::Shell("world".into()));
+        assert_eq!(read.clocks[1].place.label(), "Shell clock “world”");
+        assert_eq!(read.clocks[2].place.label(), "Lock screen");
 
-        let twelve = with_hour_cycle(text, HourCycle::H12).unwrap();
+        let twelve = with_choice(text, Fixed(HourCycle::H12)).unwrap();
         assert!(twelve.contains("time-format \"%-I:%M:%S %p\""), "{twelve}");
         assert!(twelve.contains("time-format \"%H.%M UTC\""));
+        // An unset lock-screen clock gets the explicit pattern.
         assert!(twelve.contains("clock-format \"%-I:%M %p\""));
         assert!(twelve.contains("// keep") && twelve.contains("dim 40"));
         assert!(twelve.contains("format \"{time}\""));
-        let back = with_hour_cycle(&twelve, HourCycle::H24).unwrap();
-        let formats = ClockFormats::read(&back).unwrap();
-        assert_eq!(formats.clocks[0].format, "%H:%M:%S");
-        assert_eq!(formats.clocks[2].format, "%H:%M");
+        let back = with_choice(&twelve, Fixed(HourCycle::H24)).unwrap();
+        let read = formats(&back);
+        assert_eq!(read[0].as_deref(), Some("%H:%M:%S"));
+        assert_eq!(read[2].as_deref(), Some("%H:%M"));
         // Nothing else changes.
         assert_eq!(
             crate::preferences::common_sections(text)
@@ -297,19 +390,58 @@ mod tests {
     }
 
     #[test]
+    fn automatic_removes_recognized_patterns_only() {
+        let text = "schema-version 1\nshell {\n    modules {\n        module \"clock\" { format \"{time}\"; time-format \"%-I:%M:%S %p\"; }\n        module \"world\" { type \"clock\"; time-format \"%H.%M UTC\"; }\n    }\n}\nlockscreen {\n    clock-format \"%H:%M\"\n    dim 40\n}\n";
+        let automatic = with_choice(text, Automatic).unwrap();
+        let read = formats(&automatic);
+        assert_eq!(
+            read,
+            [None, Some("%H.%M UTC".to_owned()), None],
+            "{automatic}"
+        );
+        assert!(automatic.contains("format \"{time}\"") && automatic.contains("dim 40"));
+        let read = ClockFormats::read(&automatic).unwrap();
+        // The custom clock still disagrees, and is still named.
+        assert_eq!(read.choice(), None);
+        assert_eq!(read.custom().count(), 1);
+        assert_eq!(lock_format(&automatic).as_deref(), Some(""));
+        // Without the custom clock every clock is automatic.
+        let plain = "schema-version 1\nshell {\n    modules {\n        module \"clock\" { time-format \"%H:%M\"; }\n    }\n}\n";
+        let automatic = with_choice(plain, Automatic).unwrap();
+        assert_eq!(
+            ClockFormats::read(&automatic).unwrap().choice(),
+            Some(Automatic)
+        );
+        assert_eq!(with_choice(&automatic, Automatic).unwrap(), automatic);
+        // An empty pattern is unset.
+        assert_eq!(
+            ClockFormats::read("schema-version 1\nlockscreen { clock-format \"\"; }\n")
+                .unwrap()
+                .clocks[1]
+                .format,
+            None
+        );
+    }
+
+    #[test]
     fn unset_clocks_follow_the_shipped_shell() {
-        // No configuration: the 24-hour default stays implicit.
-        assert_eq!(
-            with_hour_cycle("", HourCycle::H24).unwrap(),
-            "schema-version 1\n"
+        // Whether or not the shipped Shell sets time-format, an empty
+        // configuration reads as one choice, and Automatic leaves the clocks
+        // without a pattern.
+        let shipped = ClockFormats::read("").unwrap().choice();
+        assert!(
+            matches!(shipped, Some(Automatic | Fixed(HourCycle::H24))),
+            "{shipped:?}"
         );
+        let automatic = with_choice("", Automatic).unwrap();
         assert_eq!(
-            ClockFormats::read("").unwrap().cycle(),
-            Some(HourCycle::H24)
+            ClockFormats::read(&automatic).unwrap().choice(),
+            Some(Automatic),
+            "{automatic}"
         );
-        let twelve = with_hour_cycle("", HourCycle::H12).unwrap();
-        let formats = ClockFormats::read(&twelve).unwrap();
-        assert_eq!(formats.cycle(), Some(HourCycle::H12), "{twelve}");
+        let twelve = with_choice("", Fixed(HourCycle::H12)).unwrap();
+        let read = ClockFormats::read(&twelve).unwrap();
+        assert_eq!(read.choice(), Some(Fixed(HourCycle::H12)), "{twelve}");
         // The shipped bars and modules are written out, as the Widgets page does.
         let written: KdlDocument = twelve.parse().unwrap();
         assert!(
@@ -319,15 +451,18 @@ mod tests {
                 .is_some_and(|shell| shell.get("bar").is_some())
         );
         assert_eq!(lock_format(&twelve).as_deref(), Some("%-I:%M %p"));
+        // A 24-hour choice is explicit too: unset clocks follow the language.
+        let read = ClockFormats::read(&with_choice("", Fixed(HourCycle::H24)).unwrap()).unwrap();
+        assert_eq!(read.choice(), Some(Fixed(HourCycle::H24)));
 
         // A shell block without clock modules gains one.
         let text =
             "schema-version 1\nshell {\n    bar \"main\" { modules { end \"clock\"; } }\n}\n";
-        let twelve = with_hour_cycle(text, HourCycle::H12).unwrap();
+        let twelve = with_choice(text, Fixed(HourCycle::H12)).unwrap();
         assert!(twelve.contains("module"), "{twelve}");
         assert_eq!(
-            ClockFormats::read(&twelve).unwrap().cycle(),
-            Some(HourCycle::H12)
+            ClockFormats::read(&twelve).unwrap().choice(),
+            Some(Fixed(HourCycle::H12))
         );
     }
 }

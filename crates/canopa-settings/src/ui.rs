@@ -979,7 +979,7 @@ impl State {
             Message::DateTimeForm(edit) => return self.date_time_edit(edit),
             Message::About(event) => return self.about.update(event, about::message),
             Message::AboutForm(edit) => return self.about_edit(edit),
-            Message::Region(event) => return self.region.update(event, region::message),
+            Message::Region(event) => return self.region_event(event),
             Message::Users(event) => return self.users.update(event, users::message),
             Message::UsersForm(edit) => return self.users_edit(edit),
             Message::Privacy(event) => return self.privacy.update(event, privacy::message),

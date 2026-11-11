@@ -3,7 +3,9 @@
 //!
 //! The person's choice is written to `~/.config/locale.conf` (`LANG` and the
 //! format variables), which the login shell profile reads when greetd starts
-//! the session, so it applies at the next login. AccountsService records the
+//! the session, so it applies at the next login. Canopa applications read it
+//! when they start, and Settings switches its own language at once
+//! (`canopa_i18n::select_locale`). AccountsService records the
 //! same language (and the formats, where it supports them) for display
 //! managers and other desktops. Only installed locales are offered: localed
 //! refuses others, and generating one needs an administrator (`locale-gen`).
@@ -28,16 +30,19 @@ pub const FORMAT_VARIABLES: [&str; 5] = [
     "LC_PAPER",
 ];
 const USER_FILE: &str = "locale.conf";
-/// A fixed moment for previews: 11 November 2026, 14:30 UTC.
-const SAMPLE_TIME: i64 = 1_794_407_400;
+/// A fixed moment for previews: 11 November 2026, 14:30.
+const SAMPLE_DATE: &str = "2026-11-11";
+const SAMPLE_TIME: &str = "14:30:00";
 
 /// An installed locale and its name for people.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Installed {
     /// As localed and `locale.conf` take it, such as `fr_FR.UTF-8`.
     pub name: String,
-    /// "French (France)".
+    /// "French (France)", from glibc's `LC_IDENTIFICATION` (in English).
     pub label: String,
+    /// `C.UTF-8`, whose label is Canopa's text.
+    pub unspecified: bool,
 }
 
 /// The person's choices in `~/.config/locale.conf`.
@@ -47,9 +52,12 @@ pub struct UserLocale {
     pub formats: Option<String>,
 }
 
-/// How a formats locale writes dates, numbers and money.
+/// How a formats locale writes dates, numbers and money. Dates, times and
+/// numbers come from ICU (as Canopa formats them), money and measurement
+/// from glibc's locale data.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Preview {
+    /// The long date, then the short one.
     pub date: String,
     pub time: String,
     pub number: String,
@@ -90,8 +98,44 @@ impl RegionState {
         self.installed
             .iter()
             .find(|locale| same_locale(&locale.name, name))
-            .map_or_else(|| name.to_owned(), |locale| locale.label.clone())
+            .map_or_else(|| name.to_owned(), Installed::display)
     }
+}
+
+impl Installed {
+    /// The name people see.
+    pub fn display(&self) -> String {
+        if self.unspecified {
+            fl!("settings-region-unspecified-locale")
+        } else {
+            self.label.clone()
+        }
+    }
+}
+
+/// The ICU locale for a glibc locale name; `C` previews as `en`.
+pub fn formats_id(name: &str) -> canopa_i18n::LanguageIdentifier {
+    canopa_i18n::language_of(name).unwrap_or_else(|| "en".parse().expect("valid"))
+}
+
+/// The preview's date, time and number for `formats`, as Canopa writes them.
+pub fn sample(formats: &canopa_i18n::LanguageIdentifier) -> (String, String, String) {
+    use canopa_i18n::format::{self, DateStyle, HourCycleChoice};
+    format::with_formats(formats, || {
+        // Settings has no Chrono dependency of its own: the types come from
+        // canopa-i18n's signatures.
+        let date = SAMPLE_DATE.parse().expect("a valid date");
+        let time = SAMPLE_TIME.parse().expect("a valid time");
+        (
+            fl!(
+                "settings-region-preview-dates",
+                long = format::date_with(date, DateStyle::Full),
+                short = format::date_with(date, DateStyle::Short)
+            ),
+            format::time_with(time, false, HourCycleChoice::Locale),
+            format::decimal(1_234_567.89, 2, true),
+        )
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -217,9 +261,9 @@ fn group(digits: &str, grouping: &[usize], separator: &str) -> String {
     groups.join(separator)
 }
 
-/// A preview from `locale -k LC_NUMERIC LC_MONETARY LC_MEASUREMENT` output
-/// and `date` lines (date, time).
-pub fn preview_from(keys: &str, date: &str) -> Preview {
+/// A preview of `formats`: dates, times and numbers from ICU, money and
+/// measurement from `locale -k LC_NUMERIC LC_MONETARY LC_MEASUREMENT` output.
+pub fn preview_from(formats: &str, keys: &str) -> Preview {
     let values = assignments(keys);
     let get = |name: &str| {
         values
@@ -239,10 +283,6 @@ pub fn preview_from(keys: &str, date: &str) -> Preview {
         "" => ".",
         point => point,
     };
-    let number = format!(
-        "{}{decimal}89",
-        group("1234567", &grouping("grouping"), get("thousands_sep"))
-    );
     let mon_decimal = match get("mon_decimal_point") {
         "" => decimal,
         point => point,
@@ -267,10 +307,10 @@ pub fn preview_from(keys: &str, date: &str) -> Preview {
     } else {
         format!("{symbol}{space}{amount}")
     };
-    let mut lines = date.lines();
+    let (date, time, number) = sample(&formats_id(formats));
     Preview {
-        date: lines.next().unwrap_or("").trim().to_owned(),
-        time: lines.next().unwrap_or("").trim().to_owned(),
+        date,
+        time,
         number,
         currency,
         metric: get("measurement") != "2",
@@ -281,14 +321,12 @@ pub fn preview_from(keys: &str, date: &str) -> Preview {
 #[derive(Clone, Debug)]
 pub struct Tools {
     pub locale: PathBuf,
-    pub date: PathBuf,
 }
 
 impl Default for Tools {
     fn default() -> Self {
         Self {
             locale: "locale".into(),
-            date: "date".into(),
         }
     }
 }
@@ -341,15 +379,22 @@ impl Tools {
                     .unwrap_or_default()
             };
             let (language, territory) = (get("language"), get("territory"));
+            let unspecified = name.starts_with("C.");
+            // glibc's names are English; Canopa does not translate them.
             let label = match (language.is_empty(), territory.is_empty()) {
-                _ if name.starts_with("C.") => "Unspecified (C)".to_owned(),
+                _ if unspecified => "C".to_owned(),
                 (false, false) => format!("{language} ({territory})"),
                 (false, true) => language,
                 _ => name.clone(),
             };
-            installed.push(Installed { name, label });
+            installed.push(Installed {
+                name,
+                label,
+                unspecified,
+            });
         }
-        installed.sort_by_key(|a| a.label.to_lowercase());
+        // The unspecified locale goes last.
+        installed.sort_by_key(|a| (a.unspecified, a.label.to_lowercase()));
         installed
     }
 
@@ -360,11 +405,7 @@ impl Tools {
             Some(name),
         )
         .await?;
-        let sample = format!("@{SAMPLE_TIME}");
-        let date = run(&self.date, &["-d", &sample, "+%x%n%X"], Some(name))
-            .await
-            .unwrap_or_default();
-        Some(preview_from(&keys, &date))
+        Some(preview_from(name, &keys))
     }
 }
 
@@ -392,15 +433,9 @@ impl Default for RegionService {
 }
 
 fn failure(error: canopa_services::Error) -> ServiceError {
-    use canopa_services::Error;
-    ServiceError::Failed(match error {
-        Error::Unavailable => "systemd-localed is not available.".into(),
-        Error::NotAuthorized => "The system did not allow this change.".into(),
-        Error::TimedOut => "The system did not answer in time.".into(),
-        Error::Changed => "The setting changed. Try again.".into(),
-        Error::Invalid(what) => format!("That is not a valid {what}."),
-        Error::Refused(message) => message,
-    })
+    ServiceError::Failed(crate::service_text::failed(error, || {
+        fl!("settings-region-error-no-localed")
+    }))
 }
 
 impl RegionService {
@@ -468,7 +503,7 @@ impl RegionService {
     fn write_user(&self, values: &[(&str, &str)]) -> Result<(), ServiceError> {
         let path = self
             .user_file()
-            .ok_or_else(|| ServiceError::Failed("There is no configuration folder.".into()))?;
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-region-error-no-config")))?;
         let text = canopa_file::read_bounded(&path, 64 * 1024)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -484,7 +519,7 @@ impl RegionService {
             Ok(())
         };
         save().map_err(|error| {
-            ServiceError::Failed(format!("locale.conf could not be saved: {error}"))
+            ServiceError::Failed(fl!("settings-region-error-save", error = error.to_string()))
         })
     }
 
@@ -510,7 +545,7 @@ impl RegionService {
             .iter()
             .find(|locale| same_locale(&locale.name, name))
             .map(|locale| locale.name.clone())
-            .ok_or_else(|| ServiceError::Failed("That language is not installed.".into()))
+            .ok_or_else(|| ServiceError::Failed(fl!("settings-region-error-not-installed")))
     }
 
     async fn run(&self, action: RegionAction) -> Result<(), ServiceError> {
@@ -647,25 +682,33 @@ mod tests {
             written,
             "# mine\nLC_TIME=\"fr_FR.UTF-8\"\nLANG=de_DE.UTF-8\nLC_PAPER=de_DE.UTF-8\n"
         );
+        // Dates, times and numbers come from ICU for the formats locale,
+        // whatever the interface language (English here).
         let french = preview_from(
+            "fr_FR.UTF-8",
             "decimal_point=\",\"\nthousands_sep=\" \"\ngrouping=3;3\nmon_decimal_point=\",\"\nmon_thousands_sep=\" \"\nmon_grouping=3;3\ncurrency_symbol=\"€\"\np_cs_precedes=0\np_sep_by_space=1\nmeasurement=1\n",
-            "11/11/2026\n15:30:00\n",
         );
-        assert_eq!(french.number, "1 234 567,89");
+        assert_eq!(french.number, "1\u{202f}234\u{202f}567,89");
         assert_eq!(french.currency, "1 234,50 €");
         assert_eq!(
             (french.date.as_str(), french.time.as_str()),
-            ("11/11/2026", "15:30:00")
+            ("mercredi 11 novembre 2026 · 11/11/2026", "14:30")
         );
         assert!(french.metric);
         let american = preview_from(
+            "en_US.UTF-8",
             "decimal_point=\".\"\nthousands_sep=\",\"\ngrouping=3;3\nmon_decimal_point=\".\"\nmon_thousands_sep=\",\"\nmon_grouping=3;3\ncurrency_symbol=\"$\"\np_cs_precedes=1\np_sep_by_space=0\nmeasurement=2\n",
-            "",
         );
         assert_eq!(
             (american.number.as_str(), american.currency.as_str()),
             ("1,234,567.89", "$1,234.50")
         );
+        assert_eq!(
+            (american.date.as_str(), american.time.as_str()),
+            ("Wednesday, November 11, 2026 · 11/11/26", "2:30\u{202f}PM")
+        );
+        // The C locale previews as plain English.
+        assert_eq!(preview_from("C.UTF-8", "").number, "1,234,567.89");
         assert!(!american.metric);
         assert_eq!(group("12345678", &[3, 2], ","), "1,23,45,678");
     }
@@ -688,7 +731,6 @@ case "$LC_ALL" in
   *) printf 'language="American English"\nterritory="United States"\ndecimal_point="."\nthousands_sep=","\ngrouping=3;3\n';;
 esac"#,
             ),
-            date: script("date", r#"printf '%s\n12:00\n' "$LC_ALL""#),
         }
     }
 
@@ -702,7 +744,7 @@ esac"#,
         // Without localed or AccountsService the person's choice still works.
         let state = service.snapshot().await.unwrap();
         assert!(state.system.is_none());
-        let labels: Vec<_> = state.installed.iter().map(|l| l.label.as_str()).collect();
+        let labels: Vec<_> = state.installed.iter().map(Installed::display).collect();
         assert_eq!(
             labels,
             [
@@ -718,8 +760,9 @@ esac"#,
             .unwrap()
             .unwrap();
         assert_eq!(state.formats(), "fr_FR.UTF-8");
-        assert_eq!(state.preview.as_ref().unwrap().number, "1 234 567,89");
-        assert_eq!(state.preview.as_ref().unwrap().date, "fr_FR.UTF-8");
+        let preview = state.preview.as_ref().unwrap();
+        assert_eq!(preview.number, "1\u{202f}234\u{202f}567,89");
+        assert_eq!(preview.time, "14:30");
         let file = std::fs::read_to_string(config.join("locale.conf")).unwrap();
         assert!(file.contains("LC_TIME=fr_FR.UTF-8") && file.contains("LC_PAPER=fr_FR.UTF-8"));
         assert!(matches!(

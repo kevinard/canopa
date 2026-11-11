@@ -77,16 +77,11 @@ impl Personal {
             put(appearance, "high-contrast", Some(self.high_contrast.into()));
         }
         let lock = block(&mut document, "lockscreen")?;
-        put(
-            lock,
-            "clock-format",
-            Some(self.lock.clock_format.clone().into()),
-        );
-        put(
-            lock,
-            "date-format",
-            Some(self.lock.date_format.clone().into()),
-        );
+        // An empty pattern is left out: the lock screen then follows the
+        // language's formats (ADR 0145).
+        let pattern = |format: &str| (!format.is_empty()).then(|| format.to_owned().into());
+        put(lock, "clock-format", pattern(&self.lock.clock_format));
+        put(lock, "date-format", pattern(&self.lock.date_format));
         put(lock, "dim", Some(i128::from(self.lock.dim).into()));
         put(lock, "font", Some(self.lock.font.clone().into()));
         put(

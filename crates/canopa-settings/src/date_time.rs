@@ -10,8 +10,12 @@ use canopa_services::{
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use std::{path::PathBuf, sync::Arc};
 
-const NOT_RUNNING: &str = "systemd-timedated did not answer.";
-const NO_BUS: &str = "The system bus is not reachable.";
+fn not_running() -> String {
+    fl!("settings-date-time-not-running")
+}
+fn no_bus() -> String {
+    fl!("settings-error-bus")
+}
 const ZONE_TABLE: &str = "/usr/share/zoneinfo/zone1970.tab";
 const DESKTOP_ID: &str = "org.canopa.Settings";
 
@@ -49,14 +53,8 @@ impl LiveAction for DateTimeAction {
 fn failure(error: canopa_services::Error) -> ServiceError {
     use canopa_services::Error;
     match error {
-        Error::Unavailable => ServiceError::Unavailable(NOT_RUNNING.into()),
-        Error::NotAuthorized => {
-            ServiceError::Failed("The system did not allow this change.".into())
-        }
-        Error::TimedOut => ServiceError::Failed("The system did not answer in time.".into()),
-        Error::Changed => ServiceError::Failed("The setting changed. Try again.".into()),
-        Error::Invalid(message) => ServiceError::Failed(format!("Not accepted: {message}.")),
-        Error::Refused(message) => ServiceError::Failed(message),
+        Error::Unavailable => ServiceError::Unavailable(not_running()),
+        error => ServiceError::Failed(crate::service_text::failed(error, not_running)),
     }
 }
 
@@ -152,7 +150,7 @@ impl DateTimeService {
             .get_or_try_init(canopa_services::bus::system)
             .await
             .cloned()
-            .map_err(|_| ServiceError::Unavailable(NO_BUS.into()))
+            .map_err(|_| ServiceError::Unavailable(no_bus()))
     }
 
     async fn state(&self, clock: Clock) -> Result<DateTimeState, ServiceError> {
@@ -198,21 +196,21 @@ impl DateTimeService {
                     geoclue::locate(&system, DESKTOP_ID)
                         .await
                         .map_err(|error| match error {
-                            canopa_services::Error::NotAuthorized => ServiceError::Failed(
-                                "Location access is not allowed for Canopa Settings.".into(),
-                            ),
-                            canopa_services::Error::TimedOut => ServiceError::Failed(
-                                "The location could not be found in time.".into(),
-                            ),
-                            _ => ServiceError::Failed("The location is not available.".into()),
+                            canopa_services::Error::NotAuthorized => {
+                                ServiceError::Failed(fl!("settings-date-time-location-denied"))
+                            }
+                            canopa_services::Error::TimedOut => {
+                                ServiceError::Failed(fl!("settings-date-time-location-timeout"))
+                            }
+                            _ => {
+                                ServiceError::Failed(fl!("settings-date-time-location-unavailable"))
+                            }
                         })?;
                 let zones = self.read().await?.zones;
-                let table = std::fs::read_to_string(&self.zone_table).map_err(|_| {
-                    ServiceError::Failed("The time zone table (tzdata) is not installed.".into())
-                })?;
-                let zone = nearest_zone(&table, place, &zones).ok_or_else(|| {
-                    ServiceError::Failed("No time zone matches this location.".into())
-                })?;
+                let table = std::fs::read_to_string(&self.zone_table)
+                    .map_err(|_| ServiceError::Failed(fl!("settings-date-time-no-tzdata")))?;
+                let zone = nearest_zone(&table, place, &zones)
+                    .ok_or_else(|| ServiceError::Failed(fl!("settings-date-time-no-zone-here")))?;
                 timedate::set_timezone(&system, &zone)
                     .await
                     .map_err(failure)
@@ -238,7 +236,7 @@ impl LiveService for DateTimeService {
         let service = self.clone();
         futures_util::stream::once(async move {
             let Ok(system) = service.connection().await else {
-                return futures_util::stream::iter([Err(ServiceError::Unavailable(NO_BUS.into()))])
+                return futures_util::stream::iter([Err(ServiceError::Unavailable(no_bus()))])
                     .boxed();
             };
             timedate::watch(system)
@@ -248,7 +246,7 @@ impl LiveService for DateTimeService {
                         match state {
                             ServiceState::Available(clock) => service.state(clock).await,
                             ServiceState::Unavailable => {
-                                Err(ServiceError::Unavailable(NOT_RUNNING.into()))
+                                Err(ServiceError::Unavailable(not_running()))
                             }
                         }
                     }
@@ -303,53 +301,36 @@ pub fn now_fields() -> (String, String) {
     })
 }
 
-const WEEKDAYS: [&str; 7] = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-];
-const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-
-/// "Wednesday 11 November 2026, 14:32:05" (or "2:32:05 PM"), now.
-pub fn now_label(twelve_hour: bool) -> String {
+/// "Wednesday, November 11, 2026 · 14:32:05" (or "2:32:05 PM"), now, in
+/// the formats locale, with `cycle`'s hours.
+pub fn now_label(cycle: canopa_i18n::format::HourCycleChoice) -> String {
+    use canopa_i18n::format::{self, DateStyle};
     // SAFETY: time with a null pointer only returns the time.
     let now = unsafe { libc::time(std::ptr::null_mut()) };
     let Some(tm) = local(now) else {
         return String::new();
     };
-    let clock = if twelve_hour {
-        let hour = match tm.tm_hour % 12 {
-            0 => 12,
-            hour => hour,
-        };
-        let half = if tm.tm_hour < 12 { "AM" } else { "PM" };
-        format!("{hour}:{:02}:{:02} {half}", tm.tm_min, tm.tm_sec)
-    } else {
-        format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    // Settings has no Chrono dependency of its own: the types come from
+    // canopa-i18n's signatures, built from ISO 8601 text.
+    let date = format!(
+        "{:04}-{:02}-{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday
+    );
+    let time = format!(
+        "{:02}:{:02}:{:02}",
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec.min(59)
+    );
+    let (Ok(date), Ok(time)) = (date.parse(), time.parse()) else {
+        return String::new();
     };
-    format!(
-        "{} {} {} {}, {clock}",
-        WEEKDAYS.get(tm.tm_wday as usize).unwrap_or(&""),
-        tm.tm_mday,
-        MONTHS.get(tm.tm_mon as usize).unwrap_or(&""),
-        tm.tm_year + 1900
+    fl!(
+        "settings-date-time-now",
+        date = format::date_with(date, DateStyle::Full),
+        time = format::time_with(time, true, cycle)
     )
 }
 
@@ -446,7 +427,11 @@ mod tests {
         assert_eq!(local_usec("yesterday", "10:00"), None);
         let (date, time) = now_fields();
         assert_eq!((date.len(), time.len()), (10, 5));
-        assert!(now_label(true).contains('M'));
+        use canopa_i18n::format::HourCycleChoice;
+        // English and `en` formats in tests: a weekday, then the time.
+        let twelve = now_label(HourCycleChoice::H12);
+        assert!(twelve.contains("day, ") && twelve.contains('M'), "{twelve}");
+        assert!(!now_label(HourCycleChoice::H24).contains('M'));
     }
 
     #[tokio::test]

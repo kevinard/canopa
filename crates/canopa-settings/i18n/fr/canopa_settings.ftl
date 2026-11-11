@@ -243,3 +243,131 @@ settings-live-dismiss = Ignorer
 settings-error-not-authorized = Le système n’a pas autorisé cette modification.
 settings-error-timed-out = Le système n’a pas répondu à temps.
 settings-error-bus = Le bus système est inaccessible.
+
+## Service errors
+
+settings-error-setting-changed = Le réglage a changé. Réessayez.
+settings-error-invalid-value = Cette valeur n’est pas valide ({ $what }).
+settings-invalid-device-name = Ce nom d’appareil n’est pas valide.
+settings-invalid-host-name = Ce nom d’hôte n’est pas valide.
+settings-invalid-full-name = Ce nom complet n’est pas valide.
+settings-invalid-user-name = Ce nom d’utilisateur n’est pas valide.
+settings-invalid-picture = Cette image n’est pas valide.
+settings-invalid-language = Cette langue n’est pas valide.
+settings-invalid-formats = Ces formats ne sont pas valides.
+settings-invalid-keyboard-layout = Cette disposition de clavier n’est pas valide.
+settings-invalid-printer-name = Ce nom d’imprimante n’est pas valide.
+settings-invalid-printer-address = Cette adresse d’imprimante n’est pas valide.
+settings-invalid-time-zone = Ce fuseau horaire n’est pas valide.
+settings-invalid-time-before-1970 = L’heure ne peut pas être antérieure à 1970.
+settings-invalid-request = La demande n’était pas valide.
+settings-invalid-dns = Un serveur DNS n’est pas une adresse valide.
+settings-invalid-wifi-password = Un mot de passe Wi-Fi compte de 8 à 63 caractères.
+settings-invalid-hotspot-password = Un mot de passe de point d’accès compte de 8 à 63 caractères.
+settings-invalid-network-name = Un nom de réseau compte de 1 à 32 octets.
+settings-invalid-preshared-key = Une clé prépartagée n’est pas une clé WireGuard.
+settings-invalid-tunnel-peer = Un tunnel a besoin d’un pair.
+settings-invalid-address = Une adresse n’est pas valide.
+settings-invalid-brightness = La luminosité doit être comprise entre 1 % et 100 %.
+settings-invalid-certificate-path = Les chemins des certificats doivent être en UTF-8.
+settings-invalid-eap-method = Choisissez une méthode d’authentification.
+settings-invalid-password-missing = Saisissez le mot de passe.
+settings-invalid-identity-missing = Saisissez votre identité (nom d’utilisateur).
+settings-invalid-listen-port = ListenPort n’est pas un port.
+settings-invalid-mtu = MTU n’est pas un nombre.
+settings-invalid-manual-address = L’adressage manuel nécessite une adresse.
+settings-invalid-connection-name = Donnez un nom à la connexion.
+settings-invalid-keepalive = PersistentKeepalive n’est pas un nombre.
+settings-invalid-peer-setting = Le fichier contient un réglage de pair inconnu.
+settings-invalid-section = Le fichier contient une section inconnue.
+settings-invalid-wireguard-file = Le fichier n’est pas une configuration WireGuard.
+settings-invalid-gateway = La passerelle n’est pas une adresse valide.
+settings-invalid-prefix = Le préfixe doit être un nombre.
+settings-invalid-private-key = La clé privée n’est pas une clé WireGuard.
+settings-invalid-address-method = Méthode d’adressage inconnue.
+settings-invalid-proxy = Écrivez le mandataire sous la forme hôte:port.
+settings-invalid-wayland-login = Une session Wayland est nécessaire.
+settings-invalid-local-login = Une session locale active est nécessaire.
+
+## Region & language
+
+settings-region-yours = Votre langue et vos formats
+settings-region-system = Système
+settings-region-language = Langue
+settings-region-formats = Formats (dates, nombres, monnaie)
+settings-region-unspecified-locale = Non spécifiés (C)
+settings-region-only-c = Seuls les paramètres régionaux C sont installés. Un administrateur ajoute des langues en les activant dans /etc/locale.gen puis en lançant locale-gen.
+settings-region-preview-date = Date
+settings-region-preview-time = Heure
+settings-region-preview-number = Nombre
+settings-region-preview-money = Monnaie
+settings-region-preview-measurement = Mesures
+settings-region-preview-dates = { $long } · { $short }
+settings-region-metric = Métriques
+settings-region-us-customary = Unités américaines
+settings-region-applies = Les Paramètres changent immédiatement. Fichiers, Notify et le Shell suivent à leur redémarrage, et les autres applications à votre prochaine connexion. Enregistré dans { $file }.
+settings-region-no-localed = systemd-localed ne fonctionne pas : la langue et le clavier du système ne peuvent être ni affichés ni modifiés ici.
+settings-region-keyboard-unset = Non défini ({ $layout })
+settings-region-system-language = Écran de connexion et nouveaux utilisateurs
+settings-region-system-keyboard = Clavier du système
+settings-region-your-layouts = Vos dispositions
+settings-region-use-my-layouts = Utiliser mes dispositions pour l’écran de connexion et la console
+settings-region-change-layouts = Modifier mes dispositions…
+settings-region-system-permission = Les modifications du système demandent l’autorisation d’un administrateur.
+settings-language-name = { $code ->
+    [fr] français
+   *[en] anglais
+}
+settings-region-language-applied = Les Paramètres sont maintenant en { $language }. Redémarrez Fichiers, Notify et le Shell, ou déconnectez-vous, pour voir le changement partout ; les autres applications suivront à votre prochaine connexion.
+settings-region-language-untranslated = Canopa n’est pas encore traduit dans cette langue ({ $locale }) : les Paramètres restent en anglais. Les autres applications suivront votre choix à votre prochaine connexion.
+settings-region-formats-applied = Les Paramètres affichent maintenant les dates et les nombres au format { $formats }. Redémarrez Fichiers, Notify et le Shell, ou déconnectez-vous, pour voir le changement partout ; les autres applications suivront à votre prochaine connexion.
+settings-region-error-no-localed = systemd-localed n’est pas disponible.
+settings-region-error-no-config = Il n’y a pas de dossier de configuration.
+settings-region-error-save = locale.conf n’a pas pu être enregistré : { $error }
+settings-region-error-not-installed = Cette langue n’est pas installée.
+
+## Date & time
+
+settings-date-time-zone = Fuseau horaire
+settings-date-time-zone-current = Fuseau horaire : { $zone }
+settings-date-time-zone-unset = Non défini (UTC)
+settings-date-time-now = { $date } · { $time }
+settings-date-time-locate = Utiliser ma position
+settings-date-time-locate-hint = Règle une fois le fuseau horaire sur la position de cet ordinateur, grâce à GeoClue.
+settings-date-time-zone-search = Rechercher un fuseau horaire (ville ou région)
+settings-date-time-zone-none = Aucun fuseau horaire ne correspond.
+settings-date-time-zone-in-use = Utilisé
+settings-date-time-zone-use = Utiliser
+settings-date-time-clock = Date et heure
+settings-date-time-ntp = Régler l’heure automatiquement depuis le réseau
+settings-date-time-ntp-off = Désactivé : l’horloge garde l’heure réglée ci-dessous.
+settings-date-time-ntp-synchronized = L’horloge est synchronisée.
+settings-date-time-ntp-waiting = En attente d’un serveur de temps…
+settings-date-time-ntp-missing = Aucun service d’heure réseau (systemd-timesyncd, chrony ou ntpd) n’est installé.
+settings-date-time-date-field = Date (AAAA-MM-JJ, YYYY-MM-DD)
+settings-date-time-time-field = Heure (HH:MM)
+settings-date-time-set = Régler la date et l’heure
+settings-date-time-bad-entry = Saisissez la date sous la forme AAAA-MM-JJ et l’heure sous la forme HH:MM.
+settings-date-time-local-rtc = L’horloge matérielle est à l’heure locale, comme sous Windows ; cela peut perturber les changements d’heure.
+settings-date-time-not-running = systemd-timedated n’a pas répondu.
+settings-date-time-location-denied = L’accès à la position n’est pas autorisé pour les Paramètres Canopa.
+settings-date-time-location-timeout = La position n’a pas pu être trouvée à temps.
+settings-date-time-location-unavailable = La position n’est pas disponible.
+settings-date-time-no-tzdata = La table des fuseaux horaires (tzdata) n’est pas installée.
+settings-date-time-no-zone-here = Aucun fuseau horaire ne correspond à cette position.
+
+## Clock format (Date & time page)
+
+settings-clock-format = Format de l’horloge
+settings-clock-reading = Lecture de config.kdl…
+settings-clock-unreadable = Les formats d’horloge sont définis dans config.kdl, qui n’a pas pu être lu : { $error }
+settings-clock-automatic = Automatique
+settings-clock-24 = 24 heures ({ $example })
+settings-clock-12 = 12 heures ({ $example })
+settings-clock-automatic-24 = Automatique suit Région et langue, qui utilise l’horloge sur 24 heures ({ $example }).
+settings-clock-automatic-12 = Automatique suit Région et langue, qui utilise l’horloge sur 12 heures ({ $example }).
+settings-clock-applies = Pour l’horloge de la barre et l’écran de verrouillage. S’applique immédiatement.
+settings-clock-custom = { $place } utilise son propre format, { $format }, qui est conservé.
+settings-clock-place-shell = Horloge du Shell « { $name } »
+settings-clock-place-lock = Écran de verrouillage
+settings-clock-updated = Format de l’horloge mis à jour.
