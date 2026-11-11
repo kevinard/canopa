@@ -69,6 +69,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 - [Open With, programs and desktop-entry trust](adr/0166-open-with-and-launch-trust.md).
 
+- [Batched Copy durability, write-behind and transfer estimates](adr/0165-batched-copy-durability-and-progress.md).
+
 - [Permanent deletion and Empty Trash](adr/0164-permanent-deletion-and-empty-trash.md).
 
 - [Displayed folders follow outside changes](adr/0163-watched-browser-folders.md).
