@@ -136,7 +136,7 @@ impl Saved {
                     || !entry.text.valid()
             })
         {
-            return Err("Clipboard preferences or snippets are invalid".into());
+            return Err(fl!("launcher-clipboard-invalid"));
         }
         Ok(())
     }
@@ -145,10 +145,10 @@ impl Saved {
         let bytes = match canopa_file::private_state::read(path, STORE_BYTES) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(_) => return Err("Could not read saved clipboard preferences and snippets".into()),
+            Err(_) => return Err(fl!("launcher-clipboard-unreadable")),
         };
         let state: Self =
-            serde_json::from_slice(&bytes).map_err(|_| "Saved clipboard data is invalid")?;
+            serde_json::from_slice(&bytes).map_err(|_| fl!("launcher-clipboard-invalid"))?;
         state.validate()?;
         Ok(state)
     }
@@ -167,9 +167,9 @@ impl Saved {
 
     fn write(&self, path: &Path) -> Result<(), String> {
         self.validate()?;
-        let bytes = serde_json::to_vec(self).map_err(|_| "Could not encode saved snippets")?;
+        let bytes = serde_json::to_vec(self).map_err(|_| fl!("launcher-clipboard-unsaved"))?;
         canopa_file::private_state::write(path, &bytes)
-            .map_err(|_| "Could not save clipboard preferences and snippets".into())
+            .map_err(|_| fl!("launcher-clipboard-unsaved"))
     }
 
     pub fn edit(&mut self, edit: Edit) -> Result<(), String> {
@@ -180,19 +180,19 @@ impl Saved {
         };
         if let Some((name, id)) = name {
             if !valid_name(name) {
-                return Err("Enter a snippet name up to 256 bytes".into());
+                return Err(fl!("launcher-snippet-name", bytes = 256));
             }
             if self.snippets.iter().any(|entry| {
                 Some(entry.id) != id && entry.name.to_lowercase() == name.to_lowercase()
             }) {
-                return Err("A snippet with that name already exists".into());
+                return Err(fl!("launcher-snippet-exists"));
             }
         }
         match edit {
             Edit::Recording(enabled) => self.recording = enabled,
             Edit::Add { name, text } => {
                 if self.snippets.len() == SNIPPET_LIMIT {
-                    return Err("Delete a snippet before saving another".into());
+                    return Err(fl!("launcher-snippet-limit"));
                 }
                 let id = self
                     .snippets
@@ -201,14 +201,14 @@ impl Saved {
                     .max()
                     .unwrap_or(0)
                     .checked_add(1)
-                    .ok_or("No snippet IDs remain")?;
+                    .ok_or_else(|| fl!("launcher-snippet-limit"))?;
                 self.snippets.insert(0, Snippet { id, name, text });
             }
             Edit::Rename { id, name } => {
                 self.snippets
                     .iter_mut()
                     .find(|entry| entry.id == id)
-                    .ok_or("That snippet is no longer available")?
+                    .ok_or_else(|| fl!("launcher-snippet-gone"))?
                     .name = name;
             }
             Edit::Delete(id) => {

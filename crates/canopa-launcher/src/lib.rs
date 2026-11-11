@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const MAX_BYTES: usize = 1024 * 1024;
-fn invalid(message: &str) -> io::Error {
+fn invalid(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ impl Target {
         if valid {
             Ok(())
         } else {
-            Err(invalid("Invalid shortcut target"))
+            Err(invalid(fl!("launcher-invalid-shortcut")))
         }
     }
 }
@@ -93,9 +93,7 @@ pub fn valid_template(value: &str) -> bool {
 }
 pub fn search_url(template: &str, query: &str) -> io::Result<String> {
     if !valid_template(template) || query.len() > 1024 {
-        return Err(invalid(
-            "Search template requires one {query} placeholder in an HTTP(S) URL",
-        ));
+        return Err(invalid(fl!("launcher-invalid-template")));
     }
     let mut escaped = String::new();
     use std::fmt::Write;
@@ -110,7 +108,7 @@ pub fn search_url(template: &str, query: &str) -> io::Result<String> {
     if valid_url(&url) {
         Ok(url)
     } else {
-        Err(invalid("Invalid search URL"))
+        Err(invalid(fl!("launcher-invalid-search-url")))
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,9 +169,7 @@ impl Preferences {
             || self.shortcuts.len() > 256
             || !valid_template(&self.web_template)
         {
-            return Err(invalid(
-                "Invalid launcher preference limits or web template",
-            ));
+            return Err(invalid(fl!("launcher-invalid-preferences")));
         }
         let mut keywords = HashSet::new();
         for (id, pref) in &self.extensions {
@@ -182,16 +178,12 @@ impl Preferences {
                 || !valid_keyword(&pref.keyword)
                 || pref.enabled && !keywords.insert(pref.keyword.to_lowercase())
             {
-                return Err(invalid(
-                    "Enabled extension keywords must be unique nonreserved words",
-                ));
+                return Err(invalid(fl!("launcher-extension-keywords")));
             }
         }
         for (id, keyword) in [("builtin:web", "web"), ("builtin:date-time", "date")] {
             if !self.extensions.contains_key(id) && !keywords.insert(keyword.into()) {
-                return Err(invalid(
-                    "Extension keyword conflicts with a bundled extension",
-                ));
+                return Err(invalid(fl!("launcher-extension-keyword-conflict")));
             }
         }
         let web_enabled = self.extensions.get("builtin:web").is_none_or(|p| p.enabled);
@@ -202,9 +194,7 @@ impl Preferences {
                 || web_enabled && !keywords.insert(search.keyword.to_lowercase())
                 || !valid_template(&search.template)
             {
-                return Err(invalid(
-                    "Search shortcuts require unique keywords and valid URL templates",
-                ));
+                return Err(invalid(fl!("launcher-search-shortcuts")));
             }
         }
         let mut targets = HashSet::new();
@@ -220,9 +210,7 @@ impl Preferences {
                         || !aliases.insert(shortcut.alias.to_lowercase())
                         || keywords.contains(&shortcut.alias.to_lowercase()))
             {
-                return Err(invalid(
-                    "Shortcut names and aliases must be valid and unique",
-                ));
+                return Err(invalid(fl!("launcher-shortcut-names")));
             }
         }
         Ok(())
@@ -231,7 +219,7 @@ impl Preferences {
         match canopa_file::private_state::read(path, MAX_BYTES) {
             Ok(bytes) => {
                 let value: Self = serde_json::from_slice(&bytes)
-                    .map_err(|_| invalid("Invalid launcher preferences JSON"))?;
+                    .map_err(|_| invalid(fl!("launcher-invalid-json")))?;
                 value.validate()?;
                 Ok(value)
             }
@@ -247,7 +235,7 @@ impl Preferences {
         value.validate()?;
         let bytes = serde_json::to_vec_pretty(&value).map_err(io::Error::other)?;
         if bytes.len() > MAX_BYTES {
-            return Err(invalid("Launcher preferences exceed budget"));
+            return Err(invalid(fl!("launcher-preferences-too-large")));
         }
         canopa_file::private_state::write(path, &bytes)?;
         Ok(value)
@@ -276,7 +264,7 @@ impl Preferences {
 fn lock_preferences(path: &Path) -> io::Result<std::fs::File> {
     let parent = path
         .parent()
-        .ok_or_else(|| invalid("Missing preferences directory"))?;
+        .ok_or_else(|| invalid(fl!("launcher-no-preferences-directory")))?;
     std::fs::create_dir_all(parent)?;
     let lock = OpenOptions::new()
         .write(true)
@@ -287,7 +275,7 @@ fn lock_preferences(path: &Path) -> io::Result<std::fs::File> {
         .open(parent.join(".launcher.lock"))?;
     let meta = lock.metadata()?;
     if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
-        return Err(invalid("Invalid launcher preferences lock"));
+        return Err(invalid(fl!("launcher-invalid-lock")));
     }
     // A child forked by another thread keeps a copy of a lock descriptor this
     // process just closed until it executes. Retry briefly so that window is
@@ -297,7 +285,7 @@ fn lock_preferences(path: &Path) -> io::Result<std::fs::File> {
         if std::time::Instant::now() >= deadline {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "Launcher preferences are busy; try again",
+                fl!("launcher-preferences-busy"),
             ));
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -315,7 +303,7 @@ fn xdg(variable: &str, fallback: &str) -> io::Result<PathBuf> {
                 .filter(|p| p.is_absolute())
                 .map(|p| p.join(fallback))
         })
-        .ok_or_else(|| invalid("No absolute launcher storage directory"))
+        .ok_or_else(|| invalid(fl!("launcher-no-storage-directory")))
 }
 pub fn preferences_path() -> io::Result<PathBuf> {
     Ok(xdg("XDG_CONFIG_HOME", ".config")?.join("canopa/launcher.json"))
@@ -344,7 +332,7 @@ impl Catalog {
         let bytes = canopa_file::private_state::read(path, MAX_BYTES)?;
         let value: Self = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
         if value.extensions.len() > 64 {
-            return Err(invalid("Extension catalog exceeds budget"));
+            return Err(invalid(fl!("launcher-catalog-too-large")));
         }
         Ok(value)
     }
