@@ -1,5 +1,6 @@
 #[tokio::main]
 async fn main() {
+    canopa_i18n::init();
     // Keep the Pulse client name the audio server showed before the shared client.
     canopa_services::audio::set_client_name("canopa-shell");
     let _ = tracing_subscriber::fmt()

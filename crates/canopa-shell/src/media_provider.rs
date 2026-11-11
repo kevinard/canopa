@@ -16,6 +16,16 @@ struct MediaPanel {
     requests: HashMap<(String, Option<String>), Request>,
 }
 
+/// An MPRIS playback status as people read it.
+fn status(status: &str) -> String {
+    match status {
+        "Playing" => fl!("shell-media-playing"),
+        "Paused" => fl!("shell-media-paused"),
+        "Stopped" => fl!("shell-media-stopped"),
+        other => other.to_owned(),
+    }
+}
+
 impl MediaPanel {
     fn publish(
         &mut self,
@@ -23,11 +33,11 @@ impl MediaPanel {
         error: Option<String>,
     ) -> anyhow::Result<v5::Response> {
         self.requests.clear();
-        let mut content = PanelContent::new("Media");
+        let mut content = PanelContent::new(fl!("shell-media-title"));
         content.error = error;
         let mut section = PanelSection {
             id: "media".into(),
-            title: "Now playing".into(),
+            title: fl!("shell-media-now-playing"),
             icon: None,
             items: vec![],
             controls: vec![],
@@ -39,7 +49,7 @@ impl MediaPanel {
             );
             let mut options = vec![PanelControlOption {
                 value: "auto".into(),
-                label: "Automatic".into(),
+                label: fl!("shell-media-automatic"),
             }];
             let mut selected = "auto".to_string();
             for (index, player) in snapshot.players.iter().enumerate() {
@@ -53,27 +63,31 @@ impl MediaPanel {
                 }
                 options.push(PanelControlOption {
                     value,
-                    label: format!("{} · {}", player.name, player.status),
+                    label: fl!(
+                        "shell-media-player-option",
+                        player = player.name.clone(),
+                        status = status(&player.status)
+                    ),
                 });
             }
             section.controls.push(PanelControl {
                 key: "player".into(),
-                label: "Player".into(),
+                label: fl!("shell-media-player"),
                 value: selected,
                 options,
             });
         }
         let (title, body, actions) = if let Some(player) = snapshot.current() {
             let toggle = if player.status == "Playing" {
-                ("pause", "Pause", Operation::Pause)
+                ("pause", fl!("shell-media-pause"), Operation::Pause)
             } else {
-                ("play", "Play", Operation::Play)
+                ("play", fl!("shell-media-play"), Operation::Play)
             };
             let mut actions = vec![];
             for (key, label, operation) in [
-                ("previous", "Previous", Operation::Previous),
+                ("previous", fl!("shell-media-previous"), Operation::Previous),
                 toggle,
-                ("next", "Next", Operation::Next),
+                ("next", fl!("shell-media-next"), Operation::Next),
             ] {
                 if player.allows(operation) {
                     actions.push(PanelAction::new(key, label));
@@ -87,10 +101,11 @@ impl MediaPanel {
                     );
                 }
             }
+            let status = status(&player.status);
             let body = [
                 player.artist.as_str(),
                 player.name.as_str(),
-                player.status.as_str(),
+                status.as_str(),
             ]
             .into_iter()
             .filter(|s| !s.is_empty())
@@ -108,11 +123,10 @@ impl MediaPanel {
         } else {
             (
                 if snapshot.available {
-                    "No media players are open."
+                    fl!("shell-media-no-players")
                 } else {
-                    "Media is unavailable. Reconnecting…"
-                }
-                .into(),
+                    fl!("shell-media-unavailable")
+                },
                 None,
                 vec![],
             )
@@ -284,7 +298,7 @@ pub async fn run(
                 match tokio::time::timeout(Duration::from_secs(2), client.apply(request)).await {
                     Ok(Ok(())) => None,
                     Ok(Err(error)) => Some(error.to_string()),
-                    Err(_) => Some("Media control timed out. Please try again.".into()),
+                    Err(_) => Some(fl!("shell-media-timed-out-retry")),
                 };
             // Retire the interaction revision even if the player emits no update.
             write(&mut output, panel.publish(&snapshot, error)?).await?;

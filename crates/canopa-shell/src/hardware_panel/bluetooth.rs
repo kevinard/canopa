@@ -24,41 +24,38 @@ const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 type Path = OwnedObjectPath;
 
 fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -> PanelContent {
-    let mut content = PanelContent::new("Bluetooth");
+    let mut content = PanelContent::new(fl!("shell-bluetooth-title"));
     content.error = error.map(str::to_owned);
     if snapshot.adapters.is_empty() {
         let message = if snapshot.owner.is_some() {
-            "No Bluetooth adapters found."
+            fl!("shell-bluetooth-no-adapters")
         } else {
-            "Bluetooth service is unavailable."
+            fl!("shell-bluetooth-unavailable")
         };
         content
             .sections
-            .push(section("status", "", vec![item("unavailable", message)]));
+            .push(section("status", "", vec![item("unavailable", &message)]));
     }
     for adapter in &snapshot.adapters {
         let active_scan = scanning.contains(&adapter.path);
         let mut radio = item(adapter.path.as_str(), adapter.label.as_str());
-        radio.body = Some(
-            if active_scan {
-                "Searching for devices…"
-            } else if adapter.powered {
-                "On"
-            } else {
-                "Off"
-            }
-            .into(),
-        );
-        radio.actions.push(if adapter.powered {
-            PanelAction::new("off", "Turn off")
+        radio.body = Some(if active_scan {
+            fl!("shell-bluetooth-searching")
+        } else if adapter.powered {
+            fl!("shell-switch-on")
         } else {
-            PanelAction::new("on", "Turn on")
+            fl!("shell-switch-off")
+        });
+        radio.actions.push(if adapter.powered {
+            PanelAction::new("off", fl!("shell-bluetooth-turn-off"))
+        } else {
+            PanelAction::new("on", fl!("shell-bluetooth-turn-on"))
         });
         if adapter.powered {
             radio.actions.push(if active_scan {
-                PanelAction::new("stop", "Stop searching")
+                PanelAction::new("stop", fl!("shell-bluetooth-stop-searching"))
             } else {
-                PanelAction::new("scan", "Find devices")
+                PanelAction::new("scan", fl!("shell-bluetooth-find-devices"))
             });
         }
         let mut items = vec![radio];
@@ -69,13 +66,25 @@ fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -
         {
             let mut row = item(device.path.as_str(), device.label.as_str());
             let (status, key, label) = if device.connected {
-                ("Connected", "disconnect", "Disconnect")
+                (
+                    fl!("shell-bluetooth-connected"),
+                    "disconnect",
+                    fl!("shell-bluetooth-disconnect"),
+                )
             } else if device.paired {
-                ("Paired", "connect", "Connect")
+                (
+                    fl!("shell-bluetooth-paired"),
+                    "connect",
+                    fl!("shell-bluetooth-connect"),
+                )
             } else {
-                ("Available", "pair", "Pair")
+                (
+                    fl!("shell-bluetooth-available"),
+                    "pair",
+                    fl!("shell-bluetooth-pair"),
+                )
             };
-            row.body = Some(status.into());
+            row.body = Some(status);
             row.actions.push(PanelAction::new(key, label));
             items.push(row);
         }
@@ -88,17 +97,21 @@ fn content(snapshot: &Snapshot, scanning: &HashSet<Path>, error: Option<&str>) -
 
 fn question_label(question: &Question) -> String {
     match question {
-        Question::Confirm(code) => format!("Does the other device show {code:06}?"),
-        Question::Authorize => "Allow this pairing request?".into(),
-        Question::Service => "Allow this device to connect?".into(),
-        Question::Pin => "Enter the PIN shown by the other device.".into(),
-        Question::Passkey => "Enter the six-digit passkey shown by the other device.".into(),
-        Question::DisplayPinCode(pincode) => {
-            format!("Type {pincode} on the other device and press Enter.")
+        // Codes are passed as text: they keep their leading zeros and no grouping.
+        Question::Confirm(code) => {
+            fl!("shell-bluetooth-confirm-code", code = format!("{code:06}"))
         }
-        Question::DisplayPasskey { passkey, entered } => format!(
-            "Type {passkey:06} on the other device and press Enter ({} of 6 digits entered).",
-            entered.min(&6)
+        Question::Authorize => fl!("shell-bluetooth-authorize"),
+        Question::Service => fl!("shell-bluetooth-service"),
+        Question::Pin => fl!("shell-bluetooth-enter-pin"),
+        Question::Passkey => fl!("shell-bluetooth-enter-passkey"),
+        Question::DisplayPinCode(pincode) => {
+            fl!("shell-bluetooth-type-pin", pin = pincode.to_string())
+        }
+        Question::DisplayPasskey { passkey, entered } => fl!(
+            "shell-bluetooth-type-passkey",
+            passkey = format!("{passkey:06}"),
+            entered = u64::from(*entered.min(&6))
         ),
     }
 }
@@ -147,7 +160,7 @@ struct Pairing {
 impl Pairing {
     fn content(&self) -> Content {
         let mut elements = vec![FormElement::Text {
-            text: format!("Pair with {}", self.label),
+            text: fl!("shell-bluetooth-pair-with", device = self.label.clone()),
         }];
         if let Some(prompt) = &self.prompt {
             elements.push(FormElement::Text {
@@ -156,20 +169,20 @@ impl Pairing {
             if prompt.question.needs_entry() {
                 elements.push(FormElement::TextInput {
                     id: "code".into(),
-                    label: "Pairing code".into(),
+                    label: fl!("shell-bluetooth-pairing-code"),
                     value: String::new(),
                     secret: true,
-                    error: prompt.invalid.then(|| "Enter a valid pairing code.".into()),
+                    error: prompt.invalid.then(|| fl!("shell-bluetooth-invalid-code")),
                 });
             }
         } else {
             elements.push(FormElement::Text {
-                text: "Waiting for the device…".into(),
+                text: fl!("shell-bluetooth-waiting"),
             });
         }
         elements.push(FormElement::Button {
             id: "cancel".into(),
-            label: "Cancel pairing".into(),
+            label: fl!("shell-bluetooth-cancel-pairing"),
         });
         if self
             .prompt
@@ -178,7 +191,7 @@ impl Pairing {
         {
             elements.push(FormElement::Button {
                 id: "confirm".into(),
-                label: "Confirm".into(),
+                label: fl!("shell-bluetooth-confirm"),
             });
         }
         Content::Form(FormContent { elements })
@@ -192,7 +205,7 @@ struct Bluetooth {
     pairing: Option<Pairing>,
     events: mpsc::Sender<AgentEvent>,
     serial: u64,
-    error: Option<&'static str>,
+    error: Option<String>,
 }
 
 impl Bluetooth {
@@ -201,7 +214,7 @@ impl Bluetooth {
             let frame = self.panel.replace(pairing.content(), Update::Replace)?;
             crate::provider_io::write_v5(output, frame).await?;
         } else {
-            let content = content(&self.snapshot, &self.scanning, self.error);
+            let content = content(&self.snapshot, &self.scanning, self.error.as_deref());
             publish(&mut self.panel, output, content).await?;
         }
         Ok(())
@@ -308,7 +321,7 @@ impl Bluetooth {
             match event {
                 FormEvent::ButtonActivated { element_id } if element_id == "cancel" => {
                     self.stop_pair().await;
-                    self.error = Some("Pairing canceled.");
+                    self.error = Some(fl!("shell-bluetooth-pairing-canceled"));
                 }
                 FormEvent::TextInputChanged { element_id, value } if element_id == "code" => {
                     if let Some(prompt) = pairing.prompt.as_mut() {
@@ -354,7 +367,7 @@ impl Bluetooth {
             }
             let result = timeout(Duration::from_secs(8), self.apply(connection, id, key)).await;
             self.error =
-                (!matches!(result, Ok(Ok(())))).then_some("Bluetooth could not apply the change.");
+                (!matches!(result, Ok(Ok(())))).then(|| fl!("shell-bluetooth-change-failed"));
             if self.pairing.is_none() {
                 self.refresh(connection).await;
             }
@@ -420,7 +433,7 @@ pub(super) async fn run(
                     }
                 } => {
                     bluetooth.pairing = None;
-                    bluetooth.error = (!matches!(result, Ok(Ok(())))).then_some("Bluetooth pairing or connection failed.");
+                    bluetooth.error = (!matches!(result, Ok(Ok(())))).then(|| fl!("shell-bluetooth-pairing-failed"));
                     if let Some(bus) = &connection {
                         bluetooth.refresh(bus).await;
                     }

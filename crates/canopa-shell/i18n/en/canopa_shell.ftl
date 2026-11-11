@@ -252,3 +252,147 @@ shell-osd-announce-off = off
 shell-osd-announce-unavailable = unavailable
 shell-osd-announcement = { $channel } { $value }
 shell-osd-announcement-device = { $channel } { $value }, { $device }
+
+## Sound provider
+
+shell-audio-title = Sound
+shell-audio-unavailable = Audio is unavailable. Reconnecting…
+shell-audio-outputs = Speakers and headphones
+shell-audio-no-outputs = No output devices are available.
+shell-audio-inputs = Microphones
+shell-audio-no-inputs = No input devices are available.
+shell-audio-output-volume = Output volume
+shell-audio-set-output = Set as output
+shell-audio-default-output = Default output
+shell-audio-input-level = Input level
+shell-audio-set-input = Set as input
+shell-audio-default-input = Default input
+shell-audio-mute = Mute
+shell-audio-unmute = Unmute
+shell-audio-muted = Muted
+shell-audio-applying = Applying change…
+shell-audio-muted-applying = Muted · Applying change…
+shell-audio-too-many-changes = Too many audio changes are pending. Please try again.
+
+## Media provider
+
+shell-media-now-playing = Now playing
+# The media player choice that follows the active player.
+shell-media-automatic = Automatic
+shell-media-player = Player
+# $status is shell-media-playing, -paused or -stopped.
+shell-media-player-option = { $player } · { $status }
+shell-media-playing = Playing
+shell-media-paused = Paused
+shell-media-stopped = Stopped
+shell-media-play = Play
+shell-media-pause = Pause
+shell-media-previous = Previous
+shell-media-next = Next
+shell-media-no-players = No media players are open.
+shell-media-unavailable = Media is unavailable. Reconnecting…
+shell-media-timed-out-retry = Media control timed out. Please try again.
+shell-media-busy = Media controls are busy
+shell-media-timed-out = Media control timed out
+shell-media-disconnected = Media controls disconnected
+shell-media-player-gone = Player is no longer available
+shell-media-expired = Media request expired; try again
+
+## Wi-Fi provider
+
+shell-wifi-title = Wi-Fi
+shell-wifi-unavailable = Wi-Fi unavailable
+shell-wifi-check-again = Check again
+shell-wifi-set-up-in-settings = Set up in Settings
+shell-wifi-enterprise-in-settings = Join WPA-Enterprise networks in Settings, on the Network page.
+shell-wifi-credential-required = Credential required
+shell-wifi-credential-rejected = Credential rejected
+shell-wifi-off = Wi-Fi is off
+shell-wifi-turn-on = Turn Wi-Fi on
+shell-wifi-turn-off = Turn Wi-Fi off
+# $network is the network name.
+shell-wifi-connecting = Connecting to { $network }
+shell-wifi-connected = Connected to { $network }
+shell-wifi-scanning-networks = Scanning for Wi-Fi networks
+shell-wifi-choose = Choose a Wi-Fi network
+shell-wifi-disconnect = Disconnect
+shell-wifi-forget = Forget { $network }
+shell-wifi-problem = Wi-Fi problem
+shell-wifi-credential-title = Network Credential
+shell-wifi-credential-prompt = Enter credential for { $network }
+shell-wifi-credential-label = Network credential
+shell-wifi-connect = Connect
+shell-wifi-scanning = Scanning
+shell-wifi-refresh = Refresh
+shell-wifi-error-target-changed = The selected network changed. Select it again.
+shell-wifi-error-no-control = Check that NetworkManager or iwd is running, then try again.
+shell-wifi-error-no-backend = No supported Wi-Fi control backend is available.
+shell-wifi-error-scan-failed = Wi-Fi scan failed.
+shell-wifi-error-connection-failed = Connection failed.
+shell-wifi-error-credential-rejected = Network credential was rejected.
+shell-wifi-error-unsupported = This Wi-Fi network is not supported.
+shell-wifi-error-authorization-required = Wi-Fi authorization is required.
+# A network row's description: $known is yes or no, $security is open,
+# secured or enterprise, $signal a formatted percentage.
+shell-wifi-network-description = { $known ->
+        [yes] known { $security ->
+            [open] open
+            [enterprise] enterprise
+           *[secured] secured
+        } { $signal }
+       *[no] { $security ->
+            [open] open
+            [enterprise] enterprise
+           *[secured] secured
+        } { $signal }
+    }
+
+## Bluetooth panel
+
+shell-bluetooth-title = Bluetooth
+shell-bluetooth-no-adapters = No Bluetooth adapters found.
+shell-bluetooth-unavailable = Bluetooth service is unavailable.
+shell-bluetooth-searching = Searching for devices…
+shell-bluetooth-turn-on = Turn on
+shell-bluetooth-turn-off = Turn off
+shell-bluetooth-find-devices = Find devices
+shell-bluetooth-stop-searching = Stop searching
+shell-bluetooth-connected = Connected
+shell-bluetooth-paired = Paired
+shell-bluetooth-available = Available
+shell-bluetooth-connect = Connect
+shell-bluetooth-disconnect = Disconnect
+shell-bluetooth-pair = Pair
+# $code is a six-digit code.
+shell-bluetooth-confirm-code = Does the other device show { $code }?
+shell-bluetooth-authorize = Allow this pairing request?
+shell-bluetooth-service = Allow this device to connect?
+shell-bluetooth-enter-pin = Enter the PIN shown by the other device.
+shell-bluetooth-enter-passkey = Enter the six-digit passkey shown by the other device.
+shell-bluetooth-type-pin = Type { $pin } on the other device and press Enter.
+# $entered is how many of the 6 digits were typed.
+shell-bluetooth-type-passkey = Type { $passkey } on the other device and press Enter ({ $entered } of 6 digits entered).
+# $device is the device name.
+shell-bluetooth-pair-with = Pair with { $device }
+shell-bluetooth-pairing-code = Pairing code
+shell-bluetooth-invalid-code = Enter a valid pairing code.
+shell-bluetooth-waiting = Waiting for the device…
+shell-bluetooth-cancel-pairing = Cancel pairing
+shell-bluetooth-confirm = Confirm
+shell-bluetooth-pairing-canceled = Pairing canceled.
+shell-bluetooth-change-failed = Bluetooth could not apply the change.
+shell-bluetooth-pairing-failed = Bluetooth pairing or connection failed.
+
+## Power and brightness panel
+
+shell-power-title = Power & brightness
+shell-power-built-in-display = Built-in display
+shell-power-brightness-unavailable = Display brightness is unavailable in this session.
+shell-power-profile = Power profile
+# $profile is one of the profile names below.
+shell-power-profile-active = Active: { $profile }
+shell-power-saver = Power saver
+shell-power-balanced = Balanced
+shell-power-performance = Performance
+shell-power-profiles-unavailable = Power profiles service is unavailable.
+shell-power-change-failed = The system could not apply the change.

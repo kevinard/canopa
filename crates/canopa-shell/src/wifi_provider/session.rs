@@ -110,7 +110,7 @@ where
                         }
                     }
                     let documents = result.unwrap_or_else(|err| vec![ExternalPanelDocument { elements: vec![ExternalPanelElement::Status {
-                        title: "Wi-Fi problem".into(), message: user_message_for_error(err.category()).into(), severity: ExternalPanelSeverity::Error,
+                        title: fl!("shell-wifi-problem"), message: user_message_for_error(err.category()), severity: ExternalPanelSeverity::Error,
                     }] }]);
                     for content in documents { transport.write(&mut writer, content, false, update).await?; }
                     if dirty { next = Some(Operation::Synchronize); dirty = false; }

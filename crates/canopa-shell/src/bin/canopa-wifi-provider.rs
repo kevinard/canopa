@@ -6,8 +6,16 @@ use canopa_services::network::wifi::backends::choose_backend;
 use canopa_shell::wifi_provider::transport::{Action, Transport};
 use canopa_shell::wifi_provider::{WifiBackendErrorCategory, WifiPanelProvider};
 
+/// The Shell's messages, checked against its English file.
+macro_rules! fl {
+    ($($args:tt)*) => {
+        canopa_i18n::checked_fl!(canopa_shell::i18n::LOADER.get(), $($args)*)
+    };
+}
+
 #[tokio::main]
 async fn main() {
+    canopa_i18n::init();
     if let Err(err) = run().await {
         eprintln!("canopa-wifi-provider: {err}");
         std::process::exit(1);
@@ -68,8 +76,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await
     {
         Ok(Ok(content)) => content,
-        Ok(Err(err)) => backend_error_document("Wi-Fi unavailable", err.category()),
-        Err(_) => backend_error_document("Wi-Fi unavailable", WifiBackendErrorCategory::NoControl),
+        Ok(Err(err)) => backend_error_document(&fl!("shell-wifi-unavailable"), err.category()),
+        Err(_) => backend_error_document(
+            &fl!("shell-wifi-unavailable"),
+            WifiBackendErrorCategory::NoControl,
+        ),
     };
     transport
         .write(&mut stdout, document, initial, Update::Replace)
@@ -90,20 +101,22 @@ fn backend_error_document(
     ExternalPanelDocument {
         elements: vec![ExternalPanelElement::Status {
             title: title.into(),
-            message: category_message(category).into(),
+            message: category_message(category),
             severity: ExternalPanelSeverity::Error,
         }],
     }
 }
 
-fn category_message(category: WifiBackendErrorCategory) -> &'static str {
+fn category_message(category: WifiBackendErrorCategory) -> String {
     match category {
-        WifiBackendErrorCategory::TargetChanged => "The selected network changed. Select it again.",
-        WifiBackendErrorCategory::NoControl => "No supported Wi-Fi control backend is available.",
-        WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed.",
-        WifiBackendErrorCategory::ConnectionFailed => "Connection failed.",
-        WifiBackendErrorCategory::CredentialRejected => "Network credential was rejected.",
-        WifiBackendErrorCategory::UnsupportedNetwork => "This Wi-Fi network is not supported.",
-        WifiBackendErrorCategory::AuthorizationRequired => "Wi-Fi authorization is required.",
+        WifiBackendErrorCategory::TargetChanged => fl!("shell-wifi-error-target-changed"),
+        WifiBackendErrorCategory::NoControl => fl!("shell-wifi-error-no-backend"),
+        WifiBackendErrorCategory::ScanFailed => fl!("shell-wifi-error-scan-failed"),
+        WifiBackendErrorCategory::ConnectionFailed => fl!("shell-wifi-error-connection-failed"),
+        WifiBackendErrorCategory::CredentialRejected => fl!("shell-wifi-error-credential-rejected"),
+        WifiBackendErrorCategory::UnsupportedNetwork => fl!("shell-wifi-error-unsupported"),
+        WifiBackendErrorCategory::AuthorizationRequired => {
+            fl!("shell-wifi-error-authorization-required")
+        }
     }
 }

@@ -10,12 +10,12 @@ use canopa_services::{
 use std::{path::Path, time::Duration};
 use zbus::Connection;
 
-fn profile_label(profile: &str) -> &str {
+fn profile_label(profile: &str) -> String {
     match profile {
-        "power-saver" => "Power saver",
-        "balanced" => "Balanced",
-        "performance" => "Performance",
-        other => other,
+        "power-saver" => fl!("shell-power-saver"),
+        "balanced" => fl!("shell-power-balanced"),
+        "performance" => fl!("shell-power-performance"),
+        other => other.to_owned(),
     }
 }
 
@@ -45,13 +45,13 @@ impl Snapshot {
     }
 
     fn content(&self, error: Option<&str>) -> PanelContent {
-        let mut content = PanelContent::new("Power & brightness");
+        let mut content = PanelContent::new(fl!("shell-power-title"));
         content.error = error.map(str::to_owned);
         let light = if let Some(light) = &self.light {
-            let mut row = item("display", "Built-in display");
+            let mut row = item("display", &fl!("shell-power-built-in-display"));
             row.slider = Some(PanelSlider {
                 key: "brightness".into(),
-                label: "Brightness".into(),
+                label: fl!("shell-osd-brightness"),
                 min: 1,
                 max: 100,
                 step: 1,
@@ -61,14 +61,14 @@ impl Snapshot {
             });
             row
         } else {
-            item(
-                "display",
-                "Display brightness is unavailable in this session.",
-            )
+            item("display", &fl!("shell-power-brightness-unavailable"))
         };
-        let mut profiles = item("profiles", "Power profile");
+        let mut profiles = item("profiles", &fl!("shell-power-profile"));
         if let Some(state) = &self.profiles {
-            profiles.body = Some(format!("Active: {}", profile_label(&state.active)));
+            profiles.body = Some(fl!(
+                "shell-power-profile-active",
+                profile = profile_label(&state.active)
+            ));
             profiles.actions = state
                 .supported
                 .iter()
@@ -76,7 +76,7 @@ impl Snapshot {
                 .map(|name| PanelAction::new(*name, profile_label(name)))
                 .collect();
         } else {
-            profiles.body = Some("Power profiles service is unavailable.".into());
+            profiles.body = Some(fl!("shell-power-profiles-unavailable"));
         }
         content.sections = vec![
             section("brightness", "", vec![light]),
@@ -108,7 +108,7 @@ pub(super) async fn run(
                 let next = Snapshot::read(connection.as_ref()).await;
                 if next != snapshot {
                     snapshot = next;
-                    publish(&mut panel, output, snapshot.content(error)).await?;
+                    publish(&mut panel, output, snapshot.content(error.as_deref())).await?;
                 }
             }
             message = input.next() => {
@@ -125,9 +125,9 @@ pub(super) async fn run(
                     }
                     _ => continue,
                 };
-                error = (!matches!(result, Ok(Ok(())))).then_some("The system could not apply the change.");
+                error = (!matches!(result, Ok(Ok(())))).then(|| fl!("shell-power-change-failed"));
                 snapshot = Snapshot::read(Some(connection)).await;
-                publish(&mut panel, output, snapshot.content(error)).await?;
+                publish(&mut panel, output, snapshot.content(error.as_deref())).await?;
             }
         }
     }

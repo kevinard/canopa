@@ -228,3 +228,141 @@ shell-osd-announce-off = éteint
 shell-osd-announce-unavailable = indisponible
 shell-osd-announcement = { $channel } { $value }
 shell-osd-announcement-device = { $channel } { $value }, { $device }
+
+## Sound provider
+
+shell-audio-title = Son
+shell-audio-unavailable = Le son est indisponible. Reconnexion…
+shell-audio-outputs = Haut-parleurs et casques
+shell-audio-no-outputs = Aucun périphérique de sortie n’est disponible.
+shell-audio-inputs = Microphones
+shell-audio-no-inputs = Aucun périphérique d’entrée n’est disponible.
+shell-audio-output-volume = Volume de sortie
+shell-audio-set-output = Utiliser comme sortie
+shell-audio-default-output = Sortie par défaut
+shell-audio-input-level = Niveau d’entrée
+shell-audio-set-input = Utiliser comme entrée
+shell-audio-default-input = Entrée par défaut
+shell-audio-mute = Couper le son
+shell-audio-unmute = Rétablir le son
+shell-audio-muted = Son coupé
+shell-audio-applying = Application de la modification…
+shell-audio-muted-applying = Son coupé · Application de la modification…
+shell-audio-too-many-changes = Trop de modifications du son sont en attente. Veuillez réessayer.
+
+## Media provider
+
+shell-media-now-playing = En cours de lecture
+shell-media-automatic = Automatique
+shell-media-player = Lecteur
+shell-media-player-option = { $player } · { $status }
+shell-media-playing = En lecture
+shell-media-paused = En pause
+shell-media-stopped = Arrêté
+shell-media-play = Lire
+shell-media-pause = Pause
+shell-media-previous = Précédent
+shell-media-next = Suivant
+shell-media-no-players = Aucun lecteur multimédia n’est ouvert.
+shell-media-unavailable = Le multimédia est indisponible. Reconnexion…
+shell-media-timed-out-retry = La commande multimédia n’a pas répondu à temps. Veuillez réessayer.
+shell-media-busy = Les commandes multimédias sont occupées
+shell-media-timed-out = La commande multimédia n’a pas répondu à temps
+shell-media-disconnected = Les commandes multimédias sont déconnectées
+shell-media-player-gone = Le lecteur n’est plus disponible
+shell-media-expired = La demande multimédia a expiré ; réessayez
+
+## Wi-Fi provider
+
+shell-wifi-title = Wi-Fi
+shell-wifi-unavailable = Wi-Fi indisponible
+shell-wifi-check-again = Vérifier à nouveau
+shell-wifi-set-up-in-settings = Configurer dans les Paramètres
+shell-wifi-enterprise-in-settings = Connectez-vous aux réseaux WPA Entreprise dans les Paramètres, page Réseau.
+shell-wifi-credential-required = Identifiant requis
+shell-wifi-credential-rejected = Identifiant refusé
+shell-wifi-off = Le Wi-Fi est désactivé
+shell-wifi-turn-on = Activer le Wi-Fi
+shell-wifi-turn-off = Désactiver le Wi-Fi
+shell-wifi-connecting = Connexion à { $network }
+shell-wifi-connected = Connecté à { $network }
+shell-wifi-scanning-networks = Recherche de réseaux Wi-Fi
+shell-wifi-choose = Choisissez un réseau Wi-Fi
+shell-wifi-disconnect = Se déconnecter
+shell-wifi-forget = Oublier { $network }
+shell-wifi-problem = Problème de Wi-Fi
+shell-wifi-credential-title = Identifiant du réseau
+shell-wifi-credential-prompt = Saisissez l’identifiant de { $network }
+shell-wifi-credential-label = Identifiant du réseau
+shell-wifi-connect = Se connecter
+shell-wifi-scanning = Recherche
+shell-wifi-refresh = Actualiser
+shell-wifi-error-target-changed = Le réseau sélectionné a changé. Sélectionnez-le à nouveau.
+shell-wifi-error-no-control = Vérifiez que NetworkManager ou iwd est en cours d’exécution, puis réessayez.
+shell-wifi-error-no-backend = Aucun service de contrôle du Wi-Fi pris en charge n’est disponible.
+shell-wifi-error-scan-failed = La recherche de réseaux Wi-Fi a échoué.
+shell-wifi-error-connection-failed = La connexion a échoué.
+shell-wifi-error-credential-rejected = L’identifiant du réseau a été refusé.
+shell-wifi-error-unsupported = Ce réseau Wi-Fi n’est pas pris en charge.
+shell-wifi-error-authorization-required = Une autorisation est requise pour le Wi-Fi.
+shell-wifi-network-description = { $known ->
+        [yes] connu, { $security ->
+            [open] ouvert
+            [enterprise] entreprise
+           *[secured] sécurisé
+        }, { $signal }
+       *[no] { $security ->
+            [open] ouvert
+            [enterprise] entreprise
+           *[secured] sécurisé
+        }, { $signal }
+    }
+
+## Bluetooth panel
+
+shell-bluetooth-title = Bluetooth
+shell-bluetooth-no-adapters = Aucun adaptateur Bluetooth trouvé.
+shell-bluetooth-unavailable = Le service Bluetooth est indisponible.
+shell-bluetooth-searching = Recherche de périphériques…
+shell-bluetooth-turn-on = Activer
+shell-bluetooth-turn-off = Désactiver
+shell-bluetooth-find-devices = Rechercher des périphériques
+shell-bluetooth-stop-searching = Arrêter la recherche
+shell-bluetooth-connected = Connecté
+shell-bluetooth-paired = Associé
+shell-bluetooth-available = Disponible
+shell-bluetooth-connect = Se connecter
+shell-bluetooth-disconnect = Se déconnecter
+shell-bluetooth-pair = Associer
+shell-bluetooth-confirm-code = L’autre appareil affiche-t-il { $code } ?
+shell-bluetooth-authorize = Autoriser cette demande d’association ?
+shell-bluetooth-service = Autoriser cet appareil à se connecter ?
+shell-bluetooth-enter-pin = Saisissez le code PIN affiché par l’autre appareil.
+shell-bluetooth-enter-passkey = Saisissez la clé à six chiffres affichée par l’autre appareil.
+shell-bluetooth-type-pin = Tapez { $pin } sur l’autre appareil et appuyez sur Entrée.
+shell-bluetooth-type-passkey = Tapez { $passkey } sur l’autre appareil et appuyez sur Entrée ({ $entered ->
+        [one] { $entered } chiffre saisi sur 6
+       *[other] { $entered } chiffres saisis sur 6
+    }).
+shell-bluetooth-pair-with = Associer avec { $device }
+shell-bluetooth-pairing-code = Code d’association
+shell-bluetooth-invalid-code = Saisissez un code d’association valide.
+shell-bluetooth-waiting = En attente de l’appareil…
+shell-bluetooth-cancel-pairing = Annuler l’association
+shell-bluetooth-confirm = Confirmer
+shell-bluetooth-pairing-canceled = Association annulée.
+shell-bluetooth-change-failed = Le Bluetooth n’a pas pu appliquer la modification.
+shell-bluetooth-pairing-failed = L’association ou la connexion Bluetooth a échoué.
+
+## Power and brightness panel
+
+shell-power-title = Alimentation et luminosité
+shell-power-built-in-display = Écran intégré
+shell-power-brightness-unavailable = La luminosité de l’écran est indisponible dans cette session.
+shell-power-profile = Mode d’alimentation
+shell-power-profile-active = Actif : { $profile }
+shell-power-saver = Économie d’énergie
+shell-power-balanced = Équilibré
+shell-power-performance = Performances
+shell-power-profiles-unavailable = Le service des modes d’alimentation est indisponible.
+shell-power-change-failed = Le système n’a pas pu appliquer la modification.

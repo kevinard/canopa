@@ -45,11 +45,11 @@ impl MediaInterface {
                 result,
                 expires: tokio::time::Instant::now() + Duration::from_secs(1),
             })
-            .map_err(|_| zbus::fdo::Error::Failed("Media controls are busy".into()))?;
+            .map_err(|_| zbus::fdo::Error::Failed(fl!("shell-media-busy")))?;
         tokio::time::timeout(Duration::from_secs(3), rx)
             .await
-            .map_err(|_| zbus::fdo::Error::Failed("Media control timed out".into()))?
-            .map_err(|_| zbus::fdo::Error::Failed("Media controls disconnected".into()))?
+            .map_err(|_| zbus::fdo::Error::Failed(fl!("shell-media-timed-out")))?
+            .map_err(|_| zbus::fdo::Error::Failed(fl!("shell-media-disconnected")))?
             .map_err(zbus::fdo::Error::Failed)
     }
 }
@@ -63,7 +63,8 @@ async fn apply(
         Request::Select(id) => {
             anyhow::ensure!(
                 id.is_none() || state.players.iter().any(|p| Some(&p.id) == id.as_ref()),
-                "Player is no longer available"
+                "{}",
+                fl!("shell-media-player-gone")
             );
             state.pinned = id.is_some();
             state.selected = id;
@@ -76,7 +77,8 @@ async fn apply(
         } => {
             anyhow::ensure!(
                 state.players.iter().any(|p| p.id == player),
-                "Player is no longer available"
+                "{}",
+                fl!("shell-media-player-gone")
             );
             mpris::control(conn, &player, &track, operation).await?;
         }
@@ -164,12 +166,12 @@ async fn connected(
                 let Some(command) = command else { return Ok(()); };
                 let now = tokio::time::Instant::now();
                 if command.result.is_closed() || now >= command.expires {
-                    let _ = command.result.send(Err("Media request expired; try again".into()));
+                    let _ = command.result.send(Err(fl!("shell-media-expired")));
                     continue;
                 }
                 let target = match &command.request { Request::Control { player, .. } => Some(player.bus.clone()), _ => None };
                 let result = tokio::time::timeout(DEADLINE.min(command.expires - now), apply(&conn, &mut state, command.request)).await
-                    .map_err(|_| "Media control timed out".to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+                    .map_err(|_| fl!("shell-media-timed-out")).and_then(|r| r.map_err(|e| e.to_string()));
                 if let Some(bus) = target { registry.dirty(&bus); }
                 publication_needed |= result.is_ok();
                 let _ = command.result.send(result);

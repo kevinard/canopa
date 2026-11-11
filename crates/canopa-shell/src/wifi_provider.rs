@@ -16,13 +16,13 @@ pub fn no_control_document() -> ExternalPanelDocument {
     ExternalPanelDocument {
         elements: vec![
             ExternalPanelElement::Status {
-                title: "Wi-Fi unavailable".into(),
-                message: user_message_for_error(WifiBackendErrorCategory::NoControl).into(),
+                title: fl!("shell-wifi-unavailable"),
+                message: user_message_for_error(WifiBackendErrorCategory::NoControl),
                 severity: ExternalPanelSeverity::Error,
             },
             ExternalPanelElement::Button {
                 id: "refresh".into(),
-                label: "Check again".into(),
+                label: fl!("shell-wifi-check-again"),
             },
         ],
     }
@@ -305,9 +305,8 @@ where
             document.elements.insert(
                 1,
                 ExternalPanelElement::Status {
-                    title: "Set up in Settings".into(),
-                    message: "Join WPA-Enterprise networks in Settings, on the Network page."
-                        .into(),
+                    title: fl!("shell-wifi-set-up-in-settings"),
+                    message: fl!("shell-wifi-enterprise-in-settings"),
                     severity: ExternalPanelSeverity::Info,
                 },
             );
@@ -350,7 +349,7 @@ where
                     device_id,
                     network,
                     value: String::new(),
-                    error: Some("Credential required".into()),
+                    error: Some(fl!("shell-wifi-credential-required")),
                     hidden: false,
                 });
                 Ok(self.completed(connecting, self.render_credential_prompt()))
@@ -406,7 +405,7 @@ where
                 self.connecting_network_id = None;
                 self.credential_prompt = Some(CredentialPrompt {
                     value: String::new(),
-                    error: Some("Credential rejected".into()),
+                    error: Some(fl!("shell-wifi-credential-rejected")),
                     ..prompt
                 });
                 Ok(vec![self.render_credential_prompt()])
@@ -419,7 +418,7 @@ where
                 self.connecting_network_id = None;
                 self.credential_prompt = Some(CredentialPrompt {
                     value: String::new(),
-                    error: Some(user_message_for_error(err.category()).into()),
+                    error: Some(user_message_for_error(err.category())),
                     ..prompt
                 });
                 Ok(self.completed(connecting, self.render_credential_prompt()))
@@ -451,13 +450,13 @@ where
             return ExternalPanelDocument {
                 elements: vec![
                     ExternalPanelElement::Status {
-                        title: "Wi-Fi".into(),
-                        message: "Wi-Fi is off".into(),
+                        title: fl!("shell-wifi-title"),
+                        message: fl!("shell-wifi-off"),
                         severity: ExternalPanelSeverity::Info,
                     },
                     ExternalPanelElement::Button {
                         id: "radio".into(),
-                        label: "Turn Wi-Fi on".into(),
+                        label: fl!("shell-wifi-turn-on"),
                     },
                 ],
             };
@@ -465,19 +464,19 @@ where
         let active = self.snapshot.networks.iter().find(|network| network.active);
         let connecting = self.connecting_network();
         let message = if let Some(connecting) = connecting {
-            format!("Connecting to {}", connecting.label)
+            fl!("shell-wifi-connecting", network = connecting.label.clone())
         } else if let Some(active) = active {
-            format!("Connected to {}", active.label)
+            fl!("shell-wifi-connected", network = active.label.clone())
         } else if self.snapshot.scanning {
-            "Scanning for Wi-Fi networks".to_string()
+            fl!("shell-wifi-scanning-networks")
         } else {
-            "Choose a Wi-Fi network".to_string()
+            fl!("shell-wifi-choose")
         };
 
         let mut document = ExternalPanelDocument {
             elements: vec![
                 ExternalPanelElement::Status {
-                    title: "Wi-Fi".into(),
+                    title: fl!("shell-wifi-title"),
                     message,
                     severity: ExternalPanelSeverity::Info,
                 },
@@ -501,13 +500,16 @@ where
         if self.connecting_network_id.is_none() && self.radio.is_some() {
             let mut buttons = Vec::new();
             if active.is_some() {
-                buttons.push(("disconnect", "Disconnect".to_owned()));
+                buttons.push(("disconnect", fl!("shell-wifi-disconnect")));
             }
             if let Some(network) = self.forgettable() {
-                buttons.push(("forget", format!("Forget {}", network.label)));
+                buttons.push((
+                    "forget",
+                    fl!("shell-wifi-forget", network = network.label.clone()),
+                ));
             }
             if self.radio == Some(true) {
-                buttons.push(("radio", "Turn Wi-Fi off".to_owned()));
+                buttons.push(("radio", fl!("shell-wifi-turn-off")));
             }
             for (index, (id, label)) in buttons.into_iter().enumerate() {
                 document.elements.insert(
@@ -530,8 +532,8 @@ where
         document.elements.insert(
             1,
             ExternalPanelElement::Status {
-                title: "Wi-Fi problem".into(),
-                message: user_message_for_error(category).into(),
+                title: fl!("shell-wifi-problem"),
+                message: user_message_for_error(category),
                 severity: ExternalPanelSeverity::Error,
             },
         );
@@ -545,20 +547,23 @@ where
         ExternalPanelDocument {
             elements: vec![
                 ExternalPanelElement::Status {
-                    title: "Network Credential".into(),
-                    message: format!("Enter credential for {}", prompt.network.label),
+                    title: fl!("shell-wifi-credential-title"),
+                    message: fl!(
+                        "shell-wifi-credential-prompt",
+                        network = prompt.network.label.clone()
+                    ),
                     severity: ExternalPanelSeverity::Info,
                 },
                 ExternalPanelElement::TextInput {
                     id: "credential".into(),
-                    label: "Network credential".into(),
+                    label: fl!("shell-wifi-credential-label"),
                     value: prompt.value.clone(),
                     secret: true,
                     error: prompt.error.clone(),
                 },
                 ExternalPanelElement::Button {
                     id: "connect".into(),
-                    label: "Connect".into(),
+                    label: fl!("shell-wifi-connect"),
                 },
             ],
         }
@@ -602,9 +607,9 @@ where
 fn refresh_label(capabilities: BackendCapabilities, scanning: bool) -> String {
     let _ = capabilities;
     if scanning {
-        "Scanning".into()
+        fl!("shell-wifi-scanning")
     } else {
-        "Refresh".into()
+        fl!("shell-wifi-refresh")
     }
 }
 
@@ -648,33 +653,33 @@ fn compare_network_rows(left: &WifiNetwork, right: &WifiNetwork) -> std::cmp::Or
         .then(left.id.cmp(&right.id))
 }
 
-fn user_message_for_error(category: WifiBackendErrorCategory) -> &'static str {
+fn user_message_for_error(category: WifiBackendErrorCategory) -> String {
     match category {
-        WifiBackendErrorCategory::TargetChanged => "The selected network changed. Select it again.",
-        WifiBackendErrorCategory::NoControl => {
-            "Check that NetworkManager or iwd is running, then try again."
+        WifiBackendErrorCategory::TargetChanged => fl!("shell-wifi-error-target-changed"),
+        WifiBackendErrorCategory::NoControl => fl!("shell-wifi-error-no-control"),
+        WifiBackendErrorCategory::ScanFailed => fl!("shell-wifi-error-scan-failed"),
+        WifiBackendErrorCategory::ConnectionFailed => fl!("shell-wifi-error-connection-failed"),
+        WifiBackendErrorCategory::CredentialRejected => fl!("shell-wifi-error-credential-rejected"),
+        WifiBackendErrorCategory::UnsupportedNetwork => fl!("shell-wifi-error-unsupported"),
+        WifiBackendErrorCategory::AuthorizationRequired => {
+            fl!("shell-wifi-error-authorization-required")
         }
-        WifiBackendErrorCategory::ScanFailed => "Wi-Fi scan failed.",
-        WifiBackendErrorCategory::ConnectionFailed => "Connection failed.",
-        WifiBackendErrorCategory::CredentialRejected => "Network credential was rejected.",
-        WifiBackendErrorCategory::UnsupportedNetwork => "This Wi-Fi network is not supported.",
-        WifiBackendErrorCategory::AuthorizationRequired => "Wi-Fi authorization is required.",
     }
 }
 
+/// "known secured 70%": whether the network is saved, its security and signal.
 fn network_description(network: &WifiNetwork) -> String {
-    let mut parts = Vec::new();
-    if network.known {
-        parts.push("known");
-    }
-    parts.push(match network.security {
+    let security = match network.security {
         WifiSecurity::Open => "open",
         WifiSecurity::Personal => "secured",
         WifiSecurity::Enterprise => "enterprise",
-    });
-    let signal = format!("{}%", network.signal_strength);
-    parts.push(signal.as_str());
-    parts.join(" ")
+    };
+    fl!(
+        "shell-wifi-network-description",
+        known = if network.known { "yes" } else { "no" },
+        security = security,
+        signal = canopa_i18n::format::percent(f64::from(network.signal_strength))
+    )
 }
 
 #[cfg(test)]

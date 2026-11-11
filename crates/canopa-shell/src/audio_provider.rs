@@ -31,10 +31,10 @@ impl AudioPanel {
     ) -> Result<v5::Response, canopa_panel_protocol::ProtocolError> {
         self.actions.clear();
         self.volumes.clear();
-        let mut content = PanelContent::new("Sound");
+        let mut content = PanelContent::new(fl!("shell-audio-title"));
         content.error = error.map(str::to_owned);
         let Some(snapshot) = snapshot else {
-            content.error = Some("Audio is unavailable. Reconnecting…".into());
+            content.error = Some(fl!("shell-audio-unavailable"));
             return self
                 .session
                 .replace(Content::Rich(content), Update::Replace);
@@ -42,18 +42,26 @@ impl AudioPanel {
         for (kind, title, empty) in [
             (
                 DeviceKind::Output,
-                "Speakers and headphones",
-                "No output devices are available.",
+                fl!("shell-audio-outputs"),
+                fl!("shell-audio-no-outputs"),
             ),
             (
                 DeviceKind::Input,
-                "Microphones",
-                "No input devices are available.",
+                fl!("shell-audio-inputs"),
+                fl!("shell-audio-no-inputs"),
             ),
         ] {
             let (volume_label, select_label, default_label) = match kind {
-                DeviceKind::Output => ("Output volume", "Set as output", "Default output"),
-                DeviceKind::Input => ("Input level", "Set as input", "Default input"),
+                DeviceKind::Output => (
+                    fl!("shell-audio-output-volume"),
+                    fl!("shell-audio-set-output"),
+                    fl!("shell-audio-default-output"),
+                ),
+                DeviceKind::Input => (
+                    fl!("shell-audio-input-level"),
+                    fl!("shell-audio-set-input"),
+                    fl!("shell-audio-default-input"),
+                ),
             };
             let mut items = Vec::new();
             let devices = snapshot
@@ -70,10 +78,14 @@ impl AudioPanel {
                 for (key, label, operation) in [
                     (
                         "mute",
-                        if device.muted { "Unmute" } else { "Mute" },
+                        if device.muted {
+                            fl!("shell-audio-unmute")
+                        } else {
+                            fl!("shell-audio-mute")
+                        },
                         DeviceOperation::SetMuted(!device.muted),
                     ),
-                    ("default", select_label, DeviceOperation::SetDefault),
+                    ("default", select_label.clone(), DeviceOperation::SetDefault),
                 ] {
                     if key == "default" && device.is_default {
                         continue;
@@ -83,16 +95,16 @@ impl AudioPanel {
                     actions.push(PanelAction::new(key, label));
                 }
                 let status = match (device.muted, busy) {
-                    (true, true) => Some("Muted · Applying change…"),
-                    (true, false) => Some("Muted"),
-                    (false, true) => Some("Applying change…"),
+                    (true, true) => Some(fl!("shell-audio-muted-applying")),
+                    (true, false) => Some(fl!("shell-audio-muted")),
+                    (false, true) => Some(fl!("shell-audio-applying")),
                     (false, false) => None,
                 };
                 self.volumes.insert(id.clone(), device.id.clone());
                 items.push(PanelItem {
                     slider: Some(canopa_panel_protocol::PanelSlider {
                         key: "volume".into(),
-                        label: volume_label.into(),
+                        label: volume_label.clone(),
                         min: 0,
                         max: 100,
                         step: 1,
@@ -101,7 +113,7 @@ impl AudioPanel {
                     }),
                     id,
                     title: device.description.clone(),
-                    body: status.map(str::to_owned),
+                    body: status,
                     attribution: None,
                     styled_body: None,
                     rich_body: None,
@@ -109,7 +121,7 @@ impl AudioPanel {
                         .is_default
                         .then(|| canopa_panel_protocol::PanelMetadata {
                             key: "default".into(),
-                            label: default_label.into(),
+                            label: default_label.clone(),
                             value: String::new(),
                         })
                         .into_iter()
@@ -121,7 +133,7 @@ impl AudioPanel {
                 items.push(PanelItem {
                     slider: None,
                     id: format!("empty-{kind:?}"),
-                    title: empty.into(),
+                    title: empty.clone(),
                     body: None,
                     attribution: None,
                     styled_body: None,
@@ -132,7 +144,7 @@ impl AudioPanel {
             }
             content.sections.push(PanelSection {
                 id: format!("{kind:?}"),
-                title: title.into(),
+                title: title.clone(),
                 icon: None,
                 items,
                 controls: Vec::new(),
@@ -246,7 +258,7 @@ pub async fn run(
             } else if queued.len() < 8 {
                 queued.push_back((id, operation));
             } else {
-                error = Some("Too many audio changes are pending. Please try again.".into());
+                error = Some(fl!("shell-audio-too-many-changes"));
                 write(
                     &mut output,
                     panel.publish(current.as_ref(), !pending_volume, error.as_deref())?,
