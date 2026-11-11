@@ -50,6 +50,20 @@ fn quoted(name: &std::ffi::OsStr) -> String {
 }
 
 impl Dialog {
+    /// A confirmation for `paths` without an operation service, for view tests.
+    #[cfg(test)]
+    pub fn for_selection(window: window::Id, owner: window::Id, paths: Vec<PathBuf>) -> Self {
+        Self {
+            window,
+            owner,
+            target: Target::Selection {
+                origin: None,
+                paths,
+                unavailable: false,
+            },
+        }
+    }
+
     pub fn title(&self) -> &'static str {
         match &self.target {
             Target::Selection {

@@ -1,5 +1,7 @@
 //! Iced application windows. Filesystem snapshots stay in the shared core and
 //! are prepared on workers; UI messages carry a tab identity and scan revision.
+#[cfg(all(test, feature = "accessibility-testing"))]
+mod accessibility_tests;
 mod accessibility_ui;
 mod action_editor;
 mod actions_ui;
