@@ -392,6 +392,7 @@ enum Message {
     NewBrowser(window::Id),
     Action(actions_ui::Event),
     IconsReady(Arc<icons_ui::Prepared>),
+    TypesReady(Arc<icons_ui::PreparedTypes>),
     FolderView(folder_views::Event),
     Trash(trash_ui::Event),
     Recovery(recovery_ui::Event),
@@ -854,6 +855,10 @@ impl Desktop {
                 self.close_file_question(id)
             }
             Message::IconsReady(prepared) => self.icons.completed(&prepared),
+            Message::TypesReady(prepared) => {
+                self.icons.types_completed(&prepared);
+                Task::none()
+            }
             Message::FolderView(event) => self.folder_view_event(event),
             Message::Action(event) => self.action_event(event),
             Message::Job(event) => self.job_event(event),
@@ -988,7 +993,36 @@ impl Desktop {
         self.sync_folder_options();
         self.sync_folder_watch();
         let drag = self.poll_drag();
-        Task::batch([task, self.sync_previews(), drag])
+        let types = self.sync_file_types();
+        Task::batch([task, self.sync_previews(), drag, types])
+    }
+
+    /// Ask for types and type icons when any shown listing was replaced. Listing
+    /// identity is its entry buffer and length, so unchanged updates cost O(tabs).
+    fn sync_file_types(&mut self) -> Task<Message> {
+        use std::hash::{Hash, Hasher};
+        let mut lists: Vec<&[crate::browse::Entry]> = Vec::new();
+        for window in self.windows.values() {
+            for tab in &window.tabs {
+                if let Some(browser) = &tab.browser {
+                    lists.push(&browser.directory().entries);
+                    if let Some(search) = browser.search() {
+                        lists.push(&search.entries);
+                    }
+                }
+                for column in tab.columns.values() {
+                    if let Some(Ok(directory)) = &column.result {
+                        lists.push(&directory.entries);
+                    }
+                }
+            }
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for list in &lists {
+            (list.as_ptr() as usize, list.len()).hash(&mut hasher);
+        }
+        self.icons
+            .sync_types(hasher.finish(), lists.into_iter().flatten())
     }
 
     fn update_browser(&mut self, message: Message) -> Task<Message> {
@@ -1010,7 +1044,10 @@ impl Desktop {
             Message::ConfigurationPoll => return self.configuration_poll(),
             Message::ActionEditor(_) | Message::Preferences(_) | Message::CapturedKey(..) => {}
             Message::Job(_) => {}
-            Message::Action(_) | Message::IconsReady(_) | Message::FolderView(_) => {}
+            Message::Action(_)
+            | Message::IconsReady(_)
+            | Message::TypesReady(_)
+            | Message::FolderView(_) => {}
             Message::NewBrowser(id) => {
                 if self.operations_window == Some(id) {
                     return self.new_window(vec![self.home.clone()]);

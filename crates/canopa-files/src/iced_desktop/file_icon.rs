@@ -1,5 +1,8 @@
-//! Themed file symbols with small built-in vector fallbacks; never thumbnails.
+//! Built-in file glyphs: the fallback when the icon theme has no icon for an
+//! entry's shared-mime-info type. Type icons come from `icons_ui`; thumbnails
+//! are not prepared yet (see `icons_ui::FileVisual`).
 use crate::browse::{Entry, EntryKind};
+use canopa_file::mime::{self, MimeDatabase};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum FileIcon {
     Folder,
@@ -22,31 +25,32 @@ impl FileIcon {
         Self::Table,
         Self::Archive,
     ];
+    /// Before an entry's type is known: only what the listing itself says.
     pub fn for_entry(entry: &Entry) -> Self {
-        if entry.kind == EntryKind::Symlink {
-            Self::Link
-        } else if entry.is_directory() {
+        if entry.is_directory() {
             Self::Folder
-        } else if entry.kind == EntryKind::File {
-            match entry
-                .path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .map(str::to_ascii_lowercase)
-                .as_deref()
-            {
-                Some(
-                    "png" | "jpg" | "jpeg" | "webp" | "svg" | "gif" | "avif" | "heic" | "tif"
-                    | "tiff" | "bmp",
-                ) => Self::Image,
-                Some("pdf") => Self::Pdf,
-                Some("md" | "markdown") => Self::Markdown,
-                Some("csv" | "tsv" | "ods" | "xls" | "xlsx") => Self::Table,
-                Some("zip" | "gz" | "tar" | "7z" | "xz" | "zst" | "bz2" | "rar") => Self::Archive,
-                _ => Self::File,
-            }
+        } else if entry.kind == EntryKind::Symlink {
+            Self::Link
         } else {
             Self::File
+        }
+    }
+    /// The glyph category of a detected type, through its generic icon.
+    pub fn for_type(mime: &str, database: Option<&MimeDatabase>) -> Self {
+        let generic = database
+            .map(|database| database.icon_names(mime))
+            .and_then(|names| names.last().cloned())
+            .unwrap_or_default();
+        match mime {
+            mime::DIRECTORY => Self::Folder,
+            "inode/symlink" => Self::Link,
+            "application/pdf" => Self::Pdf,
+            "text/markdown" => Self::Markdown,
+            "text/csv" | "text/tab-separated-values" => Self::Table,
+            _ if mime.starts_with("image/") => Self::Image,
+            _ if generic == "x-office-spreadsheet" => Self::Table,
+            _ if generic == "package-x-generic" => Self::Archive,
+            _ => Self::File,
         }
     }
     pub fn name(self) -> &'static str {
