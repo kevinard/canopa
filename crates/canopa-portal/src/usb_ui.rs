@@ -1,4 +1,5 @@
 //! Iced device consent. Only explicitly selected devices can be granted.
+use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::{
     usb::{self, Grant, SelectedDevice, UsbRequest},
     worker::run as worker,
@@ -35,7 +36,7 @@ pub fn run(
                 .parent_window
                 .strip_prefix("wayland:")
                 .unwrap_or_default();
-            let (_, opening) = window::open_dialog(parent.to_owned(), true, settings);
+            let (window, opening) = window::open_dialog(parent.to_owned(), true, settings);
             let app_id = request.app_id.clone();
             let metadata = Task::perform(
                 worker(move || {
@@ -64,6 +65,8 @@ pub fn run(
                     theme: theme.clone(),
                     completed: false,
                     output: output.clone(),
+                    window,
+                    accessibility: Some(a11y::Accessibility::new("canopa-usb", WINDOW_KEY)),
                 },
                 Task::batch([opening.map(|_| Message::Opened), metadata]),
             )
@@ -71,14 +74,25 @@ pub fn run(
         Dialog::update,
         Dialog::view,
     )
-    .title(|_: &Dialog, _| "USB device access — Canopa".to_owned())
+    .title(|_: &Dialog, _| WINDOW_TITLE.to_owned())
     .theme(|app: &Dialog, _| app.theme.clone())
-    .subscription(|_: &Dialog| iced::event::listen().map(Message::Event))
+    .subscription(|app: &Dialog| {
+        let input = iced::event::listen().map(Message::Event);
+        match &app.accessibility {
+            Some(state) => iced::Subscription::batch([input, state.bridge.subscription()]),
+            None => input,
+        }
+    })
     .default_font(font)
     .run()
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     Ok(result.lock().expect("USB consent result").take())
 }
+
+/// The AT-SPI window of the device question and its title.
+const WINDOW_KEY: &str = "usb";
+const WINDOW_TITLE: &str = "USB device access — Canopa";
+const QUESTION: &str = "Allow USB device access?";
 
 struct Dialog {
     request: UsbRequest,
@@ -88,6 +102,8 @@ struct Dialog {
     theme: Theme,
     completed: bool,
     output: Arc<Mutex<Option<Grant>>>,
+    window: window::Id,
+    accessibility: Option<a11y::Accessibility<Message>>,
 }
 #[derive(Clone, Debug)]
 enum Message {
@@ -99,14 +115,42 @@ enum Message {
     Allow,
     Deny,
     Event(Event),
+    Accessibility(canopa_ui::accessibility::Event<Message>),
 }
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: canopa_ui::accessibility::Event<Self>) -> Self {
+        Self::Accessibility(event)
+    }
+}
+
 impl Dialog {
+    /// Handle a message, then refresh the accessibility tree if one is read.
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Message::Accessibility(event) = message {
+            return a11y::update(&mut self.accessibility, event);
+        }
+        let task = self.apply(message);
+        a11y::refresh(&mut self.accessibility, task)
+    }
+    fn exit(&mut self) -> Task<Message> {
+        self.completed = true;
+        if let Some(state) = &mut self.accessibility {
+            state.close();
+        }
+        iced::exit()
+    }
+    fn apply(&mut self, message: Message) -> Task<Message> {
         if self.completed {
             return Task::none();
         }
         match message {
-            Message::Opened => {}
+            Message::Opened => {
+                let window = self.window;
+                if let Some(state) = &mut self.accessibility {
+                    state.opened(WINDOW_TITLE, window);
+                }
+            }
             Message::Name(name) => self.name = name,
             Message::Selected(index, value) => {
                 if let Some(selected) = self.selected.get_mut(index) {
@@ -142,25 +186,23 @@ impl Dialog {
                         })
                         .collect(),
                 });
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Deny | Message::Event(Event::Window(window::Event::CloseRequested)) => {
-                self.completed = true;
-                return iced::exit();
+                return self.exit();
             }
             Message::Event(Event::Keyboard(keyboard::Event::KeyPressed {
                 key, modifiers, ..
             })) => {
                 if key == keyboard::Key::Named(keyboard::key::Named::Escape) {
-                    return self.update(Message::Deny);
+                    return self.apply(Message::Deny);
                 }
                 if modifiers.alt()
                     && let keyboard::Key::Character(value) = key
                 {
                     match value.as_str() {
-                        "s" | "S" => return self.update(Message::SelectAll),
-                        "a" | "A" => return self.update(Message::Allow),
+                        "s" | "S" => return self.apply(Message::SelectAll),
+                        "a" | "A" => return self.apply(Message::Allow),
                         "r" | "R" => {
                             for (index, selected) in self.selected.iter().enumerate() {
                                 if *selected {
@@ -185,7 +227,7 @@ impl Dialog {
             }
         });
         let mut body = column![
-            text("Allow USB device access?").size(24),
+            semantic(Node::heading(QUESTION, 1), text(QUESTION).size(24)),
             text(requester).size(18)
         ]
         .spacing(12);
@@ -194,18 +236,29 @@ impl Dialog {
         }
         body = body.push(text("Choose the devices this app may access.").size(14));
         let selected = self.selected.iter().filter(|selected| **selected).count();
+        let count = format!("{selected} of {} selected", self.selected.len());
+        let select_all = if selected == self.selected.len() {
+            "Clear selection"
+        } else {
+            "Select all"
+        };
         body = body.push(
             row![
-                text(format!("{selected} of {} selected", self.selected.len())).width(Length::Fill),
-                canopa_ui::action(
-                    text(if selected == self.selected.len() {
-                        "Clear selection (Alt+S)"
-                    } else {
-                        "Select all (Alt+S)"
-                    }),
-                    Some(Message::SelectAll),
-                    canopa_ui::Action::Quiet,
-                    false
+                semantic(
+                    Node::status(&count).key("usb-selection"),
+                    text(count.clone()).width(Length::Fill)
+                ),
+                semantic(
+                    Node::button(select_all)
+                        .key("usb-select-all")
+                        .shortcut("Alt+S")
+                        .on_click(Some(Message::SelectAll)),
+                    canopa_ui::action(
+                        text(format!("{select_all} (Alt+S)")),
+                        Some(Message::SelectAll),
+                        canopa_ui::Action::Quiet,
+                        false
+                    )
                 )
             ]
             .spacing(12)
@@ -213,11 +266,18 @@ impl Dialog {
         );
         let mut devices = column![].spacing(12);
         for (index, device) in self.request.devices.iter().enumerate() {
+            let key = format!("usb-device-{}", device.id.escape_default());
             let mut information = column![
-                checkbox(self.selected[index])
-                    .label(&device.name)
-                    .style(canopa_ui::checkbox_style)
-                    .on_toggle(move |value| Message::Selected(index, value)),
+                a11y::check_box(
+                    format!("{key}-selected"),
+                    &device.name,
+                    self.selected[index],
+                    Some(Message::Selected(index, !self.selected[index])),
+                    checkbox(self.selected[index])
+                        .label(&device.name)
+                        .style(canopa_ui::checkbox_style)
+                        .on_toggle(move |value| Message::Selected(index, value)),
+                ),
                 text(if device.writable {
                     "Read-write access requested"
                 } else {
@@ -247,19 +307,24 @@ impl Dialog {
                 );
             }
             if device.writable {
-                information = information.push(
+                information = information.push(a11y::check_box(
+                    format!("{key}-read-only"),
+                    "Use read-only access instead",
+                    !self.writable[index],
+                    Some(Message::ReadOnly(index, self.writable[index])),
                     checkbox(!self.writable[index])
                         .label("Use read-only access instead")
                         .style(canopa_ui::checkbox_style)
                         .on_toggle(move |value| Message::ReadOnly(index, value)),
-                );
+                ));
             }
-            devices = devices.push(
+            devices = devices.push(semantic(
+                Node::group(&device.name).key(key),
                 container(information)
                     .padding(12)
                     .width(Length::Fill)
                     .style(canopa_ui::surface),
-            );
+            ));
         }
         body = body.push(scrollable(devices).height(Length::Fill));
         body = body.push(
@@ -267,30 +332,51 @@ impl Dialog {
                 .size(12)
                 .style(canopa_ui::muted),
         );
+        let allow = (selected != 0).then_some(Message::Allow);
         body = body.push(
             row![
-                canopa_ui::action(
-                    text("Deny"),
+                a11y::button(
+                    "usb-deny",
+                    "Deny",
                     Some(Message::Deny),
-                    canopa_ui::Action::Quiet,
-                    false
+                    canopa_ui::action(
+                        text("Deny"),
+                        Some(Message::Deny),
+                        canopa_ui::Action::Quiet,
+                        false
+                    )
+                    .width(Length::Fill)
+                ),
+                semantic(
+                    Node::button("Allow selected")
+                        .key("usb-allow")
+                        .shortcut("Alt+A")
+                        .disabled(allow.is_none())
+                        .on_click(allow.clone()),
+                    canopa_ui::action(
+                        text("Allow selected (Alt+A)"),
+                        allow,
+                        canopa_ui::Action::Normal,
+                        false
+                    )
+                    .width(Length::Fill)
                 )
-                .width(Length::Fill),
-                canopa_ui::action(
-                    text("Allow selected (Alt+A)"),
-                    (selected != 0).then_some(Message::Allow),
-                    canopa_ui::Action::Normal,
-                    false
-                )
-                .width(Length::Fill)
             ]
             .spacing(12),
         );
-        container(body)
-            .padding(24)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        a11y::dialog_window(
+            WINDOW_KEY,
+            WINDOW_TITLE,
+            Node::alert_dialog(QUESTION)
+                .key("usb-dialog")
+                .description(format!(
+                    "{requester}. Choose the devices this app may access."
+                )),
+            container(body)
+                .padding(24)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(canopa_ui::surface),
+        )
     }
 }
