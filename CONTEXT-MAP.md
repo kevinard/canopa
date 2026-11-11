@@ -57,6 +57,7 @@ The supported system installation has a dedicated session.
 - [Launcher file actions and Settings pages](docs/adr/0130-launcher-file-actions-and-settings-pages.md)
 - [Unified launcher and search providers](docs/shell/adr/0023-unified-launcher-providers.md)
 - [Shell session actions through logind](docs/shell/adr/0024-session-actions-through-logind.md)
+- [Device keys and the on-screen display](docs/shell/adr/0025-device-keys-and-on-screen-display.md)
 - [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)

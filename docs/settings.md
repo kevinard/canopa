@@ -141,6 +141,11 @@ follow updates again. Edited copies of other default sections stay in `niri.kdl`
 The previous file is kept as `niri.kdl.before-shortcut-changes`. Saving on the
 Shortcuts page does the same.
 
+The volume and microphone keys once ran `wpctl`; they now run Canopa Shell
+device keys, beside new brightness, keyboard-backlight and media keys. At the
+next login, saved changes that name the old `wpctl` actions follow them: a moved
+volume key keeps its key with the new command, and a turned-off key stays off.
+
 ## Personalization
 
 Light/dark appearance and an optional accent update the shared configuration.

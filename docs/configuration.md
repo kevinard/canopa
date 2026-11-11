@@ -179,6 +179,36 @@ Configuration migration does not move or change history, DND, UI-managed permiss
 rules, or other runtime state. See [the architecture decision](adr/0002-shared-configuration.md)
 for ownership and reload guarantees.
 
+## Device keys and on-screen display
+
+Canopa's Niri defaults bind `XF86AudioRaiseVolume`, `XF86AudioLowerVolume`,
+`XF86AudioMute`, `XF86AudioMicMute`, `XF86MonBrightnessUp`/`Down`,
+`XF86KbdBrightnessUp`/`Down`, `XF86KbdLightOnOff` and `XF86AudioPlay`/`Pause`/
+`Stop`/`Next`/`Prev` to `canopa-shell volume up` and similar commands. Volume,
+brightness and media keys also work while the screen is locked. Rebind them on
+the Settings **Shortcuts** page or in `niri-custom.kdl`; the command list is in
+the [shell options](../crates/canopa-shell/README.md#device-keys-and-on-screen-display).
+Saved shortcut changes from the release that used `wpctl` are carried over at
+the next login.
+
+The optional `osd` block inside `shell` sets the key steps and the display:
+
+```kdl
+shell {
+    osd {
+        enabled #true        // #false: keys work, nothing is shown
+        volume-step 5        // percent per press, 1-100
+        brightness-step 5    // perceptual percent per press, 1-50
+        timeout-ms 1500      // how long the display stays, 500-10000
+    }
+}
+```
+
+Each option may appear once, and the block reloads live. A key's own step
+(`canopa-shell volume up 10`) overrides the configured one. The display honors
+the shared appearance's colors and reduced motion. See
+[Shell ADR 0025](shell/adr/0025-device-keys-and-on-screen-display.md).
+
 ## Clock formats
 
 Clock modules accept Chrono output directives in `time-format` (default `%H:%M`)

@@ -276,6 +276,45 @@ both companions. Use one notification daemon in the session. See the
 behavior. Canopa Shell can still be launched directly from Niri's startup configuration;
 use one startup mechanism for each process.
 
+## Device keys and on-screen display
+
+The session's Niri defaults bind the volume, microphone, brightness,
+keyboard-backlight and media keys to Canopa Shell commands. The Shell shows the
+new level for a moment in a small display above the bottom of the focused output:
+an icon, the device, a level bar and the value. Repeated presses update it in
+place. It also appears when another application, or the firmware, changes the
+volume, the default output, microphone mute or the display brightness, but never
+at login. It takes no keyboard focus, lets clicks through, follows the shared
+appearance, skips its fade-out with reduced motion and is announced to screen
+readers.
+
+```sh
+canopa-shell volume up [STEP]       # also: down [STEP], mute
+canopa-shell microphone mute
+canopa-shell brightness up [STEP]   # also: down [STEP]
+canopa-shell keyboard-backlight up  # also: down, toggle
+canopa-shell media play-pause       # also: play, pause, stop, next, previous
+```
+
+Volume goes through the audio server and stops at 100 %; raising it unmutes.
+Brightness goes through logind without root, in perceptual steps that never go
+below 1 % of the range. Media keys control the player selected in the media
+module, or the playing one. Without a running Shell the commands still work,
+without the display. Steps and the timeout are set in an optional `osd` block:
+
+```kdl
+shell {
+    osd {
+        // enabled #false hides the display; the keys still work.
+        volume-step 5        // 1-100, default 5
+        brightness-step 5    // 1-50, default 5
+        timeout-ms 1500      // 500-10000, default 1500
+    }
+}
+```
+
+See [ADR 0025](../../docs/shell/adr/0025-device-keys-and-on-screen-display.md).
+
 ## Wi-Fi and external panels
 
 The optional `media` module displays the selected MPRIS player and opens a panel

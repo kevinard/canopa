@@ -31,6 +31,12 @@ bar and panel. The pin lasts until you choose Automatic, the player disappears, 
 the shell's media connection restarts. Paused and stopped players remain accessible;
 with no players the bar module hides. Only running MPRIS players are discovered.
 
+Media keys (`XF86AudioPlay`, `Pause`, `Stop`, `Next`, `Prev`, bound to
+`canopa-shell media play-pause` and similar) control the same selected player, so
+a pinned player keeps receiving them. Without a `media` module they control the
+player Automatic would choose. Play/Pause pauses a playing player and plays any
+other. They show nothing on screen and do nothing when no player is open.
+
 The panel follows metadata and capability changes. Unsupported controls are omitted.
 Failed operations show an error. If a player exits or the track changes before a
 control is handled, the operation is rejected rather than sent to a replacement

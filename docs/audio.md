@@ -27,7 +27,13 @@ service. Install `canopa-audio-provider` beside `canopa-shell` or on PATH. No `p
 or `wpctl` executable is required for production controls. Microphone discovery
 reads device information; it does not record audio.
 
-Bar scrolling and panel adjustments use the same channel-volume policy. Relative
+Volume and microphone keys (`canopa-shell volume up|down|mute`,
+`canopa-shell microphone mute`) change the default device through the same
+client and show the result in the Shell's on-screen display, which also follows
+outside changes to the default devices. Raising with a key also unmutes. See
+[device keys](../crates/canopa-shell/README.md#device-keys-and-on-screen-display).
+
+Bar scrolling, keys and panel adjustments use the same channel-volume policy. Relative
 changes preserve channel proportions and mute state. Increasing a device whose
 loudest channel is already at or above 100% leaves it unchanged; lowering or
 setting its volume returns it to the 0–100% control range.

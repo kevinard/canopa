@@ -33,3 +33,12 @@ the user edited stay in `niri.kdl` after the include so they keep overriding the
 shipped values. The previous `niri.kdl` is saved as
 `niri.kdl.before-shortcut-changes`. A top-level binding block that is not a
 recognizable copy is never rewritten.
+
+When a release replaces a shipped action, Settings keeps a list of the retired
+action and its replacement. Once the shipped defaults have the replacement and
+no longer the old action, saved changes and migrated copies that still name the
+old action follow it: a moved binding keeps its key with the new action, a
+turned-off one stays off, and a carried binding that now equals a shipped one is
+inherited. Bindings whose action the user wrote themselves are kept as written.
+The first retired actions are the `wpctl` volume keys, replaced by Canopa Shell
+device keys ([Shell ADR 0025](../shell/adr/0025-device-keys-and-on-screen-display.md)).

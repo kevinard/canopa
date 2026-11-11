@@ -202,6 +202,32 @@ selection and supported transport controls. It shares the shell's selected playe
 through the source-owned session-bus interface. See [ADR 0018](adr/0018-mpris-media-controls.md).
 _Avoid_: Playback engine, media daemon
 
+### Device keys
+
+**Device Key**:
+A volume, microphone, brightness, keyboard-backlight or media key, run as a
+`canopa-shell` command that the compositor binds. The running Shell executes it
+and shows an **Indicator**; without a Shell the command runs it alone. See
+[ADR 0025](adr/0025-device-keys-and-on-screen-display.md).
+_Avoid_: Hotkey, media key when the term includes volume and brightness
+
+**On-screen Display (OSD)**:
+The passive overlay surface on the focused **Output** that shows one
+**Indicator**. It is not part of the **Foreground**: it takes no keyboard focus,
+lets pointer input through and never dismisses a **Panel**.
+_Avoid_: Popup, notification, banner
+
+**Indicator**:
+What the **On-screen Display** shows for one channel (volume, microphone,
+brightness, keyboard brightness): an icon, the device, a level and a value, or
+"Unavailable". A new **Indicator** replaces the visible one.
+_Avoid_: Toast, level popup
+
+**Outside Change**:
+A level change the Shell did not make, from another application or the firmware.
+It shows an **Indicator** once it settles; the first reading is only a baseline.
+_Avoid_: External event when the term means a key press
+
 ### Network
 
 **Network Status Integration**:
@@ -666,6 +692,13 @@ _Avoid_: Unavailable module, runtime failure
 - The **Media Panel Provider** changes that shared selection and exposes only supported controls.
 - Playback controls target the captured player owner and track; they never substitute another player.
 - Existing players own media playback; an empty player list produces an **Empty Module**.
+- Media **Device Keys** control the same selected player, or the automatic choice without a **Media Module**.
+
+### Device keys
+
+- One **Indicator** is visible at a time; a **Device Key** press replaces it and restarts its timeout.
+- An **Outside Change** never shows at startup, and a press's own echo never shows twice.
+- Services own the levels: audio through the Pulse-protocol server, brightness through logind, media through MPRIS.
 
 ### Network
 
