@@ -18,6 +18,7 @@ desktop = [
     "dep:canopa-config",
     "dep:canopa-theme",
     "dep:canopa-ui",
+    "canopa-ui/icons",
     "dep:accesskit",
     "dep:accesskit_unix",
     "dep:image",

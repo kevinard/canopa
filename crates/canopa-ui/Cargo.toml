@@ -5,6 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Iced handles for icons prepared by canopa-assets.
+icons = ["dep:canopa-assets"]
+
 [dependencies]
+canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-theme.workspace = true
 iced.workspace = true

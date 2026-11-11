@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [features]
 default = ["gui", "audio"]
-gui = ["dep:canopa-assets", "dep:canopa-ui", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols"]
+gui = ["dep:canopa-apps", "dep:canopa-assets", "dep:canopa-ui", "canopa-ui/icons", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols"]
 audio = ["dep:rodio"]
 
 [[test]]
@@ -20,6 +20,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [dependencies]
+canopa-apps = { workspace = true, optional = true }
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-notify-client.workspace = true
 miette.workspace = true

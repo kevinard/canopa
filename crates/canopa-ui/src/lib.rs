@@ -1,5 +1,7 @@
 //! Shared Iced visual treatment. Callers retain events, focus, identity and accessibility trees.
 mod customization;
+#[cfg(feature = "icons")]
+pub mod icons;
 pub mod panel;
 mod scroll_speed;
 pub use canopa_theme::metrics;
