@@ -27,6 +27,7 @@ pub struct DesktopEnvironment {
     names: Vec<String>,
     known: bool,
     locales: Vec<String>,
+    search_path: Vec<PathBuf>,
 }
 
 impl DesktopEnvironment {
@@ -35,7 +36,14 @@ impl DesktopEnvironment {
             names: Vec::new(),
             known: false,
             locales: Vec::new(),
+            search_path: process_search_path(),
         }
+    }
+
+    /// Directories searched for `TryExec` programs. Defaults to this process's `PATH`.
+    pub fn with_search_path(mut self, search_path: Vec<PathBuf>) -> Self {
+        self.search_path = search_path;
+        self
     }
 
     pub fn current() -> Self {
@@ -69,6 +77,7 @@ impl DesktopEnvironment {
                 .collect(),
             known: true,
             locales: Vec::new(),
+            search_path: process_search_path(),
         }
     }
 
@@ -193,7 +202,7 @@ fn collect_desktop_entries(
         if file_type.is_dir() {
             collect_desktop_entries(root, &path, entries)?;
         } else if path.extension().and_then(|value| value.to_str()) == Some("desktop") {
-            let body = match canopa_file::read_bounded(&path, 256 * 1024)
+            let body = match canopa_file::read_bounded(&path, MAX_ENTRY_BYTES)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())
             {
@@ -215,6 +224,155 @@ fn collect_desktop_entries(
     Ok(())
 }
 
+const MAX_ENTRY_BYTES: usize = 256 * 1024;
+
+/// Programs that `gio launch` (GLib 2.90) tries, in this order, to run a
+/// `Terminal=true` entry. `xdg-terminal-exec` opens the user's preferred terminal.
+pub const TERMINAL_LAUNCHERS: &[&str] = &[
+    "xdg-terminal-exec",
+    "ghostty",
+    "ptyxis",
+    "app.devsuite.Ptyxis",
+    "gnome-terminal",
+    "mate-terminal",
+    "xfce4-terminal",
+    "tilix",
+    "konsole",
+    "nxterm",
+    "color-xterm",
+    "rxvt",
+    "dtterm",
+    "xterm",
+];
+
+/// Why a desktop entry cannot start. The text completes "Could not start <name>: ".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchProblem {
+    /// The entry can no longer be read, or no longer describes an application.
+    EntryUnavailable,
+    /// The `Exec` line cannot be parsed.
+    InvalidCommand,
+    /// `TryExec` or the `Exec` program is not an executable file on the search path.
+    MissingProgram(String),
+    /// A `Terminal=true` entry, and none of [`TERMINAL_LAUNCHERS`] is installed.
+    NoTerminal,
+}
+
+impl std::fmt::Display for LaunchProblem {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EntryUnavailable => formatter.write_str("its desktop entry is no longer available"),
+            Self::InvalidCommand => formatter.write_str("its desktop entry has an invalid command"),
+            Self::MissingProgram(program) => write!(formatter, "“{program}” is not installed"),
+            Self::NoTerminal => formatter.write_str(
+                "it runs in a terminal and no terminal launcher is installed; install xdg-terminal-exec",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LaunchProblem {}
+
+/// Rereads `app`'s entry and checks what `gio launch` would need, because the
+/// compositor accepts a spawn before the program can fail where nobody sees it.
+/// D-Bus-activatable entries are checked only for `TryExec`.
+pub fn check_launch(
+    app: &DesktopApplication,
+    search_path: &[PathBuf],
+) -> Result<(), LaunchProblem> {
+    let body = canopa_file::read_bounded(&app.desktop_file, MAX_ENTRY_BYTES)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or(LaunchProblem::EntryUnavailable)?;
+    check_launch_entry(&body, search_path)
+}
+
+/// [`check_launch`] for an entry body that is already in memory.
+pub fn check_launch_entry(body: &str, search_path: &[PathBuf]) -> Result<(), LaunchProblem> {
+    let fields = parse_desktop_entry_fields(body);
+    if fields.get("Type").map(String::as_str) != Some("Application") {
+        return Err(LaunchProblem::EntryUnavailable);
+    }
+    if let Some(try_exec) = optional_non_empty_field(&fields, "TryExec") {
+        let try_exec = unescape_string(&try_exec);
+        if find_program(&try_exec, search_path).is_none() {
+            return Err(LaunchProblem::MissingProgram(try_exec));
+        }
+    }
+    if bool_field(&fields, "DBusActivatable") {
+        return Ok(());
+    }
+    let exec = optional_non_empty_field(&fields, "Exec").ok_or(LaunchProblem::EntryUnavailable)?;
+    let program = exec_program(&unescape_string(&exec)).ok_or(LaunchProblem::InvalidCommand)?;
+    if find_program(&program, search_path).is_none() {
+        return Err(LaunchProblem::MissingProgram(program));
+    }
+    if bool_field(&fields, "Terminal") && terminal_launcher(search_path).is_none() {
+        return Err(LaunchProblem::NoTerminal);
+    }
+    Ok(())
+}
+
+/// The first of [`TERMINAL_LAUNCHERS`] installed on `search_path`.
+pub fn terminal_launcher(search_path: &[PathBuf]) -> Option<PathBuf> {
+    TERMINAL_LAUNCHERS
+        .iter()
+        .find_map(|program| find_program(program, search_path))
+}
+
+/// Resolves `program` like `TryExec`: a name containing `/` is used as a path,
+/// other names are looked up in `search_path`. Only executable files count.
+pub fn find_program(program: &str, search_path: &[PathBuf]) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let executable = |path: &Path| {
+        path.metadata()
+            .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    };
+    if program.is_empty() {
+        return None;
+    }
+    if program.contains('/') {
+        let path = PathBuf::from(program);
+        return executable(&path).then_some(path);
+    }
+    search_path
+        .iter()
+        .map(|dir| dir.join(program))
+        .find(|path| executable(path))
+}
+
+/// This process's `PATH`, without empty entries.
+pub fn process_search_path() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|value| {
+            std::env::split_paths(&value)
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The program of an `Exec` value whose string escapes are already removed:
+/// its first argument, honouring the specification's double-quote rules.
+fn exec_program(exec: &str) -> Option<String> {
+    let exec = exec.trim_start();
+    let mut program = String::new();
+    if let Some(quoted) = exec.strip_prefix('"') {
+        let mut chars = quoted.chars();
+        loop {
+            match chars.next()? {
+                '"' => break,
+                '\\' => program.push(chars.next()?),
+                ch => program.push(ch),
+            }
+        }
+    } else {
+        program.extend(exec.chars().take_while(|ch| !ch.is_whitespace()));
+    }
+    (!program.is_empty()).then_some(program)
+}
+
 fn application_from_entry(
     entry: RawDesktopEntry,
     env: &DesktopEnvironment,
@@ -228,7 +386,14 @@ fn application_from_entry(
         return None;
     }
     if matches!(purpose, Purpose::Launcher) {
-        if bool_field(&fields, "NoDisplay") || bool_field(&fields, "Terminal") {
+        // Terminal=true entries stay visible; launch wraps them in a terminal.
+        if bool_field(&fields, "NoDisplay") {
+            return None;
+        }
+        // The specification lets menus ignore entries whose TryExec is unavailable.
+        if let Some(try_exec) = optional_non_empty_field(&fields, "TryExec")
+            && find_program(&unescape_string(&try_exec), &env.search_path).is_none()
+        {
             return None;
         }
         if let Some(only_show_in) = fields.get("OnlyShowIn")
@@ -424,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn filters_to_launchable_gui_apps_and_sorts_by_name() {
+    fn filters_to_launchable_apps_and_sorts_by_name() {
         let entries = vec![
             entry(
                 "z.desktop",
@@ -452,7 +617,7 @@ mod tests {
 
         assert_eq!(
             apps.iter().map(|app| app.name.as_str()).collect::<Vec<_>>(),
-            vec!["Alpha", "Zed"]
+            vec!["Alpha", "Terminal App", "Zed"]
         );
     }
 
@@ -557,7 +722,13 @@ mod tests {
             ),
         ];
         let environment = DesktopEnvironment::from_current_desktop("niri");
-        assert!(applications_from_entries(entries.clone(), &environment).is_empty());
+        assert_eq!(
+            applications_from_entries(entries.clone(), &environment)
+                .iter()
+                .map(|app| app.id.as_str())
+                .collect::<Vec<_>>(),
+            ["terminal.desktop"]
+        );
         let metadata = choice_metadata_from_entries(entries, &environment);
         assert_eq!(
             metadata
@@ -609,5 +780,159 @@ mod tests {
         .unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "normal.desktop");
+    }
+
+    fn program(dir: &Path, name: &str, mode: u32) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = dir.join(name);
+        std::fs::write(&path, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        path
+    }
+
+    #[test]
+    fn try_exec_hides_entries_whose_program_is_missing_or_not_executable() {
+        let bin = tempfile::tempdir().unwrap();
+        program(bin.path(), "present", 0o755);
+        program(bin.path(), "plain-file", 0o644);
+        let absolute = program(bin.path(), "absolute", 0o755);
+        let env = DesktopEnvironment::unknown().with_search_path(vec![bin.path().into()]);
+        let entries = vec![
+            entry(
+                "present.desktop",
+                "[Desktop Entry]\nType=Application\nName=Present\nExec=present\nTryExec=present\n",
+            ),
+            entry(
+                "missing.desktop",
+                "[Desktop Entry]\nType=Application\nName=Missing\nExec=missing\nTryExec=missing\n",
+            ),
+            entry(
+                "plain.desktop",
+                "[Desktop Entry]\nType=Application\nName=Plain\nExec=plain-file\nTryExec=plain-file\n",
+            ),
+            entry(
+                "absolute.desktop",
+                &format!(
+                    "[Desktop Entry]\nType=Application\nName=Absolute\nExec=x\nTryExec={}\n",
+                    absolute.display()
+                ),
+            ),
+            entry(
+                "gone.desktop",
+                "[Desktop Entry]\nType=Application\nName=Gone\nExec=x\nTryExec=/nonexistent/gone\n",
+            ),
+        ];
+
+        let apps = applications_from_entries(entries, &env);
+
+        assert_eq!(
+            apps.iter().map(|app| app.name.as_str()).collect::<Vec<_>>(),
+            ["Absolute", "Present"]
+        );
+    }
+
+    #[test]
+    fn launch_check_reports_missing_programs_and_invalid_commands() {
+        let bin = tempfile::tempdir().unwrap();
+        program(bin.path(), "editor", 0o755);
+        program(bin.path(), "my app", 0o755);
+        let path = [bin.path().to_path_buf()];
+        let check = |fields: &str| {
+            check_launch_entry(
+                &format!("[Desktop Entry]\nType=Application\nName=App\n{fields}"),
+                &path,
+            )
+        };
+
+        assert_eq!(check("Exec=editor %F\n"), Ok(()));
+        assert_eq!(check("Exec=\"my app\" --flag\n"), Ok(()));
+        assert_eq!(
+            check("Exec=does-not-exist\n"),
+            Err(LaunchProblem::MissingProgram("does-not-exist".into()))
+        );
+        assert_eq!(
+            check("Exec=editor\nTryExec=helper\n"),
+            Err(LaunchProblem::MissingProgram("helper".into()))
+        );
+        assert_eq!(
+            check("Exec=\"unterminated\n"),
+            Err(LaunchProblem::InvalidCommand)
+        );
+        assert_eq!(check("Name=Bus\n"), Err(LaunchProblem::EntryUnavailable));
+        assert_eq!(check("DBusActivatable=true\n"), Ok(()));
+        assert_eq!(
+            check_launch_entry("[Desktop Entry]\nType=Link\nName=Docs\n", &path),
+            Err(LaunchProblem::EntryUnavailable)
+        );
+    }
+
+    #[test]
+    fn terminal_entries_need_a_terminal_launcher() {
+        let bin = tempfile::tempdir().unwrap();
+        program(bin.path(), "htop", 0o755);
+        let path = [bin.path().to_path_buf()];
+        let body = "[Desktop Entry]\nType=Application\nName=htop\nExec=htop\nTerminal=true\n";
+
+        assert_eq!(
+            check_launch_entry(body, &path),
+            Err(LaunchProblem::NoTerminal)
+        );
+        assert!(terminal_launcher(&path).is_none());
+
+        let launcher = program(bin.path(), "xdg-terminal-exec", 0o755);
+        program(bin.path(), "xterm", 0o755);
+        assert_eq!(check_launch_entry(body, &path), Ok(()));
+        assert_eq!(terminal_launcher(&path), Some(launcher));
+    }
+
+    #[test]
+    fn launch_check_rereads_the_entry_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("app.desktop");
+        std::fs::write(
+            &file,
+            "[Desktop Entry]\nType=Application\nName=App\nExec=does-not-exist\n",
+        )
+        .unwrap();
+        let app = DesktopApplication {
+            id: "app.desktop".into(),
+            name: "App".into(),
+            generic_name: None,
+            comment: None,
+            keywords: Vec::new(),
+            icon: None,
+            desktop_file: file.clone(),
+            dbus_activatable: false,
+        };
+
+        assert_eq!(
+            check_launch(&app, &[]),
+            Err(LaunchProblem::MissingProgram("does-not-exist".into()))
+        );
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(
+            check_launch(&app, &[]),
+            Err(LaunchProblem::EntryUnavailable)
+        );
+    }
+
+    #[test]
+    fn exec_program_follows_desktop_entry_quoting() {
+        assert_eq!(exec_program("firefox %u").as_deref(), Some("firefox"));
+        assert_eq!(
+            exec_program("  /usr/bin/app").as_deref(),
+            Some("/usr/bin/app")
+        );
+        assert_eq!(
+            exec_program(r#""/opt/My App/run" %f"#).as_deref(),
+            Some("/opt/My App/run")
+        );
+        assert_eq!(
+            exec_program(r#""say \"hi\"" x"#).as_deref(),
+            Some(r#"say "hi""#)
+        );
+        assert_eq!(exec_program(r#""open"#), None);
+        assert_eq!(exec_program("   "), None);
     }
 }
