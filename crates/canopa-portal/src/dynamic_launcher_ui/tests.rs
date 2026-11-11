@@ -17,6 +17,8 @@ fn dialog(editable: bool) -> Dialog {
         output: Arc::default(),
         invalid: false,
         completed: false,
+        window: window::Id::unique(),
+        accessibility: None,
     }
 }
 
