@@ -65,6 +65,8 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Network locations, phones and cameras through GVFS](adr/0168-network-locations-through-gvfs.md).
+
 - [Thumbnails in a sandbox](adr/0167-sandboxed-thumbnails.md).
 
 - [Open With, programs and desktop-entry trust](adr/0166-open-with-and-launch-trust.md).
