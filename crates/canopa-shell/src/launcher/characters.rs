@@ -1,6 +1,6 @@
 //! Local emoji and symbol results for the Applications Panel Menu.
 use super::{Action, Batch, NamedAction, RESULT_LIMIT, ResultItem};
-use crate::app::panel_search::query_tokens;
+use crate::app::panel_search::{fold, query_tokens};
 use std::sync::OnceLock;
 
 pub(crate) const PROVIDER: usize = usize::MAX - 7;
@@ -41,8 +41,8 @@ fn parse(data: &'static str) -> Vec<Entry> {
             Entry {
                 glyph,
                 name,
-                folded_name: name.to_ascii_lowercase(),
-                keywords: keywords.to_ascii_lowercase(),
+                folded_name: fold(name),
+                keywords: fold(keywords),
             }
         })
         .collect()

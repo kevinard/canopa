@@ -966,7 +966,7 @@ fn result_content<'a>(
     } else {
         &model.search_query
     };
-    let query = query.trim().to_ascii_lowercase();
+    let query = query.trim().to_owned();
     let approximate = is_approximate(target);
     let description = target
         .display_description
@@ -1048,9 +1048,9 @@ fn match_title(
 ) -> Element<'static, Message> {
     use iced::widget::text::Wrapping;
     if query.chars().count() >= 2
-        && let Some(start) = title.to_ascii_lowercase().find(query)
+        && let Some(std::ops::Range { start, end }) =
+            crate::app::panel_search::find_folded(&title, query)
     {
-        let end = start + query.len();
         let spans: [iced::widget::text::Span<'static, (), iced::Font>; 3] = [
             iced::widget::span(title[..start].to_owned()),
             iced::widget::span(title[start..end].to_owned()).font(iced::Font {
