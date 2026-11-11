@@ -12,7 +12,7 @@ move to the previous and next page; Ctrl+Page Up and Ctrl+Page Down do the same
 from anywhere. Ctrl+1 through Ctrl+9 open the first nine pages in sidebar
 order, and Ctrl+S saves the selected page.
 
-Network, Bluetooth, Sound, Date & time, Region & language, About,
+Network, Bluetooth, Sound, Date & time, Region & language, Users, About,
 Notifications and Default applications are live pages: each change applies at once, without Save, and shows its own progress or error with Retry.
 When the service behind a page (NetworkManager, BlueZ, the audio server,
 systemd-timedated, Canopa Notify) is not running, the page says so and reconnects by itself when
@@ -196,6 +196,26 @@ are chosen. System changes ask for permission through the polkit agent.
 
 Only installed locales are offered. An administrator adds one by enabling it
 in `/etc/locale.gen` and running `locale-gen`.
+
+## Users
+
+The Users page follows AccountsService; changes it does not allow you alone
+ask for an administrator's password through the polkit agent.
+
+- **Your account**: your full name, your picture (a PNG or JPEG up to 2 MB and
+  2048 pixels a side, as the login screen shows) and **Change password**,
+  which asks for your current password and checks the system's password rules
+  as `passwd` does.
+- **Other users**: make an account an administrator (the `wheel` group) or a
+  standard account, change its full name or picture, **Ask for a new password
+  at next login**, and **Remove…**, keeping or deleting its files.
+- **Add a user…**: a full name, a user name (suggested from the full name)
+  and whether it is an administrator. The new person chooses a password the
+  first time they log in.
+
+Settings never handles password hashes; see
+[ADR 0143](adr/0143-password-changes-without-hashes.md). Automatic login is not
+offered, because the Canopa login screen does not use it.
 
 ## About
 

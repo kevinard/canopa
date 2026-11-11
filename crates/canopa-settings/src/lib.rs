@@ -26,5 +26,6 @@ pub mod sound;
 pub mod storage;
 #[cfg(feature = "desktop")]
 pub mod ui;
+pub mod users;
 #[cfg(feature = "desktop")]
 mod widget_layouts;
