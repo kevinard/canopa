@@ -527,6 +527,8 @@ impl Peer {
         Command::new(assert_cmd::cargo::cargo_bin!("canopa-settings"))
             .arg("display-guard")
             .args(args)
+            // Messages the test may read stay English on any machine.
+            .env("CANOPA_LANGUAGE", "en")
             .env("NIRI_SOCKET", &self.path)
             .env("NIRI_CONFIG", paths.niri())
             .env("XDG_RUNTIME_DIR", self.path.parent().unwrap())
