@@ -10,7 +10,7 @@ layout {
 hotkey-overlay { skip-at-startup; }
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 binds {
-    Mod+Return { spawn "foot"; }
+    Mod+Return { spawn "xdg-terminal-exec"; }
     Mod+Space { spawn "canopa-shell" "--toggle-menu" "Applications"; }
     Mod+E { spawn "canopa-files"; }
     Mod+Comma { spawn "canopa-settings"; }

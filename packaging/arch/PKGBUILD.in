@@ -62,14 +62,19 @@ package_canopa() {
         fontconfig ttf-dejavu pipewire-pulse wireplumber upower udisks2
         foot xdg-terminal-exec libqalculate coreutils tzdata wl-clipboard xdg-utils
         'xdg-desktop-portal>=1.22.1' xdg-desktop-portal-gtk bubblewrap
-        glib2 json-glib libgudev libpipewire)
+        glib2 json-glib libgudev libpipewire gvfs)
     optdepends=('stasis: automatic idle locking, display power and suspend policy'
         'networkmanager: Wi-Fi management' 'iwd: Wi-Fi management with networkd'
         'bluez: Bluetooth discovery, pairing and device controls'
         'power-profiles-daemon: system power profile selection'
         'xwayland-satellite: legacy X11 applications' 'poppler: PDF previews'
         'gnome-keyring: Secret Service and Secret portal' 'canopa-login: greetd login integration'
-        'geoclue: Location portal')
+        'geoclue: Location portal and automatic time zone'
+        'accountsservice: Settings Users page and per-user language'
+        'cups-pk-helper: adding and removing printers in Settings'
+        'avahi: network printer and server discovery'
+        'gvfs-smb: Windows and Samba shares in Files' 'gvfs-mtp: phones in Files'
+        'gvfs-gphoto2: cameras in Files' 'gvfs-nfs: NFS shares in Files')
     backup=('etc/pam.d/canopa-lock')
     cd "$srcdir/canopa-$pkgver"
     local target="${CANOPA_PACKAGE_TARGET_DIR:-$PWD/target}"
