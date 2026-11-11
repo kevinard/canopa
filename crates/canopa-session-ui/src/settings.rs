@@ -32,7 +32,11 @@ pub struct Settings {
     pub color: Rgb,
     pub solid_color: bool,
     pub font: String,
+    /// A Chrono pattern from `clock-format`; empty follows the language's
+    /// time format.
     pub clock_format: String,
+    /// A Chrono pattern from `date-format`; empty shows the language's long
+    /// weekday and date.
     pub date_format: String,
     pub widgets: Vec<String>,
     pub dim: u8,
@@ -75,8 +79,8 @@ impl Settings {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "Inter".into()),
-            clock_format: "%H:%M".into(),
-            date_format: "%A, %B %-d".into(),
+            clock_format: String::new(),
+            date_format: String::new(),
             widgets: vec![
                 "battery".into(),
                 "media".into(),
@@ -336,6 +340,59 @@ impl Settings {
         }
         Ok(value)
     }
+    /// The clock text: the configured pattern, or the language's time format.
+    pub fn clock_text<Tz: chrono::TimeZone>(&self, now: &chrono::DateTime<Tz>) -> String
+    where
+        Tz::Offset: std::fmt::Display,
+    {
+        if self.clock_format.is_empty() {
+            canopa_i18n::format::time(now.time())
+        } else {
+            now.format(&self.clock_format).to_string()
+        }
+    }
+
+    /// The date text: the configured pattern, or the language's long weekday
+    /// and date (`Wednesday, November 11`, `mercredi 11 novembre`).
+    pub fn date_text<Tz: chrono::TimeZone>(&self, now: &chrono::DateTime<Tz>) -> String
+    where
+        Tz::Offset: std::fmt::Display,
+    {
+        if self.date_format.is_empty() {
+            canopa_i18n::format::weekday_month_day_with(
+                now.date_naive(),
+                canopa_i18n::format::Length::Long,
+            )
+        } else {
+            now.format(&self.date_format).to_string()
+        }
+    }
+
+    /// Whether the clock and date change at most once a minute, so the
+    /// display can wait for the next minute instead of redrawing every second.
+    pub fn minute_resolution(&self) -> bool {
+        use chrono::format::{Fixed, Item, Numeric, StrftimeItems};
+        let coarse = |format: &str| {
+            !StrftimeItems::new(format).any(|item| {
+                matches!(
+                    item,
+                    Item::Numeric(
+                        Numeric::Second | Numeric::Nanosecond | Numeric::Timestamp,
+                        _
+                    ) | Item::Fixed(
+                        Fixed::Nanosecond
+                            | Fixed::Nanosecond3
+                            | Fixed::Nanosecond6
+                            | Fixed::Nanosecond9
+                            | Fixed::RFC2822
+                            | Fixed::RFC3339
+                    )
+                )
+            })
+        };
+        coarse(&self.clock_format) && coarse(&self.date_format)
+    }
+
     pub fn for_output(&self, name: &str) -> &Background {
         self.outputs.get(name).unwrap_or(&self.background)
     }

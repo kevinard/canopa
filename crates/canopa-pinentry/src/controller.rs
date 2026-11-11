@@ -60,8 +60,8 @@ impl Controller {
         let mut ui = SessionView::new(settings, String::new())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
-            heading: "Passphrase required",
-            eyebrow: "SECURE INPUT",
+            heading: "Passphrase required".into(),
+            eyebrow: "SECURE INPUT".into(),
             emblem: Emblem::Key,
             dialog: true,
             choices: &[(7, Emblem::Key), (8, Emblem::Cycle)],
@@ -70,6 +70,7 @@ impl Controller {
             list_actions: false,
             checked_control: None,
             choice_details: Default::default(),
+            account: None,
         });
         ui.secret = Secret::with_capacity(8193);
         ui.message = excerpt(&request.error, 96);
@@ -123,7 +124,8 @@ impl Controller {
             (false, Kind::Pin, false) => "Passphrase required",
             (false, Kind::Confirm, _) => "Confirmation required",
             (false, Kind::Message, _) => "Message",
-        };
+        }
+        .into();
         if self.details.is_none() && !self.request.title.is_empty() {
             self.ui
                 .custom
@@ -166,62 +168,50 @@ impl Controller {
             })
         };
         if let Some(page) = self.details {
-            self.ui.controls.push(Control {
-                id: 2,
-                label: "Back (Enter)".into(),
-            });
-            self.ui.controls.push(Control {
-                id: 4,
-                label: format!("Next page (Page Down) · {} / {}", page + 1, self.pages()),
-            });
-            self.ui.controls.push(Control {
-                id: 5,
-                label: "Previous page (Page Up)".into(),
-            });
+            self.ui.controls.push(Control::new(2, "Back (Enter)"));
+            self.ui.controls.push(Control::new(
+                4,
+                format!("Next page (Page Down) · {} / {}", page + 1, self.pages()),
+            ));
+            self.ui
+                .controls
+                .push(Control::new(5, "Previous page (Page Up)"));
         } else {
-            self.ui.controls.push(Control {
-                id: 2,
-                label: label(&self.request.ok),
-            });
+            self.ui
+                .controls
+                .push(Control::new(2, label(&self.request.ok)));
             if self.request.kind == Kind::Confirm && !self.request.notok.is_empty() {
-                self.ui.controls.push(Control {
-                    id: 6,
-                    label: label(&self.request.notok),
-                });
+                self.ui
+                    .controls
+                    .push(Control::new(6, label(&self.request.notok)));
             }
             if self.request.kind != Kind::Message {
-                self.ui.controls.push(Control {
-                    id: 3,
-                    label: label(&self.request.cancel),
-                });
+                self.ui
+                    .controls
+                    .push(Control::new(3, label(&self.request.cancel)));
             }
-            self.ui.controls.push(Control {
-                id: 4,
-                label: if fingerprint {
+            self.ui.controls.push(Control::new(
+                4,
+                if fingerprint {
                     "Key details"
                 } else {
                     "Request details"
-                }
-                .into(),
-            });
+                },
+            ));
         }
         if self.details.is_none() && self.request.kind == Kind::Pin && self.first.is_none() {
             if let Some(label) = &self.request.generate {
-                self.ui.controls.push(Control {
-                    id: 7,
-                    label: label.clone(),
-                });
+                self.ui.controls.push(Control::new(7, label.clone()));
             }
             if self.generated {
-                self.ui.controls.push(Control {
-                    id: 8,
-                    label: if self.revealed {
+                self.ui.controls.push(Control::new(
+                    8,
+                    if self.revealed {
                         "Hide generated passphrase"
                     } else {
                         "Reveal generated passphrase"
-                    }
-                    .into(),
-                });
+                    },
+                ));
             }
         }
         if let Some(quality) = self.quality
@@ -241,7 +231,7 @@ impl Controller {
         }
         for control in &mut self.ui.controls {
             if control.id == self.selected {
-                control.label = format!("› {}", control.label);
+                control.selected = true;
             }
         }
     }

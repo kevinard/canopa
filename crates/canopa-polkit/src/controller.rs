@@ -2,7 +2,7 @@ use crate::native::{Event, Runtime};
 use canopa_session_ui::{
     settings::Settings,
     view::{
-        AuthenticationPanel, Control, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
+        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
         request_lines, request_summary,
     },
 };
@@ -38,8 +38,8 @@ impl Controller {
         let mut ui = SessionView::new(settings, String::new())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
-            heading: "Authorize system change",
-            eyebrow: "SYSTEM AUTHORIZATION",
+            heading: "Authorize system change".into(),
+            eyebrow: "SYSTEM AUTHORIZATION".into(),
             emblem: Emblem::Shield,
             dialog: true,
             choices: &[(1, Emblem::Cycle)],
@@ -48,6 +48,7 @@ impl Controller {
             list_actions: false,
             checked_control: None,
             choice_details: Default::default(),
+            account: None,
         });
         Ok(Self {
             ui,
@@ -219,7 +220,9 @@ impl Controller {
             "Request details"
         } else {
             "Authorize system change"
-        };
+        }
+        .into();
+        panel.account = None;
         self.ui.custom.clear();
         self.ui.prompt = if self.details.is_none() {
             self.prompt.as_ref().map(|p| Prompt {
@@ -312,9 +315,12 @@ impl Controller {
             String::new()
         };
         self.ui.username = label.clone();
-        let account = format!("Account: {label}");
+        let account = canopa_session_ui::view::account_label(&label);
         if self.uids.len() == 1 && self.details.is_none() {
             self.ui.custom.insert("account".into(), account.clone());
+            if let Some(panel) = self.ui.authentication_panel.as_mut() {
+                panel.account = Some(label.clone());
+            }
             if let Some(pid) = self.subject_pid {
                 self.ui
                     .custom
@@ -331,49 +337,32 @@ impl Controller {
             && self.details.is_none())
         .then_some(2);
         self.ui.controls = vec![
-            Control {
-                id: 2,
-                label: if self.phase == Phase::Failed {
+            Control::new(
+                2,
+                if self.phase == Phase::Failed {
                     "Retry"
                 } else if self.phase == Phase::Prompt && self.details.is_none() {
                     "Authenticate"
                 } else {
                     "Waiting…"
-                }
-                .into(),
-            },
-            Control {
-                id: 3,
-                label: "Cancel".into(),
-            },
-            Control {
-                id: 4,
-                label: "Policy details".into(),
-            },
+                },
+            ),
+            Control::new(3, "Cancel"),
+            Control::new(4, "Policy details"),
         ];
         if self.uids.len() > 1 && self.details.is_none() {
-            self.ui.controls.insert(
-                0,
-                Control {
-                    id: 1,
-                    label: account,
-                },
-            );
+            self.ui
+                .controls
+                .insert(0, Control::new(1, account).with_kind(ControlKind::Identity));
         }
         if let Some(page) = self.details {
             self.ui.controls = vec![
-                Control {
-                    id: 2,
-                    label: "Back to authentication".into(),
-                },
-                Control {
-                    id: 4,
-                    label: format!("Next page ({}/{page_count})", page % page_count + 1),
-                },
-                Control {
-                    id: 3,
-                    label: "Cancel".into(),
-                },
+                Control::new(2, "Back to authentication"),
+                Control::new(
+                    4,
+                    format!("Next page ({}/{page_count})", page % page_count + 1),
+                ),
+                Control::new(3, "Cancel"),
             ];
         }
     }

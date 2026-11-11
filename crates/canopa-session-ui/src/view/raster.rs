@@ -11,6 +11,8 @@ pub enum Emblem {
     Key,
     Cycle,
     Chevron,
+    /// A chevron pointing back, toward the start of a left-to-right line.
+    ChevronBack,
     Accounts,
     Check,
     Display,
@@ -146,6 +148,7 @@ pub(super) fn emblem(
             &[(8.5, 12.), (11., 14.5), (16., 9.)],
         ],
         Emblem::Chevron => &[&[(9., 6.), (15., 12.), (9., 18.)]],
+        Emblem::ChevronBack => &[&[(15., 6.), (9., 12.), (15., 18.)]],
         Emblem::Check => &[&[(5., 12.), (10., 17.), (19., 7.)]],
         Emblem::Display => &[
             &[(3., 4.), (21., 4.), (21., 16.), (3., 16.), (3., 4.)],

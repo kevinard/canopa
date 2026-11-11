@@ -4,7 +4,9 @@ use crate::{
     protocol::{Command, Event, Kind},
 };
 use anyhow::Result;
-use canopa_session_ui::view::{AuthenticationPanel, Control, Emblem, Prompt, SessionView};
+use canopa_session_ui::view::{
+    AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView,
+};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -72,8 +74,8 @@ impl Controller {
         let mut ui = SessionView::new(&config.view, user.clone())?;
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 408.,
-            heading: "Sign in",
-            eyebrow: "CANOPA",
+            heading: "Sign in".into(),
+            eyebrow: "CANOPA".into(),
             emblem: Emblem::Canopa,
             dialog: false,
             choices: &[(1, Emblem::Accounts), (2, Emblem::Cycle)],
@@ -82,6 +84,7 @@ impl Controller {
             list_actions: false,
             checked_control: None,
             choice_details: Default::default(),
+            account: None,
         });
         let mut this = Self {
             ui,
@@ -234,12 +237,13 @@ impl Controller {
             .as_ref()
             .and_then(|chooser| chooser.current)
             .map(|index| FIRST_OPTION + index);
-        (panel.heading, panel.emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
+        let (heading, emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
             Some(Choice::Account) => ("Choose an account", Emblem::Accounts),
             Some(Choice::Desktop) => ("Choose a desktop", Emblem::Display),
             None if self.ui.hide_input => ("Power options", Emblem::Canopa),
             None => ("Sign in", Emblem::Canopa),
         };
+        (panel.heading, panel.emblem) = (heading.into(), emblem);
         if let Some(chooser) = &self.chooser {
             let start = chooser.selected / OPTIONS_PER_PAGE * OPTIONS_PER_PAGE;
             let end = (start + OPTIONS_PER_PAGE).min(chooser.options.len());
@@ -249,36 +253,27 @@ impl Controller {
                 .map(|(offset, option)| {
                     let index = start + offset;
                     let id = FIRST_OPTION + index;
-                    let prefix = if chooser.selected == index {
-                        "› "
-                    } else {
-                        ""
-                    };
                     if let Some(detail) = &option.detail {
                         panel.choice_details.insert(id, detail.clone());
                     }
-                    Control {
-                        id,
-                        label: format!("{prefix}{}", option.title),
-                    }
+                    let mut control = Control::new(id, option.title.clone());
+                    control.selected = chooser.selected == index;
+                    control
                 })
                 .collect();
             if start > 0 {
-                self.ui.controls.push(Control {
-                    id: PREVIOUS_PAGE,
-                    label: "Previous choices".into(),
-                });
+                self.ui
+                    .controls
+                    .push(Control::new(PREVIOUS_PAGE, "Previous choices"));
             }
             if end < chooser.options.len() {
-                self.ui.controls.push(Control {
-                    id: NEXT_PAGE,
-                    label: "More choices".into(),
-                });
+                self.ui
+                    .controls
+                    .push(Control::new(NEXT_PAGE, "More choices"));
             }
-            self.ui.controls.push(Control {
-                id: CLOSE_CHOOSER,
-                label: "← Back to sign in".into(),
-            });
+            self.ui
+                .controls
+                .push(Control::new(CLOSE_CHOOSER, "Back to sign in").with_kind(ControlKind::Back));
             return;
         }
         if let Menu::Choose(action) | Menu::Confirm(action) | Menu::Pending(action) =
@@ -294,14 +289,9 @@ impl Controller {
                             .into();
                     for (id, value) in [(21, Action::Shutdown), (22, Action::Restart)] {
                         if self.power_capabilities.allows(value) {
-                            self.ui.controls.push(Control {
-                                id,
-                                label: format!(
-                                    "{}{}",
-                                    if action == value { "› " } else { "" },
-                                    value.label()
-                                ),
-                            });
+                            let mut control = Control::new(id, value.label());
+                            control.selected = action == value;
+                            self.ui.controls.push(control);
                         }
                     }
                 }
@@ -310,19 +300,16 @@ impl Controller {
                         "{} this computer? Unsaved work in other sessions may be lost.",
                         action.label()
                     );
-                    self.ui.controls.push(Control {
-                        id: 24,
-                        label: format!("Confirm {}", action.label().to_lowercase()),
-                    });
+                    self.ui.controls.push(Control::new(
+                        24,
+                        format!("Confirm {}", action.label().to_lowercase()),
+                    ));
                 }
                 Menu::Pending(_) => self.ui.message = "Requesting system power action…".into(),
                 Menu::Closed => {}
             }
             if !self.ui.busy {
-                self.ui.controls.push(Control {
-                    id: 23,
-                    label: "Back".into(),
-                });
+                self.ui.controls.push(Control::new(23, "Back"));
             }
             return;
         }
@@ -348,37 +335,44 @@ impl Controller {
             (config.avatars_enabled() && self.phase != Phase::User)
                 .then(|| crate::avatars::initials(&self.ui.username)),
         );
+        let (account_label, account_text) = if self.phase == Phase::User && account_is_username {
+            ("Choose account".to_owned(), "Choose account")
+        } else if self.phase == Phase::User {
+            (
+                format!("Choose account · {chooser_label}"),
+                "Choose account",
+            )
+        } else {
+            (
+                format!("Change account · {chooser_label}"),
+                "Change account",
+            )
+        };
         self.ui.controls = vec![
-            Control {
-                id: 1,
-                label: if self.phase == Phase::User && account_is_username {
-                    "Choose account".into()
-                } else if self.phase == Phase::User {
-                    format!("Choose account · {chooser_label}")
-                } else {
-                    format!("Change account · {chooser_label}")
+            Control::new(1, account_label).with_kind(ControlKind::AccountChooser {
+                text: account_text.into(),
+            }),
+            config.sessions.get(self.session).map_or_else(
+                || Control::new(2, "No desktop sessions available"),
+                |session| {
+                    Control::new(2, format!("Desktop: {}", session.label)).with_kind(
+                        ControlKind::DesktopChooser {
+                            session: session.label.clone(),
+                        },
+                    )
                 },
-            },
-            Control {
-                id: 2,
-                label: config
-                    .sessions
-                    .get(self.session)
-                    .map(|s| format!("Desktop: {}", s.label))
-                    .unwrap_or_else(|| "No desktop sessions available".into()),
-            },
-            Control {
-                id: 3,
-                label: match self.phase {
+            ),
+            Control::new(
+                3,
+                match self.phase {
                     Phase::User => "Continue",
                     Phase::Prompt => "Submit response",
                     Phase::Failed => "Retry",
                     Phase::Starting => "Starting session…",
                     Phase::Canceling => "Cancelling…",
                     _ => "Authenticating…",
-                }
-                .into(),
-            },
+                },
+            ),
         ];
         if self.phase == Phase::User && self.accounts.is_empty() {
             self.ui.controls.retain(|control| control.id != 1);
@@ -387,10 +381,7 @@ impl Controller {
             && matches!(self.phase, Phase::User | Phase::Failed)
             && (self.power_capabilities.shutdown || self.power_capabilities.restart)
         {
-            self.ui.controls.push(Control {
-                id: 20,
-                label: "Power   · F10".into(),
-            });
+            self.ui.controls.push(Control::new(20, "Power   · F10"));
         }
     }
     pub fn avatar_request(&self, config: &Config) -> (String, Vec<std::path::PathBuf>) {

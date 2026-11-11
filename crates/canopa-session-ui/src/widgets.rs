@@ -23,7 +23,8 @@ pub fn notification_lines(snapshot: &canopa_notify_client::LockScreenSnapshot) -
         .map(|entry| entry.line())
         .collect();
     if total > shown {
-        lines.push(format!("+{} more", total - shown));
+        let hidden = (total - shown) as u64;
+        lines.push(fl!("session-notifications-more", count = hidden));
     }
     (!lines.is_empty()).then(|| lines.join("\n"))
 }

@@ -233,8 +233,8 @@ lockscreen {
     // output "DP-1" { image "wallpapers/lock-wide.jpg"; }
     dim 65                        // blend wallpaper toward the theme background, 0..100
     font "Inter"                  // defaults to the shared theme's first font family
-    clock-format "%H:%M"
-    date-format "%A, %B %-d"
+    clock-format "%H:%M"          // Chrono pattern; unset follows the language's time format
+    date-format "%A, %B %-d"      // unset shows the language's long weekday and date
     clock-size 80                 // 8..160; scales with the available viewport
     text-size 19                  // 8..160
     auth-timeout 120               // total PAM transaction timeout, seconds
@@ -243,6 +243,13 @@ lockscreen {
     weather-file "weather.json"
 }
 ```
+
+Without `clock-format` and `date-format` (or with an empty pattern) the clock
+and date follow the language's formats (`LC_TIME`): for example `2:30 PM` and
+`Wednesday, November 11` in American English, `14:30` and `mercredi 11 novembre`
+in French. An explicit Chrono pattern is kept as written; Settings' 12/24-hour
+switch writes one ([ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md)).
+The greeter, which runs before login, uses the system locale.
 
 Widgets are passive and independently selectable; `widgets;` hides them all.
 Media displays the shell's selected/pinned player's label, without playback controls.

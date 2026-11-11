@@ -287,9 +287,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         .insert_source(Timer::from_duration(Duration::from_secs(1)), |_, _, app| {
             app.dirty = true;
             TimeoutAction::ToDuration(Duration::from_secs(
-                if app.config.view.clock_format == "%H:%M"
-                    && app.config.view.date_format == "%A, %B %-d"
-                {
+                if app.config.view.minute_resolution() {
                     60 - chrono::Local::now().timestamp().rem_euclid(60) as u64
                 } else {
                     1

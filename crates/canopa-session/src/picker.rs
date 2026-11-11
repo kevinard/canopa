@@ -140,39 +140,23 @@ impl Controller {
         let output = self.output_name().unwrap_or("All monitors").to_owned();
         self.ui.primary_control = (self.ready && !self.applying).then_some(0);
         self.ui.controls = vec![
-            Control {
-                id: 1,
-                label: "Previous image   · ←".into(),
-            },
-            Control {
-                id: 2,
-                label: "Next image   · →".into(),
-            },
-            Control {
-                id: 3,
-                label: format!("Monitor: {output}   · ↑/↓"),
-            },
-            Control {
-                id: 4,
-                label: format!("Fit: {:?}   · F", self.fit),
-            },
-            Control {
-                id: 5,
-                label: "Close   · Escape".into(),
-            },
-            Control {
-                id: 0,
-                label: if self.applying {
+            Control::new(1, "Previous image   · ←"),
+            Control::new(2, "Next image   · →"),
+            Control::new(3, format!("Monitor: {output}   · ↑/↓")),
+            Control::new(4, format!("Fit: {:?}   · F", self.fit)),
+            Control::new(5, "Close   · Escape"),
+            Control::new(
+                0,
+                if self.applying {
                     "Applying…"
                 } else {
                     "Apply wallpaper"
-                }
-                .into(),
-            },
+                },
+            ),
         ];
         for control in &mut self.ui.controls {
             if control.id == self.focused {
-                control.label = format!("› {}", control.label);
+                control.selected = true;
             }
         }
         self.ui.interaction_epoch = (self.generation, 0);

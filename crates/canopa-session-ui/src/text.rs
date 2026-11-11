@@ -6,10 +6,36 @@ use cosmic_text::{
 use image::RgbImage;
 use std::ops::Range;
 
+#[derive(Clone, Copy)]
 pub(crate) enum Style {
     Centered(Weight),
+    /// Starts at the position (its left edge).
     Leading(Weight),
+    /// Ends at the position (its right edge), for right-to-left layouts.
+    Trailing(Weight),
     Code,
+    /// Monospace, ending at the position.
+    CodeTrailing,
+}
+
+impl Style {
+    /// The same style anchored at the opposite edge, for mirrored layouts.
+    pub(crate) fn mirrored(self) -> Self {
+        match self {
+            Self::Centered(weight) => Self::Centered(weight),
+            Self::Leading(weight) => Self::Trailing(weight),
+            Self::Trailing(weight) => Self::Leading(weight),
+            Self::Code => Self::CodeTrailing,
+            Self::CodeTrailing => Self::Code,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Anchor {
+    Start,
+    Center,
+    End,
 }
 
 pub struct Text {
@@ -93,10 +119,12 @@ impl Text {
         selection: Option<(Range<usize>, usize, Rgb)>,
         style: Style,
     ) {
-        let (weight, leading, monospace) = match style {
-            Style::Centered(weight) => (weight, false, false),
-            Style::Leading(weight) => (weight, true, false),
-            Style::Code => (Weight::MEDIUM, true, true),
+        let (weight, anchor, monospace) = match style {
+            Style::Centered(weight) => (weight, Anchor::Center, false),
+            Style::Leading(weight) => (weight, Anchor::Start, false),
+            Style::Trailing(weight) => (weight, Anchor::End, false),
+            Style::Code => (Weight::MEDIUM, Anchor::Start, true),
+            Style::CodeTrailing => (Weight::MEDIUM, Anchor::End, true),
         };
         let mut buffer = self.styled_buffer(text, size, weight, monospace);
         let width = buffer.layout_runs().map(|r| r.line_w).fold(0., f32::max);
@@ -106,10 +134,10 @@ impl Text {
         }
         let width = width * fit;
         let baseline = buffer.layout_runs().next().map_or(0., |r| r.line_y);
-        let left = if leading {
-            position.0
-        } else {
-            position.0 - width / 2.
+        let left = match anchor {
+            Anchor::Start => position.0,
+            Anchor::Center => position.0 - width / 2.,
+            Anchor::End => position.0 - width,
         };
         let top = position.1 - baseline;
         if let Some((range, cursor, accent)) = selection {

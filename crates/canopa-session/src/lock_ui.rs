@@ -7,8 +7,8 @@ pub(crate) const CHANGE_PASSWORD: usize = usize::MAX - 2;
 pub fn configure(ui: &mut LockUi) {
     ui.authentication_panel = Some(AuthenticationPanel {
         height_reserve: 408.,
-        heading: "Unlock session",
-        eyebrow: "SESSION LOCKED",
+        heading: "Unlock session".into(),
+        eyebrow: "SESSION LOCKED".into(),
         emblem: Emblem::Lock,
         dialog: false,
         choices: &[],
@@ -17,6 +17,7 @@ pub fn configure(ui: &mut LockUi) {
         list_actions: false,
         checked_control: None,
         choice_details: Default::default(),
+        account: None,
     });
 }
 
@@ -25,15 +26,14 @@ pub fn update_actions(ui: &mut LockUi, can_retry: bool) {
     ui.primary_control = if ui.hide_input {
         Some(CHANGE_PASSWORD)
     } else if ui.prompt.is_some() || can_retry {
-        ui.controls.push(Control {
-            id: UNLOCK,
-            label: if ui.prompt.is_some() {
+        ui.controls.push(Control::new(
+            UNLOCK,
+            if ui.prompt.is_some() {
                 "Unlock"
             } else {
                 "Try again"
-            }
-            .into(),
-        });
+            },
+        ));
         Some(UNLOCK)
     } else {
         None

@@ -1,6 +1,6 @@
 //! Shared presentation for the four session authentication surfaces.
 use super::raster::{Emblem, blend, emblem, framed, mix, rounded, shadow};
-use super::{Control, SessionView, wrap};
+use super::{Control, ControlKind, SessionView, wrap};
 use crate::{layout::Rect, text::Style};
 use canopa_theme::{Appearance, ColorRole, ColorScheme, Palette, Rgb};
 use cosmic_text::Weight;
@@ -13,8 +13,9 @@ pub const DIALOG_MARGIN: f32 = 16.;
 pub struct AuthenticationPanel {
     /// Reserve room in centered clock-and-form stacks without drawing extra card space.
     pub height_reserve: f32,
-    pub heading: &'static str,
-    pub eyebrow: &'static str,
+    pub heading: String,
+    /// Shown in capitals above the heading.
+    pub eyebrow: String,
     pub emblem: Emblem,
     pub dialog: bool,
     pub choices: &'static [(usize, Emblem)],
@@ -23,6 +24,52 @@ pub struct AuthenticationPanel {
     pub list_actions: bool,
     pub checked_control: Option<usize>,
     pub choice_details: std::collections::BTreeMap<usize, String>,
+    /// The account that authenticates, shown in a dialog's request card.
+    pub account: Option<String>,
+}
+
+/// "Account: {name}", as the request card and identity choices show it.
+pub fn account_label(name: &str) -> String {
+    fl!("session-account", name = name)
+}
+
+/// How a line of copy is coloured.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tone {
+    Muted,
+    /// A status message: the danger colour after a failure.
+    Notice,
+    /// The Caps Lock warning.
+    Caps,
+}
+
+/// The request card's second column in a policy dialog.
+#[derive(Clone, Copy)]
+enum RequestContext<'a> {
+    PolicySource(&'a str),
+    RequestedFor(&'a str),
+}
+
+impl RequestContext<'_> {
+    fn title(self) -> String {
+        match self {
+            Self::PolicySource(_) => fl!("session-policy-source"),
+            Self::RequestedFor(_) => fl!("session-requested-for"),
+        }
+    }
+
+    fn value(self) -> String {
+        match self {
+            Self::PolicySource(value) | Self::RequestedFor(value) => value.to_owned(),
+        }
+    }
+
+    fn inline(self) -> String {
+        match self {
+            Self::PolicySource(value) => fl!("session-policy-source-value", value = value),
+            Self::RequestedFor(value) => fl!("session-requested-for-value", value = value),
+        }
+    }
 }
 
 const PADDING: f32 = 28.;
@@ -32,11 +79,11 @@ const DIALOG_FOOTER_PADDING: f32 = 24.;
 
 enum Content<'a> {
     Heading,
-    Copy(Vec<String>, bool),
+    Copy(Vec<String>, Tone),
     Request {
         subject: Option<&'a str>,
         lines: Vec<String>,
-        metadata: Vec<String>,
+        account: Option<&'a str>,
         disclosure: Option<&'a Control>,
     },
     Divider,
@@ -147,7 +194,7 @@ impl AuthenticationPanel {
                 .is_some_and(|prompt| prompt.id == 0 && prompt.echo)
             && choices
                 .iter()
-                .any(|control| control.label.starts_with("Desktop: "));
+                .any(|control| matches!(control.kind, ControlKind::DesktopChooser { .. }));
         plan.push(Content::Heading, 0., 52.);
         if self.dialog {
             let lines: Vec<_> = ["message-0", "message-1"]
@@ -165,31 +212,27 @@ impl AuthenticationPanel {
                 })
                 .collect();
             let subject = view.custom.get("subject").map(String::as_str);
-            let mut metadata = Vec::new();
-            if let Some(account) = view.custom.get("account") {
-                metadata.push(account.clone());
-            }
-            if disclosure.is_some()
-                && (!lines.is_empty() || subject.is_some() || !metadata.is_empty())
+            let account = self.account.as_deref();
+            if disclosure.is_some() && (!lines.is_empty() || subject.is_some() || account.is_some())
             {
                 let height = request_height(
                     &lines,
                     subject.is_some(),
-                    metadata.len(),
+                    usize::from(account.is_some()),
                     !matches!(self.emblem, Emblem::Shield),
                 );
                 plan.push(
                     Content::Request {
                         subject,
                         lines,
-                        metadata,
+                        account,
                         disclosure: body_disclosure,
                     },
                     12.,
                     height,
                 );
             } else {
-                plan.copy(lines, 16., false);
+                plan.copy(lines, 16., Tone::Muted);
                 utilities.extend(body_disclosure);
             }
             plan.buttons(&utilities, Treatment::Utility, 6., 36.);
@@ -214,13 +257,13 @@ impl AuthenticationPanel {
             && !self.list_actions
             && let Some(prompt) = &view.prompt
         {
-            plan.copy(wrap(&prompt.text, 56, 8), 16., false);
+            plan.copy(wrap(&prompt.text, 56, 8), 16., Tone::Muted);
         }
         if !view.message.is_empty() {
-            plan.copy(wrap(&view.message, 57, 8), 12., true);
+            plan.copy(wrap(&view.message, 57, 8), 12., Tone::Notice);
         }
         if view.caps {
-            plan.copy(vec!["Caps Lock is on".into()], 10., true);
+            plan.copy(vec![fl!("session-caps-lock-on")], 10., Tone::Caps);
         }
         if session_picker_in_form {
             plan.buttons(
@@ -297,10 +340,10 @@ impl<'a> Plan<'a> {
         }
     }
 
-    fn copy(&mut self, lines: Vec<String>, gap: f32, notice: bool) {
+    fn copy(&mut self, lines: Vec<String>, gap: f32, tone: Tone) {
         if !lines.is_empty() {
             let height = 22. * lines.len() as f32;
-            self.push(Content::Copy(lines, notice), gap, height);
+            self.push(Content::Copy(lines, tone), gap, height);
         }
     }
 
@@ -393,17 +436,18 @@ impl<'a> Plan<'a> {
                 left,
                 top,
                 width,
+                rtl: canopa_i18n::direction().is_rtl(),
             };
             match row {
                 Content::Heading => paint.heading(self.panel, self.username, self.avatar),
                 Content::Request {
                     subject,
                     lines,
-                    metadata,
+                    account,
                     disclosure,
                 } => {
                     let policy = matches!(self.panel.emblem, Emblem::Shield);
-                    paint.request(*subject, lines, metadata, *disclosure, policy, &mut hits);
+                    paint.request(*subject, lines, *account, *disclosure, policy, &mut hits);
                 }
                 Content::Divider => {
                     let line = Rect {
@@ -412,12 +456,12 @@ impl<'a> Plan<'a> {
                         width,
                         height: scale,
                     };
-                    rounded(paint.image, line, 0., mix(card, edge, 0.58), 1.);
+                    paint.fill(line, 0., mix(card, edge, 0.58), 1.);
                 }
-                Content::Copy(lines, notice) => {
-                    let ink = if *notice && view.failed {
+                Content::Copy(lines, tone) => {
+                    let ink = if *tone != Tone::Muted && view.failed {
                         palette.danger
-                    } else if *notice && view.caps && lines[0] == "Caps Lock is on" {
+                    } else if *tone == Tone::Caps {
                         palette.warning
                     } else {
                         palette.muted
@@ -457,9 +501,89 @@ struct Paint<'a> {
     left: f32,
     top: f32,
     width: f32,
+    /// Mirror the panel for right-to-left languages.
+    rtl: bool,
 }
 
 impl Paint<'_> {
+    /// Mirror an absolute x coordinate within the panel when right to left.
+    fn flip(&self, x: f32) -> f32 {
+        if self.rtl {
+            2. * self.left + self.width - x
+        } else {
+            x
+        }
+    }
+
+    /// `rect`, laid out left to right, at its place in the current direction.
+    fn mirror(&self, rect: Rect) -> Rect {
+        if self.rtl {
+            Rect {
+                x: self.flip(rect.x) - rect.width,
+                ..rect
+            }
+        } else {
+            rect
+        }
+    }
+
+    fn fill(&mut self, rect: Rect, radius: f32, color: Rgb, alpha: f32) {
+        let rect = self.mirror(rect);
+        rounded(self.image, rect, radius, color, alpha);
+    }
+
+    fn frame(&mut self, rect: Rect, radius: f32, border: f32, fill: Rgb, edge: Rgb) {
+        let rect = self.mirror(rect);
+        framed(self.image, rect, radius, border, fill, edge);
+    }
+
+    fn hit(&self, hits: &mut Vec<(usize, Rect)>, id: usize, rect: Rect) {
+        hits.push((id, self.mirror(rect)));
+    }
+
+    /// A 24-unit emblem; chevrons point back toward the start when mirrored.
+    fn icon(&mut self, (x, y): (f32, f32), scale: f32, kind: Emblem, color: Rgb) {
+        let (x, kind) = if self.rtl {
+            let kind = match kind {
+                Emblem::Chevron => Emblem::ChevronBack,
+                Emblem::ChevronBack => Emblem::Chevron,
+                other => other,
+            };
+            (self.flip(x) - 24. * scale, kind)
+        } else {
+            (x, kind)
+        };
+        emblem(self.image, (x, y), scale, kind, color);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn styled(
+        &mut self,
+        text: &str,
+        (x, y): (f32, f32),
+        size: f32,
+        width: f32,
+        color: Rgb,
+        selection: Option<(std::ops::Range<usize>, usize, Rgb)>,
+        style: Style,
+    ) {
+        let (x, style) = if self.rtl {
+            (self.flip(x), style.mirrored())
+        } else {
+            (x, style)
+        };
+        self.view.text_renderer.borrow_mut().draw_styled(
+            self.image,
+            text,
+            (x, y),
+            size,
+            width,
+            color,
+            selection,
+            style,
+        );
+    }
+
     fn label(
         &mut self,
         value: &str,
@@ -474,8 +598,7 @@ impl Paint<'_> {
             .filter(|c| !c.is_control())
             .take(256)
             .collect();
-        self.view.text_renderer.borrow_mut().draw_styled(
-            self.image,
+        self.styled(
             &text,
             (self.left + x * self.scale, self.top + y * self.scale),
             size * self.scale,
@@ -511,14 +634,13 @@ impl Paint<'_> {
         } else {
             self.palette.text
         };
-        rounded(self.image, tile, 15. * s, accent_surface, 1.);
+        self.fill(tile, 15. * s, accent_surface, 1.);
         let show_avatar = show_avatar && !panel.list_actions;
         let locked_identity = username && matches!(panel.emblem, Emblem::Lock);
         let initials = self.view.avatar_initials.as_deref().filter(|_| show_avatar);
         if !(show_avatar && self.avatar(tile, 15. * s)) {
             if let Some(initials) = initials {
-                self.view.text_renderer.borrow_mut().draw_styled(
-                    self.image,
+                self.styled(
                     initials,
                     (tile.x + 26. * s, tile.y + 33. * s),
                     19. * s,
@@ -534,8 +656,7 @@ impl Paint<'_> {
                     1.
                 };
                 let inset = (52. - 24. * size) / 2. * s;
-                emblem(
-                    self.image,
+                self.icon(
                     (tile.x + inset, tile.y + inset),
                     size * s,
                     panel.emblem,
@@ -547,19 +668,19 @@ impl Paint<'_> {
             .view
             .custom
             .get("heading")
-            .map_or_else(|| panel.eyebrow.into(), |heading| heading.to_uppercase());
+            .map_or_else(|| panel.eyebrow.clone(), |heading| heading.to_uppercase());
         let heading = if username {
             self.view.username.as_str()
         } else {
             self.view
                 .custom
                 .get("request-title")
-                .map_or(panel.heading, String::as_str)
+                .map_or(panel.heading.as_str(), String::as_str)
         };
         let width = self.width - 68. * s;
         if locked_identity {
             self.label(
-                "Session locked",
+                &fl!("session-locked-heading"),
                 (68., 24.),
                 26.,
                 width,
@@ -607,6 +728,7 @@ impl Paint<'_> {
         else {
             return false;
         };
+        let tile = self.mirror(tile);
         let side = tile.width.round().max(1.) as u32;
         let avatar =
             image::imageops::resize(avatar, side, side, image::imageops::FilterType::Triangle);
@@ -632,7 +754,10 @@ impl Paint<'_> {
     fn keyboard_status(&mut self, baseline: f32, hits: &mut Vec<(usize, Rect)>) {
         let s = self.scale;
         let label = if self.view.can_select_layout {
-            format!("{} · F6", self.view.layout)
+            fl!(
+                "session-keyboard-layout-shortcut",
+                layout = self.view.layout.as_str()
+            )
         } else {
             self.view.layout.clone()
         };
@@ -644,18 +769,12 @@ impl Paint<'_> {
             height: 28. * s,
         };
         let ink = if self.view.can_select_layout {
-            hits.push((crate::input::LAYOUT_CONTROL, rect));
+            self.hit(hits, crate::input::LAYOUT_CONTROL, rect);
             self.appearance.role(ColorRole::Focus)
         } else {
             self.palette.muted
         };
-        emblem(
-            self.image,
-            (rect.x, rect.y + 7. * s),
-            s * 0.75,
-            Emblem::Keyboard,
-            ink,
-        );
+        self.icon((rect.x, rect.y + 7. * s), s * 0.75, Emblem::Keyboard, ink);
         self.label(
             &label,
             ((rect.x - self.left) / s + 25., baseline),
@@ -686,10 +805,7 @@ impl Paint<'_> {
             height: height * s,
         };
         let focus = self.appearance.role(ColorRole::Focus);
-        let (label, selected) = control
-            .label
-            .strip_prefix("› ")
-            .map_or((control.label.as_str(), false), |label| (label, true));
+        let (label, selected) = (control.label.as_str(), control.selected);
         let button = mix(
             self.palette.surface,
             self.palette.raised,
@@ -702,7 +818,7 @@ impl Paint<'_> {
         } else {
             mix(button, self.palette.border, 0.68)
         };
-        framed(self.image, link, 10. * s, s, button, border);
+        self.frame(link, 10. * s, s, button, border);
         self.label(
             label,
             ((link.x - self.left) / s + 10., inset + height / 2. + 5.),
@@ -711,40 +827,42 @@ impl Paint<'_> {
             focus,
             Weight::MEDIUM,
         );
-        emblem(
-            self.image,
+        self.icon(
             (link.x + 102. * s, link.y + (height / 2. - 8.) * s),
             s * 2. / 3.,
             Emblem::Chevron,
             focus,
         );
-        hits.push((control.id, link));
+        self.hit(hits, control.id, link);
     }
 
     fn request(
         &mut self,
         subject: Option<&str>,
         lines: &[String],
-        metadata: &[String],
+        account: Option<&str>,
         disclosure: Option<&Control>,
         policy: bool,
         hits: &mut Vec<(usize, Rect)>,
     ) {
         let s = self.scale;
-        let height = request_height(lines, subject.is_some(), metadata.len(), !policy) * s;
-        let identity_only = policy
-            && lines.is_empty()
-            && metadata.iter().any(|value| value.starts_with("Account: "));
+        let height = request_height(
+            lines,
+            subject.is_some(),
+            usize::from(account.is_some()),
+            !policy,
+        ) * s;
+        let identity_only = policy && lines.is_empty() && account.is_some();
         let context = if policy && disclosure.is_none() {
             self.view
                 .custom
                 .get("policy-publisher")
-                .map(|publisher| ("Policy source", publisher))
+                .map(|publisher| RequestContext::PolicySource(publisher))
                 .or_else(|| {
                     self.view
                         .custom
                         .get("subject-process")
-                        .map(|process| ("Requested for", process))
+                        .map(|process| RequestContext::RequestedFor(process))
                 })
         } else {
             None
@@ -755,8 +873,7 @@ impl Paint<'_> {
         } else {
             self.appearance.role(ColorRole::Focus)
         };
-        rounded(
-            self.image,
+        self.fill(
             Rect {
                 x: self.left,
                 y: self.top,
@@ -767,8 +884,7 @@ impl Paint<'_> {
             mix(self.palette.surface, self.palette.raised, 0.57),
             1.,
         );
-        rounded(
-            self.image,
+        self.fill(
             Rect {
                 x: self.left,
                 y: self.top + 8. * s,
@@ -787,14 +903,14 @@ impl Paint<'_> {
         }
         let line_width = self.width - 32. * s;
         self.label(
-            if identity_only {
-                "Authenticating as"
+            &if identity_only {
+                fl!("session-authenticating-as")
             } else if policy {
-                "POLICY REQUEST"
+                fl!("session-policy-request")
             } else if fingerprint.is_some() {
-                "KEY IDENTITY"
+                fl!("session-key-identity-caps")
             } else {
-                "REQUEST CONTEXT"
+                fl!("session-request-context")
             },
             (
                 if identity_only { 62. } else { 16. },
@@ -841,7 +957,7 @@ impl Paint<'_> {
         }
         if let Some(fingerprint) = fingerprint {
             self.label(
-                "Fingerprint",
+                &fl!("session-fingerprint"),
                 (16., baseline),
                 12.,
                 line_width,
@@ -871,11 +987,10 @@ impl Paint<'_> {
             }
             baseline += 21.;
         }
-        for (index, value) in metadata.iter().enumerate() {
-            let account = value.strip_prefix("Account: ");
-            let baseline = baseline + 2. + index as f32 * 20.;
+        if let Some(name) = account {
+            let baseline = baseline + 2.;
             let mut text_inset = 16.;
-            if let Some(name) = account.filter(|_| policy) {
+            if policy {
                 let (side, center, radius) = if identity_only {
                     (34., 35., 10.)
                 } else {
@@ -903,10 +1018,10 @@ impl Paint<'_> {
                 available
             };
             self.label(
-                if identity_only {
-                    account.unwrap_or(value)
+                &if identity_only {
+                    name.to_owned()
                 } else {
-                    value
+                    account_label(name)
                 },
                 (text_inset, baseline),
                 if identity_only { 16. } else { 13. },
@@ -919,12 +1034,11 @@ impl Paint<'_> {
                 Weight::MEDIUM,
             );
         }
-        if let Some((label, value)) = context {
+        if let Some(context) = context {
             let x = self.width / s / 2. + 16.;
             let width = self.width / 2. - 32. * s;
             if identity_only {
-                rounded(
-                    self.image,
+                self.fill(
                     Rect {
                         x: self.left + self.width / 2.,
                         y: self.top + 16. * s,
@@ -936,7 +1050,7 @@ impl Paint<'_> {
                     0.53,
                 );
                 self.label(
-                    label,
+                    &context.title(),
                     (x, 26.),
                     13.,
                     width,
@@ -944,7 +1058,7 @@ impl Paint<'_> {
                     Weight::SEMIBOLD,
                 );
                 self.label(
-                    value,
+                    &context.value(),
                     (x, 50.),
                     16.,
                     width,
@@ -953,7 +1067,7 @@ impl Paint<'_> {
                 );
             } else {
                 self.label(
-                    &format!("{label}: {value}"),
+                    &context.inline(),
                     (x, baseline + 2.),
                     13.,
                     width,
@@ -967,8 +1081,7 @@ impl Paint<'_> {
     fn request_code(&mut self, value: &str, x: f32, baseline: f32, width: f32) {
         let text = value.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
         let s = self.scale;
-        self.view.text_renderer.borrow_mut().draw_styled(
-            self.image,
+        self.styled(
             &text,
             (self.left + x * s, self.top + baseline * s),
             15. * s,
@@ -992,8 +1105,7 @@ impl Paint<'_> {
                 width: s,
                 height: 72. * s,
             };
-            rounded(
-                self.image,
+            self.fill(
                 divider,
                 0.,
                 self.palette.border,
@@ -1005,7 +1117,7 @@ impl Paint<'_> {
             );
             let width = (split - 31.) * s;
             self.label(
-                "Key identity",
+                &fl!("session-key-identity"),
                 (16., 37.),
                 13.,
                 width,
@@ -1039,7 +1151,7 @@ impl Paint<'_> {
         }
         let width = self.width - (fingerprint_x + 16.) * s;
         self.label(
-            "Fingerprint",
+            &fl!("session-fingerprint"),
             (fingerprint_x, baseline - 25.),
             14.,
             width,
@@ -1083,18 +1195,16 @@ impl Paint<'_> {
             .chain(last)
             .flat_map(char::to_uppercase)
             .collect();
-        rounded(self.image, tile, 10. * s, fill, 1.);
+        self.fill(tile, 10. * s, fill, 1.);
         if initials.is_empty() {
-            emblem(
-                self.image,
+            self.icon(
                 (tile.x + (size / 2. - 9.) * s, tile.y + (size / 2. - 9.) * s),
                 0.75 * s,
                 Emblem::Accounts,
                 ink,
             );
         } else {
-            self.view.text_renderer.borrow_mut().draw_styled(
-                self.image,
+            self.styled(
                 &initials,
                 (tile.x + size * s / 2., self.top + (center + 4.) * s),
                 12. * s,
@@ -1134,18 +1244,13 @@ impl Paint<'_> {
             height: 52. * s,
         };
         let focus = self.appearance.role(ColorRole::Focus);
-        framed(
-            self.image,
-            field,
-            12. * s,
-            1.75 * s,
-            if self.appearance.color_scheme == ColorScheme::Light {
-                mix(self.palette.surface, self.palette.background, 0.78)
-            } else {
-                self.palette.background
-            },
-            focus,
-        );
+        let light = self.appearance.color_scheme == ColorScheme::Light;
+        let background = if light {
+            mix(self.palette.surface, self.palette.background, 0.78)
+        } else {
+            self.palette.background
+        };
+        self.frame(field, 12. * s, 1.75 * s, background, focus);
 
         let prompt = self
             .view
@@ -1160,10 +1265,9 @@ impl Paint<'_> {
                 width: 1.5 * s,
                 height: 20. * s,
             };
-            rounded(self.image, caret, 0.75 * s, focus, 1.);
+            self.fill(caret, 0.75 * s, focus, 1.);
         } else {
-            self.view.text_renderer.borrow_mut().draw_styled(
-                self.image,
+            self.styled(
                 input.as_ref(),
                 (self.left + 15. * s, y + 32. * s),
                 16. * s,
@@ -1198,13 +1302,21 @@ impl Paint<'_> {
         let row_left = self.left + self.width - row_width;
         let width = (row_width - gap * (controls.len() - 1) as f32) / controls.len() as f32;
         for (index, control) in controls.iter().enumerate() {
-            let (label, selected) = control
-                .label
-                .strip_prefix("› ")
-                .map_or((control.label.as_str(), false), |label| (label, true));
+            let selected = control.selected;
+            let back_label;
+            let label = if control.kind == ControlKind::Back {
+                back_label = fl!(
+                    "session-back-label",
+                    arrow = if self.rtl { "→" } else { "←" },
+                    label = control.label.as_str()
+                );
+                back_label.as_str()
+            } else {
+                control.label.as_str()
+            };
             let primary = self.view.primary_control == Some(control.id);
             let current = panel.list_actions && panel.checked_control == Some(control.id);
-            let back = panel.list_actions && label.starts_with("← ");
+            let back = panel.list_actions && control.kind == ControlKind::Back;
             let rect = Rect {
                 x: row_left + (width + gap) * index as f32,
                 y: self.top,
@@ -1247,25 +1359,12 @@ impl Paint<'_> {
                     },
                 );
                 if selected {
-                    framed(
-                        self.image,
-                        rect,
-                        radius,
-                        1.5 * s,
-                        fill,
-                        self.appearance.role(ColorRole::Focus),
-                    );
+                    let focus = self.appearance.role(ColorRole::Focus);
+                    self.frame(rect, radius, 1.5 * s, fill, focus);
                 } else if compact_actions && primary {
-                    rounded(self.image, rect, radius, fill, 1.);
+                    self.fill(rect, radius, fill, 1.);
                 } else {
-                    framed(
-                        self.image,
-                        rect,
-                        radius,
-                        s,
-                        fill,
-                        if primary { fill } else { border },
-                    );
+                    self.frame(rect, radius, s, fill, if primary { fill } else { border });
                 }
             }
             let size = if treatment == Treatment::Utility {
@@ -1295,9 +1394,8 @@ impl Paint<'_> {
                     } else {
                         tint
                     };
-                    rounded(self.image, tile, 9. * s, tint, 1.);
-                    emblem(
-                        self.image,
+                    self.fill(tile, 9. * s, tint, 1.);
+                    self.icon(
                         (tile.x + 6. * s, tile.y + 6. * s),
                         0.75 * s,
                         Emblem::Display,
@@ -1333,8 +1431,7 @@ impl Paint<'_> {
                         height: 26. * s,
                     };
                     let focus = self.appearance.role(ColorRole::Focus);
-                    rounded(
-                        self.image,
+                    self.fill(
                         chip,
                         8. * s,
                         if selected {
@@ -1344,15 +1441,14 @@ impl Paint<'_> {
                         },
                         1.,
                     );
-                    emblem(
-                        self.image,
+                    self.icon(
                         (chip.x + 7. * s, chip.y + 4. * s),
                         0.75 * s,
                         Emblem::Check,
                         focus,
                     );
                     self.label(
-                        "Current",
+                        &fl!("session-current"),
                         ((chip.x - self.left) / s + 29., center + 5.),
                         13.,
                         51. * s,
@@ -1360,24 +1456,22 @@ impl Paint<'_> {
                         Weight::SEMIBOLD,
                     );
                 }
-                hits.push((control.id, rect));
+                self.hit(hits, control.id, rect);
                 continue;
             }
             if !panel.dialog && treatment == Treatment::Choice {
-                let destination = if let Some(value) = label.strip_prefix("Desktop: ") {
-                    Some((Emblem::Display, format!("Desktop · {value}")))
-                } else if label.starts_with("Choose account") {
-                    Some((Emblem::Accounts, "Choose account".into()))
-                } else if label.starts_with("Change account") {
-                    Some((Emblem::Accounts, "Change account".into()))
-                } else {
-                    None
+                let destination = match &control.kind {
+                    ControlKind::DesktopChooser { session } => Some((
+                        Emblem::Display,
+                        fl!("session-desktop-choice", session = session.as_str()),
+                    )),
+                    ControlKind::AccountChooser { text } => Some((Emblem::Accounts, text.clone())),
+                    _ => None,
                 };
                 if let Some((icon, value)) = destination {
                     let offset = (rect.x - self.left) / s;
                     let available = width - 62. * s;
-                    emblem(
-                        self.image,
+                    self.icon(
                         (rect.x + 12. * s, rect.y + 17. * s),
                         0.75 * s,
                         icon,
@@ -1391,14 +1485,14 @@ impl Paint<'_> {
                         self.palette.text,
                         Weight::SEMIBOLD,
                     );
-                    emblem(
-                        self.image,
+                    let muted = self.palette.muted;
+                    self.icon(
                         (rect.x + width - 27. * s, rect.y + 18. * s),
                         s * 2. / 3.,
                         Emblem::Chevron,
-                        self.palette.muted,
+                        muted,
                     );
-                    hits.push((control.id, rect));
+                    self.hit(hits, control.id, rect);
                     continue;
                 }
             }
@@ -1410,7 +1504,7 @@ impl Paint<'_> {
             };
             let identity = panel.dialog
                 && treatment == Treatment::Choice
-                && label.starts_with("Account: ")
+                && control.kind == ControlKind::Identity
                 && self.avatar(
                     Rect {
                         x: rect.x + 12. * s,
@@ -1426,8 +1520,7 @@ impl Paint<'_> {
                 Treatment::Utility => rect.x + if back { 10. * s } else { 0. },
                 Treatment::Action => rect.x + width / 2.,
             };
-            self.view.text_renderer.borrow_mut().draw_styled(
-                self.image,
+            self.styled(
                 label,
                 (x, rect.y + rect.height / 2. + size * 0.36 * s),
                 size * s,
@@ -1447,7 +1540,7 @@ impl Paint<'_> {
                     Style::Centered(weight)
                 },
             );
-            if leading && !label.starts_with("← ") {
+            if leading && control.kind != ControlKind::Back {
                 let choice = treatment == Treatment::Choice;
                 let offset = if choice {
                     width - 35. * s
@@ -1463,8 +1556,7 @@ impl Paint<'_> {
                 } else {
                     Emblem::Chevron
                 };
-                emblem(
-                    self.image,
+                self.icon(
                     (
                         x + offset - if choice { 6. * s } else { 0. },
                         rect.y + rect.height / 2. - 8. * s,
@@ -1477,16 +1569,16 @@ impl Paint<'_> {
             if back && controls.len() == 1 {
                 self.chooser_shortcuts();
             }
-            hits.push((control.id, rect));
+            self.hit(hits, control.id, rect);
         }
     }
 
     fn chooser_shortcuts(&mut self) {
         let s = self.scale;
-        let label = "↑ ↓ to move · Enter to select";
-        let width = self.view.text_width(label, 13.5 * s);
+        let label = fl!("session-chooser-shortcuts");
+        let width = self.view.text_width(&label, 13.5 * s);
         self.label(
-            label,
+            &label,
             ((self.width - width) / s - 8., 23.),
             13.5,
             width + 2. * s,

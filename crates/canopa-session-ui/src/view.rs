@@ -5,7 +5,9 @@ use image::RgbImage;
 
 mod panel;
 mod raster;
-pub use panel::{AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_SIZE};
+pub use panel::{
+    AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_SIZE, account_label,
+};
 pub use raster::Emblem;
 
 pub const REQUEST_PAGE_LINES: usize = 6;
@@ -16,9 +18,45 @@ pub struct Prompt {
     pub echo: bool,
 }
 
+/// What a control means, so the shared view lays it out without reading its
+/// (translated) label.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ControlKind {
+    #[default]
+    Action,
+    /// Returns to the previous screen; drawn with a back arrow.
+    Back,
+    /// Opens the account chooser; `text` is the short label drawn on the row.
+    AccountChooser { text: String },
+    /// Opens the desktop chooser; `session` is the selected desktop's name.
+    DesktopChooser { session: String },
+    /// Chooses the identity that authenticates, drawn with its avatar.
+    Identity,
+}
+
 pub struct Control {
     pub id: usize,
+    /// The accessible name, and the visible text unless `kind` draws its own.
     pub label: String,
+    pub kind: ControlKind,
+    /// Keyboard selection (focus ring) in surfaces without pointer focus.
+    pub selected: bool,
+}
+
+impl Control {
+    pub fn new(id: usize, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            kind: ControlKind::Action,
+            selected: false,
+        }
+    }
+
+    pub fn with_kind(mut self, kind: ControlKind) -> Self {
+        self.kind = kind;
+        self
+    }
 }
 
 pub struct SessionView {
@@ -107,7 +145,7 @@ impl SessionView {
         let mut ui = Self::new(settings, username)?;
         ui.prompt = Some(Prompt {
             id: 0,
-            text: "Password:".into(),
+            text: fl!("session-password-prompt"),
             echo: false,
         });
         ui.custom = settings
@@ -229,7 +267,7 @@ impl SessionView {
         content.insert(
             "clock".to_owned(),
             Content::Text {
-                lines: vec![now.format(&settings.clock_format).to_string()],
+                lines: vec![settings.clock_text(&now)],
                 size: settings.clock_size as f32,
                 color: palette.text,
             },
@@ -237,7 +275,7 @@ impl SessionView {
         content.insert(
             "date".to_owned(),
             Content::Text {
-                lines: vec![now.format(&settings.date_format).to_string()],
+                lines: vec![settings.date_text(&now)],
                 size: settings.text_size as f32,
                 color: palette.muted,
             },
@@ -271,15 +309,12 @@ impl SessionView {
                 "username" => Some(self.username.clone()),
                 "keyboard" => Some(self.layout.clone()).filter(|s| !s.is_empty()),
                 "battery" => self.battery.as_ref().filter(|b| b.present).map(|b| {
-                    format!(
-                        "{}%{}",
-                        b.percentage.clamp(0., 100.).round(),
-                        if b.power_state.is_charging() {
-                            " · Charging"
-                        } else {
-                            ""
-                        }
-                    )
+                    let level = canopa_i18n::format::percent(b.percentage.clamp(0., 100.).round());
+                    if b.power_state.is_charging() {
+                        fl!("session-battery-charging", level = level)
+                    } else {
+                        level
+                    }
                 }),
                 "media" => self.media.clone(),
                 "notifications" => self.notifications.clone(),
@@ -336,10 +371,13 @@ impl SessionView {
         let label = prompt.map(|prompt| wrap(prompt.text.trim_end_matches(':'), 56, 8));
         let label_height = label.as_ref().map_or(0., |lines| 21. * lines.len() as f32);
         let hints = self.authentication_hints();
-        let layout_control = self.can_select_layout.then(|| Control {
-            id: crate::input::LAYOUT_CONTROL,
-            label: format!("Keyboard: {}   · F6", self.layout),
+        let layout_control = self.can_select_layout.then(|| {
+            Control::new(
+                crate::input::LAYOUT_CONTROL,
+                fl!("session-keyboard-control", layout = self.layout.as_str()),
+            )
         });
+        let rtl = canopa_i18n::direction().is_rtl();
         let input_offset = if self.hide_input { 52. } else { 0. };
         let columns = if self.pair_controls { 2 } else { 1 };
         let control_rows =
@@ -496,13 +534,16 @@ impl SessionView {
                         let size = 14. * scale;
                         for (index, line) in lines.iter().enumerate() {
                             let available = (bounds.width - 12. * scale).max(0.);
+                            let half = self.text_width(line, size).min(available) / 2.;
                             self.text(
                                 &mut image,
                                 line,
                                 (
-                                    bounds.x
-                                        + 6. * scale
-                                        + self.text_width(line, size).min(available) / 2.,
+                                    if rtl {
+                                        bounds.x + bounds.width - 6. * scale - half
+                                    } else {
+                                        bounds.x + 6. * scale + half
+                                    },
                                     bounds.y + (14. + index as f32 * 21.) * scale,
                                 ),
                                 size,
@@ -542,17 +583,17 @@ impl SessionView {
                         let prompt = zeroize::Zeroizing::new(if let Some(prompt) = &self.prompt {
                             if self.secret.is_empty() {
                                 if prompt.echo {
-                                    "Type response".into()
+                                    fl!("session-placeholder-type-response")
                                 } else {
-                                    "Enter response".into()
+                                    fl!("session-placeholder-enter-response")
                                 }
                             } else {
                                 input.to_string()
                             }
                         } else if self.busy {
-                            "Waiting for authentication…".into()
+                            fl!("session-waiting-for-authentication")
                         } else {
-                            "Enter to authenticate".into()
+                            fl!("session-placeholder-authenticate")
                         });
                         self.text_renderer.borrow_mut().draw(
                             &mut image,
@@ -585,12 +626,14 @@ impl SessionView {
                                 * scale;
                         let gap = 8. * scale;
                         let width = (bounds.width - gap * (columns - 1) as f32) / columns as f32;
-                        let x = bounds.x + (width + gap) * (index % columns) as f32;
+                        let column = if rtl {
+                            columns - 1 - index % columns
+                        } else {
+                            index % columns
+                        };
+                        let x = bounds.x + (width + gap) * column as f32;
                         let primary = self.primary_control == Some(control.id) && !self.busy;
-                        let (label, selected) = control
-                            .label
-                            .strip_prefix("› ")
-                            .map_or((control.label.as_str(), false), |label| (label, true));
+                        let (label, selected) = (control.label.as_str(), control.selected);
                         let (fill, ink) = if primary {
                             (
                                 palette.accent,
@@ -681,19 +724,16 @@ impl SessionView {
             hints.extend(wrap(&self.message, 56, 8));
         }
         if self.caps {
-            hints.push("Caps Lock is on".into());
+            hints.push(fl!("session-caps-lock-on"));
         }
         if hints.is_empty() {
-            hints.push(
-                if self.busy {
-                    "Follow the authentication instructions"
-                } else if self.prompt.is_some() && self.controls.is_empty() {
-                    "Press Enter to continue"
-                } else {
-                    "Escape cancels the current attempt"
-                }
-                .into(),
-            );
+            hints.push(if self.busy {
+                fl!("session-hint-follow-instructions")
+            } else if self.prompt.is_some() && self.controls.is_empty() {
+                fl!("session-hint-press-enter")
+            } else {
+                fl!("session-hint-escape-cancels")
+            });
         }
         hints
     }
@@ -850,6 +890,57 @@ output "DP-1" { hide-widgets "username"; }
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn right_to_left_mirrors_panel_rows_and_back_buttons() {
+        let settings = Settings::load(
+            &canopa_config::Request::Defaults,
+            canopa_config::Component::Greeter,
+        )
+        .unwrap()
+        .0;
+        let mut view = SessionView::new(&settings, "Alice".into()).unwrap();
+        view.hide_input = true;
+        view.authentication_panel = Some(AuthenticationPanel {
+            height_reserve: 0.,
+            heading: "Choose".into(),
+            eyebrow: "CANOPA".into(),
+            emblem: Emblem::Accounts,
+            dialog: false,
+            choices: &[],
+            utilities: &[],
+            disclosure: None,
+            list_actions: true,
+            checked_control: None,
+            choice_details: Default::default(),
+            account: None,
+        });
+        view.controls = vec![
+            Control::new(1, "Alice"),
+            Control::new(2, "Back").with_kind(ControlKind::Back),
+        ];
+        let hits = |view: &SessionView| {
+            view.render_with_hits(&settings, RgbImage::new(1280, 800))
+                .unwrap()
+                .1
+        };
+        let ltr = hits(&view);
+        let rtl = {
+            let _rtl = crate::i18n::Selected::new("en", true);
+            hits(&view)
+        };
+        let find = |hits: &[(usize, crate::layout::Rect)], id| {
+            hits.iter().find(|(hit, _)| *hit == id).unwrap().1
+        };
+        let (row, back) = (find(&ltr, 1), find(&ltr, 2));
+        let (mirrored_row, mirrored_back) = (find(&rtl, 1), find(&rtl, 2));
+        assert_eq!(row.x, mirrored_row.x, "full-width rows keep their place");
+        assert!(back.width < row.width);
+        // The narrow back button moves from the start on the left to the right.
+        assert!((back.x - row.x).abs() < 1.);
+        let end = |rect: crate::layout::Rect| rect.x + rect.width;
+        assert!((end(mirrored_back) - end(mirrored_row)).abs() < 1.);
     }
 
     #[test]

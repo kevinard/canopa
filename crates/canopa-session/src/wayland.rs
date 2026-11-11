@@ -412,14 +412,11 @@ pub fn lock(
     app.handle
         .insert_source(Timer::immediate(), move |_, _, app: &mut App| {
             app.redraw();
-            TimeoutAction::ToDuration(Duration::from_secs(
-                if app.settings.clock_format == "%H:%M" && app.settings.date_format == "%A, %B %-d"
-                {
-                    60 - chrono::Timelike::second(&chrono::Local::now()) as u64
-                } else {
-                    1
-                },
-            ))
+            TimeoutAction::ToDuration(Duration::from_secs(if app.settings.minute_resolution() {
+                60 - chrono::Timelike::second(&chrono::Local::now()) as u64
+            } else {
+                1
+            }))
         })
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     run(&mut app, &mut event_loop)
@@ -1124,14 +1121,11 @@ impl App {
                     ui.action_labels =
                         Some(("Change password".into(), "Cancel password change".into()));
                     ui.controls = vec![
-                        canopa_session_ui::view::Control {
-                            id: CHANGE_PASSWORD,
-                            label: "Change password · Enter".into(),
-                        },
-                        canopa_session_ui::view::Control {
-                            id: CANCEL_CHANGE,
-                            label: "Cancel · Escape".into(),
-                        },
+                        canopa_session_ui::view::Control::new(
+                            CHANGE_PASSWORD,
+                            "Change password · Enter",
+                        ),
+                        canopa_session_ui::view::Control::new(CANCEL_CHANGE, "Cancel · Escape"),
                     ];
                 }
             }

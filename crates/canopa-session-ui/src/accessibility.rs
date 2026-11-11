@@ -32,7 +32,7 @@ struct Meaning {
     prompt: Option<(u64, String, bool)>,
     hidden: bool,
     busy: bool,
-    controls: Vec<(usize, String)>,
+    controls: Vec<(usize, String, bool)>,
     layout: Option<String>,
 }
 struct Published {
@@ -101,7 +101,7 @@ impl ActionHandler for Handler {
                 6 => Operation::Submit,
                 7 => Operation::Cancel,
                 n if n >= 10 => {
-                    let Some((id, _)) = state.meaning.controls.get((n - 10) as usize) else {
+                    let Some((id, _, _)) = state.meaning.controls.get((n - 10) as usize) else {
                         return;
                     };
                     Operation::Control(*id)
@@ -178,14 +178,15 @@ impl Accessibility {
             controls: view
                 .controls
                 .iter()
-                .map(|c| (c.id, c.label.clone()))
+                .map(|c| (c.id, c.label.clone(), c.selected))
                 .collect(),
             layout: None,
         };
         if view.can_select_layout {
             meaning.controls.push((
                 crate::input::LAYOUT_CONTROL,
-                format!("Keyboard: {}", view.layout),
+                fl!("session-keyboard-layout", layout = view.layout.as_str()),
+                false,
             ));
             meaning.layout = Some(view.layout.clone());
         }
@@ -199,12 +200,14 @@ impl Accessibility {
                 Role::PasswordInput
             });
             node.set_label(prompt.clone());
-            node.set_description(format!(
-                "{}{}{}",
-                view.layout,
-                if view.caps { ". Caps Lock is on" } else { "" },
-                ". Enter submits. Escape cancels."
-            ));
+            node.set_description(if view.caps {
+                fl!(
+                    "session-input-description-caps",
+                    layout = view.layout.as_str()
+                )
+            } else {
+                fl!("session-input-description", layout = view.layout.as_str())
+            });
             node.add_action(Action::SetValue);
             node.add_action(Action::SetTextSelection);
             node.set_children([TEXT]);
@@ -257,15 +260,11 @@ impl Accessibility {
             nodes.push((id, node));
         }
         let mut status = Node::new(Role::Status);
-        status.set_label(format!(
-            "{}{}",
-            view.message,
-            if view.failed {
-                ". Authentication error"
-            } else {
-                ""
-            }
-        ));
+        status.set_label(if view.failed {
+            fl!("session-status-error", message = view.message.as_str())
+        } else {
+            view.message.clone()
+        });
         status.set_live(Live::Polite);
         status.set_live_atomic();
         children.push(NodeId(4));
@@ -278,9 +277,8 @@ impl Accessibility {
         }
         let (submit, cancel) = view
             .action_labels
-            .as_ref()
-            .map(|(submit, cancel)| (submit.as_str(), cancel.as_str()))
-            .unwrap_or(("Submit response", "Cancel authentication"));
+            .clone()
+            .unwrap_or_else(|| (fl!("session-action-submit"), fl!("session-action-cancel")));
         for (id, label) in [(6, submit), (7, cancel)] {
             let mut node = Node::new(Role::Button);
             node.set_label(label);
@@ -288,19 +286,23 @@ impl Accessibility {
             children.push(NodeId(id));
             nodes.push((NodeId(id), node));
         }
-        for (i, (control, label)) in meaning.controls.iter().enumerate() {
+        for (i, (control, label, selected)) in meaning.controls.iter().enumerate() {
             let id = NodeId(10 + i as u64);
             let mut node = Node::new(Role::Button);
             node.set_label(label.clone());
+            if *selected {
+                node.set_selected(true);
+            }
             if let Some(panel) = &view.authentication_panel {
                 match (
                     panel.checked_control == Some(*control),
                     panel.choice_details.get(control),
                 ) {
-                    (true, Some(detail)) => {
-                        node.set_description(format!("Current selection. {detail}"))
-                    }
-                    (true, None) => node.set_description("Current selection"),
+                    (true, Some(detail)) => node.set_description(fl!(
+                        "session-current-selection-detail",
+                        detail = detail.as_str()
+                    )),
+                    (true, None) => node.set_description(fl!("session-current-selection")),
                     (false, Some(detail)) => node.set_description(detail.clone()),
                     (false, None) => {}
                 }
