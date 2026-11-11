@@ -143,7 +143,7 @@ impl Commands {
                     cancel.cancel();
                     interaction.abort();
                 } else {
-                    self.refuse(request.id, "This device request has already settled.");
+                    self.refuse(request.id, &fl!("files-device-already-settled"));
                 }
             }
             Command::Answer { question, answer } => {
@@ -159,9 +159,7 @@ impl Commands {
                             self.refuse(request.id, &error.to_string());
                         }
                     }
-                    None => {
-                        self.refuse(request.id, "This device request no longer accepts answers.")
-                    }
+                    None => self.refuse(request.id, &fl!("files-device-no-more-answers")),
                 }
             }
         }
@@ -184,19 +182,15 @@ impl Commands {
         removal: Option<Removal>,
     ) -> io::Result<Target> {
         if generation != self.generation.get() {
-            return Err(io::Error::other(
-                "The device observation has changed. Refresh and try again.",
-            ));
+            return Err(io::Error::other(fl!("files-device-observation-changed")));
         }
         let observed = catalog::observed_mounts(&self.monitor);
         let device = catalog::collect(&self.monitor, &observed)
             .into_iter()
             .find(|d| d.instance == instance)
-            .ok_or_else(|| io::Error::other("The device is no longer available."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-device-gone")))?;
         if removal.map_or(!device.can_mount, |kind| device.removal != Some(kind)) {
-            return Err(io::Error::other(
-                "The device no longer supports this operation.",
-            ));
+            return Err(io::Error::other(fl!("files-device-unsupported-operation")));
         }
         if let Some(volume) = self
             .monitor
@@ -211,18 +205,18 @@ impl Commands {
             .into_iter()
             .find(|m| m.as_ptr() as usize as u64 == instance)
             .map(Target::Mount)
-            .ok_or_else(|| io::Error::other("The device is no longer available."))
+            .ok_or_else(|| io::Error::other(fl!("files-device-gone")))
     }
 
     /// A fresh request ID while nothing else is active, else a terminal refusal.
     fn admit(&self, id: u64) -> bool {
         if id <= self.last.get() {
-            self.refuse(id, "This device request ID has already been used.");
+            self.refuse(id, &fl!("files-device-request-id-used"));
             return false;
         }
         self.last.set(id);
         if self.active.borrow().is_some() {
-            self.refuse(id, "Another device request is still in progress.");
+            self.refuse(id, &fl!("files-device-another-request"));
             return false;
         }
         true
@@ -400,7 +394,7 @@ impl Commands {
         let address = match crate::network::ServerAddress::parse(&uri) {
             Ok(address) if address.uri == uri => address,
             _ => {
-                self.refuse(id, "The server address is not valid.");
+                self.refuse(id, &fl!("files-device-address-invalid"));
                 return;
             }
         };
@@ -499,11 +493,7 @@ impl Commands {
         if !allowed {
             self.send(
                 id,
-                reply(
-                    Vec::new(),
-                    Some("This location cannot be listed.".into()),
-                    false,
-                ),
+                reply(Vec::new(), Some(fl!("files-device-cannot-list")), false),
             );
             return;
         }
@@ -521,11 +511,7 @@ impl Commands {
         if self.listings.get() >= LISTINGS || self.stopping.get() {
             self.send(
                 id,
-                reply(
-                    Vec::new(),
-                    Some("Files is still listing other locations. Try again shortly.".into()),
-                    false,
-                ),
+                reply(Vec::new(), Some(fl!("files-device-still-listing")), false),
             );
             return;
         }
@@ -546,11 +532,7 @@ impl Commands {
                     )),
                     false,
                 ),
-                Err(_) => reply(
-                    Vec::new(),
-                    Some("Listing this location took too long.".into()),
-                    false,
-                ),
+                Err(_) => reply(Vec::new(), Some(fl!("files-device-listing-timeout")), false),
             };
             owner.send(id, update);
         });
@@ -694,6 +676,6 @@ async fn list(file: gio::File) -> Result<(Vec<wire::RemoteEntry>, bool), glib::E
 fn unavailable() -> glib::Error {
     glib::Error::new(
         gio::IOErrorEnum::NotFound,
-        "The device capability is no longer available.",
+        &fl!("files-device-capability-gone"),
     )
 }

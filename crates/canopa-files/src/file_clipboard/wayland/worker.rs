@@ -20,7 +20,9 @@ use wayland_protocols::ext::data_control::v1::client::{
     ext_data_control_offer_v1 as offer, ext_data_control_source_v1 as source,
 };
 
-const CHANGED: &str = "The clipboard changed while reading it. Paste again.";
+fn changed() -> String {
+    fl!("files-clipboard-changed")
+}
 
 fn error(error: impl std::fmt::Display) -> io::Error {
     io::Error::other(error.to_string())
@@ -148,7 +150,7 @@ impl Worker {
         }
         self.snapshot();
         for (_, read) in std::mem::take(&mut self.reads) {
-            let _ = read.reply.send(Err(CHANGED.into()));
+            let _ = read.reply.send(Err(changed()));
         }
     }
     fn snapshot(&self) {
@@ -171,7 +173,7 @@ impl Worker {
     fn publish(&mut self, selection: Selection, reply: Reply<Intent>, qh: &QueueHandle<Self>) {
         let prepared = (|| {
             if self.publications.len() >= 8 {
-                return Err(error("The clipboard is busy. Try again."));
+                return Err(error(fl!("files-clipboard-busy")));
             }
             let payload = Payload::new(selection)?;
             let intent = Intent {
@@ -222,9 +224,7 @@ impl Worker {
     }
     fn read(&mut self, reply: Reply<Received>) {
         if self.reads.len() >= 4 || !self.publications.is_empty() {
-            let _ = reply.send(Err(
-                "The clipboard is busy. Wait for Copy or Cut to finish, then paste again.".into(),
-            ));
+            let _ = reply.send(Err(fl!("files-clipboard-busy-paste")));
             return;
         }
         let prepared = (|| {
@@ -377,9 +377,7 @@ impl Worker {
             .collect();
         for id in reads {
             if let Some(read) = self.reads.remove(&id) {
-                let _ = read.reply.send(Err(
-                    "The clipboard owner did not respond. Copy the files again.".into(),
-                ));
+                let _ = read.reply.send(Err(fl!("files-clipboard-owner-silent")));
             }
         }
         let publications: Vec<_> = self
@@ -402,10 +400,9 @@ impl Worker {
                     self.changed();
                 }
                 self.snapshot();
-                let _ = publication.reply.send(Err(
-                    "The compositor did not accept the file selection. Copy the files again."
-                        .into(),
-                ));
+                let _ = publication
+                    .reply
+                    .send(Err(fl!("files-clipboard-not-accepted-compositor")));
             }
         }
     }
@@ -499,9 +496,7 @@ fn dispatch_loop(
             .initialization_deadline
             .is_some_and(|deadline| Instant::now() >= deadline)
         {
-            return Err(error(
-                "The compositor did not respond while starting the file clipboard",
-            ));
+            return Err(error(fl!("files-clipboard-compositor-silent")));
         }
         for _ in 0..8 {
             match receiver.try_recv() {
@@ -509,9 +504,7 @@ fn dispatch_loop(
                     state.stop = true;
                     break;
                 }
-                Ok(control) if !state.ready => {
-                    control.reject("The file clipboard is starting. Try again.")
-                }
+                Ok(control) if !state.ready => control.reject(&fl!("files-clipboard-starting")),
                 Ok(Control::Publish(selection, reply)) => state.publish(selection, reply, qh),
                 Ok(Control::Read(reply)) => state.read(reply),
                 Ok(Control::ReplaceCut(intent, selection, reply)) => {
@@ -651,9 +644,7 @@ impl Dispatch<device::ExtDataControlDeviceV1, ()> for Worker {
                 }
             }
             device::Event::PrimarySelection { id: Some(offer) } => offer.destroy(),
-            device::Event::Finished => {
-                state.failure = Some("The Wayland file clipboard was disconnected".into())
-            }
+            device::Event::Finished => state.failure = Some(fl!("files-clipboard-disconnected")),
             _ => {}
         }
     }
@@ -723,9 +714,7 @@ impl Dispatch<source::ExtDataControlSourceV1, Arc<SourceData>> for Worker {
                     state.changed();
                 }
                 if let Some(publication) = publication {
-                    let _ = publication.reply.send(Err(
-                        "The clipboard was replaced before Copy or Cut finished".into(),
-                    ));
+                    let _ = publication.reply.send(Err(fl!("files-clipboard-replaced")));
                 }
             }
             _ => {}
@@ -748,10 +737,8 @@ impl Dispatch<wl_callback::WlCallback, Callback> for Worker {
                         state.device = Some(manager.get_data_device(seat, qh, ()));
                         conn.display().sync(qh, Callback::Device);
                     }
-                    (None, _) => state.failure = Some(
-                        "The compositor does not support the file clipboard protocol (ext-data-control-v1)".into()
-                    ),
-                    (_, None) => state.failure = Some("No Wayland input seat is available".into()),
+                    (None, _) => state.failure = Some(fl!("files-clipboard-unsupported")),
+                    (_, None) => state.failure = Some(fl!("files-clipboard-no-seat")),
                 }
                 return;
             }
@@ -765,7 +752,7 @@ impl Dispatch<wl_callback::WlCallback, Callback> for Worker {
         };
         if let Some(read) = state.reads.remove(id) {
             let result = if read.revision != state.revision {
-                Err(CHANGED.into())
+                Err(changed())
             } else if let Some(mut selection) = read.decoded {
                 let owned = state.owned().filter(|intent| Some(*intent) == read.owned);
                 if owned.is_some()
@@ -781,7 +768,7 @@ impl Dispatch<wl_callback::WlCallback, Callback> for Worker {
                 }
                 Ok(Received { selection, owned })
             } else {
-                Err("The clipboard did not finish reading".into())
+                Err(fl!("files-clipboard-read-unfinished"))
             };
             let _ = read.reply.send(result);
         }

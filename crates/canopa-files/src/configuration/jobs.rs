@@ -196,8 +196,7 @@ impl ConfigurationJobs {
                                 pending,
                             } = *request;
                             let result = if change.selection() != &selection {
-                                Err("This configuration belongs to another source selection."
-                                    .into())
+                                Err(fl!("files-configuration-other-source"))
                             } else {
                                 match change {
                                     Change::Save(base, actions) => base
@@ -277,7 +276,7 @@ impl ConfigurationJobs {
 
     fn send(&self, change: Change) -> io::Result<oneshot::Receiver<Reply>> {
         if self.0.stopped.load(Ordering::Acquire) {
-            return Err(io::Error::other("The configuration worker has stopped."));
+            return Err(io::Error::other(fl!("files-configuration-worker-stopped")));
         }
         let (reply, receiver) = oneshot::channel();
         let pending = Pending::new(self.0.shared.clone());

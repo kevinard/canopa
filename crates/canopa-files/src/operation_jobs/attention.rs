@@ -113,9 +113,7 @@ impl Worker {
             )
             .collect();
         if outstanding.len() >= ATTENTION_LIMIT {
-            return Err(io::Error::other(
-                "The operation attention queue is full. Review pending work before submitting more.",
-            ));
+            return Err(io::Error::other(fl!("files-jobs-attention-full")));
         }
         Ok(())
     }

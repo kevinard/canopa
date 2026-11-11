@@ -203,7 +203,7 @@ impl DeviceRequests {
     pub fn enumerate(&self, uri: &str) -> io::Result<ListingId> {
         let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closing || self.0.control.stopped.load(Ordering::Acquire) {
-            return Err(io::Error::other("The device runtime is shutting down."));
+            return Err(io::Error::other(fl!("files-device-runtime-stopping")));
         }
         if uri.len() > 4096 || uri.chars().any(char::is_control) {
             return Err(io::Error::other("This location cannot be listed."));
@@ -285,9 +285,9 @@ impl DeviceRequests {
                 .as_ref()
                 .is_none_or(|q| q.token != token)
         {
-            return Err(io::Error::other(
-                "This device question has changed or was cancelled.",
-            ));
+            return Err(io::Error::other(fl!(
+                "files-device-question-changed-or-cancelled"
+            )));
         }
         validate_answer(&job.snapshot.question.as_ref().unwrap().question, &answer)?;
         self.0.send(
@@ -358,24 +358,22 @@ impl Requests {
             id: id.0,
             command,
         })
-        .map_err(|_| io::Error::other("Could not prepare the device request."))?;
+        .map_err(|_| io::Error::other(fl!("files-device-prepare-failed")))?;
         if bytes.len() as u64 >= wire::INPUT_LIMIT {
-            return Err(io::Error::other(
-                "The device request exceeds its size limit.",
-            ));
+            return Err(io::Error::other(fl!("files-device-request-too-large")));
         }
         bytes.push(b'\n');
         let input = self.control.input.lock().unwrap_or_else(|e| e.into_inner());
         input
             .as_ref()
-            .ok_or_else(|| io::Error::other("The device helper is unavailable."))?
+            .ok_or_else(|| io::Error::other(fl!("files-device-helper-unavailable")))?
             .try_send(bytes)
-            .map_err(|_| io::Error::other("The device helper cannot accept more requests."))
+            .map_err(|_| io::Error::other(fl!("files-device-helper-full")))
     }
 
     fn admission(state: &State, stopped: bool) -> io::Result<()> {
         if state.closing || stopped {
-            return Err(io::Error::other("The device runtime is shutting down."));
+            return Err(io::Error::other(fl!("files-device-runtime-stopping")));
         }
         if state.jobs.iter().any(|job| job.hold.is_some()) {
             return Err(io::Error::other(
@@ -383,9 +381,7 @@ impl Requests {
             ));
         }
         if !state.attention.has_capacity() {
-            return Err(io::Error::other(
-                "Device notifications are still pending. Wait for their delivery before starting more device work.",
-            ));
+            return Err(io::Error::other(fl!("files-device-notifications-pending")));
         }
         Ok(())
     }
@@ -395,7 +391,7 @@ impl Requests {
         Self::admission(&state, self.control.stopped.load(Ordering::Acquire))?;
         let work = self.activity.work();
         if !work.ready() {
-            return Err(io::Error::other("A device removal is still in progress."));
+            return Err(io::Error::other(fl!("files-device-removal-in-progress")));
         }
         let id = RequestId(
             state
@@ -447,13 +443,11 @@ impl Requests {
             .iter()
             .find(|device| catalog.status == DeviceStatus::Ready && device.token == token)
             .cloned()
-            .ok_or_else(|| {
-                io::Error::other("This device observation has changed. Refresh and try again.")
-            })?;
+            .ok_or_else(|| io::Error::other(fl!("files-device-observation-changed-refresh")))?;
         let (operation, command) = if matches!(intent, Intent::Remove) {
             let removal = device
                 .removal
-                .ok_or_else(|| io::Error::other("This device cannot currently be removed."))?;
+                .ok_or_else(|| io::Error::other(fl!("files-device-cannot-remove")))?;
             (
                 Operation::Remove(removal),
                 wire::Command::Remove {
@@ -464,7 +458,7 @@ impl Requests {
             )
         } else {
             if !device.can_mount {
-                return Err(io::Error::other("This device cannot currently be mounted."));
+                return Err(io::Error::other(fl!("files-device-cannot-mount")));
             }
             (
                 Operation::Mount,
@@ -482,7 +476,7 @@ impl Requests {
             Operation::Mount | Operation::Connect => {
                 let work = self.activity.work();
                 if !work.ready() {
-                    return Err(io::Error::other("A device removal is still in progress."));
+                    return Err(io::Error::other(fl!("files-device-removal-in-progress")));
                 }
                 Hold::Work { _hold: work }
             }
@@ -690,7 +684,7 @@ impl Requests {
         state.lost = true;
         for listing in &mut state.listings {
             if listing.result.is_none() {
-                listing.result = Some(Err("The device helper stopped.".into()));
+                listing.result = Some(Err(fl!("files-device-helper-stopped-short")));
             }
         }
         let mut retired = Vec::new();
@@ -720,9 +714,7 @@ impl Requests {
             || state.attention.pending() > 0
             || state.closing && !state.lost && !self.control.stopped.load(Ordering::Acquire)
         {
-            return Err(io::Error::other(
-                "Device work is still active or already shutting down.",
-            ));
+            return Err(io::Error::other(fl!("files-device-work-active")));
         }
         state.closing = true;
         Ok(Closing(self.clone()))
@@ -754,9 +746,7 @@ fn protocol_error() -> io::Error {
 }
 
 fn root_changed() -> io::Error {
-    io::Error::other(
-        "This device location is no longer current. Select the device again to open it.",
-    )
+    io::Error::other(fl!("files-device-location-stale"))
 }
 
 fn valid_question(question: &wire::Question) -> bool {

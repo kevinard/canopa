@@ -146,17 +146,16 @@ impl RestoreReport {
 
     pub(super) fn detail(&self) -> String {
         if self.interrupted && self.restored.is_some() {
-            "The restore is recorded; history finalization needs review."
+            fl!("files-restore-needs-finalization")
         } else if self.interrupted {
-            "Restore needs review before more changes."
+            fl!("files-restore-needs-review")
         } else if self.cancelled {
-            "Restore cancelled before the item moved."
+            fl!("files-restore-cancelled")
         } else if self.error.is_some() {
-            "The stored item was not restored."
+            fl!("files-restore-not-restored")
         } else {
-            "Item restored."
+            fl!("files-restore-done")
         }
-        .into()
     }
 }
 

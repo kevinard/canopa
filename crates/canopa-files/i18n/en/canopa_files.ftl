@@ -1072,3 +1072,202 @@ files-undo-trash-info-unverified = Trash information cannot be verified: { $erro
 files-jobs-completed-before-interruption = Filesystem operation #{ $operation } completed before interruption; its recorded result was restored.
 # $detail summarizes a transfer's result.
 files-jobs-result-restored = { $detail } · recorded filesystem result restored after interruption
+
+## Device requests: refusals and errors
+
+files-device-already-settled = This device request has already settled.
+files-device-no-more-answers = This device request no longer accepts answers.
+files-device-observation-changed = The device observation has changed. Refresh and try again.
+files-device-gone = The device is no longer available.
+files-device-unsupported-operation = The device no longer supports this operation.
+files-device-request-id-used = This device request ID has already been used.
+files-device-another-request = Another device request is still in progress.
+files-device-address-invalid = The server address is not valid.
+files-device-cannot-list = This location cannot be listed.
+files-device-still-listing = Files is still listing other locations. Try again shortly.
+files-device-listing-timeout = Listing this location took too long.
+files-device-capability-gone = The device capability is no longer available.
+files-device-question-changed = This device question has changed.
+files-device-invalid-credentials = Invalid device credentials.
+files-device-answer-mismatch = The answer does not match the current device question.
+files-device-runtime-stopping = The device runtime is shutting down.
+files-device-question-changed-or-cancelled = This device question has changed or was cancelled.
+files-device-prepare-failed = Could not prepare the device request.
+files-device-request-too-large = The device request exceeds its size limit.
+files-device-helper-unavailable = The device helper is unavailable.
+files-device-helper-full = The device helper cannot accept more requests.
+files-device-notifications-pending = Device notifications are still pending. Wait for their delivery before starting more device work.
+files-device-removal-in-progress = A device removal is still in progress.
+files-device-observation-changed-refresh = This device observation has changed. Refresh and try again.
+files-device-cannot-remove = This device cannot currently be removed.
+files-device-cannot-mount = This device cannot currently be mounted.
+files-device-helper-stopped-short = The device helper stopped.
+files-device-work-active = Device work is still active or already shutting down.
+files-device-location-stale = This device location is no longer current. Select the device again to open it.
+
+## Device notifications
+
+files-device-notification-decision = Device needs a decision
+files-device-notification-mounted = Device mounted.
+files-device-notification-remote = Connected, but GVFS offers no local folder for it.
+files-device-notification-powered-off = Device powered off.
+files-device-notification-ejected = Device ejected.
+files-device-notification-unmounted = Device unmounted.
+
+## Operation and clipboard refusals
+
+files-jobs-attention-full = The operation attention queue is full. Review pending work before submitting more.
+files-clipboard-other-runtime = The previous clipboard selection belongs to another runtime. Copy or Cut a new selection.
+files-clipboard-other-history = This selection belongs to another operation history or another runtime. Select the files again.
+files-clipboard-cut-pasting = This Cut is already being pasted. Wait for its result before pasting again.
+files-clipboard-cut-finished = This Cut has finished. Copy or Cut a new selection.
+files-clipboard-cut-pasting-continue = This Cut is already being pasted. Wait for its result before continuing.
+files-dismissal-not-ready = This request is not ready for dismissal. Finish or cancel active work and save its result first.
+files-dismissal-unavailable = The request is unavailable.
+files-dismissal-stopped-only = Only a stopped ordinary request can be dismissed.
+files-dismissal-done = Request dismissed after review. Completed work and Undo are preserved.
+files-drop-destination-changed = The drop destination has changed. Review the folder and start a new drag.
+files-drag-ended = This drag has already ended. Start a new drag.
+files-drag-too-many-folders = This drag has already checked too many folders. Start a new drag.
+files-drop-binding-invalid = A drop requires an absolute destination and original folder binding.
+files-drop-outside-folder = The drop target is outside its original browser folder.
+files-drag-cancelled = Drag preparation cancelled.
+files-recovery-not-ready = This Recovery copy is not ready to continue.
+files-recovery-request-gone = The Recovery request is no longer available.
+files-recovery-no-plan = This owner has no exact remaining Recovery plan. Refresh Recovery to choose a new copy.
+files-recovery-handed-off = This Recovery continuation was already handed off or is unavailable.
+files-original-destination-gone = The original destination observation is unavailable.
+files-original-source-gone = The original source observation is unavailable.
+files-recovery-not-recovery = The stopped result is not a Recovery copy.
+files-rename-needs-entry = Rename needs an absolute selected entry and folder.
+files-rename-other-runtime = This Rename belongs to another runtime. Select the item again.
+files-rename-accepted = This Rename has already been accepted. Select the item again.
+files-transfer-not-ready = This transfer is not ready to continue.
+files-transfer-no-plan = This owner has no exact live transfer plan. Saved results require review before new work.
+files-transfer-handed-off = This transfer part was already handed off or is unavailable.
+files-original-destination-placement-gone = The original destination placement is unavailable.
+files-original-source-placement-gone = The original source placement is unavailable.
+files-transfer-not-transfer = The stopped result is not a transfer.
+
+## Restore from Trash results
+
+files-restore-needs-finalization = The restore is recorded; history finalization needs review.
+files-restore-needs-review = Restore needs review before more changes.
+files-restore-cancelled = Restore cancelled before the item moved.
+files-restore-not-restored = The stored item was not restored.
+files-restore-done = Item restored.
+
+## Storage checks
+
+files-storage-not-prepared = Storage protection has not been prepared. Wait for Files startup, or restart Files if storage monitoring failed.
+files-storage-cancelled = Storage checking was cancelled.
+files-storage-location-changed = The browsing location changed after the request. Check the intended location and retry.
+files-storage-not-returned = The original storage for this request has not returned. Reconnect the intended device before retrying, or start a new operation after reviewing the locations.
+files-storage-device-changed = The device at this location changed after the request. Check the intended device and retry.
+files-storage-changed = Storage changed while preparing the request. Retry the operation.
+files-storage-device-unavailable = The device for this location is unavailable. Reconnect the intended device and retry the operation.
+files-device-remove-named = Remove { $device }
+files-device-connect-named = Connect to { $device }
+files-device-notification-connected = Connected.
+files-device-notification-cancelled = Cancelled.
+
+## Network locations: missing backends and connection failures
+
+# $kind is smb, sftp, ftp, dav, nfs, mtp, ptp, afc, network or other;
+# $scheme is a URI scheme such as smb.
+files-network-missing-gvfs = Files cannot open { $kind ->
+    [smb] Windows shares (SMB)
+    [sftp] SSH servers (SFTP)
+    [ftp] FTP servers
+    [dav] WebDAV servers
+    [nfs] NFS servers
+    [mtp] phones and media players (MTP)
+    [ptp] cameras (PTP)
+    [afc] iPhones and iPads
+    [network] browsing the local network
+   *[other] this kind of location
+}: GVFS is not installed or its { $scheme } backend is missing. Install the gvfs package.
+files-network-missing-package = Files cannot open { $kind ->
+    [smb] Windows shares (SMB)
+    [sftp] SSH servers (SFTP)
+    [ftp] FTP servers
+    [dav] WebDAV servers
+    [nfs] NFS servers
+    [mtp] phones and media players (MTP)
+    [ptp] cameras (PTP)
+    [afc] iPhones and iPads
+    [network] browsing the local network
+   *[other] this kind of location
+}: install the { $package } package, then try again.
+files-network-missing-backend = Files cannot open { $kind ->
+    [smb] Windows shares (SMB)
+    [sftp] SSH servers (SFTP)
+    [ftp] FTP servers
+    [dav] WebDAV servers
+    [nfs] NFS servers
+    [mtp] phones and media players (MTP)
+    [ptp] cameras (PTP)
+    [afc] iPhones and iPads
+    [network] browsing the local network
+   *[other] this kind of location
+}: no GVFS backend handles it.
+# $detail is the system's own error text.
+files-network-unreachable = Files cannot reach { $server }. Check that the server is on and connected to the network, and that the address is right ({ $detail }).
+files-network-login-refused = { $server } refused the login. Check the user name, domain and password ({ $detail }).
+files-network-connect-failed = Files could not connect to { $server }.
+files-network-connect-failed-detail = Files could not connect to { $server }: { $detail }.
+
+## Operation results that need review
+
+files-drop-destination-unavailable = The drop destination changed or is unavailable: { $error }
+files-jobs-completion-unverified = Recorded completion could not be verified; review the interrupted work: { $error }
+files-jobs-completion-not-saved = Recorded completion result not saved: { $error }
+files-jobs-transfer-unverified = Reviewed transfer could not be verified: { $reason }
+files-jobs-recorded-transfer-unverified = Recorded transfer could not be verified; review the interrupted work: { $error }
+files-jobs-transfer-end-not-saved = Transfer end not saved: { $error }
+files-jobs-transfer-result-not-saved = Recorded transfer result not saved: { $error }
+files-jobs-transfer-receipt-not-saved = File work completed, but its transfer completion receipt was not saved: { $error }
+files-jobs-receipt-not-saved = File work completed, but its completion receipt was not saved: { $error }
+
+## File clipboard
+
+files-clipboard-changed = The clipboard changed while reading it. Paste again.
+files-clipboard-busy = The clipboard is busy. Try again.
+files-clipboard-busy-paste = The clipboard is busy. Wait for Copy or Cut to finish, then paste again.
+files-clipboard-owner-silent = The clipboard owner did not respond. Copy the files again.
+files-clipboard-not-accepted-compositor = The compositor did not accept the file selection. Copy the files again.
+files-clipboard-compositor-silent = The compositor did not respond while starting the file clipboard
+files-clipboard-starting = The file clipboard is starting. Try again.
+files-clipboard-disconnected = The Wayland file clipboard was disconnected
+files-clipboard-replaced = The clipboard was replaced before Copy or Cut finished
+files-clipboard-unsupported = The compositor does not support the file clipboard protocol (ext-data-control-v1)
+files-clipboard-no-seat = No Wayland input seat is available
+files-clipboard-read-unfinished = The clipboard did not finish reading
+files-clipboard-worker-stopped = The file clipboard worker stopped unexpectedly
+files-clipboard-busy-unavailable = The file clipboard is busy or unavailable. Try again.
+files-clipboard-no-files = The clipboard contains no files
+files-clipboard-too-large = The clipboard file list is too large
+files-clipboard-invalid-location = The clipboard contains an invalid file location. Copy the files again.
+files-clipboard-non-local = The file list contains a non-local file location
+
+## Properties, playback and device removal
+
+files-properties-too-many = Properties supports at most 64 items.
+files-media-cancelled = Media preparation cancelled.
+files-media-no-video-output = The video output is unavailable.
+files-media-cannot-play = This media could not be played. Open it in your usual application.
+files-media-no-seek = Seeking is unavailable for this media.
+files-media-timed-out = Media preparation timed out.
+files-media-shut-down = Media playback has shut down.
+files-media-closing = Media playback is still closing.
+files-media-playback-stopped = Media playback has stopped.
+files-media-controls-busy = Media controls are busy.
+files-removal-in-progress = A device removal is already in progress.
+files-removal-wait = Wait for Files operations and custom actions to finish, or cancel them, before removing a device.
+files-removal-cancelled = Work cancelled before device removal finished.
+files-actions-wait-notifications = Wait for custom-action notifications before stopping the runtime.
+files-actions-runtime-stopped-reply = The custom-action runtime stopped before replying.
+files-actions-runtime-busy = The custom-action runtime is busy or stopped.
+files-app-work-pending = Files still has accepted work or unsaved results.
+files-configuration-other-source = This configuration belongs to another source selection.
+files-configuration-worker-stopped = The configuration worker has stopped.

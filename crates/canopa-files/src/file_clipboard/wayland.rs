@@ -109,11 +109,7 @@ impl Clipboard {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     worker::run(&receiver, reader, state.clone())
                 }))
-                .unwrap_or_else(|_| {
-                    Err(io::Error::other(
-                        "The file clipboard worker stopped unexpectedly",
-                    ))
-                });
+                .unwrap_or_else(|_| Err(io::Error::other(fl!("files-clipboard-worker-stopped"))));
                 let mut snapshot = state
                     .snapshot
                     .lock()
@@ -145,9 +141,10 @@ impl Clipboard {
         control: impl FnOnce(Reply<T>) -> Control,
     ) -> io::Result<oneshot::Receiver<Result<T, String>>> {
         let (send, receive) = oneshot::channel();
-        self.0.sender.try_send(control(send)).map_err(|_| {
-            io::Error::other("The file clipboard is busy or unavailable. Try again.")
-        })?;
+        self.0
+            .sender
+            .try_send(control(send))
+            .map_err(|_| io::Error::other(fl!("files-clipboard-busy-unavailable")))?;
         self.0.wake();
         Ok(receive)
     }

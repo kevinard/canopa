@@ -87,7 +87,7 @@ impl Interaction {
     pub fn answer(&self, serial: u64, answer: Answer) -> io::Result<()> {
         let state = self.pending.borrow();
         if state.serial != serial {
-            return Err(io::Error::other("This device question has changed."));
+            return Err(io::Error::other(fl!("files-device-question-changed")));
         }
         match (state.question.as_ref(), answer) {
             (
@@ -112,7 +112,7 @@ impl Interaction {
                     || save != Remember::Never
                         && flags & gio::AskPasswordFlags::SAVING_SUPPORTED.bits() == 0
                 {
-                    return Err(io::Error::other("Invalid device credentials."));
+                    return Err(io::Error::other(fl!("files-device-invalid-credentials")));
                 }
                 // Anonymous connections never forward credential drafts from
                 // any frontend to the platform provider.
@@ -140,9 +140,7 @@ impl Interaction {
                 self.operation.set_choice(choice as i32);
             }
             _ => {
-                return Err(io::Error::other(
-                    "The answer does not match the current device question.",
-                ));
+                return Err(io::Error::other(fl!("files-device-answer-mismatch")));
             }
         }
         drop(state);

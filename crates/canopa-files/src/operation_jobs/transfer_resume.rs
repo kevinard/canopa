@@ -49,9 +49,7 @@ impl OperationJobs {
     ) -> io::Result<oneshot::Receiver<Result<u64, String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::ResumeTransfer(id, part, reply))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 
@@ -60,9 +58,7 @@ impl OperationJobs {
     pub fn abandon_transfer(&self, id: u64) -> io::Result<oneshot::Receiver<Result<(), String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::AbandonTransfer(id, reply))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 }
@@ -75,28 +71,29 @@ impl Worker {
             .iter()
             .any(|job| job.id == id && matches!(job.phase, Phase::Stopped | Phase::Failed))
         {
-            return Err(io::Error::other("This transfer is not ready to continue."));
+            return Err(io::Error::other(fl!("files-transfer-not-ready")));
         }
         self.jobs
             .get(&id)
             .filter(|job| job.transfer_pending.is_some())
-            .ok_or_else(|| io::Error::other("This owner has no exact live transfer plan. Saved results require review before new work."))
+            .ok_or_else(|| io::Error::other(fl!("files-transfer-no-plan")))
     }
 
     pub(super) fn resume_transfer(&mut self, id: u64, part: TransferPart) -> io::Result<u64> {
         self.check_attention_capacity()?;
         let previous = self.stopped_transfer(id)?;
         let mut pending = previous.transfer_pending.clone().unwrap();
-        let plan = pending.take(part).ok_or_else(|| {
-            io::Error::other("This transfer part was already handed off or is unavailable.")
-        })?;
-        let placement = previous.placement.clone().ok_or_else(|| {
-            io::Error::other("The original destination placement is unavailable.")
-        })?;
+        let plan = pending
+            .take(part)
+            .ok_or_else(|| io::Error::other(fl!("files-transfer-handed-off")))?;
+        let placement = previous
+            .placement
+            .clone()
+            .ok_or_else(|| io::Error::other(fl!("files-original-destination-placement-gone")))?;
         let source_placement = previous
             .source_placement
             .clone()
-            .ok_or_else(|| io::Error::other("The original source placement is unavailable."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-original-source-placement-gone")))?;
         let saved = Saved::Plan {
             version: 1,
             transfer_checkpoint: Some(Box::new(plan.clone().into_saved_plan())),
@@ -113,7 +110,7 @@ impl Worker {
         let mut snapshot = saved.snapshot(0, Phase::Queued, None)?;
         let mut old_saved = previous.saved.clone();
         let Saved::TransferPending { outcome, .. } = &mut old_saved else {
-            return Err(io::Error::other("The stopped result is not a transfer."));
+            return Err(io::Error::other(fl!("files-transfer-not-transfer")));
         };
         outcome.release(part, TransferResolution::HandedOff)?;
         let phase = old_saved.stopped_phase();
@@ -188,7 +185,7 @@ impl Worker {
         let previous = self.stopped_transfer(id)?;
         let mut saved = previous.saved.clone();
         let Saved::TransferPending { outcome, .. } = &mut saved else {
-            return Err(io::Error::other("The stopped result is not a transfer."));
+            return Err(io::Error::other(fl!("files-transfer-not-transfer")));
         };
         for part in [TransferPart::Failed, TransferPart::Remaining] {
             if outcome.has(part) {

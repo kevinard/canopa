@@ -35,8 +35,9 @@ impl Worker {
                     record: record.clone(),
                     saved: saved.clone(),
                     phase: Phase::Interrupted,
-                    error: Some(format!(
-                        "Recorded completion could not be verified; review the interrupted work: {error}"
+                    error: Some(fl!(
+                        "files-jobs-completion-unverified",
+                        error = error.to_string()
                     )),
                 }));
             }
@@ -59,7 +60,10 @@ impl Worker {
             Err(error) => (
                 record.clone(),
                 Phase::SaveFailed,
-                Some(format!("Recorded completion result not saved: {error}")),
+                Some(fl!(
+                    "files-jobs-completion-not-saved",
+                    error = error.to_string()
+                )),
             ),
         };
         Ok(Some(Restored {
@@ -98,7 +102,10 @@ impl Worker {
                 self.set_job_phase(
                     id,
                     Phase::Interrupted,
-                    Some(format!("Reviewed transfer could not be verified: {reason}")),
+                    Some(fl!(
+                        "files-jobs-transfer-unverified",
+                        reason = reason.to_string()
+                    )),
                 );
                 return true;
             }
@@ -120,11 +127,17 @@ impl Worker {
                     };
                     job.transfer_pending = (!pending.empty()).then_some(pending);
                     if let Some(reason) = parts.error {
-                        error = Some(format!("Some saved work cannot yet continue: {reason}"));
+                        error = Some(fl!(
+                            "files-jobs-some-work-cannot-continue",
+                            error = reason.to_string()
+                        ));
                     }
                 }
                 Err(reason) => {
-                    error = Some(format!("Saved transfer cannot yet continue: {reason}"));
+                    error = Some(fl!(
+                        "files-jobs-transfer-cannot-continue",
+                        error = reason.to_string()
+                    ));
                 }
             }
         }
@@ -201,8 +214,9 @@ impl Worker {
             Ok(Some(restored)) => restored,
             Ok(None) => return Ok(None),
             Err(error) => {
-                return Ok(Some(interrupted(format!(
-                    "Recorded transfer could not be verified; review the interrupted work: {error}"
+                return Ok(Some(interrupted(fl!(
+                    "files-jobs-recorded-transfer-unverified",
+                    error = error.to_string()
                 ))));
             }
         };
@@ -259,7 +273,10 @@ impl Worker {
         // A recovered end that failed to record must first use its exact
         // engine-scoped witness. Do not attempt an unguarded application save.
         let result = if let Some(error) = restored.error {
-            Err(io::Error::other(format!("Transfer end not saved: {error}")))
+            Err(io::Error::other(fl!(
+                "files-jobs-transfer-end-not-saved",
+                error = error.to_string()
+            )))
         } else if stopped {
             let Saved::TransferPending { outcome, .. } = &saved else {
                 unreachable!()
@@ -273,7 +290,10 @@ impl Worker {
             Err(error) => (
                 record.clone(),
                 Phase::SaveFailed,
-                Some(format!("Recorded transfer result not saved: {error}")),
+                Some(fl!(
+                    "files-jobs-transfer-result-not-saved",
+                    error = error.to_string()
+                )),
             ),
         };
         Ok(Some(Restored {
@@ -322,8 +342,17 @@ impl Job {
             return Ok(record);
         }
         if let Some(TransferConfirmation::Pending(pending)) = &self.transfer_confirmation {
-            engine.retry_transfer_confirmation(pending).map_err(|error| io::Error::new(error.kind(),
-                format!("File work completed, but its transfer completion receipt was not saved: {error}")))?;
+            engine
+                .retry_transfer_confirmation(pending)
+                .map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        fl!(
+                            "files-jobs-transfer-receipt-not-saved",
+                            error = error.to_string()
+                        ),
+                    )
+                })?;
             self.transfer_confirmation = Some(pending.recorded());
         }
         if let Some(MutationConfirmation::Pending(pending)) = &self.mutation_confirmation {
@@ -332,9 +361,7 @@ impl Job {
                 .map_err(|error| {
                     io::Error::new(
                         error.kind(),
-                        format!(
-                            "File work completed, but its completion receipt was not saved: {error}"
-                        ),
+                        fl!("files-jobs-receipt-not-saved", error = error.to_string()),
                     )
                 })?;
             self.mutation_confirmation = Some(MutationConfirmation::Recorded);

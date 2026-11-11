@@ -84,26 +84,31 @@ pub fn backend_package(scheme: &str) -> Option<&'static str> {
 
 /// Why a location scheme is unusable: GIO does not list it as supported.
 pub fn missing_backend(scheme: &str) -> String {
-    let what = match scheme {
-        "smb" => "Windows shares (SMB)",
-        "sftp" | "ssh" => "SSH servers (SFTP)",
-        "ftp" | "ftps" | "ftpis" => "FTP servers",
-        "dav" | "davs" => "WebDAV servers",
-        "nfs" => "NFS servers",
-        "mtp" => "phones and media players (MTP)",
-        "gphoto2" => "cameras (PTP)",
-        "afc" => "iPhones and iPads",
-        "network" => "browsing the local network",
-        _ => "this kind of location",
+    // The kind of location, as a selector for the messages' wording.
+    let kind = match scheme {
+        "smb" => "smb",
+        "sftp" | "ssh" => "sftp",
+        "ftp" | "ftps" | "ftpis" => "ftp",
+        "dav" | "davs" => "dav",
+        "nfs" => "nfs",
+        "mtp" => "mtp",
+        "gphoto2" => "ptp",
+        "afc" => "afc",
+        "network" => "network",
+        _ => "other",
     };
     match backend_package(scheme) {
-        Some("gvfs") => format!(
-            "Files cannot open {what}: GVFS is not installed or its {scheme} backend is missing. Install the gvfs package."
+        Some("gvfs") => fl!(
+            "files-network-missing-gvfs",
+            kind = kind,
+            scheme = scheme.to_owned()
         ),
-        Some(package) => {
-            format!("Files cannot open {what}: install the {package} package, then try again.")
-        }
-        None => format!("Files cannot open {what}: no GVFS backend handles it."),
+        Some(package) => fl!(
+            "files-network-missing-package",
+            kind = kind,
+            package = package.to_owned()
+        ),
+        None => fl!("files-network-missing-backend", kind = kind),
     }
 }
 
@@ -289,15 +294,25 @@ pub fn describe_failure(uri: &str, failure: Failure, detail: &str) -> String {
         .unwrap_or_else(|| uri.to_owned());
     let detail = detail.trim().trim_end_matches('.');
     match failure {
-        Failure::Unreachable => format!(
-            "Files cannot reach {server}. Check that the server is on and connected to the network, and that the address is right ({detail})."
+        Failure::Unreachable => fl!(
+            "files-network-unreachable",
+            server = server,
+            detail = detail.to_owned()
         ),
-        Failure::Credentials => format!(
-            "{server} refused the login. Check the user name, domain and password ({detail})."
+        Failure::Credentials => fl!(
+            "files-network-login-refused",
+            server = server,
+            detail = detail.to_owned()
         ),
         Failure::Unsupported => missing_backend(scheme),
-        Failure::Other if detail.is_empty() => format!("Files could not connect to {server}."),
-        Failure::Other => format!("Files could not connect to {server}: {detail}."),
+        Failure::Other if detail.is_empty() => {
+            fl!("files-network-connect-failed", server = server)
+        }
+        Failure::Other => fl!(
+            "files-network-connect-failed-detail",
+            server = server,
+            detail = detail.to_owned()
+        ),
     }
 }
 

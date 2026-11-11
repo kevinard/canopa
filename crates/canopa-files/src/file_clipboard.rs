@@ -18,8 +18,8 @@ pub struct Selection {
     kind: TransferKind,
 }
 
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
+fn invalid(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 impl Selection {
@@ -39,14 +39,14 @@ impl Selection {
             }
             bytes = bytes.saturating_add(path.as_os_str().len());
             if bytes > LIMIT {
-                return Err(invalid("The clipboard file list is too large"));
+                return Err(invalid(fl!("files-clipboard-too-large")));
             }
             if seen.insert(path.clone()) {
                 unique.push(path);
             }
         }
         if unique.is_empty() {
-            return Err(invalid("The clipboard contains no files"));
+            return Err(invalid(fl!("files-clipboard-no-files")));
         }
         Ok(Self {
             paths: unique.into(),
@@ -105,7 +105,7 @@ impl Selection {
                 .saturating_add(ending.len())
                 > LIMIT
             {
-                return Err(invalid("The clipboard file list is too large"));
+                return Err(invalid(fl!("files-clipboard-too-large")));
             }
             bytes.extend_from_slice(uri.as_str().as_bytes());
             bytes.extend_from_slice(ending);
@@ -115,7 +115,7 @@ impl Selection {
 
     pub fn decode(mime: &str, bytes: &[u8], kde: Option<&[u8]>) -> io::Result<Self> {
         if bytes.len() > LIMIT {
-            return Err(invalid("The clipboard file list is too large"));
+            return Err(invalid(fl!("files-clipboard-too-large")));
         }
         let value =
             std::str::from_utf8(bytes).map_err(|_| invalid("Invalid clipboard file list"))?;
@@ -146,9 +146,7 @@ pub(crate) fn local_path(value: &str) -> io::Result<PathBuf> {
         .bytes()
         .any(|byte| byte.is_ascii_control() || byte == b' ' || byte == b'\\')
     {
-        return Err(invalid(
-            "The clipboard contains an invalid file location. Copy the files again.",
-        ));
+        return Err(invalid(fl!("files-clipboard-invalid-location")));
     }
     if let Some((_, rest)) = value.split_once(':')
         && let Some(authority) = rest
@@ -157,7 +155,7 @@ pub(crate) fn local_path(value: &str) -> io::Result<PathBuf> {
         && !authority.is_empty()
         && !authority.eq_ignore_ascii_case("localhost")
     {
-        return Err(invalid("The file list contains a non-local file location"));
+        return Err(invalid(fl!("files-clipboard-non-local")));
     }
     // URL parsers remove dot segments before returning a path. For a directory
     // link followed by `..`, that can name a different file from Unix traversal.
@@ -196,7 +194,7 @@ pub(crate) fn local_path(value: &str) -> io::Result<PathBuf> {
         || uri.query().is_some()
         || uri.fragment().is_some()
     {
-        return Err(invalid("The file list contains a non-local file location"));
+        return Err(invalid(fl!("files-clipboard-non-local")));
     }
     uri.to_file_path()
         .map_err(|_| invalid("Invalid clipboard file location"))

@@ -108,9 +108,7 @@ impl Application {
     /// A refused shutdown leaves ownership with the caller.
     pub async fn shutdown(&self) -> io::Result<()> {
         if self.holds_application() {
-            return Err(io::Error::other(
-                "Files still has accepted work or unsaved results.",
-            ));
+            return Err(io::Error::other(fl!("files-app-work-pending")));
         }
         if let Some(host) = &self.file_manager {
             host.shutdown()?;

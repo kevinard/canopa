@@ -21,7 +21,7 @@ impl Decoder {
     fn new(source: MediaSource, shared: &Shared, audio: AudioOutput) -> Result<Self, String> {
         gst::init().map_err(|e| e.to_string())?;
         if shared.cancellation.is_cancelled() {
-            return Err("Media preparation cancelled.".into());
+            return Err(fl!("files-media-cancelled"));
         }
         let input =
             input::Input::new(source, shared.cancellation.clone()).map_err(|e| e.to_string())?;
@@ -37,7 +37,7 @@ impl Decoder {
         let sink = bin
             .by_name("frames")
             .and_then(|element| element.downcast::<AppSink>().ok())
-            .ok_or("The video output is unavailable.")?;
+            .ok_or(fl!("files-media-no-video-output"))?;
         pipeline.set_property("video-sink", &bin);
         match audio {
             AudioOutput::System => {}
@@ -85,9 +85,7 @@ pub(super) fn run(
         state.frame = None;
     } else if let Err(error) = result {
         eprintln!("[canopa-files media] {error}");
-        state.phase = Phase::Failed(
-            "This media could not be played. Open it in your usual application.".into(),
-        );
+        state.phase = Phase::Failed(fl!("files-media-cannot-play"));
     }
     shared.publish(state);
 }
@@ -184,7 +182,7 @@ fn play(
                     ended = false;
                     requested_position = Some((position, Instant::now()));
                 } else {
-                    state.notice = Some("Seeking is unavailable for this media.".into());
+                    state.notice = Some(fl!("files-media-no-seek"));
                 }
             }
             if playing && ended {
@@ -253,7 +251,7 @@ fn play(
             dirty = true;
         }
         if !prepared && started.elapsed() > Duration::from_secs(10) {
-            return Err("Media preparation timed out.".into());
+            return Err(fl!("files-media-timed-out"));
         }
         if prepared && last_query.elapsed() >= Duration::from_millis(100) {
             last_query = Instant::now();

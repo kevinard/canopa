@@ -191,9 +191,7 @@ impl OperationJobs {
     ) -> io::Result<oneshot::Receiver<Result<u64, String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::ResumeRecovery(id, part, reply))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 }
@@ -222,25 +220,27 @@ impl Worker {
             .iter()
             .any(|job| job.id == id && matches!(job.phase, Phase::Stopped | Phase::Failed))
         {
-            return Err(io::Error::other(
-                "This Recovery copy is not ready to continue.",
-            ));
+            return Err(io::Error::other(fl!("files-recovery-not-ready")));
         }
         let previous = self
             .jobs
             .get(&id)
-            .ok_or_else(|| io::Error::other("The Recovery request is no longer available."))?;
-        let mut pending = previous.recovery_pending.clone().ok_or_else(|| io::Error::other("This owner has no exact remaining Recovery plan. Refresh Recovery to choose a new copy."))?;
-        let plan = pending.take(part).ok_or_else(|| {
-            io::Error::other("This Recovery continuation was already handed off or is unavailable.")
-        })?;
-        let placement = previous.placement.clone().ok_or_else(|| {
-            io::Error::other("The original destination observation is unavailable.")
-        })?;
+            .ok_or_else(|| io::Error::other(fl!("files-recovery-request-gone")))?;
+        let mut pending = previous
+            .recovery_pending
+            .clone()
+            .ok_or_else(|| io::Error::other(fl!("files-recovery-no-plan")))?;
+        let plan = pending
+            .take(part)
+            .ok_or_else(|| io::Error::other(fl!("files-recovery-handed-off")))?;
+        let placement = previous
+            .placement
+            .clone()
+            .ok_or_else(|| io::Error::other(fl!("files-original-destination-gone")))?;
         let source_placement = previous
             .source_placement
             .clone()
-            .ok_or_else(|| io::Error::other("The original source observation is unavailable."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-original-source-gone")))?;
         let request = Request::Recover {
             item: Box::new(plan.item().clone()),
             destination: plan.destination().to_owned(),
@@ -256,9 +256,7 @@ impl Worker {
         };
         let mut old_saved = previous.saved.clone();
         let Saved::RecoveryResult { report, .. } = &mut old_saved else {
-            return Err(io::Error::other(
-                "The stopped result is not a Recovery copy.",
-            ));
+            return Err(io::Error::other(fl!("files-recovery-not-recovery")));
         };
         report.handed_off = pending.empty();
         let phase = old_saved.stopped_phase();

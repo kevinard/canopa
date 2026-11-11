@@ -139,7 +139,7 @@ impl Playback {
             if state.closed {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
-                    "Media playback has shut down.",
+                    fl!("files-media-shut-down"),
                 ));
             }
             state.active += 1;
@@ -187,7 +187,7 @@ impl Playback {
         if activity.active != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "Media playback is still closing.",
+                fl!("files-media-closing"),
             ));
         }
         activity.closed = true;
@@ -251,18 +251,19 @@ impl Session {
         if self.shared.cancellation.is_cancelled() {
             return Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Media playback has stopped.",
+                fl!("files-media-playback-stopped"),
             ));
         }
         self.commands
             .try_send(command)
             .map_err(|error| match error {
                 mpsc::TrySendError::Full(_) => {
-                    io::Error::new(io::ErrorKind::WouldBlock, "Media controls are busy.")
+                    io::Error::new(io::ErrorKind::WouldBlock, fl!("files-media-controls-busy"))
                 }
-                mpsc::TrySendError::Disconnected(_) => {
-                    io::Error::new(io::ErrorKind::BrokenPipe, "Media playback has stopped.")
-                }
+                mpsc::TrySendError::Disconnected(_) => io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    fl!("files-media-playback-stopped"),
+                ),
             })
     }
 

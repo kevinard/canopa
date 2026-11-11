@@ -25,6 +25,7 @@ pub(crate) mod tests {
         }
 
         /// The pseudo-locale (right to left) until dropped.
+        #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
         pub(crate) fn pseudo() -> Self {
             let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
             canopa_i18n::select(canopa_i18n::Selection {

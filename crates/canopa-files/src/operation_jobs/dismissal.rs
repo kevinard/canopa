@@ -8,9 +8,7 @@ impl OperationJobs {
     pub fn dismiss_request(&self, id: u64) -> io::Result<oneshot::Receiver<Result<(), String>>> {
         let (reply, receiver) = oneshot::channel();
         self.send_work(Control::DismissRequest(id, reply))
-            .map_err(|_| {
-                io::Error::other("The operation queue is unavailable or full. Try again.")
-            })?;
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receiver)
     }
 }
@@ -20,11 +18,11 @@ impl Worker {
         let snapshot = self.state().jobs.iter().find(|row| row.id == id).cloned();
         let snapshot = snapshot
             .filter(|row| row.dismissible)
-            .ok_or_else(|| io::Error::other("This request is not ready for dismissal. Finish or cancel active work and save its result first."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-dismissal-not-ready")))?;
         let job = self
             .jobs
             .get(&id)
-            .ok_or_else(|| io::Error::other("The request is unavailable."))?;
+            .ok_or_else(|| io::Error::other(fl!("files-dismissal-unavailable")))?;
         if self.active == Some(id)
             || self.queue.contains(&id)
             || !matches!(
@@ -38,12 +36,9 @@ impl Worker {
                 }
             )
         {
-            return Err(io::Error::other(
-                "Only a stopped ordinary request can be dismissed.",
-            ));
+            return Err(io::Error::other(fl!("files-dismissal-stopped-only")));
         }
-        let mut detail =
-            String::from("Request dismissed after review. Completed work and Undo are preserved.");
+        let mut detail = fl!("files-dismissal-done");
         for note in [snapshot.detail.as_ref(), snapshot.error.as_ref()]
             .into_iter()
             .flatten()

@@ -40,28 +40,32 @@ impl Inbox {
         }
         let (title, body) = if job.question.is_some() {
             (
-                "Device needs a decision".into(),
-                format!("{} · Open Operations to review.", job.name),
+                fl!("files-device-notification-decision"),
+                fl!(
+                    "files-notification-decision-body",
+                    operation = job.name.clone()
+                ),
             )
         } else if let Some(outcome) = &job.outcome {
             let title = match job.operation {
-                Operation::Mount => format!("Mount {}", job.name),
-                Operation::Remove(_) => format!("Remove {}", job.name),
-                Operation::Connect => format!("Connect to {}", job.name),
+                Operation::Mount => fl!("files-device-mount-named", device = job.name.clone()),
+                Operation::Remove(_) => fl!("files-device-remove-named", device = job.name.clone()),
+                Operation::Connect => fl!("files-device-connect-named", device = job.name.clone()),
             };
             let body = match outcome {
-                wire::Outcome::Mounted { .. } => "Device mounted.".into(),
-                wire::Outcome::Connected { .. } => "Connected.".into(),
+                wire::Outcome::Mounted { .. } => fl!("files-device-notification-mounted"),
+                wire::Outcome::Connected { .. } => fl!("files-device-notification-connected"),
                 wire::Outcome::ConnectedRemote { .. } => {
-                    "Connected, but GVFS offers no local folder for it.".into()
+                    fl!("files-device-notification-remote")
                 }
                 wire::Outcome::Removed => match job.operation {
-                    Operation::Remove(Removal::PowerOff) => "Device powered off.",
-                    Operation::Remove(Removal::Eject) => "Device ejected.",
-                    _ => "Device unmounted.",
-                }
-                .into(),
-                wire::Outcome::Cancelled => "Cancelled.".into(),
+                    Operation::Remove(Removal::PowerOff) => {
+                        fl!("files-device-notification-powered-off")
+                    }
+                    Operation::Remove(Removal::Eject) => fl!("files-device-notification-ejected"),
+                    _ => fl!("files-device-notification-unmounted"),
+                },
+                wire::Outcome::Cancelled => fl!("files-device-notification-cancelled"),
                 wire::Outcome::Failed { message } | wire::Outcome::Uncertain { message } => {
                     message.clone()
                 }
@@ -162,39 +166,60 @@ impl Host {
         let worker_failures = failures.clone();
         let worker_requests = requests.clone();
         let (stop, mut stopped) = oneshot::channel();
-        std::thread::Builder::new().name("files-device-attention".into()).spawn(move || {
-            runtime.block_on(async move {
-                let mut pending = FuturesUnordered::new();
-                let mut open = true;
-                loop {
-                    let ready = worker_requests.0.state.lock().unwrap_or_else(|e| e.into_inner()).attention.take();
-                    let mut refused = false;
-                    for notice in ready {
-                        let result = notifications.as_ref().map_err(Clone::clone).and_then(|worker| {
-                            worker.send(notice.title.clone(), notice.body.clone()).map_err(|error| error.to_string())
-                        });
-                        match result {
-                            Ok(reply) => pending.push(async move {
-                                (notice, reply.await.unwrap_or_else(|_| Err("Desktop notification worker stopped before replying.".into())))
-                            }),
-                            Err(error) => {
-                                finish(&worker_failures, &worker_requests, notice, Err(error));
-                                refused = true;
+        std::thread::Builder::new()
+            .name("files-device-attention".into())
+            .spawn(move || {
+                runtime.block_on(async move {
+                    let mut pending = FuturesUnordered::new();
+                    let mut open = true;
+                    loop {
+                        let ready = worker_requests
+                            .0
+                            .state
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .attention
+                            .take();
+                        let mut refused = false;
+                        for notice in ready {
+                            let result =
+                                notifications
+                                    .as_ref()
+                                    .map_err(Clone::clone)
+                                    .and_then(|worker| {
+                                        worker
+                                            .send(notice.title.clone(), notice.body.clone())
+                                            .map_err(|error| error.to_string())
+                                    });
+                            match result {
+                                Ok(reply) => pending.push(async move {
+                                    (
+                                        notice,
+                                        reply.await.unwrap_or_else(|_| {
+                                            Err(fl!("files-notification-worker-stopped"))
+                                        }),
+                                    )
+                                }),
+                                Err(error) => {
+                                    finish(&worker_failures, &worker_requests, notice, Err(error));
+                                    refused = true;
+                                }
+                            }
+                        }
+                        if !open && pending.is_empty() && !refused {
+                            break;
+                        }
+                        tokio::select! {
+                            _ = &mut stopped => return,
+                            _ = std::future::ready(()), if refused => {},
+                            change = changes.next(), if open => { open = change.is_some(); },
+                            Some((notice, result)) = pending.next(), if !pending.is_empty() => {
+                                finish(&worker_failures, &worker_requests, notice, result);
                             }
                         }
                     }
-                    if !open && pending.is_empty() && !refused { break; }
-                    tokio::select! {
-                        _ = &mut stopped => return,
-                        _ = std::future::ready(()), if refused => {},
-                        change = changes.next(), if open => { open = change.is_some(); },
-                        Some((notice, result)) = pending.next(), if !pending.is_empty() => {
-                            finish(&worker_failures, &worker_requests, notice, result);
-                        }
-                    }
-                }
-            });
-        })?;
+                });
+            })?;
         Ok(Self {
             requests,
             failures,

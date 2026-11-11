@@ -40,10 +40,15 @@ impl PreparedStorage {
     /// Memory-only capture. An unprepared managed host never falls back to
     /// unguarded command execution.
     pub(crate) fn capture(&self) -> io::Result<Snapshot> {
-        let snapshot = self.current().map(|storage| storage.snapshot()).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected,
-                "Storage protection has not been prepared. Wait for Files startup, or restart Files if storage monitoring failed.")
-        })?;
+        let snapshot = self
+            .current()
+            .map(|storage| storage.snapshot())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    fl!("files-storage-not-prepared"),
+                )
+            })?;
         if snapshot.problem {
             Err(unavailable())
         } else {
@@ -463,7 +468,7 @@ impl Snapshot {
             if cancelled() {
                 Err(io::Error::new(
                     io::ErrorKind::Interrupted,
-                    "Storage checking was cancelled.",
+                    fl!("files-storage-cancelled"),
                 ))
             } else {
                 Ok(())
@@ -496,7 +501,7 @@ impl Snapshot {
                 {
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
-                        "The browsing location changed after the request. Check the intended location and retry.",
+                        fl!("files-storage-location-changed"),
                     ));
                 }
             }
@@ -523,7 +528,7 @@ impl Snapshot {
                     _ => {
                         return Err(io::Error::new(
                             io::ErrorKind::NotConnected,
-                            "The original storage for this request has not returned. Reconnect the intended device before retrying, or start a new operation after reviewing the locations.",
+                            fl!("files-storage-not-returned"),
                         ));
                     }
                 }
@@ -546,7 +551,7 @@ impl Snapshot {
                 _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
-                        "The device at this location changed after the request. Check the intended device and retry.",
+                        fl!("files-storage-device-changed"),
                     ));
                 }
             }
@@ -562,7 +567,7 @@ impl Snapshot {
         {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "Storage changed while preparing the request. Retry the operation.",
+                fl!("files-storage-changed"),
             ));
         }
         Ok(())
@@ -612,7 +617,7 @@ fn resolve(path: &Path, depth: usize) -> io::Result<PathBuf> {
 fn unavailable() -> io::Error {
     io::Error::new(
         io::ErrorKind::NotConnected,
-        "The device for this location is unavailable. Reconnect the intended device and retry the operation.",
+        fl!("files-storage-device-unavailable"),
     )
 }
 fn invalid() -> io::Error {

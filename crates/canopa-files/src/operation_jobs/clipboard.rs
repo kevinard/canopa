@@ -52,7 +52,7 @@ impl PreparedSelection {
                 if !Arc::ptr_eq(runtime, &previous.0.runtime) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        "The previous clipboard selection belongs to another runtime. Copy or Cut a new selection.",
+                        fl!("files-clipboard-other-runtime"),
                     ));
                 }
                 ObservedSources::capture_replacing(selection.paths(), &previous.0.observed)?
@@ -85,9 +85,7 @@ impl PreparedSelection {
 
     pub(super) fn check_runtime(&self, runtime: &Arc<()>) -> io::Result<()> {
         if !Arc::ptr_eq(runtime, &self.0.runtime) {
-            return Err(io::Error::other(
-                "This selection belongs to another operation history or another runtime. Select the files again.",
-            ));
+            return Err(io::Error::other(fl!("files-clipboard-other-history")));
         }
         Ok(())
     }
@@ -112,13 +110,12 @@ impl PreparedSelection {
         self.check_runtime(runtime)?;
         let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.busy {
-            return Err(io::Error::other(
-                "This Cut is already being pasted. Wait for its result before pasting again.",
-            ));
+            return Err(io::Error::other(fl!("files-clipboard-cut-pasting")));
         }
-        let selection = state.selection.clone().ok_or_else(|| {
-            io::Error::other("This Cut has finished. Copy or Cut a new selection.")
-        })?;
+        let selection = state
+            .selection
+            .clone()
+            .ok_or_else(|| io::Error::other(fl!("files-clipboard-cut-finished")))?;
         let selection = if let Some(kind) = kind {
             Selection::new(selection.paths().to_vec(), kind)?
         } else {
@@ -340,9 +337,9 @@ impl CutProgress {
             return Ok(None);
         }
         if state.busy {
-            return Err(io::Error::other(
-                "This Cut is already being pasted. Wait for its result before continuing.",
-            ));
+            return Err(io::Error::other(fl!(
+                "files-clipboard-cut-pasting-continue"
+            )));
         }
         state.busy = true;
         drop(state);

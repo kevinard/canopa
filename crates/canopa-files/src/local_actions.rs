@@ -108,12 +108,12 @@ impl LocalActions {
                         Some(reply) = shutdown_requests.recv() => {
                             let delivering = !worker_attention.lock().unwrap_or_else(|e| e.into_inner()).pending.is_empty();
                             let result = if delivering {
-                                Err("Wait for custom-action notifications before stopping the runtime.".into())
+                                Err(fl!("files-actions-wait-notifications"))
                             } else {
                                 // Keep unhanded receipts in the queue during its
                                 // shutdown check, preserving their lifetime hold.
                                 match worker_jobs.shutdown() {
-                                    Ok(result) => result.await.unwrap_or_else(|_| Err("The custom-action runtime stopped before replying.".into())),
+                                    Ok(result) => result.await.unwrap_or_else(|_| Err(fl!("files-actions-runtime-stopped-reply"))),
                                     Err(error) => Err(error.to_string()),
                                 }
                             };
@@ -132,7 +132,7 @@ impl LocalActions {
                             for completion in completions {
                                 let id = completion.id;
                                 let result = if pending.len() >= DELIVERY_LIMIT {
-                                    Err("Desktop notifications are busy or unavailable.".into())
+                                    Err(fl!("files-notifications-busy"))
                                 } else {
                                     notifications.as_ref().map_err(Clone::clone).and_then(|worker| {
                                         worker.send(completion.title, completion.status.description()).map_err(|error| error.to_string())
@@ -140,7 +140,7 @@ impl LocalActions {
                                 };
                                 match result {
                                     Ok(reply) => pending.push(async move {
-                                        (id, reply.await.unwrap_or_else(|_| Err("Desktop notification worker stopped before replying.".into())))
+                                        (id, reply.await.unwrap_or_else(|_| Err(fl!("files-notification-worker-stopped"))))
                                     }),
                                     Err(error) => finish(&worker_attention, &worker_jobs, id, Err(error)),
                                 }
@@ -155,7 +155,7 @@ impl LocalActions {
                     }
                     if !open && pending.is_empty() { break; }
                 }
-                worker_attention.lock().unwrap_or_else(|e| e.into_inner()).error = Some("The custom-action runtime has stopped.".into());
+                worker_attention.lock().unwrap_or_else(|e| e.into_inner()).error = Some(fl!("files-action-runtime-stopped"));
                 let _ = notice.try_send(());
             });
         })?;
@@ -185,7 +185,7 @@ impl LocalActions {
         self.0
             .shutdown
             .try_send(reply)
-            .map_err(|_| io::Error::other("The custom-action runtime is busy or stopped."))?;
+            .map_err(|_| io::Error::other(fl!("files-actions-runtime-busy")))?;
         Ok(receiver)
     }
 

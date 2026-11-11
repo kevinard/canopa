@@ -43,7 +43,7 @@ impl PreparedRename {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Rename needs an absolute selected entry and folder.",
+                fl!("files-rename-needs-entry"),
             ));
         }
         // Renaming a name draft stays in this same parent. Final links are
@@ -98,14 +98,12 @@ impl Worker {
         name: OsString,
     ) -> io::Result<u64> {
         if !Arc::ptr_eq(&prepared.0.runtime, &self.clipboard_owner) {
-            return Err(io::Error::other(
-                "This Rename belongs to another runtime. Select the item again.",
-            ));
+            return Err(io::Error::other(fl!("files-rename-other-runtime")));
         }
         let mut state = prepared.0.ready.lock().unwrap_or_else(|e| e.into_inner());
-        let ready = state.as_ref().ok_or_else(|| {
-            io::Error::other("This Rename has already been accepted. Select the item again.")
-        })?;
+        let ready = state
+            .as_ref()
+            .ok_or_else(|| io::Error::other(fl!("files-rename-accepted")))?;
         let mut components = std::path::Path::new(&name).components();
         if !matches!(components.next(), Some(Component::Normal(_)))
             || components.next().is_some()
@@ -114,7 +112,7 @@ impl Worker {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Enter one name, without a slash. The names . and .. are reserved.",
+                fl!("files-name-invalid"),
             ));
         }
         ready.observed.require(&ready.source)?;

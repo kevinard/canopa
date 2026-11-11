@@ -22,7 +22,7 @@ pub struct Metadata {
 /// Individual failures stay inspectable alongside the other requested items.
 pub fn read(paths: &[PathBuf], cancellation: &Cancellation) -> io::Result<Vec<Item>> {
     if paths.len() > 64 {
-        return Err(io::Error::other("Properties supports at most 64 items."));
+        return Err(io::Error::other(fl!("files-properties-too-many")));
     }
     paths
         .iter()
@@ -30,7 +30,7 @@ pub fn read(paths: &[PathBuf], cancellation: &Cancellation) -> io::Result<Vec<It
             if cancellation.is_cancelled() {
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
-                    "Properties inspection cancelled.",
+                    fl!("files-properties-cancelled"),
                 ));
             }
             let metadata = fs::symlink_metadata(path)

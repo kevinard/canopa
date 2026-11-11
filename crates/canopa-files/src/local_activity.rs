@@ -62,12 +62,10 @@ impl LocalActivity {
     pub fn try_remove(&self) -> io::Result<RemovalGuard> {
         let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.removing {
-            return Err(io::Error::other("A device removal is already in progress."));
+            return Err(io::Error::other(fl!("files-removal-in-progress")));
         }
         if state.work != 0 {
-            return Err(io::Error::other(
-                "Wait for Files operations and custom actions to finish, or cancel them, before removing a device.",
-            ));
+            return Err(io::Error::other(fl!("files-removal-wait")));
         }
         state.removing = true;
         drop(state);
@@ -117,7 +115,7 @@ impl Work {
             if cancelled() {
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
-                    "Work cancelled before device removal finished.",
+                    fl!("files-removal-cancelled"),
                 ));
             }
             if !state.removing {

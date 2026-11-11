@@ -86,7 +86,7 @@ impl DestinationProof {
         if std::fs::canonicalize(&self.directory)? != self.resolved {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                "The drop destination has changed. Review the folder and start a new drag.",
+                fl!("files-drop-destination-changed"),
             ));
         }
         self.observed
@@ -94,7 +94,10 @@ impl DestinationProof {
             .map_err(|error| {
                 io::Error::new(
                     error.kind(),
-                    format!("The drop destination changed or is unavailable: {error}"),
+                    fl!(
+                        "files-drop-destination-unavailable",
+                        error = error.to_string()
+                    ),
                 )
             })
     }
@@ -130,7 +133,7 @@ impl DropChoice {
             .0
             .state
             .compare_exchange(READY, SUBMITTED, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| io::Error::other("This drag has already ended. Start a new drag."))?;
+            .map_err(|_| io::Error::other(fl!("files-drag-ended")))?;
         // Admission runs on the worker. Keep the chosen proof below while
         // releasing observations of other hovered folders and their pins.
         target.drag.0.destinations.lock().unwrap().clear();
@@ -177,9 +180,7 @@ impl PreparedDrag {
     fn available(&self, runtime: &Arc<()>) -> io::Result<()> {
         self.0.selection.check_runtime(runtime)?;
         if self.ended() {
-            return Err(io::Error::other(
-                "This drag has already ended. Start a new drag.",
-            ));
+            return Err(io::Error::other(fl!("files-drag-ended")));
         }
         Ok(())
     }
@@ -222,9 +223,7 @@ impl PreparedDrag {
                 return Ok(captured.clone());
             }
             if destinations.len() >= MAX_DESTINATIONS {
-                return Err(io::Error::other(
-                    "This drag has already checked too many folders. Start a new drag.",
-                ));
+                return Err(io::Error::other(fl!("files-drag-too-many-folders")));
             }
         }
         // Never hold the memory lock across filesystem inspection: cancellation
@@ -235,9 +234,7 @@ impl PreparedDrag {
             return Ok(original.clone());
         }
         if destinations.len() >= MAX_DESTINATIONS {
-            return Err(io::Error::other(
-                "This drag has already checked too many folders. Start a new drag.",
-            ));
+            return Err(io::Error::other(fl!("files-drag-too-many-folders")));
         }
         destinations.insert(target.directory.clone(), captured.clone());
         Ok(captured)
@@ -288,7 +285,7 @@ impl PreparedDrop {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "A drop requires an absolute destination and original folder binding.",
+                fl!("files-drop-binding-invalid"),
             ));
         }
         if target
@@ -296,9 +293,7 @@ impl PreparedDrop {
             .as_ref()
             .is_some_and(|binding| !target.directory.starts_with(&binding.directory))
         {
-            return Err(io::Error::other(
-                "The drop target is outside its original browser folder.",
-            ));
+            return Err(io::Error::other(fl!("files-drop-outside-folder")));
         }
         let captured = drag.destination(&target, placement, cancellation)?;
         captured
@@ -357,7 +352,7 @@ fn check_cancel(cancellation: &Cancellation) -> io::Result<()> {
     if cancellation.is_cancelled() {
         Err(io::Error::new(
             io::ErrorKind::Interrupted,
-            "Drag preparation cancelled.",
+            fl!("files-drag-cancelled"),
         ))
     } else {
         Ok(())
@@ -383,7 +378,7 @@ impl OperationJobs {
             work,
             send,
         ))
-        .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))?;
+        .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receive)
     }
 
@@ -406,7 +401,7 @@ impl OperationJobs {
             cancellation,
             send,
         ))
-        .map_err(|_| io::Error::other("The operation queue is unavailable or full. Try again."))?;
+        .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receive)
     }
 
@@ -417,9 +412,8 @@ impl OperationJobs {
         choice: DropChoice,
     ) -> io::Result<oneshot::Receiver<Result<u64, String>>> {
         let (send, receive) = oneshot::channel();
-        self.send_work(Control::Drop(choice, send)).map_err(|_| {
-            io::Error::other("The operation queue is unavailable or full. Try again.")
-        })?;
+        self.send_work(Control::Drop(choice, send))
+            .map_err(|_| io::Error::other(fl!("files-jobs-queue-full")))?;
         Ok(receive)
     }
 }

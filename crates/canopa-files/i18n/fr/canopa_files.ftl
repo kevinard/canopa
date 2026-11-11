@@ -1030,3 +1030,199 @@ files-transfer-source-retained = La source est conservée ; sa destination modi
 files-undo-trash-info-unverified = Les informations de la corbeille ne peuvent pas être vérifiées : { $error }
 files-jobs-completed-before-interruption = L’opération de fichiers n° { $operation } s’est terminée avant l’interruption ; son résultat enregistré a été restauré.
 files-jobs-result-restored = { $detail } · résultat enregistré restauré après l’interruption
+
+## Device requests: refusals and errors
+
+files-device-already-settled = Cette demande de périphérique est déjà terminée.
+files-device-no-more-answers = Cette demande de périphérique n’accepte plus de réponses.
+files-device-observation-changed = L’état observé du périphérique a changé. Actualisez et réessayez.
+files-device-gone = Le périphérique n’est plus disponible.
+files-device-unsupported-operation = Le périphérique ne prend plus en charge cette opération.
+files-device-request-id-used = Cet identifiant de demande de périphérique a déjà été utilisé.
+files-device-another-request = Une autre demande de périphérique est encore en cours.
+files-device-address-invalid = L’adresse du serveur n’est pas valide.
+files-device-cannot-list = Cet emplacement ne peut pas être listé.
+files-device-still-listing = Fichiers liste encore d’autres emplacements. Réessayez dans un instant.
+files-device-listing-timeout = Le listage de cet emplacement a pris trop de temps.
+files-device-capability-gone = Cette capacité du périphérique n’est plus disponible.
+files-device-question-changed = Cette question du périphérique a changé.
+files-device-invalid-credentials = Identifiants du périphérique non valides.
+files-device-answer-mismatch = La réponse ne correspond pas à la question actuelle du périphérique.
+files-device-runtime-stopping = Le service des périphériques s’arrête.
+files-device-question-changed-or-cancelled = Cette question du périphérique a changé ou a été annulée.
+files-device-prepare-failed = Impossible de préparer la demande de périphérique.
+files-device-request-too-large = La demande de périphérique dépasse sa taille maximale.
+files-device-helper-unavailable = L’assistant des périphériques est indisponible.
+files-device-helper-full = L’assistant des périphériques ne peut pas accepter d’autres demandes.
+files-device-notifications-pending = Des notifications de périphériques sont en attente. Attendez leur envoi avant de lancer d’autres travaux sur les périphériques.
+files-device-removal-in-progress = Un retrait de périphérique est encore en cours.
+files-device-observation-changed-refresh = L’état observé de ce périphérique a changé. Actualisez et réessayez.
+files-device-cannot-remove = Ce périphérique ne peut pas être retiré pour l’instant.
+files-device-cannot-mount = Ce périphérique ne peut pas être monté pour l’instant.
+files-device-helper-stopped-short = L’assistant des périphériques s’est arrêté.
+files-device-work-active = Un travail sur les périphériques est encore actif ou déjà en cours d’arrêt.
+files-device-location-stale = Cet emplacement de périphérique n’est plus à jour. Sélectionnez de nouveau le périphérique pour l’ouvrir.
+
+## Device notifications
+
+files-device-notification-decision = Un périphérique nécessite une décision
+files-device-notification-mounted = Périphérique monté.
+files-device-notification-remote = Connecté, mais GVFS ne propose aucun dossier local pour cet emplacement.
+files-device-notification-powered-off = Périphérique éteint.
+files-device-notification-ejected = Périphérique éjecté.
+files-device-notification-unmounted = Périphérique démonté.
+
+## Operation and clipboard refusals
+
+files-jobs-attention-full = La file des avis d’opérations est pleine. Examinez le travail en attente avant d’en soumettre davantage.
+files-clipboard-other-runtime = La sélection précédente du presse-papiers appartient à une autre session de Fichiers. Copiez ou coupez une nouvelle sélection.
+files-clipboard-other-history = Cette sélection appartient à un autre historique d’opérations ou à une autre session de Fichiers. Sélectionnez de nouveau les fichiers.
+files-clipboard-cut-pasting = Cet élément coupé est déjà en cours de collage. Attendez son résultat avant de coller à nouveau.
+files-clipboard-cut-finished = Ce couper est terminé. Copiez ou coupez une nouvelle sélection.
+files-clipboard-cut-pasting-continue = Cet élément coupé est déjà en cours de collage. Attendez son résultat avant de continuer.
+files-dismissal-not-ready = Cette demande ne peut pas encore être écartée. Terminez ou annulez le travail en cours et enregistrez d’abord son résultat.
+files-dismissal-unavailable = La demande est indisponible.
+files-dismissal-stopped-only = Seule une demande ordinaire arrêtée peut être écartée.
+files-dismissal-done = Demande écartée après examen. Le travail effectué et l’annulation sont préservés.
+files-drop-destination-changed = La destination du dépôt a changé. Vérifiez le dossier et commencez un nouveau glisser.
+files-drag-ended = Ce glisser est déjà terminé. Commencez un nouveau glisser.
+files-drag-too-many-folders = Ce glisser a déjà vérifié trop de dossiers. Commencez un nouveau glisser.
+files-drop-binding-invalid = Un dépôt nécessite une destination absolue et le dossier d’origine.
+files-drop-outside-folder = La cible du dépôt se trouve en dehors du dossier d’origine du navigateur.
+files-drag-cancelled = Préparation du glisser annulée.
+files-recovery-not-ready = Cette copie de récupération n’est pas prête à continuer.
+files-recovery-request-gone = La demande de récupération n’est plus disponible.
+files-recovery-no-plan = Il ne reste aucun plan de récupération exact pour cet élément. Actualisez Récupération pour choisir une nouvelle copie.
+files-recovery-handed-off = Cette suite de récupération a déjà été transmise ou est indisponible.
+files-original-destination-gone = L’observation de la destination d’origine est indisponible.
+files-original-source-gone = L’observation de la source d’origine est indisponible.
+files-recovery-not-recovery = Le résultat arrêté n’est pas une copie de récupération.
+files-rename-needs-entry = Le renommage nécessite un élément sélectionné et un dossier absolus.
+files-rename-other-runtime = Ce renommage appartient à une autre session de Fichiers. Sélectionnez de nouveau l’élément.
+files-rename-accepted = Ce renommage a déjà été accepté. Sélectionnez de nouveau l’élément.
+files-transfer-not-ready = Ce transfert n’est pas prêt à continuer.
+files-transfer-no-plan = Aucun plan de transfert actif exact ne reste pour cette demande. Les résultats enregistrés doivent être examinés avant tout nouveau travail.
+files-transfer-handed-off = Cette partie du transfert a déjà été transmise ou est indisponible.
+files-original-destination-placement-gone = L’emplacement de destination d’origine est indisponible.
+files-original-source-placement-gone = L’emplacement source d’origine est indisponible.
+files-transfer-not-transfer = Le résultat arrêté n’est pas un transfert.
+
+## Restore from Trash results
+
+files-restore-needs-finalization = La restauration est enregistrée ; la finalisation de l’historique doit être examinée.
+files-restore-needs-review = La restauration doit être examinée avant d’autres modifications.
+files-restore-cancelled = Restauration annulée avant le déplacement de l’élément.
+files-restore-not-restored = L’élément conservé n’a pas été restauré.
+files-restore-done = Élément restauré.
+
+## Storage checks
+
+files-storage-not-prepared = La protection du stockage n’est pas prête. Attendez le démarrage de Fichiers, ou redémarrez Fichiers si la surveillance du stockage a échoué.
+files-storage-cancelled = La vérification du stockage a été annulée.
+files-storage-location-changed = L’emplacement parcouru a changé après la demande. Vérifiez l’emplacement voulu et réessayez.
+files-storage-not-returned = Le stockage d’origine de cette demande n’est pas revenu. Reconnectez le périphérique voulu avant de réessayer, ou lancez une nouvelle opération après avoir vérifié les emplacements.
+files-storage-device-changed = Le périphérique à cet emplacement a changé après la demande. Vérifiez le périphérique voulu et réessayez.
+files-storage-changed = Le stockage a changé pendant la préparation de la demande. Réessayez l’opération.
+files-storage-device-unavailable = Le périphérique de cet emplacement est indisponible. Reconnectez le périphérique voulu et réessayez l’opération.
+files-device-remove-named = Retirer { $device }
+files-device-connect-named = Se connecter à { $device }
+files-device-notification-connected = Connecté.
+files-device-notification-cancelled = Annulé.
+
+## Network locations: missing backends and connection failures
+
+files-network-missing-gvfs = Fichiers ne peut pas ouvrir { $kind ->
+    [smb] les partages Windows (SMB)
+    [sftp] les serveurs SSH (SFTP)
+    [ftp] les serveurs FTP
+    [dav] les serveurs WebDAV
+    [nfs] les serveurs NFS
+    [mtp] les téléphones et lecteurs multimédias (MTP)
+    [ptp] les appareils photo (PTP)
+    [afc] les iPhone et iPad
+    [network] la navigation dans le réseau local
+   *[other] ce type d’emplacement
+} : GVFS n’est pas installé ou son module { $scheme } est absent. Installez le paquet gvfs.
+files-network-missing-package = Fichiers ne peut pas ouvrir { $kind ->
+    [smb] les partages Windows (SMB)
+    [sftp] les serveurs SSH (SFTP)
+    [ftp] les serveurs FTP
+    [dav] les serveurs WebDAV
+    [nfs] les serveurs NFS
+    [mtp] les téléphones et lecteurs multimédias (MTP)
+    [ptp] les appareils photo (PTP)
+    [afc] les iPhone et iPad
+    [network] la navigation dans le réseau local
+   *[other] ce type d’emplacement
+} : installez le paquet { $package }, puis réessayez.
+files-network-missing-backend = Fichiers ne peut pas ouvrir { $kind ->
+    [smb] les partages Windows (SMB)
+    [sftp] les serveurs SSH (SFTP)
+    [ftp] les serveurs FTP
+    [dav] les serveurs WebDAV
+    [nfs] les serveurs NFS
+    [mtp] les téléphones et lecteurs multimédias (MTP)
+    [ptp] les appareils photo (PTP)
+    [afc] les iPhone et iPad
+    [network] la navigation dans le réseau local
+   *[other] ce type d’emplacement
+} : aucun module GVFS ne le prend en charge.
+files-network-unreachable = Fichiers ne parvient pas à joindre { $server }. Vérifiez que le serveur est allumé et connecté au réseau, et que l’adresse est correcte ({ $detail }).
+files-network-login-refused = { $server } a refusé la connexion. Vérifiez le nom d’utilisateur, le domaine et le mot de passe ({ $detail }).
+files-network-connect-failed = Fichiers n’a pas pu se connecter à { $server }.
+files-network-connect-failed-detail = Fichiers n’a pas pu se connecter à { $server } : { $detail }.
+
+## Operation results that need review
+
+files-drop-destination-unavailable = La destination du dépôt a changé ou est indisponible : { $error }
+files-jobs-completion-unverified = L’achèvement enregistré n’a pas pu être vérifié ; examinez le travail interrompu : { $error }
+files-jobs-completion-not-saved = Résultat de l’achèvement enregistré non sauvegardé : { $error }
+files-jobs-transfer-unverified = Le transfert examiné n’a pas pu être vérifié : { $reason }
+files-jobs-recorded-transfer-unverified = Le transfert enregistré n’a pas pu être vérifié ; examinez le travail interrompu : { $error }
+files-jobs-transfer-end-not-saved = Fin du transfert non enregistrée : { $error }
+files-jobs-transfer-result-not-saved = Résultat du transfert enregistré non sauvegardé : { $error }
+files-jobs-transfer-receipt-not-saved = Le travail sur les fichiers est terminé, mais son reçu de fin de transfert n’a pas été enregistré : { $error }
+files-jobs-receipt-not-saved = Le travail sur les fichiers est terminé, mais son reçu de fin n’a pas été enregistré : { $error }
+
+## File clipboard
+
+files-clipboard-changed = Le presse-papiers a changé pendant sa lecture. Collez de nouveau.
+files-clipboard-busy = Le presse-papiers est occupé. Réessayez.
+files-clipboard-busy-paste = Le presse-papiers est occupé. Attendez la fin de Copier ou Couper, puis collez de nouveau.
+files-clipboard-owner-silent = Le propriétaire du presse-papiers n’a pas répondu. Copiez de nouveau les fichiers.
+files-clipboard-not-accepted-compositor = Le compositeur n’a pas accepté la sélection de fichiers. Copiez de nouveau les fichiers.
+files-clipboard-compositor-silent = Le compositeur n’a pas répondu pendant le démarrage du presse-papiers de fichiers
+files-clipboard-starting = Le presse-papiers de fichiers démarre. Réessayez.
+files-clipboard-disconnected = Le presse-papiers de fichiers Wayland a été déconnecté
+files-clipboard-replaced = Le presse-papiers a été remplacé avant la fin de Copier ou Couper
+files-clipboard-unsupported = Le compositeur ne prend pas en charge le protocole du presse-papiers de fichiers (ext-data-control-v1)
+files-clipboard-no-seat = Aucun poste d’entrée Wayland n’est disponible
+files-clipboard-read-unfinished = La lecture du presse-papiers ne s’est pas terminée
+files-clipboard-worker-stopped = Le service du presse-papiers de fichiers s’est arrêté de manière inattendue
+files-clipboard-busy-unavailable = Le presse-papiers de fichiers est occupé ou indisponible. Réessayez.
+files-clipboard-no-files = Le presse-papiers ne contient aucun fichier
+files-clipboard-too-large = La liste de fichiers du presse-papiers est trop longue
+files-clipboard-invalid-location = Le presse-papiers contient un emplacement de fichier non valide. Copiez de nouveau les fichiers.
+files-clipboard-non-local = La liste de fichiers contient un emplacement de fichier non local
+
+## Properties, playback and device removal
+
+files-properties-too-many = Les propriétés prennent en charge 64 éléments au maximum.
+files-media-cancelled = Préparation du média annulée.
+files-media-no-video-output = La sortie vidéo est indisponible.
+files-media-cannot-play = Ce média n’a pas pu être lu. Ouvrez-le dans votre application habituelle.
+files-media-no-seek = Le déplacement est impossible dans ce média.
+files-media-timed-out = La préparation du média a expiré.
+files-media-shut-down = La lecture des médias s’est arrêtée.
+files-media-closing = La lecture des médias est encore en cours de fermeture.
+files-media-playback-stopped = La lecture des médias est arrêtée.
+files-media-controls-busy = Les commandes de lecture sont occupées.
+files-removal-in-progress = Un retrait de périphérique est déjà en cours.
+files-removal-wait = Attendez la fin des opérations de Fichiers et des actions personnalisées, ou annulez-les, avant de retirer un périphérique.
+files-removal-cancelled = Travail annulé avant la fin du retrait du périphérique.
+files-actions-wait-notifications = Attendez les notifications des actions personnalisées avant d’arrêter le service.
+files-actions-runtime-stopped-reply = Le service des actions personnalisées s’est arrêté avant de répondre.
+files-actions-runtime-busy = Le service des actions personnalisées est occupé ou arrêté.
+files-app-work-pending = Fichiers a encore du travail accepté ou des résultats non enregistrés.
+files-configuration-other-source = Cette configuration appartient à une autre sélection de source.
+files-configuration-worker-stopped = Le service de configuration s’est arrêté.
