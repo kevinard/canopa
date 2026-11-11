@@ -15,6 +15,14 @@ pub struct TrashReport {
     pub cancelled: bool,
     #[serde(default)]
     pub interrupted: Option<String>,
+    /// Failed sources whose volume has no usable Trash. Presentation may offer
+    /// a separately confirmed permanent deletion; this list authorizes nothing.
+    #[serde(
+        default,
+        with = "crate::path_serde::sequence",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub unavailable: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -165,6 +173,7 @@ impl TrashReport {
             remaining: outcome.remaining,
             cancelled: outcome.cancelled,
             interrupted: None,
+            unavailable: outcome.unavailable,
         }
     }
 
@@ -182,6 +191,10 @@ impl TrashReport {
                 .chain(&self.remaining)
                 .all(|path| path.is_absolute() && path.file_name().is_some() && paths.insert(path))
             && (self.cancelled || self.interrupted.is_some() || self.remaining.is_empty())
+            && self
+                .unavailable
+                .iter()
+                .all(|path| self.failures.iter().any(|failure| &failure.source == path))
     }
 
     pub(super) fn phase(&self) -> RequestPhase {
@@ -211,6 +224,114 @@ impl TrashReport {
             } else {
                 "not started"
             },
+            if self.cancelled { " · cancelled" } else { "" }
+        )
+    }
+}
+
+/// Actual permanent-deletion results. Nothing here is undoable or replayable.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteReport {
+    /// Deleted from Trash storage rather than from ordinary folders.
+    pub from_trash: bool,
+    #[serde(with = "crate::path_serde::sequence")]
+    pub completed: Vec<PathBuf>,
+    pub failures: Vec<TrashFailure>,
+    #[serde(with = "crate::path_serde::sequence")]
+    pub remaining: Vec<PathBuf>,
+    pub cancelled: bool,
+    pub entries: u64,
+    pub bytes: u64,
+}
+
+impl DeleteReport {
+    pub(super) fn from_outcome(
+        from_trash: bool,
+        outcome: crate::operations::deletion::DeleteOutcome,
+    ) -> Self {
+        Self {
+            from_trash,
+            completed: outcome.completed,
+            failures: outcome
+                .failures
+                .into_iter()
+                .map(|(source, message)| TrashFailure { source, message })
+                .collect(),
+            remaining: outcome.remaining,
+            cancelled: outcome.cancelled,
+            entries: outcome.entries,
+            bytes: outcome.bytes,
+        }
+    }
+
+    pub(super) fn unstarted(
+        from_trash: bool,
+        selected: Vec<PathBuf>,
+        error: Option<String>,
+    ) -> Self {
+        let selected: Vec<_> = selected
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let (failures, remaining) = match error {
+            Some(message) => (
+                selected
+                    .into_iter()
+                    .map(|source| TrashFailure {
+                        source,
+                        message: message.clone(),
+                    })
+                    .collect(),
+                Vec::new(),
+            ),
+            None => (Vec::new(), selected),
+        };
+        Self {
+            from_trash,
+            completed: Vec::new(),
+            failures,
+            cancelled: !remaining.is_empty(),
+            remaining,
+            entries: 0,
+            bytes: 0,
+        }
+    }
+
+    pub(super) fn valid(&self) -> bool {
+        let mut paths = std::collections::BTreeSet::new();
+        self.completed
+            .iter()
+            .chain(self.failures.iter().map(|failure| &failure.source))
+            .chain(&self.remaining)
+            .all(|path| path.is_absolute() && path.file_name().is_some() && paths.insert(path))
+            && (self.cancelled || self.remaining.is_empty())
+    }
+
+    pub(super) fn phase(&self) -> RequestPhase {
+        match (self.failures.is_empty(), self.remaining.is_empty()) {
+            (true, true) => RequestPhase::Finished,
+            (false, true) => RequestPhase::Failed,
+            (true, false) => RequestPhase::Remaining,
+            (false, false) => RequestPhase::FailedWithRemaining,
+        }
+    }
+
+    pub(super) fn status(&self) -> Phase {
+        match self.phase() {
+            RequestPhase::Finished => Phase::Finished,
+            _ if self.completed.is_empty() && !self.cancelled => Phase::Failed,
+            _ => Phase::Stopped,
+        }
+    }
+
+    pub(super) fn detail(&self) -> String {
+        format!(
+            "{} deleted permanently · {} failed · {} not started{}",
+            self.completed.len(),
+            self.failures.len(),
+            self.remaining.len(),
             if self.cancelled { " · cancelled" } else { "" }
         )
     }

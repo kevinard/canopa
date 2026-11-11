@@ -35,6 +35,7 @@ pub use recovery::{
     RecoveryPage, RecoveryStatus, RecoveryVersion,
 };
 mod copied_leaf;
+pub mod deletion;
 mod directory_removal;
 #[cfg(test)]
 mod directory_removal_boundary;

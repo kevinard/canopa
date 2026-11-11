@@ -10,6 +10,7 @@ mod cases {
     mod clipboard_capacity;
     mod configuration_jobs;
     mod configuration_reload;
+    mod deletion;
     mod device_coordination;
     mod directory_permissions;
     mod file_clipboard;

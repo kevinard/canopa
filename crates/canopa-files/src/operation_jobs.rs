@@ -41,7 +41,7 @@ use std::{
 };
 pub use transfer::{TransferFailure, TransferProgress, TransferQuestion, TransferReport};
 pub use transfer_resume::{TransferActions, TransferPart, TransferResolution};
-pub use trash::{RestoreReport, TrashFailure, TrashReport};
+pub use trash::{DeleteReport, RestoreReport, TrashFailure, TrashReport};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,6 +70,16 @@ pub enum Request {
         item: Box<crate::trash::TrashItem>,
         #[serde(with = "crate::path_serde::optional")]
         destination: Option<PathBuf>,
+    },
+    /// Permanent, non-undoable removal of a confirmed selection.
+    Delete {
+        #[serde(with = "crate::path_serde::sequence")]
+        sources: Vec<PathBuf>,
+    },
+    /// Permanent removal of confirmed Trash items; `empty` names Empty Trash.
+    DeleteTrash {
+        items: Vec<crate::trash::TrashItem>,
+        empty: bool,
     },
 }
 
@@ -118,6 +128,7 @@ pub struct JobSnapshot {
     pub transfer: Option<Arc<TransferReport>>,
     pub trash: Option<Arc<TrashReport>>,
     pub restore: Option<Arc<RestoreReport>>,
+    pub delete: Option<Arc<DeleteReport>>,
     pub recovery: Option<Arc<RecoveryReport>>,
     pub recovery_actions: RecoveryActions,
     pub transfer_actions: TransferActions,
@@ -410,6 +421,11 @@ enum Saved {
         title: String,
         report: RestoreReport,
     },
+    DeleteResult {
+        version: u8,
+        title: String,
+        report: DeleteReport,
+    },
 }
 
 struct Job {
@@ -448,6 +464,7 @@ struct Completion {
     transfer: Option<Box<transfer::Finished>>,
     trash: Option<TrashReport>,
     restore: Option<RestoreReport>,
+    delete: Option<DeleteReport>,
     recovery: Option<recovery::Finished>,
     mutation_confirmation: Option<MutationConfirmation>,
 }
@@ -473,9 +490,18 @@ impl Completion {
             transfer: None,
             trash: None,
             restore: None,
+            delete: None,
             recovery: None,
             mutation_confirmation: None,
         };
+        if let Some(request @ (Request::Delete { .. } | Request::DeleteTrash { .. })) = request {
+            completion.summary.label = request.title();
+            completion.delete = Some(DeleteReport::unstarted(
+                matches!(request, Request::DeleteTrash { .. }),
+                request.paths(),
+                None,
+            ));
+        }
         if let Some(request @ Request::Trash { sources, .. }) = request {
             completion.summary.label = request.title();
             completion.trash = Some(TrashReport {
@@ -490,6 +516,7 @@ impl Completion {
                     .collect(),
                 cancelled: true,
                 interrupted: None,
+                unavailable: Vec::new(),
             });
         }
         if let Some(request @ Request::Recover { item, destination }) = request {
@@ -1538,6 +1565,9 @@ impl Worker {
             Request::Restore { item, .. } => Some(crate::transfers::ObservedSources::capture(
                 std::slice::from_ref(&item.path),
             )?),
+            Request::Delete { sources } => {
+                Some(crate::transfers::ObservedSources::capture(sources)?)
+            }
             _ => None,
         };
         let record = if let Some(ready) = rename {
@@ -1580,6 +1610,7 @@ impl Worker {
             transfer: None,
             trash: None,
             restore: None,
+            delete: None,
             recovery: None,
             recovery_actions: RecoveryActions::default(),
             transfer_actions: TransferActions::default(),
@@ -1660,6 +1691,10 @@ impl Worker {
         let is_transfer = matches!(request, Request::Transfer(_));
         let is_trash = matches!(request, Request::Trash { .. });
         let is_restore = matches!(request, Request::Restore { .. });
+        let is_delete = matches!(
+            request,
+            Request::Delete { .. } | Request::DeleteTrash { .. }
+        );
         let engine = self.engine.clone();
         let Some(placement) = job.placement.clone() else {
             return;
@@ -1689,7 +1724,7 @@ impl Worker {
                     if let Some(plan) = &recovery_execution { accesses.extend(plan.storage_destinations().map(Access::entry)); }
                     if !matches!(request, Request::Transfer(_)) { placement.check(&accesses)?; }
                 let interrupted = match engine.interrupted_operations(&cancellation) {
-                    Err(error) if (is_recovery || is_transfer || is_trash || is_restore) && cancellation.is_cancelled() && error.kind() == io::ErrorKind::Interrupted => return Ok(Completion::cancelled_before_start(Some(&request), recovery_execution.as_ref(), cancelled_transfer)),
+                    Err(error) if (is_recovery || is_transfer || is_trash || is_restore || is_delete) && cancellation.is_cancelled() && error.kind() == io::ErrorKind::Interrupted => return Ok(Completion::cancelled_before_start(Some(&request), recovery_execution.as_ref(), cancelled_transfer)),
                     result => result?,
                 };
                 if !interrupted.is_empty() && !is_recovery && !is_reconciliation {
@@ -1698,17 +1733,17 @@ impl Worker {
                 match request {
                     Request::KeepRecovery { item } => {
                         engine.keep_in_recovery(&item, &cancellation)?;
-                        Ok(Completion { summary: OperationSummary { id: 0, label: format!("Keep {} in Recovery", item.name().to_string_lossy()), paths: item.entry.iter().map(|entry| entry.path.clone()).collect() }, detail: Some("Entry kept in Recovery. The interrupted work is preserved; recover a copy when needed.".into()), transfer: None, trash: None, restore: None, recovery: None, mutation_confirmation: None })
+                        Ok(Completion { summary: OperationSummary { id: 0, label: format!("Keep {} in Recovery", item.name().to_string_lossy()), paths: item.entry.iter().map(|entry| entry.path.clone()).collect() }, detail: Some("Entry kept in Recovery. The interrupted work is preserved; recover a copy when needed.".into()), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Reconcile => {
                         let observed = reconciliation.ok_or_else(|| io::Error::other("This owner has no original journal observation. Refresh Recovery before retrying."))?;
                         engine.reconcile_with_check(&observed.journals, &cancellation, |paths| placement.check(&paths.iter().cloned().map(Access::entry).collect::<Vec<_>>()))?;
-                        Ok(Completion { summary: OperationSummary { id: 0, label: "Retry interrupted operation".into(), paths: observed.journals.paths().to_vec() }, detail: Some("Interrupted operation journals rechecked.".into()), transfer: None, trash: None, restore: None, recovery: None, mutation_confirmation: None })
+                        Ok(Completion { summary: OperationSummary { id: 0, label: "Retry interrupted operation".into(), paths: observed.journals.paths().to_vec() }, detail: Some("Interrupted operation journals rechecked.".into()), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Recover { item, destination } => {
                         let title = format!("Recover {}", item.name().to_string_lossy());
                         let report = recovery::run(&engine, &item, &destination, &cancellation, recovery::Placement { source: &source_placement, destination: &placement }, transfer::Publication { id, snapshot, notice, sender: sender.clone() }, recovery_execution.as_ref());
-                        Ok(Completion { summary: OperationSummary { id: report.report.transfer.operation.unwrap_or(0), label: title, paths: report.report.transfer.destinations.clone() }, detail: Some(report.report.detail()), recovery: Some(report), transfer: None, trash: None, restore: None, mutation_confirmation: None })
+                        Ok(Completion { summary: OperationSummary { id: report.report.transfer.operation.unwrap_or(0), label: title, paths: report.report.transfer.destinations.clone() }, detail: Some(report.report.detail()), recovery: Some(report), transfer: None, trash: None, restore: None, delete: None, mutation_confirmation: None })
                     }
                     Request::Mutation(request) => {
                         let result = match request {
@@ -1720,14 +1755,14 @@ impl Worker {
                             request @ OperationRequest::CreateFolder { .. } => execution.mutate(request, &cancellation),
                         };
                         result
-                            .map(|outcome| Completion { summary: outcome.summary, detail: None, transfer: None, trash: None, restore: None, recovery: None, mutation_confirmation: outcome.confirmation })
+                            .map(|outcome| Completion { summary: outcome.summary, detail: None, transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: outcome.confirmation })
                     }
                     Request::Trash { data_home, sources } => {
                         let observed = observed_sources.ok_or_else(|| io::Error::other("Trash needs its original selected entries before execution."))?;
                         let report = match engine.trash_observed(&data_home, &sources, &observed, &cancellation) {
                             Ok(outcome) => TrashReport::from_outcome(outcome),
                             Err(failure) => {
-                                let mut report = TrashReport::from_outcome(failure.outcome);
+                                let mut report = TrashReport::from_outcome(*failure.outcome);
                                 if failure.error.kind() != io::ErrorKind::Interrupted {
                                     report.interrupted = Some(failure.error.to_string());
                                 }
@@ -1736,7 +1771,7 @@ impl Worker {
                         };
                         Ok(Completion {
                             summary: OperationSummary { id: report.operation.unwrap_or(0), label: format!("Move {} {} to Trash", sources.len(), if sources.len() == 1 { "item" } else { "items" }), paths: report.completed.clone() },
-                            detail: Some(report.detail()), transfer: None, trash: Some(report), restore: None, recovery: None, mutation_confirmation: None,
+                            detail: Some(report.detail()), transfer: None, trash: Some(report), restore: None, delete: None, recovery: None, mutation_confirmation: None,
                         })
                     }
                     Request::Restore { item, destination } => {
@@ -1748,7 +1783,32 @@ impl Worker {
                         };
                         Ok(Completion {
                             summary: OperationSummary { id: report.operation.unwrap_or(0), label: format!("Restore {}", item.name().to_string_lossy()), paths: report.restored.iter().cloned().collect() },
-                            detail: Some(report.detail()), transfer: None, trash: None, restore: Some(report), recovery: None, mutation_confirmation: None,
+                            detail: Some(report.detail()), transfer: None, trash: None, restore: Some(report), delete: None, recovery: None, mutation_confirmation: None,
+                        })
+                    }
+                    request @ (Request::Delete { .. } | Request::DeleteTrash { .. }) => {
+                        let title = request.title();
+                        let publication = transfer::Publication { id, snapshot, notice, sender: sender.clone() };
+                        let mut last = None::<std::time::Instant>;
+                        let mut progress = |path: &std::path::Path, totals: crate::operations::deletion::DeleteProgress| {
+                            // Bound presentation work for folders with many entries.
+                            if last.is_none_or(|last| last.elapsed() >= std::time::Duration::from_millis(100)) {
+                                last = Some(std::time::Instant::now());
+                                publication.progress(TransferProgress { path: path.to_owned(), completed: totals.entries as usize, bytes: totals.bytes, verifying: false });
+                            }
+                        };
+                        let (from_trash, outcome) = match request {
+                            Request::DeleteTrash { items, .. } => (true, engine.delete_trashed(&items, &cancellation, &mut progress)?),
+                            Request::Delete { sources } => {
+                                let observed = observed_sources.ok_or_else(|| io::Error::other("Deletion needs its original selected entries before execution."))?;
+                                (false, engine.delete_observed(&sources, &observed, &cancellation, &mut progress)?)
+                            }
+                            _ => unreachable!(),
+                        };
+                        let report = DeleteReport::from_outcome(from_trash, outcome);
+                        Ok(Completion {
+                            summary: OperationSummary { id: 0, label: title, paths: report.completed.clone() },
+                            detail: Some(report.detail()), transfer: None, trash: None, restore: None, delete: Some(report), recovery: None, mutation_confirmation: None,
                         })
                     }
                     Request::Undo { expected } => {
@@ -1771,7 +1831,7 @@ impl Worker {
                             outcome.completed, outcome.kept.len(), outcome.skipped.len(), outcome.dismissed.len(),
                             outcome.unrestored_previous.len(), outcome.unremoved.len(), outcome.remaining,
                             if outcome.cancelled { " · cancelled" } else { "" },
-                        )), transfer: None, trash: None, restore: None, recovery: None, mutation_confirmation: None })
+                        )), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None })
                     }
                     Request::Transfer(request) => {
                         let title = Request::Transfer(request.clone()).title();
@@ -1781,13 +1841,13 @@ impl Worker {
                             transfer::Publication { id, snapshot, notice, sender: sender.clone() });
                         Ok(Completion {
                             summary: OperationSummary { id: outcome.outcome.report.operation.unwrap_or(0), label: title, paths: outcome.outcome.report.destinations.clone() },
-                            detail: Some(outcome.outcome.detail()), transfer: Some(Box::new(outcome)), trash: None, restore: None, recovery: None, mutation_confirmation: None,
+                            detail: Some(outcome.outcome.detail()), transfer: Some(Box::new(outcome)), trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None,
                         })
                     }
                 }
             }));
             let result = match result {
-                Ok(result) => result.map_err(|error| if is_recovery || is_transfer || is_trash || is_restore { Failure::BeforeExecution(error.to_string()) } else { Failure::DuringExecution(error.to_string()) }),
+                Ok(result) => result.map_err(|error| if is_recovery || is_transfer || is_trash || is_restore || is_delete { Failure::BeforeExecution(error.to_string()) } else { Failure::DuringExecution(error.to_string()) }),
                 Err(_) => Err(Failure::DuringExecution("The operation worker stopped unexpectedly".into())),
             };
             drop(engine);
@@ -1933,6 +1993,12 @@ impl Worker {
                         title: completion.summary.label,
                         report,
                     }
+                } else if let Some(report) = completion.delete {
+                    Saved::DeleteResult {
+                        version: 1,
+                        title: completion.summary.label,
+                        report,
+                    }
                 } else {
                     match completion.transfer {
                         Some(transfer) if transfer.outcome.phase() != RequestPhase::Finished => {
@@ -2013,6 +2079,20 @@ impl Worker {
                         report: RestoreReport::failed(item.path.clone(), error, !before_execution),
                     },
                     Saved::Plan {
+                        request: request @ (Request::Delete { .. } | Request::DeleteTrash { .. }),
+                        ..
+                    } => Saved::DeleteResult {
+                        version: 1,
+                        title: request.title(),
+                        // An execution failure may follow partial removal;
+                        // every selected entry is reported for review.
+                        report: DeleteReport::unstarted(
+                            matches!(request, Request::DeleteTrash { .. }),
+                            request.paths(),
+                            Some(error),
+                        ),
+                    },
+                    Saved::Plan {
                         request: request @ Request::Trash { sources, .. },
                         ..
                     } => {
@@ -2046,6 +2126,7 @@ impl Worker {
                                 },
                                 cancelled: false,
                                 interrupted: (!before_execution).then_some(error),
+                                unavailable: Vec::new(),
                             },
                         }
                     }
@@ -2111,6 +2192,7 @@ impl Worker {
                 Saved::Completed { .. }
                     | Saved::TrashResult { .. }
                     | Saved::RestoreResult { .. }
+                    | Saved::DeleteResult { .. }
                     | Saved::RecoveryResult { .. }
             )
         {
@@ -2230,6 +2312,12 @@ impl Request {
                         && !sources.is_empty()
                         && sources.iter().all(|source| source.file_name().is_some())
                 }
+                Self::Delete { sources } => {
+                    !sources.is_empty() && sources.iter().all(|source| source.file_name().is_some())
+                }
+                Self::DeleteTrash { items, .. } => {
+                    !items.is_empty() && items.iter().all(|item| item.path.file_name().is_some())
+                }
                 Self::Transfer(request) => {
                     !request.sources.is_empty()
                         && request
@@ -2270,6 +2358,24 @@ impl Request {
                 "Move {} {} to Trash",
                 sources.len(),
                 if sources.len() == 1 { "item" } else { "items" }
+            ),
+            Self::Delete { sources } => format!(
+                "Delete {} {} permanently",
+                sources.len(),
+                if sources.len() == 1 { "item" } else { "items" }
+            ),
+            Self::DeleteTrash { items, empty: true } => format!(
+                "Empty Trash ({} {})",
+                items.len(),
+                if items.len() == 1 { "item" } else { "items" }
+            ),
+            Self::DeleteTrash {
+                items,
+                empty: false,
+            } => format!(
+                "Delete {} {} from Trash permanently",
+                items.len(),
+                if items.len() == 1 { "item" } else { "items" }
             ),
             Self::Transfer(request) => format!(
                 "{} {} {} to {}",
@@ -2313,7 +2419,8 @@ impl Request {
             Self::Restore { item, destination } => std::iter::once(item.path.clone())
                 .chain(destination.as_ref().or(item.original.as_ref()).cloned())
                 .collect(),
-            Self::Trash { sources, .. } => sources.clone(),
+            Self::Trash { sources, .. } | Self::Delete { sources } => sources.clone(),
+            Self::DeleteTrash { items, .. } => items.iter().map(|item| item.path.clone()).collect(),
             Self::Transfer(request) => request
                 .sources
                 .iter()
@@ -2414,6 +2521,9 @@ impl Saved {
             Self::RestoreResult {
                 version: 1, report, ..
             } => report.valid(),
+            Self::DeleteResult {
+                version: 1, report, ..
+            } => report.valid(),
             Self::RecoveryResult {
                 version: 1, report, ..
             } => report.valid(),
@@ -2438,6 +2548,7 @@ impl Saved {
             Self::Completed { .. }
             | Self::TrashResult { .. }
             | Self::RestoreResult { .. }
+            | Self::DeleteResult { .. }
             | Self::RecoveryResult { .. } => None,
         }
     }
@@ -2456,6 +2567,7 @@ impl Saved {
             Self::Completed { .. }
             | Self::TrashResult { .. }
             | Self::RestoreResult { .. }
+            | Self::DeleteResult { .. }
             | Self::RecoveryResult { .. } => None,
         }
     }
@@ -2468,6 +2580,7 @@ impl Saved {
             Self::Completed { .. } => RequestPhase::Finished,
             Self::TrashResult { report, .. } => report.phase(),
             Self::RestoreResult { report, .. } => report.phase(),
+            Self::DeleteResult { report, .. } => report.phase(),
             Self::RecoveryResult { report, .. } => report.phase(),
             Self::TransferPending { outcome, .. } => outcome.phase(),
         }
@@ -2480,6 +2593,7 @@ impl Saved {
             Self::Plan { error: Some(_), .. } => Phase::Failed,
             Self::Completed { .. } => Phase::Finished,
             Self::RestoreResult { report, .. } => report.status(),
+            Self::DeleteResult { report, .. } => report.status(),
             Self::RecoveryResult { report, .. } => report.status(),
             Self::TrashResult { report, .. } => {
                 if report.interrupted.is_some() {
@@ -2529,6 +2643,10 @@ impl Saved {
                         .first()
                         .map(|failure| failure.message.clone())
                 }),
+            Self::DeleteResult { report, .. } => report
+                .failures
+                .first()
+                .map(|failure| format!("{}: {}", failure.source.display(), failure.message)),
             Self::TrashResult { report, .. } => report.interrupted.clone().or_else(|| {
                 report
                     .failures
@@ -2552,6 +2670,7 @@ impl Saved {
             transfer: None,
             trash: None,
             restore: None,
+            delete: None,
             recovery: None,
             recovery_actions: RecoveryActions::default(),
             transfer_actions: TransferActions::default(),
@@ -2578,12 +2697,16 @@ impl Saved {
                 snapshot.title = request.title();
                 snapshot.paths = request.paths().into();
                 snapshot.error = error.clone();
-                snapshot.dismissible =
-                    matches!(request, Request::Mutation(_) | Request::KeepRecovery { .. })
-                        && matches!(
-                            phase,
-                            Phase::Failed | Phase::AwaitingReview | Phase::Interrupted
-                        );
+                snapshot.dismissible = matches!(
+                    request,
+                    Request::Mutation(_)
+                        | Request::KeepRecovery { .. }
+                        | Request::Delete { .. }
+                        | Request::DeleteTrash { .. }
+                ) && matches!(
+                    phase,
+                    Phase::Failed | Phase::AwaitingReview | Phase::Interrupted
+                );
             }
             Self::Completed {
                 version: 1,
@@ -2639,6 +2762,16 @@ impl Saved {
                 snapshot.paths = report.restored.iter().cloned().collect::<Vec<_>>().into();
                 snapshot.detail = Some(report.detail());
                 snapshot.restore = Some(Arc::new(report.clone()));
+            }
+            Self::DeleteResult {
+                version: 1,
+                title,
+                report,
+            } => {
+                snapshot.title = title.clone();
+                snapshot.paths = report.completed.clone().into();
+                snapshot.detail = Some(report.detail());
+                snapshot.delete = Some(Arc::new(report.clone()));
             }
             _ => {
                 return Err(io::Error::new(

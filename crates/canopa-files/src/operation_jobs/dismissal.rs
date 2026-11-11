@@ -30,7 +30,10 @@ impl Worker {
             || !matches!(
                 job.saved,
                 Saved::Plan {
-                    request: Request::Mutation(_) | Request::KeepRecovery { .. },
+                    request: Request::Mutation(_)
+                        | Request::KeepRecovery { .. }
+                        | Request::Delete { .. }
+                        | Request::DeleteTrash { .. },
                     ..
                 }
             )

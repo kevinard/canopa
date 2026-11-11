@@ -177,7 +177,7 @@ pub(super) fn rows(
             chrome::Icon::Edit
         } else if created.is_some() {
             chrome::Icon::Folder
-        } else if job.trash.is_some() {
+        } else if job.trash.is_some() || job.delete.is_some() {
             chrome::Icon::Trash
         } else if job.restore.is_some() || job.recovery.is_some() {
             chrome::Icon::Recovery
@@ -476,6 +476,9 @@ pub(super) fn phase_badge<'a>(
             .is_none_or(|report| report.error.is_none() && !report.interrupted)
         && job.restore.as_ref().is_none_or(|report| {
             report.error.is_none() && !report.cancelled && !report.interrupted
+        })
+        && job.delete.as_ref().is_none_or(|report| {
+            report.failures.is_empty() && report.remaining.is_empty() && !report.cancelled
         });
     let role = match job.phase {
         Phase::Failed | Phase::StartSaveFailed | Phase::SaveFailed => ColorRole::Danger,

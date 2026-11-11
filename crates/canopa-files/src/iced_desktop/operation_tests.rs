@@ -84,6 +84,7 @@ fn admit_phase(
         transfer: None,
         trash: None,
         restore: None,
+        delete: None,
         recovery: None,
         recovery_actions: Default::default(),
         transfer_actions: Default::default(),

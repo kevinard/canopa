@@ -74,12 +74,15 @@ pub struct TrashOutcome {
     pub failures: Vec<(PathBuf, String)>,
     pub remaining: Vec<PathBuf>,
     pub cancelled: bool,
+    /// Failed sources whose volume offers no usable Trash storage. They are
+    /// unchanged; only an explicit, confirmed permanent deletion removes them.
+    pub unavailable: Vec<PathBuf>,
 }
 
 /// Confirmed results survive a later recovery or history-finalization error.
 /// An unconfirmed current item stays in remaining and needs reconciliation.
 pub(crate) struct InterruptedTrash {
-    pub outcome: TrashOutcome,
+    pub outcome: Box<TrashOutcome>,
     pub error: io::Error,
 }
 
@@ -524,6 +527,7 @@ impl OperationEngine {
                     result.cancelled = true;
                     break;
                 }
+                let mut unavailable = false;
                 let operation = (|| -> io::Result<()> {
                     validate_target(&source)?;
                     if source
@@ -535,8 +539,10 @@ impl OperationEngine {
                     if let Some(observed) = observed {
                         observed.require(&source)?;
                     }
-                    let location = locate(&source)?;
-                    location.ensure()?;
+                    // Failures to find or prepare storage mean this volume
+                    // cannot hold Trash; the source itself is untouched.
+                    let location = locate(&source).inspect_err(|_| unavailable = true)?;
+                    location.ensure().inspect_err(|_| unavailable = true)?;
                     let physical = fs::canonicalize(source.parent().unwrap())?
                         .join(source.file_name().unwrap());
                     let storage = fs::canonicalize(&location.directory)?;
@@ -560,7 +566,8 @@ impl OperationEngine {
                     let mut file = tempfile::Builder::new()
                         .prefix("canopa-")
                         .suffix(".trashinfo")
-                        .tempfile_in(location.directory.join("info"))?;
+                        .tempfile_in(location.directory.join("info"))
+                        .inspect_err(|_| unavailable = true)?;
                     file.write_all(&data)?;
                     file.as_file().sync_all()?;
                     let current = location
@@ -589,6 +596,9 @@ impl OperationEngine {
                     if let Err(error) = check_cancel(cancellation)
                         .and_then(|()| rename_no_replace(&source, &current))
                     {
+                        // The storage is on another filesystem than the source.
+                        unavailable |=
+                            error.raw_os_error() == Some(rustix::io::Errno::XDEV.raw_os_error());
                         info.remove()?;
                         state.clear_intent()?;
                         return Err(error);
@@ -619,6 +629,9 @@ impl OperationEngine {
                         result.paths.push(source);
                         result.id = Some(id);
                     } else {
+                        if unavailable && fs::symlink_metadata(&source).is_ok() {
+                            result.unavailable.push(source.clone());
+                        }
                         result.failures.push((source, error.to_string()));
                     }
                     }
@@ -640,12 +653,181 @@ impl OperationEngine {
                     result.cancelled = true;
                 }
                 Err(InterruptedTrash {
-                    outcome: result,
+                    outcome: Box::new(result),
                     error,
                 })
             }
         }
     }
+}
+
+impl OperationEngine {
+    /// Permanently remove stored Trash items, payload first and then its
+    /// information file, as the freedesktop specification orders it. Prefer
+    /// the confirmed queue request; this public seam serves headless tests.
+    pub fn delete_from_trash(
+        &self,
+        items: &[TrashItem],
+        cancellation: &Cancellation,
+    ) -> io::Result<super::deletion::DeleteOutcome> {
+        self.delete_trashed(items, cancellation, &mut |_, _| {})
+    }
+
+    pub(crate) fn delete_trashed(
+        &self,
+        items: &[TrashItem],
+        cancellation: &Cancellation,
+        progress: &mut dyn FnMut(&Path, super::deletion::DeleteProgress),
+    ) -> io::Result<super::deletion::DeleteOutcome> {
+        let mut outcome = super::deletion::DeleteOutcome::default();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut pending: std::collections::VecDeque<_> = items
+            .iter()
+            .filter(|item| seen.insert(item.path.clone()))
+            .collect();
+        check_cancel(cancellation)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("operation history failed"))?;
+        recover(&mut state, cancellation)?;
+        drop(state);
+        let mut removal = super::deletion::Removal::new(cancellation, progress);
+        let mut forgotten: std::collections::BTreeMap<
+            PathBuf,
+            std::collections::BTreeSet<OsString>,
+        > = std::collections::BTreeMap::new();
+        while let Some(item) = pending.front().copied() {
+            if cancellation.is_cancelled() {
+                outcome.cancelled = true;
+                break;
+            }
+            let result = (|| -> io::Result<()> {
+                validate_target(&item.path)?;
+                let files = item.location.directory.join("files");
+                if item.path.parent() != Some(files.as_path()) {
+                    return Err(invalid("the item is not stored in its Trash location"));
+                }
+                item.location.check_volume()?;
+                private_directory(&item.location.directory)?;
+                private_directory(&files)?;
+                if let Some(info) = &item.info {
+                    info.validate(&item.path)?;
+                }
+                if !item.identity.matches(&item.path) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "the selected Trash item has been replaced or moved",
+                    ));
+                }
+                let state = self
+                    .state
+                    .lock()
+                    .map_err(|_| io::Error::other("operation history failed"))?;
+                removal.remove(&item.path)?;
+                // A leftover information file without its payload is ignored
+                // by readers, so its removal is best-effort. Changed
+                // information belongs to someone else and stays.
+                match &item.info {
+                    Some(info) => {
+                        let _ = info.remove();
+                    }
+                    None => {
+                        let mut name = item.path.file_name().unwrap().to_os_string();
+                        name.push(".trashinfo");
+                        let path = item.location.directory.join("info").join(name);
+                        if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
+                }
+                drop(state);
+                forgotten
+                    .entry(item.location.directory.clone())
+                    .or_default()
+                    .insert(item.path.file_name().unwrap().to_os_string());
+                Ok(())
+            })();
+            match result {
+                Ok(()) => outcome.completed.push(item.path.clone()),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    outcome.cancelled = true;
+                    if fs::symlink_metadata(&item.path).is_ok() {
+                        outcome.failures.push((
+                            item.path.clone(),
+                            "Stopped; part of this folder may already be deleted.".into(),
+                        ));
+                    } else {
+                        outcome.completed.push(item.path.clone());
+                    }
+                    pending.pop_front();
+                    break;
+                }
+                Err(error) => outcome
+                    .failures
+                    .push((item.path.clone(), error.to_string())),
+            }
+            pending.pop_front();
+        }
+        for (directory, names) in forgotten {
+            // The size cache is advisory; a failure only leaves stale lines
+            // that readers ignore because their folder no longer exists.
+            let _ = forget_sizes(&directory, &names);
+        }
+        outcome.remaining = pending.into_iter().map(|item| item.path.clone()).collect();
+        let totals = removal.totals();
+        outcome.entries = totals.entries;
+        outcome.bytes = totals.bytes;
+        Ok(outcome)
+    }
+}
+
+/// Drop `directorysizes` entries for removed payloads (Trash specification
+/// 1.0, "Directory size cache"). The file is replaced atomically.
+fn forget_sizes(directory: &Path, names: &std::collections::BTreeSet<OsString>) -> io::Result<()> {
+    const LIMIT: u64 = 16 * 1024 * 1024;
+    let path = directory.join("directorysizes");
+    let mut file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(
+            rustix::fs::OFlags::NOFOLLOW.bits() as i32 | rustix::fs::OFlags::NONBLOCK.bits() as i32,
+        )
+        .open(&path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > LIMIT {
+        return Err(invalid("invalid Trash size cache"));
+    }
+    let mut data = Vec::new();
+    (&mut file).take(LIMIT + 1).read_to_end(&mut data)?;
+    let mut kept = Vec::with_capacity(data.len());
+    let mut removed = false;
+    for line in data.split_inclusive(|byte| *byte == b'\n') {
+        let entry = line.strip_suffix(b"\n").unwrap_or(line);
+        let name = entry
+            .splitn(3, |byte| *byte == b' ')
+            .nth(2)
+            .and_then(|name| decode(name).ok());
+        if name.is_some_and(|name| names.contains(std::ffi::OsStr::from_bytes(&name))) {
+            removed = true;
+        } else {
+            kept.extend_from_slice(line);
+        }
+    }
+    if !removed {
+        return Ok(());
+    }
+    let mut replacement = tempfile::Builder::new()
+        .prefix(".directorysizes-")
+        .tempfile_in(directory)?;
+    replacement.write_all(&kept)?;
+    replacement.as_file().sync_all()?;
+    replacement.persist(&path).map_err(|error| error.error)?;
+    sync_parent(&path)
 }
 
 impl Info {

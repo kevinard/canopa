@@ -105,7 +105,7 @@ pub(super) struct Publication {
 }
 
 impl Publication {
-    fn progress(&self, progress: TransferProgress) {
+    pub(super) fn progress(&self, progress: TransferProgress) {
         let mut snapshot = self.snapshot.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(job) = snapshot
             .jobs
