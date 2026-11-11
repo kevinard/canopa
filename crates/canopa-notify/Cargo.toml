@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [features]
 default = ["gui", "audio"]
-gui = ["dep:canopa-assets", "dep:canopa-ui", "canopa-ui/icons", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols"]
+gui = ["dep:canopa-assets", "dep:canopa-ui", "canopa-ui/icons", "dep:accesskit", "dep:accesskit_unix", "dep:iced", "dep:iced_layershell", "dep:iced_runtime", "dep:image", "dep:libc", "dep:wayland-client", "dep:wayland-protocols", "dep:niri-ipc"]
 audio = ["dep:rodio"]
 
 [[test]]
@@ -24,6 +24,7 @@ canopa-apps.workspace = true
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-notify-client.workspace = true
 miette.workspace = true
+niri-ipc = { workspace = true, optional = true }
 canopa-file.workspace = true
 canopa-config.workspace = true
 canopa-theme.workspace = true
