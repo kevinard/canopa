@@ -76,7 +76,7 @@ impl RecoveryReport {
     pub(super) fn detail(&self) -> String {
         let detail = self.transfer.detail();
         if self.handed_off {
-            format!("{detail} · remaining work handed to another request")
+            fl!("files-report-handed-to-request", detail = detail)
         } else {
             detail
         }

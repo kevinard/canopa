@@ -111,42 +111,37 @@ impl TransferReport {
     }
 
     pub(crate) fn detail(&self) -> String {
-        let mut detail = format!(
-            "{} completed · {} bytes · {} failed · {} skipped · {} remaining{}{}",
-            self.completed,
-            self.bytes,
-            self.failures.len(),
-            self.skipped.len(),
-            self.remaining.len(),
-            if self.cancelled { " · cancelled" } else { "" },
-            if self.needs_attention {
-                " · needs attention"
-            } else {
-                ""
-            }
-        );
+        // Independent facts, joined with " · " as the Operations window shows them.
+        let mut parts = vec![
+            fl!("files-report-completed", count = self.completed),
+            fl!("files-size-bytes", bytes = self.bytes),
+            fl!("files-report-failed", count = self.failures.len()),
+            fl!("files-report-skipped", count = self.skipped.len()),
+            fl!("files-report-remaining", count = self.remaining.len()),
+        ];
+        if self.cancelled {
+            parts.push(fl!("files-report-cancelled"));
+        }
+        if self.needs_attention {
+            parts.push(fl!("files-report-needs-attention"));
+        }
         if !self.source_remainders.is_empty() {
-            detail.push_str(&format!(
-                " · {} source {} to review",
-                self.source_remainders.len(),
-                if self.source_remainders.len() == 1 {
-                    "folder"
-                } else {
-                    "folders"
-                }
+            parts.push(fl!(
+                "files-report-source-folders",
+                count = self.source_remainders.len()
             ));
         }
-        for (name, resolution) in [
-            ("failed work", self.failed_resolution),
-            ("remaining work", self.remaining_resolution),
-        ] {
-            match resolution {
-                TransferResolution::Available => {}
-                TransferResolution::HandedOff => detail.push_str(&format!(" · {name} handed off")),
-                TransferResolution::Abandoned => detail.push_str(&format!(" · {name} abandoned")),
-            }
+        match self.failed_resolution {
+            TransferResolution::Available => {}
+            TransferResolution::HandedOff => parts.push(fl!("files-report-failed-handed-off")),
+            TransferResolution::Abandoned => parts.push(fl!("files-report-failed-abandoned")),
         }
-        detail
+        match self.remaining_resolution {
+            TransferResolution::Available => {}
+            TransferResolution::HandedOff => parts.push(fl!("files-report-remaining-handed-off")),
+            TransferResolution::Abandoned => parts.push(fl!("files-report-remaining-abandoned")),
+        }
+        parts.join(" · ")
     }
 }
 
@@ -166,7 +161,7 @@ impl StoppedTransfer {
     pub(crate) fn detail(&self) -> String {
         let detail = self.report.detail();
         if self.interrupted.is_some() {
-            format!("{detail} · confirmed portion; unfinished work needs reconciliation")
+            fl!("files-report-confirmed-portion", detail = detail)
         } else {
             detail
         }

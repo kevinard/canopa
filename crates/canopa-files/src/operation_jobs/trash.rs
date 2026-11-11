@@ -213,18 +213,19 @@ impl TrashReport {
     }
 
     pub(super) fn detail(&self) -> String {
-        format!(
-            "{} moved to Trash · {} failed · {} {}{}",
-            self.completed.len(),
-            self.failures.len(),
-            self.remaining.len(),
+        let mut parts = vec![
+            fl!("files-report-trashed", count = self.completed.len()),
+            fl!("files-report-failed", count = self.failures.len()),
             if self.interrupted.is_some() {
-                "need review"
+                fl!("files-report-need-review", count = self.remaining.len())
             } else {
-                "not started"
+                fl!("files-report-not-started", count = self.remaining.len())
             },
-            if self.cancelled { " · cancelled" } else { "" }
-        )
+        ];
+        if self.cancelled {
+            parts.push(fl!("files-report-cancelled"));
+        }
+        parts.join(" · ")
     }
 }
 
@@ -326,12 +327,14 @@ impl DeleteReport {
     }
 
     pub(super) fn detail(&self) -> String {
-        format!(
-            "{} deleted permanently · {} failed · {} not started{}",
-            self.completed.len(),
-            self.failures.len(),
-            self.remaining.len(),
-            if self.cancelled { " · cancelled" } else { "" }
-        )
+        let mut parts = vec![
+            fl!("files-report-deleted", count = self.completed.len()),
+            fl!("files-report-failed", count = self.failures.len()),
+            fl!("files-report-not-started", count = self.remaining.len()),
+        ];
+        if self.cancelled {
+            parts.push(fl!("files-report-cancelled"));
+        }
+        parts.join(" · ")
     }
 }

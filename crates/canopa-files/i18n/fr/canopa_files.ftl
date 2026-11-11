@@ -1252,3 +1252,50 @@ files-action-needs-name = %n nécessite un fichier sélectionné
 files-config-defaults-read-only = les valeurs par défaut intégrées ne peuvent pas être modifiées
 files-config-needs-parent = la configuration nécessite un dossier parent
 files-config-too-many-actions = 256 actions personnalisées au maximum sont prises en charge
+
+## Operation result summaries (facts joined with " · ")
+
+files-report-completed = { $count ->
+    [one] { $count } terminé
+   *[other] { $count } terminés
+}
+files-report-failed = { $count ->
+    [one] { $count } en échec
+   *[other] { $count } en échec
+}
+files-report-skipped = { $count ->
+    [one] { $count } ignoré
+   *[other] { $count } ignorés
+}
+files-report-remaining = { $count ->
+    [one] { $count } restant
+   *[other] { $count } restants
+}
+files-report-cancelled = annulé
+files-report-needs-attention = attention requise
+files-report-source-folders = { $count ->
+    [one] { $count } dossier source à examiner
+   *[other] { $count } dossiers source à examiner
+}
+files-report-failed-handed-off = travail en échec transmis
+files-report-failed-abandoned = travail en échec abandonné
+files-report-remaining-handed-off = travail restant transmis
+files-report-remaining-abandoned = travail restant abandonné
+files-report-confirmed-portion = { $detail } · partie confirmée ; le travail inachevé doit être réconcilié
+files-report-handed-to-request = { $detail } · travail restant transmis à une autre demande
+files-report-trashed = { $count ->
+    [one] { $count } mis à la corbeille
+   *[other] { $count } mis à la corbeille
+}
+files-report-deleted = { $count ->
+    [one] { $count } supprimé définitivement
+   *[other] { $count } supprimés définitivement
+}
+files-report-need-review = { $count ->
+    [one] { $count } à examiner
+   *[other] { $count } à examiner
+}
+files-report-not-started = { $count ->
+    [one] { $count } non démarré
+   *[other] { $count } non démarrés
+}

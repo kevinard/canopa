@@ -1298,3 +1298,26 @@ files-action-needs-name = %n requires a selected file
 files-config-defaults-read-only = built-in defaults cannot be edited
 files-config-needs-parent = configuration needs a parent folder
 files-config-too-many-actions = at most 256 custom actions are supported
+
+## Operation result summaries (facts joined with " · ")
+
+files-report-completed = { $count } completed
+files-report-failed = { $count } failed
+files-report-skipped = { $count } skipped
+files-report-remaining = { $count } remaining
+files-report-cancelled = cancelled
+files-report-needs-attention = needs attention
+files-report-source-folders = { $count ->
+    [one] { $count } source folder to review
+   *[other] { $count } source folders to review
+}
+files-report-failed-handed-off = failed work handed off
+files-report-failed-abandoned = failed work abandoned
+files-report-remaining-handed-off = remaining work handed off
+files-report-remaining-abandoned = remaining work abandoned
+files-report-confirmed-portion = { $detail } · confirmed portion; unfinished work needs reconciliation
+files-report-handed-to-request = { $detail } · remaining work handed to another request
+files-report-trashed = { $count } moved to Trash
+files-report-deleted = { $count } deleted permanently
+files-report-need-review = { $count } need review
+files-report-not-started = { $count } not started
