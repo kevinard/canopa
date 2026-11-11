@@ -1126,3 +1126,148 @@ settings-error-motion-session = Log into the Canopa session to change compositor
 # $reply is the idle manager's answer.
 settings-error-idle-no-ack = Stasis did not acknowledge the operation: { $reply }
 settings-error-idle-reload = Stasis rejected the reload; the previous file was restored.
+
+## Shortcuts: the names of the shipped keyboard actions
+
+settings-shortcut-open-terminal = Open terminal
+settings-shortcut-open-applications = Open Applications
+settings-shortcut-open-files = Open Files
+settings-shortcut-open-settings = Open Settings
+settings-shortcut-lock-screen = Lock screen
+settings-shortcut-close-window = Close window
+settings-shortcut-maximize-column = Maximize column
+settings-shortcut-toggle-fullscreen = Toggle fullscreen
+settings-shortcut-toggle-floating-window = Toggle floating window
+settings-shortcut-toggle-overview = Toggle overview
+settings-shortcut-log-out = Log out
+settings-shortcut-select-screenshot-region = Select screenshot region
+settings-shortcut-capture-screen = Capture screen
+settings-shortcut-capture-window = Capture window
+settings-shortcut-raise-volume = Raise volume
+settings-shortcut-lower-volume = Lower volume
+settings-shortcut-mute-speakers = Mute speakers
+settings-shortcut-mute-microphone = Mute microphone
+settings-shortcut-brightness-up = Brightness up
+settings-shortcut-brightness-down = Brightness down
+settings-shortcut-keyboard-brightness-up = Keyboard brightness up
+settings-shortcut-keyboard-brightness-down = Keyboard brightness down
+settings-shortcut-toggle-keyboard-backlight = Toggle keyboard backlight
+settings-shortcut-play-or-pause = Play or pause
+settings-shortcut-pause-media = Pause media
+settings-shortcut-stop-media = Stop media
+settings-shortcut-next-track = Next track
+settings-shortcut-previous-track = Previous track
+settings-shortcuts-loading = Loading keyboard shortcuts…
+settings-shortcuts-unavailable = Shortcuts unavailable
+settings-shortcuts-intro = Edit the keyboard shortcuts shipped with Canopa. Use Niri key names such as Mod+Shift+Space. Mod is normally Super. Leave a shortcut empty to turn it off. Shortcuts you have not changed follow Canopa updates.
+settings-shortcuts-search = Search shortcuts
+settings-shortcuts-migration = Your shortcuts are stored as a full copy of an older set of defaults. Saving keeps only your changes, so new and updated default shortcuts reach you again. A backup of niri.kdl is kept next to it.
+settings-shortcuts-reset = Reset to defaults
+settings-shortcuts-needs-session = Log into the Canopa session to save keyboard shortcuts.
+settings-shortcuts-none-match = No shortcuts match your search.
+# $action is a shortcut's name, $key its keys.
+settings-shortcut-key = { $action } · { $key }
+settings-shortcut-off = { $action } · Off
+settings-error-shortcuts-custom-blocks = Custom top-level binding blocks are read-only. Keep your own bindings in niri-custom.kdl.
+settings-error-shortcuts-defaults-include = Canopa defaults that include other files cannot be combined with shortcut changes.
+settings-error-shortcuts-not-separable = Your shortcut changes could not be separated from the shipped bindings. Edit niri.kdl in KDL.
+settings-error-shortcuts-too-many-includes = Too many Niri includes for the shortcut editor.
+settings-error-shortcuts-recursive-includes = Too many or recursive Niri includes.
+
+## Launcher
+
+settings-launcher-intro = Enable extensions and choose their launcher keywords. Changes apply automatically.
+settings-launcher-pin-hint = Use Tab on a launcher result to pin it or assign an alias.
+settings-launcher-loading = Loading launcher preferences…
+settings-launcher-no-extensions = Start Canopa Shell to discover configured extensions and their latest status.
+settings-launcher-keyword = Keyword
+# $actions lists an extension's actions.
+settings-launcher-actions = Actions: { $actions }
+# $status is the extension's own status text.
+settings-launcher-status = Last status: { $status }
+settings-launcher-web = Web searches
+settings-launcher-web-hint = Only pasted URLs and explicit search keywords offer browser actions. A request starts when you select the result.
+# $placeholder is the text replaced by the search, {query}.
+settings-launcher-default-url = Default search URL · include { $placeholder }
+settings-launcher-search-keyword = Search keyword
+settings-launcher-search-url = Search URL · include { $placeholder }
+settings-launcher-remove-search = Remove search shortcut
+settings-launcher-add-search = Add search shortcut
+settings-launcher-pins = Pins and aliases
+# A launcher result with its pin and alias. $pinned is yes or no.
+settings-launcher-pin = { $pinned ->
+    [yes] { $name } · pinned
+   *[no] { $name }
+}
+settings-launcher-pin-alias = { $pinned ->
+    [yes] { $name } · pinned · { $alias }
+   *[no] { $name } · { $alias }
+}
+settings-clipboard = Clipboard history
+settings-clipboard-hint = Use clip in Applications to find recent copies. History lasts for this Shell session.
+settings-clipboard-record = Record clipboard history
+settings-clipboard-images = Include images when recording
+# $limit is the largest number allowed.
+settings-clipboard-limit = Maximum recent entries (1–{ $limit })
+settings-clipboard-save = Save clipboard settings
+settings-clipboard-loading = Loading clipboard settings…
+settings-error-launcher-changed = Launcher preferences changed outside this editor; reload before saving.
+settings-error-launcher-keywords = Enabled extension keywords must be unique.
+settings-error-launcher-search-keywords = Search keywords must be unique.
+settings-error-clipboard-changed = Clipboard preferences changed. Reload saved settings before saving.
+
+## Widgets
+
+settings-widgets-loading = Loading widget layouts…
+settings-widgets-saved = Widget layouts saved.
+settings-widgets-bar-layout = Bar layout
+settings-widgets-lock-layout = Lock screen layout
+settings-widgets-refresh = Refresh monitors
+settings-widgets-bar = Bar
+settings-widgets-edge = Screen edge
+settings-widgets-edge-left = Left
+settings-widgets-edge-right = Right
+settings-widgets-edge-top = Top
+settings-widgets-edge-bottom = Bottom
+settings-widgets-preview-monitor = Preview monitor
+settings-widgets-preview-scale = Preview scale
+settings-widgets-all-monitors = All monitors
+settings-widgets-selected-monitors = Selected monitors
+settings-widgets-except-monitors = All except selected monitors
+settings-widgets-preview-hint = Sample preview · Select a widget to edit its placement.
+settings-widgets-visibility = Bar visibility
+settings-widgets-choose-monitor = Choose at least one monitor before saving.
+settings-widgets-copy-name = Name for a copy of this bar
+settings-widgets-duplicate-bar = Duplicate bar
+settings-widgets-remove-bar = Remove bar
+settings-widgets-lock-hint = Lock screen changes take effect the next time you lock. Authentication is always available.
+settings-widgets-placed = Placed widget
+settings-widgets-add = Add widget
+settings-widgets-region = Region
+settings-widgets-zone = Zone
+# Bar zones.
+settings-widgets-zone-start = Start
+settings-widgets-zone-center = Center
+settings-widgets-zone-end = End
+# Lock screen regions.
+settings-widgets-region-top-left = Top left
+settings-widgets-region-top-center = Top center
+settings-widgets-region-top-right = Top right
+settings-widgets-region-center-left = Center left
+settings-widgets-region-center-right = Center right
+settings-widgets-region-bottom-left = Bottom left
+settings-widgets-region-bottom-center = Bottom center
+settings-widgets-region-bottom-right = Bottom right
+settings-widgets-earlier = Earlier
+settings-widgets-later = Later
+settings-widgets-remove = Remove widget
+settings-widgets-flow = Arrange this region in a row
+settings-widgets-hide = Hide this widget on the preview monitor
+settings-widgets-bar-hidden = This bar is hidden on the preview monitor.
+# Sample content in the lock screen preview; keep it short.
+settings-widgets-sample-password = Password · ••••
+settings-widgets-sample-user = Sample user
+settings-widgets-sample-media = Now playing
+settings-widgets-sample-weather = 18 °C · Clear
+settings-widgets-sample-keyboard = English (US)
+settings-widgets-sample-avatar = Avatar

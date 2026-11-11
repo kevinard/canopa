@@ -24,3 +24,6 @@ crates/canopa-files/src/operations/undo/unavailable_move.rs: "Preserved after fi
 crates/canopa-files/src/operations/undo/unavailable_saved.rs: "Preserved after finishing an unavailable saved version during Undo {label}"  # stored English Recovery label; history_labels translates it when shown
 crates/canopa-files/src/operations/saved_stage.rs: *  # saved-version proof diagnostics of the crash-durable engine, journaled with the transfer; not yet translated (rare Recovery attention)
 crates/canopa-files/src/operations/saved_stage/forward.rs: *  # saved-version proof diagnostics of the crash-durable engine, journaled with the transfer; not yet translated (rare Recovery attention)
+crates/canopa-settings/src/ui/live_example.rs: *  # the live-page pattern's example on a simulated service, debug builds only (ui.rs cfg(debug_assertions))
+crates/canopa-settings/src/ui/about.rs: "Canopa"  # product name beside its version on the About page
+crates/canopa-settings/src/ui/bluetooth.rs: "Bluetooth"  # the Bluetooth trademark as the adapter group's title, the same in every language

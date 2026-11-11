@@ -36,9 +36,9 @@ impl Model {
                 || current.web_template != self.saved.web_template
                 || current.searches != self.saved.searches
             {
-                return Err(std::io::Error::other(
-                    "Launcher preferences changed outside this editor; reload before saving",
-                ));
+                return Err(std::io::Error::other(fl!(
+                    "settings-error-launcher-changed"
+                )));
             }
             current.extensions = self.draft.extensions.clone();
             current.web_template = self.draft.web_template.clone();
@@ -53,9 +53,9 @@ impl Model {
                             .to_owned(),
                     )
                 {
-                    return Err(std::io::Error::other(
-                        "Enabled extension keywords must be unique",
-                    ));
+                    return Err(std::io::Error::other(fl!(
+                        "settings-error-launcher-keywords"
+                    )));
                 }
             }
             if self
@@ -73,7 +73,9 @@ impl Model {
             {
                 for search in &current.searches {
                     if !keywords.insert(search.keyword.clone()) {
-                        return Err(std::io::Error::other("Search keywords must be unique"));
+                        return Err(std::io::Error::other(fl!(
+                            "settings-error-launcher-search-keywords"
+                        )));
                     }
                 }
             }
@@ -141,9 +143,7 @@ impl ClipboardEditor {
         };
         let saved = clipboard::Saved::update(path, |current| {
             if current.options() != self.saved {
-                return Err(
-                    "Clipboard preferences changed. Reload saved settings before saving.".into(),
-                );
+                return Err(fl!("settings-error-clipboard-changed").into());
             }
             current.set_options(options);
             Ok(())

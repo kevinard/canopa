@@ -1033,3 +1033,139 @@ settings-error-motion-edited = Le réglage d’animation du compositeur a été 
 settings-error-motion-session = Connectez-vous à la session Canopa pour modifier les animations du compositeur.
 settings-error-idle-no-ack = Stasis n’a pas confirmé l’opération : { $reply }
 settings-error-idle-reload = Stasis a refusé le rechargement ; le fichier précédent a été restauré.
+
+## Shortcuts
+
+settings-shortcut-open-terminal = Ouvrir un terminal
+settings-shortcut-open-applications = Ouvrir les applications
+settings-shortcut-open-files = Ouvrir Fichiers
+settings-shortcut-open-settings = Ouvrir les Paramètres
+settings-shortcut-lock-screen = Verrouiller l’écran
+settings-shortcut-close-window = Fermer la fenêtre
+settings-shortcut-maximize-column = Maximiser la colonne
+settings-shortcut-toggle-fullscreen = Basculer en plein écran
+settings-shortcut-toggle-floating-window = Basculer la fenêtre flottante
+settings-shortcut-toggle-overview = Afficher ou masquer la vue d’ensemble
+settings-shortcut-log-out = Se déconnecter
+settings-shortcut-select-screenshot-region = Capturer une zone de l’écran
+settings-shortcut-capture-screen = Capturer l’écran
+settings-shortcut-capture-window = Capturer la fenêtre
+settings-shortcut-raise-volume = Augmenter le volume
+settings-shortcut-lower-volume = Baisser le volume
+settings-shortcut-mute-speakers = Couper les haut-parleurs
+settings-shortcut-mute-microphone = Couper le micro
+settings-shortcut-brightness-up = Augmenter la luminosité
+settings-shortcut-brightness-down = Baisser la luminosité
+settings-shortcut-keyboard-brightness-up = Augmenter le rétroéclairage du clavier
+settings-shortcut-keyboard-brightness-down = Baisser le rétroéclairage du clavier
+settings-shortcut-toggle-keyboard-backlight = Activer ou désactiver le rétroéclairage du clavier
+settings-shortcut-play-or-pause = Lecture ou pause
+settings-shortcut-pause-media = Mettre le média en pause
+settings-shortcut-stop-media = Arrêter le média
+settings-shortcut-next-track = Piste suivante
+settings-shortcut-previous-track = Piste précédente
+settings-shortcuts-loading = Chargement des raccourcis clavier…
+settings-shortcuts-unavailable = Raccourcis indisponibles
+settings-shortcuts-intro = Modifiez les raccourcis clavier fournis avec Canopa. Utilisez les noms de touches de Niri, comme Mod+Shift+Space. Mod est normalement la touche Super. Laissez un raccourci vide pour le désactiver. Les raccourcis que vous n’avez pas modifiés suivent les mises à jour de Canopa.
+settings-shortcuts-search = Rechercher un raccourci
+settings-shortcuts-migration = Vos raccourcis sont enregistrés comme une copie complète d’un ancien jeu de raccourcis par défaut. L’enregistrement ne conserve que vos modifications, pour que les raccourcis par défaut nouveaux et mis à jour vous parviennent à nouveau. Une sauvegarde de niri.kdl est conservée à côté.
+settings-shortcuts-reset = Rétablir les valeurs par défaut
+settings-shortcuts-needs-session = Connectez-vous à la session Canopa pour enregistrer les raccourcis clavier.
+settings-shortcuts-none-match = Aucun raccourci ne correspond à votre recherche.
+settings-shortcut-key = { $action } · { $key }
+settings-shortcut-off = { $action } · Désactivé
+settings-error-shortcuts-custom-blocks = Les blocs de raccourcis personnalisés de premier niveau sont en lecture seule. Gardez vos propres raccourcis dans niri-custom.kdl.
+settings-error-shortcuts-defaults-include = Des raccourcis Canopa par défaut qui incluent d’autres fichiers ne peuvent pas être combinés avec des modifications.
+settings-error-shortcuts-not-separable = Vos modifications de raccourcis n’ont pas pu être séparées des raccourcis fournis. Modifiez niri.kdl en KDL.
+settings-error-shortcuts-too-many-includes = Trop de fichiers d’inclusion de Niri pour l’éditeur de raccourcis.
+settings-error-shortcuts-recursive-includes = Fichiers d’inclusion de Niri trop nombreux ou récursifs.
+
+## Launcher
+
+settings-launcher-intro = Activez des extensions et choisissez leurs mots-clés dans le lanceur. Les modifications s’appliquent automatiquement.
+settings-launcher-pin-hint = Appuyez sur Tab sur un résultat du lanceur pour l’épingler ou lui donner un alias.
+settings-launcher-loading = Chargement des préférences du lanceur…
+settings-launcher-no-extensions = Démarrez le Shell Canopa pour découvrir les extensions configurées et leur dernier état.
+settings-launcher-keyword = Mot-clé
+settings-launcher-actions = Actions : { $actions }
+settings-launcher-status = Dernier état : { $status }
+settings-launcher-web = Recherches web
+settings-launcher-web-hint = Seuls les liens collés et les mots-clés de recherche explicites proposent des actions du navigateur. Une requête ne part que lorsque vous choisissez le résultat.
+settings-launcher-default-url = Adresse de recherche par défaut · contenant { $placeholder }
+settings-launcher-search-keyword = Mot-clé de recherche
+settings-launcher-search-url = Adresse de recherche · contenant { $placeholder }
+settings-launcher-remove-search = Supprimer le raccourci de recherche
+settings-launcher-add-search = Ajouter un raccourci de recherche
+settings-launcher-pins = Épingles et alias
+settings-launcher-pin = { $pinned ->
+    [yes] { $name } · épinglé
+   *[no] { $name }
+}
+settings-launcher-pin-alias = { $pinned ->
+    [yes] { $name } · épinglé · { $alias }
+   *[no] { $name } · { $alias }
+}
+settings-clipboard = Historique du presse-papiers
+settings-clipboard-hint = Tapez clip dans Applications pour retrouver les copies récentes. L’historique dure le temps de cette session du Shell.
+settings-clipboard-record = Enregistrer l’historique du presse-papiers
+settings-clipboard-images = Inclure les images dans l’enregistrement
+settings-clipboard-limit = Nombre maximal d’entrées récentes (1–{ $limit })
+settings-clipboard-save = Enregistrer les paramètres du presse-papiers
+settings-clipboard-loading = Chargement des paramètres du presse-papiers…
+settings-error-launcher-changed = Les préférences du lanceur ont changé en dehors de cet éditeur ; rechargez avant d’enregistrer.
+settings-error-launcher-keywords = Les mots-clés des extensions activées doivent être uniques.
+settings-error-launcher-search-keywords = Les mots-clés de recherche doivent être uniques.
+settings-error-clipboard-changed = Les préférences du presse-papiers ont changé. Rechargez les paramètres enregistrés avant d’enregistrer.
+
+## Widgets
+
+settings-widgets-loading = Chargement des dispositions des widgets…
+settings-widgets-saved = Dispositions des widgets enregistrées.
+settings-widgets-bar-layout = Disposition de la barre
+settings-widgets-lock-layout = Disposition de l’écran de verrouillage
+settings-widgets-refresh = Actualiser les écrans
+settings-widgets-bar = Barre
+settings-widgets-edge = Bord de l’écran
+settings-widgets-edge-left = Gauche
+settings-widgets-edge-right = Droite
+settings-widgets-edge-top = Haut
+settings-widgets-edge-bottom = Bas
+settings-widgets-preview-monitor = Écran de l’aperçu
+settings-widgets-preview-scale = Échelle de l’aperçu
+settings-widgets-all-monitors = Tous les écrans
+settings-widgets-selected-monitors = Écrans sélectionnés
+settings-widgets-except-monitors = Tous sauf les écrans sélectionnés
+settings-widgets-preview-hint = Aperçu avec des exemples · Sélectionnez un widget pour modifier son emplacement.
+settings-widgets-visibility = Visibilité de la barre
+settings-widgets-choose-monitor = Choisissez au moins un écran avant d’enregistrer.
+settings-widgets-copy-name = Nom d’une copie de cette barre
+settings-widgets-duplicate-bar = Dupliquer la barre
+settings-widgets-remove-bar = Supprimer la barre
+settings-widgets-lock-hint = Les modifications de l’écran de verrouillage s’appliquent au prochain verrouillage. L’authentification reste toujours disponible.
+settings-widgets-placed = Widget placé
+settings-widgets-add = Ajouter un widget
+settings-widgets-region = Région
+settings-widgets-zone = Zone
+settings-widgets-zone-start = Début
+settings-widgets-zone-center = Centre
+settings-widgets-zone-end = Fin
+settings-widgets-region-top-left = En haut à gauche
+settings-widgets-region-top-center = En haut au centre
+settings-widgets-region-top-right = En haut à droite
+settings-widgets-region-center-left = Au centre à gauche
+settings-widgets-region-center-right = Au centre à droite
+settings-widgets-region-bottom-left = En bas à gauche
+settings-widgets-region-bottom-center = En bas au centre
+settings-widgets-region-bottom-right = En bas à droite
+settings-widgets-earlier = Avant
+settings-widgets-later = Après
+settings-widgets-remove = Retirer le widget
+settings-widgets-flow = Disposer cette région en ligne
+settings-widgets-hide = Masquer ce widget sur l’écran de l’aperçu
+settings-widgets-bar-hidden = Cette barre est masquée sur l’écran de l’aperçu.
+settings-widgets-sample-password = Mot de passe · ••••
+settings-widgets-sample-user = Utilisateur exemple
+settings-widgets-sample-media = En cours de lecture
+settings-widgets-sample-weather = 18 °C · Dégagé
+settings-widgets-sample-keyboard = Français (France)
+settings-widgets-sample-avatar = Avatar

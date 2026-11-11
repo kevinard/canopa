@@ -1,10 +1,11 @@
-use super::{Message, State, choice, field, task, toggle};
+use super::{Message, State, choice, field, pick, task, toggle};
 use crate::{
     session::Paths,
     storage::Snapshot,
     widget_layouts::{EDGES, Editor, Target, ZONES},
 };
 use canopa_session_ui::layout::{Anchor, Item, Layout, Region};
+use canopa_ui::direction;
 use iced::{
     Element, Length,
     widget::{column, container, responsive, row, space, stack, text},
@@ -18,10 +19,11 @@ pub(super) enum Action {
     Lock(bool),
     Bar(String),
     Edge(String),
-    Target(String),
+    Target(Target),
     Monitor(String),
     Output(String),
-    Scale(String),
+    /// An index into [`SCALES`].
+    Scale(usize),
     Select(String),
     Place(String),
     Add(String),
@@ -49,9 +51,36 @@ pub(super) struct View {
     title: String,
 }
 
-const ALL_OUTPUTS: &str = "All monitors";
-const SCALE_LABELS: [&str; 4] = ["100%", "75%", "125%", "150%"];
 const SCALES: [f32; 4] = [1., 0.75, 1.25, 1.5];
+
+/// A screen edge (`left`, `right`, `top`, `bottom`) in the selected language.
+fn edge_label(edge: &str) -> String {
+    match edge {
+        "left" => fl!("settings-widgets-edge-left"),
+        "right" => fl!("settings-widgets-edge-right"),
+        "top" => fl!("settings-widgets-edge-top"),
+        _ => fl!("settings-widgets-edge-bottom"),
+    }
+}
+
+/// A bar zone (`start`, `center`, `end`) or lock-screen region in the
+/// selected language.
+fn place_label(place: &str) -> String {
+    match place {
+        "start" => fl!("settings-widgets-zone-start"),
+        "center" => fl!("settings-widgets-zone-center"),
+        "end" => fl!("settings-widgets-zone-end"),
+        "top-left" => fl!("settings-widgets-region-top-left"),
+        "top-center" => fl!("settings-widgets-region-top-center"),
+        "top-right" => fl!("settings-widgets-region-top-right"),
+        "center-left" => fl!("settings-widgets-region-center-left"),
+        "center-right" => fl!("settings-widgets-region-center-right"),
+        "bottom-left" => fl!("settings-widgets-region-bottom-left"),
+        "bottom-center" => fl!("settings-widgets-region-bottom-center"),
+        "bottom-right" => fl!("settings-widgets-region-bottom-right"),
+        other => other.to_owned(),
+    }
+}
 
 impl View {
     pub(super) fn load(paths: &Paths) -> iced::Task<Message> {
@@ -123,7 +152,7 @@ impl State {
                         let view = &mut self.widget_layouts;
                         view.bar = view.bar.min(editor.bars.len() - 1);
                         view.editor = Some(Ok(*editor));
-                        self.notice = "Widget layouts saved.".into();
+                        self.notice = fl!("settings-widgets-saved");
                     }
                     Err(error) => self.notice = error,
                 }
@@ -148,8 +177,8 @@ impl State {
                     view.widget = None;
                 }
             }
-            Action::Scale(label) => {
-                if let Some(index) = SCALE_LABELS.iter().position(|scale| *scale == label) {
+            Action::Scale(index) => {
+                if index < SCALES.len() {
                     view.scale = index;
                 }
             }
@@ -174,15 +203,10 @@ impl State {
                 bar.edge = edge;
                 bar.change();
             }
-            Action::Target(label) => {
-                if let Some(target) = Target::ALL
-                    .into_iter()
-                    .find(|target| target.label() == label)
-                {
-                    let bar = &mut editor.bars[view.bar];
-                    bar.target = target;
-                    bar.change();
-                }
+            Action::Target(target) => {
+                let bar = &mut editor.bars[view.bar];
+                bar.target = target;
+                bar.change();
             }
             Action::Monitor(output) => {
                 let bar = &mut editor.bars[view.bar];
@@ -275,33 +299,33 @@ impl State {
     pub(super) fn widget_layouts_view(&self) -> Element<'_, Message> {
         let view = &self.widget_layouts;
         let Some(result) = &view.editor else {
-            return text("Loading widget layouts…").into();
+            return text(fl!("settings-widgets-loading")).into();
         };
         let editor = match result {
             Ok(editor) => editor,
             Err(error) => return text(error.as_str()).into(),
         };
         let mut content = column![
-            row![
+            direction::row([
                 self.action(
                     "settings-button-bar-layout",
-                    "Bar layout",
+                    fl!("settings-widgets-bar-layout"),
                     Some(message(Action::Lock(false))),
-                    !view.lock
+                    !view.lock,
                 ),
                 self.action(
                     "settings-button-lock-screen-layout",
-                    "Lock screen layout",
+                    fl!("settings-widgets-lock-layout"),
                     Some(message(Action::Lock(true))),
-                    view.lock
+                    view.lock,
                 ),
                 self.action(
                     "settings-button-refresh-monitors",
-                    "Refresh monitors",
+                    fl!("settings-widgets-refresh"),
                     (!self.refreshing).then_some(Message::BackendChanged),
-                    false
-                )
-            ]
+                    false,
+                ),
+            ])
             .spacing(8)
         ]
         .spacing(12);
@@ -313,9 +337,9 @@ impl State {
         } else {
             outputs.extend(bar.outputs.iter().cloned());
             content = content.push(
-                row![
+                direction::row([
                     column![
-                        text("Bar"),
+                        text(fl!("settings-widgets-bar")),
                         choice(
                             "widgets-bar",
                             editor.bars.iter().map(|bar| bar.name.clone()).collect(),
@@ -324,75 +348,91 @@ impl State {
                         )
                     ]
                     .spacing(4)
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .into(),
                     column![
-                        text("Screen edge"),
-                        choice(
+                        text(fl!("settings-widgets-edge")),
+                        pick(
                             "widgets-edge",
-                            EDGES.map(String::from).to_vec(),
+                            EDGES
+                                .iter()
+                                .map(|edge| ((*edge).to_owned(), edge_label(edge)))
+                                .collect(),
                             Some(bar.edge.clone()),
                             |edge| message(Action::Edge(edge))
                         )
                     ]
                     .spacing(4)
                     .width(Length::Fill)
-                ]
+                    .into(),
+                ])
                 .spacing(12),
             );
         }
         if !view.output.is_empty() {
             outputs.insert(view.output.clone());
         }
-        let preview_outputs = std::iter::once(ALL_OUTPUTS.into())
-            .chain(outputs.iter().cloned())
-            .collect();
+        // "" is every monitor; others by connector name.
+        let preview_outputs =
+            std::iter::once((String::new(), fl!("settings-widgets-all-monitors")))
+                .chain(
+                    outputs
+                        .iter()
+                        .map(|output| (output.clone(), output.clone())),
+                )
+                .collect();
         content = content.push(
-            row![
+            direction::row([
                 column![
-                    text("Preview monitor"),
-                    choice(
+                    text(fl!("settings-widgets-preview-monitor")),
+                    pick(
                         "widgets-output",
                         preview_outputs,
-                        Some(if view.output.is_empty() {
-                            ALL_OUTPUTS.into()
-                        } else {
-                            view.output.clone()
-                        }),
-                        |output| {
-                            message(Action::Output(if output == ALL_OUTPUTS {
-                                String::new()
-                            } else {
-                                output
-                            }))
-                        }
+                        Some(view.output.clone()),
+                        |output| message(Action::Output(output))
                     )
                 ]
                 .spacing(4)
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .into(),
                 column![
-                    text("Preview scale"),
-                    choice(
+                    text(fl!("settings-widgets-preview-scale")),
+                    pick(
                         "widgets-scale",
-                        SCALE_LABELS.map(String::from).to_vec(),
-                        Some(SCALE_LABELS[view.scale].into()),
+                        SCALES
+                            .iter()
+                            .enumerate()
+                            .map(|(index, scale)| {
+                                (
+                                    index,
+                                    canopa_i18n::format::percent(f64::from(*scale) * 100.),
+                                )
+                            })
+                            .collect(),
+                        Some(view.scale),
                         |scale| message(Action::Scale(scale))
                     )
                 ]
                 .spacing(4)
                 .width(Length::Fill)
-            ]
+                .into(),
+            ])
             .spacing(12),
         );
-        content =
-            content.push(text("Sample preview · Select a widget to edit its placement.").size(14));
+        content = content.push(text(fl!("settings-widgets-preview-hint")).size(14));
         content = content.push(self.widget_preview(editor));
         content = content.push(self.placement_controls(editor));
         if !view.lock {
-            content = content.push(text("Bar visibility").size(20));
-            content = content.push(choice(
+            content = content.push(text(fl!("settings-widgets-visibility")).size(20));
+            content = content.push(pick(
                 "widgets-target",
-                Target::ALL.map(|target| target.label().into()).to_vec(),
-                Some(bar.target.label().into()),
+                Target::ALL
+                    .map(|target| {
+                        let label = target.label();
+                        (target, label)
+                    })
+                    .to_vec(),
+                Some(bar.target.clone()),
                 |target| message(Action::Target(target)),
             ));
             if bar.target != Target::All {
@@ -405,34 +445,34 @@ impl State {
                     ));
                 }
                 if bar.outputs.is_empty() {
-                    content = content.push(text("Choose at least one monitor before saving."));
+                    content = content.push(text(fl!("settings-widgets-choose-monitor")));
                 }
             }
             content = content.push(field(
                 "widgets-copy-name",
-                "Name for a copy of this bar",
+                fl!("settings-widgets-copy-name"),
                 &view.title,
                 |title| message(Action::Title(title)),
             ));
             content = content.push(
-                row![
+                direction::row([
                     self.action(
                         "settings-button-duplicate-bar",
-                        "Duplicate bar",
+                        fl!("settings-widgets-duplicate-bar"),
                         (!view.title.trim().is_empty()).then_some(message(Action::Duplicate)),
-                        false
+                        false,
                     ),
                     self.action(
                         "settings-button-remove-bar",
-                        "Remove bar",
+                        fl!("settings-widgets-remove-bar"),
                         (editor.bars.len() > 1).then_some(message(Action::RemoveBar)),
-                        false
-                    )
-                ]
+                        false,
+                    ),
+                ])
                 .spacing(8),
             );
         } else {
-            content = content.push(text("Lock screen changes take effect the next time you lock. Authentication is always available.").size(14));
+            content = content.push(text(fl!("settings-widgets-lock-hint")).size(14));
         }
         content.into()
     }
@@ -471,9 +511,9 @@ impl State {
             .selected()
             .filter(|name| placed.iter().any(|widget| widget == name));
         let mut controls = column![
-            row![
+            direction::row([
                 column![
-                    text("Placed widget"),
+                    text(fl!("settings-widgets-placed")),
                     choice(
                         "widgets-selection",
                         placed,
@@ -482,16 +522,18 @@ impl State {
                     )
                 ]
                 .spacing(4)
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .into(),
                 column![
-                    text("Add widget"),
+                    text(fl!("settings-widgets-add")),
                     choice("widgets-add", available, None, |name| message(Action::Add(
                         name
                     )))
                 ]
                 .spacing(4)
                 .width(Length::Fill)
-            ]
+                .into(),
+            ])
             .spacing(12)
         ]
         .spacing(10);
@@ -516,38 +558,52 @@ impl State {
                 siblings = bar.zones[index].clone();
             }
             controls = controls.push(
-                row![
+                direction::row([
                     column![
-                        text(if view.lock { "Region" } else { "Zone" }),
-                        choice("widgets-placement", options, Some(zone.into()), |zone| {
-                            message(Action::Place(zone))
-                        })
+                        text(if view.lock {
+                            fl!("settings-widgets-region")
+                        } else {
+                            fl!("settings-widgets-zone")
+                        }),
+                        pick(
+                            "widgets-placement",
+                            options
+                                .into_iter()
+                                .map(|place| {
+                                    let label = place_label(&place);
+                                    (place, label)
+                                })
+                                .collect(),
+                            Some(zone.to_owned()),
+                            |zone| message(Action::Place(zone))
+                        )
                     ]
                     .spacing(4)
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .into(),
                     self.action(
                         "settings-button-earlier",
-                        "Earlier",
+                        fl!("settings-widgets-earlier"),
                         adjacent(&siblings, name, -1)
                             .is_some()
                             .then_some(message(Action::Shift(-1))),
-                        false
+                        false,
                     ),
                     self.action(
                         "settings-button-later",
-                        "Later",
+                        fl!("settings-widgets-later"),
                         adjacent(&siblings, name, 1)
                             .is_some()
                             .then_some(message(Action::Shift(1))),
-                        false
+                        false,
                     ),
                     self.action(
                         "settings-button-remove-widget",
-                        "Remove widget",
+                        fl!("settings-widgets-remove"),
                         (name != "authentication").then_some(message(Action::Remove)),
-                        false
-                    )
-                ]
+                        false,
+                    ),
+                ])
                 .spacing(8)
                 .align_y(iced::Alignment::End),
             );
@@ -555,7 +611,7 @@ impl State {
                 let region = lock_region(editor, name).unwrap();
                 controls = controls.push(toggle(
                     "widgets-region-flow",
-                    "Arrange this region in a row",
+                    fl!("settings-widgets-flow"),
                     region.row,
                     message(Action::Flow(!region.row)),
                 ));
@@ -567,7 +623,7 @@ impl State {
                         .any(|widget| widget == name);
                     controls = controls.push(toggle(
                         "widgets-hide",
-                        "Hide this widget on the preview monitor",
+                        fl!("settings-widgets-hide"),
                         hidden,
                         message(Action::Hide(!hidden)),
                     ));
@@ -602,7 +658,7 @@ impl State {
                 .collect();
         } else {
             if !view.output.is_empty() && !bar.visible_on(&view.output) {
-                return container(text("This bar is hidden on the preview monitor."))
+                return container(text(fl!("settings-widgets-bar-hidden")))
                     .width(width)
                     .height(height)
                     .center_x(width)
@@ -715,21 +771,22 @@ fn preview_size(output: Option<&niri_ipc::Output>, available_width: f32) -> (f32
 }
 
 fn preview_label(name: &str, lock: bool) -> String {
+    use canopa_i18n::format;
     let sample = if lock {
         match name {
-            "clock" => "12:45",
-            "date" => "Tuesday, Nov 3",
-            "authentication" => "Password · ••••",
-            "username" => "Sample user",
-            "battery" => "82%",
-            "media" => "Now playing",
-            "weather" => "18 °C · Clear",
-            "keyboard" => "English (US)",
-            "avatar" => "Avatar",
-            _ => name,
+            "clock" => format::time("12:45:00".parse().expect("a valid time")),
+            "date" => format::weekday_month_day("2026-11-03".parse().expect("a valid date")),
+            "authentication" => fl!("settings-widgets-sample-password"),
+            "username" => fl!("settings-widgets-sample-user"),
+            "battery" => format::percent(82.),
+            "media" => fl!("settings-widgets-sample-media"),
+            "weather" => fl!("settings-widgets-sample-weather"),
+            "keyboard" => fl!("settings-widgets-sample-keyboard"),
+            "avatar" => fl!("settings-widgets-sample-avatar"),
+            _ => name.to_owned(),
         }
     } else {
-        name
+        name.to_owned()
     };
     sample.chars().take(19).collect()
 }

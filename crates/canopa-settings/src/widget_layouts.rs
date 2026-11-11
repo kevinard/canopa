@@ -38,11 +38,11 @@ pub(crate) enum Target {
 
 impl Target {
     pub(crate) const ALL: [Self; 3] = [Self::All, Self::Include, Self::Exclude];
-    pub(crate) fn label(&self) -> &'static str {
+    pub(crate) fn label(&self) -> String {
         match self {
-            Self::All => "All monitors",
-            Self::Include => "Selected monitors",
-            Self::Exclude => "All except selected monitors",
+            Self::All => fl!("settings-widgets-all-monitors"),
+            Self::Include => fl!("settings-widgets-selected-monitors"),
+            Self::Exclude => fl!("settings-widgets-except-monitors"),
         }
     }
 }

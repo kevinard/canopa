@@ -55,8 +55,9 @@ const RETIRED_ACTIONS: &[(&str, &str)] = &[
     ),
 ];
 const MAX_INCLUDES: usize = 32;
-const LEGACY_READ_ONLY: &str =
-    "Custom top-level binding blocks are read-only. Keep your own bindings in niri-custom.kdl.";
+fn legacy_read_only() -> String {
+    fl!("settings-error-shortcuts-custom-blocks")
+}
 
 #[derive(Clone, Debug)]
 pub struct Shortcut {
@@ -204,7 +205,8 @@ impl Shipped {
                 .nodes()
                 .iter()
                 .all(|node| node.name().value() != "include"),
-            "Canopa defaults that include other files cannot be combined with shortcut changes."
+            "{}",
+            fl!("settings-error-shortcuts-defaults-include")
         );
         let binds = effective(&self.binds()?, delta)?;
         let span = document
@@ -287,7 +289,8 @@ fn migrate(base: &[KdlNode], user: &[KdlNode]) -> Result<Delta> {
     ensure!(
         result.len() == user.len()
             && result.iter().map(binding_id).collect::<HashSet<_>>() == user_set,
-        "Your shortcut changes could not be separated from the shipped bindings. Edit niri.kdl in KDL."
+        "{}",
+        fl!("settings-error-shortcuts-not-separable")
     );
     Ok(delta)
 }
@@ -526,7 +529,8 @@ impl Editor {
             }
             ensure!(
                 includes.len() <= MAX_INCLUDES,
-                "Too many Niri includes for the shortcut editor."
+                "{}",
+                fl!("settings-error-shortcuts-too-many-includes")
             );
         }
         let root_binds = document
@@ -910,7 +914,8 @@ fn legacy(document: &KdlDocument, binds: usize) -> Result<(Source, Delta)> {
     let nodes = document.nodes();
     ensure!(
         binds >= before.len() && binds + after.len() < nodes.len(),
-        LEGACY_READ_ONLY
+        "{}",
+        legacy_read_only()
     );
     let (start, end) = (binds - before.len(), binds + after.len());
     let mut kept = Vec::new();
@@ -919,7 +924,11 @@ fn legacy(document: &KdlDocument, binds: usize) -> Result<(Source, Delta)> {
         .zip(before)
         .chain(nodes[binds + 1..=end].iter().zip(after))
     {
-        ensure!(node.name().value() == base.name().value(), LEGACY_READ_ONLY);
+        ensure!(
+            node.name().value() == base.name().value(),
+            "{}",
+            legacy_read_only()
+        );
         if plain(node) != plain(base) {
             kept.push(node.clone());
         }
@@ -1073,43 +1082,44 @@ fn key_id_of(key: &str) -> String {
 fn label(node: &KdlNode) -> Result<String> {
     let action = action(node)?;
     let label = match node.name().value() {
-        "Mod+Return" => "Open terminal",
-        "Mod+Space" => "Open Applications",
-        "Mod+E" => "Open Files",
-        "Mod+Comma" => "Open Settings",
-        "Mod+L" => "Lock screen",
-        "Mod+Q" => "Close window",
-        "Mod+F" => "Maximize column",
-        "Mod+Shift+F" => "Toggle fullscreen",
-        "Mod+V" => "Toggle floating window",
-        "Mod+O" => "Toggle overview",
-        "Mod+Shift+E" => "Log out",
-        "Print" => "Select screenshot region",
-        "Ctrl+Print" => "Capture screen",
-        "Alt+Print" => "Capture window",
-        "XF86AudioRaiseVolume" => "Raise volume",
-        "XF86AudioLowerVolume" => "Lower volume",
-        "XF86AudioMute" => "Mute speakers",
-        "XF86AudioMicMute" => "Mute microphone",
-        "XF86MonBrightnessUp" => "Brightness up",
-        "XF86MonBrightnessDown" => "Brightness down",
-        "XF86KbdBrightnessUp" => "Keyboard brightness up",
-        "XF86KbdBrightnessDown" => "Keyboard brightness down",
-        "XF86KbdLightOnOff" => "Toggle keyboard backlight",
-        "XF86AudioPlay" => "Play or pause",
-        "XF86AudioPause" => "Pause media",
-        "XF86AudioStop" => "Stop media",
-        "XF86AudioNext" => "Next track",
-        "XF86AudioPrev" => "Previous track",
+        "Mod+Return" => fl!("settings-shortcut-open-terminal"),
+        "Mod+Space" => fl!("settings-shortcut-open-applications"),
+        "Mod+E" => fl!("settings-shortcut-open-files"),
+        "Mod+Comma" => fl!("settings-shortcut-open-settings"),
+        "Mod+L" => fl!("settings-shortcut-lock-screen"),
+        "Mod+Q" => fl!("settings-shortcut-close-window"),
+        "Mod+F" => fl!("settings-shortcut-maximize-column"),
+        "Mod+Shift+F" => fl!("settings-shortcut-toggle-fullscreen"),
+        "Mod+V" => fl!("settings-shortcut-toggle-floating-window"),
+        "Mod+O" => fl!("settings-shortcut-toggle-overview"),
+        "Mod+Shift+E" => fl!("settings-shortcut-log-out"),
+        "Print" => fl!("settings-shortcut-select-screenshot-region"),
+        "Ctrl+Print" => fl!("settings-shortcut-capture-screen"),
+        "Alt+Print" => fl!("settings-shortcut-capture-window"),
+        "XF86AudioRaiseVolume" => fl!("settings-shortcut-raise-volume"),
+        "XF86AudioLowerVolume" => fl!("settings-shortcut-lower-volume"),
+        "XF86AudioMute" => fl!("settings-shortcut-mute-speakers"),
+        "XF86AudioMicMute" => fl!("settings-shortcut-mute-microphone"),
+        "XF86MonBrightnessUp" => fl!("settings-shortcut-brightness-up"),
+        "XF86MonBrightnessDown" => fl!("settings-shortcut-brightness-down"),
+        "XF86KbdBrightnessUp" => fl!("settings-shortcut-keyboard-brightness-up"),
+        "XF86KbdBrightnessDown" => fl!("settings-shortcut-keyboard-brightness-down"),
+        "XF86KbdLightOnOff" => fl!("settings-shortcut-toggle-keyboard-backlight"),
+        "XF86AudioPlay" => fl!("settings-shortcut-play-or-pause"),
+        "XF86AudioPause" => fl!("settings-shortcut-pause-media"),
+        "XF86AudioStop" => fl!("settings-shortcut-stop-media"),
+        "XF86AudioNext" => fl!("settings-shortcut-next-track"),
+        "XF86AudioPrev" => fl!("settings-shortcut-previous-track"),
         _ => {
             let mut label = action.name().value().replace('-', " ");
             if let Some(initial) = label.get_mut(..1) {
                 initial.make_ascii_uppercase();
             }
+            // Other actions are named by Niri's own (English) action name.
             return Ok(label);
         }
     };
-    Ok(label.into())
+    Ok(label)
 }
 
 fn normalize(key: &str) -> Option<String> {
@@ -1175,7 +1185,8 @@ fn collect_included_keys(
             "include" => {
                 ensure!(
                     collected.len() < MAX_INCLUDES,
-                    "Too many or recursive Niri includes."
+                    "{}",
+                    fl!("settings-error-shortcuts-recursive-includes")
                 );
                 let nested = Include::load(parent, node)?;
                 collected.push(nested.clone());

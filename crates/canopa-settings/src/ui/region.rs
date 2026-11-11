@@ -77,6 +77,11 @@ impl State {
     /// Show Settings in the language of `name` and say what else follows.
     fn switch_language(&mut self, name: &str, formats: Option<&str>, state: &RegionState) {
         canopa_i18n::select_locale(name, formats);
+        // The shortcut editor keeps its rows' names: read them again in the
+        // new language unless they hold edits.
+        if !matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
+            self.shortcuts = None;
+        }
         let selected = canopa_i18n::selection();
         let shown = selected.language().clone();
         let translated =
