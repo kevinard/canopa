@@ -14,6 +14,7 @@ pub mod profiles;
 pub mod registry;
 pub mod session;
 pub mod shortcuts;
+pub mod sound;
 pub mod storage;
 #[cfg(feature = "desktop")]
 pub mod ui;

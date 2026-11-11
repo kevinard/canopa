@@ -8,6 +8,7 @@ mod navigation;
 mod power;
 mod profiles;
 mod shortcuts;
+mod sound;
 mod widget_layouts;
 use crate::{
     display::{Monitor, TrialHandle, transform_name},
@@ -117,6 +118,11 @@ enum Message {
     /// Whether the compositor focused the window.
     Raised(bool),
     Power(crate::live::Event<crate::power::PowerService>),
+    Sound(crate::live::Event<crate::sound::SoundService>),
+    /// The default input's peak level, while the Sound page is shown.
+    Level(Option<f32>),
+    AlertSounds(bool),
+    AlertSoundsStored(Result<(Snapshot, Snapshot), String>),
     LidClose(canopa_services::power_switches::LidAction),
     /// Leave the power button to logind (`true`) or to Niri's suspend.
     PowerKey(bool),
@@ -152,6 +158,9 @@ struct State {
     idle: FileDraft<IdleDraft>,
     power_choices: FileDraft<PowerChoices>,
     power: power::PowerPage,
+    sound: sound::SoundPage,
+    input_level: Option<f32>,
+    alert_sounds: Option<bool>,
     profile: String,
     idle_status: String,
     idle_available: bool,
@@ -243,6 +252,9 @@ impl State {
             idle,
             power_choices,
             power: live_page::LivePage::new(Default::default()),
+            sound: live_page::LivePage::new(Default::default()),
+            input_level: None,
+            alert_sounds: None,
             profile: "none".into(),
             idle_status: "Connecting to the idle manager…".into(),
             idle_available: false,
@@ -420,6 +432,12 @@ impl State {
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 self.page = page;
                 self.idle_available = false;
+                self.input_level = None;
+                if page == Page::Sound {
+                    self.alert_sounds = Snapshot::load(self.paths.common())
+                        .ok()
+                        .and_then(|source| crate::sound::alert_sounds(&source.text).ok());
+                }
                 if page == Page::Widgets && self.widget_layouts.editor.is_none() {
                     return widget_layouts::View::load(&self.paths);
                 }
@@ -658,6 +676,7 @@ impl State {
                 match self.page {
                     #[cfg(debug_assertions)]
                     Page::LiveExample => self.busy = false,
+                    Page::Sound => self.busy = false,
                     Page::Launcher => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
@@ -783,6 +802,32 @@ impl State {
                 });
             }
             Message::Power(event) => return self.power.update(event, power::message),
+            Message::Sound(event) => return self.sound.update(event, sound::message),
+            Message::Level(level) if self.page == Page::Sound => self.input_level = level,
+            Message::AlertSounds(enabled) if !self.busy && self.trial.is_none() => {
+                self.busy = true;
+                self.notice.clear();
+                let paths = self.paths.clone();
+                return task(
+                    move || crate::sound::set_alert_sounds(&paths, enabled),
+                    Message::AlertSoundsStored,
+                );
+            }
+            Message::AlertSoundsStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok((previous, saved)) => {
+                        self.alert_sounds = crate::sound::alert_sounds(&saved.text).ok();
+                        self.notice = "Notification sounds updated.".into();
+                        self.document_saved(
+                            Page::Sound,
+                            Document::Common,
+                            Some((&previous, &saved)),
+                        );
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
             Message::LidClose(action) => self.power_choices.value.lid_close = action,
             Message::PowerKey(to_logind)
                 if !self.busy
@@ -977,6 +1022,9 @@ impl State {
             Page::LiveExample => self
                 .live_example
                 .update(crate::live::Event::Reload, live_example::message),
+            Page::Sound => self
+                .sound
+                .update(crate::live::Event::Reload, sound::message),
         }
     }
     fn subscription(&self) -> Subscription<Message> {
@@ -991,6 +1039,9 @@ impl State {
         if self.page == Page::Power {
             subscriptions.push(Subscription::run(idle_events));
             subscriptions.push(self.power.subscription(Message::Power));
+        }
+        if self.page == Page::Sound {
+            subscriptions.push(self.sound_subscription());
         }
         if self.trial.is_some() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
@@ -1059,6 +1110,7 @@ impl State {
         body = body.push(match self.page {
             Page::Displays => self.displays(),
             Page::Input => self.input_view(),
+            Page::Sound => self.sound_view(),
             Page::Personal => self.personal_view(),
             Page::Power => self.power_view(),
             Page::Launcher => self.launcher_view(),

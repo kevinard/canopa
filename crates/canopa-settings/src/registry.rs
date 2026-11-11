@@ -10,6 +10,7 @@
 pub enum Page {
     Displays,
     Input,
+    Sound,
     Personal,
     Power,
     Launcher,
@@ -171,6 +172,36 @@ pub static PAGES: &[Entry] = &[
             documents: &[Document::Input],
             apply: Apply::Save,
         },
+        hidden: false,
+    },
+    Entry {
+        page: Page::Sound,
+        id: "sound",
+        title: "Sound",
+        description: "Choose speakers and microphones, and set application volumes.",
+        icon: "preferences-desktop-sound",
+        group: Group::Devices,
+        keywords: &[
+            "audio",
+            "volume",
+            "speakers",
+            "headphones",
+            "headset",
+            "microphone",
+            "input level",
+            "output",
+            "mute",
+            "balance",
+            "hdmi",
+            "bluetooth",
+            "a2dp",
+            "hfp",
+            "profile",
+            "applications",
+            "alert sound",
+            "notification sound",
+        ],
+        kind: Kind::Live,
         hidden: false,
     },
     Entry {
@@ -486,6 +517,7 @@ mod tests {
             [
                 Page::Displays,
                 Page::Input,
+                Page::Sound,
                 Page::Personal,
                 Page::Power,
                 Page::Launcher,
@@ -501,7 +533,7 @@ mod tests {
         assert_eq!(grouped, order);
         assert_eq!(step(Page::Widgets, 1), Page::Displays);
         assert_eq!(step(Page::Displays, -1), Page::Widgets);
-        assert_eq!(step(Page::Input, 1), Page::Personal);
+        assert_eq!(step(Page::Input, 1), Page::Sound);
     }
 
     #[test]
@@ -517,6 +549,8 @@ mod tests {
         assert_eq!(pages("dark"), [Page::Personal]);
         assert_eq!(pages("suspend"), [Page::Power]);
         assert_eq!(pages("clipboard"), [Page::Launcher]);
+        assert_eq!(pages("microphone"), [Page::Sound]);
+        assert_eq!(pages("lid"), [Page::Power]);
         assert_eq!(pages("hotkeys"), [Page::Shortcuts]);
         // A title match ranks above keyword matches on other pages.
         let keyboard = pages("keyboard");
