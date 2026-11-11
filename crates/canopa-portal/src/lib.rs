@@ -2,6 +2,8 @@
 pub mod access;
 #[cfg(feature = "desktop")]
 pub mod access_ui;
+#[cfg(feature = "desktop")]
+mod accessibility_ui;
 pub mod account;
 #[cfg(feature = "desktop")]
 mod account_profile;

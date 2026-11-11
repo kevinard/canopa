@@ -7,8 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-default = ["desktop"]
-desktop = ["dep:iced", "dep:canopa-ui", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:canopa-file", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
+default = ["desktop", "accessibility-testing"]
+# Native AT-SPI acceptance helpers for the lib tests. A dev-dependency would
+# pull Iced into the core (--no-default-features) test profile.
+accessibility-testing = ["desktop", "canopa-ui/accessibility-testing"]
+desktop = ["dep:iced", "dep:canopa-ui", "canopa-ui/accessibility", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:canopa-file", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
 
 [[bin]]
 name = "xdg-desktop-portal-canopa"
