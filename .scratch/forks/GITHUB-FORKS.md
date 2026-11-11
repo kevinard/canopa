@@ -83,7 +83,7 @@ SSH prompts and hangs in agent shells. Large repositories use
 | coreutils | `dc1efd89` (uucore 0.12.0) | `1e4f136e` | #1 |
 | winit | `e9809ef5` (0.30.13) | `5bbfe4f2` | #1–#7 |
 | iced | `595af03a` (`0.14` branch, iced_widget 0.14.2) | `af379ca0` | #1–#8 |
-| exwlshelleventloop | `5e39311c` (v0.19.1) | `1de59e6d` (#6 pins the iced and winit forks) | #1–#6 |
+| exwlshelleventloop | `5e39311c` (v0.19.1) | `fecb4f1a` (#6 pins the iced and winit forks; #4 records the keyboard serial) | #1–#6 |
 | niri | `b22eb842` | `9389bbaa` | #1–#12 (`canopa/fixes` = base + the six fixes; features stack on it) |
 | smithay | `8a270232` | `55163887` | pushed; 4 to open |
 | xdg-desktop-portal | `1d20fad` (1.22.1) | `5272cf5` | #1–#11 |
@@ -109,7 +109,8 @@ Findings from the split:
 - Two portal fixes are already on upstream main (#1 invocation app-info ref,
   #3 session unclaim).
 - The layershellev keyboard-serial gap is confirmed: keyboard-triggered
-  activation gets no token without recent pointer input.
+  activation gets no token without recent pointer input. Fixed 2026-11-11 in
+  #4 (`canopa/main` `fecb4f1a`).
 - The output-snapshot change breaks `iced_layershell --features debug`, which
   Canopa does not use.
 
