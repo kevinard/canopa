@@ -58,6 +58,7 @@ canopa-ui = { workspace = true, optional = true }
 accesskit = { workspace = true, optional = true }
 accesskit_unix = { workspace = true, optional = true }
 canopa-panel-protocol = { workspace = true, features = ["tokio"] }
+canopa-services = { workspace = true, features = ["audio"] }
 image = { workspace = true, optional = true, features = ["gif", "webp"] }
 rustix = { workspace = true, optional = true }
 resvg = { workspace = true, optional = true }
@@ -81,4 +82,5 @@ sha2 = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
+canopa-services = { workspace = true, features = ["audio", "test-support"] }
 tempfile.workspace = true

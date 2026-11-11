@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 libc.workspace = true
 canopa-file.workspace = true
+canopa-services.workspace = true
 anyhow.workspace = true
 futures-util.workspace = true
 serde.workspace = true
@@ -16,4 +17,5 @@ tokio = { workspace = true, features = ["process"] }
 zbus.workspace = true
 
 [dev-dependencies]
+canopa-services = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true

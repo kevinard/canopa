@@ -1,0 +1,26 @@
+[package]
+name = "canopa-services"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+description = "Toolkit-free clients for the system services Canopa presents"
+
+[features]
+# libpulse links the Pulse client library; only audio consumers opt in.
+audio = ["dep:libpulse-binding"]
+# Private buses, fake services and private audio servers for consumers' tests.
+test-support = ["dep:tempfile", "tokio/process"]
+
+[dependencies]
+futures-util.workspace = true
+libpulse-binding = { workspace = true, optional = true }
+serde.workspace = true
+tempfile = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["process"] }
