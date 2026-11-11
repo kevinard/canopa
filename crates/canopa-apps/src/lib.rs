@@ -673,7 +673,10 @@ fn parse_group(body: &str, name: &str) -> HashMap<String, String> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(header) = line.strip_prefix('[').and_then(|line| line.strip_suffix(']')) {
+        if let Some(header) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
             in_group = header == name;
             continue;
         }
