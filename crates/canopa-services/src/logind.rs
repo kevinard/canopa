@@ -166,7 +166,11 @@ impl Inhibitor {
         if self.why.trim().is_empty() {
             self.who.clone()
         } else {
-            format!("{}: {}", self.who, self.why)
+            fl!(
+                "services-logind-inhibitor",
+                who = self.who.as_str(),
+                why = self.why.as_str()
+            )
         }
     }
 }

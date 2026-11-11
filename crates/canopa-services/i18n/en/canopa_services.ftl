@@ -61,3 +61,5 @@ services-secret-private-key-password = Private key password
 services-secret-password = Password
 services-secret-wireguard-key = WireGuard private key
 services-secret-vpn-password = VPN password
+# An application holding an inhibitor and its reason, as in "Firefox: Playing video".
+services-logind-inhibitor = { $who }: { $why }

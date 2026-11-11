@@ -51,3 +51,4 @@ services-secret-private-key-password = Mot de passe de la clé privée
 services-secret-password = Mot de passe
 services-secret-wireguard-key = Clé privée WireGuard
 services-secret-vpn-password = Mot de passe du VPN
+services-logind-inhibitor = { $who } : { $why }
