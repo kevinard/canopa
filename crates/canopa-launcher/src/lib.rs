@@ -287,11 +287,18 @@ fn lock_preferences(path: &Path) -> io::Result<std::fs::File> {
     if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
         return Err(invalid("Invalid launcher preferences lock"));
     }
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            "Launcher preferences are busy; try again",
-        ));
+    // A child forked by another thread keeps a copy of a lock descriptor this
+    // process just closed until it executes. Retry briefly so that window is
+    // not reported as a concurrent writer.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Launcher preferences are busy; try again",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
     Ok(lock)
 }

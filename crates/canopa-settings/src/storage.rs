@@ -117,11 +117,21 @@ pub fn lock(path: &Path) -> Result<File> {
             && metadata.mode() & 0o077 == 0,
         "invalid settings lock file"
     );
-    ensure!(
-        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-        "another settings operation is active"
-    );
-    Ok(file)
+    // A child process forked by another thread holds a copy of every open
+    // descriptor until it executes, including a lock descriptor this process
+    // has just closed. Retry for a short, bounded time so that window is not
+    // mistaken for a concurrent settings operation.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    loop {
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(file);
+        }
+        ensure!(
+            std::time::Instant::now() < deadline,
+            "another settings operation is active"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 pub fn quote(value: &str) -> String {
