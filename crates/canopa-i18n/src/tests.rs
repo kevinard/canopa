@@ -130,6 +130,23 @@ fn numbers_and_sizes_follow_the_numbers_locale() {
 }
 
 #[test]
+fn previews_format_another_locale_on_this_thread() {
+    let _guard = with("en", "en");
+    let fr: LanguageIdentifier = "fr-FR".parse().unwrap();
+    let inside = format::with_formats(&fr, || (format::time(afternoon()), format::integer(1234)));
+    assert_eq!(inside, ("14:30".to_owned(), "1\u{202f}234".to_owned()));
+    assert_eq!(format::time(afternoon()), "2:30\u{202f}PM");
+    assert_eq!(
+        format::weekday_month_day_with(date(), icu_datetime::options::Length::Long),
+        "Wednesday, November 11"
+    );
+    let long = format::with_formats(&fr, || {
+        format::weekday_month_day_with(date(), icu_datetime::options::Length::Long)
+    });
+    assert_eq!(long, "mercredi 11 novembre");
+}
+
+#[test]
 fn numeric_message_arguments_use_the_numbers_locale() {
     let _guard = with("fr", "fr");
     let relative = format::relative(1_500 * 86_400 * 365);

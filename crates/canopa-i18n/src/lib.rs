@@ -375,6 +375,7 @@ macro_rules! __localization {
         #[crate_path = "canopa_i18n::rust_embed"]
         pub struct Localizations;
 
+        #[allow(dead_code)]
         pub static LOADER: $crate::Loader =
             $crate::Loader::new(env!("CARGO_PKG_NAME"), &Localizations);
 

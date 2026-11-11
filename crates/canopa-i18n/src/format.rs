@@ -60,24 +60,62 @@ fn locale(id: &unic_langid::LanguageIdentifier, cycle: HourCycleChoice) -> Local
     locale
 }
 
+thread_local! {
+    /// A formats locale set by [`with_formats`] on this thread.
+    static OVERRIDE: RefCell<Option<unic_langid::LanguageIdentifier>> = const { RefCell::new(None) };
+    static OVERRIDES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Run `f` with dates, times and numbers formatted for `formats` instead of
+/// the selection, on this thread: for previews of another locale's formats
+/// (Settings' Region & language page). Messages keep the selected language.
+pub fn with_formats<R>(formats: &unic_langid::LanguageIdentifier, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<unic_langid::LanguageIdentifier>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OVERRIDE.with(|value| *value.borrow_mut() = self.0.take());
+            OVERRIDES.with(|count| count.set(count.get() + 1));
+        }
+    }
+    let previous = OVERRIDE.with(|value| value.borrow_mut().replace(formats.clone()));
+    OVERRIDES.with(|count| count.set(count.get() + 1));
+    let _restore = Restore(previous);
+    f()
+}
+
+fn override_locale() -> Option<unic_langid::LanguageIdentifier> {
+    OVERRIDE.with(|value| value.borrow().clone())
+}
+
 fn time_locale(cycle: HourCycleChoice) -> Locale {
-    locale(&selection().time, cycle)
+    locale(
+        &override_locale().unwrap_or_else(|| selection().time),
+        cycle,
+    )
 }
 
 fn number_locale() -> Locale {
-    locale(&selection().numbers, HourCycleChoice::Locale)
+    locale(
+        &override_locale().unwrap_or_else(|| selection().numbers),
+        HourCycleChoice::Locale,
+    )
+}
+
+/// The cache token: the selection generation and this thread's overrides.
+fn cache_token() -> (u64, u64) {
+    (generation(), OVERRIDES.with(std::cell::Cell::get))
 }
 
 /// Formatters are cached per thread until the selection changes.
 macro_rules! cached {
     ($key:ty, $value:ty, $key_expr:expr, $make:expr) => {{
         thread_local! {
-            static CACHE: RefCell<(u64, HashMap<$key, Option<$value>>)> =
-                RefCell::new((0, HashMap::new()));
+            static CACHE: RefCell<((u64, u64), HashMap<$key, Option<$value>>)> =
+                RefCell::new(((0, 0), HashMap::new()));
         }
         CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            let current = generation();
+            let current = cache_token();
             if cache.0 != current {
                 *cache = (current, HashMap::new());
             }
@@ -211,16 +249,22 @@ pub fn date_time_with(value: NaiveDateTime, style: DateStyle) -> String {
 
 /// A weekday and month day (`Wed, Nov 11`; `mer. 11 nov.`).
 pub fn weekday_month_day(value: NaiveDate) -> String {
+    weekday_month_day_with(value, Length::Medium)
+}
+
+/// A weekday and month day in `length`: `Long` gives `Wednesday, November 11`
+/// (`mercredi 11 novembre`), as the lock screen shows it.
+pub fn weekday_month_day_with(value: NaiveDate, length: Length) -> String {
     let Some(input) = icu_date(value) else {
         return value.to_string();
     };
     cached!(
-        (),
+        Length,
         std::sync::Arc<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::MDE>>,
-        (),
-        |_| FixedCalendarDateTimeFormatter::try_new(
+        length,
+        |length| FixedCalendarDateTimeFormatter::try_new(
             time_locale(HourCycleChoice::Locale).into(),
-            fieldsets::MDE::medium()
+            fieldsets::MDE::for_length(length)
         )
         .ok()
         .map(std::sync::Arc::new)
