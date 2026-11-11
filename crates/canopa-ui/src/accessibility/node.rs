@@ -89,6 +89,7 @@ pub struct Node<M> {
     pub(crate) active_descendant: Option<String>,
     pub(crate) focus: Option<Id>,
     pub(crate) hidden_text: bool,
+    pub(crate) focused: bool,
     pub(crate) actions: Actions<M>,
 }
 
@@ -122,6 +123,7 @@ impl<M: Clone> Clone for Node<M> {
             active_descendant: self.active_descendant.clone(),
             focus: self.focus.clone(),
             hidden_text: self.hidden_text,
+            focused: self.focused,
             actions: self.actions.clone(),
         }
     }
@@ -168,6 +170,7 @@ impl<M> Node<M> {
             active_descendant: None,
             focus: None,
             hidden_text: false,
+            focused: false,
             actions: Actions::default(),
         }
     }
@@ -396,6 +399,12 @@ impl<M> Node<M> {
     /// first focusable widget inside it is used.
     pub fn focus_id(mut self, id: impl Into<Id>) -> Self {
         self.focus = Some(id.into());
+        self
+    }
+    /// Keyboard focus held in application state rather than by an Iced
+    /// focusable widget (a selected bar module, a highlighted menu row).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
         self
     }
     /// Ignore text drawn inside; the label already says it.

@@ -103,8 +103,14 @@ impl<M: Clone + Send + 'static> ActionHandler for Handler<M> {
         let actions = &bound.actions;
         let event = match request.action {
             Action::Click => actions.click.clone().map(|m| Event::Action(Box::new(m))),
-            Action::Increment => actions.increment.clone().map(|m| Event::Action(Box::new(m))),
-            Action::Decrement => actions.decrement.clone().map(|m| Event::Action(Box::new(m))),
+            Action::Increment => actions
+                .increment
+                .clone()
+                .map(|m| Event::Action(Box::new(m))),
+            Action::Decrement => actions
+                .decrement
+                .clone()
+                .map(|m| Event::Action(Box::new(m))),
             Action::Expand => actions.expand.clone().map(|m| Event::Action(Box::new(m))),
             Action::Collapse => actions.collapse.clone().map(|m| Event::Action(Box::new(m))),
             Action::Focus => bound.focus.clone().map(Event::Focus),

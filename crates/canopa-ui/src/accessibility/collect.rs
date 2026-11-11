@@ -184,7 +184,7 @@ impl<M: Clone + Send + 'static> Operation<Snapshot<M>> for Collect<M> {
             bounds: bounds - self.offset,
             parent,
             children: Vec::new(),
-            focused: false,
+            focused: node.focused,
         });
         if let Some(parent) = parent {
             self.nodes[parent].children.push(Child::Node(index));

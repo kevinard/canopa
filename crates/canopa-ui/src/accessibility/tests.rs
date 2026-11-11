@@ -91,7 +91,13 @@ fn view<'a>(extra: bool, status: &'a str) -> View<'a> {
             }),
             text(""),
         ))
-        .push(semantic(Node::status(status).key("status"), text("hidden")));
+        .push(semantic(Node::status(status).key("status"), text("hidden")))
+        .push(semantic(
+            Node::option("Hinted", true)
+                .key("hinted")
+                .focused(status == "Hint"),
+            text("Hinted"),
+        ));
     semantic(Node::window("main", "Example window"), scrollable(content))
 }
 
@@ -173,6 +179,11 @@ fn ids_stay_stable_and_focus_follows_keyboard_focus() {
     let focused = tree::build(&harness.collect(), "main", &mut ids, true, 1.0).unwrap();
     assert_eq!(focused.update.focus, ids.get("name").unwrap());
     assert_eq!(focused.focus.as_deref(), Some("name"));
+    // Focus held in application state is reported like widget focus.
+    harness.rebuild(view(false, "Hint"), Size::new(400.0, 800.0));
+    let hinted = tree::build(&harness.collect(), "main", &mut ids, true, 1.0).unwrap();
+    assert_eq!(hinted.update.focus, ids.get("hinted").unwrap());
+    harness.rebuild(view(false, "Ready"), Size::new(400.0, 800.0));
     // An unfocused window reports its root.
     let unfocused = tree::build(&harness.collect(), "main", &mut ids, false, 1.0).unwrap();
     assert_eq!(unfocused.update.focus, root);
