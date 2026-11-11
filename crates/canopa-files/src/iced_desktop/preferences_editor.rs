@@ -45,6 +45,8 @@ pub(super) enum Change {
     Descending(bool),
     Detail(Detail, bool),
     Sidebar(SidebarMode),
+    Thumbnails(crate::interface::ThumbnailPolicy),
+    IconSize(crate::interface::IconSize),
     Field(Field, String),
     SelectToolbar(usize),
     MoveToolbar(isize),
@@ -262,6 +264,8 @@ impl Editor {
                 }
             }
             Change::Sidebar(v) => self.draft.sidebar = v,
+            Change::Thumbnails(v) => self.draft.thumbnails.show = v,
+            Change::IconSize(v) => self.draft.thumbnails.size = v,
             Change::Field(field, value) => {
                 let max = match field {
                     Field::Width => 5,

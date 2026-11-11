@@ -1,5 +1,7 @@
 use crate::{
-    interface::{Command, InterfaceSettings, Place, PlaceKind, SidebarMode},
+    interface::{
+        Command, IconSize, InterfaceSettings, Place, PlaceKind, SidebarMode, ThumbnailPolicy,
+    },
     preferences::{Detail, SortField, ViewMode},
 };
 use kdl::{KdlDocument, KdlNode};
@@ -179,6 +181,30 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                     }
                 }
             }
+            "thumbnails" => {
+                if node.children().is_some() {
+                    return Err(invalid());
+                }
+                let mut props = BTreeSet::new();
+                for entry in node.entries() {
+                    let name = entry.name().ok_or_else(invalid)?.value();
+                    let value = entry.value().as_string().ok_or_else(invalid)?;
+                    if entry.ty().is_some() || !props.insert(name) {
+                        return Err(invalid());
+                    }
+                    match name {
+                        "show" => {
+                            settings.thumbnails.show =
+                                ThumbnailPolicy::from_id(value).ok_or_else(invalid)?
+                        }
+                        "size" => {
+                            settings.thumbnails.size =
+                                IconSize::from_id(value).ok_or_else(invalid)?
+                        }
+                        _ => return Err(invalid()),
+                    }
+                }
+            }
             "shortcut" => {
                 let values = strings(node)?;
                 let command = values
@@ -272,6 +298,13 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
     }
     places.set_children(children);
     let mut nodes = vec![view, toolbar, sidebar, places];
+    // Written only when chosen, so existing files keep their exact shape.
+    if settings.thumbnails != Default::default() {
+        let mut thumbnails = KdlNode::new("thumbnails");
+        thumbnails.push(("show", settings.thumbnails.show.id()));
+        thumbnails.push(("size", settings.thumbnails.size.id()));
+        nodes.push(thumbnails);
+    }
     for (command, bindings) in &settings.shortcuts {
         let mut node = KdlNode::new("shortcut");
         node.push(command.id());
@@ -281,4 +314,43 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
         nodes.push(node);
     }
     nodes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn document(nodes: Vec<KdlNode>) -> KdlDocument {
+        let mut document = KdlDocument::new();
+        document.nodes_mut().extend(nodes);
+        document
+    }
+
+    #[test]
+    fn thumbnail_settings_parse_round_trip_and_stay_out_of_default_files() {
+        let parsed = parse(
+            &"thumbnails show=\"always\" size=\"huge\"\n"
+                .parse()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parsed.thumbnails.show, ThumbnailPolicy::Always);
+        assert_eq!(parsed.thumbnails.size, IconSize::Huge);
+        assert_eq!(parse(&document(nodes(&parsed))).unwrap(), parsed);
+        let defaults = InterfaceSettings::default();
+        assert_eq!(defaults.thumbnails.show, ThumbnailPolicy::Local);
+        assert!(
+            !nodes(&defaults)
+                .iter()
+                .any(|node| node.name().value() == "thumbnails")
+        );
+        for invalid in [
+            "thumbnails show=\"sometimes\"\n",
+            "thumbnails size=12\n",
+            "thumbnails colour=\"red\"\n",
+            "thumbnails show=\"local\" show=\"never\"\n",
+        ] {
+            assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
+        }
+    }
 }

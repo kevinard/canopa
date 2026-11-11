@@ -150,6 +150,92 @@ impl Place {
     }
 }
 
+/// Which files get thumbnails.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThumbnailPolicy {
+    /// Files on local disks; not on network shares or removable media.
+    #[default]
+    Local,
+    Always,
+    Never,
+}
+
+impl ThumbnailPolicy {
+    pub const ALL: [Self; 3] = [Self::Local, Self::Always, Self::Never];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|policy| policy.id() == id)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Local => "Local files only",
+            Self::Always => "All files",
+            Self::Never => "Never",
+        }
+    }
+}
+
+/// The icon size of the Icons view, which thumbnails fill.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum IconSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+    Huge,
+}
+
+impl IconSize {
+    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::Huge];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::Huge => "huge",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|size| size.id() == id)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+            Self::Huge => "Huge",
+        }
+    }
+
+    /// Logical pixels of an Icons-view icon or thumbnail.
+    pub fn pixels(self) -> f32 {
+        match self {
+            Self::Small => 48.0,
+            Self::Medium => 64.0,
+            Self::Large => 96.0,
+            Self::Huge => 128.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ThumbnailSettings {
+    pub show: ThumbnailPolicy,
+    pub size: IconSize,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InterfaceSettings {
     pub view: ViewSettings,
@@ -159,6 +245,7 @@ pub struct InterfaceSettings {
     pub sidebar: SidebarMode,
     /// Absent means default; an empty list disables a command's bindings.
     pub shortcuts: BTreeMap<Command, Vec<String>>,
+    pub thumbnails: ThumbnailSettings,
 }
 impl Default for InterfaceSettings {
     fn default() -> Self {
@@ -170,6 +257,7 @@ impl Default for InterfaceSettings {
             places: PlaceKind::ALL.iter().copied().map(Place::Builtin).collect(),
             sidebar: SidebarMode::Auto,
             shortcuts: BTreeMap::new(),
+            thumbnails: ThumbnailSettings::default(),
         }
     }
 }

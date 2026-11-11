@@ -28,18 +28,20 @@ impl Geometry {
         settings: &ViewSettings,
         searching: bool,
         width: f32,
+        icon: f32,
     ) -> Self {
         let padding = canopa_ui::content_padding(appearance.style(UiKind::MenuRow));
         if !searching && settings.mode == ViewMode::Icons {
             let minimum =
                 (appearance.typography().body_size.px() * 7.5 + padding.left + padding.right)
-                    .max(128.0);
+                    .max(128.0)
+                    .max(icon + 32.0 + padding.left + padding.right);
             Self {
                 // Keep the stride stable if a height change makes the rail
                 // appear. Embedded scrollbars reserve this same width.
                 columns: (((width - ICON_SCROLLBAR_GUTTER).max(0.0) / minimum).floor() as usize)
                     .clamp(1, 16),
-                height: 48.0
+                height: icon
                     + 6.0
                     + (appearance.typography().body_size.px() * 1.3).ceil() * 2.0
                     + padding.top
@@ -98,6 +100,7 @@ pub(super) fn geometry(desktop: &Desktop, tab: &Tab) -> Geometry {
             .as_ref()
             .is_some_and(|browser| browser.search().is_some()),
         tab.viewport_width,
+        desktop.icon_size(),
     )
 }
 
@@ -290,7 +293,7 @@ pub(super) fn entry<'a>(
         .width(Length::Fill)
         .height((size * 1.3).ceil() * 2.0)
         .clip(true);
-        column![desktop.icons.file(entry, 48.0), name]
+        column![desktop.icons.file(entry, desktop.icon_size()), name]
             .spacing(6)
             .align_x(Alignment::Center)
             .into()
@@ -366,7 +369,13 @@ pub(super) fn entry<'a>(
         }
         line.into()
     };
-    let geometry = Geometry::new(appearance, settings, searching, tab.viewport_width);
+    let geometry = Geometry::new(
+        appearance,
+        settings,
+        searching,
+        tab.viewport_width,
+        desktop.icon_size(),
+    );
     let height = if current {
         geometry.height
     } else {
@@ -481,6 +490,7 @@ pub(super) fn icons<'a>(
             browser.view(),
             false,
             size.width,
+            desktop.icon_size(),
         );
         let rows = visible.len().div_ceil(geometry.columns);
         let range = super::view::visible_rows(rows, browser.scroll(), size.height, geometry.height);
@@ -581,7 +591,7 @@ mod tests {
         };
         browser.set_view(settings.clone()).unwrap();
         browser.select(&root.path().join("099.txt"), SelectionMode::Replace);
-        let geometry = Geometry::new(&Default::default(), &settings, false, 360.0);
+        let geometry = Geometry::new(&Default::default(), &settings, false, 360.0, 48.0);
         assert_eq!(geometry.columns, 2);
         assert!(geometry.reveal(&mut browser, 400.0));
         assert!(geometry.visible(99, browser.scroll(), 400.0));
@@ -589,7 +599,7 @@ mod tests {
         browser.set_scroll(0.0);
         assert!(!geometry.visible(99, browser.scroll(), 400.0));
         assert_eq!(
-            Geometry::new(&Default::default(), &settings, true, 360.0).columns,
+            Geometry::new(&Default::default(), &settings, true, 360.0, 48.0).columns,
             1
         );
     }

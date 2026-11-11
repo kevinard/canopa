@@ -56,6 +56,7 @@ pub(super) struct Icons {
     chrome_handles: BTreeMap<Icon, image::Handle>,
     file_foreground: [u8; 4],
     types: Types,
+    pub(super) thumbnails: super::thumbnails_ui::Thumbnails,
 }
 
 /// shared-mime-info types and their themed icons. The database and sniffed
@@ -199,19 +200,22 @@ impl Icons {
 
     pub fn file(&self, entry: &crate::browse::Entry, size: f32) -> Element<'_, Message> {
         let content: Element<'_, Message> = match self.visual(entry) {
-            FileVisual::Type(handle) | FileVisual::Glyph(handle) => {
-                image(handle.clone()).width(size).height(size).into()
-            }
+            FileVisual::Thumbnail(handle)
+            | FileVisual::Type(handle)
+            | FileVisual::Glyph(handle) => image(handle.clone()).width(size).height(size).into(),
             FileVisual::Pending => iced::widget::space().width(size).height(size).into(),
         };
         container(content).width(size).height(size).into()
     }
 
-    /// What stands for an entry, in precedence order. Thumbnails belong first:
-    /// pixels keyed by path and modification time, prepared on a worker like
-    /// type icons, then the type icon, then the built-in glyph.
+    /// What stands for an entry, in precedence order: a thumbnail prepared for
+    /// this path and modification time, then the type icon, then the built-in
+    /// glyph. Thumbnails keep their aspect ratio inside the icon square.
     fn visual(&self, entry: &crate::browse::Entry) -> FileVisual<'_> {
         use super::file_icon::FileIcon;
+        if let Some(handle) = self.thumbnails.handle(entry) {
+            return FileVisual::Thumbnail(handle);
+        }
         let mime = self.entry_type(entry);
         if let Some(handle) = mime
             .as_deref()
@@ -406,6 +410,7 @@ impl Drop for Icons {
 }
 
 enum FileVisual<'a> {
+    Thumbnail(&'a image::Handle),
     Type(&'a image::Handle),
     Glyph(&'a image::Handle),
     Pending,
@@ -656,6 +661,7 @@ mod tests {
             chrome_handles: BTreeMap::new(),
             file_foreground: [255; 4],
             types: Types::default(),
+            thumbnails: Default::default(),
         };
         let old = Prepared {
             revision: 1,

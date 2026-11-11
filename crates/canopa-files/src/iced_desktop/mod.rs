@@ -48,6 +48,7 @@ mod search_tests;
 mod search_ui;
 #[cfg(test)]
 mod tests;
+mod thumbnails_ui;
 mod toolbar;
 mod toolbar_layout;
 mod transfer_dialog;
@@ -395,6 +396,7 @@ enum Message {
     Action(actions_ui::Event),
     IconsReady(Arc<icons_ui::Prepared>),
     TypesReady(Arc<icons_ui::PreparedTypes>),
+    ThumbnailReady(Arc<thumbnails_ui::Done>),
     FolderView(folder_views::Event),
     Trash(trash_ui::Event),
     Recovery(recovery_ui::Event),
@@ -876,6 +878,7 @@ impl Desktop {
                 self.close_file_question(id)
             }
             Message::IconsReady(prepared) => self.icons.completed(&prepared),
+            Message::ThumbnailReady(done) => self.thumbnail_done(&done),
             Message::TypesReady(prepared) => {
                 self.icons.types_completed(&prepared);
                 Task::none()
@@ -1015,7 +1018,8 @@ impl Desktop {
         self.sync_folder_watch();
         let drag = self.poll_drag();
         let types = self.sync_file_types();
-        Task::batch([task, self.sync_previews(), drag, types])
+        let thumbnails = self.sync_thumbnails();
+        Task::batch([task, self.sync_previews(), drag, types, thumbnails])
     }
 
     /// Ask for types and type icons when any shown listing was replaced. Listing
@@ -1069,6 +1073,7 @@ impl Desktop {
             Message::Action(_)
             | Message::IconsReady(_)
             | Message::TypesReady(_)
+            | Message::ThumbnailReady(_)
             | Message::FolderView(_) => {}
             Message::NewBrowser(id) => {
                 if self.operations_window == Some(id) {
@@ -1131,6 +1136,7 @@ impl Desktop {
             Message::Go(id, path) => return self.navigate(id, path, Navigation::Visit, None),
             Message::Loaded(id, tab_id, revision, navigation, result) => {
                 let appearance = self.configuration.appearance.clone();
+                let icon = self.icon_size();
                 let Some(window) = self.windows.get_mut(&id) else {
                     return Task::none();
                 };
@@ -1181,6 +1187,7 @@ impl Desktop {
                                 browser.view(),
                                 false,
                                 tab.viewport_width,
+                                icon,
                             )
                             .reveal(browser, tab.viewport_height);
                         }
@@ -1331,6 +1338,7 @@ impl Desktop {
             Message::Viewport(id, tab_id, epoch, path, size) => {
                 let active = self.active(id).is_some_and(|tab| tab.id == tab_id);
                 let appearance = &self.configuration.appearance;
+                let icon = self.configuration.settings.thumbnails.size.pixels();
                 let mut reveal = false;
                 let mut remapped = false;
                 if let Some(tab) = self.windows.get_mut(&id).and_then(|window| {
@@ -1348,12 +1356,14 @@ impl Desktop {
                             browser.view(),
                             browser.search().is_some(),
                             tab.viewport_width,
+                            icon,
                         );
                         let new = listing_ui::Geometry::new(
                             appearance,
                             browser.view(),
                             browser.search().is_some(),
                             size.width,
+                            icon,
                         );
                         let was_visible = browser
                             .visible_entries()
@@ -1401,6 +1411,11 @@ impl Desktop {
             }
         }
         Task::none()
+    }
+
+    /// The Icons-view icon and thumbnail size.
+    fn icon_size(&self) -> f32 {
+        self.configuration.settings.thumbnails.size.pixels()
     }
 
     fn exit_if_empty(&self) -> Task<Message> {

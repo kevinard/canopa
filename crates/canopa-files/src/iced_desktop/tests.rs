@@ -337,6 +337,7 @@ fn reflow_scroll_feedback(viewport_first: bool) {
     let rendered = Size::new(360.0, 413.7);
     let measured = Size::new(1024.0, 449.3);
     let appearance = desktop.configuration.appearance.clone();
+    let icon = desktop.icon_size();
     let tab = desktop.active_mut(window).unwrap();
     tab.viewport_width = rendered.width;
     tab.viewport_height = rendered.height;
@@ -348,10 +349,11 @@ fn reflow_scroll_feedback(viewport_first: bool) {
         })
         .unwrap();
     browser.select(&root.path().join("item-159.txt"), SelectionMode::Replace);
-    listing_ui::Geometry::new(&appearance, browser.view(), false, rendered.width)
+    listing_ui::Geometry::new(&appearance, browser.view(), false, rendered.width, icon)
         .reveal(browser, rendered.height);
     let old_scroll = browser.scroll();
-    let geometry = listing_ui::Geometry::new(&appearance, browser.view(), false, measured.width);
+    let geometry =
+        listing_ui::Geometry::new(&appearance, browser.view(), false, measured.width, icon);
     // Iced reports the old native offset clamped to the new grid extent. Its
     // producer still captured the narrow model, as in the native resize trace.
     let clamped = old_scroll.min(

@@ -42,31 +42,7 @@ const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 const SANDBOX_TMP_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Which files get thumbnails.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ThumbnailPolicy {
-    /// Files on local disks; not on network shares or removable media.
-    #[default]
-    Local,
-    Always,
-    Never,
-}
-
-impl ThumbnailPolicy {
-    pub const ALL: [Self; 3] = [Self::Local, Self::Always, Self::Never];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Local => "local",
-            Self::Always => "always",
-            Self::Never => "never",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|policy| policy.id() == id)
-    }
-}
+pub use crate::interface::ThumbnailPolicy;
 
 /// Bounds for one external thumbnailer run.
 #[derive(Clone, Copy, Debug)]

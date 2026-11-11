@@ -438,6 +438,32 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             Change::Detail(detail, !checked),
         ));
     }
+    let thumbnails = form.editor.draft.thumbnails;
+    let mut show = row![].spacing(4);
+    for policy in crate::interface::ThumbnailPolicy::ALL {
+        show = show.push(form.change(
+            policy.label(),
+            &format!("thumbnails-{}", policy.id()),
+            Change::Thumbnails(policy),
+            thumbnails.show == policy,
+            true,
+        ));
+    }
+    let mut sizes = row![].spacing(4);
+    for size in crate::interface::IconSize::ALL {
+        sizes = sizes.push(form.change(
+            size.label(),
+            &format!("icon-size-{}", size.id()),
+            Change::IconSize(size),
+            thumbnails.size == size,
+            true,
+        ));
+    }
+    let ordering = ordering
+        .push(chrome::section_title(appearance, "Thumbnails"))
+        .push(segment(show.wrap().into()))
+        .push(chrome::section_title(appearance, "Icon size"))
+        .push(segment(sizes.wrap().into()));
     let settings: Element<'a, Message> = if wide {
         row![
             container(ordering).width(Length::FillPortion(1)),
@@ -458,7 +484,7 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         container(settings).padding([6, 4]).width(Length::Fill),
         iced::widget::rule::horizontal(1).style(chrome::divider),
         container(
-            form.note("Folders inherit these settings unless they have their own view options.")
+            form.note("Folders inherit these settings unless they have their own view options. “Local files only” skips network shares and removable media.")
         )
         .padding([4, 4])
     ]
