@@ -569,7 +569,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
                     |path| {
                         fl!(
                             "files-home-path",
-                            path = path.to_string_lossy().replace('/', " / ")
+                            path = path.to_string_lossy().replace('/', " › ")
                         )
                     },
                 )
@@ -834,9 +834,7 @@ fn contents<'a>(desktop: &'a Desktop, trash: &'a TrashWindow, wide: bool) -> Ele
             .id(control(id, "root"))
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_| {
-                canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
-            }),
+            .style(move |_| chrome::window_surface(appearance, false)),
         order,
         reveal,
         None,

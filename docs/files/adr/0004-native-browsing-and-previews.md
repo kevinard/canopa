@@ -30,7 +30,7 @@ atomic write finishes. A larger interface editor and shared Files configuration
 namespace are still separate, unfinished requirements.
 
 Quick Look is a non-modal transient window attached to its originating Browser
-Window, not a tile or a preview column. Its default size is 760 × 600 logical
+Window, not a tile or a preview column. Its default size is 880 × 620 logical
 pixels. It follows that window's active Tab, including while another Browser
 Window is focused. Space or Escape closes it and returns focus to its browser.
 Navigation keys in Quick Look continue browsing through the source window.

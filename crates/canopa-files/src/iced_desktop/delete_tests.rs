@@ -75,7 +75,7 @@ fn shift_delete_asks_first_and_only_confirmation_deletes() {
     shift_delete(&mut desktop);
     assert_eq!(
         message(&desktop),
-        "Delete permanently? | Permanently delete 2 items? This can't be undone. | Delete 2 items"
+        "Delete permanently? | 2 items will be deleted immediately. This can't be undone. | Delete 2 items"
     );
     let dialog = desktop.delete_dialog.as_ref().unwrap().window;
     // A second request never replaces the open confirmation.

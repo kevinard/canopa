@@ -78,7 +78,6 @@ files-close-window = Fermer la fenêtre
 
 ## Browser window
 
-files-app-name = Fichiers
 files-toolbar = Barre d’outils
 files-tabs = Onglets
 files-sidebar = Barre latérale
@@ -96,6 +95,7 @@ files-search-results = Résultats de la recherche
 files-column-view = Vue en colonnes
 files-list-view = Vue en liste
 files-icon-view = Vue en icônes
+files-view-current = Affichage : { $view }
 files-view-columns = Colonnes
 files-view-list = Liste
 files-view-icons = Icônes
@@ -103,6 +103,8 @@ files-status-items = { $count ->
     [one] { $count } élément
    *[other] { $count } éléments
 }
+files-folder-items-at-least = { $count } éléments ou plus
+files-folder-empty = Vide
 files-status-results = { $count ->
     [one] { $count } résultat
    *[other] { $count } résultats
@@ -114,6 +116,10 @@ files-status-inspected = { $count ->
 files-status-selected = { $count ->
     [one] { $count } sélectionné
    *[other] { $count } sélectionnés
+}
+files-status-selected-size = { $count ->
+    [one] { $count } sélectionné ({ $size })
+   *[other] { $count } sélectionnés ({ $size })
 }
 files-status-stopping = Arrêt…
 files-status-searching = Recherche…
@@ -172,7 +178,7 @@ files-preferences-page-views = Affichage
 files-preferences-page-toolbar = Barre d’outils
 files-preferences-page-locations = Emplacements
 files-preferences-page-shortcuts = Raccourcis
-files-preferences-status-initial = Les modifications s’appliquent à toutes les fenêtres de Fichiers après l’enregistrement.
+files-preferences-status-initial = Les modifications s’appliquent à toutes les fenêtres de Fichiers dès que vous les faites.
 files-preferences-too-many-locations = 256 emplacements au maximum sont pris en charge.
 files-preferences-column-width-invalid = La largeur des colonnes doit être un nombre entier compris entre 160 et 640.
 files-preferences-bookmark-path-invalid = Un signet nécessite un chemin local absolu, un chemin ~/ ou une URI de fichier local.
@@ -187,32 +193,37 @@ files-preferences-worker-unavailable = Le service de configuration est indisponi
 files-preferences-worker-stopped = Le service de configuration s’est arrêté avant de répondre.
 files-preferences-saving = Enregistrement…
 files-preferences-reloading = Rechargement…
-files-preferences-saved = Enregistré. Les préférences s’appliquent à toutes les fenêtres de Fichiers.
+files-preferences-saved = Enregistré. Les modifications s’appliquent à toutes les fenêtres de Fichiers.
 files-preferences-reloaded = Préférences partagées de Fichiers rechargées.
 
 ## Preferences window: controls
 
 files-preferences-subtitle = Choisissez l’apparence et le comportement de Fichiers.
 files-preferences-read-only = Les valeurs par défaut intégrées sont en lecture seule. Démarrez Fichiers avec une configuration modifiable pour enregistrer les préférences.
-files-preferences-changed-outside = La configuration a été modifiée en dehors de cet éditeur. Votre brouillon est conservé ; rechargez avant d’enregistrer.
+files-preferences-changed-outside = La configuration a été modifiée en dehors de cet éditeur. Votre brouillon est conservé ; choisissez Annuler les modifications pour charger la nouvelle version avant d’enregistrer.
 files-preferences-discard-question = Abandonner les modifications non enregistrées des préférences ?
 files-preferences-reload-question = Recharger et abandonner les modifications non enregistrées des préférences ?
 files-preferences-keep-editing = Continuer la modification
 files-preferences-discard = Abandonner
 files-preferences-reload = Recharger
-files-preferences-save = Enregistrer les préférences
+files-preferences-pending = Appuyez sur Entrée pour appliquer la valeur saisie.
 files-preferences-keys = Alt+1–4 pages · Ctrl+S Enregistrer · Ctrl+R Recharger
 files-preferences-default-view = Vue par défaut
 files-preferences-sort-by = Trier par
 files-preferences-descending = Ordre décroissant
-files-preferences-column-layout = Disposition des colonnes
+files-preferences-columns-view = Affichage en colonnes
+files-preferences-all-views = Valeurs par défaut
+files-preferences-each-view = Réglages par affichage
+files-preferences-list-view = Affichage en liste
+files-preferences-icons-view = Affichage en icônes
 files-preferences-column-width = Largeur des colonnes
 files-preferences-column-width-range = 160 à 640 pixels
-files-preferences-list-details = Détails de la vue en liste
+files-preferences-list-details = Détails à afficher
 files-preferences-modified-date = Date de modification
 files-preferences-thumbnails = Miniatures
 files-preferences-icon-size = Taille des icônes
-files-preferences-views-note = Les dossiers héritent de ces réglages sauf s’ils ont leurs propres options d’affichage. « Fichiers locaux uniquement » ignore les partages réseau et les supports amovibles.
+files-preferences-views-note = Les dossiers héritent de ces réglages sauf s’ils ont leurs propres options d’affichage.
+files-preferences-thumbnails-note = « Fichiers locaux uniquement » ignore les partages réseau et les supports amovibles.
 files-preferences-location-field = Champ d’emplacement
 files-preferences-toolbar-action = Action : { $name }
 files-preferences-toolbar-note = Sélectionnez un élément de la barre d’outils pour le déplacer ou le retirer.
@@ -271,6 +282,7 @@ files-operations-save-before-closing = Enregistrez le résultat de l’opératio
 files-menu-open = Ouvrir
 files-menu-open-with = Ouvrir avec…
 files-menu-new-folder = Nouveau dossier…
+files-menu-new-folder-short = Nouveau dossier
 files-menu-rename = Renommer…
 files-menu-delete-permanently = Supprimer définitivement…
 files-menu-edit-custom-actions = Modifier les actions personnalisées…
@@ -327,17 +339,18 @@ files-name-dialog-failed = Impossible d’ouvrir la boîte de dialogue du nom.
 files-rename-worker-stopped = Le service des opérations s’est arrêté avant de préparer le renommage.
 files-operation-queue-unavailable = La file des opérations est indisponible.
 files-accepting-operation = Acceptation de l’opération…
-files-home-path = Dossier personnel / { $path }
+files-home-path = Dossier personnel › { $path }
 
 ## Permanent deletion confirmation
 
 files-delete-title = Supprimer définitivement ?
 files-delete-title-empty-trash = Vider la corbeille ?
 files-delete-title-no-trash = Impossible de mettre à la corbeille
-files-delete-one = Supprimer définitivement « { $name } » ? Cette action est irréversible.
+files-delete-one = « { $name } » sera supprimé immédiatement. Cette action est irréversible.
+files-delete-cannot-undo = L’élément ci-dessous sera supprimé immédiatement. Cette action est irréversible.
 files-delete-many = { $count ->
-    [one] Supprimer définitivement { $count } élément ? Cette action est irréversible.
-   *[other] Supprimer définitivement { $count } éléments ? Cette action est irréversible.
+    [one] { $count } élément sera supprimé immédiatement. Cette action est irréversible.
+   *[other] { $count } éléments seront supprimés immédiatement. Cette action est irréversible.
 }
 files-delete-no-trash-one = « { $name } » se trouve sur un volume sans corbeille utilisable et ne peut donc pas être mis à la corbeille. Le supprimer définitivement à la place ? Cette action est irréversible.
 files-delete-no-trash-many = { $count ->
@@ -367,6 +380,9 @@ files-confirmation-failed = Impossible d’ouvrir la confirmation.
 ## Dates
 
 files-date-time = { $date } · { $time }
+files-date-today = Aujourd’hui, { $time }
+files-date-yesterday = Hier, { $time }
+files-date-this-year = { $date }, { $time }
 files-unknown = Inconnue
 
 ## Operation questions: conflicts and Undo decisions
@@ -678,10 +694,33 @@ files-properties-cancelled = Examen des propriétés annulé.
 files-properties-copy-location = Copier l’emplacement
 files-properties-copy-locations = Copier les emplacements
 files-properties-link-target = Cible du lien
+files-properties-dimensions = Dimensions
+files-command-properties = Propriétés
+files-preferences-properties = Propriétés
+files-properties-display-window = Dans une fenêtre
+files-properties-display-panel = Dans un panneau latéral
+files-properties-created = Création
+files-properties-opens-with = S’ouvre avec
+files-properties-change = Modifier…
+files-properties-advanced = Mode et identifiants
+files-properties-access-saving = Mise à jour de l’accès…
+files-permission-folder-none = Aucun accès
+files-permission-folder-list = Lister les fichiers uniquement
+files-permission-folder-access = Accéder aux fichiers
+files-permission-folder-change = Créer et supprimer des fichiers
+files-permission-file-none = Aucun accès
+files-permission-file-read = Lecture seule
+files-permission-file-write = Lecture et écriture
+files-properties-panel-empty = Sélectionnez un élément pour voir ses propriétés.
+files-properties-hide-panel = Masquer les propriétés
+files-properties-pixels = { $width } × { $height } pixels
+files-properties-size-detail = { $size } ({ $exact })
 files-properties-access = Accès
 files-properties-owner = Propriétaire
 files-properties-group = Groupe
 files-properties-others = Autres
+files-properties-account = Compte
+files-properties-permission = Autorisation
 files-properties-access-identity = { $who } · { $identity }
 files-properties-mode = Mode { $mode } · UID { $uid } · GID { $gid }
 files-unavailable = Indisponible
@@ -692,14 +731,14 @@ files-size-bytes = { $bytes ->
    *[other] { $bytes } octets
 }
 files-date-out-of-range = Hors de la plage de dates prise en charge
-files-permission-none = aucun
-files-permission-x = exécution
-files-permission-w = écriture
-files-permission-wx = écriture et exécution
-files-permission-r = lecture
-files-permission-rx = lecture et exécution
-files-permission-rw = lecture et écriture
-files-permission-rwx = lecture, écriture et exécution
+files-permission-none = Aucun
+files-permission-x = Exécution
+files-permission-w = Écriture
+files-permission-wx = Écriture et exécution
+files-permission-r = Lecture
+files-permission-rx = Lecture et exécution
+files-permission-rw = Lecture et écriture
+files-permission-rwx = Lecture, écriture et exécution
 
 ## Trash window and Restore to folder
 
@@ -959,6 +998,11 @@ files-preview-fit = Ajuster à la fenêtre
 files-preview-actual-size = Taille réelle
 files-preview-zoom-in = Zoom avant
 files-preview-fit-short = Ajuster
+files-preview-actual-short = 1:1
+files-preview-open-with = Ouvrir avec { $app }
+files-preview-previous-item = Élément précédent (Haut)
+files-preview-next-item = Élément suivant (Bas)
+files-preview-position = { $index } sur { $count }
 files-preview-page = { $page } / { $pages }
 files-preview-preparing = Préparation de l’aperçu…
 files-preview-unavailable = Aperçu indisponible : { $error }
@@ -1233,6 +1277,7 @@ files-config-toolbar-location = la barre d’outils doit contenir exactement un 
 files-config-toolbar-unknown = élément de barre d’outils inconnu ou en double
 files-config-too-many-places = 256 emplacements au maximum sont pris en charge
 files-config-duplicate-place = emplacement intégré en double
+files-config-list-columns-invalid = les largeurs des colonnes de la liste sont hors de leur plage
 files-config-bookmark-invalid = un signet nécessite un nom et un dossier local absolu
 files-config-too-many-shortcuts = huit raccourcis au maximum sont pris en charge par commande
 files-config-action-modifier = les actions personnalisées nécessitent un raccourci avec Ctrl, Alt, Super ou une touche de fonction

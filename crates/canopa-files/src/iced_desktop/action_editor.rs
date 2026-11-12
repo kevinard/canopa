@@ -1102,7 +1102,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(&appearance, false));
     super::focus::group(content, order, reveal, default)
 }
 

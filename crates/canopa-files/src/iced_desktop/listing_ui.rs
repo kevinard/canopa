@@ -136,9 +136,23 @@ pub(super) fn local_time(time: std::time::SystemTime) -> Option<chrono::NaiveDat
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(milliseconds)
         .map(|time| time.with_timezone(&chrono::Local).naive_local())
 }
-fn detail_value(entry: &Entry, detail: Detail) -> Option<String> {
+/// A folder's Size: its item count once counted, otherwise nothing yet.
+fn folder_items(items: Option<usize>) -> Option<String> {
+    items.map(|count| {
+        if count == 0 {
+            fl!("files-folder-empty")
+        } else if count >= super::folder_counts::LIMIT {
+            fl!("files-folder-items-at-least", count = count)
+        } else {
+            fl!("files-status-items", count = count)
+        }
+    })
+}
+
+fn detail_value(entry: &Entry, detail: Detail, items: Option<usize>) -> Option<String> {
     match detail {
-        Detail::Size => (!entry.is_directory()).then(|| size(entry.size)),
+        Detail::Size if entry.is_directory() => folder_items(items),
+        Detail::Size => Some(size(entry.size)),
         Detail::Kind => Some(kind(entry)),
         Detail::Modified => modified(entry),
     }
@@ -155,18 +169,103 @@ pub(super) fn date_time_seconds(time: chrono::NaiveDateTime) -> String {
 }
 
 pub(super) fn modified(entry: &Entry) -> Option<String> {
-    entry.modified.and_then(local_time).map(|time| {
-        canopa_i18n::format::date_time_with(time, canopa_i18n::format::DateStyle::Short)
-    })
+    let today = chrono::Local::now().date_naive();
+    entry
+        .modified
+        .and_then(local_time)
+        .map(|time| relative_date_time(time, today))
 }
 
-pub(super) fn details(entry: &Entry, settings: &ViewSettings) -> String {
+/// Recent times read as Today or Yesterday; older ones carry their date.
+pub(super) fn relative_date_time(time: chrono::NaiveDateTime, today: chrono::NaiveDate) -> String {
+    use canopa_i18n::format;
+    use chrono::Datelike;
+    let clock = || format::time(time.time());
+    if time.date() == today {
+        fl!("files-date-today", time = clock())
+    } else if today.pred_opt() == Some(time.date()) {
+        fl!("files-date-yesterday", time = clock())
+    } else if time.date().year() == today.year() {
+        fl!(
+            "files-date-this-year",
+            date = format::month_day_short(time.date()),
+            time = clock()
+        )
+    } else {
+        format::date_with(time.date(), format::DateStyle::Medium)
+    }
+}
+
+pub(super) fn details(entry: &Entry, settings: &ViewSettings, items: Option<usize>) -> String {
     settings
         .details
         .iter()
-        .filter_map(|&detail| detail_value(entry, detail))
+        .filter_map(|&detail| detail_value(entry, detail, items))
         .collect::<Vec<_>>()
         .join(" · ")
+}
+
+/// Gap after each detail column; a header divider sits in its middle.
+const DETAIL_GAP: f32 = 28.0;
+
+fn detail_units(detail: Detail) -> f32 {
+    match detail {
+        Detail::Size => 6.5,
+        Detail::Modified => 11.5,
+        Detail::Kind => 9.0,
+    }
+}
+
+/// A detail column's width: being dragged, chosen earlier, or from the text size.
+pub(super) fn detail_width(desktop: &Desktop, id: window::Id, detail: Detail) -> f32 {
+    let size = desktop
+        .configuration
+        .appearance
+        .typography()
+        .label_size
+        .px()
+        + 1.0;
+    desktop
+        .layouts
+        .dragged(id, super::resize::Target::Detail(detail))
+        .or_else(|| {
+            desktop
+                .configuration
+                .settings
+                .list_columns
+                .detail(detail)
+                .map(f32::from)
+        })
+        .unwrap_or(detail_units(detail) * size)
+}
+
+/// The Name column's width in a List `viewport` wide: it takes the room the
+/// details leave, unless a width was chosen by dragging. A chosen width gives
+/// way before the details would leave the window.
+pub(super) fn name_width(
+    desktop: &Desktop,
+    id: window::Id,
+    settings: &ViewSettings,
+    viewport: f32,
+) -> f32 {
+    let details: f32 = settings
+        .details
+        .iter()
+        .map(|&detail| detail_width(desktop, id, detail) + DETAIL_GAP + 1.0)
+        .sum();
+    let room = viewport - details - 72.0;
+    desktop
+        .layouts
+        .dragged(id, super::resize::Target::Name)
+        .or_else(|| {
+            desktop
+                .configuration
+                .settings
+                .list_columns
+                .name
+                .map(f32::from)
+        })
+        .map_or(room.max(260.0), |chosen| chosen.min(room).max(160.0))
 }
 
 pub(super) fn inline_details(
@@ -207,34 +306,65 @@ pub(super) fn name_heading(settings: &ViewSettings) -> String {
     }
 }
 
+/// Detail values for `entry`, or the headings when it is `None`. Headings
+/// carry the dividers that resize the columns before them.
 pub(super) fn detail_cells<'a>(
-    appearance: &'a canopa_theme::Appearance,
+    desktop: &'a Desktop,
+    id: window::Id,
     settings: &ViewSettings,
     entry: Option<&Entry>,
+    items: Option<usize>,
+    name: f32,
 ) -> Element<'a, Message> {
-    let size = appearance.typography().label_size.px();
+    let appearance = &desktop.configuration.appearance;
+    let size = appearance.typography().label_size.px() + 1.0;
     let font = canopa_ui::font(appearance);
-    let mut cells = row![].spacing(14).align_y(Alignment::Center);
+    let heading = entry.is_none();
+    let mut divider = chrome::divider(&desktop.theme).color;
+    divider.a = 0.9;
+    let last = settings.details.last().copied();
+    let grip = |target, current| -> Element<'a, Message> {
+        super::resize::Grip {
+            window: id,
+            target,
+            width: 1.0,
+            current,
+            height: Length::Fixed(28.0),
+            line: Some(14.0),
+            color: divider,
+            share: 1.0,
+            quiet: last.is_some_and(|last| target == super::resize::Target::Detail(last)),
+        }
+        .into()
+    };
+    // Generous gutters keep metadata columns distinct from each other and from Name.
+    let mut cells = row![].align_y(Alignment::Center);
+    // Rows keep a one-pixel space wherever the headings have a divider.
+    cells = cells.push(if heading {
+        grip(super::resize::Target::Name, name)
+    } else {
+        space().width(1).into()
+    });
     for &detail in &settings.details {
-        let (label, field, units) = match detail {
-            Detail::Size => (fl!("files-column-size"), SortField::Size, 6.0),
-            Detail::Modified => (fl!("files-column-modified"), SortField::Modified, 12.5),
-            Detail::Kind => (fl!("files-column-kind"), SortField::Kind, 9.0),
+        let (label, field) = match detail {
+            Detail::Size => (fl!("files-column-size"), SortField::Size),
+            Detail::Modified => (fl!("files-column-modified"), SortField::Modified),
+            Detail::Kind => (fl!("files-column-kind"), SortField::Kind),
         };
+        let width = detail_width(desktop, id, detail);
         let value = entry.map_or_else(
             || sort_heading(settings, field, label),
-            |entry| detail_value(entry, detail).unwrap_or_else(|| "—".into()),
+            |entry| detail_value(entry, detail, items).unwrap_or_else(|| "—".into()),
         );
-        let heading = entry.is_none();
         let active = heading && settings.sort == field;
-        let foreground = chrome::ink(
-            appearance,
-            if active {
-                ColorRole::Text
-            } else {
-                ColorRole::Muted
-            },
-        );
+        // Values read as secondary text; headings stay muted unless they sort.
+        let foreground = if heading && !active {
+            chrome::ink(appearance, ColorRole::Muted)
+        } else if heading || appearance.high_contrast() {
+            chrome::ink(appearance, ColorRole::Text)
+        } else {
+            chrome::ink(appearance, ColorRole::Text).scale_alpha(0.78)
+        };
         let mut cell_font = font;
         if heading {
             cell_font.weight = iced::font::Weight::Semibold;
@@ -251,7 +381,15 @@ pub(super) fn detail_cells<'a>(
         } else {
             chrome::single_line(value, cell_font, size, Some(foreground), entry.is_some())
         };
-        cells = cells.push(container(cell).width(units * size).clip(true));
+        cells = cells.push(container(cell).width(width).clip(true));
+        cells = cells
+            .push(space().width(DETAIL_GAP / 2.0))
+            .push(if heading {
+                grip(super::resize::Target::Detail(detail), width)
+            } else {
+                space().width(1).into()
+            })
+            .push(space().width(DETAIL_GAP / 2.0));
     }
     cells.into()
 }
@@ -265,6 +403,11 @@ pub(super) struct Presentation<'a> {
     pub alternate: bool,
     /// One-based position among all rows of the virtualized list.
     pub position: (usize, usize),
+}
+
+/// High contrast keeps the bold selected name as a second, non-colour cue.
+fn style_contrast(appearance: &canopa_theme::Appearance) -> bool {
+    appearance.high_contrast()
 }
 
 pub(super) fn entry<'a>(
@@ -288,16 +431,14 @@ pub(super) fn entry<'a>(
     let settings = browser.view();
     let current = column_path == browser.path();
     let current_folder = !current && entry.path == browser.path();
-    let selection = appearance.style(UiKind::MenuRow).states[0];
-    let highlighted = selected
-        && current_folder
-        && entry.kind == crate::browse::EntryKind::Directory
-        && selection.background.is_none()
-        && selection.foreground.is_none();
     let size = appearance.typography().body_size.px();
     let label_size = appearance.typography().label_size.px();
     let font = canopa_ui::font(appearance);
     let inline = current && !searching && inline_details(appearance, settings, tab.viewport_width);
+    let items = entry
+        .is_directory()
+        .then(|| desktop.folder_counts.items(entry, browser.show_hidden()))
+        .flatten();
     let content: Element<'a, Message> = if grid {
         let name = container(
             text(entry.name().into_owned())
@@ -314,46 +455,56 @@ pub(super) fn entry<'a>(
             .align_x(Alignment::Center)
             .into()
     } else {
+        // Selection is carried by the row's fill; the name keeps its weight
+        // so it never shifts as the selection moves.
         let mut name_font = font;
-        if selected {
+        if selected && style_contrast(appearance) {
             name_font.weight = iced::font::Weight::Semibold;
         }
         let name = chrome::single_line(
             entry.name().into_owned(),
             name_font,
             size,
-            highlighted.then(|| chrome::ink(appearance, ColorRole::OnAccent)),
+            None,
             tab.location.is_none()
                 && desktop.action_menu.is_none()
                 && desktop.folder_options.is_none(),
         );
-        let file_icon = if highlighted {
-            desktop.icons.chrome(Icon::ActiveFolder, 20.0, 1.0)
-        } else {
-            desktop.icons.file(entry, 20.0)
-        };
+        let file_icon = desktop.icons.file(entry, 22.0);
         let arrow = || {
-            desktop.icons.chrome(
-                if highlighted {
-                    Icon::ActiveForward
-                } else {
-                    Icon::Forward
-                },
-                16.0,
-                if selected { 1.0 } else { 0.83 },
-            )
+            desktop
+                .icons
+                .chrome(Icon::Forward, 16.0, if selected { 1.0 } else { 0.83 })
+        };
+        // Inline details follow a bounded Name column, so a row's facts sit
+        // beside its name instead of across the window.
+        let name_width = name_width(desktop, id, settings, tab.viewport_width);
+        let name: Element<'a, Message> = if inline {
+            container(name).width(name_width).into()
+        } else {
+            name
         };
         let mut name_line = row![file_icon, name].spacing(8).align_y(Alignment::Center);
+        // Chevrons promise a column to the right; List view opens folders in place.
+        let drills = entry.is_directory() && (!current || settings.mode == ViewMode::Columns);
         if inline {
-            let trailing = if entry.is_directory() {
+            let trailing = if drills {
                 arrow()
             } else {
                 space().width(16).into()
             };
             name_line = name_line
-                .push(detail_cells(appearance, settings, Some(entry)))
-                .push(trailing);
-        } else if entry.is_directory() {
+                .push(detail_cells(
+                    desktop,
+                    id,
+                    settings,
+                    Some(entry),
+                    items,
+                    name_width,
+                ))
+                .push(trailing)
+                .push(space().width(Length::Fill));
+        } else if drills {
             name_line = name_line.push(arrow());
         }
         let mut line = column![name_line].spacing(2);
@@ -377,7 +528,7 @@ pub(super) fn entry<'a>(
             && !settings.details.is_empty()
         {
             line = line.push(
-                text(details(entry, settings))
+                text(details(entry, settings, items))
                     .size(label_size)
                     .font(font)
                     .wrapping(text::Wrapping::None),
@@ -398,6 +549,9 @@ pub(super) fn entry<'a>(
         super::view::row_height(appearance)
     };
     let style_appearance = appearance.clone();
+    // The keyboard cursor's ring belongs to the active window only; the
+    // accessible focus state below does not depend on it.
+    let ring = focused && desktop.focused_window == Some(id);
     let card = container(content)
         .padding(super::view::entry_padding(appearance, grid))
         .height(height)
@@ -405,39 +559,33 @@ pub(super) fn entry<'a>(
         .clip(true)
         .style(move |_| {
             let base = style_appearance.style(UiKind::MenuRow);
-            let resolved = base.state(selected, false, false, false, focused);
+            let resolved = base.state(selected, false, false, false, ring);
             let mut style = canopa_ui::frame(&style_appearance, resolved);
             // High contrast keeps selection and its edge opaque in every column.
             let contrast = style_appearance.high_contrast();
             if selected && base.states[0].background.is_none() {
-                let role = if highlighted {
-                    ColorRole::Accent
+                // Ancestors share one neutral fill; the accent stays with the
+                // current folder's selection and keyboard focus.
+                let color = if current || contrast {
+                    chrome::ink(&style_appearance, ColorRole::AccentSurface)
                 } else {
-                    ColorRole::AccentSurface
+                    chrome::ink(&style_appearance, ColorRole::Raised)
                 };
-                let mut color = chrome::ink(&style_appearance, role);
-                color.a = if current || current_folder || contrast {
-                    1.0
-                } else {
-                    0.50
-                };
+                // The current folder's selection is the accent surface without an
+                // outline, so it never reads as the keyboard focus ring.
                 style.background = Some(color.into());
                 if !base.custom_border && base.states[0].border_color.is_none() {
                     let mut edge = chrome::ink(&style_appearance, ColorRole::Accent);
                     edge.a = if contrast {
                         1.0
                     } else if current {
-                        0.58
+                        0.0
                     } else if current_folder {
                         0.42
                     } else {
                         0.0
                     };
-                    style.border.width = if current || current_folder || contrast {
-                        1.0
-                    } else {
-                        0.0
-                    };
+                    style.border.width = if contrast { 1.0 } else { 0.0 };
                     style.border.color = edge;
                 }
             }
@@ -445,21 +593,23 @@ pub(super) fn entry<'a>(
                 && alternate
                 && !contrast
                 && !selected
-                && !focused
+                && !ring
                 && canopa_ui::resolve_color(&style_appearance, base.background).a == 0.0
             {
                 style.background = Some(
                     chrome::ink(&style_appearance, ColorRole::Raised)
-                        .scale_alpha(0.38)
+                        .scale_alpha(0.22)
                         .into(),
                 );
             }
             if !base.custom_radius {
                 style.border.radius = 7.0.into();
             }
-            if focused && base.states[4].border_color.is_none() {
+            if ring && base.states[4].border_color.is_none() {
                 style.border.width = style.border.width.max(1.0);
-                style.border.color = canopa_ui::color(style_appearance.role(ColorRole::Focus));
+                // A quieter ring than controls': rows are focused continuously.
+                style.border.color = canopa_ui::color(style_appearance.role(ColorRole::Focus))
+                    .scale_alpha(if contrast { 1.0 } else { 0.6 });
             }
             style
         });
@@ -618,6 +768,23 @@ pub(super) fn icons<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
+
+    #[test]
+    fn modified_times_read_relative_recently_and_drop_the_current_year() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let at = |date: chrono::NaiveDate| date.and_hms_opt(9, 30, 0).unwrap();
+        assert!(relative_date_time(at(today), today).starts_with("Today, "));
+        let yesterday = today.pred_opt().unwrap();
+        assert!(relative_date_time(at(yesterday), today).starts_with("Yesterday, "));
+        let this_year = relative_date_time(at(today.with_day(1).unwrap()), today);
+        assert!(!this_year.contains("2026"), "{this_year}");
+        let older = relative_date_time(
+            at(chrono::NaiveDate::from_ymd_opt(2025, 3, 4).unwrap()),
+            today,
+        );
+        assert!(older.contains("2025"), "{older}");
+    }
     #[test]
     fn grid_geometry_reveals_the_actual_file_and_preserves_deliberate_scroll() {
         let root = tempfile::tempdir().unwrap();

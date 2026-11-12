@@ -183,6 +183,30 @@ fn settings_and_actions_share_one_guarded_source_and_preserve_each_other() {
 }
 
 #[test]
+fn saved_thumbnail_and_properties_choices_load_with_the_actions() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("config.kdl");
+    std::fs::write(&path, "schema-version 1\n").unwrap();
+    let base = ConfigurationSnapshot::load(&canopa_config::Request::common(&path)).unwrap();
+    let worker = ConfigurationJobs::start(base.clone()).unwrap();
+    let mut settings = base.settings.clone();
+    settings.thumbnails.show = canopa_files::interface::ThumbnailPolicy::Never;
+    settings.properties = canopa_files::interface::PropertiesDisplay::Panel;
+    let reply = worker.save_settings(base, settings).unwrap();
+    await_reply(reply).unwrap().unwrap();
+    // Interface nodes beside actions must not read as malformed actions.
+    let loaded = ConfigurationSnapshot::load(&canopa_config::Request::common(&path)).unwrap();
+    assert_eq!(
+        loaded.settings.thumbnails.show,
+        canopa_files::interface::ThumbnailPolicy::Never
+    );
+    assert_eq!(
+        loaded.settings.properties,
+        canopa_files::interface::PropertiesDisplay::Panel
+    );
+}
+
+#[test]
 fn worker_serializes_saves_and_rejects_stale_drafts_without_replacing_newer_configuration() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("config.kdl");

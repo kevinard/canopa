@@ -12,6 +12,10 @@ use iced::{
 
 const SIDE_PADDING: f32 = 14.0;
 const COMMAND_ICON: f32 = 20.0;
+/// The New folder button joins the toolbar from this window width, and is
+/// labelled from the next.
+const NEW_FOLDER_WIDTH: f32 = 860.0;
+const NEW_FOLDER_LABEL_WIDTH: f32 = 1040.0;
 
 enum Item<'a> {
     Location,
@@ -100,7 +104,7 @@ fn control_padding(
 fn width(item: &Item<'_>, appearance: &canopa_theme::Appearance, labels: Labels) -> f32 {
     let padding = control_padding(item, appearance, labels);
     let horizontal = padding.left + padding.right;
-    let size = appearance.typography().label_size.px();
+    let size = appearance.typography().label_size.px() + 1.0;
     match item {
         Item::Location => 144.0,
         Item::Builtin(command) => match command_icon(*command) {
@@ -170,6 +174,7 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
         | Command::NewTab
         | Command::CustomActions
         | Command::Preferences
+        | Command::Properties
         | Command::BookmarkFolder
         | Command::Operations
         | Command::ShowTrash
@@ -471,8 +476,9 @@ fn control<'a>(
             } else {
                 canopa_ui::direction::row([
                     icon,
+                    // Command labels match the view switcher's caption size.
                     text(label)
-                        .size(appearance.typography().label_size.px())
+                        .size(appearance.typography().label_size.px() + 1.0)
                         .font(font)
                         .into(),
                 ])
@@ -495,11 +501,12 @@ fn control<'a>(
             .into(),
     };
     let search = matches!(item, Item::Builtin(Command::Search));
-    let outlined_search = search && (tab.search.is_some() || matches!(labels, Labels::Full));
     let button = canopa_ui::styled_action(
         container(content).width(Length::Fill).clip(true),
         message,
-        if outlined_search {
+        // Search keeps its outline only while a search is open; idle secondary
+        // controls stay borderless so the location field leads the toolbar.
+        if search && tab.search.is_some() {
             canopa_ui::Action::Normal
         } else {
             canopa_ui::Action::Quiet
@@ -510,8 +517,19 @@ fn control<'a>(
     .padding(control_padding(item, appearance, labels))
     .width(width(item, appearance, labels));
     let button: Element<'_, Message> = if navigation(item) {
+        // History controls without a destination drop their tile, so the
+        // available ones read as buttons at a glance.
+        // History controls are borderless like the other secondary actions;
+        // hover fills them and an unavailable one only dims its glyph.
         container(button)
-            .style(move |_| chrome::highlight(appearance, ColorRole::Spine))
+            .style(move |_| {
+                if appearance.high_contrast() {
+                    chrome::highlight(appearance, ColorRole::Spine)
+                        .border(iced::Border::default().rounded(10))
+                } else {
+                    container::Style::default()
+                }
+            })
             .into()
     } else {
         button.into()
@@ -549,13 +567,14 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
         menu_padding.right -= 6.0;
     }
     let menu_width = 18.0 + menu_padding.left + menu_padding.right;
+    let icon_button_width = menu_width;
     let open_menu = source
         .as_ref()
         .map(|_| Message::Action(actions_ui::Event::Menu(id)));
     let menu = canopa_ui::styled_action(
         desktop.icons.chrome(Icon::More, 18.0, 1.0),
         open_menu.clone(),
-        canopa_ui::Action::Normal,
+        canopa_ui::Action::Quiet,
         false,
         appearance,
     )
@@ -625,18 +644,74 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
     } else {
         (menu, menu_width)
     };
-    let (menu, menu_width) = if let Some(browser) = &tab.browser
-        && browser.search().is_none()
-        && window_width >= super::view::TOOLBAR_MODES_WIDTH
-    {
-        let (width, modes) =
-            super::view::view_switcher(desktop, id, tab, browser.view().mode, true, true);
+    let (menu, menu_width) = if tab.browser.is_some() && window_width >= NEW_FOLDER_WIDTH {
+        // Creating a folder stays one click away beside the overflow menu.
+        let create = enabled(desktop, Command::NewFolder, tab)
+            .then_some(Message::Command(id, Command::NewFolder));
+        let label = Command::NewFolder.label();
+        // Wide windows name the action; narrower ones keep the icon.
+        let labelled = window_width >= NEW_FOLDER_LABEL_WIDTH;
+        let caption_size = appearance.typography().label_size.px() + 1.0;
+        let caption = fl!("files-menu-new-folder-short");
+        let new_folder_width = if labelled {
+            icon_button_width
+                + 6.0
+                + chrome::text_width(&caption, canopa_ui::font(appearance), caption_size)
+                + 4.0
+        } else {
+            icon_button_width
+        };
+        let symbol = desktop.icons.chrome(
+            Icon::NewFolder,
+            18.0,
+            if create.is_some() { 1.0 } else { 0.45 },
+        );
+        let content: Element<'_, Message> = if labelled {
+            row![
+                symbol,
+                text(caption)
+                    .size(caption_size)
+                    .font(canopa_ui::font(appearance))
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            symbol
+        };
+        let new_folder = canopa_ui::styled_action(
+            content,
+            create.clone(),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        )
+        .padding(menu_padding)
+        .width(new_folder_width);
+        let new_folder: Element<'_, Message> =
+            if labelled || tab.location.is_some() || desktop.action_menu.is_some() {
+                new_folder.into()
+            } else {
+                tooltip(
+                    new_folder,
+                    text(label.clone()).size(appearance.typography().label_size.px()),
+                    tooltip::Position::Bottom,
+                )
+                .into()
+            };
+        let new_folder = semantic(
+            Node::button(label)
+                .key("files-toolbar-new-folder")
+                .disabled(create.is_none())
+                .on_click(create),
+            new_folder,
+        );
         (
-            row![modes, menu]
+            row![new_folder, menu]
                 .spacing(6)
                 .align_y(Alignment::Center)
                 .into(),
-            width + 6.0 + menu_width,
+            new_folder_width + 6.0 + menu_width,
         )
     } else {
         (menu, menu_width)
@@ -647,7 +722,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
         - if show_places {
             0.0
         } else {
-            chrome::SIDEBAR_WIDTH + 1.0
+            chrome::BRAND_WIDTH
         };
     let required = |items: &[Item<'_>], labels| {
         let commands = items

@@ -54,6 +54,14 @@ impl Desktop {
         }
         self.configuration_applied = event.current_revision;
         let snapshot = event.current;
+        // Choosing where Properties appears opens or closes every panel at once.
+        if snapshot.settings.properties != self.configuration.settings.properties {
+            let panel = snapshot.settings.properties == crate::interface::PropertiesDisplay::Panel;
+            for window in self.windows.values_mut() {
+                window.properties =
+                    panel.then(|| super::properties_ui::Window::pending(Vec::new()));
+            }
+        }
         self.theme = canopa_ui::theme(snapshot.appearance.clone());
         let _ = self
             .preferences

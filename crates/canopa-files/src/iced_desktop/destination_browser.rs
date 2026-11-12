@@ -285,9 +285,7 @@ impl Browser {
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| {
-            canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
-        });
+        .style(move |_| chrome::window_surface(appearance, true));
         let default = matches!(scan.result.as_deref(), Some(Ok(_))).then(|| control(id, "use"));
         Some(focus::group(body, order, reveal, default))
     }

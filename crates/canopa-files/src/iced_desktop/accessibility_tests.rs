@@ -256,7 +256,7 @@ async fn native_rows_expose_selection_focus_and_the_delete_confirmation() {
     let alert = testing::named_role(&connection, "Delete permanently?", "alert").await;
     assert_eq!(
         alert.description().await,
-        "Permanently delete 2 items? This can't be undone."
+        "2 items will be deleted immediately. This can't be undone."
     );
     let cancel = testing::named_role(&connection, "Cancel", "push button").await;
     cancel.wait_for_state(atspi::STATE_FOCUSED).await;

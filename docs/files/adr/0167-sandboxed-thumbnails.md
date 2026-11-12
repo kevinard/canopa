@@ -56,6 +56,17 @@ Thumbnailers are read once per process from `thumbnailers/*.thumbnailer` in the
 XDG data directories (`TryExec` and the program must exist). Installing a new
 thumbnailer takes effect at the next start of Files.
 
+For PDFs, when no installed thumbnailer covers them, Files supplies its own
+entry: Poppler's `pdftoppm` (the optional dependency Quick Look already uses)
+renders the first page, in the same sandbox and bounds. A shell strips the
+`.png` that `pdftoppm` adds to its output name. An installed PDF thumbnailer,
+such as Papers' or Evince's, takes precedence. Office documents rely on
+`gsf-office-thumbnailer`, which shows the thumbnail a document carries.
+
+In List and Columns rows, only pictures and videos show their thumbnail, in a
+hairline frame; a page or sheet shrunk to row size reads as a blank tile, so
+documents keep their type icon there. Icons view shows every thumbnail.
+
 ## Sandbox
 
 External thumbnailers parse untrusted files with C libraries. Each run uses the

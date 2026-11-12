@@ -2,7 +2,6 @@
 use super::file_operations::Event;
 use super::*;
 use crate::operation_jobs::{JobSnapshot, Phase, TransferProgress, TransferReport};
-use canopa_theme::UiKind;
 use iced::{
     Length,
     widget::{column, container, responsive, row, scrollable, text},
@@ -744,7 +743,7 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
     .padding(padding)
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+    .style(move |_| chrome::window_surface(&appearance, true));
     super::focus::group(body, order, reveal, Some(control(dialog.window, 0)))
 }
 

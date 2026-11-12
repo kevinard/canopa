@@ -82,7 +82,6 @@ files-close-window = Close window
 ## Browser window
 
 # The application's name, shown at the top of the sidebar.
-files-app-name = Files
 # Accessible names of window regions.
 files-toolbar = Toolbar
 files-tabs = Tabs
@@ -104,6 +103,7 @@ files-column-view = Column view
 files-list-view = List view
 files-icon-view = Icon view
 # Captions of the view switcher.
+files-view-current = View: { $view }
 files-view-columns = Columns
 files-view-list = List
 files-view-icons = Icons
@@ -112,6 +112,9 @@ files-status-items = { $count ->
     [one] { $count } item
    *[other] { $count } items
 }
+# A folder with at least $count items; counting stopped there.
+files-folder-items-at-least = { $count }+ items
+files-folder-empty = Empty
 files-status-results = { $count ->
     [one] { $count } result
    *[other] { $count } results
@@ -119,6 +122,8 @@ files-status-results = { $count ->
 # $count is the number of files a search has looked at.
 files-status-inspected = { $count } inspected
 files-status-selected = { $count } selected
+# The selection and the total size of its files, such as 12.1 KiB.
+files-status-selected-size = { $count } selected ({ $size })
 files-status-stopping = Stopping…
 files-status-searching = Searching…
 files-status-stopped = Stopped
@@ -165,7 +170,7 @@ files-preferences-page-views = Views
 files-preferences-page-toolbar = Toolbar
 files-preferences-page-locations = Locations
 files-preferences-page-shortcuts = Shortcuts
-files-preferences-status-initial = Changes apply to all Files windows when saved.
+files-preferences-status-initial = Changes apply to all Files windows as you make them.
 files-preferences-too-many-locations = At most 256 locations are supported.
 files-preferences-column-width-invalid = Column width must be a whole number from 160 to 640.
 files-preferences-bookmark-path-invalid = A bookmark needs an absolute local path, ~/ path or local file URI.
@@ -182,33 +187,38 @@ files-preferences-worker-unavailable = The configuration worker is unavailable.
 files-preferences-worker-stopped = The configuration worker stopped before replying.
 files-preferences-saving = Saving…
 files-preferences-reloading = Reloading…
-files-preferences-saved = Saved. Preferences apply to all Files windows.
+files-preferences-saved = Saved. Changes apply to all Files windows.
 files-preferences-reloaded = Reloaded shared Files preferences.
 
 ## Preferences window: controls
 
 files-preferences-subtitle = Choose how Files looks and behaves.
 files-preferences-read-only = Built-in defaults are read-only. Start Files with a writable configuration to save preferences.
-files-preferences-changed-outside = Configuration changed outside this editor. Your draft is kept; Reload before saving.
+files-preferences-changed-outside = Configuration changed outside this editor. Your draft is kept; choose Revert changes to load the new version before saving.
 files-preferences-discard-question = Discard unsaved preference changes?
 files-preferences-reload-question = Reload and discard unsaved preference changes?
 files-preferences-keep-editing = Keep editing
 files-preferences-discard = Discard
 files-preferences-reload = Reload
-files-preferences-save = Save preferences
+files-preferences-pending = Press Enter to apply the typed value.
 # Keyboard hints under the Preferences window's status line.
 files-preferences-keys = Alt+1–4 pages · Ctrl+S Save · Ctrl+R Reload
 files-preferences-default-view = Default view
 files-preferences-sort-by = Sort by
 files-preferences-descending = Descending order
-files-preferences-column-layout = Column layout
+files-preferences-columns-view = Columns view
+files-preferences-all-views = Defaults
+files-preferences-each-view = View-specific settings
+files-preferences-list-view = List view
+files-preferences-icons-view = Icons view
 files-preferences-column-width = Column width
 files-preferences-column-width-range = 160–640 pixels
-files-preferences-list-details = Details in List view
+files-preferences-list-details = Details to show
 files-preferences-modified-date = Modified date
 files-preferences-thumbnails = Thumbnails
 files-preferences-icon-size = Icon size
-files-preferences-views-note = Folders inherit these settings unless they have their own view options. “Local files only” skips network shares and removable media.
+files-preferences-views-note = Folders inherit these settings unless they have their own view options.
+files-preferences-thumbnails-note = “Local files only” skips network shares and removable media.
 # The toolbar item that is the location field.
 files-preferences-location-field = Location field
 # A toolbar item that runs the custom action $name.
@@ -277,6 +287,7 @@ files-operations-save-before-closing = Save the operation result before closing 
 files-menu-open = Open
 files-menu-open-with = Open With…
 files-menu-new-folder = New folder…
+files-menu-new-folder-short = New folder
 files-menu-rename = Rename…
 files-menu-delete-permanently = Delete permanently…
 files-menu-edit-custom-actions = Edit custom actions…
@@ -337,17 +348,18 @@ files-rename-worker-stopped = The operation worker stopped before preparing Rena
 files-operation-queue-unavailable = The operation queue is unavailable.
 files-accepting-operation = Accepting operation…
 # A folder inside the home folder, such as "Home / Documents / Work".
-files-home-path = Home / { $path }
+files-home-path = Home › { $path }
 
 ## Permanent deletion confirmation
 
 files-delete-title = Delete permanently?
 files-delete-title-empty-trash = Empty Trash?
 files-delete-title-no-trash = Can't move to Trash
-files-delete-one = Permanently delete “{ $name }”? This can't be undone.
+files-delete-one = “{ $name }” will be deleted immediately. This can't be undone.
+files-delete-cannot-undo = The item below will be deleted immediately. This can't be undone.
 files-delete-many = { $count ->
-    [one] Permanently delete { $count } item? This can't be undone.
-   *[other] Permanently delete { $count } items? This can't be undone.
+    [one] { $count } item will be deleted immediately. This can't be undone.
+   *[other] { $count } items will be deleted immediately. This can't be undone.
 }
 files-delete-no-trash-one = “{ $name }” is on a volume without a usable Trash, so it cannot be moved to Trash. Delete it permanently instead? This can't be undone.
 files-delete-no-trash-many = { $count ->
@@ -378,6 +390,11 @@ files-confirmation-failed = Could not open the confirmation.
 
 # A date and time with seconds: "Nov 11, 2026 · 2:30:05 PM".
 files-date-time = { $date } · { $time }
+# A modification time earlier today or yesterday; $time is a time of day.
+files-date-today = Today, { $time }
+files-date-yesterday = Yesterday, { $time }
+# A time earlier this year: $date is a month and day, $time a time of day.
+files-date-this-year = { $date }, { $time }
 files-unknown = Unknown
 
 ## Operation questions: conflicts and Undo decisions
@@ -703,10 +720,36 @@ files-properties-cancelled = Properties inspection cancelled.
 files-properties-copy-location = Copy location
 files-properties-copy-locations = Copy locations
 files-properties-link-target = Link target
+files-properties-dimensions = Dimensions
+files-command-properties = Properties
+files-preferences-properties = Properties
+files-properties-display-window = In a window
+files-properties-display-panel = In a side panel
+files-properties-created = Created
+files-properties-opens-with = Opens with
+files-properties-change = Change…
+files-properties-advanced = Mode and IDs
+files-properties-access-saving = Updating access…
+# Folder access levels, as file managers name them.
+files-permission-folder-none = No access
+files-permission-folder-list = List files only
+files-permission-folder-access = Access files
+files-permission-folder-change = Create and delete files
+files-permission-file-none = No access
+files-permission-file-read = Read only
+files-permission-file-write = Read and write
+files-properties-panel-empty = Select an item to see its properties.
+files-properties-hide-panel = Hide properties
+# $width and $height are image sizes in pixels.
+files-properties-pixels = { $width } × { $height } pixels
+# $size is a rounded size such as 11.4 KiB; $exact the byte count with its unit.
+files-properties-size-detail = { $size } ({ $exact })
 files-properties-access = Access
 files-properties-owner = Owner
 files-properties-group = Group
 files-properties-others = Others
+files-properties-account = Account
+files-properties-permission = Permission
 # $who is Owner or Group, $identity the user or group name.
 files-properties-access-identity = { $who } · { $identity }
 # $mode is an octal mode such as 0644.
@@ -719,14 +762,14 @@ files-size-bytes = { $bytes ->
    *[other] { $bytes } bytes
 }
 files-date-out-of-range = Outside supported date range
-files-permission-none = none
-files-permission-x = execute
-files-permission-w = write
-files-permission-wx = write and execute
-files-permission-r = read
-files-permission-rx = read and execute
-files-permission-rw = read and write
-files-permission-rwx = read, write, and execute
+files-permission-none = None
+files-permission-x = Execute
+files-permission-w = Write
+files-permission-wx = Write and execute
+files-permission-r = Read
+files-permission-rx = Read and execute
+files-permission-rw = Read and write
+files-permission-rwx = Read, write, and execute
 
 ## Trash window and Restore to folder
 
@@ -998,6 +1041,13 @@ files-preview-actual-size = Actual size
 files-preview-zoom-in = Zoom in
 # Caption of the Fit to window button.
 files-preview-fit-short = Fit
+files-preview-actual-short = 1:1
+# The preview’s Open button names the default application.
+files-preview-open-with = Open with { $app }
+files-preview-previous-item = Previous item (Up)
+files-preview-next-item = Next item (Down)
+# The previewed item’s place in its folder, such as 8 of 11.
+files-preview-position = { $index } of { $count }
 files-preview-page = { $page } / { $pages }
 files-preview-preparing = Preparing preview…
 files-preview-unavailable = Preview unavailable: { $error }
@@ -1278,6 +1328,7 @@ files-config-toolbar-location = the toolbar needs exactly one location field and
 files-config-toolbar-unknown = unknown or duplicate toolbar item
 files-config-too-many-places = at most 256 locations are supported
 files-config-duplicate-place = duplicate built-in location
+files-config-list-columns-invalid = list column widths are outside their supported range
 files-config-bookmark-invalid = a bookmark needs a name and an absolute local folder
 files-config-too-many-shortcuts = at most eight shortcuts per command are supported
 files-config-action-modifier = custom actions need a Ctrl, Alt, Super or function-key shortcut

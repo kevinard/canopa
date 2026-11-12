@@ -701,7 +701,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(appearance, true));
     super::accessibility_ui::dialog(
         "files-device-dialog",
         dialog.title(),

@@ -14,13 +14,32 @@ const MAXIMUM_ZOOM: f32 = 8.0;
 pub(super) struct Prepared {
     preview: PreparedPreview,
     highlighting: preview_highlights::Prepared,
+    /// The type's description, such as "PNG image", when the type is known.
+    kind: Option<String>,
+    /// Pixel dimensions read from an image header; never decoded again.
+    dimensions: Option<(u32, u32)>,
+    /// The default application's name, so Open says where the file goes.
+    opener: Option<String>,
 }
 impl Prepared {
     fn new(preview: PreparedPreview, cancellation: &Cancellation) -> io::Result<Self> {
         let highlighting = preview_highlights::Prepared::new(&preview.content, cancellation)?;
+        let (content_type, _) = gio::content_type_guess(Some(&preview.path), None);
+        let known = !gio::content_type_is_unknown(&content_type);
+        let kind = known.then(|| gio::content_type_get_description(&content_type).to_string());
+        let opener = known
+            .then(|| gio::AppInfo::default_for_type(&content_type, false))
+            .flatten()
+            .map(|app| gio::prelude::AppInfoExt::display_name(&app).to_string());
+        let dimensions = matches!(preview.content, PreviewContent::Image(_))
+            .then(|| ::image::image_dimensions(&preview.path).ok())
+            .flatten();
         Ok(Self {
             preview,
             highlighting,
+            kind,
+            dimensions,
+            opener,
         })
     }
 }
@@ -249,11 +268,12 @@ impl PreviewWindow {
         } else {
             vec![]
         };
+        // The sizing modes come first, then the zoom steps, as drawn.
         if self.bitmap.is_some() {
+            controls.extend([Control::Fit, Control::Actual]);
             if self.scale() > MINIMUM_ZOOM {
                 controls.push(Control::ZoomOut);
             }
-            controls.extend([Control::Fit, Control::Actual]);
             if self.scale() < MAXIMUM_ZOOM {
                 controls.push(Control::ZoomIn);
             }
@@ -378,7 +398,7 @@ impl Desktop {
         let size = if audio {
             Size::new(560.0, 345.0)
         } else {
-            Size::new(760.0, 510.0)
+            Size::new(880.0, 620.0)
         };
         let settings = window::Settings {
             size,
@@ -767,17 +787,12 @@ pub(super) fn view<'a>(
     id: window::Id,
     preview: &'a PreviewWindow,
 ) -> Element<'a, Message> {
-    use canopa_theme::UiKind;
     let appearance = &desktop.configuration.appearance;
     let body_size = appearance.typography().body_size.px();
     let controls = preview.controls();
-    let raw = |label: String, control: Control| {
-        // The close symbol is drawn larger than captions.
-        let symbol = label == "×";
+    let raw_content = |content: Element<'a, Message>, control: Control, treatment| {
         canopa_ui::styled_action(
-            text(label)
-                .font(canopa_ui::font(appearance))
-                .size(appearance.typography().label_size.px() + if symbol { 5.0 } else { 0.0 }),
+            content,
             controls
                 .contains(&control)
                 .then_some(Message::Preview(Event::Activate(
@@ -785,14 +800,44 @@ pub(super) fn view<'a>(
                     preview.revision,
                     control,
                 ))),
-            if control == Control::Open && preview.media.is_none() {
-                canopa_ui::Action::Primary
-            } else {
-                canopa_ui::Action::Quiet
-            },
+            treatment,
             preview.focused == Some(control),
             appearance,
         )
+    };
+    let raw = |label: String, control: Control| {
+        raw_content(
+            text(label)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px() + 1.0)
+                .into(),
+            control,
+            // Open is a way out of the preview, not its purpose: a secondary button.
+            if control == Control::Open && preview.media.is_none() {
+                canopa_ui::Action::Normal
+            } else {
+                canopa_ui::Action::Quiet
+            },
+        )
+    };
+    // Zoom and page controls form one segmented group; the active sizing
+    // mode is drawn as the selected segment.
+    let segment = |content: Element<'a, Message>, control: Control, selected: bool| {
+        let button = raw_content(
+            container(content)
+                .center_x(Length::Shrink)
+                .center_y(20)
+                .into(),
+            control,
+            canopa_ui::Action::Quiet,
+        )
+        .padding([5, 12]);
+        // Focus keeps the shared ring; only an unfocused selection is restyled.
+        if selected && preview.focused != Some(control) {
+            button.style(chrome::selected_segment(appearance))
+        } else {
+            button
+        }
     };
     // Symbols and abbreviations get spoken names; focus is held in the model.
     let semantics = |control: Control| {
@@ -823,23 +868,74 @@ pub(super) fn view<'a>(
     let button = |label: String, control: Control| {
         super::accessibility_ui::semantic(semantics(control), raw(label, control))
     };
-    let mut controls_row = row![].spacing(6);
+    let caption = |label: String| -> Element<'a, Message> {
+        text(label)
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().label_size.px() + 1.0)
+            .into()
+    };
+    let glyph =
+        |icon: chrome::Icon| -> Element<'a, Message> { desktop.icons.chrome(icon, 16.0, 0.9) };
+    // Two groups in focus order: the sizing modes, then the zoom steps around
+    // the live scale, so Fit never reads as if it were 100%.
+    let mut modes_row = row![].spacing(4).align_y(iced::Alignment::Center);
+    let mut controls_row = row![].spacing(4).align_y(iced::Alignment::Center);
     if preview.bitmap.is_some() {
+        let fit = preview.zoom.is_none();
+        let actual = preview
+            .zoom
+            .is_some_and(|zoom| (zoom - 1.0).abs() < f32::EPSILON);
+        modes_row = modes_row
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::Fit),
+                segment(caption(fl!("files-preview-fit-short")), Control::Fit, fit),
+            ))
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::Actual),
+                segment(
+                    caption(fl!("files-preview-actual-short")),
+                    Control::Actual,
+                    actual,
+                ),
+            ));
+        let scale = container(
+            text(canopa_i18n::format::percent(
+                f64::from(preview.scale()) * 100.0,
+            ))
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().label_size.px() + 1.0),
+        )
+        .center_x(52);
         controls_row = controls_row
-            .push(button("−".into(), Control::ZoomOut))
-            .push(button(fl!("files-preview-fit-short"), Control::Fit))
-            .push(button(canopa_i18n::format::percent(100.0), Control::Actual))
-            .push(button("+".into(), Control::ZoomIn));
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::ZoomOut),
+                segment(glyph(chrome::Icon::Minus), Control::ZoomOut, false),
+            ))
+            .push(scale)
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::ZoomIn),
+                segment(glyph(chrome::Icon::Plus), Control::ZoomIn, false),
+            ));
     }
     if let Some(PreviewContent::Pdf { page, pages, .. }) = preview.content() {
         controls_row = controls_row
-            .push(button(fl!("files-previous"), Control::Previous))
-            .push(text(fl!(
-                "files-preview-page",
-                page = u64::from(*page),
-                pages = u64::from(*pages)
-            )))
-            .push(button(fl!("files-next"), Control::Next));
+            .push(iced::widget::space().width(10))
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::Previous),
+                segment(caption(fl!("files-previous")), Control::Previous, false),
+            ))
+            .push(
+                container(caption(fl!(
+                    "files-preview-page",
+                    page = u64::from(*page),
+                    pages = u64::from(*pages)
+                )))
+                .padding([0, 8]),
+            )
+            .push(super::accessibility_ui::semantic(
+                semantics(Control::Next),
+                segment(caption(fl!("files-next")), Control::Next, false),
+            ));
     }
     let content: Element<'a, Message> = if let Some(media) = &preview.media {
         media.body(
@@ -933,8 +1029,16 @@ pub(super) fn view<'a>(
         .and_then(|result| result.as_ref().ok())
         .map_or_else(String::new, |prepared| {
             // Independent facts, joined like the rest of the subtitle.
-            let mut parts =
-                vec![super::listing_ui::size(prepared.preview.size).replace(' ', "\u{a0}")];
+            let mut parts = Vec::new();
+            if let Some((width, height)) = prepared.dimensions {
+                // Formatted as Properties shows them.
+                parts.push(fl!(
+                    "files-properties-pixels",
+                    width = width,
+                    height = height
+                ));
+            }
+            parts.push(super::listing_ui::size(prepared.preview.size).replace(' ', "\u{a0}"));
             if matches!(
                 &prepared.preview.content,
                 PreviewContent::Text {
@@ -976,7 +1080,12 @@ pub(super) fn view<'a>(
     let compact = preview.viewport.width < 360.0;
     let kind = match preview.content() {
         Some(PreviewContent::Text { .. }) => fl!("files-preview-text"),
-        Some(PreviewContent::Image(_)) => fl!("files-preview-image"),
+        Some(PreviewContent::Image(_)) => preview
+            .result
+            .as_deref()
+            .and_then(|result| result.as_ref().ok())
+            .and_then(|prepared| prepared.kind.clone())
+            .unwrap_or_else(|| fl!("files-preview-image")),
         Some(PreviewContent::Pdf { .. }) => fl!("files-preview-pdf"),
         Some(PreviewContent::Audio(_)) => {
             if compact {
@@ -1002,34 +1111,149 @@ pub(super) fn view<'a>(
     let close = iced::widget::tooltip(
         super::accessibility_ui::semantic(
             semantics(Control::Close),
-            raw("×".into(), Control::Close).width(32).padding(4),
+            raw_content(
+                container(desktop.icons.chrome(chrome::Icon::Close, 16.0, 0.86))
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill)
+                    .into(),
+                Control::Close,
+                canopa_ui::Action::Quiet,
+            )
+            .width(30)
+            .height(30)
+            .padding(4)
+            .style(chrome::close_style(&appearance)),
         ),
         text(fl!("files-preview-close"))
             .font(canopa_ui::font(&appearance))
             .size(appearance.typography().label_size.px()),
         iced::widget::tooltip::Position::Bottom,
     );
+    // Previous and next step through the source folder exactly as the arrow
+    // keys do in the preview; they are pointer shortcuts, not extra stops.
+    let step = |icon: chrome::Icon, key: keyboard::key::Named, label: String| {
+        let message = Message::Key(
+            id,
+            keyboard::Key::Named(key),
+            keyboard::Modifiers::default(),
+            None,
+        );
+        iced::widget::tooltip(
+            canopa_ui::styled_action(
+                container(desktop.icons.chrome(icon, 16.0, 0.9))
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill),
+                Some(message),
+                canopa_ui::Action::Quiet,
+                false,
+                &appearance,
+            )
+            .width(34)
+            .height(34)
+            .padding(4)
+            .style(chrome::close_style(&appearance)),
+            text(label)
+                .font(canopa_ui::font(&appearance))
+                .size(appearance.typography().label_size.px()),
+            iced::widget::tooltip::Position::Bottom,
+        )
+    };
+    let browsing = preview.target.is_some() && preview.media.is_none();
+    // Where the previewed item sits in its folder's listing, shown between
+    // the arrows that step through it.
+    let position = preview.target.as_ref().and_then(|target| {
+        let browser = desktop.active(preview.source)?.browser.as_ref()?;
+        let visible = browser.visible_entries();
+        let index = visible.iter().position(|entry| entry.path == target.path)?;
+        Some((index + 1, visible.len()))
+    });
     let mut body = column![chrome::heading_line(
         desktop,
         icon,
         filename,
         subtitle,
-        canopa_ui::direction::row([button(fl!("files-menu-open"), Control::Open), close.into()])
-            .spacing(4)
-            .align_y(iced::Alignment::Center)
-            .into(),
+        canopa_ui::direction::row([
+            button(
+                preview
+                    .result
+                    .as_deref()
+                    .and_then(|result| result.as_ref().ok())
+                    .and_then(|prepared| prepared.opener.clone())
+                    .map_or_else(
+                        || fl!("files-menu-open"),
+                        |app| fl!("files-preview-open-with", app = app),
+                    ),
+                Control::Open,
+            ),
+            if browsing {
+                row![
+                    // Stepping through the folder stands apart from Open and Close.
+                    iced::widget::space().width(6),
+                    step(
+                        chrome::Icon::Back,
+                        keyboard::key::Named::ArrowUp,
+                        fl!("files-preview-previous-item")
+                    ),
+                    text(position.map_or_else(String::new, |(index, count)| {
+                        fl!("files-preview-position", index = index, count = count)
+                    }))
+                    .font(canopa_ui::font(&appearance))
+                    .size(appearance.typography().label_size.px() + 1.0)
+                    .color(chrome::ink(&appearance, canopa_theme::ColorRole::Muted)),
+                    step(
+                        chrome::Icon::Forward,
+                        keyboard::key::Named::ArrowDown,
+                        fl!("files-preview-next-item")
+                    ),
+                    iced::widget::space().width(10),
+                ]
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .into()
+            } else {
+                iced::widget::space().width(0).into()
+            },
+            close.into(),
+        ])
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
+        .into(),
     )]
-    .spacing(8)
+    .spacing(12)
     .padding(16);
+    let staged = preview.bitmap.is_some() && preview.media.is_none();
+    let stage_appearance = appearance.clone();
+    let stage = container(content)
+        .padding(4)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| {
+            if staged {
+                chrome::stage(&stage_appearance)
+            } else {
+                container::Style::default()
+            }
+        });
     if preview.bitmap.is_some() {
-        body = body.push(container(controls_row.wrap()).padding([0, 4]));
+        let group_appearance = appearance.clone();
+        let modes_appearance = appearance.clone();
+        let pill = row![
+            container(modes_row)
+                .padding(3)
+                .style(move |_| chrome::segmented(&modes_appearance)),
+            container(controls_row)
+                .padding(3)
+                .style(move |_| chrome::segmented(&group_appearance)),
+        ]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+        // The controls sit below the picture, never over it.
+        body = body
+            .push(stage)
+            .push(container(pill).center_x(Length::Fill));
+    } else {
+        body = body.push(stage);
     }
-    body = body.push(
-        container(content)
-            .padding(4)
-            .width(Length::Fill)
-            .height(Length::Fill),
-    );
     if let Some(media) = &preview.media {
         body = body.push(media.transport(
             id,
@@ -1043,7 +1267,7 @@ pub(super) fn view<'a>(
         .id(root_id(id))
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)))
+        .style(move |_| chrome::window_surface(&appearance, true))
         .into()
 }
 

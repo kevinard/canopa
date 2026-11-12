@@ -114,6 +114,39 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                 }
                 settings.sidebar = SidebarMode::from_id(values[0]).ok_or_else(invalid)?;
             }
+            "properties" => {
+                let values = strings(node)?;
+                if values.len() != 1 {
+                    return Err(invalid());
+                }
+                settings.properties =
+                    crate::interface::PropertiesDisplay::from_id(values[0]).ok_or_else(invalid)?;
+            }
+            "list-columns" => {
+                if node.children().is_some() {
+                    return Err(invalid());
+                }
+                let mut props = BTreeSet::new();
+                for entry in node.entries() {
+                    let name = entry.name().ok_or_else(invalid)?.value();
+                    if entry.ty().is_some() || !props.insert(name) {
+                        return Err(invalid());
+                    }
+                    let width = entry
+                        .value()
+                        .as_integer()
+                        .and_then(|n| u16::try_from(n).ok())
+                        .ok_or_else(invalid)?;
+                    let columns = &mut settings.list_columns;
+                    *match name {
+                        "name" => &mut columns.name,
+                        "size" => &mut columns.size,
+                        "modified" => &mut columns.modified,
+                        "kind" => &mut columns.kind,
+                        _ => return Err(invalid()),
+                    } = Some(width);
+                }
+            }
             "places" => {
                 if !node.entries().is_empty() {
                     return Err(invalid());
@@ -299,6 +332,26 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
     places.set_children(children);
     let mut nodes = vec![view, toolbar, sidebar, places];
     // Written only when chosen, so existing files keep their exact shape.
+    if settings.properties != Default::default() {
+        let mut properties = KdlNode::new("properties");
+        properties.push(settings.properties.id());
+        nodes.push(properties);
+    }
+    if settings.list_columns != Default::default() {
+        let mut columns = KdlNode::new("list-columns");
+        let widths = &settings.list_columns;
+        for (name, width) in [
+            ("name", widths.name),
+            ("size", widths.size),
+            ("modified", widths.modified),
+            ("kind", widths.kind),
+        ] {
+            if let Some(width) = width {
+                columns.push((name, i128::from(width)));
+            }
+        }
+        nodes.push(columns);
+    }
     if settings.thumbnails != Default::default() {
         let mut thumbnails = KdlNode::new("thumbnails");
         thumbnails.push(("show", settings.thumbnails.show.id()));
@@ -352,5 +405,30 @@ mod tests {
         ] {
             assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn list_column_widths_round_trip_and_stay_out_of_default_files() {
+        let parsed = parse(&"list-columns name=320 modified=150\n".parse().unwrap()).unwrap();
+        assert_eq!(parsed.list_columns.name, Some(320));
+        assert_eq!(parsed.list_columns.modified, Some(150));
+        assert_eq!(parsed.list_columns.size, None);
+        assert_eq!(parse(&document(nodes(&parsed))).unwrap(), parsed);
+        assert!(
+            !nodes(&InterfaceSettings::default())
+                .iter()
+                .any(|node| node.name().value() == "list-columns")
+        );
+        for invalid in [
+            "list-columns name=\"wide\"\n",
+            "list-columns colour=10\n",
+            "list-columns size=80 size=90\n",
+            "list-columns 80\n",
+        ] {
+            assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
+        }
+        let mut out_of_range = InterfaceSettings::default();
+        out_of_range.list_columns.size = Some(8);
+        assert!(out_of_range.validate(&[]).is_err());
     }
 }

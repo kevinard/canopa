@@ -96,6 +96,8 @@ enum Attempt {
 pub struct Generator {
     cache: Option<Cache>,
     thumbnailers: Thumbnailers,
+    /// Used for types no installed thumbnailer covers.
+    fallbacks: Vec<Thumbnailer>,
     database: Arc<MimeDatabase>,
     sandbox: Option<Sandbox>,
     limits: Limits,
@@ -116,6 +118,7 @@ impl Generator {
         Self {
             cache: Cache::user(),
             thumbnailers: Thumbnailers::load(&Thumbnailers::search_dirs(), &program_path()),
+            fallbacks: fallbacks(&program_path()),
             database: MimeDatabase::system(),
             sandbox,
             limits: Limits::default(),
@@ -176,7 +179,11 @@ impl Generator {
             failed = bitmap.is_none();
         }
         if bitmap.is_none()
-            && let Some(thumbnailer) = self.thumbnailers.for_types([&*mime])
+            && let Some(thumbnailer) = self.thumbnailers.for_types([&*mime]).or_else(|| {
+                self.fallbacks
+                    .iter()
+                    .find(|fallback| fallback.mime_types.iter().any(|known| *known == *mime))
+            })
         {
             match self.run(thumbnailer, path, &source, flavor.side(), cancellation) {
                 Attempt::Produced(png) => {
@@ -306,6 +313,37 @@ impl Generator {
             None => Attempt::Failed,
         }
     }
+}
+
+/// Thumbnailers Files supplies for types that installed ones may not cover,
+/// run in the same sandbox: PDFs through Poppler's `pdftoppm`, which Quick
+/// Look already uses. Its output name gains `.png`, so a shell strips it first
+/// (`%%` is a literal `%` among the field codes).
+fn fallbacks(search_path: &[PathBuf]) -> Vec<Thumbnailer> {
+    let poppler = Thumbnailer {
+        id: "canopa-files-poppler.thumbnailer".into(),
+        try_exec: Some("pdftoppm".into()),
+        exec: [
+            "sh",
+            "-c",
+            r#"exec pdftoppm -f 1 -l 1 -singlefile -scale-to "$1" -png "$2" "${3%%.png}""#,
+            "sh",
+            "%s",
+            "%i",
+            "%o",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        mime_types: vec!["application/pdf".into()],
+    };
+    let installed = |program: &str| search_path.iter().any(|dir| dir.join(program).is_file());
+    [poppler]
+        .into_iter()
+        .filter(|entry| {
+            entry.try_exec.as_deref().is_none_or(installed)
+                && resolve_program(entry, search_path).is_some()
+        })
+        .collect()
 }
 
 /// Where thumbnailer programs are looked up; the sandbox sees only `/usr`.
@@ -660,6 +698,7 @@ mod tests {
             Generator {
                 cache: Some(self.cache()),
                 thumbnailers: Thumbnailers::load(&[dir], &search),
+                fallbacks: Vec::new(),
                 database: Arc::new(MimeDatabase::load(&[mime])),
                 sandbox,
                 limits: Limits {
@@ -945,6 +984,72 @@ mod tests {
             Outcome::Unavailable
         ));
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// One red US Letter page, with a valid cross-reference table.
+    fn red_pdf(path: &Path) {
+        let content = "1 0 0 rg 0 0 612 792 re f";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>".to_owned(),
+            format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            ),
+        ];
+        let mut pdf = String::from("%PDF-1.4\n");
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+        }
+        let xref = pdf.len();
+        pdf.push_str(&format!(
+            "xref\n0 {}\n0000000000 65535 f \n",
+            objects.len() + 1
+        ));
+        for offset in offsets {
+            pdf.push_str(&format!("{offset:010} 00000 n \n"));
+        }
+        pdf.push_str(&format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        ));
+        std::fs::write(path, pdf).unwrap();
+    }
+
+    #[test]
+    fn pdfs_without_an_installed_thumbnailer_render_through_poppler_in_the_sandbox() {
+        let Some(sandbox) = bubblewrap_or_skip() else {
+            return;
+        };
+        let fallbacks = fallbacks(&program_path());
+        if fallbacks.is_empty() {
+            eprintln!("skipping: Poppler is not installed here");
+            return;
+        }
+        let fixture = Fixture::new();
+        let generator = Generator {
+            fallbacks,
+            database: MimeDatabase::system(),
+            sandbox: Some(sandbox),
+            search_path: program_path(),
+            ..fixture.generator(None, None, Duration::from_secs(15))
+        };
+        let document = fixture.root.path().join("letter.pdf");
+        red_pdf(&document);
+        let bitmap = ready(generator.thumbnail(
+            &document,
+            Flavor::Normal,
+            ThumbnailPolicy::Always,
+            &Cancellation::default(),
+        ));
+        // A portrait page fitted into the 128 pixel box.
+        assert_eq!(bitmap.height, 128);
+        assert!((97..=100).contains(&bitmap.width), "{}", bitmap.width);
+        let middle = ((bitmap.height / 2 * bitmap.width + bitmap.width / 2) * 4) as usize;
+        assert_eq!(&bitmap.rgba[middle..middle + 3], &[255, 0, 0]);
     }
 
     /// Hands-on: the installed glycin thumbnailer through the real sandbox.

@@ -66,6 +66,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 ## Decision index
 
 - [Network locations, phones and cameras through GVFS](adr/0168-network-locations-through-gvfs.md).
+- [Live preferences, folder item counts and the Properties panel](adr/0169-live-preferences-folder-counts-and-properties-panel.md).
 
 - [Thumbnails in a sandbox](adr/0167-sandboxed-thumbnails.md).
 

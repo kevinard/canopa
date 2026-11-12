@@ -33,6 +33,8 @@ struct Request {
     names: Vec<String>,
     foreground: [u8; 4],
     on_accent: [u8; 4],
+    danger: [u8; 4],
+    warning: [u8; 4],
     file_foreground: [u8; 4],
     folder_foreground: [u8; 4],
     media_foreground: [u8; 4],
@@ -124,6 +126,10 @@ impl Icons {
             foreground,
             on_accent: chrome::ink(&configuration.appearance, canopa_theme::ColorRole::OnAccent)
                 .into_rgba8(),
+            danger: chrome::ink(&configuration.appearance, canopa_theme::ColorRole::Danger)
+                .into_rgba8(),
+            warning: chrome::ink(&configuration.appearance, canopa_theme::ColorRole::Warning)
+                .into_rgba8(),
             folder_foreground: chrome::ink(
                 &configuration.appearance,
                 canopa_theme::ColorRole::Accent,
@@ -199,10 +205,44 @@ impl Icons {
     }
 
     pub fn file(&self, entry: &crate::browse::Entry, size: f32) -> Element<'_, Message> {
-        let content: Element<'_, Message> = match self.visual(entry) {
-            FileVisual::Thumbnail(handle)
-            | FileVisual::Type(handle)
-            | FileVisual::Glyph(handle) => image(handle.clone()).width(size).height(size).into(),
+        let content: Element<'_, Message> = match self.visual(entry, size <= 32.0) {
+            // Row-sized thumbnails fill the icon square like the type icons
+            // beside them; larger ones show the whole picture.
+            // A hairline frame keeps light pages and sheets from dissolving
+            // into a blank square on the row.
+            FileVisual::Thumbnail(handle) if size <= 32.0 => {
+                let [r, g, b, _] = self.file_foreground;
+                let edge = iced::Color::from_rgba8(r, g, b, 0.32);
+                container(
+                    image(handle.clone())
+                        .width(size - 2.0)
+                        .height(size - 2.0)
+                        .content_fit(iced::ContentFit::Cover)
+                        .border_radius(2.0),
+                )
+                .padding(1)
+                .style(move |_| {
+                    container::Style::default().border(iced::Border {
+                        color: edge,
+                        width: 1.0,
+                        radius: 3.0.into(),
+                    })
+                })
+                .into()
+            }
+            FileVisual::Thumbnail(handle) => image(handle.clone()).width(size).height(size).into(),
+            // Large glyphs sit slightly inside the square so documents and
+            // thumbnails read at the same optical size in a grid.
+            FileVisual::Type(handle) | FileVisual::Glyph(handle) if size > 32.0 => {
+                let inner = (size * 0.84).round();
+                container(image(handle.clone()).width(inner).height(inner))
+                    .center_x(size)
+                    .center_y(size)
+                    .into()
+            }
+            FileVisual::Type(handle) | FileVisual::Glyph(handle) => {
+                image(handle.clone()).width(size).height(size).into()
+            }
             FileVisual::Pending => iced::widget::space().width(size).height(size).into(),
         };
         container(content).width(size).height(size).into()
@@ -211,12 +251,19 @@ impl Icons {
     /// What stands for an entry, in precedence order: a thumbnail prepared for
     /// this path and modification time, then the type icon, then the built-in
     /// glyph. Thumbnails keep their aspect ratio inside the icon square.
-    fn visual(&self, entry: &crate::browse::Entry) -> FileVisual<'_> {
+    /// In a row, only pictures and videos show a thumbnail: a page or sheet
+    /// shrunk to row size reads as a blank tile, so documents keep their type.
+    fn visual(&self, entry: &crate::browse::Entry, row: bool) -> FileVisual<'_> {
         use super::file_icon::FileIcon;
-        if let Some(handle) = self.thumbnails.handle(entry) {
+        let mime = self.entry_type(entry);
+        if let Some(handle) = self.thumbnails.handle(entry)
+            && (!row
+                || mime
+                    .as_deref()
+                    .is_some_and(|mime| mime.starts_with("image/") || mime.starts_with("video/")))
+        {
             return FileVisual::Thumbnail(handle);
         }
-        let mime = self.entry_type(entry);
         if let Some(handle) = mime
             .as_deref()
             .and_then(|mime| self.types.handles.get(mime))
@@ -534,6 +581,7 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         .filter_map(|icon| {
             let ink = match icon {
                 Icon::ActiveFolder | Icon::ActiveForward | Icon::ActiveBack => request.on_accent,
+                Icon::DangerTrash | Icon::Warning => request.danger,
                 _ => request.foreground,
             };
             let raster = svg(icon.svg().as_bytes(), ink)?;
@@ -547,8 +595,16 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         }
         use super::file_icon::FileIcon;
         let foreground = match icon {
+            // Kinds keep a small set of tints so a listing scans by type:
+            // folders and spreadsheets, pictures and media, PDFs, packages and slides.
             FileIcon::Folder | FileIcon::Table => request.folder_foreground,
-            FileIcon::Pdf | FileIcon::Image | FileIcon::Archive => request.media_foreground,
+            FileIcon::Image
+            | FileIcon::Document
+            | FileIcon::Audio
+            | FileIcon::Video
+            | FileIcon::Code => request.media_foreground,
+            FileIcon::Pdf => request.danger,
+            FileIcon::Archive | FileIcon::Presentation => request.warning,
             _ => request.file_foreground,
         };
         let raster = lookup(&icon.name().to_owned(), 48)
@@ -629,6 +685,8 @@ mod tests {
             revision: 7,
             foreground: [255; 4],
             on_accent: [255; 4],
+            danger: [255; 4],
+            warning: [255; 4],
             file_foreground: [255; 4],
             folder_foreground: [255; 4],
             media_foreground: [255; 4],
@@ -652,6 +710,8 @@ mod tests {
                 names: vec!["new".into()],
                 foreground: [255; 4],
                 on_accent: [255; 4],
+                danger: [255; 4],
+                warning: [255; 4],
                 file_foreground: [255; 4],
                 folder_foreground: [255; 4],
                 media_foreground: [255; 4],
@@ -796,14 +856,14 @@ mod tests {
         let folder = entry(root.path().join("mime"));
         // Without the database only the listing kind is known.
         assert!(
-            matches!(icons.visual(&script), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::File])
+            matches!(icons.visual(&script, false), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::File])
         );
         assert!(
-            matches!(icons.visual(&folder), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::Folder])
+            matches!(icons.visual(&folder, false), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::Folder])
         );
         icons.types.database = Some(database.clone());
         assert!(
-            matches!(icons.visual(&archive), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::Archive])
+            matches!(icons.visual(&archive, false), FileVisual::Glyph(h) if *h == icons.file_handles[&FileIcon::Archive])
         );
         let typed = glyph(200);
         icons
@@ -811,8 +871,11 @@ mod tests {
             .handles
             .insert("text/x-python".into(), Some(typed.clone()));
         icons.types.handles.insert("application/x-tar".into(), None);
-        assert!(matches!(icons.visual(&script), FileVisual::Type(h) if *h == typed));
-        assert!(matches!(icons.visual(&archive), FileVisual::Glyph(_)));
+        assert!(matches!(icons.visual(&script, false), FileVisual::Type(h) if *h == typed));
+        assert!(matches!(
+            icons.visual(&archive, false),
+            FileVisual::Glyph(_)
+        ));
 
         let entries = [script.clone(), archive, noext.clone(), folder];
         let task = icons.sync_types(1, entries.iter());
@@ -829,7 +892,7 @@ mod tests {
             handles: vec![("inode/directory".into(), None)],
         });
         assert!(icons.types.running.is_none() && icons.types.requested.is_empty());
-        assert!(matches!(icons.visual(&noext), FileVisual::Type(h) if *h == typed));
+        assert!(matches!(icons.visual(&noext, false), FileVisual::Type(h) if *h == typed));
         assert!(icons.sync_types(2, entries.iter()).units() == 0);
         assert_eq!(icons.types.fingerprint, Some(2));
     }

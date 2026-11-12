@@ -22,6 +22,7 @@ mod file_icon;
 mod file_operation_rows;
 mod file_operations;
 mod focus;
+mod folder_counts;
 mod folder_views;
 #[cfg(test)]
 mod folder_watch_tests;
@@ -47,6 +48,7 @@ mod properties_ui;
 mod question_dialog;
 mod recovery_destination;
 mod recovery_ui;
+mod resize;
 mod row_state;
 mod scrolling;
 #[cfg(test)]
@@ -223,6 +225,8 @@ struct Desktop {
     operations_window: Option<window::Id>,
     action_menu: Option<actions_ui::Menu>,
     icons: icons_ui::Icons,
+    folder_counts: folder_counts::FolderCounts,
+    layouts: resize::Layouts,
     folder_writer: folder_views::Writer,
     folder_options: Option<folder_views::Target>,
     folder_watch: folder_watch_ui::State,
@@ -245,9 +249,22 @@ struct Desktop {
 struct BrowserWindow {
     tabs: Vec<Tab>,
     active: usize,
+    /// The Properties side panel, when open beside this window's listing.
+    properties: Option<properties_ui::Window>,
     width: f32,
     size_confirmed: bool,
     modifiers: keyboard::Modifiers,
+}
+
+impl BrowserWindow {
+    /// The width the Properties panel takes beside the listing.
+    fn panel_width(&self) -> f32 {
+        if self.properties.is_some() {
+            properties_ui::PANEL_WIDTH + 1.0
+        } else {
+            0.0
+        }
+    }
 }
 
 struct Tab {
@@ -293,21 +310,35 @@ impl Tab {
             .map_or(self.target.as_path(), Browser::path)
     }
 
-    fn column_paths(&self, width: f32, sidebar: SidebarMode) -> Vec<PathBuf> {
+    /// Folders shown as columns in a window `width` wide, less `reserved`
+    /// for a side panel beside them. Inside `home` the trail starts at Home, as
+    /// browsing from Places does, rather than at the filesystem root.
+    fn column_paths(
+        &self,
+        width: f32,
+        sidebar: SidebarMode,
+        reserved: f32,
+        home: &Path,
+    ) -> Vec<PathBuf> {
         self.browser.as_ref().map_or_else(Vec::new, |browser| {
             if browser.search().is_some()
                 || browser.view().mode != crate::preferences::ViewMode::Columns
             {
                 return vec![browser.path().to_owned()];
             }
-            browser.column_paths_for_content(
+            let mut paths = browser.column_paths_for_content(
                 width
+                    - reserved
                     - if sidebar_visible(sidebar, width) {
                         chrome::SIDEBAR_WIDTH + 1.0
                     } else {
                         0.0
                     },
-            )
+            );
+            if browser.path().starts_with(home) {
+                paths.retain(|path| path.starts_with(home));
+            }
+            paths
         })
     }
 }
@@ -356,6 +387,8 @@ struct ScrollUpdate {
 #[derive(Clone, Debug)]
 enum Message {
     Properties(properties_ui::Event),
+    FolderCounts(folder_counts::Counted),
+    Resize(resize::Event),
     ActivationPoll,
     MediaPoll,
     ActivityPoll,
@@ -470,6 +503,8 @@ impl Desktop {
             operations_window: None,
             action_menu: None,
             icons: icons_ui::Icons::default(),
+            folder_counts: folder_counts::FolderCounts::default(),
+            layouts: resize::Layouts::default(),
             folder_writer: folder_views::Writer::new(preference_path),
             folder_options: None,
             folder_watch: folder_watch_ui::State::default(),
@@ -587,6 +622,10 @@ impl Desktop {
             BrowserWindow {
                 tabs,
                 active: 0,
+                // In panel mode a new window opens with its Properties panel.
+                properties: (self.configuration.settings.properties
+                    == crate::interface::PropertiesDisplay::Panel)
+                    .then(|| properties_ui::Window::pending(Vec::new())),
                 width: 1000.0,
                 size_confirmed: false,
                 modifiers: keyboard::Modifiers::default(),
@@ -601,6 +640,33 @@ impl Desktop {
             self.navigate(id, target, Navigation::Visit, None),
             self.present_initial_recovery(),
         ])
+    }
+
+    /// How strongly browser `id` recedes: fully behind its own prompt, partly
+    /// while another Files window such as Quick Look or Properties is active.
+    fn recession(&self, id: window::Id) -> chrome::Recession {
+        if self.holds_attached_prompt(id) {
+            chrome::Recession::Prompt
+        } else if self
+            .focused_window
+            .is_some_and(|focused| focused != id && !self.windows.contains_key(&focused))
+        {
+            chrome::Recession::Inactive
+        } else {
+            chrome::Recession::None
+        }
+    }
+
+    /// Whether a delete confirmation or name prompt belonging to browser `id` is open.
+    fn holds_attached_prompt(&self, id: window::Id) -> bool {
+        self.delete_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.owner == id)
+            || self
+                .file_operations
+                .name
+                .as_ref()
+                .is_some_and(|dialog| dialog.origin.window == id)
     }
 
     fn active(&self, id: window::Id) -> Option<&Tab> {
@@ -681,6 +747,11 @@ impl Desktop {
     fn apply(&mut self, message: Message) -> Task<Message> {
         let task = match message {
             Message::Properties(event) => self.properties_event(event),
+            Message::FolderCounts(counted) => {
+                self.folder_counts.completed(counted);
+                Task::none()
+            }
+            Message::Resize(event) => self.resize_event(event),
             Message::Drag(event) => self.drag_event(event),
             Message::Key(_, keyboard::Key::Named(keyboard::key::Named::Escape), _, _)
                 if self.cancel_drag() =>
@@ -1068,7 +1139,19 @@ impl Desktop {
         let drag = self.poll_drag();
         let types = self.sync_file_types();
         let thumbnails = self.sync_thumbnails();
-        Task::batch([task, self.sync_previews(), drag, types, thumbnails])
+        let counts = self.sync_folder_counts();
+        let panels = self.sync_properties_panels();
+        let layout = self.sync_layout_save();
+        Task::batch([
+            layout,
+            task,
+            self.sync_previews(),
+            drag,
+            types,
+            thumbnails,
+            counts,
+            panels,
+        ])
     }
 
     /// Ask for types and type icons when any shown listing was replaced. Listing
@@ -1116,6 +1199,8 @@ impl Desktop {
             | Message::OpenWith(_)
             | Message::FileClipboard(_)
             | Message::Properties(_)
+            | Message::FolderCounts(_)
+            | Message::Resize(_)
             | Message::Accessibility(_)
             | Message::Drag(_) => {}
             Message::ConfigurationPoll => return self.configuration_poll(),
@@ -1602,6 +1687,7 @@ impl Desktop {
             Command::Copy | Command::Cut => return self.copy_files(id, command == Command::Cut),
             Command::Paste => return self.paste_files(id),
             Command::NewFolder => return self.show_name_dialog(id, false),
+            Command::Properties => return self.properties_command(id),
             Command::Rename => return self.show_name_dialog(id, true),
             Command::Undo => {
                 if !self.file_operations.ready() || self.file_operations.has_active() {

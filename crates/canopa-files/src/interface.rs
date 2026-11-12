@@ -60,6 +60,7 @@ commands! {
     Recovery => ("recovery", "files-command-recovery", "document-revert-symbolic", []),
     CustomActions => ("custom-actions", "files-command-custom-actions", "system-run-symbolic", ["<Control><Shift>a"]),
     Preferences => ("preferences", "files-command-preferences", "preferences-system-symbolic", ["<Control>comma"]),
+    Properties => ("properties", "files-command-properties", "document-properties-symbolic", ["<Alt>Return"]),
     BookmarkFolder => ("bookmark-folder", "files-command-bookmark-folder", "bookmark-new-symbolic", ["<Control>d"]),
 }
 
@@ -85,6 +86,68 @@ impl SidebarMode {
             "never" => Some(Self::Never),
             _ => None,
         }
+    }
+}
+
+/// Where Properties shows the selection: its own window, or a panel beside
+/// the browser's listing that follows the selection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PropertiesDisplay {
+    #[default]
+    Window,
+    Panel,
+}
+impl PropertiesDisplay {
+    pub const ALL: [Self; 2] = [Self::Window, Self::Panel];
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Window => "window",
+            Self::Panel => "panel",
+        }
+    }
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|display| display.id() == id)
+    }
+    pub fn label(self) -> String {
+        match self {
+            Self::Window => fl!("files-properties-display-window"),
+            Self::Panel => fl!("files-properties-display-panel"),
+        }
+    }
+}
+
+/// List view column widths chosen by dragging their header dividers, in
+/// logical pixels. `None` keeps the width that follows the window and text size.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ListColumns {
+    pub name: Option<u16>,
+    pub size: Option<u16>,
+    pub modified: Option<u16>,
+    pub kind: Option<u16>,
+}
+impl ListColumns {
+    pub const NAME: std::ops::RangeInclusive<u16> = 160..=1200;
+    pub const DETAIL: std::ops::RangeInclusive<u16> = 48..=480;
+    pub fn detail(&self, detail: crate::preferences::Detail) -> Option<u16> {
+        match detail {
+            crate::preferences::Detail::Size => self.size,
+            crate::preferences::Detail::Modified => self.modified,
+            crate::preferences::Detail::Kind => self.kind,
+        }
+    }
+    pub fn detail_mut(&mut self, detail: crate::preferences::Detail) -> &mut Option<u16> {
+        match detail {
+            crate::preferences::Detail::Size => &mut self.size,
+            crate::preferences::Detail::Modified => &mut self.modified,
+            crate::preferences::Detail::Kind => &mut self.kind,
+        }
+    }
+    fn valid(&self) -> bool {
+        self.name.is_none_or(|width| Self::NAME.contains(&width))
+            && [self.size, self.modified, self.kind]
+                .into_iter()
+                .flatten()
+                .all(|width| Self::DETAIL.contains(&width))
     }
 }
 
@@ -248,6 +311,8 @@ pub struct InterfaceSettings {
     /// Absent means default; an empty list disables a command's bindings.
     pub shortcuts: BTreeMap<Command, Vec<String>>,
     pub thumbnails: ThumbnailSettings,
+    pub properties: PropertiesDisplay,
+    pub list_columns: ListColumns,
 }
 impl Default for InterfaceSettings {
     fn default() -> Self {
@@ -260,6 +325,8 @@ impl Default for InterfaceSettings {
             sidebar: SidebarMode::Auto,
             shortcuts: BTreeMap::new(),
             thumbnails: ThumbnailSettings::default(),
+            properties: PropertiesDisplay::default(),
+            list_columns: ListColumns::default(),
         }
     }
 }
@@ -279,6 +346,9 @@ impl InterfaceSettings {
     }
     pub fn validate(&self, actions: &[CustomAction]) -> io::Result<()> {
         self.view.validate()?;
+        if !self.list_columns.valid() {
+            return Err(invalid(fl!("files-config-list-columns-invalid")));
+        }
         if self.toolbar.len() > 64
             || self
                 .toolbar

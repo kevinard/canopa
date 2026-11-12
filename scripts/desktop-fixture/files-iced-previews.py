@@ -88,9 +88,9 @@ def verify(session, fixture, browser, launched, scheme, scale):
     floating = preview("B-notes.txt")
     assert floating["is_floating"], floating
     initial_size = floating["layout"]["window_size"]
-    assert abs(initial_size[0] - 760) <= 4, floating
+    assert abs(initial_size[0] - 880) <= 4, floating
     # The compositor may include its decorations in the reported height.
-    assert 510 <= initial_size[1] <= min(logical["height"], 560), floating
+    assert 620 <= initial_size[1] <= min(logical["height"], 680), floating
     assert title("Downloads — Canopa Files")["layout"]["window_size"][0] == 360
     x, y, width, height = position(floating)
     focus(floating)
@@ -202,10 +202,13 @@ def verify(session, fixture, browser, launched, scheme, scale):
             matches = all(abs(a-b) <= 12 for a,b in zip(color, (24, 160, 120)))
             return matches == inside
         session.wait_for(rendered, f"actual image extent {name}")
-    keys("Tab", "Tab", "space")
+    # Focus order: Open, Fit, 1:1, Zoom out, Zoom in, then back to Open.
+    keys("Tab", "Tab", "Tab", "Tab", "space")
     assert preview("C-photo.png")["id"] == floating["id"]
     image_edge("preview-02b-image-zoom-out.png", False)
-    keys("Tab", "space")
+    session.run(["wtype", "-M", "shift", "-k", "Tab", "-k", "Tab", "-m", "shift"])
+    time.sleep(.25)
+    keys("space")
     image_edge("preview-02c-image-fit-restored.png", True)
     keys("Escape")
     absent(floating["id"])
@@ -274,7 +277,7 @@ def verify(session, fixture, browser, launched, scheme, scale):
     return {"status": "passed", "scope": "Iced transient text/source/image/PDF previews; media and full GUI migration remain required", "scheme": scheme, "scale": scale,
         "initial_preview_size": initial_size, "checks": [
             "Quick Look opens as an actual floating transient with no app-specific Niri rule",
-            "a 360px browser retains its width beside a 760px preview with bounded initial height",
+            "a 360px browser retains its width beside an 880px preview with bounded initial height",
             "actual text editor selection copies the prepared file contents",
             "source previews render prepared syntax colors and copy exact Unicode text with native LF separators",
             "live palette changes restyle the same source preview and plain-text selection clears lexical colors",

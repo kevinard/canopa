@@ -6,7 +6,7 @@ use crate::{
     operations::{UndoChoice, UndoConflict, UndoItem, UndoSource},
     transfers::TransferReply,
 };
-use canopa_theme::{ColorRole, UiKind};
+use canopa_theme::ColorRole;
 use iced::{
     Length,
     widget::{column, container, scrollable, text},
@@ -159,7 +159,7 @@ pub(super) fn display_location(home: &Path, path: &Path) -> String {
         Ok(relative) if relative.as_os_str().is_empty() => fl!("files-place-home"),
         Ok(relative) => fl!(
             "files-home-path",
-            path = relative.to_string_lossy().replace('/', " / ")
+            path = relative.to_string_lossy().replace('/', " › ")
         ),
         Err(_) => path.to_string_lossy().into_owned(),
     }
@@ -646,6 +646,6 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
     .padding(16)
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+    .style(move |_| chrome::window_surface(&appearance, true));
     super::focus::group(body, order, Vec::new(), Some(control(dialog.window, 0)))
 }

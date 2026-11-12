@@ -4,7 +4,6 @@
 use super::file_operations::{Origin, Submission};
 use super::*;
 use crate::{operation_jobs::Request, trash::TrashItem};
-use canopa_theme::UiKind;
 use iced::{
     Length,
     widget::{column, container, text},
@@ -28,6 +27,8 @@ pub(super) struct Dialog {
     pub window: window::Id,
     pub owner: window::Id,
     target: Target,
+    /// The one listed entry being deleted, shown with its icon and folder.
+    subject: Option<crate::browse::Entry>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +58,7 @@ impl Dialog {
                 paths,
                 unavailable: false,
             },
+            subject: None,
         }
     }
 
@@ -190,10 +192,25 @@ impl Desktop {
             // One confirmation at a time; never replace what the user reads.
             return window::gain_focus(dialog.window);
         }
+        // The browser's own listing supplies the entry; no filesystem call here.
+        let subject = match &target {
+            Target::Selection { paths, .. } if paths.len() == 1 => self
+                .active(owner)
+                .and_then(|tab| tab.browser.as_ref())
+                .and_then(|browser| {
+                    browser
+                        .visible_entries()
+                        .into_iter()
+                        .find(|entry| entry.path == paths[0])
+                        .cloned()
+                }),
+            _ => None,
+        };
+        let height = if subject.is_some() { 266.0 } else { 212.0 };
         let (window, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(440.0, 220.0),
+                size: Size::new(480.0, height),
                 min_size: Some(Size::new(320.0, 200.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -207,6 +224,7 @@ impl Desktop {
             window,
             owner,
             target,
+            subject,
         });
         opened.map(move |opened| Message::DeleteDialog(Event::Opened(window, opened)))
     }
@@ -306,32 +324,89 @@ impl Desktop {
     }
 }
 
+/// The item being deleted, set apart so it can be checked at a glance.
+fn subject<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
+    let Some(entry) = &dialog.subject else {
+        return iced::widget::space().height(0).into();
+    };
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let mut bold = font;
+    bold.weight = iced::font::Weight::Semibold;
+    let size = appearance.typography().body_size.px();
+    let folder = entry.path.parent().unwrap_or(&entry.path);
+    let mut facts = super::question_dialog::display_location(&desktop.home, folder);
+    if !entry.is_directory() {
+        facts = format!("{facts} · {}", super::listing_ui::size(entry.size));
+    }
+    chrome::section_card(
+        appearance,
+        iced::widget::row![
+            desktop.icons.file(entry, 28.0),
+            iced::widget::column![
+                chrome::single_line(entry.name().into_owned(), bold, size, None, true),
+                chrome::single_line(
+                    facts,
+                    font,
+                    appearance.typography().label_size.px() + 1.0,
+                    Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
+                    true,
+                ),
+            ]
+            .spacing(2),
+        ]
+        .spacing(12)
+        .align_y(iced::Alignment::Center),
+    )
+    .padding([10, 12])
+    .into()
+}
+
 pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().body_size.px();
-    let small = appearance.typography().label_size.px();
     let id = dialog.window;
-    let action = |label: String, name: &'static str, message: Message, kind| {
+    let action = |label: String, name: &'static str, message: Message, danger: bool| {
+        let label = text(label).font(font).size(size);
         super::focus::button(
             control(id, name),
             Some(message.clone()),
             appearance,
-            canopa_ui::styled_action(
-                text(label).font(font).size(small),
-                Some(message),
-                kind,
-                false,
-                appearance,
-            ),
+            if danger {
+                chrome::danger_action(label, Some(message), false, appearance)
+            } else {
+                canopa_ui::styled_action(
+                    label,
+                    Some(message),
+                    canopa_ui::Action::Normal,
+                    false,
+                    appearance,
+                )
+            }
+            .padding(chrome::DIALOG_BUTTON_PADDING),
         )
     };
     let body = column![
-        chrome::dialog_heading(desktop, chrome::Icon::Trash, dialog.title(), ""),
-        text(dialog.message())
-            .font(font)
-            .size(size)
-            .wrapping(text::Wrapping::WordOrGlyph),
+        chrome::toned_heading(
+            desktop,
+            chrome::Icon::DangerTrash,
+            chrome::Tone::Danger,
+            dialog.title(),
+            ""
+        ),
+        // With the item set apart below, the sentence only states the stakes.
+        text(if dialog.subject.is_some() {
+            fl!("files-delete-cannot-undo")
+        } else {
+            dialog.message()
+        })
+        .font(font)
+        .size(size)
+        .line_height(1.4)
+        .color(chrome::ink(appearance, canopa_theme::ColorRole::Muted))
+        .wrapping(text::Wrapping::WordOrGlyph),
+        subject(desktop, dialog),
         iced::widget::space().height(Length::Fill),
         canopa_ui::direction::row([
             iced::widget::space().width(Length::Fill).into(),
@@ -339,24 +414,24 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 fl!("files-cancel"),
                 "cancel",
                 Message::DeleteDialog(Event::Cancel(id)),
-                canopa_ui::Action::Quiet,
+                false,
             ),
             action(
                 dialog.confirm_label(),
                 "confirm",
                 Message::DeleteDialog(Event::Confirm(id)),
-                canopa_ui::Action::Destructive,
+                true,
             ),
         ])
         .spacing(8),
     ]
-    .spacing(12);
+    .spacing(14);
     let appearance = appearance.clone();
     let body = container(body)
-        .padding(16)
+        .padding(20)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(&appearance, true));
     super::accessibility_ui::dialog(
         "files-delete-dialog",
         dialog.title(),

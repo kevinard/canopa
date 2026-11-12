@@ -10,7 +10,7 @@ use crate::{
     operation_jobs::{Question, TransferQuestion},
     transfers::{ConflictChoice, TransferReply},
 };
-use canopa_theme::{ColorRole, UiKind};
+use canopa_theme::ColorRole;
 use iced::{
     Length,
     widget::{checkbox, column, container, row, scrollable, text},
@@ -279,6 +279,6 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     .padding(16)
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+    .style(move |_| chrome::window_surface(&appearance, true));
     super::focus::group(body, order, Vec::new(), Some(control(dialog.window, 0)))
 }

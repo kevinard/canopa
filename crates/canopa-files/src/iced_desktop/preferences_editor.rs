@@ -1,4 +1,5 @@
-//! One transactional interface draft. Rendered controls capture its page/selection
+//! One interface draft that applies as it changes. Choices save immediately;
+//! typed fields save when submitted. Rendered controls capture its page/selection
 //! revision; publications update the application but never replace an open draft.
 use super::*;
 use crate::{
@@ -47,6 +48,7 @@ pub(super) enum Change {
     Sidebar(SidebarMode),
     Thumbnails(crate::interface::ThumbnailPolicy),
     IconSize(crate::interface::IconSize),
+    Properties(crate::interface::PropertiesDisplay),
     Field(Field, String),
     SelectToolbar(usize),
     MoveToolbar(isize),
@@ -103,6 +105,13 @@ pub(super) struct Editor {
     pub shortcuts: BTreeMap<Command, String>,
     pub busy: bool,
     pub dirty: bool,
+    /// A save of the draft is in flight; the form stays editable meanwhile.
+    pub applying: bool,
+    /// The draft changed while a save was in flight and must be saved again.
+    reapply: bool,
+    /// Counts draft changes, so a finished save knows whether it covered them all.
+    generation: u64,
+    applying_generation: u64,
     pub recording: bool,
     recording_activation: bool,
     pub confirmation: Option<Confirmation>,
@@ -142,6 +151,10 @@ impl Editor {
             shortcuts,
             busy: false,
             dirty: false,
+            applying: false,
+            reapply: false,
+            generation: 0,
+            applying_generation: 0,
             recording: false,
             recording_activation: false,
             confirmation: None,
@@ -165,6 +178,11 @@ impl Editor {
     fn select_page(&mut self, page: Page) {
         self.page = page;
         self.filter.clear();
+        // Each page opens with its first item, as a fresh draft does; a
+        // selection survives saves made while the page stays open.
+        self.selected_toolbar = Some(0);
+        self.selected_place = None;
+        self.selected_command = Command::Search;
         self.revision += 1;
     }
     fn add_bookmark(&mut self, folder: PathBuf) {
@@ -184,6 +202,7 @@ impl Editor {
         });
         self.selected_place = Some(self.locations.len() - 1);
         self.dirty = true;
+        self.generation += 1;
     }
     pub fn focus_id(&self, name: &str) -> iced::widget::Id {
         iced::widget::Id::from(format!(
@@ -267,6 +286,7 @@ impl Editor {
             Change::Sidebar(v) => self.draft.sidebar = v,
             Change::Thumbnails(v) => self.draft.thumbnails.show = v,
             Change::IconSize(v) => self.draft.thumbnails.size = v,
+            Change::Properties(v) => self.draft.properties = v,
             Change::Field(field, value) => {
                 let max = match field {
                     Field::Width => 5,
@@ -410,7 +430,23 @@ impl Editor {
             _ => return,
         }
         self.dirty = true;
+        self.generation += 1;
     }
+}
+
+/// Typed fields apply when submitted, so a half-typed value never saves.
+fn applies_on_change(change: &Change) -> bool {
+    !matches!(
+        change,
+        Change::Field(
+            Field::Width
+                | Field::Filter
+                | Field::BookmarkName
+                | Field::BookmarkPath
+                | Field::Shortcut,
+            _
+        )
+    )
 }
 
 impl Desktop {
@@ -421,8 +457,8 @@ impl Desktop {
             }
             return window::gain_focus(editor.window);
         }
-        let (id, opened) = window::open(window::Settings {
-            size: Size::new(720.0, 472.0),
+        let settings = window::Settings {
+            size: Size::new(780.0, 660.0),
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -430,13 +466,33 @@ impl Desktop {
                 ..Default::default()
             },
             ..Default::default()
-        });
+        };
+        // Opened from a browser, Preferences belongs to it and floats above it
+        // at its own size instead of taking a full tiled column.
+        let owner = self
+            .focused_window
+            .filter(|window| self.windows.contains_key(window));
+        let (id, opened) = match owner {
+            Some(owner) => {
+                let (id, opened) = window::open_transient(owner, settings);
+                // An adapter without parented windows shows nothing; release the editor.
+                let opened = opened.map(move |shown| match shown {
+                    Some(shown) => Message::Opened(shown),
+                    None => Message::Close(id),
+                });
+                (id, opened)
+            }
+            None => {
+                let (id, opened) = window::open(settings);
+                (id, opened.map(Message::Opened))
+            }
+        };
         let mut editor = Editor::new(id, self.configuration.clone(), folder.clone());
         if bookmark {
             editor.add_bookmark(folder);
         }
         self.preferences_editor = Some(editor);
-        opened.map(Message::Opened)
+        opened
     }
     pub(super) fn close_preferences(&mut self, id: window::Id, forced: bool) -> Task<Message> {
         let Some(editor) = self.preferences_editor.as_mut().filter(|e| e.window == id) else {
@@ -448,12 +504,117 @@ impl Desktop {
         }
         if !forced && editor.dirty {
             editor.recording = false;
-            editor.confirmation = Some(Confirmation::Close);
-            return Task::none();
+            if editor.settings(&self.home).is_err() {
+                // Only an invalid typed value is left behind; ask before losing it.
+                editor.confirmation = Some(Confirmation::Close);
+                return Task::none();
+            }
+            // Submit the remaining typed values; the publication outlives the window.
+            let apply = if editor.applying {
+                Task::none()
+            } else {
+                self.apply_preferences(id)
+            };
+            self.preferences_editor = None;
+            return Task::batch([apply, window::close(id), self.exit_if_empty()]);
         }
         self.preferences_editor = None;
         Task::batch([window::close(id), self.exit_if_empty()])
     }
+    /// Save the draft as it stands, without disabling the form or replacing
+    /// the draft. A change made during the save is saved right after it.
+    fn apply_preferences(&mut self, id: window::Id) -> Task<Message> {
+        let Some(editor) = self
+            .preferences_editor
+            .as_mut()
+            .filter(|e| e.window == id && !e.busy && e.dirty)
+        else {
+            return Task::none();
+        };
+        if editor.applying {
+            editor.reapply = true;
+            return Task::none();
+        }
+        if self.configuration_pending.is_some() {
+            editor.status = fl!("files-preferences-another-change");
+            return Task::none();
+        }
+        let Some(worker) = &self.configuration_worker else {
+            editor.status = fl!("files-preferences-worker-unavailable");
+            return Task::none();
+        };
+        let settings = match editor.settings(&self.home) {
+            Ok(settings) => settings,
+            Err(error) => {
+                editor.status = error;
+                return Task::none();
+            }
+        };
+        let receiver = match worker.save_settings(editor.base.clone(), settings) {
+            Ok(receiver) => receiver,
+            Err(error) => {
+                editor.status = error.to_string();
+                return Task::none();
+            }
+        };
+        self.configuration_request += 1;
+        let request = self.configuration_request;
+        self.configuration_pending = Some((request, id, Operation::Save));
+        editor.applying = true;
+        editor.applying_generation = editor.generation;
+        Task::perform(
+            async move { receiver.await.ok().map(Arc::new) },
+            move |result| Message::Preferences(Event::Finished(request, result)),
+        )
+    }
+
+    /// Take widths just saved by dragging a divider into an open form, which
+    /// keeps its own changes and saves them next if it has any.
+    pub(super) fn adopt_layout(&mut self, current: &ConfigurationSnapshot) -> Task<Message> {
+        let Some(editor) = self.preferences_editor.as_mut() else {
+            return Task::none();
+        };
+        let width = current.settings.view.column_width;
+        if editor.width.trim() == editor.base.settings.view.column_width.to_string() {
+            editor.width = width.to_string();
+        }
+        editor.draft.view.column_width = width;
+        editor.draft.list_columns = current.settings.list_columns;
+        editor.base = current.clone();
+        if editor.dirty && !editor.applying {
+            let id = editor.window;
+            return self.apply_preferences(id);
+        }
+        Task::none()
+    }
+
+    fn finish_apply(&mut self, id: window::Id, result: configuration_ui::Reply) -> Task<Message> {
+        let Some(editor) = self.preferences_editor.as_mut().filter(|e| e.window == id) else {
+            return Task::none();
+        };
+        editor.applying = false;
+        match result {
+            Ok(publication) => {
+                // Later saves compare against what was just written.
+                editor.base = (*publication.current).clone();
+                if editor.generation == editor.applying_generation {
+                    editor.dirty = false;
+                    editor.status = fl!("files-preferences-saved");
+                }
+                if std::mem::take(&mut editor.reapply)
+                    || editor.generation != editor.applying_generation
+                {
+                    return self.apply_preferences(id);
+                }
+            }
+            Err(error) => {
+                editor.reapply = false;
+                editor.status = error;
+            }
+        }
+        Task::none()
+    }
+
     fn write_preferences(&mut self, id: window::Id, operation: Operation) -> Task<Message> {
         let Some(editor) = self
             .preferences_editor
@@ -519,6 +680,9 @@ impl Desktop {
             } else {
                 Task::none()
             };
+            if operation == Operation::Save {
+                return Task::batch([install, self.finish_apply(id, result)]);
+            }
             if let Some(editor) = self.preferences_editor.as_mut().filter(|e| e.window == id) {
                 editor.busy = false;
                 match result {
@@ -569,8 +733,14 @@ impl Desktop {
         }
         match event {
             Event::Page(t, page) if editor.accepts(t) => editor.select_page(page),
-            Event::Change(t, change) if editor.accepts(t) => editor.change(change),
-            Event::Save(_) => return self.write_preferences(id, Operation::Save),
+            Event::Change(t, change) if editor.accepts(t) => {
+                let applies = applies_on_change(&change);
+                editor.change(change);
+                if applies {
+                    return self.apply_preferences(id);
+                }
+            }
+            Event::Save(_) => return self.apply_preferences(id),
             Event::Reload(_) => {
                 if editor.dirty {
                     editor.confirmation = Some(Confirmation::Reload);
@@ -607,11 +777,13 @@ impl Desktop {
                 keyboard::Key::Named(keyboard::key::Named::Backspace) if modifiers.is_empty() => {
                     editor.recording = false;
                     editor.change(Change::Field(Field::Shortcut, String::new()));
+                    return self.apply_preferences(id);
                 }
                 _ => {
                     if let Some(chord) = key_chord(&key, modifiers) {
                         editor.recording = false;
                         editor.change(Change::Field(Field::Shortcut, chord.accelerator()));
+                        return self.apply_preferences(id);
                     }
                 }
             }
@@ -790,6 +962,15 @@ mod tests {
             desktop.preferences_editor.as_ref().unwrap().locations.len(),
             original_locations + 1
         );
+        // Valid choices save as they are made; only an invalid typed value
+        // left in the draft makes closing ask before discarding it.
+        let current = desktop.preferences_editor.as_ref().unwrap().target();
+        let _ = desktop.preferences_event(Event::Page(current, Page::Views));
+        let current = desktop.preferences_editor.as_ref().unwrap().target();
+        let _ = desktop.preferences_event(Event::Change(
+            current,
+            Change::Field(Field::Width, "12x".into()),
+        ));
         let _ = desktop.close_preferences(t.window, false);
         assert_eq!(
             desktop.preferences_editor.as_ref().unwrap().confirmation,

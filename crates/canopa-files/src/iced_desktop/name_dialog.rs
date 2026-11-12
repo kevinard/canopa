@@ -117,8 +117,8 @@ impl Desktop {
         let (window, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(440.0, 250.0),
-                min_size: Some(Size::new(320.0, 240.0)),
+                size: Size::new(440.0, 240.0),
+                min_size: Some(Size::new(320.0, 228.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Files".into(),
@@ -307,16 +307,19 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             message.clone(),
             appearance,
             canopa_ui::styled_action(
-                text(label).font(font).size(small),
+                text(label)
+                    .font(font)
+                    .size(appearance.typography().body_size.px()),
                 message,
                 if name == "submit" {
                     canopa_ui::Action::Primary
                 } else {
-                    canopa_ui::Action::Quiet
+                    canopa_ui::Action::Normal
                 },
                 false,
                 appearance,
-            ),
+            )
+            .padding(chrome::DIALOG_BUTTON_PADDING),
         )
     };
     let folder = dialog
@@ -332,28 +335,34 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             } else {
                 fl!(
                     "files-home-path",
-                    path = path.to_string_lossy().replace('/', " / ")
+                    path = path.to_string_lossy().replace('/', " › ")
                 )
             }
         },
     );
+    let mut title_font = font;
+    title_font.weight = iced::font::Weight::Semibold;
     let body = column![
-        chrome::dialog_heading(
+        chrome::heading_parts(
             desktop,
             if dialog.original.is_some() {
                 chrome::Icon::Edit
             } else {
                 chrome::Icon::Folder
             },
-            dialog.title(),
-            ""
-        ),
-        chrome::single_line(
-            location,
-            font,
-            small + 1.0,
-            Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
-            true
+            chrome::Tone::Accent,
+            text(dialog.title())
+                .font(title_font)
+                .size(appearance.typography().title_size.px())
+                .into(),
+            Some(chrome::single_line(
+                location,
+                font,
+                small + 1.0,
+                Some(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
+                true
+            )),
+            None,
         ),
         column![
             chrome::section_title(
@@ -367,7 +376,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             .size(small + 1.0),
             input,
         ]
-        .spacing(4),
+        .spacing(6),
         super::accessibility_ui::semantic(
             feedback,
             container(
@@ -390,9 +399,9 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 ))
             )
             .height(if dialog.error.is_some() || dialog.busy {
-                26
+                Length::Fixed(22.0)
             } else {
-                1
+                Length::Fill
             })
         ),
         canopa_ui::direction::row([
@@ -410,13 +419,13 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         ])
         .spacing(8),
     ]
-    .spacing(10);
+    .spacing(14);
     let appearance = appearance.clone();
     let body = container(body)
-        .padding(16)
+        .padding(20)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(&appearance, true));
     let order = if dialog.busy {
         Vec::new()
     } else {

@@ -9,6 +9,10 @@ use iced::{
 use std::{cell::RefCell, collections::HashMap};
 
 pub(super) const SIDEBAR_WIDTH: f32 = 204.0;
+/// The app mark before the toolbar when the sidebar is shown.
+pub(super) const BRAND_WIDTH: f32 = 62.0;
+/// Dialog and footer buttons match the height of a text field beside them.
+pub(super) const DIALOG_BUTTON_PADDING: [f32; 2] = [9.0, 18.0];
 
 pub(super) fn ink(appearance: &Appearance, role: ColorRole) -> Color {
     canopa_ui::color(appearance.role(role))
@@ -28,7 +32,7 @@ pub(super) fn divider(theme: &Theme) -> rule::Style {
 pub(super) fn bar(appearance: &Appearance, top: bool) -> container::Style {
     let mut tint = ink(appearance, ColorRole::Raised);
     tint.a = 0.56;
-    let mut frame = canopa_ui::frame(appearance, appearance.style(UiKind::Panel));
+    let mut frame = window_surface(appearance, false);
     let radius = frame.border.radius;
     frame.border = iced::Border::default().rounded(if top {
         iced::border::Radius {
@@ -47,6 +51,104 @@ pub(super) fn bar(appearance: &Appearance, top: bool) -> container::Style {
     frame
 }
 
+/// The surface that fills a Files window. The compositor owns the window's
+/// shape, corner radius, outline and shadow, so the default surface runs edge
+/// to edge instead of drawing rounded corners over an opaque rectangle. In
+/// high contrast, floating dialogs keep their own full-strength outline.
+/// Customized radii and borders still apply.
+pub(super) fn window_surface(appearance: &Appearance, floating: bool) -> container::Style {
+    let style = appearance.style(UiKind::Panel);
+    let mut frame = canopa_ui::frame(appearance, style);
+    if !style.custom_radius {
+        frame.border.radius = 0.0.into();
+    }
+    if !style.custom_border {
+        frame.border.width = if floating && appearance.high_contrast() {
+            1.0
+        } else {
+            0.0
+        };
+    }
+    // Floating dialogs sit one step above the browser surface they cover.
+    let custom_background = appearance.customization.ui[UiKind::Panel as usize]
+        .background
+        .is_some();
+    if floating && !custom_background && !appearance.high_contrast() {
+        let lift = match appearance.color_scheme {
+            canopa_theme::ColorScheme::Dark => 0.55,
+            canopa_theme::ColorScheme::Light => 0.0,
+        };
+        frame.background = Some(
+            mix(
+                ink(appearance, ColorRole::Surface),
+                ink(appearance, ColorRole::Raised),
+                lift,
+            )
+            .into(),
+        );
+    }
+    frame
+}
+
+/// How far a browser recedes behind another Files window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Recession {
+    None,
+    /// Another Files window, such as Quick Look or Properties, is active.
+    Inactive,
+    /// A confirmation or name prompt that belongs to this browser is open.
+    Prompt,
+}
+
+/// The dimming laid over a browser so the active Files window reads as the
+/// surface in use. It only paints; the browser keeps receiving input.
+pub(super) fn scrim(appearance: &Appearance, recession: Recession) -> container::Style {
+    let dark = appearance.color_scheme == canopa_theme::ColorScheme::Dark;
+    let alpha = match (recession, dark) {
+        (Recession::None, _) => return container::Style::default(),
+        (Recession::Inactive, true) => 0.25,
+        (Recession::Inactive, false) => 0.1,
+        (Recession::Prompt, true) => 0.55,
+        (Recession::Prompt, false) => 0.28,
+    };
+    container::Style::default().background(Color::BLACK.scale_alpha(alpha))
+}
+
+/// The recessed area that presents an image or page with even margins.
+pub(super) fn stage(appearance: &Appearance) -> container::Style {
+    container::Style::default()
+        .background(mix(
+            ink(appearance, ColorRole::Surface),
+            ink(appearance, ColorRole::Background),
+            0.45,
+        ))
+        .border(iced::Border::default().rounded(12))
+}
+
+/// The Properties side panel: the sidebar's quieter surface, on the other side.
+pub(super) fn panel_surface(appearance: &Appearance) -> container::Style {
+    container::Style::default().background(mix(
+        ink(appearance, ColorRole::Surface),
+        ink(appearance, ColorRole::Background),
+        0.35,
+    ))
+}
+
+/// The track behind a group of segmented controls.
+pub(super) fn segmented(appearance: &Appearance) -> container::Style {
+    container::Style::default()
+        .background(ink(appearance, ColorRole::Raised).scale_alpha(0.8))
+        .border(iced::Border {
+            width: 1.0,
+            color: ink(appearance, ColorRole::Border).scale_alpha(if appearance.high_contrast() {
+                1.0
+            } else {
+                0.35
+            }),
+            radius: 14.0.into(),
+        })
+}
+
 pub(super) fn highlight(appearance: &Appearance, role: ColorRole) -> container::Style {
     container::Style::default()
         .background(ink(appearance, role))
@@ -60,6 +162,122 @@ pub(super) fn dialog_heading<'a>(
     subtitle: impl Into<String>,
 ) -> Element<'a, Message> {
     heading_with_action(desktop, icon, title, subtitle, None)
+}
+
+/// The emphasis of a heading's symbol: the accent for ordinary windows, the
+/// danger role for confirmations that cannot be undone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Tone {
+    Accent,
+    Danger,
+}
+
+pub(super) fn symbol_tile(appearance: &Appearance, tone: Tone) -> container::Style {
+    match tone {
+        Tone::Accent => highlight(appearance, ColorRole::AccentSurface),
+        Tone::Danger => container::Style::default()
+            .background(ink(appearance, ColorRole::Danger).scale_alpha(
+                if appearance.high_contrast() {
+                    0.0
+                } else {
+                    0.16
+                },
+            ))
+            .border(iced::Border {
+                width: if appearance.high_contrast() { 1.0 } else { 0.0 },
+                color: ink(appearance, ColorRole::Danger),
+                radius: 10.0.into(),
+            }),
+    }
+}
+
+/// A dialog heading whose symbol carries `tone`.
+pub(super) fn toned_heading<'a>(
+    desktop: &'a Desktop,
+    icon: Icon,
+    tone: Tone,
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let mut bold = canopa_ui::font(appearance);
+    bold.weight = Weight::Semibold;
+    let title = text(title.into())
+        .font(bold)
+        .size(appearance.typography().title_size.px())
+        .wrapping(text::Wrapping::WordOrGlyph);
+    heading_toned(desktop, icon, tone, title.into(), subtitle.into(), None)
+}
+
+/// The filled button that confirms an action which cannot be undone. It keeps
+/// the shared focus ring and corner radius; only its fill uses the danger role.
+pub(super) fn danger_action<'a>(
+    content: impl Into<Element<'a, Message>>,
+    on_press: Option<Message>,
+    focused: bool,
+    appearance: &Appearance,
+) -> iced::widget::Button<'a, Message> {
+    use iced::widget::button;
+    let radius = appearance.style(UiKind::Button).radius;
+    let appearance = appearance.clone();
+    canopa_ui::styled_action(
+        content,
+        on_press,
+        canopa_ui::Action::Destructive,
+        focused,
+        &appearance.clone(),
+    )
+    .style(move |theme, status| {
+        let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Primary, focused);
+        let rgb = |c: Color| {
+            let [r, g, b, _] = c.into_rgba8();
+            canopa_theme::Rgb(r, g, b)
+        };
+        // The dark scheme's danger role is a light tint for text on dark
+        // surfaces; a fill reads as danger when deepened to carry white text.
+        let danger = ink(&appearance, ColorRole::Danger);
+        let deep = mix(danger, Color::from_rgb8(150, 0, 30), 0.55);
+        let danger = if appearance.color_scheme == canopa_theme::ColorScheme::Dark
+            && !appearance.high_contrast()
+            && rgb(deep).contrast(canopa_theme::Rgb(255, 255, 255)) >= 4.5
+        {
+            deep
+        } else {
+            danger
+        };
+        let fill = match status {
+            button::Status::Hovered => mix(danger, Color::WHITE, 0.1),
+            button::Status::Pressed => mix(danger, Color::BLACK, 0.12),
+            _ => danger,
+        };
+        if status == button::Status::Disabled {
+            style.background = None;
+            style.text_color = ink(&appearance, ColorRole::Disabled);
+        } else {
+            style.background = Some(fill.into());
+            let canopa_theme::Rgb(r, g, b) = rgb(danger).contrasting_text();
+            style.text_color = Color::from_rgb8(r, g, b);
+        }
+        if !(focused && status != button::Status::Disabled) {
+            style.border.width = 0.0;
+        }
+        style.border.radius = iced::border::Radius {
+            top_left: radius[0].px(),
+            top_right: radius[1].px(),
+            bottom_right: radius[2].px(),
+            bottom_left: radius[3].px(),
+        };
+        style
+    })
+}
+
+pub(super) fn mix(a: Color, b: Color, amount: f32) -> Color {
+    Color {
+        r: a.r + (b.r - a.r) * amount,
+        g: a.g + (b.g - a.g) * amount,
+        b: a.b + (b.b - a.b) * amount,
+        a: a.a,
+    }
 }
 
 pub(super) fn heading_with_action<'a>(
@@ -106,21 +324,47 @@ fn heading<'a>(
     subtitle: String,
     action: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
+    heading_toned(desktop, icon, Tone::Accent, title, subtitle, action)
+}
+
+fn heading_toned<'a>(
+    desktop: &'a Desktop,
+    icon: Icon,
+    tone: Tone,
+    title: Element<'a, Message>,
+    subtitle: String,
+    action: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let mut labels = column![title].width(Length::Fill).spacing(3);
-    if !subtitle.is_empty() {
-        labels = labels.push(
-            text(subtitle)
-                .font(font)
-                .size(appearance.typography().label_size.px() + 1.0)
-                .color(ink(appearance, ColorRole::Muted))
-                .wrapping(text::Wrapping::WordOrGlyph),
-        );
+    let subtitle = (!subtitle.is_empty()).then(|| {
+        text(subtitle)
+            .font(font)
+            .size(appearance.typography().label_size.px() + 1.0)
+            .color(ink(appearance, ColorRole::Muted))
+            .wrapping(text::Wrapping::WordOrGlyph)
+            .into()
+    });
+    heading_parts(desktop, icon, tone, title, subtitle, action)
+}
+
+/// A heading whose subtitle is already laid out, such as a truncated path.
+pub(super) fn heading_parts<'a>(
+    desktop: &'a Desktop,
+    icon: Icon,
+    tone: Tone,
+    title: Element<'a, Message>,
+    subtitle: Option<Element<'a, Message>>,
+    action: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let mut labels = column![title].width(Length::Fill).spacing(2);
+    if let Some(subtitle) = subtitle {
+        labels = labels.push(subtitle);
     }
     let symbol = container(desktop.icons.chrome(icon, 21.0, 1.0))
         .padding(9)
-        .style(move |_| highlight(appearance, ColorRole::AccentSurface));
+        .style(move |_| symbol_tile(appearance, tone));
     let mut content: Vec<Element<'a, Message>> = vec![symbol.into(), labels.into()];
     if let Some(action) = action {
         content.push(action);
@@ -178,18 +422,18 @@ pub(super) fn dismiss(desktop: &Desktop, window: iced::window::Id) -> Element<'_
     let font = canopa_ui::font(appearance);
     let message = Some(Message::Close(window));
     let button = canopa_ui::styled_action(
-        text("×")
-            .font(font)
-            .size(19)
-            .align_x(iced::Alignment::Center),
+        container(desktop.icons.chrome(Icon::Close, 16.0, 0.86))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
         message.clone(),
         canopa_ui::Action::Quiet,
         false,
         appearance,
     )
-    .width(32)
-    .height(32)
-    .padding(4);
+    .width(30)
+    .height(30)
+    .padding(4)
+    .style(close_style(appearance));
     tooltip(
         super::accessibility_ui::named_button(
             super::accessibility_ui::focus_key(&dismiss_id(window)),
@@ -204,6 +448,64 @@ pub(super) fn dismiss(desktop: &Desktop, window: iced::window::Id) -> Element<'_
     )
     .delay(std::time::Duration::from_millis(400))
     .into()
+}
+
+/// A round, filled close control so window dismissal reads as a button.
+pub(super) fn close_style(
+    appearance: &Appearance,
+) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style + 'static {
+    let appearance = appearance.clone();
+    move |theme, status| {
+        use iced::widget::button::Status;
+        let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+        let raised = ink(&appearance, ColorRole::Raised);
+        style.background = Some(
+            match status {
+                Status::Hovered => mix(raised, ink(&appearance, ColorRole::Text), 0.1),
+                Status::Pressed => mix(raised, Color::BLACK, 0.1),
+                _ => raised,
+            }
+            .into(),
+        );
+        style.border = iced::Border {
+            width: if appearance.high_contrast() { 1.0 } else { 0.0 },
+            color: ink(&appearance, ColorRole::Border),
+            radius: 15.0.into(),
+        };
+        style
+    }
+}
+
+/// The selected segment in a segmented control: the accent surface with a
+/// faint accent edge, as in the browser's view switcher.
+pub(super) fn selected_segment(
+    appearance: &Appearance,
+) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style + 'static {
+    let appearance = appearance.clone();
+    move |theme, status| {
+        let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+        style.text_color = ink(&appearance, ColorRole::Text);
+        style.background = Some(selected_fill(&appearance).into());
+        style.border = iced::Border {
+            width: 1.0,
+            color: ink(&appearance, ColorRole::Accent).scale_alpha(0.55),
+            radius: 11.0.into(),
+        };
+        style
+    }
+}
+
+/// The fill of a selected segment: a clear accent tint over the track.
+pub(super) fn selected_fill(appearance: &Appearance) -> Color {
+    if appearance.high_contrast() {
+        ink(appearance, ColorRole::AccentSurface)
+    } else {
+        mix(
+            ink(appearance, ColorRole::AccentSurface),
+            ink(appearance, ColorRole::Accent),
+            0.22,
+        )
+    }
 }
 
 pub(super) fn catalogue_row(appearance: &Appearance, selected: bool) -> container::Style {
@@ -274,6 +576,26 @@ pub(super) fn card<'a>(
         .width(Length::Fill)
         .padding(14)
         .style(move |_| canopa_ui::frame(appearance, appearance.style(UiKind::Card)))
+}
+
+/// A quiet grouped section: a tinted surface without its own outline, for
+/// groups that already sit inside an outlined window.
+pub(super) fn section_card<'a>(
+    appearance: &'a Appearance,
+    body: impl Into<Element<'a, Message>>,
+) -> container::Container<'a, Message> {
+    container(body)
+        .width(Length::Fill)
+        .padding(14)
+        .style(move |_| {
+            container::Style::default()
+                .background(ink(appearance, ColorRole::Raised).scale_alpha(0.55))
+                .border(iced::Border {
+                    width: if appearance.high_contrast() { 1.0 } else { 0.0 },
+                    color: ink(appearance, ColorRole::Border),
+                    radius: 12.0.into(),
+                })
+        })
 }
 
 pub(super) fn catalogue<'a>(
@@ -472,10 +794,23 @@ pub(super) enum Icon {
     Network,
     Phone,
     Camera,
+    DangerTrash,
+    Warning,
+    Plus,
+    Minus,
+    Close,
+    Fit,
+    Image,
+    NewFolder,
+    Computer,
+    Down,
+    Disk,
+    Toolbar,
+    Check,
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 32] = [
+    pub(super) const ALL: [Self; 45] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -508,6 +843,19 @@ impl Icon {
         Self::Network,
         Self::Phone,
         Self::Camera,
+        Self::DangerTrash,
+        Self::Warning,
+        Self::Plus,
+        Self::Minus,
+        Self::Close,
+        Self::Fit,
+        Self::Image,
+        Self::NewFolder,
+        Self::Computer,
+        Self::Down,
+        Self::Disk,
+        Self::Toolbar,
+        Self::Check,
     ];
 
     /// The icon drawn for `self` in the current writing direction: arrows and
@@ -529,25 +877,41 @@ impl Icon {
         let path = match self {
             Self::Back | Self::ActiveBack => "m14 6-6 6 6 6",
             Self::Forward | Self::ActiveForward => "m10 6 6 6-6 6",
-            Self::Up => "M12 19V5m-6 6 6-6 6 6",
+            Self::Up => "m6 15 6-6 6 6",
+            Self::Down => "m6 9 6 6 6-6",
+            Self::Check => "m5 12.5 4.5 4.5L19 7.5",
+            Self::Disk => {
+                "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3Zm0 0c0 1.7 3.6 3 8 3s8-1.3 8-3m-16 6c0 1.7 3.6 3 8 3s8-1.3 8-3"
+            }
+            Self::Toolbar => "M3 5h18v14H3Zm0 5h18M6.5 7.5h.01m3 0h.01m3 0h.01",
             Self::Search => "M16.2 16.2 21 21M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",
             Self::Eye => {
                 "M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Zm12.5 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z"
             }
             Self::More => "M5 12h.01m6.99 0h.01m6.99 0h.01",
+            Self::NewFolder => {
+                "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm9 3.5v6m-3-3h6"
+            }
             Self::Folder | Self::ActiveFolder => {
                 "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
             }
             Self::Home => "m3 10 9-7 9 7m-2-1v11H5V9m5 11v-6h4v6",
             Self::Desktop => "M3 5h18v12H3Zm9 12v4m-4 0h8",
+            Self::Computer => "M4 4h16v10H4Zm-2 14h20l-2-4H4Zm8-2h4",
             Self::Documents => "M6 3h8l4 4v14H6Zm8 0v5h4m-9 4h6m-6 4h6",
             Self::Downloads => "M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4",
             Self::Pictures => "M3 5h18v14H3Zm1 12 5-5 3 3 3-3 5 5M15 9h.01",
             Self::Drive => "M5 5h14l2 10v4H3v-4Zm-2 10h18m-4 2h.01",
-            Self::Trash => "M4 6h16M9 6V3h6v3m3 0-1 15H7L6 6m4 4v7m4-7v7",
+            Self::Trash | Self::DangerTrash => "M4 6h16M9 6V3h6v3m3 0-1 15H7L6 6m4 4v7m4-7v7",
+            Self::Warning => "M12 3 2 20h20Zm0 6v5m0 3h.01",
+            Self::Plus => "M12 5v14M5 12h14",
+            Self::Minus => "M5 12h14",
+            Self::Close => "M6 6l12 12M18 6 6 18",
+            Self::Fit => "M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5",
+            Self::Image => "M4 5h16v14H4Zm0 11 4.5-4.5 3.5 3.5 2.5-2.5L20 17M15.5 9h.01",
             Self::Recovery => "M3 10a9 9 0 1 1 1 7m-1-13v6h6m3-4v6l3 2",
             Self::Eject => "m6 14 6-8 6 8Zm0 4h12",
-            Self::Columns => "M3 5h18v14H3Zm6 0v14m6-14v14",
+            Self::Columns => "M3 5h4.5v14H3Zm6.75 0h4.5v14h-4.5ZM16.5 5H21v14h-4.5Z",
             Self::List => "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
             Self::Grid => "M4 4h6v6H4Zm10 0h6v6h-6ZM4 14h6v6H4Zm10 0h6v6h-6Z",
             Self::Edit => "m15 5 4 4M4 20l4-.8L20 7l-3-3L5 16Z",

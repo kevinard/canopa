@@ -4,7 +4,6 @@ use super::*;
 pub(super) use crate::action_jobs::ActionRequest as CommandRequest;
 use crate::action_jobs::{JobSnapshot, Phase};
 use crate::local_actions::LocalActions;
-use canopa_theme::UiKind;
 use iced::futures::{StreamExt, channel::mpsc};
 use iced::{
     Length,
@@ -771,7 +770,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(&appearance, false));
     super::focus::group(content, order, reveal, None)
 }
 

@@ -259,7 +259,7 @@ pub(super) fn control_with_keyboard<'a>(
     border.width = if style.custom_border {
         border.width.max(1.0)
     } else {
-        2.0
+        1.5
     };
     border.color = canopa_ui::color(appearance.role(ColorRole::Focus));
     Element::new(Frame {
@@ -636,10 +636,28 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
             && tree.state.downcast_ref::<State>().focused
         {
             use iced::advanced::Renderer as _;
+            // The ring stands a little outside the control, so keyboard focus
+            // never reads as an outlined button style.
+            const OFFSET: f32 = 3.0;
+            let bounds = layout.bounds();
+            let radius = border.radius;
             renderer.fill_quad(
                 renderer::Quad {
-                    bounds: layout.bounds(),
-                    border: *border,
+                    bounds: Rectangle {
+                        x: bounds.x - OFFSET,
+                        y: bounds.y - OFFSET,
+                        width: bounds.width + 2.0 * OFFSET,
+                        height: bounds.height + 2.0 * OFFSET,
+                    },
+                    border: Border {
+                        radius: iced::border::Radius {
+                            top_left: radius.top_left + OFFSET,
+                            top_right: radius.top_right + OFFSET,
+                            bottom_right: radius.bottom_right + OFFSET,
+                            bottom_left: radius.bottom_left + OFFSET,
+                        },
+                        ..*border
+                    },
                     ..Default::default()
                 },
                 Color::TRANSPARENT,

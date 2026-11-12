@@ -10,8 +10,6 @@ use iced::{
     },
 };
 
-pub(super) const TOOLBAR_MODES_WIDTH: f32 = 1120.0;
-
 pub(super) fn entry_padding(appearance: &canopa_theme::Appearance, grid: bool) -> iced::Padding {
     let style = appearance.style(UiKind::MenuRow);
     let mut padding = canopa_ui::content_padding(style);
@@ -97,33 +95,40 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     .background(chrome::ink(appearance, ColorRole::AccentSurface))
                     .border(iced::Border::default().rounded(9))
             });
-        container(
-            row![
-                mark,
-                text(fl!("files-app-name"))
-                    .font(title_font)
-                    .size(appearance.typography().title_size.px())
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center),
-        )
-        .padding([0, 16])
-        .width(chrome::SIDEBAR_WIDTH + 1.0)
-        .into()
+        // A compact identity mark; the toolbar's navigation starts beside it
+        // and the window title already names the application and folder.
+        container(mark)
+            .padding([0, 14])
+            .width(chrome::BRAND_WIDTH)
+            .into()
     } else {
         space().width(0).into()
     };
-    let paths = tab.column_paths(window.width, desktop.configuration.settings.sidebar);
-    let minimum = tab
-        .browser
-        .as_ref()
-        .map_or(0.0, |browser| f32::from(browser.view().column_width));
+    let paths = tab.column_paths(
+        window.width,
+        desktop.configuration.settings.sidebar,
+        window.panel_width(),
+        &desktop.home,
+    );
     let content_width = window.width
+        - window.panel_width()
         - if sidebar {
             chrome::SIDEBAR_WIDTH + 1.0
         } else {
             0.0
         };
+    // While a divider is dragged, the current column keeps a usable width.
+    let minimum = tab.browser.as_ref().map_or(0.0, |browser| {
+        let fitting = if paths.len() > 1 {
+            ((content_width - 220.0 - 68.0) / (paths.len() - 1) as f32).max(160.0)
+        } else {
+            f32::INFINITY
+        };
+        desktop
+            .column_width(id, browser.view().column_width)
+            .min(fitting.max(f32::from(browser.view().column_width)))
+    });
+    let divider_color = chrome::divider(&desktop.theme).color;
     let spare = (content_width - paths.len() as f32 * minimum).max(0.0);
     // Share surplus with the immediate parent while keeping the larger share
     // available for the current folder.
@@ -234,7 +239,18 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     if let Some(browser) = &tab.browser {
         for (index, path) in paths.iter().enumerate() {
             if index != 0 {
-                content = content.push(rule::vertical(1).style(chrome::divider));
+                // Dragging any divider resizes every column left of it.
+                content = content.push(super::resize::Grip {
+                    window: id,
+                    target: super::resize::Target::Columns,
+                    width: 1.0,
+                    current: f32::from(browser.view().column_width),
+                    height: Length::Fill,
+                    line: None,
+                    color: divider_color,
+                    share: 1.0 / index as f32,
+                    quiet: false,
+                });
             }
             let current = path == browser.path();
             let searching = current && browser.search().is_some();
@@ -440,14 +456,16 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     browser.view(),
                     tab.viewport_width,
                 );
+            let name_width =
+                super::listing_ui::name_width(desktop, id, browser.view(), tab.viewport_width);
             let heading = if inline {
                 let trailing = entry_padding(appearance, false).right + 14.0;
                 row![
                     space().width(30),
-                    chrome::single_line(
+                    container(chrome::single_line(
                         super::listing_ui::name_heading(browser.view()),
                         title_font,
-                        label_size,
+                        label_size + 1.0,
                         Some(chrome::ink(
                             appearance,
                             if browser.view().sort == crate::preferences::SortField::Name {
@@ -457,9 +475,18 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                             },
                         )),
                         true,
+                    ))
+                    .width(name_width),
+                    super::listing_ui::detail_cells(
+                        desktop,
+                        id,
+                        browser.view(),
+                        None,
+                        None,
+                        name_width
                     ),
-                    super::listing_ui::detail_cells(appearance, browser.view(), None),
                     space().width(trailing),
+                    space().width(Length::Fill),
                 ]
             } else {
                 row![
@@ -467,7 +494,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     chrome::single_line(
                         heading,
                         title_font,
-                        if current { body_size + 4.0 } else { body_size },
+                        body_size,
                         Some(chrome::ink(appearance, ColorRole::Text)),
                         tab.location.is_none() && desktop.action_menu.is_none(),
                     ),
@@ -481,44 +508,53 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 .padding([0, 11])
                 .width(Length::Fill)
                 .style(move |_| {
-                    let role = if current && !inline {
-                        ColorRole::AccentSurface
-                    } else {
-                        ColorRole::Raised
-                    };
-                    let mut background = chrome::ink(appearance, role);
-                    background.a = if current { 1.0 } else { 0.58 };
+                    // Columns share one neutral heading, the current one marked
+                    // by its accent underline. Icons view keeps only a quiet title.
+                    if grid {
+                        return container::Style::default();
+                    }
+                    let mut background = chrome::ink(appearance, ColorRole::Raised);
+                    background.a = if current { 0.72 } else { 0.58 };
                     container::Style::default().background(background)
                 });
-            let folder: Element<'_, Message> = container(column![
-                heading,
-                rule::horizontal(if current { 2 } else { 1 }).style(move |theme| {
-                    let mut style = chrome::divider(theme);
-                    if current && !inline {
-                        style.color = chrome::ink(appearance, ColorRole::Accent);
-                        style.color.a = 0.72;
-                    }
-                    style
-                }),
-                container(list).padding([6, 7]).height(Length::Fill)
-            ])
-            .width(if current {
-                Length::Fill
-            } else if index + 2 == paths.len() {
-                Length::Fixed(minimum + parent_extra - 1.0)
+            let list = container(list)
+                .padding(if grid { [14, 14] } else { [6, 7] })
+                .height(Length::Fill);
+            // The toolbar's path already names an Icons view's folder.
+            let folder = if grid {
+                column![list]
             } else {
-                Length::Fixed(minimum - 1.0)
-            })
-            .height(Length::Fill)
-            .style(move |_| {
-                if current {
-                    container::Style::default()
+                column![
+                    heading,
+                    rule::horizontal(if current { 2 } else { 1 }).style(move |theme| {
+                        let mut style = chrome::divider(theme);
+                        if current && !inline {
+                            style.color = chrome::ink(appearance, ColorRole::Accent);
+                            style.color.a = 0.72;
+                        }
+                        style
+                    }),
+                    list,
+                ]
+            };
+            let folder: Element<'_, Message> = container(folder)
+                .width(if current {
+                    Length::Fill
+                } else if index + 2 == paths.len() {
+                    Length::Fixed(minimum + parent_extra - 1.0)
                 } else {
-                    container::Style::default()
-                        .background(chrome::ink(appearance, ColorRole::Spine))
-                }
-            })
-            .into();
+                    Length::Fixed(minimum - 1.0)
+                })
+                .height(Length::Fill)
+                .style(move |_| {
+                    if current {
+                        container::Style::default()
+                    } else {
+                        container::Style::default()
+                            .background(chrome::ink(appearance, ColorRole::Spine))
+                    }
+                })
+                .into();
             content = content.push(super::drag_ui::target_region(
                 desktop,
                 id,
@@ -538,6 +574,14 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             }))
             .padding(20)
             .width(Length::Fill),
+        );
+    }
+    if let Some(panel) = &window.properties {
+        let panel_appearance = appearance.clone();
+        content = content.push(rule::vertical(1).style(chrome::divider)).push(
+            container(super::properties_ui::panel(desktop, id, panel))
+                .height(Length::Fill)
+                .style(move |_| chrome::panel_surface(&panel_appearance)),
         );
     }
     body = body.push(content);
@@ -566,12 +610,28 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 parts.push(fl!("files-status-more-results"));
             }
         } else {
-            parts.push(fl!(
-                "files-status-items",
-                count = browser.visible_entries().len()
-            ));
-            if selected != 0 {
-                parts.push(fl!("files-status-selected", count = selected));
+            let visible = browser.visible_entries();
+            parts.push(fl!("files-status-items", count = visible.len()));
+            // Selected files add their total size; folders have no cheap size.
+            let bytes = (selected != 0 && visible.len() <= 20_000)
+                .then(|| {
+                    visible
+                        .iter()
+                        .filter(|entry| {
+                            !entry.is_directory() && browser.selected().contains(&entry.path)
+                        })
+                        .map(|entry| entry.size)
+                        .sum::<u64>()
+                })
+                .filter(|bytes| *bytes != 0);
+            match bytes {
+                Some(bytes) => parts.push(fl!(
+                    "files-status-selected-size",
+                    count = selected,
+                    size = super::listing_ui::size(bytes)
+                )),
+                None if selected != 0 => parts.push(fl!("files-status-selected", count = selected)),
+                None => {}
             }
         }
         parts.join(" · ")
@@ -664,19 +724,8 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     }
     if let Some(browser) = &tab.browser
         && browser.search().is_none()
-        && window.width < TOOLBAR_MODES_WIDTH
     {
-        footer = footer.push(
-            view_switcher(
-                desktop,
-                id,
-                tab,
-                browser.view().mode,
-                window.width >= 560.0,
-                false,
-            )
-            .1,
-        );
+        footer = footer.push(view_button(desktop, id, tab, browser.view().mode));
     }
     let mut status_bar = column![footer].spacing(3);
     if !summary.is_empty() && (!wide_status || tab.error.is_some()) {
@@ -720,12 +769,21 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             .map(|chord| (chord, Message::Command(id, Command::Location)))
             .collect()
     };
+    let dimmed = desktop.recession(id);
     let appearance = appearance.clone();
-    let content = container(body)
+    let scrim_appearance = appearance.clone();
+    let surface = container(body)
         .id(root_id(id, tab.id))
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+        .style(move |_| chrome::window_surface(&appearance, false));
+    // The layer stays in the tree so that opening a prompt keeps every
+    // browser widget's state. It only paints; input still reaches the browser.
+    let scrim = container(space())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| chrome::scrim(&scrim_appearance, dimmed));
+    let content = iced::widget::stack![surface, scrim];
     let content = focus::transitions(
         content,
         shortcuts,
@@ -1009,106 +1067,75 @@ fn search_bar<'a>(
     )
 }
 
-pub(super) fn view_switcher<'a>(
+/// The current view's symbol in the status bar; it opens the view menu.
+fn view_button<'a>(
     desktop: &'a Desktop,
     id: window::Id,
     tab: &Tab,
     current: crate::preferences::ViewMode,
-    show_labels: bool,
-    top: bool,
-) -> (f32, Element<'a, Message>) {
-    use crate::preferences::ViewMode;
+) -> Element<'a, Message> {
     use iced::widget::{button, tooltip};
 
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let size = appearance.typography().label_size.px() + 1.0;
-    let mut controls = row![].spacing(2).align_y(Alignment::Center);
-    let mut width = 10.0;
-    for (mode, icon, command) in [
-        (ViewMode::Columns, Icon::Columns, Command::Columns),
-        (ViewMode::List, Icon::List, Command::List),
-        (ViewMode::Icons, Icon::Grid, Command::Icons),
-    ] {
-        let active = mode == current;
-        width += 32.0;
-        let label = match mode {
-            ViewMode::Columns => fl!("files-view-columns"),
-            ViewMode::List => fl!("files-view-list"),
-            ViewMode::Icons => fl!("files-view-icons"),
-        };
-        let mut content = vec![
-            desktop
-                .icons
-                .chrome(icon, 16.0, if active { 1.0 } else { 0.8 }),
-        ];
-        if active || show_labels {
-            width += 6.0 + chrome::text_width(&label, font, size);
-            content.push(text(label.clone()).font(font).size(size).into());
-        }
-        let content = canopa_ui::direction::row(content)
-            .spacing(6)
-            .align_y(Alignment::Center);
-        let control = button(content)
-            .padding([4, 8])
-            .on_press_maybe((!active && !tab.loading).then_some(Message::Command(id, command)))
-            .style(move |theme, status| {
-                let mut style =
-                    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
-                style.border.radius = 6.0.into();
-                if active {
-                    style.text_color = chrome::ink(appearance, ColorRole::Text);
-                    style.border.width = 1.0;
-                    style.border.color = chrome::ink(appearance, ColorRole::Accent);
-                    style.border.color.a = 0.32;
-                    style.background =
-                        Some(chrome::ink(appearance, ColorRole::AccentSurface).into());
-                }
-                style
-            });
-        let control = semantic(
-            Node::radio(label, active)
-                .key(format!("files-view-{}", command.id()))
-                .disabled(tab.loading)
-                .on_click((!active && !tab.loading).then_some(Message::Command(id, command))),
+    let size = appearance.typography().label_size.px();
+    let label = fl!("files-view-current", view = view_label(current));
+    let open = (!tab.loading).then_some(Message::Action(super::actions_ui::Event::ViewMenu(id)));
+    let expanded = desktop
+        .action_menu
+        .as_ref()
+        .is_some_and(|menu| menu.window() == id && menu.is_view_menu());
+    let content = row![
+        desktop.icons.chrome(view_icon(current), 16.0, 0.92),
+        desktop.icons.chrome(Icon::Down, 12.0, 0.6),
+    ]
+    .spacing(2)
+    .align_y(Alignment::Center);
+    let control = button(content)
+        .padding([3, 6])
+        .on_press_maybe(open.clone())
+        .style(move |theme, status| {
+            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+            style.border.radius = 7.0.into();
+            if expanded {
+                style.background = Some(chrome::selected_fill(appearance).into());
+            }
+            style
+        });
+    let control: Element<'_, Message> = if expanded || tab.location.is_some() {
+        control.into()
+    } else {
+        tooltip(
             control,
-        );
-        let control: Element<'_, Message> = if active
-            || show_labels
-            || tab.location.is_some()
-            || desktop.action_menu.is_some()
-            || desktop.folder_options.is_some()
-        {
-            control
-        } else {
-            tooltip(
-                control,
-                text(command.label()).font(font).size(size),
-                if top {
-                    tooltip::Position::Bottom
-                } else {
-                    tooltip::Position::Top
-                },
-            )
-            .into()
-        };
-        controls = controls.push(control);
-    }
-    (
-        width,
-        semantic(
-            Node::new(Role::RadioGroup)
-                .label(fl!("files-view"))
-                .key(if top {
-                    "files-view-switcher-top"
-                } else {
-                    "files-view-switcher"
-                }),
-            container(controls)
-                .padding(3)
-                .style(move |_| chrome::highlight(appearance, ColorRole::Spine)),
-        ),
+            text(label.clone()).font(font).size(size),
+            tooltip::Position::Top,
+        )
+        .into()
+    };
+    semantic(
+        Node::button(label)
+            .key("files-view-menu-button")
+            .expanded(expanded)
+            .disabled(open.is_none())
+            .on_click(open),
+        control,
     )
+}
+
+pub(super) fn view_icon(mode: crate::preferences::ViewMode) -> Icon {
+    match mode {
+        crate::preferences::ViewMode::Columns => Icon::Columns,
+        crate::preferences::ViewMode::List => Icon::List,
+        crate::preferences::ViewMode::Icons => Icon::Grid,
+    }
+}
+
+pub(super) fn view_label(mode: crate::preferences::ViewMode) -> String {
+    match mode {
+        crate::preferences::ViewMode::Columns => fl!("files-view-columns"),
+        crate::preferences::ViewMode::List => fl!("files-view-list"),
+        crate::preferences::ViewMode::Icons => fl!("files-view-icons"),
+    }
 }
 
 fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
@@ -1136,7 +1163,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             Place::Builtin(PlaceKind::Documents) => Icon::Documents,
             Place::Builtin(PlaceKind::Downloads) => Icon::Downloads,
             Place::Builtin(PlaceKind::Pictures) => Icon::Pictures,
-            Place::Builtin(PlaceKind::Filesystem) => Icon::Drive,
+            Place::Builtin(PlaceKind::Filesystem) => Icon::Disk,
             Place::Builtin(PlaceKind::Trash) => Icon::Trash,
             Place::Builtin(PlaceKind::Recovery) => Icon::Recovery,
             Place::Bookmark { .. } => Icon::Folder,
@@ -1179,15 +1206,20 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             appearance,
         )
         .width(Length::Fill);
+        // The current place is a neutral fill, like the column trail, so the
+        // accent stays with the file selection.
         let button: Element<'_, Message> = if active {
             container(button)
                 .width(Length::Fill)
                 .style(move |_| {
-                    let mut style = chrome::highlight(appearance, ColorRole::AccentSurface);
-                    style.border.width = 1.0;
-                    style.border.color = chrome::ink(appearance, ColorRole::Accent);
-                    style.border.color.a = 0.42;
-                    style
+                    if appearance.high_contrast() {
+                        let mut style = chrome::highlight(appearance, ColorRole::AccentSurface);
+                        style.border.width = 1.0;
+                        style.border.color = chrome::ink(appearance, ColorRole::Accent);
+                        style
+                    } else {
+                        chrome::highlight(appearance, ColorRole::Raised)
+                    }
                 })
                 .into()
         } else {
@@ -1318,7 +1350,12 @@ pub(super) fn input_style(
     if let Some(color) = frame.text_color {
         result.value = color;
     }
-    result.selection = chrome::ink(appearance, ColorRole::AccentSurface);
+    // Selected text reads clearly against the field, as in a pre-selected name.
+    result.selection = if appearance.high_contrast() {
+        chrome::ink(appearance, ColorRole::AccentSurface)
+    } else {
+        chrome::ink(appearance, ColorRole::Accent).scale_alpha(0.55)
+    };
     result.border = frame.border;
     if focused && style.states[4].border_color.is_none() {
         result.border.width = result.border.width.max(1.0);

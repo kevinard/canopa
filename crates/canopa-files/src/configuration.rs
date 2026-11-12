@@ -266,7 +266,15 @@ fn parse_actions(document: &KdlDocument) -> Result<Vec<CustomAction>, Diagnostic
     for node in document.nodes() {
         if matches!(
             node.name().value(),
-            "view" | "toolbar" | "sidebar" | "places" | "shortcut"
+            // Interface nodes, read by `interface_config`; the rest are actions.
+            "view"
+                | "toolbar"
+                | "sidebar"
+                | "places"
+                | "shortcut"
+                | "thumbnails"
+                | "properties"
+                | "list-columns"
         ) {
             continue;
         }

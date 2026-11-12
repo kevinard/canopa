@@ -23,13 +23,14 @@ impl Desktop {
         if !window.size_confirmed {
             return Task::none();
         }
+        let reserved = window.panel_width();
         let Some(tab) = window.tabs.get_mut(window.active) else {
             return Task::none();
         };
         if tab.loading {
             return Task::none();
         }
-        let paths = tab.column_paths(window.width, sidebar);
+        let paths = tab.column_paths(window.width, sidebar, reserved, &self.home);
         let wanted: Vec<_> = paths
             .into_iter()
             .filter(|path| path != tab.path())

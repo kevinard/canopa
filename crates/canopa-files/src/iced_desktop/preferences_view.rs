@@ -43,7 +43,7 @@ impl<'a> Form<'a> {
         let primary = name == "save";
         let icon = match name {
             "page-Views" => Some(chrome::Icon::Columns),
-            "page-Toolbar" => Some(chrome::Icon::Edit),
+            "page-Toolbar" => Some(chrome::Icon::Toolbar),
             "page-Locations" => Some(chrome::Icon::Places),
             "page-Shortcuts" => Some(chrome::Icon::Terminal),
             _ => None,
@@ -56,9 +56,14 @@ impl<'a> Form<'a> {
             other => Message::Preferences(other.clone()),
         });
         let message = event.map(Message::Preferences);
+        let footer = matches!(name, "save" | "reload");
         let label = text(label.into())
             .font(canopa_ui::font(self.appearance))
-            .size(self.appearance.typography().label_size.px() + if tab { 1.0 } else { 0.0 });
+            .size(if footer {
+                self.appearance.typography().body_size.px()
+            } else {
+                self.appearance.typography().label_size.px() + if tab { 1.0 } else { 0.0 }
+            });
         let label: Element<'a, Message> = if let Some(icon) = icon {
             canopa_ui::direction::row([self.desktop.icons.chrome(icon, 16.0, 0.9), label.into()])
                 .spacing(8)
@@ -72,7 +77,8 @@ impl<'a> Form<'a> {
             message.clone(),
             if primary {
                 canopa_ui::Action::Primary
-            } else if name == "reload" {
+            } else if name == "reload" && message.is_some() {
+                // An unavailable Revert drops its outline so it reads as disabled.
                 canopa_ui::Action::Normal
             } else {
                 canopa_ui::Action::Quiet
@@ -85,20 +91,25 @@ impl<'a> Form<'a> {
         } else {
             Length::Shrink
         });
+        let button = if footer {
+            button.padding(chrome::DIALOG_BUTTON_PADDING)
+        } else {
+            button
+        };
         let content = container(button).style({
             let appearance = self.appearance;
             move |_| {
                 if active && tab {
                     chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
                 } else if active && !primary {
-                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface).border(
-                        iced::Border {
+                    container::Style::default()
+                        .background(chrome::selected_fill(appearance))
+                        .border(iced::Border {
                             width: 1.0,
                             color: chrome::ink(appearance, canopa_theme::ColorRole::Accent)
-                                .scale_alpha(0.60),
-                            radius: 8.0.into(),
-                        },
-                    )
+                                .scale_alpha(0.55),
+                            radius: 11.0.into(),
+                        })
                 } else {
                     container::Style::default()
                 }
@@ -140,9 +151,12 @@ impl<'a> Form<'a> {
             .value(value)
             .read_only(!enabled);
         if enabled {
-            input = input.on_input(move |v| {
-                Message::Preferences(Event::Change(target, Change::Field(which, v)))
-            });
+            input = input
+                .on_input(move |v| {
+                    Message::Preferences(Event::Change(target, Change::Field(which, v)))
+                })
+                // Typed values apply when submitted.
+                .on_submit(Message::Preferences(Event::Save(target.window)));
             node = node.on_text(move |v| {
                 Message::Preferences(Event::Change(target, Change::Field(which, v)))
             });
@@ -311,35 +325,39 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             .into()
     };
     body = body.push(page);
-    let reload = form.button(
-        fl!("files-preferences-reload"),
-        "reload",
-        editor.enabled().then_some(Event::Reload(id)),
-        false,
-        false,
-    );
     body = body.push(iced::widget::rule::horizontal(1).style(chrome::divider));
+    let changed_outside = !editor.base.same_source(&desktop.configuration);
+    // Changes save as they are made, so the footer reports state instead of
+    // offering Save. A newer version saved elsewhere can still be loaded.
+    let reload: Element<'a, Message> = if changed_outside {
+        form.button(
+            fl!("files-preferences-reload"),
+            "reload",
+            editor.enabled().then_some(Event::Reload(id)),
+            false,
+            false,
+        )
+    } else {
+        iced::widget::space().width(0).into()
+    };
+    let status: Element<'a, Message> = if editor.dirty
+        && !editor.busy
+        && !editor.applying
+        && matches!(editor.status.as_str(), s if s == fl!("files-preferences-status-initial")
+            || s == fl!("files-preferences-saved"))
+    {
+        text(fl!("files-preferences-pending"))
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().label_size.px() + 1.0)
+            .color(chrome::ink(appearance, canopa_theme::ColorRole::Warning))
+            .into()
+    } else {
+        form.note(&editor.status)
+    };
     body = body.push(
-        row![
-            column![
-                form.note(&editor.status),
-                text(fl!("files-preferences-keys"))
-                    .font(canopa_ui::font(appearance))
-                    .size(appearance.typography().label_size.px() + 1.0)
-                    .style(canopa_ui::muted),
-            ]
-            .spacing(3)
-            .width(Length::Fill),
-            form.button(
-                fl!("files-preferences-save"),
-                "save",
-                (editor.enabled() && editor.base.is_editable()).then_some(Event::Save(id)),
-                true,
-                false
-            )
-        ]
-        .align_y(iced::Alignment::Center)
-        .spacing(8),
+        row![container(status).width(Length::Fill), reload]
+            .align_y(iced::Alignment::Center)
+            .spacing(8),
     );
     form.order.push(chrome::dismiss_id(id));
     let default = editor.confirmation.map(|_| editor.focus_id("keep"));
@@ -351,12 +369,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
                 chrome::Icon::Settings,
                 fl!("files-command-preferences"),
                 fl!("files-preferences-subtitle"),
-                Some(
-                    row![reload, chrome::dismiss(desktop, id)]
-                        .spacing(4)
-                        .align_y(iced::Alignment::Center)
-                        .into()
-                ),
+                Some(chrome::dismiss(desktop, id)),
             ),
             body,
         ]
@@ -366,7 +379,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     .padding(16)
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Panel)));
+    .style(move |_| chrome::window_surface(&appearance, true));
     let shortcuts = if editor.enabled() {
         Page::ALL
             .iter()
@@ -417,44 +430,63 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
     let segment = |choices: Element<'a, Message>| {
         container(choices)
             .padding(3)
-            .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Spine))
+            .style(move |_| chrome::segmented(appearance))
     };
+    let group = |title: String, control: Element<'a, Message>| -> Element<'a, Message> {
+        column![chrome::section_title(appearance, title), control]
+            .spacing(8)
+            .into()
+    };
+    let descending = form.toggle(
+        &fl!("files-preferences-descending"),
+        "descending",
+        v.descending,
+        Change::Descending(!v.descending),
+    );
     let ordering = column![
-        chrome::section_title(appearance, fl!("files-preferences-default-view")),
-        segment(modes.wrap().into()),
-        chrome::section_title(appearance, fl!("files-preferences-sort-by")),
-        segment(sorts.wrap().into()),
-        form.toggle(
-            &fl!("files-preferences-descending"),
-            "descending",
-            v.descending,
-            Change::Descending(!v.descending)
-        )
+        group(
+            fl!("files-preferences-default-view"),
+            column![
+                segment(modes.wrap().into()),
+                text(fl!("files-preferences-views-note"))
+                    .font(canopa_ui::font(appearance))
+                    .size(appearance.typography().label_size.px() + 1.0)
+                    .style(canopa_ui::muted)
+                    .wrapping(text::Wrapping::WordOrGlyph),
+            ]
+            .spacing(8)
+            .into()
+        ),
+        group(
+            fl!("files-preferences-sort-by"),
+            column![segment(sorts.wrap().into()), descending]
+                .spacing(10)
+                .into()
+        ),
     ]
-    .spacing(10);
-    let mut details = column![
-        chrome::section_title(form.appearance, fl!("files-preferences-column-layout")),
+    .spacing(22);
+    let width = column![
         container(form.field(
             &fl!("files-preferences-column-width"),
             "width",
             &form.editor.width,
             Field::Width
         ))
-        .max_width(220),
+        .max_width(150),
         text(fl!("files-preferences-column-width-range"))
             .font(canopa_ui::font(form.appearance))
-            .size(form.appearance.typography().label_size.px())
+            .size(form.appearance.typography().label_size.px() + 1.0)
             .style(canopa_ui::muted),
-        chrome::section_title(form.appearance, fl!("files-preferences-list-details"))
     ]
-    .spacing(10);
+    .spacing(6);
+    let mut list_details = column![].spacing(8);
     for (detail, label) in [
         (Detail::Size, fl!("files-column-size")),
         (Detail::Modified, fl!("files-preferences-modified-date")),
         (Detail::Kind, fl!("files-column-kind")),
     ] {
         let checked = v.details.contains(&detail);
-        details = details.push(form.toggle(
+        list_details = list_details.push(form.toggle(
             &label,
             &format!("detail-{detail:?}"),
             checked,
@@ -482,23 +514,75 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             true,
         ));
     }
+    // Registered after the existing Views controls, keeping their keyboard order.
+    let mut displays = row![].spacing(4);
+    for display in crate::interface::PropertiesDisplay::ALL {
+        displays = displays.push(form.change(
+            display.label(),
+            &format!("properties-{}", display.id()),
+            Change::Properties(display),
+            form.editor.draft.properties == display,
+            true,
+        ));
+    }
+    let caption = |label: String| {
+        text(label)
+            .font(canopa_ui::font(appearance))
+            .size(appearance.typography().label_size.px() + 1.0)
+            .style(canopa_ui::muted)
+            .wrapping(text::Wrapping::WordOrGlyph)
+    };
+    // Shared browsing choices on the left; each view's own options on the
+    // right under that view's name, so their scope is explicit.
     let ordering = ordering
-        .push(chrome::section_title(
-            appearance,
+        .push(group(
             fl!("files-preferences-thumbnails"),
+            column![
+                segment(show.wrap().into()),
+                caption(fl!("files-preferences-thumbnails-note")),
+            ]
+            .spacing(8)
+            .into(),
         ))
-        .push(segment(show.wrap().into()))
-        .push(chrome::section_title(
-            appearance,
-            fl!("files-preferences-icon-size"),
-        ))
-        .push(segment(sizes.wrap().into()));
+        .push(group(
+            fl!("files-preferences-properties"),
+            segment(displays.wrap().into()).into(),
+        ));
+    let details = column![
+        group(fl!("files-preferences-columns-view"), width.into()),
+        group(
+            fl!("files-preferences-list-view"),
+            column![caption(fl!("files-preferences-list-details")), list_details]
+                .spacing(8)
+                .into()
+        ),
+        group(
+            fl!("files-preferences-icons-view"),
+            column![
+                caption(fl!("files-preferences-icon-size")),
+                segment(sizes.wrap().into())
+            ]
+            .spacing(8)
+            .into()
+        ),
+    ]
+    .spacing(20);
+    // Each column opens with what it governs: every view, or one view.
+    let eyebrow = |label: String| {
+        let mut font = canopa_ui::font(appearance);
+        font.weight = iced::font::Weight::Semibold;
+        text(label)
+            .font(font)
+            .size(appearance.typography().body_size.px() + 2.0)
+    };
+    let ordering = column![eyebrow(fl!("files-preferences-all-views")), ordering].spacing(12);
+    let details = column![eyebrow(fl!("files-preferences-each-view")), details].spacing(12);
     let settings: Element<'a, Message> = if wide {
         row![
             container(ordering).width(Length::FillPortion(1)),
             container(details).width(Length::FillPortion(1)),
         ]
-        .spacing(20)
+        .spacing(28)
         .into()
     } else {
         column![
@@ -509,13 +593,10 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         .spacing(14)
         .into()
     };
-    column![
-        container(settings).padding([6, 4]).width(Length::Fill),
-        iced::widget::rule::horizontal(1).style(chrome::divider),
-        container(form.note(fl!("files-preferences-views-note"))).padding([4, 4])
-    ]
-    .spacing(10)
-    .into()
+    container(settings)
+        .padding([6, 4])
+        .width(Length::Fill)
+        .into()
 }
 
 fn item_label(editor: &Editor, id: &str) -> String {

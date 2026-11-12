@@ -210,6 +210,20 @@ impl PreferenceStore {
         Ok(())
     }
 
+    /// Drop `folder`'s own column width, so it follows the default again.
+    /// Returns whether it had one.
+    pub fn forget_column_width(&mut self, folder: &Path) -> bool {
+        let Some(overrides) = self.overrides.get_mut(folder) else {
+            return false;
+        };
+        if overrides.column_width.take().is_none() {
+            return false;
+        }
+        let view = overrides.resolve(&self.defaults);
+        self.folders.insert(folder.to_owned(), view);
+        true
+    }
+
     pub fn use_defaults(&mut self, folder: &Path) {
         self.folders.remove(folder);
         self.overrides.remove(folder);

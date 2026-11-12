@@ -123,6 +123,10 @@ impl Desktop {
             self.folder_options = None;
         }
     }
+    /// Save folder views after a change made outside the View options.
+    pub(super) fn save_folder_views(&mut self, folder: PathBuf) -> Task<Message> {
+        self.folder_writer.queue(self.preferences.clone(), folder)
+    }
     pub(super) fn change_folder_mode(&mut self, id: window::Id, mode: ViewMode) -> Task<Message> {
         let Some(target) = self.folder_target(id) else {
             return Task::none();
@@ -144,7 +148,13 @@ impl Desktop {
                 if browser.view() == &view {
                     continue;
                 }
-                if browser.set_view(view).is_ok() {
+                // A new column width only lays the same listings out again.
+                let width_only = {
+                    let mut old = browser.view().clone();
+                    old.column_width = view.column_width;
+                    old == view
+                };
+                if browser.set_view(view).is_ok() && !width_only {
                     tab.list_epoch += 1;
                     tab.reveal_on_show = true;
                     tab.columns.clear();

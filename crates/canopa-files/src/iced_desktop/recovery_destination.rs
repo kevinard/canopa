@@ -420,9 +420,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .padding(16)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| {
-            canopa_ui::frame(appearance, appearance.style(canopa_theme::UiKind::Panel))
-        }),
+        .style(move |_| chrome::window_surface(appearance, true)),
         order,
         reveal,
         (!dialog.busy).then(|| control(id, "folder")),

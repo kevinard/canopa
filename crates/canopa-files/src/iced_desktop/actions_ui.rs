@@ -36,6 +36,8 @@ pub(super) struct RowTarget {
 pub(super) enum Event {
     Menu(window::Id),
     Locations(window::Id),
+    /// The status bar's view menu.
+    ViewMenu(window::Id),
     Row(RowTarget),
     Close(window::Id),
     Builtin(Arc<Source>, Command),
@@ -57,6 +59,7 @@ enum Item {
     OpenWith,
     Application(Arc<canopa_apps::DesktopApplication>),
     OtherApplication,
+    View(crate::preferences::ViewMode),
 }
 pub(super) struct Menu {
     source: Arc<Source>,
@@ -66,6 +69,12 @@ pub(super) struct Menu {
 impl Menu {
     pub fn window(&self) -> window::Id {
         self.source.window
+    }
+    /// Whether this is the status bar's view menu, which opens above it.
+    pub fn is_view_menu(&self) -> bool {
+        self.items
+            .first()
+            .is_some_and(|(_, item)| matches!(item, Item::View(_)))
     }
 }
 
@@ -201,6 +210,10 @@ impl Desktop {
                     }
                 }
                 items.push((
+                    fl!("files-command-properties"),
+                    Item::Command(Command::Properties),
+                ));
+                items.push((
                     fl!("files-menu-edit-custom-actions"),
                     Item::Command(Command::CustomActions),
                 ));
@@ -230,6 +243,39 @@ impl Desktop {
                 };
                 return self.present_menu(source, self.location_items(false));
             }
+            Event::ViewMenu(id) => {
+                // The button toggles its menu.
+                if self
+                    .action_menu
+                    .as_ref()
+                    .is_some_and(|menu| menu.window() == id && menu.is_view_menu())
+                {
+                    self.action_menu = None;
+                    return Task::none();
+                }
+                let Some(source) = self.action_source(id) else {
+                    return Task::none();
+                };
+                let current = self
+                    .active(id)
+                    .and_then(|tab| tab.browser.as_ref())
+                    .map(|browser| browser.view().mode)
+                    .unwrap_or_default();
+                use crate::preferences::ViewMode;
+                let items: Vec<_> = [ViewMode::Columns, ViewMode::List, ViewMode::Icons]
+                    .into_iter()
+                    .map(|mode| (super::view::view_label(mode), Item::View(mode)))
+                    .collect();
+                let focused = items
+                    .iter()
+                    .position(|(_, item)| matches!(item, Item::View(mode) if *mode == current))
+                    .unwrap_or(0);
+                let task = self.present_menu(source, items);
+                if let Some(menu) = &mut self.action_menu {
+                    menu.focused = focused;
+                }
+                return task;
+            }
             Event::Row(target) => {
                 let Some(tab) = self.active(target.window).filter(|tab| {
                     tab.id == target.tab
@@ -248,9 +294,12 @@ impl Desktop {
                         .into_iter()
                         .any(|entry| entry.path == target.path)
                 } else {
+                    let window = &self.windows[&target.window];
                     let columns = tab.column_paths(
-                        self.windows[&target.window].width,
+                        window.width,
                         self.configuration.settings.sidebar,
+                        window.panel_width(),
+                        &self.home,
                     );
                     let child = columns
                         .iter()
@@ -380,6 +429,14 @@ impl Desktop {
                         }
                     }
                     Item::Command(command) => self.command(source.window, command),
+                    Item::View(mode) => self.command(
+                        source.window,
+                        match mode {
+                            crate::preferences::ViewMode::Columns => Command::Columns,
+                            crate::preferences::ViewMode::List => Command::List,
+                            crate::preferences::ViewMode::Icons => Command::Icons,
+                        },
+                    ),
                     Item::FolderOptions => {
                         self.folder_view_event(folder_views::Event::Show(source.window))
                     }
@@ -582,6 +639,11 @@ pub(super) fn overlay<'a>(
     let appearance = &desktop.configuration.appearance;
     let size = appearance.typography().body_size.px();
     let font = canopa_ui::font(appearance);
+    let view_menu = menu.is_view_menu();
+    let current = desktop
+        .active(id)
+        .and_then(|tab| tab.browser.as_ref())
+        .map(|browser| browser.view().mode);
     let mut items = column![].spacing(4);
     for (index, (label, item)) in menu.items.iter().enumerate() {
         let icon = match item {
@@ -599,6 +661,7 @@ pub(super) fn overlay<'a>(
             | Item::Locations
             | Item::Back
             | Item::Device(..)
+            | Item::View(_)
             | Item::Place(_) => None,
         };
         let message = Message::Action(Event::MenuItem(menu.source.clone(), index));
@@ -609,7 +672,10 @@ pub(super) fn overlay<'a>(
                 .focused(index == menu.focused)
                 .on_click(Some(message.clone())),
             canopa_ui::styled_action(
-                desktop.icons.label(icon, label, size, font, true),
+                match item {
+                    Item::View(mode) => view_item(desktop, *mode, current, label, size, font),
+                    _ => desktop.icons.label(icon, label, size, font, true),
+                },
                 Some(message),
                 canopa_ui::Action::Quiet,
                 index == menu.focused,
@@ -620,29 +686,75 @@ pub(super) fn overlay<'a>(
     }
     let appearance = appearance.clone();
     let menu = container(scrollable(items).id(menu_id(id)).height(Length::Shrink))
-        .padding(8)
-        .max_width(320)
+        .padding(if view_menu { 6 } else { 8 })
+        .max_width(if view_menu { 200 } else { 320 })
         .max_height(360)
         .width(Length::Fill)
         .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Menu)));
+    let placed = container(opaque(super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::menu(if view_menu {
+            fl!("files-view")
+        } else {
+            fl!("files-toolbar-actions")
+        })
+        .key("files-menu"),
+        menu,
+    )))
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .align_right(Length::Fill);
+    // The view menu opens above its status bar button, at the window's end.
+    let placed = if view_menu {
+        placed
+            .padding(iced::Padding {
+                bottom: VIEW_MENU_BOTTOM,
+                right: 8.0,
+                ..Default::default()
+            })
+            .align_bottom(Length::Fill)
+    } else {
+        placed.padding([74, 10]).align_top(Length::Fill)
+    };
     layers
         .push(
             mouse_area(space().width(Length::Fill).height(Length::Fill))
                 .on_press(Message::Action(Event::Close(id)))
                 .on_right_press(Message::Action(Event::Close(id))),
         )
-        .push(
-            container(opaque(super::accessibility_ui::semantic(
-                super::accessibility_ui::Node::menu(fl!("files-toolbar-actions")).key("files-menu"),
-                menu,
-            )))
-            .padding([74, 10])
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_right(Length::Fill)
-            .align_top(Length::Fill),
-        )
+        .push(placed)
         .into()
+}
+
+/// Space below the view menu: the status bar and a small gap.
+const VIEW_MENU_BOTTOM: f32 = 40.0;
+
+/// A view menu item: the view's symbol, its name, and a check on the current one.
+fn view_item<'a>(
+    desktop: &'a Desktop,
+    mode: crate::preferences::ViewMode,
+    current: Option<crate::preferences::ViewMode>,
+    label: &str,
+    size: f32,
+    font: iced::Font,
+) -> Element<'a, Message> {
+    let check: Element<'a, Message> = if current == Some(mode) {
+        desktop.icons.chrome(super::chrome::Icon::Check, 16.0, 0.9)
+    } else {
+        space().width(16).into()
+    };
+    iced::widget::row![
+        desktop
+            .icons
+            .chrome(super::view::view_icon(mode), 18.0, 0.92),
+        iced::widget::text(label.to_owned())
+            .font(font)
+            .size(size)
+            .width(Length::Fill),
+        check,
+    ]
+    .spacing(10)
+    .align_y(iced::Alignment::Center)
+    .into()
 }
 
 #[cfg(test)]

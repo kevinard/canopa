@@ -13,6 +13,8 @@ pub struct Metadata {
     pub kind: EntryKind,
     pub bytes: u64,
     pub modified: Option<SystemTime>,
+    /// The birth time, where the filesystem records one.
+    pub created: Option<SystemTime>,
     pub permissions: u32,
     pub owner: u32,
     pub group: u32,
@@ -46,6 +48,7 @@ pub fn read(paths: &[PathBuf], cancellation: &Cancellation) -> io::Result<Vec<It
                     },
                     bytes: m.len(),
                     modified: m.modified().ok(),
+                    created: m.created().ok(),
                     permissions: m.mode() & 0o7777,
                     owner: m.uid(),
                     group: m.gid(),
