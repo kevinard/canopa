@@ -1242,8 +1242,11 @@ impl App {
                             })
                     })
                     .map(|(zone, id)| {
+                        // Keyboard activation carries the bar's selection into
+                        // the panel; a pointer click opens it without a ring.
                         let focused = self.foreground.focused_panel_module().map_or(
-                            origin == &crate::surface::panel::PanelOrigin::Module(id.clone()),
+                            origin == &crate::surface::panel::PanelOrigin::Module(id.clone())
+                                && origin_surface.focused_module.as_ref() == Some(&id),
                             |focused| focused == &id,
                         );
                         crate::surface::panel::PanelModuleEntry { id, zone, focused }
@@ -1447,6 +1450,44 @@ impl App {
         Task::batch(self.apply_foreground_effects(effects))
     }
 
+    /// A status icon that opens Quick settings from the bar leads, inside Quick
+    /// settings, to its own detail: Sound to the audio provider, Wi-Fi to the
+    /// network's provider, media to the media provider.
+    fn quick_settings_action(
+        &self,
+        target: &crate::modules::ModuleId,
+        action: crate::config::PanelAction,
+    ) -> crate::config::PanelAction {
+        use crate::config::PanelAction;
+        if !matches!(
+            action,
+            PanelAction::OpenBarPanel | PanelAction::ToggleBarPanel
+        ) {
+            return action;
+        }
+        let provider = match self.modules.kind_for(target) {
+            Some(crate::modules::ModuleKind::Volume) => Some("audio".to_owned()),
+            Some(crate::modules::ModuleKind::Media) => Some("media".to_owned()),
+            Some(crate::modules::ModuleKind::Battery) => Some("power".to_owned()),
+            Some(crate::modules::ModuleKind::Network) => self
+                .config
+                .modules
+                .iter()
+                .find(|module| module.name == target.configured_name())
+                .map_or_else(
+                    || crate::config::NetworkConfig::default().default_provider,
+                    |module| match &module.params {
+                        crate::config::ModuleParams::Network(config) => {
+                            config.default_provider.clone()
+                        }
+                        _ => crate::config::NetworkConfig::default().default_provider,
+                    },
+                ),
+            _ => None,
+        };
+        provider.map_or(action, PanelAction::OpenProvider)
+    }
+
     fn interact_panel_module(
         &mut self,
         window: iced::window::Id,
@@ -1476,6 +1517,7 @@ impl App {
         if let Some(action) = trigger
             .and_then(|trigger| self.modules.action_for(&target, &trigger))
             .cloned()
+            .map(|action| self.quick_settings_action(&target, action))
         {
             // Use the active Panel's origin and anchor: this Module need not be on the Bar.
             let action_origin = if matches!(
@@ -2968,10 +3010,10 @@ mod tests {
             names,
             [
                 "network",
-                "volume",
+                "bluetooth",
                 "notifications",
                 "idle-inhibitor",
-                "bluetooth",
+                "volume",
                 "power-and-brightness"
             ]
         );
@@ -3035,7 +3077,7 @@ mod tests {
         let _ = app.move_panel_focus(1);
         assert_eq!(
             app.foreground.focused_panel_module(),
-            Some(&ModuleId::new("volume"))
+            Some(&ModuleId::new("bluetooth"))
         );
         let _ = app.activate_panel_entry(None);
         assert!(matches!(
@@ -3047,7 +3089,7 @@ mod tests {
     }
 
     #[test]
-    fn bundled_controls_button_opens_its_bar_panel_and_repeated_click_dismisses() {
+    fn bundled_status_group_opens_its_bar_panel_and_repeated_click_dismisses() {
         let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
         assert_eq!(
             config.bars[0].panel.title.as_deref(),
@@ -3056,12 +3098,12 @@ mod tests {
         let (mut app, _) = App::boot(config, vec![]);
         let origin_window = iced::window::Id::unique();
         app.surface_mut(origin_window);
-        let id = crate::modules::ModuleId::new("system");
+        let id = crate::modules::ModuleId::new("volume");
         let action = app
             .modules
             .action_for(&id, &crate::config::ActionTrigger::Click)
             .cloned()
-            .expect("bundled controls action");
+            .expect("bundled status action");
         let origin = crate::surface::panel::PanelOrigin::Module(id.clone());
         let anchor = iced::Rectangle {
             x: 10.0,

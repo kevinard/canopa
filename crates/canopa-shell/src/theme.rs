@@ -204,18 +204,16 @@ pub fn menu_metrics_with_gap(gap: Option<canopa_theme::Pixels>) -> MenuMetrics {
     MenuMetrics { row, gap, extent }
 }
 
-pub fn launcher_menu_metrics(mut metrics: MenuMetrics, browsing: bool) -> MenuMetrics {
-    let labels = if browsing {
-        (body_size() + label_size() + 3.0) * 1.12 + 5.0
-    } else {
-        (body_size() + label_size() + 4.0) * 1.14 + 4.0
-    };
+/// Launcher rows: browsing and results share one height, so typing never
+/// moves the list. `_browsing` is kept for callers that still distinguish them.
+pub fn launcher_menu_metrics(mut metrics: MenuMetrics, _browsing: bool) -> MenuMetrics {
+    let labels = (body_size() + label_size() + 3.0) * 1.12 + 5.0;
     let padding = if metrics.row.custom_padding {
         metrics.row.padding.vertical()
     } else {
         10.0
     };
-    metrics.extent = labels.ceil().max(if browsing { 27.0 } else { 32.0 })
+    metrics.extent = labels.ceil().max(27.0)
         + padding
         + metrics.row.margin.vertical()
         + 2.0 * metrics.row.border_width.px()
@@ -309,4 +307,118 @@ pub fn text_width_in_font(content: &str, size: f32, font: iced::Font) -> f32 {
     })
     .min_bounds()
     .width
+}
+
+/// A round, icon-only control (Close, Back) shared by every panel header so the
+/// launcher, Quick settings and provider panels dismiss the same way.
+pub fn icon_button<'a, Message: Clone + 'a>(
+    bytes: &'static [u8],
+    on_press: Option<Message>,
+    focused: bool,
+) -> iced::widget::button::Button<'a, Message> {
+    use iced::widget::button;
+    button(iced::widget::container(icon(bytes, 16.0, palette().text)).center(32))
+        .padding(0)
+        .width(32)
+        .height(32)
+        .on_press_maybe(on_press)
+        .style(move |theme, status| {
+            let colors = canopa_ui::colors(theme);
+            let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: Some(
+                    if engaged {
+                        colors.text.scale_alpha(0.16)
+                    } else {
+                        colors.text.scale_alpha(0.07)
+                    }
+                    .into(),
+                ),
+                text_color: colors.text,
+                border: iced::Border {
+                    color: colors.focus,
+                    width: if focused { 2.0 } else { 0.0 },
+                    radius: 16.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+}
+
+pub const CLOSE_ICON: &[u8] = include_bytes!("../assets/close.svg");
+
+/// A 0-100 level slider for Quick settings: a thick rounded rail with the
+/// accent fill and a round handle. Without `on_change` it is a read-only gauge.
+pub fn level_slider<'a, Message: Clone + 'a>(
+    value: f32,
+    on_change: Option<impl Fn(f32) -> Message + 'a>,
+    dimmed: bool,
+) -> iced::Element<'a, Message> {
+    use iced::widget::slider;
+    let style = move |theme: &iced::Theme, status: slider::Status| {
+        let colors = canopa_ui::colors(theme);
+        let fill = if dimmed { colors.muted } else { colors.accent };
+        slider::Style {
+            rail: slider::Rail {
+                backgrounds: (fill.into(), colors.text.scale_alpha(0.14).into()),
+                width: 6.0,
+                border: iced::Border::default().rounded(3),
+            },
+            handle: slider::Handle {
+                shape: slider::HandleShape::Circle {
+                    radius: if matches!(status, slider::Status::Active) {
+                        8.0
+                    } else {
+                        9.0
+                    },
+                },
+                background: colors.text.into(),
+                border_width: 3.0,
+                border_color: fill,
+            },
+        }
+    };
+    match on_change {
+        Some(on_change) => slider(0.0..=100.0, value, on_change)
+            .step(1.0)
+            .shift_step(10.0)
+            .height(22)
+            .width(iced::Length::Fill)
+            .style(style)
+            .into(),
+        None => {
+            let fill = (value / 100.0).clamp(0.0, 1.0);
+            let colors = palette();
+            iced::widget::container(
+                iced::widget::container(iced::widget::Space::new())
+                    .width(iced::Length::FillPortion((fill * 1000.0) as u16 + 1))
+                    .height(6)
+                    .style(move |_| {
+                        iced::widget::container::Style::default()
+                            .background(colors.muted)
+                            .border(iced::Border::default().rounded(3))
+                    }),
+            )
+            .width(iced::Length::Fill)
+            .height(22)
+            .align_y(iced::Alignment::Center)
+            .into()
+        }
+    }
+}
+
+/// `text` shortened with a trailing ellipsis to fit `width` at `size`.
+pub fn ellipsize(text: &str, width: f32, size: f32) -> String {
+    if text_width(text, size) <= width {
+        return text.to_owned();
+    }
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let candidate: String = chars.iter().collect::<String>().trim_end().to_owned() + "…";
+        if text_width(&candidate, size) <= width {
+            return candidate;
+        }
+    }
+    "…".into()
 }

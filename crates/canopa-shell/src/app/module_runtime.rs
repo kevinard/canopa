@@ -13,6 +13,18 @@ pub(super) struct ModuleRuntime {
     actions: HashMap<ModuleId, ModuleActionsConfig>,
     interactions: HashMap<ModuleId, ModuleInteractionProfile>,
     dynamic_family_inputs: HashMap<ModuleId, super::dynamic_modules::DynamicModuleFamilyInput>,
+    /// Live state of built-in providers that Quick settings links to, by name.
+    provider_status: HashMap<String, ProviderStatus>,
+}
+
+/// What a Quick settings link to a provider shows without opening it: a short
+/// status and, for a radio, its switch.
+#[derive(Debug, Clone)]
+pub(super) struct ProviderStatus {
+    pub summary: String,
+    pub switch: Option<(bool, super::Message)>,
+    /// A level set inline from Quick settings, 1–100.
+    pub level: Option<crate::modules::render::LevelControl>,
 }
 
 pub(super) struct BarModuleRenderRequest<'a> {
@@ -117,7 +129,39 @@ impl ModuleRuntime {
             actions,
             interactions,
             dynamic_family_inputs: HashMap::new(),
+            provider_status: HashMap::new(),
         }
+    }
+
+    pub(super) fn set_provider_status(&mut self, provider: &str, status: Option<ProviderStatus>) {
+        match status {
+            Some(status) => {
+                self.provider_status.insert(provider.to_owned(), status);
+            }
+            None => {
+                self.provider_status.remove(provider);
+            }
+        }
+    }
+
+    /// Whether a module links to a provider that currently offers a switch.
+    pub(super) fn has_provider_switch(&self, id: &ModuleId) -> bool {
+        match self.action_for(id, &crate::config::ActionTrigger::Click) {
+            Some(crate::config::PanelAction::OpenProvider(name)) => self
+                .provider_status
+                .get(name)
+                .is_some_and(|status| status.switch.is_some()),
+            _ => false,
+        }
+    }
+
+    /// Whether a module opens `provider` when clicked.
+    pub(super) fn opens_provider(&self, provider: &str) -> bool {
+        self.actions.values().any(|actions| {
+            actions.bindings.iter().any(|binding| {
+                matches!(&binding.action, crate::config::PanelAction::OpenProvider(name) if name == provider)
+            })
+        })
     }
 
     /// Reuse state and subscription identity only for unchanged configured instances.
@@ -128,6 +172,7 @@ impl ModuleRuntime {
         new: &crate::config::Config,
         generation: u64,
     ) {
+        self.provider_status = previous.provider_status.clone();
         for (_, module) in self.store.iter() {
             let id = module.id();
             let name = id.configured_name();
@@ -465,6 +510,26 @@ impl ModuleRuntime {
                 event,
             })
         };
+        let opens_provider =
+            match self.action_for(&request.detail.id, &crate::config::ActionTrigger::Click) {
+                Some(crate::config::PanelAction::OpenProvider(name)) => Some(name.clone()),
+                _ => None,
+            };
+        // Power & display names the battery charge when a battery is present;
+        // other built-in providers report their own status.
+        // The volume card names the default output, as the Sound panel would.
+        let status = opens_provider
+            .as_deref()
+            .or((module.kind() == ModuleKind::Volume).then_some("audio"))
+            .and_then(|provider| self.provider_status.get(provider));
+        let provider_summary = (opens_provider.as_deref() == Some("power"))
+            .then(|| self.store.ids_by_kind(ModuleKind::Battery).first().cloned())
+            .flatten()
+            .and_then(|id| self.states.get(&id))
+            .and_then(crate::modules::battery::panel_summary)
+            .or_else(|| status.map(|status| status.summary.clone()));
+        let provider_switch = status.and_then(|status| status.switch.clone());
+        let provider_level = status.and_then(|status| status.level);
         let context = crate::modules::render::PanelModuleContext {
             primary: (profile.primary_activation || profile.secondary_activation)
                 .then(|| module.bar_panel_activation(state, request.window))
@@ -479,10 +544,17 @@ impl ModuleRuntime {
             focused: request.focused,
             footer: request.footer,
             paired_toggle: request.paired_toggle,
-            opens_provider: matches!(
+            opens_menu: matches!(
                 self.action_for(&request.detail.id, &crate::config::ActionTrigger::Click),
-                Some(crate::config::PanelAction::OpenProvider(_))
+                Some(
+                    crate::config::PanelAction::OpenMenu(_)
+                        | crate::config::PanelAction::ToggleMenu(_)
+                )
             ),
+            opens_provider,
+            provider_summary,
+            provider_switch,
+            provider_level,
             key: format!("quick-settings:{}", request.detail.id.accessibility_key()),
         };
         let key = context.key.clone();
@@ -2700,6 +2772,7 @@ mod tests {
                 label: Some("Home".into()),
                 kind: None,
                 vpn: Vec::new(),
+                wireless: None,
             },
         )));
         let id = ModuleId::new("network");
@@ -2734,6 +2807,7 @@ mod tests {
                 label: None,
                 kind: None,
                 vpn: Vec::new(),
+                wireless: None,
             },
         )));
         let id = ModuleId::new("network");

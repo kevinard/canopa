@@ -215,6 +215,15 @@ Canopa providers send complete `replace_content` JSON lines without waiting for 
 
 The host renders grouped sections, controls, metadata, all actions, bold/italic/underline and ordered local body images. Image decoding runs off the UI thread: at most 16 unique images per snapshot, 8 MiB encoded bytes per file, 2048×2048 source dimensions, and two concurrent decoding jobs; displayed pixels are reduced to at most 512×512. Invalid/unavailable images retain alternative text. No network fetching or arbitrary markup execution occurs.
 
+Actions may carry two optional presentation hints, which older hosts ignore:
+`"destructive": true` for an action that removes or discards something, and
+`"pressed": true|false` for an action that switches a view or setting. Canopa
+Shell draws content-level actions as compact chips: destructive ones in the danger
+tone and switches with a small on/off switch (a toggle button to assistive tools).
+On an attributed item (a message card), a destructive item action becomes the
+card's round close control, and a presence status with a single other action
+becomes an unread dot that performs it.
+
 Arrow keys select an action, Enter activates it, and Escape closes the panel. The selected action and its item/control context remain visible above the scrolling content. A replacement clears keyboard selection and invalidates old actions. Pointer interaction remains available for every action/control option. Body links are underlined controls with opaque provider actions. Their URI stays in the provider. Native AT-SPI exposes names, button/link roles, selection, focus and actions; updates retain the panel window and retire stale controls. Page Up/Page Down and Home/End read the content without activating a control. The Notify completion evidence records the supported Orca/keyboard acceptance.
 
 See [ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md) and the shared [crate guide](../../crates/canopa-panel-protocol/README.md) for canonical sources.

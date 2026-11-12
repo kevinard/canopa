@@ -12,6 +12,7 @@ pub mod network;
 pub mod notifications;
 pub mod render;
 pub mod script;
+pub mod taskbar;
 pub mod tray;
 pub mod view;
 pub mod volume;
@@ -85,6 +86,7 @@ enum ModuleIdentity {
 enum ModuleChildKey {
     Workspace(u64),
     Tray(String),
+    Taskbar(String),
 }
 
 impl ModuleId {
@@ -103,6 +105,13 @@ impl ModuleId {
         Self(Arc::new(ModuleIdentity::Child {
             parent: parent.into(),
             key: ModuleChildKey::Tray(runtime_id.into()),
+        }))
+    }
+
+    pub(crate) fn taskbar(parent: &str, application: &str) -> Self {
+        Self(Arc::new(ModuleIdentity::Child {
+            parent: parent.into(),
+            key: ModuleChildKey::Taskbar(application.into()),
         }))
     }
 
@@ -132,6 +141,10 @@ impl ModuleId {
                 parent,
                 key: ModuleChildKey::Tray(id),
             } => format!("module:{parent}:tray:{id}"),
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Taskbar(id),
+            } => format!("module:{parent}:taskbar:{id}"),
         }
     }
 
@@ -160,6 +173,10 @@ impl ModuleId {
                     format!("tray:{parent}:{id}")
                 }
             }
+            ModuleIdentity::Child {
+                parent,
+                key: ModuleChildKey::Taskbar(id),
+            } => format!("taskbar:{parent}:{id}"),
         }
     }
 }
@@ -180,6 +197,8 @@ pub enum ModuleKind {
     FocusedWindow,
     Tray,
     TrayIcon,
+    Taskbar,
+    TaskbarItem,
 }
 
 impl ModuleKind {
@@ -210,6 +229,8 @@ impl ModuleKind {
             ModuleKind::FocusedWindow => "focused-window",
             ModuleKind::Tray => "tray",
             ModuleKind::TrayIcon => "tray_icon",
+            ModuleKind::Taskbar => "taskbar",
+            ModuleKind::TaskbarItem => "taskbar_item",
         }
     }
 
@@ -387,6 +408,7 @@ macro_rules! config_module_descriptors {
             (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Taskbar, "taskbar", taskbar_ctor, Some(taskbar_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_wireplumber: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
             (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
         }
@@ -666,6 +688,16 @@ fn tray_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>
     Ok(Box::new(tray::TrayModule::new(ModuleId::new(&mc.name))))
 }
 
+fn taskbar_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    Ok(Box::new(taskbar::TaskbarModule::new(ModuleId::new(
+        &mc.name,
+    ))))
+}
+
+fn taskbar_synthesized_params() -> ModuleParams {
+    ModuleParams::Taskbar(crate::config::TaskbarConfig::default())
+}
+
 fn volume_synthesized_params() -> ModuleParams {
     ModuleParams::Volume(VolumeConfig::default())
 }
@@ -710,6 +742,7 @@ mod tests {
             (ModuleKind::Notifications, "notifications"),
             (ModuleKind::Network, "network"),
             (ModuleKind::Script, "script"),
+            (ModuleKind::Taskbar, "taskbar"),
             (ModuleKind::Tray, "tray"),
             (ModuleKind::Volume, "volume"),
             (ModuleKind::Workspaces, "workspaces"),
@@ -721,6 +754,7 @@ mod tests {
         for (kind, name) in [
             (ModuleKind::WorkspaceItem, "workspace_item"),
             (ModuleKind::TrayIcon, "tray_icon"),
+            (ModuleKind::TaskbarItem, "taskbar_item"),
         ] {
             assert_eq!(kind.as_str(), name);
             assert_eq!(ModuleKind::from_config_name(name), None);
@@ -771,6 +805,7 @@ mod tests {
             ModuleKind::Notifications,
             ModuleKind::Media,
             ModuleKind::Script,
+            ModuleKind::Taskbar,
             ModuleKind::Tray,
             ModuleKind::Volume,
             ModuleKind::Workspaces,

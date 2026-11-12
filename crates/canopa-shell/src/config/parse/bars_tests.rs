@@ -447,7 +447,7 @@ bar "main" {
         let config = parse(crate::config::defaults::DEFAULT_CONFIG).unwrap();
         use crate::surface::panel::PanelContent;
         assert!(config.bars[0].uses_drawer_for(&PanelContent::BarPanel));
-        for name in ["clock", "volume", "battery", "focused-window"] {
+        for name in ["clock", "focused-window"] {
             assert!(!config.bars[0].uses_drawer_for(&PanelContent::ModulePanel(
                 crate::modules::ModuleId::new(name),
             )));
@@ -462,6 +462,21 @@ bar "main" {
                     .action_for(&crate::config::ActionTrigger::Click),
                 Some(&crate::config::PanelAction::OpenPanel),
                 "{name} must open its detail content when clicked",
+            );
+        }
+        // The status group (network, volume, battery) opens Quick settings.
+        for name in ["network", "volume", "battery"] {
+            let module = config
+                .modules
+                .iter()
+                .find(|module| module.name == name)
+                .unwrap();
+            assert_eq!(
+                module
+                    .actions
+                    .action_for(&crate::config::ActionTrigger::Click),
+                Some(&crate::config::PanelAction::ToggleBarPanel),
+                "{name} must open Quick settings when clicked",
             );
         }
     }

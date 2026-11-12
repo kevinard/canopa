@@ -51,6 +51,9 @@ pub enum DefaultChange {
     Raise(u8),
     /// Lower the loudest channel; mute is unchanged.
     Lower(u8),
+    /// Set the loudest channel to this percent (0-100), keeping the balance
+    /// and the mute state.
+    Set(u8),
     ToggleMute,
 }
 
@@ -323,6 +326,10 @@ fn change_on(
                 channels,
                 volume::Change::Adjust { step, up: false },
             )?),
+            device.muted,
+        ),
+        DefaultChange::Set(percent) => (
+            Some(volume::apply(channels, volume::Change::Set { percent })?),
             device.muted,
         ),
         DefaultChange::ToggleMute => (None, !device.muted),

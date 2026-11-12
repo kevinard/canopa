@@ -546,6 +546,37 @@ impl Foreground {
             .map(|tree| &tree.origin)
     }
 
+    /// Whether `action` opens the panel now shown from `origin_window`, however
+    /// that panel was opened (pointer, shortcut or command line).
+    pub(super) fn action_shows_active_panel(
+        &self,
+        origin_window: iced::window::Id,
+        action: &crate::config::PanelAction,
+    ) -> bool {
+        use crate::config::PanelAction;
+        use crate::surface::panel::PanelContent;
+
+        let Some(tree) = self
+            .active_panel_tree()
+            .filter(|tree| tree.origin_window == origin_window)
+        else {
+            return false;
+        };
+        match (action, &tree.content) {
+            (PanelAction::OpenBarPanel | PanelAction::ToggleBarPanel, PanelContent::BarPanel) => {
+                true
+            }
+            (
+                PanelAction::OpenMenu(name) | PanelAction::ToggleMenu(name),
+                PanelContent::Menu(menu),
+            ) => name == menu,
+            (PanelAction::OpenProvider(name), PanelContent::ExternalProvider(content)) => {
+                &content.provider_name == name
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn module_action_targets_active_panel(
         &self,
         origin_window: iced::window::Id,

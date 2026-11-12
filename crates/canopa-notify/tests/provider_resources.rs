@@ -904,6 +904,8 @@ fn v5_provider_rejects_retired_actions_and_exits_on_close_or_stdin_eof() {
         let mut content = PanelContent::new("First");
         content.actions.push(v4::PanelAction {
             request_activation_token: false,
+            destructive: false,
+            pressed: None,
             key: "opaque-action".into(),
             label: "Invoke".into(),
             value: Some("same-domain-value".into()),

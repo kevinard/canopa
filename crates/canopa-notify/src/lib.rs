@@ -78,10 +78,10 @@ pub use presentation::IcedLayerShellBannerPresenter;
 pub use presentation::{
     BannerAction, BannerBodySegment, BannerFocusBehavior, BannerIconSettings, BannerInteraction,
     BannerKeyboardInteractivity, BannerLayer, BannerOutputSelection, BannerPlacement,
-    BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter, BannerRendererState,
-    BannerReply, BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual, NoopBannerPresenter,
-    NotificationBannerState, StructuredLogBannerPresenter, app_identity_icon_name_candidates,
-    hidden_content_summary,
+    BannerPosition, BannerPresentation, BannerPresentationAcknowledgement, BannerPresenter,
+    BannerRendererState, BannerReply, BannerSurfaceSpec, BannerTarget, BannerView, BannerVisual,
+    NoopBannerPresenter, NotificationBannerState, StructuredLogBannerPresenter,
+    app_identity_icon_name_candidates, hidden_content_summary,
 };
 pub use runtime::NotificationStateSubscription;
 pub use sender_events::{SenderEventPublication, SenderEventPublisher};
@@ -248,6 +248,7 @@ impl Daemon {
         .await?;
         runtime.set_icon_settings(configuration.icon_settings());
         runtime.set_appearance(configuration.appearance());
+        runtime.set_banner_position(configuration.banner_position());
         Ok(Self {
             runtime,
             configuration: Arc::new(Mutex::new(configuration)),
@@ -554,6 +555,7 @@ impl Daemon {
                     candidate.sound_settings(),
                     candidate.icon_settings(),
                     candidate.appearance(),
+                    candidate.banner_position(),
                     candidate.configured_preferences(),
                 )
                 .await

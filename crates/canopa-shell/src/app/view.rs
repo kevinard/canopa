@@ -118,6 +118,11 @@ impl App {
     }
 }
 
+/// Session actions per Quick settings footer row.
+pub(super) const FOOTER_ROW: usize = 3;
+/// One row of session pills.
+const FOOTER_TILE_HEIGHT: f32 = 38.0;
+
 fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     let text_color = model.bar_style.resolve().color;
     if matches!(
@@ -160,12 +165,9 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     let mut entries = entries.into_iter().peekable();
     while let Some(entry) = entries.next() {
         if is_bar_panel
-            && entries.peek().is_some_and(|next| {
-                entry.paired_toggle && next.paired_toggle
-                    || entry.kind == crate::modules::ModuleKind::Button
-                        && next.kind == entry.kind
-                        && next.zone == entry.zone
-            })
+            && entries
+                .peek()
+                .is_some_and(|next| entry.paired_toggle && next.paired_toggle)
         {
             let next = entries.next().expect("peeked panel entry");
             body = body.push(row![entry.element, next.element].spacing(gap));
@@ -181,9 +183,12 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     };
     let scroll = crate::theme::panel_scroll(body).height(height);
     let body: Element<'_, Message> = if compact {
-        let rows = footer_entries.len().div_ceil(2) as f32;
+        let rows = footer_entries.len().div_ceil(FOOTER_ROW) as f32;
         let footer_height = if rows > 0.0 {
-            1.0 + rows * (44.0 + gap.min(6.0)) + padding.top + padding.bottom
+            1.0 + rows * (FOOTER_TILE_HEIGHT + gap.min(6.0) + 2.0)
+                + padding.top
+                + 6.0
+                + padding.bottom
         } else {
             0.0
         };
@@ -209,18 +214,25 @@ fn render_panel_model<'a>(model: PanelRenderModel<'a>) -> Element<'a, Message> {
     };
     let mut content = column![body].height(height);
     if !footer_entries.is_empty() {
-        let mut buttons = footer_entries.into_iter();
-        let mut footer = column![crate::theme::divider()].spacing(gap.min(6.0));
-        while let Some(first) = buttons.next() {
-            let mut pair = row![first.element].spacing(gap);
-            if let Some(second) = buttons.next() {
-                pair = pair.push(second.element);
-            } else {
-                pair = pair.push(Space::new().width(Length::Fill));
+        // Session actions share rows of three pills: Lock, Suspend and
+        // Hibernate first, then the actions that end the session.
+        let mut footer = column![crate::theme::divider()].spacing(gap.min(6.0) + 2.0);
+        let mut buttons = footer_entries.into_iter().peekable();
+        while buttons.peek().is_some() {
+            let mut cells: Vec<Element<'_, Message>> = buttons
+                .by_ref()
+                .take(FOOTER_ROW)
+                .map(|entry| entry.element)
+                .collect();
+            while cells.len() < FOOTER_ROW {
+                cells.push(Space::new().width(Length::Fill).into());
             }
-            footer = footer.push(pair);
+            footer = footer.push(row(cells).spacing(gap.min(6.0)));
         }
-        content = content.push(footer.padding(padding));
+        content = content.push(footer.padding(iced::Padding {
+            top: padding.top + 6.0,
+            ..padding
+        }));
     }
 
     let frame = panel_frame(
@@ -1280,38 +1292,13 @@ fn render_bar_model<'a>(
         padding.left += ui.border_width.px();
         padding.right += ui.border_width.px();
     }
-    let show_workspace_label = !model.is_horizontal
-        && !model.center.is_empty()
-        && model
-            .center
-            .iter()
-            .all(|entry| entry.kind == crate::modules::ModuleKind::WorkspaceItem);
-    let mut center: Vec<_> = model
+    // Workspace pills explain themselves; their names are tooltips and labels.
+    let center: Vec<_> = model
         .center
         .into_iter()
         .map(|entry| entry.element)
         .collect();
-    let label_size = if show_workspace_label {
-        let available = frame.width - padding.left - padding.right;
-        [10.0, 9.0].into_iter().find(|size| {
-            available >= crate::theme::text_width(&fl!("shell-workspace-label"), *size)
-        })
-    } else {
-        None
-    };
-    if let Some(label_size) = label_size {
-        center.insert(
-            0,
-            container(
-                crate::theme::strong_text(fl!("shell-workspace-label"))
-                    .size(label_size)
-                    .style(canopa_ui::muted),
-            )
-            .center_x(Length::Fill)
-            .into(),
-        );
-    }
-    let mut end: Vec<_> = model.end.into_iter().map(|e| e.element).collect();
+    let mut end = status_clusters(model.end, model.is_horizontal);
     if let Some(actions) = model.config_alert {
         end.insert(0, config_alert(actions, model.is_horizontal));
     }
@@ -1384,6 +1371,69 @@ fn render_bar_model<'a>(
             bottom: 0.0,
         })
         .into()
+}
+
+/// Adjacent connectivity, sound and power indicators read as one status group
+/// on a soft shared surface; every indicator keeps its own target and label.
+fn status_clusters<'a>(
+    entries: Vec<super::render::ModuleRenderEntry<'a>>,
+    horizontal: bool,
+) -> Vec<Element<'a, Message>> {
+    use crate::modules::ModuleKind;
+    let status = |kind: ModuleKind| {
+        matches!(
+            kind,
+            ModuleKind::Network | ModuleKind::Volume | ModuleKind::Battery
+        )
+    };
+    let mut out: Vec<Element<'a, Message>> = Vec::new();
+    let mut group: Vec<Element<'a, Message>> = Vec::new();
+    let mut active = false;
+    let flush = |group: &mut Vec<Element<'a, Message>>,
+                 out: &mut Vec<Element<'a, Message>>,
+                 active: &mut bool| {
+        let selected = std::mem::take(active);
+        match group.len() {
+            0 => {}
+            1 => out.push(group.pop().expect("one indicator")),
+            _ => {
+                let items = std::mem::take(group);
+                let inner: Element<'a, Message> = if horizontal {
+                    row(items)
+                        .spacing(0)
+                        .align_y(iced::Alignment::Center)
+                        .into()
+                } else {
+                    column(items).spacing(4).width(Length::Fill).into()
+                };
+                out.push(
+                    container(inner)
+                        .padding([6, 2])
+                        .style(move |_| {
+                            container::Style::default()
+                                .background(if selected {
+                                    crate::theme::accent_surface()
+                                } else {
+                                    crate::theme::palette().text.scale_alpha(0.05)
+                                })
+                                .border(iced::Border::default().rounded(16))
+                        })
+                        .into(),
+                );
+            }
+        }
+    };
+    for entry in entries {
+        if status(entry.kind) {
+            active |= entry.active;
+            group.push(entry.element);
+        } else {
+            flush(&mut group, &mut out, &mut active);
+            out.push(entry.element);
+        }
+    }
+    flush(&mut group, &mut out, &mut active);
+    out
 }
 
 /// The configuration-error badge: click opens the file (or Settings when there

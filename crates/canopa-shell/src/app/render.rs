@@ -181,35 +181,43 @@ impl App {
             .width
             .unwrap_or_else(|| bar.panel.max_width.unwrap_or(360).min(360));
         let content_width = panel_width as f32 - ui.padding.horizontal();
-        let paired_toggles = if is_bar_panel && adaptive {
-            layout.windows(2).find(|pair| {
-                pair[0].zone == pair[1].zone
-                    && matches!(
-                        (
-                            self.modules.kind_for(&pair[0].id),
-                            self.modules.kind_for(&pair[1].id)
-                        ),
-                        (
-                            Some(ModuleKind::Notifications),
-                            Some(ModuleKind::IdleInhibitor)
-                        ) | (
-                            Some(ModuleKind::IdleInhibitor),
-                            Some(ModuleKind::Notifications)
-                        )
-                    )
-            })
-        } else {
-            None
-        }
-        .filter(|_| {
+        // Switches pair into two-up tiles: Do Not Disturb, Keep awake, and the
+        // Wi-Fi and Bluetooth radios when their services report a state.
+        let tileable = |id: &crate::modules::ModuleId| match self.modules.kind_for(id) {
+            Some(ModuleKind::Notifications | ModuleKind::IdleInhibitor) => true,
+            Some(ModuleKind::Network) => matches!(
+                self.module_render_state(ModuleKind::Network, id, &origin_surface),
+                crate::modules::ModuleState::Network(crate::modules::network::NetworkState {
+                    wireless: Some(_),
+                    ..
+                })
+            ),
+            Some(ModuleKind::Button) => self.modules.has_provider_switch(id),
+            _ => false,
+        };
+        let mut paired_toggles = std::collections::HashSet::new();
+        // Text measurement is costly; only Quick settings needs it.
+        let tiles_fit = || {
             let tile_width = (crate::theme::text_width(
                 &fl!("shell-notifications-do-not-disturb"),
                 crate::theme::body_size(),
             ) + 64.0)
                 .max(168.0);
             content_width >= 2.0 * tile_width + ui.gap.px()
-        })
-        .map(|pair| [pair[0].id.clone(), pair[1].id.clone()]);
+        };
+        if is_bar_panel && adaptive && tiles_fit() {
+            let mut index = 0;
+            while index + 1 < layout.len() {
+                let (first, second) = (&layout[index], &layout[index + 1]);
+                if first.zone == second.zone && tileable(&first.id) && tileable(&second.id) {
+                    paired_toggles.insert(first.id.clone());
+                    paired_toggles.insert(second.id.clone());
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+            }
+        }
         // Use the configured order so an invisible module still separates
         // controls from the trailing actions.
         let footer: Vec<_> = if is_bar_panel {
@@ -228,9 +236,7 @@ impl App {
                 let id = entry.id;
                 let kind = self.modules.kind_for(&id)?;
                 let in_footer = footer.contains(&id);
-                let paired_toggle = paired_toggles
-                    .as_ref()
-                    .is_some_and(|pair| pair.contains(&id));
+                let paired_toggle = paired_toggles.contains(&id);
                 let state = self.module_render_state(kind, &id, &origin_surface);
                 let request = super::module_runtime::ModuleDetailRenderRequest {
                     id: id.clone(),
@@ -251,17 +257,19 @@ impl App {
                 } else {
                     self.modules.render_module_detail(request)?
                 };
-                let element = if in_footer {
-                    module_view
-                } else if matches!(
-                    tree.content,
-                    crate::surface::panel::PanelContent::ModulePanel(_)
-                ) {
-                    // Single-module content uses the same body in both presentations.
-                    container(module_view).width(iced::Length::Fill).into()
-                } else {
-                    crate::surface::panel::panel_module_frame(module_view, entry.focused)
-                };
+                // Tiles and footer actions draw their own frame.
+                let element =
+                    if in_footer || paired_toggle || is_bar_panel && kind == ModuleKind::Button {
+                        module_view
+                    } else if matches!(
+                        tree.content,
+                        crate::surface::panel::PanelContent::ModulePanel(_)
+                    ) {
+                        // Single-module content uses the same body in both presentations.
+                        container(module_view).width(iced::Length::Fill).into()
+                    } else {
+                        crate::surface::panel::panel_module_frame(module_view, entry.focused)
+                    };
 
                 Some(ModuleRenderEntry {
                     id,
@@ -435,7 +443,13 @@ impl App {
             let hovered = !panel_open && surface.hovered_module.as_ref() == Some(&id);
             let focused = !panel_open && surface.focused_module.as_ref() == Some(&id);
             let active = self.foreground.active_panel_origin_for(window)
-                == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()));
+                == Some(&crate::surface::panel::PanelOrigin::Module(id.clone()))
+                || self
+                    .modules
+                    .action_for(&id, &crate::config::ActionTrigger::Click)
+                    .is_some_and(|action| {
+                        self.foreground.action_shows_active_panel(window, action)
+                    });
 
             let local = self
                 .config

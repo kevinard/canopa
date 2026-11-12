@@ -27,6 +27,7 @@ pub(super) enum AppEffect {
         step: u8,
         up: bool,
     },
+    ChangeDefaultSink(canopa_services::audio::DefaultChange),
     LaunchInstalledApp(String),
     SendDmenuResponse {
         responder: super::messages::IpcResponder,
@@ -193,6 +194,20 @@ impl App {
             }
             AppEffect::AdjustDefaultSinkVolume { step, up } => {
                 adjust_default_sink_volume(step, up);
+                Vec::new()
+            }
+            AppEffect::ChangeDefaultSink(change) => {
+                tokio::task::spawn(async move {
+                    if let Err(error) = canopa_services::audio::change_default(
+                        None,
+                        canopa_services::audio::DeviceKind::Output,
+                        change,
+                    )
+                    .await
+                    {
+                        tracing::warn!(target: "canopa_shell::modules", %error, "audio output change failed");
+                    }
+                });
                 Vec::new()
             }
             AppEffect::LaunchInstalledApp(id) => {

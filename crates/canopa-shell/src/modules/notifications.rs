@@ -116,9 +116,9 @@ impl Presentation {
         match summary(state) {
             Some(summary) => Self {
                 icon: if summary.do_not_disturb {
-                    "󰂛"
+                    "canopa:bell-off"
                 } else {
-                    "󰂚"
+                    "canopa:bell"
                 },
                 count: canopa_i18n::format::integer(summary.requires_attention as i64),
                 status: if summary.do_not_disturb {
@@ -146,7 +146,7 @@ impl Presentation {
                 },
             },
             None => Self {
-                icon: "󰂜",
+                icon: "canopa:bell-off",
                 count: "?".into(),
                 status: "unavailable",
                 dnd: false,
@@ -173,6 +173,51 @@ impl Presentation {
     }
 }
 
+/// The bell with its unread count as a small badge over the trailing corner.
+fn badged_icon<'a>(
+    icon: String,
+    count: Option<String>,
+    color: iced::Color,
+    style: &Style,
+) -> iced::Element<'a, Message> {
+    use iced::widget::{container, stack};
+    let bell = container(super::view::styled_segment_text(
+        icon,
+        22,
+        color,
+        super::view::fallback_resolved_style(style),
+    ))
+    .center_x(iced::Length::Fill)
+    .padding([2, 0]);
+    let Some(count) = count else {
+        return bell.into();
+    };
+    let palette = crate::theme::palette();
+    let badge = container(
+        crate::theme::strong_text(count)
+            .size(10)
+            .line_height(1.0)
+            .color(palette.on_accent),
+    )
+    .padding([2, 5])
+    .style(move |_| {
+        container::Style::default()
+            .background(palette.accent)
+            .border(iced::Border::default().rounded(8))
+    });
+    stack![
+        bell,
+        container(badge)
+            .width(iced::Length::Fill)
+            .padding(iced::Padding {
+                left: 26.0,
+                ..Default::default()
+            })
+            .align_x(iced::alignment::Horizontal::Center),
+    ]
+    .into()
+}
+
 impl IconLabel for NotificationsModule {
     fn fallback_view(
         &self,
@@ -181,9 +226,11 @@ impl IconLabel for NotificationsModule {
         style: &Style,
     ) -> iced::Element<'_, Message> {
         if layout == IconLabelLayout::Collapsed {
-            super::view::stacked_icon_label(
+            badged_icon(
                 self.icon(state),
-                Presentation::for_state(state).count,
+                summary(state)
+                    .filter(|summary| summary.requires_attention > 0)
+                    .map(|_| Presentation::for_state(state).count),
                 self.color(state),
                 style,
             )
@@ -222,7 +269,7 @@ impl IconLabel for NotificationsModule {
         match summary(state) {
             None => crate::theme::palette().warning,
             Some(s) if s.do_not_disturb => crate::theme::palette().muted,
-            Some(s) if s.requires_attention > 0 => crate::theme::palette().accent,
+            // The badge carries the count; the bell matches the other marks.
             _ => crate::theme::palette().text,
         }
     }

@@ -21,7 +21,7 @@ where
 }
 
 impl App {
-    fn has_module_kind(&self, kind: ModuleKind) -> bool {
+    pub(super) fn has_module_kind(&self, kind: ModuleKind) -> bool {
         self.modules.has_kind(kind)
     }
 
@@ -113,6 +113,7 @@ impl App {
         };
 
         iced::Subscription::batch([
+            self.quick_toggle_subscription(),
             if self.has_launcher_menu() {
                 self.launcher_clipboard
                     .saved_subscription()

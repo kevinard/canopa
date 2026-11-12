@@ -68,6 +68,12 @@ trait NetworkManager {
 
     #[zbus(property)]
     fn active_connections(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
+
+    #[zbus(property)]
+    fn wireless_enabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn wireless_hardware_enabled(&self) -> zbus::Result<bool>;
 }
 
 /// Active connection proxy for reading the profile name.
@@ -245,11 +251,17 @@ async fn read_nm_state(
         }
     }
     vpn.sort();
+    // A radio switched off in hardware cannot be turned on from here.
+    let wireless = match proxy.wireless_hardware_enabled().await {
+        Ok(true) => proxy.wireless_enabled().await.ok(),
+        _ => None,
+    };
     Ok(NetworkStatus {
         connectivity,
         label,
         kind,
         vpn,
+        wireless,
     })
 }
 

@@ -30,16 +30,10 @@ fn quick_settings(app: &App, window: iced::window::Id) -> Vec<String> {
 #[test]
 fn quick_settings_follow_logind_answers() {
     let (mut app, window) = default_app();
-    // Before logind answers, everything but hibernate is offered.
+    // Lock and Suspend stay at hand; the rest is behind Power.
     assert_eq!(
         quick_settings(&app, window),
-        [
-            "session-lock",
-            "session-suspend",
-            "session-logout",
-            "session-reboot",
-            "session-poweroff"
-        ]
+        ["session-lock", "session-suspend", "session-power"]
     );
     let _ = app.update(Message::Session(Event::Capabilities(Capabilities {
         suspend: Availability::NotApplicable,
@@ -47,15 +41,16 @@ fn quick_settings_follow_logind_answers() {
         reboot: Availability::No,
         power_off: Availability::Challenge,
     })));
+    // Power stays: some of its items still lead somewhere.
     assert_eq!(
         quick_settings(&app, window),
-        [
-            "session-lock",
-            "session-hibernate",
-            "session-logout",
-            "session-poweroff"
-        ]
+        ["session-lock", "session-power"]
     );
+    // The Power menu as shown leaves out Reboot, whose confirmation logind refuses.
+    let menus = offered_menus(&app.config.menus, &app.session.capabilities);
+    let power = menus.iter().find(|menu| menu.name == "Power").unwrap();
+    let labels: Vec<_> = power.items.iter().map(|item| item.label.as_str()).collect();
+    assert_eq!(labels, ["Hibernate", "Log out…", "Power off…"]);
 }
 
 #[test]

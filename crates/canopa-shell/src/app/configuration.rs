@@ -392,6 +392,8 @@ impl App {
             }
         }
         self.reconcile_tray_dynamic_modules(&self.tray.snapshot());
+        self.taskbar.invalidate();
+        self.refresh_taskbar();
         let effects = self.surfaces.reconcile_bar_surfaces(desired);
         tasks.extend(self.apply_bar_surface_lifecycle_effects(effects));
         tasks.extend(

@@ -36,6 +36,7 @@ notify-center-reply = Répondre…
 notify-center-open = Ouvrir la notification
 notify-center-dismiss = Fermer
 notify-center-mark-read = Marquer comme lue
+notify-center-remove = Supprimer
 notify-center-clear-active = Effacer les notifications actives
 notify-center-delete-history = Supprimer l’historique des notifications
 notify-center-mark-all-read = Tout marquer comme lu

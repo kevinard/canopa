@@ -484,7 +484,7 @@ async fn center_activation_controls_cannot_switch_meaning_after_replacement() {
                             .iter()
                             .flat_map(|group| &group.items)
                             .filter(|candidate| candidate.id == item.id)
-                            .all(|candidate| candidate.actions.is_empty())
+                            .all(|candidate| only_removal(&candidate.actions))
                     );
                     // The completed socket exchange is a barrier: duplicate terminal events
                     // must be rejected, not interpreted against history or another live item.
@@ -579,7 +579,8 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
         } else {
             let historical = &after.sections[0].items[0];
             assert_eq!(historical.id, item.id);
-            assert!(historical.actions.is_empty());
+            // Finished history offers only its removal.
+            assert!(only_removal(&historical.actions));
             assert!(
                 historical
                     .metadata
@@ -587,6 +588,25 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
                     .all(|metadata| metadata.key == "received"),
                 "acknowledged cards need no state label"
             );
+            // Removing it deletes the card from the Center.
+            let removal = historical.actions[0].clone();
+            provider
+                .invoke(&historical.id, &removal.key, removal.value.clone())
+                .await;
+            let removed = provider.next().await;
+            assert!(
+                removed
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.items)
+                    .all(|candidate| candidate.id != item.id),
+                "a removed notification left the Center"
+            );
         }
     }
+}
+
+/// A finished card's only action deletes it from history.
+fn only_removal(actions: &[canopa_panel_protocol::PanelAction]) -> bool {
+    matches!(actions, [action] if action.key == "canopa-notify:remove-item" && action.destructive)
 }

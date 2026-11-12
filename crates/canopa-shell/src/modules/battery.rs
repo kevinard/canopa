@@ -27,11 +27,34 @@ fn charge_tier(percentage: f64, critical_threshold: u8) -> u8 {
 /// Icon character for each charge tier (not-charging state).
 fn tier_icon(tier: u8) -> &'static str {
     match tier {
-        0 => "▏", // Critical
-        1 => "░", // Low
-        2 => "▒", // Medium
-        3 => "▓", // High
-        _ => "█", // Full
+        0 => "canopa:battery-0", // Critical
+        1 => "canopa:battery-1", // Low
+        2 => "canopa:battery-2", // Medium
+        3 => "canopa:battery-3", // High
+        _ => "canopa:battery-4", // Full
+    }
+}
+
+/// "78% · On battery power", for links to the power provider.
+pub(crate) fn panel_summary(state: &crate::modules::ModuleState) -> Option<String> {
+    let crate::modules::ModuleState::Battery(battery) = state else {
+        return None;
+    };
+    battery.present.then(|| {
+        format!(
+            "{} · {}",
+            canopa_i18n::format::percent(battery.percentage.round()),
+            power_state_text(battery.power_state)
+        )
+    })
+}
+
+fn power_state_text(state: BatteryPowerState) -> String {
+    match state {
+        BatteryPowerState::Charging => fl!("shell-battery-charging"),
+        BatteryPowerState::FullyCharged => fl!("shell-battery-full"),
+        BatteryPowerState::PendingCharge => fl!("shell-battery-plugged-in"),
+        _ => fl!("shell-battery-on-battery"),
     }
 }
 
@@ -67,7 +90,8 @@ fn icon_color(percentage: f64, is_charging: bool, critical_threshold: u8) -> ice
     match tier {
         0 => theme::palette().danger,
         1 => theme::palette().warning,
-        _ => theme::palette().accent,
+        // A healthy battery matches the other spine marks.
+        _ => theme::palette().text,
     }
 }
 
@@ -124,7 +148,7 @@ impl BatteryModule {
             .icon_for_state_or_value(Some(&state), Some(battery.percentage))
             .unwrap_or_else(|| {
                 if battery.power_state.is_charging() {
-                    "⚡"
+                    "canopa:battery-charging"
                 } else {
                     tier_icon(charge_tier(battery.percentage, self.critical_threshold))
                 }
@@ -285,6 +309,34 @@ impl crate::modules::data_source::ModuleDataSourceMapper for BatteryModule {
 impl crate::modules::render::ModuleRender for BatteryModule {
     fn presentation(&self) -> Option<&dyn crate::modules::view::IconLabel> {
         Some(self)
+    }
+
+    fn has_bar_panel_content(&self, state: &crate::modules::ModuleState) -> bool {
+        matches!(state, crate::modules::ModuleState::Battery(_))
+    }
+
+    /// Quick settings shows the charge as a row like Wi-Fi and Sound.
+    fn render_bar_panel_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        _: &crate::config::Style,
+        context: crate::modules::render::PanelModuleContext,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let crate::modules::ModuleState::Battery(battery) = state else {
+            return None;
+        };
+        let icon = crate::modules::view::embedded_icon(&self.current_icon(battery))
+            .unwrap_or(include_bytes!("../../assets/battery-3.svg").as_slice());
+        let description = power_state_text(battery.power_state);
+        Some(crate::modules::view::panel_control(
+            icon,
+            fl!("shell-battery-title"),
+            description,
+            crate::modules::view::PanelControlEnd::Status(canopa_i18n::format::percent(
+                battery.percentage.round(),
+            )),
+            context,
+        ))
     }
 
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
@@ -479,8 +531,8 @@ mod tests {
     }
 
     #[test]
-    fn icon_color_normal_returns_accent() {
-        assert_eq!(icon_color(80.0, false, 15), theme::palette().accent);
+    fn icon_color_normal_matches_the_spine_text() {
+        assert_eq!(icon_color(80.0, false, 15), theme::palette().text);
     }
 
     #[test]
@@ -584,7 +636,7 @@ mod tests {
             present: true,
         });
 
-        assert_eq!(m.icon(&state), "▓");
+        assert_eq!(m.icon(&state), "canopa:battery-3");
     }
 
     #[test]
@@ -613,7 +665,7 @@ mod tests {
                 .map(|(text, _)| text)
                 .collect::<Vec<_>>()
                 .join(" ")),
-            Some("▒ 42% normal".to_string())
+            Some("canopa:battery-2 42% normal".to_string())
         );
     }
 

@@ -569,7 +569,7 @@ fn notification_banner_surface_maps_to_iced_layer_shell_settings() {
         Some((0, 0)),
         "the compositor assigns both available dimensions"
     );
-    assert_eq!(settings.margin, (12, 12, 12, 12));
+    assert_eq!(settings.margin, (12, 0, 12, 0));
     assert!(
         settings.events_transparent,
         "empty startup must not intercept desktop input"

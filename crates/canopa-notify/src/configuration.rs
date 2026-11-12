@@ -101,6 +101,10 @@ impl LoadedNotificationConfiguration {
         self.active.icons.clone()
     }
 
+    pub(crate) fn banner_position(&self) -> crate::BannerPosition {
+        self.active.banner_position
+    }
+
     pub(crate) fn error(&self) -> Option<String> {
         self.last_error.clone()
     }
@@ -127,6 +131,7 @@ struct NotificationConfiguration {
     sound: NotificationSoundSettings,
     icons: BannerIconSettings,
     banner_ui: canopa_theme::UiStyle,
+    banner_position: crate::BannerPosition,
 }
 
 impl NotificationConfiguration {
@@ -140,6 +145,7 @@ impl NotificationConfiguration {
         let mut sound = None;
         let mut icons = None;
         let mut banner_ui = None;
+        let mut banner_position = None;
         let mut do_not_disturb = None;
         let mut apps = std::collections::BTreeMap::new();
 
@@ -184,10 +190,40 @@ impl NotificationConfiguration {
                         .children()
                         .ok_or_else(|| anyhow::anyhow!("banners requires a block"))?;
                     anyhow::ensure!(
-                        children.nodes().len() <= 1
-                            && children.nodes().iter().all(|n| n.name().value() == "ui"),
-                        "banners accepts one ui block"
+                        children.nodes().len() <= 2
+                            && children
+                                .nodes()
+                                .iter()
+                                .all(|n| matches!(n.name().value(), "ui" | "position"))
+                            && children
+                                .nodes()
+                                .iter()
+                                .filter(|n| n.name().value() == "ui")
+                                .count()
+                                <= 1
+                            && children
+                                .nodes()
+                                .iter()
+                                .filter(|n| n.name().value() == "position")
+                                .count()
+                                <= 1,
+                        "banners accepts one ui block and one position"
                     );
+                    if let Some(position) = children.get("position") {
+                        let value = match position.entries() {
+                            [entry] if entry.name().is_none() => entry.value().as_string(),
+                            _ => None,
+                        };
+                        banner_position = Some(
+                            value
+                                .and_then(crate::BannerPosition::parse)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "banners position accepts top-start, top-end, bottom-start or bottom-end"
+                                    )
+                                })?,
+                        );
+                    }
                     banner_ui = Some(match children.get("ui") {
                         Some(ui) => {
                             canopa_config::ui_style(ui, canopa_theme::UiKind::Notification)?
@@ -210,6 +246,7 @@ impl NotificationConfiguration {
             sound: sound.unwrap_or_default(),
             icons: icons.unwrap_or_default(),
             banner_ui: banner_ui.unwrap_or_default(),
+            banner_position: banner_position.unwrap_or_default(),
         })
     }
 
@@ -597,6 +634,37 @@ pub fn check_configuration_document(document: &Document) -> anyhow::Result<Sourc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn banners_position_parses_each_corner_and_rejects_others() {
+        assert_eq!(
+            NotificationConfiguration::parse("")
+                .unwrap()
+                .banner_position,
+            crate::BannerPosition::BottomStart
+        );
+        for (value, expected) in [
+            ("top-start", crate::BannerPosition::TopStart),
+            ("top-end", crate::BannerPosition::TopEnd),
+            ("bottom-start", crate::BannerPosition::BottomStart),
+            ("bottom-end", crate::BannerPosition::BottomEnd),
+        ] {
+            let parsed =
+                NotificationConfiguration::parse(&format!("banners {{ position \"{value}\"; }}"))
+                    .unwrap();
+            assert_eq!(parsed.banner_position, expected);
+        }
+        for invalid in [
+            "banners { position \"left\"; }",
+            "banners { position 3; }",
+            "banners { position \"top-end\"; position \"top-start\"; }",
+        ] {
+            assert!(
+                NotificationConfiguration::parse(invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
 
     #[test]
     fn parses_kdl_notification_rules_into_delivery_policy_rules() {

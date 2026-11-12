@@ -38,10 +38,9 @@ fn volume_tier(volume: f64, muted: bool) -> u8 {
 
 fn tier_icon(tier: u8) -> &'static str {
     match tier {
-        0 => "✕", // Muted/Zero
-        1 => "░", // Low
-        2 => "▓", // Medium
-        _ => "◈", // High
+        0 => "canopa:sound-muted", // Muted/Zero
+        1 => "canopa:sound-low",   // Low
+        _ => "canopa:sound",       // Medium and high
     }
 }
 
@@ -49,7 +48,7 @@ fn tier_color(tier: u8) -> iced::Color {
     if tier == 0 {
         theme::palette().muted // muted remains readable on bar and panel surfaces
     } else {
-        theme::palette().accent // normal
+        theme::palette().text // normal, like the other spine marks
     }
 }
 
@@ -265,7 +264,7 @@ impl crate::modules::render::ModuleRender for VolumeModule {
         _: &crate::config::Style,
         context: crate::modules::render::PanelModuleContext,
     ) -> Option<iced::Element<'_, crate::app::Message>> {
-        use iced::widget::{column, row};
+        use iced::widget::column;
         let volume = if let crate::modules::ModuleState::Volume(volume) = state {
             Some(volume)
         } else {
@@ -273,11 +272,15 @@ impl crate::modules::render::ModuleRender for VolumeModule {
         };
         let description = match volume {
             Some(volume) if volume.muted => fl!("shell-volume-muted"),
-            Some(_) => fl!("shell-volume-devices"),
+            Some(_) => context
+                .provider_summary
+                .clone()
+                .unwrap_or_else(|| fl!("shell-volume-devices")),
             None => fl!("shell-volume-unavailable"),
         };
+        // The heading names the devices; the speaker mark belongs to mute.
         let heading = crate::modules::view::panel_control(
-            include_bytes!("../../assets/sound.svg"),
+            include_bytes!("../../assets/audio-devices.svg"),
             fl!("shell-volume-sound"),
             description,
             super::view::PanelControlEnd::Navigate,
@@ -288,72 +291,75 @@ impl crate::modules::render::ModuleRender for VolumeModule {
                 scroll_down: None,
                 footer: false,
                 paired_toggle: false,
-                opens_provider: false,
+                opens_provider: None,
+                provider_summary: None,
+                provider_switch: None,
+                provider_level: None,
+                opens_menu: false,
                 key: context.key.clone(),
             },
         );
-        use canopa_ui::accessibility::{Node, semantic};
-        let adjust = |label, message| {
-            crate::theme::action(
-                iced::widget::container(crate::theme::strong_text(label).size(18))
-                    .center(iced::Length::Fill),
-                message,
-                canopa_ui::Action::Normal,
-                false,
-            )
-            .width(44)
-            .height(44)
-            .padding(0)
-        };
+        use canopa_ui::accessibility::{Node, Range, semantic};
         let level = volume.map_or_else(
             || "—".to_owned(),
             |v| canopa_i18n::format::percent(v.volume.round()),
         );
-        let group = Node::group(fl!("shell-volume-level-value", level = level.clone()))
-            .key(format!("{}/level", context.key))
-            .hide_text();
+        let percent = volume.map_or(0.0, |v| v.volume.clamp(0.0, 100.0).round());
+        let muted = volume.is_some_and(|v| v.muted);
+        let slider_node = Node::slider(
+            fl!("shell-volume-level"),
+            Range {
+                value: percent,
+                min: 0.0,
+                max: 100.0,
+                step: Some(f64::from(self.step)),
+            },
+        )
+        .key(format!("{}/level", context.key))
+        .value(fl!("shell-volume-level-value", level = level.clone()))
+        .disabled(volume.is_none())
+        .on_increment(volume.and(context.scroll_up.clone()))
+        .on_decrement(volume.and(context.scroll_down.clone()));
+        let mute_node = Node::switch(fl!("shell-volume-mute"), muted)
+            .key(format!("{}/mute", context.key))
+            .disabled(volume.is_none())
+            .on_click(volume.map(|_| crate::app::Message::VolumeToggleMute));
+        let mute = crate::theme::icon_button(
+            if muted || percent < 0.5 {
+                include_bytes!("../../assets/sound-muted.svg").as_slice()
+            } else if percent <= 32.0 {
+                include_bytes!("../../assets/sound-low.svg").as_slice()
+            } else {
+                include_bytes!("../../assets/sound.svg").as_slice()
+            },
+            volume.map(|_| crate::app::Message::VolumeToggleMute),
+            false,
+        );
+        let slider = crate::theme::level_slider(
+            percent as f32,
+            volume.map(|_| |value: f32| crate::app::Message::VolumeSet(value.round() as u8)),
+            muted,
+        );
         Some(
             column![
                 heading,
-                semantic(
-                    group,
-                    canopa_ui::direction::row([
-                        iced::widget::container(
-                            crate::theme::text(fl!("shell-volume-level"))
-                                .size(crate::theme::label_size())
-                                .style(canopa_ui::muted)
-                                .align_x(canopa_ui::direction::text_start())
-                        )
-                        .padding([0, 6])
-                        .width(iced::Length::Fill)
-                        .into(),
-                        row![
-                            semantic(
-                                Node::button(fl!("shell-volume-decrease"))
-                                    .key(format!("{}/decrease", context.key))
-                                    .disabled(volume.is_none())
-                                    .on_click(volume.and(context.scroll_down.clone())),
-                                adjust("−", volume.and(context.scroll_down)),
-                            ),
-                            iced::widget::container(crate::theme::strong_text(level).size(16))
-                                .center_x(58),
-                            semantic(
-                                Node::button(fl!("shell-volume-increase"))
-                                    .key(format!("{}/increase", context.key))
-                                    .disabled(volume.is_none())
-                                    .on_click(volume.and(context.scroll_up.clone())),
-                                adjust("+", volume.and(context.scroll_up)),
-                            ),
-                        ]
-                        .spacing(4)
-                        .align_y(iced::Alignment::Center)
-                        .into(),
-                    ])
-                    .spacing(12)
-                    .align_y(iced::Alignment::Center)
-                ),
+                canopa_ui::direction::row([
+                    semantic(mute_node, mute),
+                    semantic(slider_node, slider),
+                    iced::widget::container(
+                        crate::theme::strong_text(level)
+                            .size(crate::theme::label_size())
+                            .style(canopa_ui::muted)
+                    )
+                    .width(40)
+                    .align_x(canopa_ui::direction::end())
+                    .into(),
+                ])
+                .spacing(12)
+                .padding([0, 6])
+                .align_y(iced::Alignment::Center),
             ]
-            .spacing(8)
+            .spacing(4)
             .into(),
         )
     }
@@ -617,7 +623,7 @@ mod tests {
             muted: false,
         });
 
-        assert_eq!(m.icon(&state), "◈");
+        assert_eq!(m.icon(&state), "canopa:sound");
     }
 
     #[test]
@@ -641,7 +647,7 @@ mod tests {
                 &crate::config::Style::default(),
             )
             .unwrap();
-        assert_eq!(rendered[0].0, "◈ 80%");
+        assert_eq!(rendered[0].0, "canopa:sound 80%");
     }
 
     #[test]

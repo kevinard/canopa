@@ -773,6 +773,22 @@ impl SqlitePersistedState {
             .collect()
     }
 
+    /// Delete one finished thread at `revision`; false when it changed or is live.
+    pub(crate) async fn delete_inactive_thread(
+        &self,
+        id: i64,
+        revision: i64,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            "DELETE FROM notification_threads WHERE id = ?1 AND revision = ?2 AND status != 'active'",
+        )
+        .bind(id)
+        .bind(revision)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub(crate) async fn delete_inactive_history(&self) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM notification_threads WHERE status != 'active'")
             .execute(&self.pool)

@@ -164,6 +164,39 @@ pub struct BannerPresentation {
     pub banners: Vec<BannerView>,
     pub overflow_count: usize,
     pub icon_settings: BannerIconSettings,
+    pub position: BannerPosition,
+}
+
+/// The screen corner banners stack in. Start and end follow the reading
+/// direction. The default, bottom start, sits beside the bell of Canopa
+/// Shell's default left bar, where the Notification Center opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BannerPosition {
+    TopStart,
+    TopEnd,
+    #[default]
+    BottomStart,
+    BottomEnd,
+}
+
+impl BannerPosition {
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "top-start" => Self::TopStart,
+            "top-end" => Self::TopEnd,
+            "bottom-start" => Self::BottomStart,
+            "bottom-end" => Self::BottomEnd,
+            _ => return None,
+        })
+    }
+
+    pub fn is_bottom(self) -> bool {
+        matches!(self, Self::BottomStart | Self::BottomEnd)
+    }
+
+    pub fn is_start(self) -> bool {
+        matches!(self, Self::TopStart | Self::BottomStart)
+    }
 }
 
 impl BannerPresentation {
@@ -173,6 +206,7 @@ impl BannerPresentation {
             overflow_count: 0,
             icon_settings: BannerIconSettings::default(),
             appearance: Default::default(),
+            position: BannerPosition::default(),
         }
     }
 }
@@ -668,6 +702,7 @@ pub(crate) struct PresentationCoordinator {
     last_error: Arc<Mutex<Option<String>>>,
     icon_settings: Arc<Mutex<BannerIconSettings>>,
     appearance: Arc<Mutex<canopa_theme::Appearance>>,
+    position: Arc<Mutex<BannerPosition>>,
 }
 
 impl PresentationCoordinator {
@@ -695,6 +730,7 @@ impl PresentationCoordinator {
             last_error: Arc::new(Mutex::new(None)),
             appearance: Default::default(),
             icon_settings: Arc::new(Mutex::new(BannerIconSettings::default())),
+            position: Default::default(),
         }
     }
 
@@ -717,6 +753,14 @@ impl PresentationCoordinator {
 
     pub(crate) fn icon_settings(&self) -> BannerIconSettings {
         self.icon_settings.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_banner_position(&self, position: BannerPosition) {
+        *self.position.lock().unwrap() = position;
+    }
+
+    pub(crate) fn banner_position(&self) -> BannerPosition {
+        *self.position.lock().unwrap()
     }
 
     pub(crate) fn replace_banner_presentation_with_acknowledgement(
@@ -799,6 +843,7 @@ impl NotificationBannerState {
             overflow_count: self.overflow_count(),
             icon_settings: BannerIconSettings::default(),
             appearance: Default::default(),
+            position: BannerPosition::default(),
         }
     }
 

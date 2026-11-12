@@ -82,4 +82,7 @@ pub struct NetworkStatus {
     pub kind: Option<NetworkKind>,
     /// Names of active VPN connections (NetworkManager only).
     pub vpn: Vec<String>,
+    /// Whether Wi-Fi is switched on, when NetworkManager manages a radio
+    /// that is not blocked in hardware.
+    pub wireless: Option<bool>,
 }

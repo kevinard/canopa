@@ -257,6 +257,8 @@ mod tests {
         let mut content = v5::RichContent::new("Center");
         content.actions.push(canopa_panel_protocol::PanelAction {
             request_activation_token: false,
+            destructive: false,
+            pressed: None,
             key: "opaque".into(),
             label: "Open".into(),
             value: Some("daemon/revision".into()),

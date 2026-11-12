@@ -55,6 +55,7 @@ impl App {
             NiriEvent::Unavailable => {
                 *self.niri.state_mut() = crate::niri::NiriState::default();
                 self.reconcile_workspace_dynamic_modules(&[]);
+                self.refresh_taskbar();
                 let affected_module_count = self.modules.count_by_kind(ModuleKind::Workspaces)
                     + self.modules.count_by_kind(ModuleKind::FocusedWindow);
                 tracing::info!(
@@ -182,6 +183,7 @@ impl App {
                     }
                     _ => {}
                 }
+                self.refresh_taskbar();
                 Task::none()
             }
         }

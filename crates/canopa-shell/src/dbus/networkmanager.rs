@@ -23,6 +23,7 @@ fn build_network_stream(
                 label: status.label,
                 kind: status.kind,
                 vpn: status.vpn,
+                wireless: status.wireless,
             },
             ServiceState::Unavailable => NetworkEvent::Unavailable,
         };

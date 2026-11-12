@@ -34,6 +34,14 @@ menus {
     menu "Applications" show-icons=#true prompt-id="shell-menu-launcher-prompt" {
         source "launcher"
     }
+    // Quick settings keeps Lock and Suspend at hand; the rest is one step away.
+    // Items whose session action logind refuses are left out.
+    menu "Power" title-id="shell-menu-power-title" {
+        item label-id="shell-module-hibernate" { session "hibernate"; }
+        item label-id="shell-menu-log-out-more" { open-menu "Log out?"; }
+        item label-id="shell-menu-reboot-more" { open-menu "Reboot?"; }
+        item label-id="shell-menu-power-off-more" { open-menu "Power off?"; }
+    }
     // Cancel is first so Enter never ends the session by default.
     menu "Log out?" title-id="shell-menu-log-out-title" prompt-id="shell-menu-unsaved-work" {
         item label-id="shell-menu-cancel" { open-bar-panel; }
@@ -121,17 +129,20 @@ bar "main" {
     // Multiple modules per zone: list them as separate string arguments on one line.
     modules {
         // Start zone: stacks from the leading edge of the bar.
-        start "launcher" "overview"
+        start "launcher" "overview" "workspaces"
         // Center zone: centered on the bar surface midpoint.
         // Add "media" to a zone for MPRIS now-playing and playback controls.
         // See docs/media.md; the module hides when no player is open.
-        center "workspaces"
+        // The taskbar shows pinned applications, then the other open ones.
+        center "taskbar"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
         // The tray shows one icon per StatusNotifierItem application. Network,
         // volume and battery are compact icons that hide while their service
         // (or the battery itself) is absent.
-        end "tray" "network" "volume" "battery" "notifications" "system" "clock"
+        // Network, volume and battery form one status group that opens Quick
+        // settings; add "system" for a separate Quick settings button.
+        end "tray" "network" "volume" "battery" "notifications" "clock"
     }
 
     // Default panel content for this bar.
@@ -147,11 +158,14 @@ bar "main" {
         width 416
         launcher-width 580
         ui { margin 12 0; radius 24; border width=1 color="border"; }
-        start "network" "volume"
-        center "notifications" "idle-inhibitor" "bluetooth" "power-and-brightness"
+        // Adjacent switches pair into tiles: Wi-Fi and Bluetooth, then
+        // Do Not Disturb and Keep awake.
+        start "network" "bluetooth"
+        center "notifications" "idle-inhibitor" "volume" "power-and-brightness"
         // Trailing buttons form a compact footer with two columns.
         // Hibernate appears only when logind answers CanHibernate with "yes".
-        end "battery" "media" "session-lock" "session-suspend" "session-hibernate" "session-logout" "session-reboot" "session-poweroff"
+        // Power & display shows the battery charge when there is a battery.
+        end "media" "session-lock" "session-suspend" "session-power"
     }
 }
 
@@ -194,7 +208,7 @@ modules {
         label-id "shell-module-search"
         icon "canopa:search"
         tooltip-id "shell-tooltip-launcher"
-        ui { padding 7 0; foreground "accent"; }
+        ui { padding 11 0; foreground "accent"; }
         actions { click { toggle-menu "Applications"; } }
     }
     module "overview" {
@@ -202,7 +216,7 @@ modules {
         label-id "shell-module-overview"
         icon "canopa:overview"
         tooltip-id "shell-tooltip-overview"
-        ui { padding 7 0; }
+        ui { padding 11 0; }
         actions { click { command { argv "niri" "msg" "action" "toggle-overview"; }; } }
     }
     module "system" {
@@ -210,7 +224,7 @@ modules {
         label-id "shell-module-controls"
         icon "canopa:controls"
         tooltip-id "shell-tooltip-quick-settings"
-        ui { padding 7 0; }
+        ui { padding 11 0; }
         actions { click { toggle-bar-panel; } }
     }
     module "bluetooth" {
@@ -222,7 +236,7 @@ modules {
     module "power-and-brightness" {
         type "button"
         label-id "shell-module-power-and-display"
-        icon "canopa:brightness"
+        icon "canopa:power-mode"
         actions { click { open-provider "power"; } }
     }
     // Session controls use ordinary buttons and can be rebound to another locker
@@ -240,6 +254,14 @@ modules {
         icon "canopa:suspend"
         actions { click { session "suspend"; } }
     }
+    module "session-power" {
+        type "button"
+        label-id "shell-module-power"
+        icon "canopa:power-menu"
+        actions { click { open-menu "Power"; } }
+    }
+    // Hibernate, Log out, Reboot and Power off are also ordinary buttons; add
+    // them to the panel's end zone to reach them in one click.
     module "session-hibernate" {
         type "button"
         label-id "shell-module-hibernate"
@@ -268,6 +290,13 @@ modules {
     // tray: StatusNotifierItem icons for background applications. Left click
     // activates an item, right click opens its menu. The Shell owns the
     // org.kde.StatusNotifierWatcher name while a tray module is placed.
+    // Click focuses an application or launches it; clicking the focused one
+    // cycles its windows; right- or middle-click opens another instance.
+    // Pinned applications that are not installed are skipped.
+    module "taskbar" {
+        pinned "org.canopa.Files.desktop" "firefox.desktop" "org.canopa.Settings.desktop"
+        ui { padding 2 0; }
+    }
     module "tray" {
         // Show a filter field at the top of long tray menus.
         // menu-search #true
@@ -276,12 +305,12 @@ modules {
     module "idle-inhibitor"
     // Click opens the Center; right-click toggles DND.
     module "notifications" {
-        ui { padding 6 0; }
+        ui { padding 9 0; }
     }
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
     module "workspaces" {
-        ui { padding 13 0; }
+        ui { padding 3 0; }
         // Optional display templates for workspace items.
         // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
         // format "{icon}{label}"
@@ -352,8 +381,10 @@ modules {
     }
 
     // volume: audio output level indicator. Scroll on the module to adjust volume.
+    // Network, volume and battery form the spine's status group; each opens
+    // Quick settings, where Wi-Fi, Sound and Power & display lead further.
     module "volume" {
-        actions { click { open-panel; } }
+        actions { click { toggle-bar-panel; } }
         // Volume adjustment per scroll event, as a percentage. Range: 1–100. Default: 5.
         step 5
         //
@@ -398,6 +429,7 @@ modules {
 
     // network: network connectivity status (connected/disconnected/interface type).
     module "network" {
+        actions { click { toggle-bar-panel; } }
         // Optional default provider for rich network controls.
         // If no click action is configured, clicking the network module opens
         // the shipped Wi-Fi provider. Override with another provider name or
@@ -438,7 +470,7 @@ modules {
 
     // battery: charge level and charging/discharging state.
     module "battery" {
-        actions { click { open-panel; } }
+        actions { click { toggle-bar-panel; } }
         // Percentage at or below which the critical badge and alert color appear.
         // Range: 0–100. Default: 15.
         critical-threshold 15

@@ -58,6 +58,7 @@ notify-center-reply = Reply…
 notify-center-open = Open notification
 notify-center-dismiss = Dismiss
 notify-center-mark-read = Mark as read
+notify-center-remove = Remove
 notify-center-clear-active = Clear active notifications
 notify-center-delete-history = Delete notification history
 notify-center-mark-all-read = Mark all read

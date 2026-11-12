@@ -90,6 +90,10 @@ pub fn tray_default() -> Option<FormatTemplate> {
     Some(template("{title}", &["title", "description"]))
 }
 
+pub fn taskbar_default() -> Option<FormatTemplate> {
+    Some(template("{name}", &["name", "windows"]))
+}
+
 pub fn media_default() -> Option<FormatTemplate> {
     Some(template(
         "{label} · {player} · {state}",

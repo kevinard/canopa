@@ -14,6 +14,8 @@ pub struct NetworkState {
     pub kind: Option<NetworkKind>,
     /// Active VPN connections (NetworkManager only).
     pub vpn: Vec<String>,
+    /// Whether Wi-Fi is switched on, when it can be switched (NetworkManager).
+    pub wireless: Option<bool>,
 }
 
 /// Events emitted by the network D-Bus subscription.
@@ -24,18 +26,26 @@ pub enum NetworkEvent {
         label: Option<String>,
         kind: Option<NetworkKind>,
         vpn: Vec<String>,
+        wireless: Option<bool>,
     },
     Unavailable,
 }
 
-fn icon_str(connectivity: &NetworkConnectivity) -> &'static str {
-    match connectivity {
-        NetworkConnectivity::Full => "◆",
-        NetworkConnectivity::Limited => "◈",
-        NetworkConnectivity::None => "✕",
-        NetworkConnectivity::Unknown => "?",
-        NetworkConnectivity::Connected => "◆",
-        NetworkConnectivity::Portal => "◈",
+fn icon_str(network: &NetworkState) -> &'static str {
+    let connected = matches!(
+        network.connectivity,
+        NetworkConnectivity::Full | NetworkConnectivity::Connected
+    );
+    if connected && network.kind == Some(NetworkKind::Wired) {
+        return "canopa:ethernet";
+    }
+    match &network.connectivity {
+        NetworkConnectivity::Full => "canopa:wifi",
+        NetworkConnectivity::Limited => "canopa:wifi-limited",
+        NetworkConnectivity::None => "canopa:wifi-off",
+        NetworkConnectivity::Unknown => "canopa:wifi-limited",
+        NetworkConnectivity::Connected => "canopa:wifi",
+        NetworkConnectivity::Portal => "canopa:wifi-limited",
     }
 }
 
@@ -52,11 +62,11 @@ fn connectivity_state(connectivity: &NetworkConnectivity) -> &'static str {
 
 fn icon_color(connectivity: &NetworkConnectivity) -> iced::Color {
     match connectivity {
-        NetworkConnectivity::Full => theme::palette().accent,
+        NetworkConnectivity::Full => theme::palette().text,
         NetworkConnectivity::Limited => theme::palette().warning,
         NetworkConnectivity::None => theme::palette().danger,
         NetworkConnectivity::Unknown => theme::palette().muted,
-        NetworkConnectivity::Connected => theme::palette().accent,
+        NetworkConnectivity::Connected => theme::palette().text,
         NetworkConnectivity::Portal => theme::palette().warning,
     }
 }
@@ -127,7 +137,7 @@ impl NetworkModule {
         let icon = self
             .icons
             .icon_for_state(connectivity_state(&network.connectivity))
-            .unwrap_or_else(|| icon_str(&network.connectivity))
+            .unwrap_or_else(|| icon_str(network))
             .to_string();
         let label = Self::default_label(network);
         let state = connectivity_state(&network.connectivity);
@@ -159,7 +169,7 @@ impl crate::modules::view::IconLabel for NetworkModule {
             crate::modules::ModuleState::Network(s) => self
                 .icons
                 .icon_for_state(connectivity_state(&s.connectivity))
-                .unwrap_or_else(|| icon_str(&s.connectivity))
+                .unwrap_or_else(|| icon_str(s))
                 .to_owned(),
             _ => String::new(),
         }
@@ -229,6 +239,7 @@ impl crate::modules::data_source::ModuleDataSourceMapper for NetworkModule {
                 label: reading.label.clone(),
                 kind: reading.kind,
                 vpn: reading.vpn.clone(),
+                wireless: reading.wireless,
             }),
         )
     }
@@ -262,11 +273,40 @@ impl crate::modules::render::ModuleRender for NetworkModule {
                 fl!("shell-network-status-unavailable"),
             ),
         };
+        let wireless = match state {
+            crate::modules::ModuleState::Network(network) => network.wireless,
+            _ => None,
+        };
+        let (icon, connected) = match state {
+            crate::modules::ModuleState::Network(network) => (
+                super::view::embedded_icon(icon_str(network)),
+                matches!(
+                    network.connectivity,
+                    NetworkConnectivity::Full
+                        | NetworkConnectivity::Connected
+                        | NetworkConnectivity::Limited
+                        | NetworkConnectivity::Portal
+                ),
+            ),
+            _ => (super::view::embedded_icon("canopa:wifi-off"), false),
+        };
         Some(crate::modules::view::panel_control(
-            include_bytes!("../../assets/wifi.svg"),
+            icon.unwrap_or(include_bytes!("../../assets/wifi.svg").as_slice()),
             title,
             description,
-            super::view::PanelControlEnd::Navigate,
+            match wireless {
+                // Wi-Fi carries its own switch; NetworkManager decides.
+                Some(on) => super::view::PanelControlEnd::NavigateSwitch {
+                    on,
+                    toggle: Some(Box::new(crate::app::Message::QuickToggles(
+                        crate::app::quick_toggles::Event::Toggle(
+                            crate::app::quick_toggles::QuickToggle::Wireless(!on),
+                        ),
+                    ))),
+                },
+                None if connected => super::view::PanelControlEnd::NavigateActive,
+                None => super::view::PanelControlEnd::Navigate,
+            },
             context,
         ))
     }
@@ -280,7 +320,7 @@ impl crate::modules::render::ModuleRender for NetworkModule {
             let icon = self
                 .icons
                 .icon_for_state(connectivity_state(&n.connectivity))
-                .unwrap_or_else(|| icon_str(&n.connectivity))
+                .unwrap_or_else(|| icon_str(n))
                 .to_string();
             let label = Self::default_label(n);
             let s = connectivity_state(&n.connectivity).to_string();
@@ -467,7 +507,7 @@ mod tests {
             ..Default::default()
         });
 
-        assert_eq!(m.icon(&state), "◆");
+        assert_eq!(m.icon(&state), "canopa:wifi");
     }
 
     #[test]
@@ -490,7 +530,7 @@ mod tests {
                 &crate::config::Style::default(),
             )
             .unwrap();
-        assert_eq!(rendered[0].0, "◆ wifi (full)");
+        assert_eq!(rendered[0].0, "canopa:wifi wifi (full)");
     }
 
     #[test]

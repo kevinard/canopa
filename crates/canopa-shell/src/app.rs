@@ -35,6 +35,7 @@ mod panel_runtime;
 pub(crate) mod panel_search;
 mod panel_sizing;
 mod perf;
+pub(crate) mod quick_toggles;
 mod render;
 mod selectable_menu_session;
 mod session_actions;
@@ -43,6 +44,7 @@ mod shell_accessibility;
 mod subscriptions;
 mod surface_input_router;
 mod surfaces;
+mod taskbar;
 mod tray;
 mod view;
 mod visibility;
@@ -84,6 +86,8 @@ pub(crate) struct App {
     notices: crate::notice::Outbox,
     session: session_actions::SessionRuntime,
     osd: osd::OsdRuntime,
+    quick_toggles: quick_toggles::QuickToggles,
+    taskbar: taskbar::TaskbarRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -161,6 +165,14 @@ pub enum Message {
         step: u8,
         up: bool,
     },
+    /// Quick settings slider: set the default output to this percent.
+    VolumeSet(u8),
+    /// Quick settings mute button for the default output.
+    VolumeToggleMute,
+    /// Quick settings radios and the BlueZ state behind them.
+    QuickToggles(quick_toggles::Event),
+    /// A taskbar application was clicked.
+    Taskbar(crate::modules::taskbar::TaskbarEvent),
     /// D-Bus connection handles established at startup (Story 5.1).
     DbusReady(DbusConnections),
     /// User clicked a workspace pill -- switch to that workspace via niri IPC.
@@ -195,6 +207,10 @@ impl Message {
             Message::Niri(event) => event.diagnostic_label(),
             Message::Tray(event) => event.diagnostic_label(),
             Message::VolumeAdjust { .. } => "VolumeAdjust",
+            Message::VolumeSet(_) => "VolumeSet",
+            Message::VolumeToggleMute => "VolumeToggleMute",
+            Message::QuickToggles(_) => "QuickToggles",
+            Message::Taskbar(_) => "Taskbar",
             Message::DbusReady(_) => "DbusReady",
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
@@ -255,6 +271,10 @@ impl Message {
                 }
             }
             Message::VolumeAdjust { .. } => "VolumeAdjust",
+            Message::VolumeSet(_) => "VolumeSet",
+            Message::VolumeToggleMute => "VolumeToggleMute",
+            Message::QuickToggles(_) => "QuickToggles",
+            Message::Taskbar(_) => "Taskbar",
             Message::DbusReady(_) => "DbusReady",
             Message::Tray(messages::TrayRuntimeEvent::Host(_)) => "Tray::Host",
             Message::Tray(messages::TrayRuntimeEvent::Activate { .. }) => "Tray::Activate",
@@ -364,6 +384,8 @@ impl App {
             canopa_accessibility: None,
             accessibility: (!cfg!(test)).then(shell_accessibility::ShellAccessibility::new),
             accessibility_focused_window: None,
+            quick_toggles: Default::default(),
+            taskbar: Default::default(),
             notices: Default::default(),
             session: Default::default(),
             osd: Default::default(),
@@ -372,6 +394,7 @@ impl App {
             #[cfg(test)]
             external_panel_event_responses_for_test: std::collections::HashMap::new(),
         };
+        app.refresh_taskbar();
         let mut window_tasks = app.apply_bar_surface_lifecycle_effects(effects);
         window_tasks.push(app.refresh_session_capabilities());
         tracing::debug!(
@@ -528,6 +551,18 @@ impl App {
             Message::Modules(event) => self.handle_module_runtime_event(event),
             Message::Niri(event) => self.handle_app_niri_event(event),
             Message::VolumeAdjust { step, up } => self.handle_volume_adjust(step, up),
+            Message::VolumeSet(percent) => Task::batch(self.apply_app_effects(vec![
+                app_effects::AppEffect::ChangeDefaultSink(
+                    canopa_services::audio::DefaultChange::Set(percent.min(100)),
+                ),
+            ])),
+            Message::QuickToggles(event) => self.handle_quick_toggle_event(event),
+            Message::Taskbar(event) => self.handle_taskbar_event(event),
+            Message::VolumeToggleMute => Task::batch(self.apply_app_effects(vec![
+                app_effects::AppEffect::ChangeDefaultSink(
+                    canopa_services::audio::DefaultChange::ToggleMute,
+                ),
+            ])),
             Message::DbusReady(connections) => {
                 tracing::debug!(
                     target: "canopa_shell::runtime",

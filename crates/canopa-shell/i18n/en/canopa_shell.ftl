@@ -25,12 +25,24 @@ shell-module-overview = Overview
 shell-module-controls = Controls
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Power & display
+shell-provider-bluetooth-description = Devices and pairing
+shell-bluetooth-on = On, no devices connected
+shell-bluetooth-connected-count = { $count } devices connected
+shell-provider-power-description = Battery, power mode and brightness
+shell-provider-wifi-description = Wi-Fi networks and connections
+shell-tile-details = { $name } settings
+shell-battery-title = Battery
+shell-battery-charging = Charging
+shell-battery-full = Fully charged
+shell-battery-plugged-in = Plugged in, not charging
+shell-battery-on-battery = On battery power
 shell-module-lock = Lock
 shell-module-suspend = Suspend
 shell-module-hibernate = Hibernate
 shell-module-log-out = Log out
 shell-module-reboot = Reboot
 shell-module-power-off = Power off
+shell-module-power = Power
 shell-tooltip-launcher = Launcher
 shell-tooltip-overview = Overview
 shell-tooltip-quick-settings = Quick settings
@@ -44,6 +56,10 @@ shell-menu-launcher-prompt = Search apps, files, and more
 shell-menu-log-out-title = Log out?
 shell-menu-reboot-title = Reboot?
 shell-menu-power-off-title = Power off?
+shell-menu-power-title = Power
+shell-menu-log-out-more = Log out…
+shell-menu-reboot-more = Reboot…
+shell-menu-power-off-more = Power off…
 # Shown in the log out, reboot and power off confirmations.
 shell-menu-unsaved-work = Unsaved work may be lost.
 shell-menu-cancel = Cancel
@@ -141,6 +157,7 @@ shell-volume-muted = Output muted
 shell-volume-devices = Speakers and microphones
 shell-volume-unavailable = Audio status unavailable
 shell-volume-level = Output level
+shell-volume-mute = Mute output
 # $level is a formatted percentage.
 shell-volume-level-value = Output level, { $level }
 shell-volume-decrease = Decrease volume
@@ -199,6 +216,13 @@ shell-a11y-workspace-active = active
 shell-a11y-workspace-urgent = urgent
 shell-a11y-tray-item = Tray item
 shell-a11y-tray = Tray
+shell-a11y-taskbar = Taskbar
+shell-a11y-taskbar-pinned = pinned
+shell-a11y-taskbar-focused = focused
+shell-taskbar-windows = { $count ->
+    [one] 1 window
+   *[other] { $count } windows
+}
 shell-a11y-image = Image
 
 ## Notices

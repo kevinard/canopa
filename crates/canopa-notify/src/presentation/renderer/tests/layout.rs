@@ -293,6 +293,35 @@ fn region_requests(callback: &iced_layershell::actions::ActionCallback) -> Vec<(
 }
 
 #[tokio::test]
+async fn bottom_start_banners_take_input_only_in_their_corner() {
+    let renderer = software_renderer().await;
+    let mut state = banner_ui_test_state();
+    let mut tree = Tree::empty();
+    let _task = banner_ui_update(
+        &mut state,
+        BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
+            presentation: BannerPresentation {
+                position: crate::BannerPosition::BottomStart,
+                ..BannerPresentation::visible_banners(vec![banner_view(42, "Queued")])
+            },
+            acknowledgement: BannerPresentationAcknowledgement::new(|| {}),
+        }),
+    );
+    let actions = frame_actions(&mut state, &renderer, Size::new(976.0, 600.0), &mut tree).await;
+    let [LayerShellCustomAction::SetInputRegion(region)] = actions.as_slice() else {
+        panic!("{actions:?}");
+    };
+    let height = queued_card_height(&renderer, 360.0);
+    assert_eq!(
+        region_requests(region),
+        vec![
+            (2, vec![0, 0, i32::MAX, i32::MAX]),
+            (1, vec![0, 600 - height, 360, height])
+        ]
+    );
+}
+
+#[tokio::test]
 async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_clear() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
@@ -348,7 +377,9 @@ async fn queued_input_regions_use_the_latest_viewport_and_remain_empty_after_cle
 async fn compositor_viewport_keeps_cards_width_capped_and_top_right() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
-    state.presentation = BannerPresentation::visible_banners(vec![banner_view(42, "Fits")]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![banner_view(
+        42, "Fits",
+    )]));
     for (viewport, expected_x, expected_width) in [
         (Size::new(976.0, 216.0), 616.0, 360.0),
         (Size::new(276.0, 416.0), 0.0, 276.0),
@@ -391,8 +422,10 @@ async fn compositor_viewport_keeps_cards_width_capped_and_top_right() {
 async fn fully_visible_card_is_acknowledged_while_a_lower_card_is_clipped() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
-    state.presentation =
-        BannerPresentation::visible_banners(vec![banner_view(1, "Upper"), banner_view(2, "Lower")]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![
+        banner_view(1, "Upper"),
+        banner_view(2, "Lower"),
+    ]));
     let targets: Vec<_> = state
         .presentation
         .banners
@@ -453,7 +486,7 @@ async fn queued_card_frames_cannot_acknowledge_replacement_content() {
         let _ = banner_ui_update(
             &mut state,
             BannerUiMessage::Runtime(BannerRuntimeInput::Replace {
-                presentation: BannerPresentation::visible_banners(vec![banner]),
+                presentation: top_end(BannerPresentation::visible_banners(vec![banner])),
                 acknowledgement,
             }),
         );
@@ -505,7 +538,7 @@ async fn display_observer_preserves_action_clicks_across_view_rebuilds() {
         icon: None,
     }];
     let target = banner.target();
-    state.presentation = BannerPresentation::visible_banners(vec![banner]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![banner]));
     state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
         generation: 0,
         acknowledgement: BannerPresentationAcknowledgement::for_banners([target], |_| {}),
@@ -610,7 +643,7 @@ async fn ordinary_stack_wheel_steps_acknowledge_an_oversized_middle_card() {
             })
             .collect();
         let targets: Vec<_> = banners.iter().map(BannerView::target).collect();
-        state.presentation = BannerPresentation::visible_banners(banners);
+        state.presentation = top_end(BannerPresentation::visible_banners(banners));
         let displayed = Arc::new(Mutex::new(Vec::new()));
         let observed = displayed.clone();
         state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
@@ -660,8 +693,10 @@ async fn oversized_card_and_stack_have_independently_reachable_scrollbars() {
         label: "Last action".into(),
         icon: None,
     }];
-    state.presentation =
-        BannerPresentation::visible_banners(vec![oversized, banner_view(2, "Lower")]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![
+        oversized,
+        banner_view(2, "Lower"),
+    ]));
     let targets: Vec<_> = state
         .presentation
         .banners
@@ -779,7 +814,7 @@ async fn oversized_card_wheel_scrolling_preserves_body_navigation_and_action_cli
         icon: Some(test_banner_visual()),
     }];
     let target = banner.target();
-    state.presentation = BannerPresentation::visible_banners(vec![banner]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![banner]));
     state.pending_acknowledgement = Some(PendingBannerAcknowledgement {
         generation: 0,
         acknowledgement: BannerPresentationAcknowledgement::for_banners([target], |_| {}),
@@ -1374,8 +1409,10 @@ async fn late_layout_from_lost_output_cannot_restore_its_input_region() {
 async fn scrolling_reveals_a_pending_card_without_restarting_already_displayed_cards() {
     let renderer = software_renderer().await;
     let mut state = banner_ui_test_state();
-    state.presentation =
-        BannerPresentation::visible_banners(vec![banner_view(1, "Upper"), banner_view(2, "Lower")]);
+    state.presentation = top_end(BannerPresentation::visible_banners(vec![
+        banner_view(1, "Upper"),
+        banner_view(2, "Lower"),
+    ]));
     let targets: Vec<_> = state
         .presentation
         .banners
@@ -1718,4 +1755,10 @@ async fn custom_banner_font_and_spacing_reflow_without_losing_action_targets() {
     }
     assert_eq!(messages.len(), 1);
     assert!(format!("{:?}", messages[0]).contains("opaque-action"));
+}
+
+/// These geometry checks were written for the top-end corner.
+fn top_end(mut presentation: BannerPresentation) -> BannerPresentation {
+    presentation.position = crate::BannerPosition::TopEnd;
+    presentation
 }

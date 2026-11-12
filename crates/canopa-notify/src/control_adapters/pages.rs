@@ -144,34 +144,39 @@ impl Session {
         self.next = page.next;
         let grouped = self.grouped && !self.settings;
         let mut content = present(page, self.settings, grouped, &self.collapsed);
-        content.actions.insert(
-            0,
-            navigation(
-                self.generation,
-                if self.settings {
-                    Direction::Notifications
-                } else {
-                    Direction::Settings
-                },
-            ),
-        );
+        // Back leads the Settings view; in the reading view everyday actions
+        // come first and Settings follows them.
+        if self.settings {
+            content
+                .actions
+                .insert(0, navigation(self.generation, Direction::Notifications));
+        }
         if !self.settings {
             if let Some(token) = control.clear_undo() {
                 content.actions.push(PanelAction {
                     request_activation_token: false,
+                    destructive: false,
+                    pressed: None,
                     key: PANEL_UNDO_CLEAR_KEY.into(),
                     label: fl!("notify-center-undo-clear"),
                     value: Some(token.to_string()),
                 });
             }
-            content.actions.push(navigation(
+            // One "Group by app" toggle; pressed while the Center is grouped.
+            let mut group = navigation(
                 self.generation,
                 if grouped {
                     Direction::Timeline
                 } else {
                     Direction::Grouped
                 },
-            ));
+            )
+            .pressed(grouped);
+            group.label = fl!("notify-center-group-by-app");
+            content.actions.push(group);
+            content
+                .actions
+                .push(navigation(self.generation, Direction::Settings));
         }
         // The reading view names the state; Settings offers the choices.
         let (status, suppression) = control.do_not_disturb_view();
@@ -422,6 +427,8 @@ fn present(
 fn navigation(generation: u64, direction: Direction) -> PanelAction {
     PanelAction {
         request_activation_token: false,
+        destructive: false,
+        pressed: None,
         key: PAGE_KEY.into(),
         label: match direction {
             Direction::First => fl!("notify-center-first-page"),

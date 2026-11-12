@@ -33,13 +33,16 @@ pub(crate) fn resolve_application_icon(app_id: &str) -> Option<ApplicationIcon> 
     resolved
 }
 
-fn resolve_application_icon_uncached(app_id: &str) -> Option<ApplicationIcon> {
+/// Installed applications, discovered once per process.
+pub(crate) fn installed_applications() -> &'static [crate::desktop_apps::DesktopApplication] {
     static APPLICATIONS: OnceLock<Vec<crate::desktop_apps::DesktopApplication>> = OnceLock::new();
 
-    let applications = APPLICATIONS
-        .get_or_init(|| crate::desktop_apps::discover_installed_applications().unwrap_or_default());
+    APPLICATIONS
+        .get_or_init(|| crate::desktop_apps::discover_installed_applications().unwrap_or_default())
+}
 
-    resolve_application_icon_from_applications(app_id, applications)
+fn resolve_application_icon_uncached(app_id: &str) -> Option<ApplicationIcon> {
+    resolve_application_icon_from_applications(app_id, installed_applications())
 }
 
 fn resolve_application_icon_from_applications(

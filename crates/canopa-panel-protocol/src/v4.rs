@@ -385,6 +385,14 @@ pub struct PanelAction {
     /// omit it; the opaque action value and frozen v4 invoke event are unchanged.
     #[serde(default, skip_serializing_if = "is_false")]
     pub request_activation_token: bool,
+    /// The action removes or discards something; hosts may set it apart.
+    /// Older hosts ignore it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub destructive: bool,
+    /// For an action that switches a view or setting: whether it is on now.
+    /// Hosts may draw it as a pressed toggle. Older hosts ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressed: Option<bool>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -398,7 +406,19 @@ impl PanelAction {
             label: label.into(),
             value: None,
             request_activation_token: false,
+            destructive: false,
+            pressed: None,
         }
+    }
+
+    pub fn destructive(mut self) -> Self {
+        self.destructive = true;
+        self
+    }
+
+    pub fn pressed(mut self, on: bool) -> Self {
+        self.pressed = Some(on);
+        self
     }
 
     pub fn with_activation_token(mut self) -> Self {
@@ -478,6 +498,8 @@ mod tests {
             key: "opaque".into(),
             label: "Duplicate".into(),
             value: Some("revision-owned-target".into()),
+            destructive: false,
+            pressed: None,
         });
         assert!(
             content.validate().is_err(),

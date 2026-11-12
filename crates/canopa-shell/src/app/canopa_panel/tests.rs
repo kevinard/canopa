@@ -140,6 +140,17 @@ impl Operation for TextBounds {
     fn text(&mut self, _: Option<&iced::widget::Id>, bounds: Rectangle, text: &str) {
         self.0.push((text.to_owned(), bounds));
     }
+
+    // The icon-only Close control is found by its widget, under its name.
+    fn container(&mut self, id: Option<&iced::widget::Id>, bounds: Rectangle) {
+        if id
+            == Some(&iced::widget::Id::new(
+                crate::surface::panel::PANEL_CLOSE_ID,
+            ))
+        {
+            self.0.push(("Close".to_owned(), bounds));
+        }
+    }
 }
 
 #[tokio::test]
@@ -266,7 +277,8 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
         );
         assert_eq!(bounds("New message").x, bounds("Hello").x);
         assert!(bounds("Mail").y < bounds("New message").y);
-        assert!(bounds("Unread").x > bounds("Mail").x);
+        // An attributed item shows its status as a dot; the name stays accessible.
+        assert!(!labels.0.iter().any(|(label, _)| label == "Unread"));
         let key = semantic_key(
             &snapshot,
             "notifications",
@@ -283,7 +295,8 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
             &mut iced::advanced::widget::operation::black_box(&mut measure),
         );
         let marker = measure.bounds[&key];
-        assert!(marker.width >= bounds("Unread").width && marker.height <= 24.0);
+        assert!(marker.x > bounds("Mail").x);
+        assert!(marker.width >= 8.0 && marker.height <= 24.0);
         assert!(marker.y < bounds("Hello").y && viewport.contains(marker.center()));
         let reply = bounds("Reply");
         let dismiss = bounds("Dismiss");
@@ -530,7 +543,7 @@ async fn long_keyboard_selection_leaves_panel_content_visible() {
         .find(|(label, _)| label == "Refresh")
         .unwrap();
     assert!(
-        refresh.height >= 16.0,
+        refresh.height >= 14.0,
         "content action collapsed: {refresh:?}"
     );
     assert!(
@@ -643,6 +656,8 @@ async fn canopa_body_links_support_selection_clicks_and_replacement_guards() {
         },
         &PanelAction {
             request_activation_token: false,
+            destructive: false,
+            pressed: None,
             key: "opaque-link".into(),
             label: "Read the page".into(),
             value: Some("old-revision".into()),

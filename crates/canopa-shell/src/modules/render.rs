@@ -1,5 +1,8 @@
 use crate::modules::{ModuleDetailSession, ModuleState};
 
+/// A 1–100 level and the message that sets a new one.
+pub type LevelControl = (u8, fn(u8) -> crate::app::Message);
+
 pub struct BarRenderContext<'a> {
     pub window: iced::window::Id,
     pub edge: &'a crate::config::Edge,
@@ -13,7 +16,17 @@ pub struct PanelModuleContext {
     pub focused: bool,
     pub footer: bool,
     pub paired_toggle: bool,
-    pub opens_provider: bool,
+    /// The provider a click opens, for links to built-in or external panels.
+    pub opens_provider: Option<String>,
+    /// Live state for a link to a built-in provider, such as the battery charge
+    /// on Power & display.
+    pub provider_summary: Option<String>,
+    /// A radio's state and the message that flips it, shown as a switch.
+    pub provider_switch: Option<(bool, crate::app::Message)>,
+    /// A level the linked provider adjusts inline, such as brightness.
+    pub provider_level: Option<LevelControl>,
+    /// The click opens a menu (such as Power), not an action.
+    pub opens_menu: bool,
     /// The stable key of the card's accessible node.
     pub key: String,
 }
@@ -53,6 +66,13 @@ pub trait ModuleRender: Send + Sync {
         style: &crate::config::Style,
     ) -> iced::Element<'_, crate::app::Message> {
         let horizontal = context.edge.is_horizontal();
+        // A presentation may still offer a spine-specific arrangement.
+        if !horizontal
+            && self.presentation().is_some()
+            && let Some(element) = self.render_bar_collapsed_with_style(state, context, style)
+        {
+            return element;
+        }
         if let Some(presentation) = self.presentation() {
             let layout = if horizontal {
                 super::view::IconLabelLayout::Horizontal

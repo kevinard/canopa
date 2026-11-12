@@ -563,6 +563,77 @@ impl crate::modules::render::ModuleRender for ClockModule {
         Some(self)
     }
 
+    /// On a vertical spine a 12-hour time stacks its day period under the
+    /// digits ("11:58" over "PM") so it stays legible within the rail.
+    fn render_bar_collapsed_with_style(
+        &self,
+        state: &crate::modules::ModuleState,
+        context: &crate::modules::render::BarRenderContext<'_>,
+        style: &crate::config::Style,
+    ) -> Option<iced::Element<'_, crate::app::Message>> {
+        let crate::modules::ModuleState::Clock(clock) = state else {
+            return None;
+        };
+        if context.edge.is_horizontal()
+            || self.content_rotation != crate::config::ContentRotation::None
+        {
+            return None;
+        }
+        let segments =
+            self.styled_segments_with_default(clock, crate::config::FormatMode::Collapsed, style)?;
+        let [(text, resolved)] = segments.as_slice() else {
+            return None;
+        };
+        if text.trim() != clock.time.trim() {
+            return None;
+        }
+        // ICU separates the day period with a (narrow) no-break space.
+        let (digits, period) = match text.trim().rsplit_once(char::is_whitespace) {
+            Some((digits, period))
+                if !period.is_empty()
+                    && period.chars().all(char::is_alphabetic)
+                    && !digits.chars().any(char::is_alphabetic) =>
+            {
+                (digits.trim_end(), Some(period))
+            }
+            _ => (text.trim(), None),
+        };
+        let color = resolved.color.unwrap_or(crate::theme::palette().text);
+        let today = chrono::Local::now().date_naive();
+        // "Nov 12": the short month and day, under the time; the tooltip and
+        // the calendar give the full date.
+        let date = canopa_i18n::format::month_day_short(today);
+        let mut column = iced::widget::column![
+            crate::theme::strong_text(digits.to_owned())
+                .size(resolved.size.unwrap_or(14.0).max(14.0))
+                .color(color)
+                .wrapping(iced::widget::text::Wrapping::None),
+        ]
+        .align_x(iced::Alignment::Center)
+        .width(iced::Length::Fill);
+        if let Some(period) = period {
+            column = column.push(
+                crate::theme::text(period.to_owned())
+                    .size(12)
+                    .color(color.scale_alpha(0.75))
+                    .wrapping(iced::widget::text::Wrapping::None),
+            );
+        }
+        column = column.push(
+            iced::widget::container(
+                crate::theme::text(date)
+                    .size(12)
+                    .color(crate::theme::palette().muted)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .padding(iced::Padding {
+                top: 3.0,
+                ..Default::default()
+            }),
+        );
+        Some(column.into())
+    }
+
     fn tooltip_values(&self, state: &crate::modules::ModuleState) -> Vec<(&'static str, String)> {
         if let crate::modules::ModuleState::Clock(c) = state {
             vec![

@@ -406,6 +406,9 @@ pub enum NotificationCenterAction {
     },
     /// Reopen the live banner with its reply composer; the text stays in Notify.
     Reply,
+    /// Delete one finished notification from the Center's history. Live
+    /// notifications are dismissed through their sender's lifecycle instead.
+    Remove,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

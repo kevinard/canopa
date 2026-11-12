@@ -432,25 +432,26 @@ pub(super) fn styled_segment_text<'a>(
 ) -> Element<'a, Message> {
     // Embedded, monochrome shell marks use the same configured size/color as
     // glyph icons. No filesystem lookup or extra module kind is needed.
-    let icon = match segment.as_str() {
-        "canopa:mark" => Some(include_bytes!("../../assets/canopa-mark.svg").as_slice()),
-        "canopa:search" => Some(include_bytes!("../../assets/search.svg").as_slice()),
-        "canopa:overview" => Some(include_bytes!("../../assets/overview.svg").as_slice()),
-        "canopa:controls" => Some(include_bytes!("../../assets/controls.svg").as_slice()),
-        "canopa:bluetooth" => Some(include_bytes!("../../assets/bluetooth.svg").as_slice()),
-        "canopa:brightness" => Some(include_bytes!("../../assets/brightness.svg").as_slice()),
-        "canopa:lock" => Some(include_bytes!("../../assets/lock.svg").as_slice()),
-        "canopa:logout" => Some(include_bytes!("../../assets/logout.svg").as_slice()),
-        "canopa:reboot" => Some(include_bytes!("../../assets/reboot.svg").as_slice()),
-        "canopa:poweroff" => Some(include_bytes!("../../assets/poweroff.svg").as_slice()),
-        "canopa:suspend" => Some(include_bytes!("../../assets/moon.svg").as_slice()),
-        "canopa:hibernate" => Some(include_bytes!("../../assets/hibernate.svg").as_slice()),
-        _ => None,
-    };
-    if let Some(bytes) = icon {
-        let size = style.size.unwrap_or(fallback_size as f32);
-        let color = style.color.unwrap_or(fallback_color);
+    let size = style.size.unwrap_or(fallback_size as f32);
+    let color = style.color.unwrap_or(fallback_color);
+    if let Some(bytes) = embedded_icon(&segment) {
         return crate::theme::icon(bytes, size, color);
+    }
+    // A template such as "{icon} {value}%" keeps the mark beside its text.
+    if let Some((token, rest)) = segment.split_once(' ')
+        && let Some(bytes) = embedded_icon(token)
+    {
+        let rest = rest.trim_start().to_owned();
+        return row![
+            crate::theme::icon(bytes, size, color),
+            crate::theme::text(rest.clone())
+                .size(size)
+                .color(color)
+                .font(segment_font(&rest, style)),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into();
     }
     let font = segment_font(&segment, style);
     crate::theme::text(segment)
@@ -458,6 +459,43 @@ pub(super) fn styled_segment_text<'a>(
         .color(style.color.unwrap_or(fallback_color))
         .font(font)
         .into()
+}
+
+/// Shell-owned monochrome marks, addressed as `canopa:NAME` in icon values.
+pub(crate) fn embedded_icon(token: &str) -> Option<&'static [u8]> {
+    Some(match token {
+        "canopa:mark" => include_bytes!("../../assets/canopa-mark.svg").as_slice(),
+        "canopa:search" => include_bytes!("../../assets/search.svg").as_slice(),
+        "canopa:overview" => include_bytes!("../../assets/overview.svg").as_slice(),
+        "canopa:controls" => include_bytes!("../../assets/controls.svg").as_slice(),
+        "canopa:bluetooth" => include_bytes!("../../assets/bluetooth.svg").as_slice(),
+        "canopa:brightness" => include_bytes!("../../assets/brightness.svg").as_slice(),
+        "canopa:power-mode" => include_bytes!("../../assets/power-mode.svg").as_slice(),
+        "canopa:lock" => include_bytes!("../../assets/lock.svg").as_slice(),
+        "canopa:logout" => include_bytes!("../../assets/logout.svg").as_slice(),
+        "canopa:reboot" => include_bytes!("../../assets/reboot.svg").as_slice(),
+        "canopa:poweroff" | "canopa:power-menu" => {
+            include_bytes!("../../assets/poweroff.svg").as_slice()
+        }
+        "canopa:suspend" => include_bytes!("../../assets/suspend.svg").as_slice(),
+        "canopa:hibernate" => include_bytes!("../../assets/hibernate.svg").as_slice(),
+        "canopa:bell" => include_bytes!("../../assets/bell.svg").as_slice(),
+        "canopa:bell-off" => include_bytes!("../../assets/bell-off.svg").as_slice(),
+        "canopa:sound" => include_bytes!("../../assets/sound.svg").as_slice(),
+        "canopa:sound-low" => include_bytes!("../../assets/sound-low.svg").as_slice(),
+        "canopa:sound-muted" => include_bytes!("../../assets/sound-muted.svg").as_slice(),
+        "canopa:wifi" => include_bytes!("../../assets/wifi.svg").as_slice(),
+        "canopa:wifi-limited" => include_bytes!("../../assets/wifi-limited.svg").as_slice(),
+        "canopa:wifi-off" => include_bytes!("../../assets/wifi-off.svg").as_slice(),
+        "canopa:ethernet" => include_bytes!("../../assets/ethernet.svg").as_slice(),
+        "canopa:battery-0" => include_bytes!("../../assets/battery-0.svg").as_slice(),
+        "canopa:battery-1" => include_bytes!("../../assets/battery-1.svg").as_slice(),
+        "canopa:battery-2" => include_bytes!("../../assets/battery-2.svg").as_slice(),
+        "canopa:battery-3" => include_bytes!("../../assets/battery-3.svg").as_slice(),
+        "canopa:battery-4" => include_bytes!("../../assets/battery-4.svg").as_slice(),
+        "canopa:battery-charging" => include_bytes!("../../assets/battery-charging.svg").as_slice(),
+        _ => return None,
+    })
 }
 
 /// Give standalone Nerd Font icons a full icon cell instead of a code font's
@@ -845,13 +883,21 @@ fn visual_segment_size(style: crate::config::ResolvedStyle, fallback_size: u32) 
 
 /// A compact, full-width control within the host's Bar Panel card frame.
 #[derive(Clone)]
-pub(super) enum PanelControlEnd {
+pub(crate) enum PanelControlEnd {
     Navigate,
+    /// Opens a panel for something that is currently on or connected.
+    NavigateActive,
+    /// Opens a panel and carries a switch for its radio (Wi-Fi, Bluetooth).
+    NavigateSwitch {
+        on: bool,
+        /// Boxed: a message is far larger than the other endings.
+        toggle: Option<Box<Message>>,
+    },
     Toggle(bool),
     Status(String),
 }
 
-pub(super) fn panel_control<'a>(
+pub(crate) fn panel_control<'a>(
     icon: &'static [u8],
     title: impl Into<String>,
     description: impl Into<String>,
@@ -864,7 +910,10 @@ pub(super) fn panel_control<'a>(
     // A switch for toggles, otherwise a button; focus is the panel's own selection.
     let node = match &end {
         PanelControlEnd::Toggle(on) => Node::switch(title.clone(), *on),
-        PanelControlEnd::Navigate | PanelControlEnd::Status(_) => Node::button(title.clone()),
+        PanelControlEnd::Navigate
+        | PanelControlEnd::NavigateActive
+        | PanelControlEnd::NavigateSwitch { .. }
+        | PanelControlEnd::Status(_) => Node::button(title.clone()),
     };
     let node = node
         .key(context.key.clone())
@@ -881,20 +930,112 @@ pub(super) fn panel_control<'a>(
         .disabled(context.primary.is_none())
         .focused(context.focused)
         .on_click(context.primary.clone());
+    if context.paired_toggle
+        && let PanelControlEnd::NavigateSwitch { on, toggle } = &end
+    {
+        let toggle = toggle.as_deref().cloned();
+        // A radio tile: the tile switches it, the chevron opens its panel.
+        let status = if *on {
+            description.clone()
+        } else {
+            fl!("shell-switch-off")
+        };
+        let node = Node::switch(title.clone(), *on)
+            .key(context.key.clone())
+            .description(description.clone())
+            .disabled(toggle.is_none())
+            .focused(context.focused)
+            .on_click(toggle.clone());
+        return panel_tile_with_details(
+            icon,
+            title,
+            Some(status),
+            *on,
+            node,
+            toggle.clone(),
+            context
+                .primary
+                .clone()
+                .map(|open| (open, context.key.clone())),
+            false,
+            context.focused,
+        );
+    }
+    if context.paired_toggle {
+        let (status, active) = match &end {
+            PanelControlEnd::Toggle(on) => (
+                Some(if *on {
+                    fl!("shell-switch-on")
+                } else {
+                    fl!("shell-switch-off")
+                }),
+                *on,
+            ),
+            PanelControlEnd::Status(status) => (Some(status.clone()), false),
+            PanelControlEnd::Navigate => (None, false),
+            PanelControlEnd::NavigateActive => (None, true),
+            PanelControlEnd::NavigateSwitch { on, .. } => (None, *on),
+        };
+        return panel_tile(
+            icon,
+            title,
+            status,
+            active,
+            matches!(
+                end,
+                PanelControlEnd::Navigate
+                    | PanelControlEnd::NavigateActive
+                    | PanelControlEnd::NavigateSwitch { .. }
+            ),
+            node,
+            context.primary,
+            context.focused,
+        );
+    }
     let palette = crate::theme::palette();
     let toggle = matches!(end, PanelControlEnd::Toggle(_));
-    let (icon_color, icon_fill) = if toggle {
-        let brand =
-            canopa_ui::color(crate::theme::appearance().role(canopa_theme::ColorRole::Brand));
-        (brand, brand.scale_alpha(0.18))
+    // One meaning for an icon disc everywhere: accent-filled while its
+    // feature is on or connected, neutral otherwise.
+    let active = matches!(
+        end,
+        PanelControlEnd::Toggle(true)
+            | PanelControlEnd::NavigateActive
+            | PanelControlEnd::NavigateSwitch { on: true, .. }
+    );
+    let (icon_color, icon_fill) = if active {
+        (palette.on_accent, palette.accent)
     } else {
-        (palette.accent, crate::theme::accent_surface())
+        (palette.text, palette.text.scale_alpha(0.09))
     };
     let trailing: Element<'_, Message> = match end {
-        PanelControlEnd::Navigate => crate::theme::text(canopa_ui::direction::forward_chevron())
-            .size(22)
-            .style(canopa_ui::muted)
-            .into(),
+        PanelControlEnd::NavigateSwitch { on, toggle } => {
+            let toggle = toggle.map(|toggle| *toggle);
+            let chevron = crate::theme::text(canopa_ui::direction::forward_chevron())
+                .size(22)
+                .style(canopa_ui::muted);
+            canopa_ui::direction::row([
+                canopa_ui::accessibility::semantic(
+                    Node::switch(title.clone(), on)
+                        .key(format!("{}/switch", context.key))
+                        .disabled(toggle.is_none())
+                        .on_click(toggle.clone()),
+                    iced::widget::button(switch_track(on))
+                        .padding([6, 4])
+                        .on_press_maybe(toggle)
+                        .style(|_, _| iced::widget::button::Style::default()),
+                ),
+                chevron.into(),
+            ])
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        }
+        PanelControlEnd::Navigate | PanelControlEnd::NavigateActive => {
+            crate::theme::text(canopa_ui::direction::forward_chevron())
+                .size(22)
+                .style(canopa_ui::muted)
+                .into()
+        }
         PanelControlEnd::Status(label) => crate::theme::text(label)
             .size(crate::theme::label_size())
             .style(canopa_ui::muted)
@@ -947,15 +1088,15 @@ pub(super) fn panel_control<'a>(
         }
     };
     let icon = container(crate::theme::icon(icon, 19.0, icon_color))
-        .center(if context.paired_toggle { 28 } else { 34 })
+        .center(34)
         .style(move |_| {
             container::Style::default()
                 .background(icon_fill)
-                .border(iced::Border::default().rounded(9))
+                .border(iced::Border::default().rounded(17))
         });
     let title = crate::theme::strong_text(title);
     let description = crate::theme::text(description)
-        .size(crate::theme::label_size())
+        .size(crate::theme::label_size() + 1.0)
         .style(canopa_ui::muted);
     let content: Element<'_, Message> = if context.paired_toggle {
         let status: Element<'_, Message> = if toggle {
@@ -1005,6 +1146,230 @@ pub(super) fn panel_control<'a>(
             [8, 6]
         })
         .width(iced::Length::Fill),
+    )
+}
+
+/// The switch drawn for Quick settings radios: a pill track with a knob at
+/// the trailing edge while on.
+fn switch_track<'a>(active: bool) -> Element<'a, Message> {
+    let palette = crate::theme::palette();
+    let knob = container(iced::widget::Space::new().width(14).height(14)).style(move |_| {
+        container::Style::default()
+            .background(if active {
+                palette.on_accent
+            } else {
+                palette.text
+            })
+            .border(iced::Border::default().rounded(7))
+    });
+    container(knob)
+        .width(38)
+        .height(22)
+        .padding(4)
+        .align_x(if active {
+            canopa_ui::direction::end()
+        } else {
+            canopa_ui::direction::start()
+        })
+        .align_y(Alignment::Center)
+        .style(move |_| {
+            container::Style::default()
+                .background(if active {
+                    palette.accent
+                } else {
+                    palette.muted.scale_alpha(0.4)
+                })
+                .border(iced::Border::default().rounded(11))
+        })
+        .into()
+}
+
+fn mix(a: iced::Color, b: iced::Color, t: f32) -> iced::Color {
+    iced::Color {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+}
+
+/// A Quick settings tile: the whole surface is the control. Toggles fill with
+/// the accent surface while on; links to a provider end with a chevron.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn panel_tile<'a>(
+    icon: &'static [u8],
+    title: String,
+    status: Option<String>,
+    active: bool,
+    navigate: bool,
+    node: canopa_ui::accessibility::Node<Message>,
+    primary: Option<Message>,
+    focused: bool,
+) -> Element<'a, Message> {
+    panel_tile_with_details(
+        icon, title, status, active, node, primary, None, navigate, focused,
+    )
+}
+
+/// The shared tile body. `details` adds a chevron that opens the control's
+/// panel; it carries the message and the tile's accessibility key.
+#[allow(clippy::too_many_arguments)]
+fn panel_tile_with_details<'a>(
+    icon: &'static [u8],
+    title: String,
+    status: Option<String>,
+    active: bool,
+    node: canopa_ui::accessibility::Node<Message>,
+    primary: Option<Message>,
+    details: Option<(Message, String)>,
+    chevron: bool,
+    focused: bool,
+) -> Element<'a, Message> {
+    use iced::widget::{button, column};
+    let palette = crate::theme::palette();
+    let disabled = primary.is_none();
+    // "On" is one look across the Shell: the accent fill with dark text, as on
+    // the focused workspace. "Off" keeps the raised card.
+    let ink = if active {
+        palette.on_accent
+    } else {
+        palette.text
+    };
+    let soft = if active {
+        palette.on_accent.scale_alpha(0.72)
+    } else {
+        palette.muted
+    };
+    let badge = container(crate::theme::icon(icon, 18.0, ink))
+        .center(30)
+        .style(move |_| {
+            container::Style::default()
+                .background(if active {
+                    palette.on_accent.scale_alpha(0.12)
+                } else {
+                    palette.text.scale_alpha(0.09)
+                })
+                .border(iced::Border::default().rounded(15))
+        });
+    let title_label = title.clone();
+    // A long device name ends in an ellipsis within the space the tile gives
+    // its text, instead of running into the divider and chevron.
+    let status_size = crate::theme::label_size();
+    let body_size = crate::theme::body_size();
+    let text = iced::widget::responsive(move |space| {
+        let room = space.width.max(24.0);
+        let mut text = column![
+            crate::theme::strong_text(crate::theme::ellipsize(&title, room, body_size))
+                .color(ink)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .align_x(canopa_ui::direction::text_start())
+        ]
+        .spacing(1)
+        .width(Length::Fill);
+        if let Some(status) = &status {
+            text = text.push(
+                crate::theme::text(crate::theme::ellipsize(status, room, status_size))
+                    .size(status_size)
+                    .color(soft)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .align_x(canopa_ui::direction::text_start()),
+            );
+        }
+        container(text)
+            .height(Length::Fill)
+            .align_y(Alignment::Center)
+            .into()
+    });
+    let mut cells: Vec<Element<'a, Message>> = vec![badge.into(), text.into()];
+    let details_shown = details.is_some();
+    if let Some((open, key)) = details {
+        // Its own target, set off by a hairline: the rest of the tile switches the radio.
+        cells.push(
+            container(iced::widget::Space::new().width(1).height(28))
+                .style(move |_| container::Style::default().background(ink.scale_alpha(0.2)))
+                .into(),
+        );
+        cells.push(canopa_ui::accessibility::semantic(
+            canopa_ui::accessibility::Node::button(fl!(
+                "shell-tile-details",
+                name = title_label.clone()
+            ))
+            .key(format!("{key}/details"))
+            .on_click(Some(open.clone())),
+            button(
+                container(
+                    crate::theme::text(canopa_ui::direction::forward_chevron())
+                        .size(18)
+                        .color(soft),
+                )
+                .center(22)
+                .width(20),
+            )
+            .padding(0)
+            .on_press(open)
+            .style(move |_, status| {
+                let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+                button::Style {
+                    background: engaged.then(|| ink.scale_alpha(0.12).into()),
+                    border: iced::Border::default().rounded(13),
+                    ..Default::default()
+                }
+            }),
+        ));
+    } else if chevron {
+        cells.push(
+            crate::theme::text(canopa_ui::direction::forward_chevron())
+                .size(18)
+                .color(soft)
+                .into(),
+        );
+    }
+    let content = canopa_ui::direction::row(cells)
+        .spacing(if details_shown { 6 } else { 8 })
+        .align_y(Alignment::Center);
+    let card = crate::theme::ui(canopa_theme::UiKind::Card);
+    let radius = card.radius[0].px();
+    canopa_ui::accessibility::semantic(
+        node,
+        button(
+            container(content)
+                .height(Length::Fill)
+                .align_y(Alignment::Center),
+        )
+        .padding(if details_shown { [8, 8] } else { [8, 10] })
+        .width(Length::Fill)
+        .height(64)
+        .on_press_maybe(primary)
+        .style(move |theme, status| {
+            let colors = canopa_ui::colors(theme);
+            let resting = if active { colors.accent } else { colors.raised };
+            let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: Some(
+                    if engaged {
+                        mix(
+                            resting,
+                            if active {
+                                colors.on_accent
+                            } else {
+                                colors.text
+                            },
+                            0.08,
+                        )
+                    } else {
+                        resting
+                    }
+                    .into(),
+                ),
+                text_color: if disabled { colors.disabled } else { ink },
+                border: iced::Border {
+                    color: colors.focus,
+                    width: if focused { 2.0 } else { 0.0 },
+                    radius: radius.into(),
+                },
+                ..Default::default()
+            }
+        }),
     )
 }
 

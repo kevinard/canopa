@@ -211,11 +211,13 @@ impl ModuleDataSourceRuntime {
                 label,
                 kind,
                 vpn,
+                wireless,
             } => self.apply_source_state(ModuleDataSourceState::Network(NetworkReading {
                 connectivity,
                 label,
                 kind,
                 vpn,
+                wireless,
             })),
             NetworkEvent::Unavailable => self.mark_unavailable(ModuleDataSourceIdentity::Network),
         }

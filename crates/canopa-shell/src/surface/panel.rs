@@ -209,6 +209,9 @@ pub fn panel_module_frame<'a>(
         .into()
 }
 
+/// The widget holding a panel's icon-only Close control.
+pub const PANEL_CLOSE_ID: &str = "panel-close";
+
 /// The same host-owned heading and dismiss control in both panel presentations.
 pub fn panel_header<'a>(title: String) -> iced::Element<'a, crate::app::Message> {
     panel_header_with_back(title, false)
@@ -250,13 +253,12 @@ pub fn panel_header_with_back<'a>(
             .key("panel-close")
             .shortcut("Escape")
             .on_click(panel(crate::app::messages::PanelEvent::Close)),
-        crate::theme::action(
-            crate::theme::text(fl!("shell-close")).size(crate::theme::label_size()),
+        iced::widget::container(crate::theme::icon_button(
+            crate::theme::CLOSE_ICON,
             panel(crate::app::messages::PanelEvent::Close),
-            canopa_ui::Action::Normal,
             false,
-        )
-        .height((crate::theme::panel_header_height() - 24) as f32),
+        ))
+        .id(PANEL_CLOSE_ID),
     ));
     canopa_ui::direction::row(cells)
         .spacing(canopa_ui::metrics::GAP)

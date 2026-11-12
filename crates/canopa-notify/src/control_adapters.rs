@@ -18,6 +18,7 @@ use transport::{control_reply_line, panel_response_line};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACKNOWLEDGE_ITEM_KEY: &str = "canopa-notify:acknowledge-item";
+const PANEL_REMOVE_ITEM_KEY: &str = "canopa-notify:remove-item";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
 const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
 const PANEL_CATEGORY_PERMISSION_KEY_PREFIX: &str = "canopa-notify:category-permission:";
@@ -602,6 +603,16 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                             )
                                         }),
                                 )
+                                .chain(
+                                    (item.status != canopa_notify::NotificationStatus::Active)
+                                        .then(|| {
+                                            panel_center_action(
+                                                item.target.clone(),
+                                                NotificationCenterAction::Remove,
+                                                fl!("notify-center-remove"),
+                                            )
+                                        }),
+                                )
                                 .collect(),
                         })
                         .collect(),
@@ -622,9 +633,10 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
             PanelAction::new(
                 PANEL_DELETE_HISTORY_KEY,
                 fl!("notify-center-delete-history"),
-            ),
+            )
+            .destructive(),
             PanelAction::new(PANEL_MARK_ALL_READ_KEY, fl!("notify-center-mark-all-read")),
-            PanelAction::new(PANEL_CLEAR_ALL_KEY, fl!("notify-center-clear-all")),
+            PanelAction::new(PANEL_CLEAR_ALL_KEY, fl!("notify-center-clear-all")).destructive(),
         ],
         error: None,
     }
@@ -718,7 +730,12 @@ fn panel_center_action(
     label: String,
 ) -> PanelAction {
     PanelAction {
-        request_activation_token: !matches!(action, NotificationCenterAction::Acknowledge),
+        request_activation_token: !matches!(
+            action,
+            NotificationCenterAction::Acknowledge | NotificationCenterAction::Remove
+        ),
+        destructive: matches!(action, NotificationCenterAction::Remove),
+        pressed: None,
         key: panel_center_action_key(&action).to_string(),
         label,
         value: Some(
@@ -736,6 +753,7 @@ fn panel_center_action_key(action: &NotificationCenterAction) -> &'static str {
     match action {
         NotificationCenterAction::OpenLink { .. } => "canopa-notify:open-link",
         NotificationCenterAction::Acknowledge => PANEL_ACKNOWLEDGE_ITEM_KEY,
+        NotificationCenterAction::Remove => PANEL_REMOVE_ITEM_KEY,
         NotificationCenterAction::Activate => PANEL_ACTIVATE_ITEM_KEY,
         NotificationCenterAction::InvokeAction { .. } => PANEL_NOTIFICATION_ACTION_KEY,
         NotificationCenterAction::Reply => "canopa-notify:reply",

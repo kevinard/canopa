@@ -357,6 +357,30 @@ pub(super) fn module_summary(
         }
         ModuleKind::Workspaces => (fl!("shell-panel-workspaces"), Vec::new()),
         ModuleKind::Tray => (fl!("shell-a11y-tray"), Vec::new()),
+        ModuleKind::Taskbar => (fl!("shell-a11y-taskbar"), Vec::new()),
+        ModuleKind::TaskbarItem => {
+            let mut parts = Vec::new();
+            let count = get("count")
+                .and_then(|count| count.parse::<usize>().ok())
+                .unwrap_or(0);
+            if count > 0 {
+                parts.push(fl!("shell-taskbar-windows", count = count));
+            } else if get("pinned").is_some() {
+                parts.push(fl!("shell-a11y-taskbar-pinned"));
+            }
+            if get("state") == Some("focused") {
+                parts.push(fl!("shell-a11y-taskbar-focused"));
+            }
+            if get("urgent").is_some() {
+                parts.push(fl!("shell-a11y-workspace-urgent"));
+            }
+            (
+                get("name")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| fl!("shell-a11y-taskbar")),
+                parts,
+            )
+        }
     };
     summary.label = std::iter::once(name)
         .chain(parts)

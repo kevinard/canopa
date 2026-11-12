@@ -17,6 +17,8 @@ use canopa_ui::accessibility::{Node, semantic};
 /// The results list, which the search field controls.
 const RESULTS: &str = "launcher-results";
 
+/// Browsing and search headings share one height so typing never moves the list.
+const LAUNCHER_HEADING_HEIGHT: f32 = 24.0;
 const CLOSE_ICON: &[u8] = include_bytes!("../../../assets/close.svg");
 const SEARCH_ICON: &[u8] = include_bytes!("../../../assets/search.svg");
 const APPS_ICON: &[u8] = include_bytes!("../../../assets/app-grid.svg");
@@ -63,18 +65,6 @@ fn contents<'a>(
     };
     let target = selected_target(model);
     let wide = width >= 450.0;
-    let close_icon = theme::icon(CLOSE_ICON, 16.0, theme::palette().text);
-    let close_label: Element<'a, Message> = if wide {
-        row![
-            close_icon,
-            theme::strong_text(fl!("shell-close")).size(caption_size())
-        ]
-        .spacing(5)
-        .align_y(iced::Alignment::Center)
-        .into()
-    } else {
-        container(close_icon).center(20).into()
-    };
     let close_shortcut = !child && model.search_query.is_empty();
     let mut close_node = Node::button(fl!("shell-launcher-close"))
         .key("launcher-close")
@@ -85,13 +75,7 @@ fn contents<'a>(
     let close = semantic(
         close_node,
         control_hint(
-            theme::action(
-                close_label,
-                Some(Message::Panel(PanelEvent::Close)),
-                canopa_ui::Action::Quiet,
-                false,
-            )
-            .padding([6, 9]),
+            theme::icon_button(CLOSE_ICON, Some(Message::Panel(PanelEvent::Close)), false),
             if close_shortcut {
                 fl!("shell-launcher-close-hint", key = fl!("shell-key-escape"))
             } else {
@@ -122,7 +106,8 @@ fn contents<'a>(
             metrics.extent - metrics.gap
         }
     } else {
-        let visible_rows = count.min(if browsing { 5 } else { 3 });
+        // Results keep the browsing height, so typing never resizes the panel.
+        let visible_rows = if browsing { count.min(7) } else { 7 };
         metrics.extent * visible_rows as f32 - metrics.gap
     };
     let compact = model.adaptive && bounds.height >= chrome + preferred_body;
@@ -177,6 +162,7 @@ fn contents<'a>(
             ),
             Space::new().width(Length::Fill),
         ]
+        .height(LAUNCHER_HEADING_HEIGHT)
         .align_y(iced::Alignment::Center)
         .spacing(4);
         if wide {
@@ -186,6 +172,22 @@ fn contents<'a>(
                 .push(muted_label(fl!("shell-launcher-calculate-after")));
         }
         controls = controls.push(header);
+    } else if count > 0 && !visible_query(model).trim().is_empty() {
+        // Searching keeps a heading row, so the panel does not jump as you type.
+        controls = controls.push(
+            row![
+                semantic(
+                    Node::heading(fl!("shell-launcher-results"), 2).key("launcher-heading"),
+                    theme::strong_text(fl!("shell-launcher-results"))
+                        .size(theme::body_size() + 1.0),
+                ),
+                Space::new().width(Length::Fill),
+                muted_label(fl!("shell-launcher-match-count", count = count)),
+            ]
+            .height(LAUNCHER_HEADING_HEIGHT)
+            .align_y(iced::Alignment::Center)
+            .spacing(4),
+        );
     }
     let frame_height = if compact {
         Length::Shrink
@@ -238,19 +240,26 @@ fn contents<'a>(
     } else {
         16.0
     };
-    let mut results = column![].spacing(8);
+    let mut results = column![].spacing(12);
     if !has_scopes && count > 0 {
         results = results.push(footer_rule());
     }
     results = results.push(body);
     if let Some(target) = target {
-        if !model.launcher_status.is_empty() {
+        // "Top matches" notes are announced; the list itself shows the ranking.
+        let ranking_note = [
+            fl!("shell-launcher-top-matches"),
+            fl!("shell-files-top-matches"),
+        ]
+        .contains(&model.launcher_status);
+        if !model.launcher_status.is_empty() && !ranking_note {
             results = results.push(muted_label(model.launcher_status.clone()));
         }
-        let shortcuts = secondary_commands(target);
-        if !shortcuts.is_empty() {
-            results = results.push(row(shortcuts).spacing(4).wrap());
-        }
+        // A single extra command joins the footer beside Actions and Open. More
+        // stay in Actions (Tab) and on their Ctrl+digit keys, so the panel keeps
+        // its height and every command stays beside the result it belongs to.
+        let mut shortcuts = secondary_commands(target);
+        let inline_shortcut = (shortcuts.len() == 1 && width >= 500.0).then(|| shortcuts.remove(0));
         let mut footer = row![].spacing(7).align_y(iced::Alignment::Center);
         if width >= 380.0 {
             if count > 1 {
@@ -263,6 +272,9 @@ fn contents<'a>(
             }
         }
         footer = footer.push(Space::new().width(Length::Fill));
+        if let Some(shortcut) = inline_shortcut {
+            footer = footer.push(shortcut);
+        }
         footer = footer.push(command_controls(model, target, width));
         let footer = container(footer).padding([5, 8]);
         results = results.push(if calculator {
@@ -579,7 +591,7 @@ fn search<'a>(
     if !input_ui.custom_border && input_ui.states[4].border_color.is_none() {
         input_ui.states[4].border_color = Some(ColorValue::Rgba(
             theme::appearance().role(ColorRole::Focus),
-            145,
+            255,
         ));
     }
     let mut padding = canopa_ui::content_padding(input_ui);
@@ -780,7 +792,8 @@ fn scope_button(
             let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
             style.border.radius = 8.0.into();
             if selected {
-                style.background = Some(palette.accent.scale_alpha(0.16).into());
+                // The same accent surface marks every selected or active control.
+                style.background = Some(theme::accent_surface().into());
             } else if matches!(
                 status,
                 iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed
@@ -977,16 +990,22 @@ fn keycap<'a>(label: impl iced::widget::text::IntoFragment<'a>) -> Element<'a, M
 }
 
 fn primary_keycap() -> Element<'static, Message> {
-    container(theme::text(fl!("shell-key-enter")).size(theme::label_size() + 1.0))
-        .padding([2, 5])
-        .style(|theme| {
-            let palette = canopa_ui::colors(theme);
-            container::Style::default()
-                .background(palette.on_accent.scale_alpha(0.14))
-                .color(palette.on_accent)
-                .border(iced::Border::default().rounded(5))
-        })
-        .into()
+    container(
+        theme::text(fl!("shell-key-enter"))
+            .size(theme::label_size() + 1.0)
+            .style(|theme| iced::widget::text::Style {
+                color: Some(canopa_ui::colors(theme).on_accent),
+            }),
+    )
+    .padding([2, 5])
+    .style(|theme| {
+        let palette = canopa_ui::colors(theme);
+        container::Style::default()
+            .background(palette.on_accent.scale_alpha(0.10))
+            .color(palette.on_accent)
+            .border(iced::Border::default().rounded(5))
+    })
+    .into()
 }
 
 fn badge<'a>(
@@ -1194,11 +1213,7 @@ fn result_content<'a>(
                 ..font
             };
             let title_size = theme::body_size() + 2.0;
-            let detail_size = if browsing {
-                theme::label_size() + 1.0
-            } else {
-                caption_size()
-            };
+            let detail_size = theme::label_size() + 1.0;
             let title = fit_line(&title, bounds.width, title_size, title_font);
             let mut labels = column![match_title(title, &query, title_size, title_font)]
                 .spacing(if browsing { 3 } else { 2 });
@@ -1220,11 +1235,45 @@ fn result_content<'a>(
         })
         .into(),
     );
+    // Mixed results carry their section's mark, as on the scope tabs.
+    if !model.can_go_back
+        && !browsing
+        && model.launcher_scope.is_none()
+        && !model.launcher_scopes.is_empty()
+        && let Some(glyph) = section_glyph(target)
+    {
+        cells.push(
+            container(theme::icon(
+                glyph,
+                15.0,
+                theme::palette().muted.scale_alpha(0.8),
+            ))
+            .center(20)
+            .into(),
+        );
+    }
     canopa_ui::direction::row(cells)
         .spacing(7)
         .width(Length::Fill)
         .align_y(iced::Alignment::Center)
         .into()
+}
+
+/// The scope tab a result belongs to, by what opening it does.
+fn section_glyph(target: &Target) -> Option<&'static [u8]> {
+    match &target.result.actions.first()?.action {
+        Action::Application { .. } | Action::AppActionLaunch { .. } | Action::Launch { .. } => {
+            Some(APPS_ICON)
+        }
+        Action::Open { .. }
+        | Action::Reveal { .. }
+        | Action::Preview { .. }
+        | Action::ChooseApplication { .. }
+        | Action::OpenWith { .. } => Some(FILES_ICON),
+        Action::FocusWindow { .. } => Some(WINDOWS_ICON),
+        Action::Provider { .. } | Action::SettingsPage { .. } => Some(SETTINGS_ICON),
+        _ => None,
+    }
 }
 
 fn action_description(target: &Target) -> Option<String> {
@@ -1258,12 +1307,14 @@ fn match_title(
         && let Some(std::ops::Range { start, end }) =
             crate::app::panel_search::find_folded(&title, query)
     {
+        // Text shaping applies one weight per word, so the match is marked by
+        // the accent color on a soft wash, which follow single characters.
         let spans: [iced::widget::text::Span<'static, (), iced::Font>; 3] = [
             iced::widget::span(title[..start].to_owned()),
-            iced::widget::span(title[start..end].to_owned()).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..font
-            }),
+            iced::widget::span(title[start..end].to_owned())
+                .color(theme::palette().accent)
+                .background(theme::palette().accent.scale_alpha(0.26))
+                .border(iced::Border::default().rounded(3)),
             iced::widget::span(title[end..].to_owned()),
         ];
         return iced::widget::rich_text(spans)

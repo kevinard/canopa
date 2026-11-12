@@ -209,6 +209,8 @@ impl PanelAccessibility {
                 for option in &control.options {
                     let action = PanelAction {
                         request_activation_token: false,
+                        destructive: false,
+                        pressed: None,
                         key: control.key.clone(),
                         label: option.label.clone(),
                         value: Some(option.value.clone()),
@@ -506,6 +508,13 @@ impl Builder<'_> {
         }
         if let ActionSemantics::Radio { selected } = semantics {
             node.set_toggled(if selected {
+                accesskit::Toggled::True
+            } else {
+                accesskit::Toggled::False
+            });
+        } else if let Some(pressed) = action.pressed {
+            // A button with a toggled state is a toggle button to AT-SPI.
+            node.set_toggled(if pressed {
                 accesskit::Toggled::True
             } else {
                 accesskit::Toggled::False

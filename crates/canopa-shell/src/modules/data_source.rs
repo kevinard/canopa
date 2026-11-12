@@ -42,6 +42,7 @@ pub struct NetworkReading {
     pub label: Option<String>,
     pub kind: Option<crate::modules::network::NetworkKind>,
     pub vpn: Vec<String>,
+    pub wireless: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

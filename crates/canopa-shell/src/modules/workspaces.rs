@@ -25,7 +25,7 @@ fn pill_border(is_focused: bool, is_active: bool) -> iced::Border {
             iced::Color::TRANSPARENT
         },
         width: 1.0,
-        radius: 8.0.into(),
+        radius: 10.0.into(),
     }
 }
 
@@ -129,8 +129,25 @@ impl WorkspaceItemModule {
         use iced::widget::container;
         use iced::{Alignment, Background, Length};
 
-        let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
-        let border = pill_border(self.workspace.is_focused, self.workspace.is_active);
+        let (mut bg, mut fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        // Occupied workspaces are soft pills; an empty one recedes to its number.
+        if !self.workspace.is_focused {
+            if self.workspace.active_window_id.is_some() {
+                if bg == iced::Color::TRANSPARENT {
+                    bg = theme::palette().text.scale_alpha(0.12);
+                }
+            } else {
+                fg = theme::palette().muted;
+            }
+        }
+        let mut border = pill_border(self.workspace.is_focused, self.workspace.is_active);
+        // Fill grades the states: accent for the focused workspace, a filled
+        // pill when occupied, an outline when empty.
+        if !self.workspace.is_focused && self.workspace.active_window_id.is_none() {
+            bg = iced::Color::TRANSPARENT;
+            border.color = theme::palette().text.scale_alpha(0.16);
+            border.width = border.width.max(1.0);
+        }
         let ws_num = self.workspace.idx as u32;
         let label_cfg = self.config.workspaces.get(&ws_num);
         let configured_icon = label_cfg.and_then(|c| c.icon.as_deref());
@@ -196,7 +213,7 @@ impl WorkspaceItemModule {
                     fg,
                 ))
                 .width(Length::Fill)
-                .height(20)
+                .height(30)
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
                 .padding([0, 6])
@@ -215,7 +232,7 @@ impl WorkspaceItemModule {
                     crate::modules::view::fallback_resolved_style(bar_style),
                 ))
                 .width(Length::Fill)
-                .height(20)
+                .height(30)
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
                 .padding([0, 6])
@@ -241,9 +258,12 @@ impl WorkspaceItemModule {
             } else {
                 parts.push(crate::modules::view::styled_segment_text(
                     format!("{ws_num}"),
-                    crate::theme::label_size() as u32,
+                    13,
                     fg,
-                    style,
+                    crate::config::ResolvedStyle {
+                        weight: style.weight.or(Some(crate::config::Weight::Bold)),
+                        ..style
+                    },
                 ));
             }
             if let Some(lbl) = label_str {
@@ -261,7 +281,7 @@ impl WorkspaceItemModule {
                     .align_y(Alignment::Center),
             )
             .width(Length::Fill)
-            .height(20)
+            .height(30)
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
             .padding([0, 6])
@@ -283,8 +303,25 @@ impl WorkspaceItemModule {
         use iced::widget::container;
         use iced::{Alignment, Background, Length};
 
-        let (bg, fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
-        let border = pill_border(self.workspace.is_focused, self.workspace.is_active);
+        let (mut bg, mut fg) = pill_colors(self.workspace.is_focused, self.workspace.is_active);
+        // Occupied workspaces are soft pills; an empty one recedes to its number.
+        if !self.workspace.is_focused {
+            if self.workspace.active_window_id.is_some() {
+                if bg == iced::Color::TRANSPARENT {
+                    bg = theme::palette().text.scale_alpha(0.12);
+                }
+            } else {
+                fg = theme::palette().muted;
+            }
+        }
+        let mut border = pill_border(self.workspace.is_focused, self.workspace.is_active);
+        // Fill grades the states: accent for the focused workspace, a filled
+        // pill when occupied, an outline when empty.
+        if !self.workspace.is_focused && self.workspace.active_window_id.is_none() {
+            bg = iced::Color::TRANSPARENT;
+            border.color = theme::palette().text.scale_alpha(0.16);
+            border.width = border.width.max(1.0);
+        }
         let mode = if horizontal {
             crate::config::FormatMode::Horizontal
         } else {

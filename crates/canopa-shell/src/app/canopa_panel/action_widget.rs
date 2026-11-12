@@ -18,6 +18,175 @@ pub(super) fn render<'a>(
     action(id, provider, label.into(), false, focused, treatment)
 }
 
+/// A pill-shaped toolbar action: label-sized text on a soft wash.
+pub(super) fn chip<'a>(
+    id: String,
+    label: &str,
+    provider: &str,
+    focused: bool,
+    destructive: bool,
+    toggle: Option<bool>,
+) -> Element<'a, Message> {
+    use iced::widget::button;
+    let pressed = toggle == Some(true);
+    let label = crate::theme::strong_text(label.to_owned())
+        .size(crate::theme::label_size())
+        .wrapping(iced::widget::text::Wrapping::Word);
+    // A view or setting switch shows its state with a small switch.
+    let content: Element<'a, Message> = match toggle {
+        Some(on) => iced::widget::row![mini_switch(on), label]
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        None => label.into(),
+    };
+    let content = button(content)
+        .padding([7, 8])
+        .on_press(Message::ExternalPanel(
+            ExternalPanelEvent::ButtonActivated {
+                provider_name: provider.to_owned(),
+                element_id: id.clone(),
+            },
+        ))
+        .style(move |theme, status| {
+            let colors = canopa_ui::colors(theme);
+            let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            // Destructive actions use the danger tone.
+            let (wash, text) = if destructive {
+                (colors.danger, colors.danger)
+            } else {
+                (colors.text, colors.text)
+            };
+            button::Style {
+                background: Some(
+                    if pressed && !engaged {
+                        crate::theme::accent_surface()
+                    } else {
+                        wash.scale_alpha(if engaged { 0.18 } else { 0.08 })
+                    }
+                    .into(),
+                ),
+                text_color: text,
+                border: iced::Border {
+                    color: colors.focus,
+                    width: if focused { 2.0 } else { 0.0 },
+                    radius: 14.0.into(),
+                },
+                ..Default::default()
+            }
+        });
+    crate::surface::identity::identify(id, content)
+}
+
+fn mini_switch<'a>(on: bool) -> Element<'a, Message> {
+    let knob = container(iced::widget::Space::new().width(8).height(8)).style(move |theme| {
+        let colors = canopa_ui::colors(theme);
+        container::Style::default()
+            .background(if on { colors.on_accent } else { colors.text })
+            .border(iced::Border::default().rounded(4))
+    });
+    container(knob)
+        .width(22)
+        .height(12)
+        .padding(2)
+        .align_x(if on {
+            canopa_ui::direction::end()
+        } else {
+            canopa_ui::direction::start()
+        })
+        .align_y(iced::Alignment::Center)
+        .style(move |theme| {
+            let colors = canopa_ui::colors(theme);
+            container::Style::default()
+                .background(if on {
+                    colors.accent
+                } else {
+                    colors.muted.scale_alpha(0.45)
+                })
+                .border(iced::Border::default().rounded(6))
+        })
+        .into()
+}
+
+/// A status dot that is also its item's only action (an unread dot that marks
+/// the message read): a 16px target that shows a soft ring on hover.
+pub(super) fn marker<'a>(
+    id: String,
+    label: &str,
+    provider: &str,
+    focused: bool,
+) -> Element<'a, Message> {
+    use iced::widget::button;
+    let dot = container(iced::widget::Space::new().width(8).height(8)).style(|theme| {
+        container::Style::default()
+            .background(canopa_ui::colors(theme).accent)
+            .border(iced::Border::default().rounded(4))
+    });
+    // The name is the accessible label; the card's close control sits beside it.
+    let _ = label;
+    let content = button(container(dot).center(16))
+        .padding(0)
+        .on_press(Message::ExternalPanel(
+            ExternalPanelEvent::ButtonActivated {
+                provider_name: provider.to_owned(),
+                element_id: id.clone(),
+            },
+        ))
+        .style(move |theme, status| {
+            let colors = canopa_ui::colors(theme);
+            let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: engaged.then(|| colors.accent.scale_alpha(0.18).into()),
+                border: iced::Border {
+                    color: colors.focus,
+                    width: if focused { 2.0 } else { 0.0 },
+                    radius: 8.0.into(),
+                },
+                ..Default::default()
+            }
+        });
+    crate::surface::identity::identify(id, content)
+}
+
+/// A message card's round close control, the same one the banners use.
+pub(super) fn dismiss<'a>(id: String, provider: &str, focused: bool) -> Element<'a, Message> {
+    use iced::widget::button;
+    let content = button(
+        container(crate::theme::icon(
+            crate::theme::CLOSE_ICON,
+            14.0,
+            crate::theme::palette().text,
+        ))
+        .center(28),
+    )
+    .padding(0)
+    .on_press(Message::ExternalPanel(
+        ExternalPanelEvent::ButtonActivated {
+            provider_name: provider.to_owned(),
+            element_id: id.clone(),
+        },
+    ))
+    .style(move |theme, status| {
+        let colors = canopa_ui::colors(theme);
+        let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: Some(
+                colors
+                    .text
+                    .scale_alpha(if engaged { 0.18 } else { 0.10 })
+                    .into(),
+            ),
+            border: iced::Border {
+                color: colors.focus,
+                width: if focused { 2.0 } else { 0.0 },
+                radius: 14.0.into(),
+            },
+            ..Default::default()
+        }
+    });
+    crate::surface::identity::identify(id, content)
+}
+
 pub(super) fn preview<'a>(id: &str, label: &str, provider: &str) -> Element<'a, Message> {
     action(
         id.to_owned(),

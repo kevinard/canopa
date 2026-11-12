@@ -43,25 +43,59 @@ fn menu_actions(menu: &MenuConfig) -> Vec<SessionAction> {
     actions
 }
 
-fn retain_offered(items: &mut Vec<MenuItemConfig>, capabilities: &Capabilities) {
-    items.retain(|item| {
-        !matches!(item.action, Some(PanelAction::Session(action)) if !capabilities.offers(action))
+fn retain_offered(
+    items: &mut Vec<MenuItemConfig>,
+    capabilities: &Capabilities,
+    refused_menus: &[&str],
+) {
+    items.retain(|item| match &item.action {
+        Some(PanelAction::Session(action)) => capabilities.offers(*action),
+        // A confirmation whose session action is refused leads nowhere.
+        Some(PanelAction::OpenMenu(name) | PanelAction::ToggleMenu(name)) => {
+            !refused_menus.contains(&name.as_str())
+        }
+        _ => true,
     });
     for item in items {
-        retain_offered(&mut item.children, capabilities);
+        retain_offered(&mut item.children, capabilities, refused_menus);
     }
 }
 
-/// Menus as shown: items for refused session actions are left out. A free
-/// function so callers can borrow the configuration beside the foreground.
+/// Menus whose session actions logind refuses, all of them.
+fn refused_menus<'a>(menus: &'a [MenuConfig], capabilities: &Capabilities) -> Vec<&'a str> {
+    menus
+        .iter()
+        .filter(|menu| {
+            let actions = menu_actions(menu);
+            !actions.is_empty()
+                && !actions
+                    .into_iter()
+                    .any(|action| capabilities.offers(action))
+        })
+        .map(|menu| menu.name.as_str())
+        .collect()
+}
+
+/// Menus as shown: items for refused session actions, and items that open a
+/// confirmation for one, are left out. A free function so callers can borrow
+/// the configuration beside the foreground.
 pub(super) fn offered_menus<'a>(
     menus: &'a [MenuConfig],
     capabilities: &Capabilities,
 ) -> Cow<'a, [MenuConfig]> {
+    let refused_targets = refused_menus(menus, capabilities);
     let refused = |menu: &MenuConfig| {
+        fn leads_to_refused(items: &[MenuItemConfig], refused: &[&str]) -> bool {
+            items.iter().any(|item| {
+                matches!(&item.action, Some(PanelAction::OpenMenu(name) | PanelAction::ToggleMenu(name))
+                    if refused.contains(&name.as_str()))
+                    || leads_to_refused(&item.children, refused)
+            })
+        }
         menu_actions(menu)
             .into_iter()
             .any(|action| !capabilities.offers(action))
+            || leads_to_refused(&menu.items, &refused_targets)
     };
     if !menus.iter().any(refused) {
         return Cow::Borrowed(menus);
@@ -71,7 +105,7 @@ pub(super) fn offered_menus<'a>(
             .iter()
             .cloned()
             .map(|mut menu| {
-                retain_offered(&mut menu.items, capabilities);
+                retain_offered(&mut menu.items, capabilities, &refused_targets);
                 menu
             })
             .collect(),
@@ -231,17 +265,15 @@ impl App {
         {
             Some(PanelAction::Session(action)) => capabilities.offers(*action),
             Some(PanelAction::OpenMenu(name) | PanelAction::ToggleMenu(name)) => {
-                let actions = self
-                    .config
-                    .menus
-                    .iter()
-                    .find(|menu| &menu.name == name)
-                    .map(menu_actions)
-                    .unwrap_or_default();
-                actions.is_empty()
-                    || actions
-                        .into_iter()
-                        .any(|action| capabilities.offers(action))
+                let Some(menu) = self.config.menus.iter().find(|menu| &menu.name == name) else {
+                    return true;
+                };
+                // Offered while some item leads somewhere: anything other than
+                // a session action logind refuses.
+                menu.items.is_empty()
+                    || menu.items.iter().any(|item| {
+                        !matches!(item.action, Some(PanelAction::Session(action)) if !capabilities.offers(action))
+                    })
             }
             _ => true,
         }

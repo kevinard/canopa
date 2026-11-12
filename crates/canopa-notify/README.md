@@ -67,6 +67,13 @@ applications. Policy changes affect future requests after a successful Notify re
 The shared `appearance` block selects the same palette as Canopa Shell and repaints
 existing banners on reload; the shell applies it after a restart.
 
+Banners stack in the bottom-start corner by default, beside the bell of Canopa
+Shell's default left bar, where the Notification Center opens. Choose another
+corner with `banners { position "top-end"; }` (`top-start`, `top-end`,
+`bottom-start` or `bottom-end`; start and end follow the reading direction), for
+example for a top bar. Finished notifications in the Center have a close control
+that removes them from history; live ones are dismissed through their sender.
+
 ```sh
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" status --json
 canopa-notify ctl --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock" reload

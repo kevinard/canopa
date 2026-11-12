@@ -26,7 +26,8 @@ menus, dmenu, and whole-panel providers retain their behavior.
 Type normally to search applications, open windows, controls, Settings pages,
 session actions and file/folder names.
 Choose a scope below the search field to narrow the current query. Choose **All**
-to search across sources again. You can also type a scope directly, as in
+to search across sources again; its results carry the matching scope's icon at
+the row's end, so apps, files, windows and settings stay distinguishable. You can also type a scope directly, as in
 `apps firefox`, `windows notes`, `settings volume`, or `files budget`.
 The English scope keywords (`apps`, `files`, `windows`, `settings`, `clip`,
 `snip`, `emoji`, `symbol`) always work; the session language adds its own

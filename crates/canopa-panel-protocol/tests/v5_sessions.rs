@@ -133,6 +133,8 @@ fn rich_actions_retain_opaque_values_and_require_the_current_revision() {
     let mut content = RichContent::new("Notifications");
     content.actions.push(v4::PanelAction {
         request_activation_token: false,
+        destructive: false,
+        pressed: None,
         key: "opaque".into(),
         label: "Clear".into(),
         value: Some("domain-revision".into()),
@@ -168,6 +170,8 @@ fn rich_membership_checks_section_options_and_item_actions_including_links() {
     let mut content = RichContent::new("Center");
     let action = |key: &str| v4::PanelAction {
         request_activation_token: false,
+        destructive: false,
+        pressed: None,
         key: key.into(),
         label: key.into(),
         value: Some("domain-token".into()),
@@ -263,6 +267,8 @@ fn advertised_actions_must_fit_the_event_limit_including_json_escapes() {
             let mut content = RichContent::new("Actions");
             content.actions.push(v4::PanelAction {
                 request_activation_token: false,
+                destructive: false,
+                pressed: None,
                 key: "run".into(),
                 label: "Run".into(),
                 value: Some(large),
@@ -547,6 +553,8 @@ fn activation_is_opted_in_revision_bound_bounded_and_absent_from_legacy_events()
             sections: vec![],
             actions: vec![v4::PanelAction {
                 request_activation_token: activation,
+                destructive: false,
+                pressed: None,
                 ..v4::PanelAction::new("open", "Open")
             }],
             error: None,

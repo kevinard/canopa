@@ -355,6 +355,15 @@ impl Default for TrayConfig {
     }
 }
 
+/// Configuration for the taskbar: pinned applications, then running ones.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TaskbarConfig {
+    /// Desktop IDs shown even when not running, in this order. Missing
+    /// applications are skipped.
+    pub pinned: Vec<String>,
+    pub tooltip: TooltipSetting,
+}
+
 /// Configuration for the focused-window module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FocusedWindowConfig {
@@ -459,6 +468,7 @@ pub enum ModuleParams {
     Button(ButtonConfig),
     Workspaces(WorkspacesConfig),
     Tray(TrayConfig),
+    Taskbar(TaskbarConfig),
     FocusedWindow(FocusedWindowConfig),
 }
 

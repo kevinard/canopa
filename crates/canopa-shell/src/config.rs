@@ -25,7 +25,7 @@ pub use module::{
     IdleBackend, IdleInhibitorConfig, MediaConfig, MenuConfig, MenuItemConfig, MenuSourceConfig,
     MenuSourceKind, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig,
     NotificationsConfig, PanelAction, PanelProviderConfig, ScriptConfig, StateRule, StatesConfig,
-    TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    TaskbarConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub(crate) use module::{CommandPolicyError, ConfiguredCommandSpec};
 #[allow(unused_imports)]

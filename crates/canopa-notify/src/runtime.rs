@@ -912,6 +912,18 @@ impl NotificationRuntime {
                 })
                 .await
             }
+            NotificationCenterAction::Remove => {
+                self.mutate(move |runtime| async move {
+                    let removed = runtime
+                        .storage
+                        .delete_inactive_thread(target.notification_id.get(), target.revision)
+                        .await?;
+                    anyhow::ensure!(removed, "notification is live or has changed");
+                    runtime.notify_state_changed();
+                    Ok(())
+                })
+                .await
+            }
             NotificationCenterAction::Activate => {
                 self.activate_notification_for_revision(
                     target.notification_id,
@@ -1586,6 +1598,7 @@ impl NotificationRuntime {
         sound_settings: NotificationSoundSettings,
         icon_settings: crate::BannerIconSettings,
         appearance: canopa_theme::Appearance,
+        position: crate::BannerPosition,
         configured: ConfiguredPreferences,
     ) -> anyhow::Result<()> {
         self.mutate(move |runtime| async move {
@@ -1607,6 +1620,7 @@ impl NotificationRuntime {
             runtime.dnd_wake.notify_one();
             runtime.set_icon_settings(icon_settings);
             runtime.set_appearance(appearance);
+            runtime.presentation.set_banner_position(position);
             // A renderer outage is presentation status, not rejection of a valid local snapshot.
             // Publication is synchronous and coalesced; it does not await redraw or restart timeouts.
             let _ = runtime.sync_presentation();
@@ -1618,6 +1632,10 @@ impl NotificationRuntime {
 
     pub(crate) fn set_appearance(&self, appearance: canopa_theme::Appearance) {
         self.presentation.set_appearance(appearance);
+    }
+
+    pub(crate) fn set_banner_position(&self, position: crate::BannerPosition) {
+        self.presentation.set_banner_position(position);
     }
 
     pub(crate) fn set_icon_settings(&self, settings: crate::BannerIconSettings) {
@@ -1987,6 +2005,7 @@ impl NotificationRuntime {
                 overflow_count,
                 icon_settings: self.presentation.icon_settings(),
                 appearance: self.presentation.appearance(),
+                position: self.presentation.banner_position(),
             },
             visible_revisions,
         )

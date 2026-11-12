@@ -92,8 +92,11 @@ mod config_tests {
             88
         );
         // UX-DR18: zone assignments
-        assert_eq!(config.bars[0].modules.start, vec!["launcher", "overview"]);
-        assert_eq!(config.bars[0].modules.center, vec!["workspaces"]);
+        assert_eq!(
+            config.bars[0].modules.start,
+            vec!["launcher", "overview", "workspaces"]
+        );
+        assert_eq!(config.bars[0].modules.center, vec!["taskbar"]);
         // The shipped bar shows status at a glance: tray, network, volume and
         // battery (hidden without a battery) sit above the existing controls.
         assert_eq!(
@@ -104,12 +107,21 @@ mod config_tests {
                 "volume",
                 "battery",
                 "notifications",
-                "system",
                 "clock"
             ]
         );
-        // All default modules declared
-        assert_eq!(config.modules.len(), 21);
+        // All default modules declared, with the Power menu button.
+        assert_eq!(config.modules.len(), 23);
+        let taskbar = config
+            .modules
+            .iter()
+            .find(|module| module.name == "taskbar")
+            .expect("taskbar module");
+        assert!(matches!(
+            &taskbar.params,
+            crate::config::ModuleParams::Taskbar(config)
+                if config.pinned.first().map(String::as_str) == Some("org.canopa.Files.desktop")
+        ));
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));

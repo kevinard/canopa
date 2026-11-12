@@ -20,6 +20,7 @@ mod notifications;
 mod script;
 mod segment_styles;
 mod states;
+mod taskbar;
 mod tray;
 mod volume;
 mod workspaces;
@@ -55,14 +56,16 @@ pub(super) fn dispatch(
             focused_window::parse_ctx(node, ctx).map(ModuleParams::FocusedWindow)
         }
         ModuleKind::Tray => tray::parse_ctx(node, ctx).map(ModuleParams::Tray),
-        ModuleKind::WorkspaceItem | ModuleKind::TrayIcon => Err(ctx.node_err(
-            node,
-            format!(
-                "internal error: {:?} is runtime-only and cannot appear in config",
-                kind
-            ),
-            None,
-        )),
+        ModuleKind::Taskbar => taskbar::parse_ctx(node, ctx).map(ModuleParams::Taskbar),
+        ModuleKind::WorkspaceItem | ModuleKind::TrayIcon | ModuleKind::TaskbarItem => Err(ctx
+            .node_err(
+                node,
+                format!(
+                    "internal error: {:?} is runtime-only and cannot appear in config",
+                    kind
+                ),
+                None,
+            )),
     }
 }
 
@@ -85,6 +88,7 @@ mod tests {
                 | ModuleKind::Workspaces
                 | ModuleKind::FocusedWindow
                 | ModuleKind::Tray
+                | ModuleKind::Taskbar
         )
     }
 

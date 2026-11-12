@@ -24,12 +24,24 @@ shell-module-overview = Vue d’ensemble
 shell-module-controls = Réglages
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Alimentation et écran
+shell-provider-bluetooth-description = Appareils et association
+shell-bluetooth-on = Activé, aucun appareil connecté
+shell-bluetooth-connected-count = { $count } appareils connectés
+shell-provider-power-description = Batterie, mode d’alimentation et luminosité
+shell-provider-wifi-description = Réseaux Wi-Fi et connexions
+shell-tile-details = Réglages { $name }
+shell-battery-title = Batterie
+shell-battery-charging = En charge
+shell-battery-full = Complètement chargée
+shell-battery-plugged-in = Branchée, pas en charge
+shell-battery-on-battery = Sur batterie
 shell-module-lock = Verrouiller
 shell-module-suspend = Mettre en veille
 shell-module-hibernate = Hiberner
 shell-module-log-out = Se déconnecter
 shell-module-reboot = Redémarrer
 shell-module-power-off = Éteindre
+shell-module-power = Alimentation
 shell-tooltip-launcher = Lanceur
 shell-tooltip-overview = Vue d’ensemble
 shell-tooltip-quick-settings = Réglages rapides
@@ -41,6 +53,10 @@ shell-menu-launcher-prompt = Rechercher des applications, des fichiers et plus
 shell-menu-log-out-title = Se déconnecter ?
 shell-menu-reboot-title = Redémarrer ?
 shell-menu-power-off-title = Éteindre ?
+shell-menu-power-title = Alimentation
+shell-menu-log-out-more = Se déconnecter…
+shell-menu-reboot-more = Redémarrer…
+shell-menu-power-off-more = Éteindre…
 shell-menu-unsaved-work = Les travaux non enregistrés peuvent être perdus.
 shell-menu-cancel = Annuler
 shell-menu-log-out = Se déconnecter
@@ -126,6 +142,7 @@ shell-volume-muted = Sortie coupée
 shell-volume-devices = Haut-parleurs et microphones
 shell-volume-unavailable = État du son indisponible
 shell-volume-level = Volume de sortie
+shell-volume-mute = Couper le son
 shell-volume-level-value = Volume de sortie, { $level }
 shell-volume-decrease = Baisser le volume
 shell-volume-increase = Augmenter le volume
@@ -177,6 +194,13 @@ shell-a11y-workspace-active = affiché
 shell-a11y-workspace-urgent = urgent
 shell-a11y-tray-item = Élément de la zone de notification
 shell-a11y-tray = Zone de notification
+shell-a11y-taskbar = Barre des tâches
+shell-a11y-taskbar-pinned = épinglée
+shell-a11y-taskbar-focused = au premier plan
+shell-taskbar-windows = { $count ->
+    [one] 1 fenêtre
+   *[other] { $count } fenêtres
+}
 shell-a11y-image = Image
 
 ## Notices

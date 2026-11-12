@@ -60,28 +60,15 @@ pub(super) fn render_with_back<'a>(
         ));
     }
     if !snapshot.content.actions.is_empty() {
-        panel = panel.push(
-            row(snapshot
-                .content
-                .actions
-                .iter()
-                .enumerate()
-                .map(|(index, action)| {
-                    action_button_with_treatment(
-                        snapshot,
-                        provider,
-                        InteractionTarget::Content,
-                        action,
-                        if index == 0 {
-                            canopa_ui::Action::Normal
-                        } else {
-                            canopa_ui::Action::Quiet
-                        },
-                    )
+        panel =
+            panel.push(
+                row(snapshot.content.actions.iter().map(|action| {
+                    chip_button(snapshot, provider, InteractionTarget::Content, action)
                 }))
-            .spacing(metrics::GAP)
-            .wrap(),
-        );
+                .spacing(5)
+                .wrap()
+                .vertical_spacing(5),
+            );
     }
     for section in &snapshot.content.sections {
         let identifies_each_item = !section.items.is_empty()
@@ -97,7 +84,7 @@ pub(super) fn render_with_back<'a>(
                 .style(canopa_ui::muted);
             group = group.push(if let Some(icon) = &section.icon {
                 Element::from(
-                    row![source_icon(snapshot, Some(icon), &section.title), label]
+                    row![source_icon(snapshot, Some(icon), &section.title, 24), label]
                         .spacing(10)
                         .align_y(iced::Alignment::Center),
                 )
@@ -110,6 +97,8 @@ pub(super) fn render_with_back<'a>(
             for option in &control.options {
                 let action = PanelAction {
                     request_activation_token: false,
+                    destructive: false,
+                    pressed: None,
                     key: control.key.clone(),
                     label: format!(
                         "{}{}",
@@ -144,24 +133,14 @@ pub(super) fn render_with_back<'a>(
         }
         for item in &section.items {
             let title_size = (crate::theme::body_size() + crate::theme::title_size()) / 2.0;
-            let inline_action = adaptive
-                && content_width >= 300.0
-                && item.attribution.is_some()
-                && item.slider.is_none()
-                && matches!(item.actions.as_slice(), [action]
-                    if crate::theme::text_width(&action.label, crate::theme::body_size()) <= 80.0);
-            let inline_metadata = inline_action
-                .then(|| {
-                    let mut details = item
-                        .metadata
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, metadata)| !metadata.value.is_empty());
-                    let (index, metadata) = details.next()?;
-                    (details.next().is_none() && metadata_label(metadata).chars().count() <= 24)
-                        .then_some((index, metadata))
-                })
-                .flatten();
+            // An attributed item names its source and moment on one line:
+            // "Messages · 5 minutes ago". Further details stay below the body.
+            let inline_metadata = item.attribution.as_ref().and_then(|_| {
+                item.metadata
+                    .iter()
+                    .enumerate()
+                    .find(|(_, metadata)| !metadata.value.is_empty())
+            });
             let detail_label = |index, metadata: &PanelMetadata| {
                 semantic(
                     snapshot,
@@ -209,33 +188,95 @@ pub(super) fn render_with_back<'a>(
                 .spacing(metrics::GAP)
                 .wrap()
             };
+            let dots = item.attribution.is_some();
+            // On a message card, a destructive item action (Remove) is the card's
+            // close control; the others follow the dot, link and chip rules.
+            let (removals, card_actions): (Vec<&PanelAction>, Vec<&PanelAction>) = if dots {
+                item.actions.iter().partition(|action| action.destructive)
+            } else {
+                (Vec::new(), item.actions.iter().collect())
+            };
+            // One status and one action: the status dot is that action (an
+            // unread dot that marks the item read), named for assistive tools.
+            let dot_action = (dots
+                && item.slider.is_none()
+                && card_actions.len() == 1
+                && item
+                    .metadata
+                    .iter()
+                    .filter(|metadata| metadata.value.is_empty())
+                    .count()
+                    == 1)
+                .then(|| {
+                    snapshot.action_id(
+                        InteractionTarget::Item {
+                            id: item.id.clone(),
+                        },
+                        card_actions[0],
+                    )
+                });
+            // Otherwise a single short action joins the source line as a quiet link.
+            let header_action = dots
+                && dot_action.is_none()
+                && item.slider.is_none()
+                && content_width >= 300.0
+                && matches!(card_actions.as_slice(), [action]
+                    if crate::theme::text_width(&action.label, crate::theme::label_size()) <= 110.0);
             let statuses = row(item
                 .metadata
                 .iter()
                 .enumerate()
                 .filter(|(_, metadata)| metadata.value.is_empty())
                 .map(|(index, metadata)| {
-                    container(
-                        crate::theme::strong_text(metadata_label(metadata))
-                            .size(crate::theme::label_size())
-                            .style(canopa_ui::link),
-                    )
-                    .padding([3, 7])
-                    .style(|_| {
-                        container::Style::default()
-                            .background(crate::theme::accent_surface())
-                            .border(iced::Border::default().rounded(7))
-                    })
-                    .id(super::canopa_accessibility_bounds::widget_id(
-                        &semantic_key(
-                            snapshot,
-                            provider,
-                            &SemanticNode::Metadata(item.id.clone(), index),
-                        ),
-                    ))
-                    .into()
+                    // Attributed items show a status as an accent dot; its
+                    // name stays in the accessible metadata.
+                    let marker = if let Some(id) = &dot_action {
+                        container(
+                            container(action_widget::marker(
+                                id.clone(),
+                                &card_actions[0].label,
+                                provider,
+                                snapshot.focused_action_id() == Some(id.as_str()),
+                            ))
+                            .id(
+                                super::canopa_accessibility_bounds::widget_id(&semantic_key(
+                                    snapshot,
+                                    provider,
+                                    &SemanticNode::Action(id.clone()),
+                                )),
+                            ),
+                        )
+                    } else if dots {
+                        container(iced::widget::Space::new().width(8).height(8)).style(|_| {
+                            container::Style::default()
+                                .background(crate::theme::palette().accent)
+                                .border(iced::Border::default().rounded(4))
+                        })
+                    } else {
+                        container(
+                            crate::theme::strong_text(metadata_label(metadata))
+                                .size(crate::theme::label_size())
+                                .style(canopa_ui::link),
+                        )
+                        .padding([3, 7])
+                        .style(|_| {
+                            container::Style::default()
+                                .background(crate::theme::accent_surface())
+                                .border(iced::Border::default().rounded(7))
+                        })
+                    };
+                    marker
+                        .id(super::canopa_accessibility_bounds::widget_id(
+                            &semantic_key(
+                                snapshot,
+                                provider,
+                                &SemanticNode::Metadata(item.id.clone(), index),
+                            ),
+                        ))
+                        .into()
                 }))
             .spacing(5);
+            let mut leading_icon: Option<Element<'a, Message>> = None;
             let mut card = column![].spacing(
                 card_overrides
                     .gap
@@ -247,34 +288,91 @@ pub(super) fn render_with_back<'a>(
                 .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
                 .width(Length::Fill);
             if let Some(source) = &item.attribution {
-                let attribution = semantic(
-                    snapshot,
-                    provider,
-                    &SemanticNode::Attribution(item.id.clone()),
+                let attribution = container(
                     crate::theme::strong_text(source.label.clone())
                         .size(crate::theme::label_size())
-                        .style(canopa_ui::muted),
-                );
-                let mut identity = column![attribution].spacing(1).width(Length::Fill);
+                        .style(canopa_ui::muted)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .id(super::canopa_accessibility_bounds::widget_id(
+                    &semantic_key(
+                        snapshot,
+                        provider,
+                        &SemanticNode::Attribution(item.id.clone()),
+                    ),
+                ));
+                let mut identity = row![attribution].spacing(6).width(Length::Fill);
                 if let Some((index, metadata)) = inline_metadata {
-                    identity = identity.push(detail_label(index, metadata));
+                    identity = identity.push(
+                        container(
+                            crate::theme::text(format!("· {}", metadata.value))
+                                .size(crate::theme::label_size())
+                                .style(canopa_ui::muted)
+                                .wrapping(iced::widget::text::Wrapping::None),
+                        )
+                        .id(super::canopa_accessibility_bounds::widget_id(
+                            &semantic_key(
+                                snapshot,
+                                provider,
+                                &SemanticNode::Metadata(item.id.clone(), index),
+                            ),
+                        )),
+                    );
                 }
-                let mut source_row = row![
-                    source_icon(snapshot, source.icon.as_ref(), &source.label),
-                    identity,
-                    statuses.wrap(),
-                ]
-                .spacing(9)
+                // Status dots follow the source and time: "Messages · now ●".
+                let identity = identity.push(statuses);
+                // As on banners, the source icon leads the whole message when
+                // the card is wide enough; narrow cards keep it on the source line.
+                let mut source_row = if content_width >= 300.0 {
+                    leading_icon = Some(source_icon(
+                        snapshot,
+                        source.icon.as_ref(),
+                        &source.label,
+                        32,
+                    ));
+                    row![identity]
+                } else {
+                    row![
+                        source_icon(snapshot, source.icon.as_ref(), &source.label, 24),
+                        identity
+                    ]
+                }
+                .spacing(8)
                 .align_y(iced::Alignment::Center);
-                if inline_action {
-                    source_row = source_row.push(action_button(
+                if header_action {
+                    source_row = source_row.push(action_button_with_treatment(
                         snapshot,
                         provider,
                         InteractionTarget::Item {
                             id: item.id.clone(),
                         },
-                        &item.actions[0],
+                        card_actions[0],
+                        canopa_ui::Action::Quiet,
                     ));
+                }
+                // The close control keeps the trailing corner to itself.
+                let mut source_row = source_row;
+                for removal in &removals {
+                    let id = snapshot.action_id(
+                        InteractionTarget::Item {
+                            id: item.id.clone(),
+                        },
+                        removal,
+                    );
+                    source_row = source_row.push(
+                        container(action_widget::dismiss(
+                            id.clone(),
+                            provider,
+                            snapshot.focused_action_id() == Some(id.as_str()),
+                        ))
+                        .id(
+                            super::canopa_accessibility_bounds::widget_id(&semantic_key(
+                                snapshot,
+                                provider,
+                                &SemanticNode::Action(id),
+                            )),
+                        ),
+                    );
                 }
                 card = card.push(source_row);
                 card = card.push(title);
@@ -405,17 +503,8 @@ pub(super) fn render_with_back<'a>(
                 has_detail = true;
                 detail = detail.push(detail_label(index, metadata));
             }
-            let mut inline_detail = None;
             if has_detail {
-                if !inline_action
-                    && item.attribution.is_some()
-                    && item.actions.len() == 1
-                    && item.slider.is_none()
-                {
-                    inline_detail = Some(detail);
-                } else {
-                    card = card.push(detail);
-                }
+                card = card.push(detail);
             }
             if let Some(slider) = &item.slider {
                 let id = snapshot.slider_id(&item.id, slider);
@@ -442,32 +531,56 @@ pub(super) fn render_with_back<'a>(
                     ),
                 ));
             }
-            if !inline_action && !inline_slider_actions && !item.actions.is_empty() {
-                let actions = actions();
-                card = if let Some(detail) = inline_detail {
-                    card.push(
-                        row![detail.width(Length::Fill), actions]
-                            .spacing(metrics::GAP)
-                            .align_y(iced::Alignment::Center),
+            if !inline_slider_actions
+                && !header_action
+                && dot_action.is_none()
+                && !card_actions.is_empty()
+            {
+                card = card.push(if item.attribution.is_some() {
+                    // Message actions are compact chips at the trailing edge.
+                    let target = InteractionTarget::Item {
+                        id: item.id.clone(),
+                    };
+                    Element::from(
+                        container(
+                            row(card_actions.iter().map(|action| {
+                                chip_button(snapshot, provider, target.clone(), action)
+                            }))
+                            .spacing(6)
+                            .width(Length::Fill)
+                            .wrap()
+                            .vertical_spacing(6)
+                            .align_x(canopa_ui::direction::end()),
+                        )
+                        .width(Length::Fill)
+                        .padding(iced::Padding {
+                            top: 2.0,
+                            ..Default::default()
+                        }),
                     )
                 } else {
-                    card.push(actions)
-                };
+                    actions().into()
+                });
             }
             group = group.push(
                 container(
-                    container(card)
-                        .id(super::canopa_accessibility_bounds::widget_id(
-                            &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
-                        ))
-                        .padding(canopa_ui::content_padding(canopa_theme::ResolvedStyle {
-                            padding: card_overrides
-                                .padding
-                                .unwrap_or(canopa_theme::Insets::all(12)),
-                            ..card_ui
-                        }))
-                        .width(Length::Fill)
-                        .style(crate::theme::card),
+                    container(match leading_icon {
+                        Some(icon) => {
+                            Element::from(row![container(icon).width(40), card].spacing(8))
+                        }
+                        None => card.into(),
+                    })
+                    .id(super::canopa_accessibility_bounds::widget_id(
+                        &semantic_key(snapshot, provider, &SemanticNode::Item(item.id.clone())),
+                    ))
+                    .padding(canopa_ui::content_padding(canopa_theme::ResolvedStyle {
+                        padding: card_overrides
+                            .padding
+                            .unwrap_or(canopa_theme::Insets::all(12)),
+                        ..card_ui
+                    }))
+                    .width(Length::Fill)
+                    .style(crate::theme::card),
                 )
                 .padding(canopa_ui::padding(card_ui.margin)),
             );
@@ -541,12 +654,13 @@ fn source_icon<'a>(
     snapshot: &CanopaSnapshot,
     icon: Option<&PanelIcon>,
     label: &str,
+    size: u16,
 ) -> Element<'a, Message> {
     icon.and_then(|icon| snapshot.icon(icon))
         .map(|handle| {
             iced::widget::image(handle.clone())
-                .width(24)
-                .height(24)
+                .width(f32::from(size))
+                .height(f32::from(size))
                 .content_fit(iced::ContentFit::Contain)
                 .into()
         })
@@ -560,17 +674,43 @@ fn source_icon<'a>(
                         .map(|c| c.to_ascii_uppercase().to_string())
                         .unwrap_or_else(|| "?".into()),
                 )
-                .size(crate::theme::label_size())
+                .size(if size > 24 {
+                    crate::theme::body_size() + 2.0
+                } else {
+                    crate::theme::label_size()
+                })
                 .style(canopa_ui::link),
             )
-            .center(24)
-            .style(|_| {
+            .center(f32::from(size))
+            .style(move |_| {
                 container::Style::default()
                     .background(crate::theme::accent_surface())
-                    .border(iced::Border::default().rounded(7))
+                    .border(iced::Border::default().rounded(f32::from(size) / 2.0))
             })
             .into()
         })
+}
+
+/// A compact, rounded action shared by panel toolbars and message cards.
+fn chip_button<'a>(
+    snapshot: &CanopaSnapshot,
+    provider: &str,
+    target: InteractionTarget,
+    action: &PanelAction,
+) -> Element<'a, Message> {
+    let id = snapshot.action_id(target, action);
+    container(action_widget::chip(
+        id.clone(),
+        &action.label,
+        provider,
+        snapshot.focused_action_id() == Some(id.as_str()),
+        action.destructive,
+        action.pressed,
+    ))
+    .id(super::canopa_accessibility_bounds::widget_id(
+        &semantic_key(snapshot, provider, &SemanticNode::Action(id)),
+    ))
+    .into()
 }
 
 fn action_button<'a>(

@@ -41,10 +41,29 @@ The adjacent shared `appearance` block controls the dark/light palette and accen
 for the shell, Notification Center, and Notify banners.
 
 The bundled left bar is Canopa's spine: a 64-pixel rounded frame, 12-pixel outer
-spacing and a stable 88-pixel reservation. Launcher and native overview are at the
-top, local workspaces in the middle, and status, controls and time below: the
-system tray, network, volume and battery icons, then notifications, Quick settings
-and the clock. Network and volume hide while their service is unavailable, and
+spacing and a stable 88-pixel reservation. Launcher, native overview and local
+workspaces are at the top, the taskbar in the middle, and status and time below: the system tray,
+a status group of network, volume and battery icons, notifications and the clock
+(time, day period and date). Spine buttons are icons with tooltips and accessible
+names; the one whose panel is open is highlighted. Workspaces are pills: accent for
+the focused one, a filled pill when occupied and an outline when empty. The bell
+carries the unread count as a badge.
+
+The taskbar shows the applications listed in its `pinned` desktop IDs (missing
+ones are skipped), then the other open applications in the order they opened,
+grouped by desktop file. A dot on the bar's screen edge marks a running
+application, a longer mark several windows, and an accent mark the focused one.
+Click focuses the application's most recent window or launches it; clicking the
+focused application cycles its windows; right- or middle-click starts another
+instance.
+
+```kdl
+module "taskbar" {
+    pinned "org.canopa.Files.desktop" "firefox.desktop"
+}
+```
+
+Network and volume hide while their service is unavailable, and
 battery appears only when UPower reports a present battery. The tray (and the
 `org.kde.StatusNotifierWatcher` it owns) runs because the default bar places it.
 Only the embedded defaults changed: a `shell` block in your `config.kdl`, including
@@ -52,11 +71,17 @@ one saved by Settings, keeps its own layout. Add `"tray" "network" "volume"
 "battery"` to a bar's `end` zone, or place them in Settings > Widgets, to match. Inspect the bundled layout
 with `target/debug/canopa-shell --canopa-config examples/canopa-desktop.kdl`; the
 example selects the shared Canopa palette, with `"light"` available as a companion.
-The controls button uses `toggle-bar-panel` to open that bar's configured modules;
+The status group's icons use `toggle-bar-panel` to open that bar's configured
+modules; inside Quick settings the same modules open their own providers (Wi-Fi,
+Sound). Add the `system` button to a bar for a separate Quick settings button;
 `open-panel` and `toggle-panel` on a module still open its own details.
-Quick settings contains Wi-Fi and Sound cards that open the existing providers,
-volume down/up controls, Do Not Disturb and Keep awake. Wi-Fi and Sound remain
-reachable when status is unavailable; disconnected toggles show their availability.
+Quick settings starts with two-up tiles: Wi-Fi and Bluetooth (the tile switches the
+radio through NetworkManager or BlueZ; its chevron opens the provider), then
+Do Not Disturb and Keep awake. A tile that is on uses the accent fill. The Sound
+card names the default output and carries a level slider and mute button; Power
+& display shows the battery charge and, when a built-in backlight exists, a
+brightness slider on the same curve as the brightness keys. Wi-Fi and Sound remain reachable when status
+is unavailable; a radio without a service shows a plain row instead of a tile.
 Provider Back returns to Quick settings on the same output. Tab/Shift+Tab select
 cards and Enter activates them. Battery and media appear when they have content;
 Calendar opens separately from the clock.
@@ -70,11 +95,14 @@ Wayland login can use logind. The power profile list reflects the options
 advertised by the system Power Profiles daemon or a compatible service.
 The launcher can also open both panels.
 
-Lock, Suspend, Hibernate, Log out, Reboot and Power off occupy a two-column footer.
+Lock, Suspend and Power share the footer. Power opens a menu with Hibernate,
+Log out…, Reboot… and Power off…; the hibernate, logout, reboot and poweroff
+buttons remain available to place in the panel's end zone for one-click access.
 Lock launches `canopa-lock` with session ownership (install its PAM service first; see
 [session tools](../../docs/session-tools.md)). Suspend and Hibernate act at once.
 Log out, Reboot and Power off open confirmation menus with Cancel selected first;
-Cancel returns to Quick settings. Log out asks Niri to quit.
+Cancel returns to Quick settings. Log out asks Niri to quit. The Power menu leaves
+out an item whose confirmation logind would refuse.
 
 Suspend, Hibernate, Reboot and Power off ask systemd-logind directly with the
 `session "suspend"`, `"hibernate"`, `"reboot"` and `"power-off"` actions, never

@@ -182,14 +182,14 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
                     .to_string_lossy()
                     .into(),
                 description: {
-                    let parent = path.parent().unwrap_or(path).display().to_string();
+                    let parent = home_relative(path.parent().unwrap_or(path));
                     if *is_dir {
                         fl!("shell-files-folder-in", parent = parent)
                     } else {
                         fl!("shell-files-file-in", parent = parent)
                     }
                 },
-                icon: Some(if *is_dir { "folder" } else { "text-x-generic" }.into()),
+                icon: Some(if *is_dir { "folder" } else { file_icon(path) }.into()),
                 actions,
             }
         })
@@ -201,6 +201,40 @@ pub(crate) fn search_files(index: &FileIndex, query: &str, cancel: &Cancellation
         } else {
             index.status.clone()
         },
+    }
+}
+
+/// A generic freedesktop icon for common document kinds, by extension.
+fn file_icon(path: &std::path::Path) -> &'static str {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "pdf" => "application-pdf",
+        "odt" | "doc" | "docx" | "rtf" => "x-office-document",
+        "ods" | "xls" | "xlsx" | "csv" => "x-office-spreadsheet",
+        "odp" | "ppt" | "pptx" => "x-office-presentation",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "heic" => "image-x-generic",
+        "mp3" | "flac" | "ogg" | "opus" | "wav" | "m4a" => "audio-x-generic",
+        "mp4" | "mkv" | "webm" | "mov" | "avi" => "video-x-generic",
+        "zip" | "tar" | "gz" | "xz" | "zst" | "7z" | "rar" => "package-x-generic",
+        "html" | "htm" => "text-html",
+        "md" | "markdown" => "text-markdown",
+        _ => "text-x-generic",
+    }
+}
+
+/// A folder under the home directory as `~/…`, as file managers show it.
+fn home_relative(path: &std::path::Path) -> String {
+    match std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        Some(home) if home.is_absolute() && path == home => "~".into(),
+        Some(home) if home.is_absolute() => match path.strip_prefix(&home) {
+            Ok(rest) => format!("~/{}", rest.display()),
+            Err(_) => path.display().to_string(),
+        },
+        _ => path.display().to_string(),
     }
 }
 

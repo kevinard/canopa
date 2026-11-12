@@ -17,6 +17,12 @@ pub(super) const TRAY_DYNAMIC_MODULE: DynamicModuleFamily = DynamicModuleFamily 
     child_interactions: ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
 };
 
+pub(super) const TASKBAR_DYNAMIC_MODULE: DynamicModuleFamily = DynamicModuleFamily {
+    parent_kind: ModuleKind::Taskbar,
+    child_kind: ModuleKind::TaskbarItem,
+    child_interactions: ModuleInteractionProfile::PRIMARY_AND_SECONDARY,
+};
+
 pub(super) const WORKSPACES_DYNAMIC_MODULE: DynamicModuleFamily = DynamicModuleFamily {
     parent_kind: ModuleKind::Workspaces,
     child_kind: ModuleKind::WorkspaceItem,
@@ -304,6 +310,57 @@ pub(super) fn tray_reconciliation_plan(
     plan
 }
 
+/// One child per application for each taskbar placeholder, from `entries`
+/// keyed by the placeholder's configured name.
+pub(super) fn taskbar_reconciliation_plan(
+    snapshot: &DynamicModuleRuntimeSnapshot,
+    entries: &HashMap<String, Vec<crate::modules::taskbar::TaskbarEntry>>,
+) -> DynamicModuleReconciliationPlan {
+    let mut plan = DynamicModuleReconciliationPlan::new();
+    for slot in snapshot
+        .slots_for_family(TASKBAR_DYNAMIC_MODULE)
+        .iter()
+        .rev()
+    {
+        let parent_name = slot.parent_name().to_string();
+        let desired = entries
+            .get(&parent_name)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let desired_ids: HashSet<_> = desired
+            .iter()
+            .map(|entry| {
+                crate::modules::taskbar::TaskbarItemModule::module_id(&parent_name, &entry.key)
+            })
+            .collect();
+        let stale_child_ids: Vec<_> = snapshot
+            .child_ids_for_parent(&parent_name)
+            .into_iter()
+            .filter(|id| !desired_ids.contains(id))
+            .collect();
+        let children = desired
+            .iter()
+            .cloned()
+            .map(|entry| {
+                PlannedDynamicChild::Insert(Box::new(
+                    crate::modules::taskbar::TaskbarItemModule::new(entry, &parent_name),
+                ))
+            })
+            .collect();
+        plan.push_parent(DynamicModuleParentReconciliation {
+            parent_name,
+            insert_after_index: slot.index,
+            zone: slot.zone.clone(),
+            child_kind: TASKBAR_DYNAMIC_MODULE.child_kind,
+            actions: slot.actions.clone(),
+            interactions: TASKBAR_DYNAMIC_MODULE.child_interactions,
+            children,
+            stale_child_ids,
+        });
+    }
+    plan
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct DynamicModuleSlot {
     index: usize,
@@ -364,6 +421,18 @@ impl App {
     ) {
         let snapshot = self.modules.dynamic_module_runtime_snapshot();
         let plan = tray_reconciliation_plan(&snapshot, items);
+        let effects = self.modules.handle(
+            super::module_runtime::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan),
+        );
+        self.apply_dynamic_module_reconciliation_effects(effects);
+    }
+
+    pub(super) fn reconcile_taskbar_dynamic_modules(
+        &mut self,
+        entries: &HashMap<String, Vec<crate::modules::taskbar::TaskbarEntry>>,
+    ) {
+        let snapshot = self.modules.dynamic_module_runtime_snapshot();
+        let plan = taskbar_reconciliation_plan(&snapshot, entries);
         let effects = self.modules.handle(
             super::module_runtime::ModuleRuntimeIntent::ApplyDynamicModuleReconciliation(plan),
         );
