@@ -45,12 +45,13 @@ pub(super) enum Change {
     Sort(SortField),
     Descending(bool),
     Detail(Detail, bool),
+    Tree(bool),
+    FoldersFirst(bool),
     Sidebar(SidebarMode),
     Thumbnails(crate::interface::ThumbnailPolicy),
     IconSize(crate::interface::IconSize),
     Properties(crate::interface::PropertiesDisplay),
     Field(Field, String),
-    SelectToolbar(usize),
     MoveToolbar(isize),
     RemoveToolbar,
     AddToolbar(String),
@@ -62,6 +63,23 @@ pub(super) enum Change {
     SelectCommand(Command),
     ResetShortcut,
     Record(bool),
+    /// A toolbar row's own control.
+    ToolbarItem(usize, RowEdit),
+    /// A sidebar row's own control.
+    PlaceItem(usize, RowEdit),
+    /// Show or hide the page's picker of buttons or places to add.
+    Picker(bool),
+    /// A shortcut row's Record and Reset, for that command.
+    RecordFor(Command),
+    ResetFor(Command),
+}
+
+/// What a list row's own buttons do to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowEdit {
+    Earlier,
+    Later,
+    Remove,
 }
 #[derive(Clone, Debug)]
 pub(super) enum Event {
@@ -102,6 +120,8 @@ pub(super) struct Editor {
     pub selected_toolbar: Option<usize>,
     pub selected_place: Option<usize>,
     pub selected_command: Command,
+    /// The page's picker of buttons or places to add is open.
+    pub picker: bool,
     pub shortcuts: BTreeMap<Command, String>,
     pub busy: bool,
     pub dirty: bool,
@@ -148,6 +168,7 @@ impl Editor {
             selected_toolbar: Some(0),
             selected_place: None,
             selected_command: Command::Search,
+            picker: false,
             shortcuts,
             busy: false,
             dirty: false,
@@ -183,6 +204,7 @@ impl Editor {
         self.selected_toolbar = Some(0);
         self.selected_place = None;
         self.selected_command = Command::Search;
+        self.picker = false;
         self.revision += 1;
     }
     fn add_bookmark(&mut self, folder: PathBuf) {
@@ -283,6 +305,8 @@ impl Editor {
                     self.draft.view.details.push(detail);
                 }
             }
+            Change::Tree(v) => self.draft.view.tree = v,
+            Change::FoldersFirst(v) => self.draft.view.folders_first = v,
             Change::Sidebar(v) => self.draft.sidebar = v,
             Change::Thumbnails(v) => self.draft.thumbnails.show = v,
             Change::IconSize(v) => self.draft.thumbnails.size = v,
@@ -323,11 +347,6 @@ impl Editor {
                     }
                 }
             }
-            Change::SelectToolbar(index) if index < self.draft.toolbar.len() => {
-                self.selected_toolbar = Some(index);
-                self.revision += 1;
-                return;
-            }
             Change::MoveToolbar(delta) => {
                 if let Some(index) = self.selected_toolbar {
                     let next = index
@@ -358,7 +377,7 @@ impl Editor {
             Change::AddToolbar(id) => {
                 if self.draft.toolbar.len() >= 64
                     || self.draft.toolbar.contains(&id)
-                    || id == Command::QuickLook.id()
+                    || Command::from_id(&id).is_some_and(Command::never_on_toolbar)
                     || !(Command::from_id(&id).is_some()
                         || id
                             .strip_prefix("action:")
@@ -368,6 +387,7 @@ impl Editor {
                 }
                 self.draft.toolbar.push(id);
                 self.selected_toolbar = Some(self.draft.toolbar.len() - 1);
+                self.picker = false;
                 self.revision += 1;
             }
             Change::SelectPlace(index) if index < self.locations.len() => {
@@ -404,10 +424,50 @@ impl Editor {
                 }
                 self.locations.push(Location::Builtin(kind));
                 self.selected_place = Some(self.locations.len() - 1);
+                self.picker = false;
                 self.revision += 1;
             }
             Change::AddBookmark => {
+                self.picker = false;
                 self.add_bookmark(self.folder.clone());
+                return;
+            }
+            Change::ToolbarItem(index, edit) => {
+                if index < self.draft.toolbar.len() {
+                    self.selected_toolbar = Some(index);
+                    self.change(match edit {
+                        RowEdit::Earlier => Change::MoveToolbar(-1),
+                        RowEdit::Later => Change::MoveToolbar(1),
+                        RowEdit::Remove => Change::RemoveToolbar,
+                    });
+                }
+                return;
+            }
+            Change::PlaceItem(index, edit) => {
+                if index < self.locations.len() {
+                    self.selected_place = Some(index);
+                    self.change(match edit {
+                        RowEdit::Earlier => Change::MovePlace(-1),
+                        RowEdit::Later => Change::MovePlace(1),
+                        RowEdit::Remove => Change::RemovePlace,
+                    });
+                }
+                return;
+            }
+            Change::Picker(open) => {
+                self.picker = open;
+                self.filter.clear();
+                self.revision += 1;
+                return;
+            }
+            Change::RecordFor(command) => {
+                self.selected_command = command;
+                self.change(Change::Record(false));
+                return;
+            }
+            Change::ResetFor(command) => {
+                self.selected_command = command;
+                self.change(Change::ResetShortcut);
                 return;
             }
             Change::SelectCommand(command) => {
@@ -580,6 +640,8 @@ impl Desktop {
         }
         editor.draft.view.column_width = width;
         editor.draft.list_columns = current.settings.list_columns;
+        editor.draft.view.tree = current.settings.view.tree;
+        editor.draft.view.folders_first = current.settings.view.folders_first;
         editor.base = current.clone();
         if editor.dirty && !editor.applying {
             let id = editor.window;
@@ -826,7 +888,11 @@ impl Desktop {
                 PlaceKind::Desktop
                 | PlaceKind::Documents
                 | PlaceKind::Downloads
-                | PlaceKind::Pictures => self.personal_folders.path(*kind)?.to_owned(),
+                | PlaceKind::Music
+                | PlaceKind::Pictures
+                | PlaceKind::Videos
+                | PlaceKind::Templates
+                | PlaceKind::Public => self.personal_folders.path(*kind)?.to_owned(),
                 PlaceKind::Trash | PlaceKind::Recovery => return None,
             },
         })
@@ -988,20 +1054,41 @@ mod tests {
     fn ordering_cannot_remove_location_or_duplicate_toolbar_items() {
         let root = tempfile::tempdir().unwrap();
         let mut e = editor(root.path());
-        e.change(Change::SelectToolbar(3));
-        e.change(Change::RemoveToolbar);
+        // Rows act on themselves: the location field cannot be removed.
+        e.change(Change::ToolbarItem(3, RowEdit::Remove));
         assert_eq!(e.draft.toolbar[3], "location");
-        e.change(Change::MoveToolbar(-1));
+        e.change(Change::ToolbarItem(3, RowEdit::Earlier));
         assert_eq!(e.draft.toolbar[2], "location");
+        e.change(Change::Picker(true));
+        assert!(e.picker);
         e.change(Change::AddToolbar("refresh".into()));
+        assert!(!e.picker, "adding closes the picker");
         e.change(Change::AddToolbar("refresh".into()));
         assert_eq!(
             e.draft.toolbar.iter().filter(|s| *s == "refresh").count(),
             1
         );
+        // Search is the location field's own button, never a toolbar button.
+        e.change(Change::AddToolbar("search".into()));
+        assert!(!e.draft.toolbar.contains(&"search".into()));
         e.change(Change::AddToolbar("unknown".into()));
         assert!(e.settings(root.path()).is_ok());
-        e.change(Change::RemoveToolbar);
+        let last = e.draft.toolbar.len() - 1;
+        e.change(Change::ToolbarItem(last, RowEdit::Remove));
         assert!(!e.draft.toolbar.contains(&"refresh".into()));
+    }
+
+    #[test]
+    fn shortcut_rows_record_and_reset_their_own_command() {
+        let root = tempfile::tempdir().unwrap();
+        let mut e = editor(root.path());
+        e.shortcuts.insert(Command::Refresh, "F9".into());
+        e.change(Change::ResetFor(Command::Refresh));
+        assert_eq!(
+            e.shortcuts[&Command::Refresh],
+            Command::Refresh.defaults().join("; ")
+        );
+        e.change(Change::RecordFor(Command::NewTab));
+        assert!(e.recording && e.selected_command == Command::NewTab);
     }
 }

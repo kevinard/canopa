@@ -10,6 +10,9 @@ use iced::futures::channel::mpsc;
 use iced::{Point, Rectangle, window::drag_drop as native};
 use std::sync::Mutex;
 
+#[path = "tab_drag.rs"]
+pub(super) mod tab_drag;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Context {
     window: window::Id,
@@ -145,6 +148,21 @@ impl Scene {
     }
 }
 
+/// A drag hovering a browser window, as its views show it.
+pub(super) struct HoverFeedback {
+    /// The target outlined under the pointer.
+    pub bounds: Rectangle,
+    pub pointer: Point,
+    /// What a drop would do, for the status bar: "Move to Documents".
+    pub label: String,
+    /// The same with what is dragged, beside the pointer.
+    pub badge: String,
+    pub refused: bool,
+    /// A drop here would copy or move: only then is the target outlined and
+    /// the pointer labelled.
+    pub acting: bool,
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum Event {
     Enabled(window::Id, Option<native::DragDrop>),
@@ -162,6 +180,12 @@ pub(super) enum Event {
         Arc<file_operations::Submission>,
         Option<Result<u64, String>>,
     ),
+    /// A press on a tab of a window: its bounds and where in it it was pressed.
+    TabPress(window::Id, u64, Rectangle, iced::Vector),
+    /// That press moved far enough to drag the tab.
+    TabStart(window::Id, u64),
+    /// The dragged tab's picture, cut from its window's capture.
+    TabPicture(u64, Arc<Option<native::Icon>>),
 }
 struct Host {
     scene: Scene,
@@ -218,6 +242,9 @@ pub(super) struct State {
     suppress: Option<(window::Id, PathBuf)>,
     modifiers: keyboard::Modifiers,
     rejected: BTreeMap<u64, window::Id>,
+    tab_gesture: Option<tab_drag::TabGesture>,
+    tab_source: Option<tab_drag::TabSource>,
+    tab_hovers: BTreeMap<window::Id, tab_drag::TabHover>,
 }
 impl State {
     pub fn open(&mut self, id: window::Id) {
@@ -239,6 +266,7 @@ impl State {
     pub fn holds_application(&self) -> bool {
         self.pending > 0
             || self.pointer.is_some()
+            || self.tab_source.is_some()
             || !self.outgoing.is_empty()
             || self.incoming.values().any(|offer| offer.dropped)
     }
@@ -330,6 +358,33 @@ impl State {
         }
     }
     pub fn feedback(&self, id: window::Id) -> Option<(Rectangle, String)> {
+        self.hover_feedback(id)
+            .map(|feedback| (feedback.bounds, feedback.label))
+    }
+
+    /// The drop target to outline: only one that a drop would act on.
+    pub fn outlined(&self, id: window::Id) -> Option<Rectangle> {
+        self.hover_feedback(id)
+            .filter(|feedback| feedback.acting)
+            .map(|feedback| feedback.bounds)
+    }
+
+    /// Whether `path` is being dragged out of this application right now.
+    pub fn is_dragged(&self, path: &Path) -> bool {
+        self.outgoing.values().any(|outgoing| {
+            let snapshot = outgoing.source.snapshot();
+            !snapshot.finished
+                && !snapshot.dropped
+                && outgoing
+                    .prepared
+                    .paths()
+                    .iter()
+                    .any(|dragged| dragged == path)
+        })
+    }
+
+    /// What a drag over window `id` would do there, and where its pointer is.
+    pub fn hover_feedback(&self, id: window::Id) -> Option<HoverFeedback> {
         self.incoming.values().find_map(|incoming| {
             if incoming.owner != id || incoming.dropped || incoming.offer.snapshot().left {
                 return None;
@@ -343,7 +398,26 @@ impl State {
                 .unwrap_or(target.directory.as_os_str())
                 .to_string_lossy()
                 .into_owned();
-            let label = if incoming.hover_cancel.is_cancelled() {
+            let items = incoming.paths.as_deref().map(|paths| match paths {
+                [one] => one
+                    .file_name()
+                    .unwrap_or(one.as_os_str())
+                    .to_string_lossy()
+                    .into_owned(),
+                many => fl!("files-status-items", count = many.len()),
+            });
+            let home = incoming.paths.as_deref().is_some_and(|paths| {
+                !paths.is_empty()
+                    && paths.iter().all(|path| {
+                        path.parent() == Some(target.directory.as_path())
+                            || *path == target.directory
+                    })
+            });
+            let refused = incoming.hover_cancel.is_cancelled()
+                || incoming.hover.is_some() && snapshot.selected.is_none();
+            let label = if home {
+                fl!("files-drop-already-there", folder = folder)
+            } else if incoming.hover_cancel.is_cancelled() {
                 fl!("files-drop-refused", folder = folder)
             } else if incoming.hover.is_some() {
                 match snapshot.selected {
@@ -354,7 +428,22 @@ impl State {
             } else {
                 fl!("files-drop-checking", folder = folder)
             };
-            Some((bounds, label))
+            Some(HoverFeedback {
+                bounds,
+                pointer: Point::new(snapshot.position.0 as f32, snapshot.position.1 as f32),
+                badge: match items {
+                    Some(items) if !home => {
+                        fl!("files-drop-badge", action = label.clone(), items = items)
+                    }
+                    _ => label.clone(),
+                },
+                label,
+                refused: refused || home,
+                acting: !refused
+                    && !home
+                    && incoming.hover.is_some()
+                    && snapshot.selected.is_some(),
+            })
         })
     }
 }
@@ -446,8 +535,7 @@ impl State {
                     return tasks;
                 };
                 let selected = browser.selected().contains(&row.path);
-                let current =
-                    browser.search().is_some() || row.path.parent() == Some(browser.path());
+                let current = browser.lists(&row.path);
                 if !selected && current {
                     browser.select(&row.path, mode);
                 }
@@ -496,13 +584,18 @@ impl State {
                     .get(&id)
                     .and_then(|host| host.endpoint.as_ref())
                     .and_then(native::DragDrop::capture_origin);
-                if let (Some(native), Some(gesture)) = (
-                    native,
-                    self.pointer
-                        .as_mut()
-                        .filter(|gesture| gesture.origin.window == id),
-                ) {
-                    gesture.native = Some(native);
+                if let Some(gesture) = self
+                    .pointer
+                    .as_mut()
+                    .filter(|gesture| gesture.origin.window == id)
+                {
+                    gesture.native = native;
+                } else if let Some(gesture) = self
+                    .tab_gesture
+                    .as_mut()
+                    .filter(|gesture| gesture.window == id && gesture.native.is_none())
+                {
+                    gesture.native = native;
                 }
             }
 
@@ -517,6 +610,13 @@ impl State {
             }
             Event::Release(id) => {
                 if self
+                    .tab_gesture
+                    .as_ref()
+                    .is_some_and(|gesture| gesture.window == id)
+                {
+                    self.tab_gesture = None;
+                }
+                if self
                     .pointer
                     .as_ref()
                     .is_some_and(|gesture| gesture.origin.window == id)
@@ -529,7 +629,7 @@ impl State {
                         if let Some(browser) =
                             desktop.active_mut(id).and_then(|tab| tab.browser.as_mut())
                         {
-                            if browser.search().is_some() || path.parent() == Some(browser.path()) {
+                            if browser.lists(&path) {
                                 browser.select(&path, mode);
                             } else {
                                 tasks.push(desktop.update_browser(Message::Select(id, path)));
@@ -641,6 +741,9 @@ impl State {
                     }
                 }
             }
+            event @ (Event::TabPress(..) | Event::TabStart(..) | Event::TabPicture(..)) => {
+                tasks.extend(self.tab_event(desktop, event));
+            }
             Event::Admitted(id, submission, result) => {
                 if let Some(incoming) = self.incoming.get_mut(&id) {
                     incoming.awaiting = false;
@@ -692,7 +795,7 @@ impl State {
                 .zip(content.ok())
                 .ok_or_else(|| fl!("files-drag-origin-unavailable"))
                 .and_then(|(endpoint, bytes)| {
-                    endpoint.start(
+                    endpoint.start_with_icon(
                         gesture.native.unwrap(),
                         vec![native::Content {
                             mime: URIS.into(),
@@ -702,6 +805,7 @@ impl State {
                             copy: true,
                             move_files: true,
                         },
+                        drag_icon(desktop, gesture.origin.window, prepared.paths()),
                     )
                 }) {
                 Ok(source) => {
@@ -720,6 +824,7 @@ impl State {
                 }
             }
         }
+        let mut tab_offers = Vec::new();
         for (&owner, host) in &self.hosts {
             if let Some(endpoint) = &host.endpoint {
                 for offer in endpoint.offers() {
@@ -728,6 +833,10 @@ impl State {
                         || self.rejected.contains_key(&snap.id)
                         || snap.finished
                     {
+                        continue;
+                    }
+                    if host.live && offer.has_format(tab_drag::MIME) {
+                        tab_offers.push((owner, offer.clone()));
                         continue;
                     }
                     if !host.live || !offer.has_format(URIS) || self.incoming.len() >= 32 {
@@ -775,6 +884,7 @@ impl State {
                 }
             }
         }
+        tasks.extend(self.poll_tabs(desktop, tab_offers));
         for source in self.outgoing.values() {
             let snapshot = source.source.snapshot();
             if snapshot.finished && !snapshot.dropped {
@@ -1050,7 +1160,9 @@ impl Desktop {
         Task::batch(tasks)
     }
     pub(super) fn cancel_drag(&mut self) -> bool {
-        let active = self.drag.pointer.is_some()
+        let tab = self.drag.cancel_tab_drag();
+        let active = tab
+            || self.drag.pointer.is_some()
             || self.drag.outgoing.values().any(|source| {
                 !source.source.snapshot().dropped && !source.source.snapshot().finished
             });
@@ -1063,6 +1175,73 @@ impl Desktop {
         }
         active
     }
+}
+
+/// The picture under the pointer while files are dragged out of `window`: the
+/// first dragged item's icon or thumbnail, with up to two more stacked behind
+/// it for a larger selection. Drawn at twice the logical size for sharp output
+/// on scaled displays.
+fn drag_icon(desktop: &Desktop, window: window::Id, paths: &[PathBuf]) -> Option<native::Icon> {
+    const SCALE: u32 = 2;
+    const SIDE: u32 = 48 * SCALE;
+    const STEP: u32 = 7 * SCALE;
+    let browser = desktop.active(window)?.browser.as_ref()?;
+    let entries: Vec<_> = browser
+        .visible_entries()
+        .into_iter()
+        .filter(|entry| paths.contains(&entry.path))
+        .take(3)
+        .collect();
+    if entries.is_empty() {
+        return None;
+    }
+    let layers = entries.len() as u32;
+    let side = SIDE + STEP * (layers - 1);
+    let mut canvas = ::image::RgbaImage::new(side, side);
+    let mut drawn = false;
+    // The first item is in front, at the top left; the others peek out behind.
+    for (index, entry) in entries.iter().enumerate().rev() {
+        let Some((width, height, pixels)) = desktop.icons.picture(entry) else {
+            continue;
+        };
+        let Some(source) = ::image::RgbaImage::from_raw(width, height, pixels.to_vec()) else {
+            continue;
+        };
+        let fit = (f64::from(SIDE) / f64::from(width.max(height))).min(4.0);
+        let (fitted_width, fitted_height) = (
+            ((f64::from(width) * fit).round() as u32).clamp(1, SIDE),
+            ((f64::from(height) * fit).round() as u32).clamp(1, SIDE),
+        );
+        let fitted = ::image::imageops::resize(
+            &source,
+            fitted_width,
+            fitted_height,
+            ::image::imageops::FilterType::Triangle,
+        );
+        let offset = STEP * index as u32;
+        drawn = true;
+        ::image::imageops::overlay(
+            &mut canvas,
+            &fitted,
+            i64::from(offset + (SIDE - fitted_width) / 2),
+            i64::from(offset + (SIDE - fitted_height) / 2),
+        );
+    }
+    if !drawn {
+        return None;
+    }
+    // Slightly see-through, so the drop target shows under it.
+    for pixel in canvas.pixels_mut() {
+        pixel[3] = (u16::from(pixel[3]) * 220 / 255) as u8;
+    }
+    let logical = (side / SCALE) as i32;
+    Some(native::Icon {
+        width: side,
+        height: side,
+        scale: SCALE,
+        rgba: Arc::from(canvas.into_raw()),
+        hotspot: (logical / 2, logical / 2),
+    })
 }
 
 pub(super) fn row_region(

@@ -275,6 +275,8 @@ pub(super) fn rows(
                     .size(small),
                     iced::widget::tooltip::Position::Bottom,
                 )
+                .padding(6)
+                .style(super::chrome::tooltip_style)
                 .into()
             });
         if let Some(location) = location {

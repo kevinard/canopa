@@ -89,6 +89,70 @@ fn directory_results_keep_their_tab_and_reject_superseded_or_closed_requests() {
 }
 
 #[test]
+fn moved_tabs_keep_the_shown_tab_and_a_detached_tab_takes_its_history_along() {
+    let root = tempfile::tempdir().unwrap();
+    let folders: Vec<_> = ["a", "b", "c"]
+        .into_iter()
+        .map(|name| root.path().join(name))
+        .collect();
+    for path in &folders {
+        fs::create_dir(path).unwrap();
+    }
+    let (mut desktop, window) = desktop(root.path(), folders.clone());
+    let ids: Vec<_> = desktop.windows[&window]
+        .tabs
+        .iter()
+        .map(|tab| tab.id)
+        .collect();
+    loaded(&mut desktop, window, ids[0], 1, &folders[0]);
+    let _task = desktop.update(Message::SwitchTab(window, 1));
+    loaded(&mut desktop, window, ids[1], 1, &folders[1]);
+    let order = |desktop: &Desktop| -> Vec<u64> {
+        desktop.windows[&window]
+            .tabs
+            .iter()
+            .map(|tab| tab.id)
+            .collect()
+    };
+    let _task = desktop.update(Message::MoveTab(window, ids[0], 2));
+    assert_eq!(order(&desktop), [ids[1], ids[2], ids[0]]);
+    assert_eq!(desktop.active(window).unwrap().id, ids[1]);
+    let _task = desktop.command(window, Command::MoveTabRight);
+    assert_eq!(order(&desktop), [ids[2], ids[1], ids[0]]);
+    assert_eq!(desktop.active(window).unwrap().id, ids[1]);
+
+    let _task = desktop.update(Message::DetachTab(window, ids[1]));
+    assert_eq!(order(&desktop), [ids[2], ids[0]]);
+    let (&new, detached) = desktop
+        .windows
+        .iter()
+        .find(|(id, _)| **id != window)
+        .expect("the tab has its own window");
+    assert_eq!(detached.tabs.len(), 1);
+    assert_eq!(detached.tabs[0].id, ids[1]);
+    assert_eq!(detached.tabs[0].target, folders[1]);
+    // Its browser, with its history and selection, came along; it is read again.
+    assert!(detached.tabs[0].browser.is_some());
+    assert!(desktop.active(new).unwrap().loading);
+    // The last tab of a window stays there.
+    let _task = desktop.update(Message::DetachTab(new, ids[1]));
+    assert_eq!(desktop.windows.len(), 2);
+
+    // Dropped on the first window's bar, it moves back between its tabs and
+    // shows there; the window it leaves empty closes.
+    let _task = desktop.update(Message::TransferTab {
+        from: new,
+        tab: ids[1],
+        to: window,
+        index: 1,
+    });
+    assert_eq!(order(&desktop), [ids[2], ids[1], ids[0]]);
+    assert_eq!(desktop.active(window).unwrap().id, ids[1]);
+    assert!(desktop.active(window).unwrap().loading);
+    assert!(!desktop.windows.contains_key(&new));
+}
+
+#[test]
 fn asynchronous_open_errors_stay_with_the_originating_tab() {
     let root = tempfile::tempdir().unwrap();
     let (mut desktop, window) = desktop(root.path(), vec![root.path().to_owned(); 2]);
@@ -559,4 +623,43 @@ fn requested_quick_look_waits_for_source_size_and_never_previews_a_neighbor() {
             );
         }
     }
+}
+
+#[test]
+fn a_folder_clicked_in_a_parent_column_opens_and_a_file_there_is_selected() {
+    let root = tempfile::tempdir().unwrap();
+    let current = root.path().join("current");
+    let sibling = root.path().join("sibling");
+    let note = root.path().join("note.txt");
+    for folder in [&current, &sibling] {
+        fs::create_dir(folder).unwrap();
+    }
+    fs::write(&note, b"x").unwrap();
+    let (mut desktop, window) = desktop(root.path(), vec![current.clone()]);
+    let tab = desktop.active(window).unwrap().id;
+    loaded(&mut desktop, window, tab, 1, &current);
+    // The parent column's listing, as its worker would install it.
+    desktop.active_mut(window).unwrap().columns.insert(
+        root.path().to_owned(),
+        super::loading::ColumnSnapshot {
+            request: 1,
+            cancellation: Cancellation::default(),
+            result: Some(Ok(Directory::read(root.path()).unwrap())),
+            scroll: 0.0,
+        },
+    );
+    let _task = desktop.update(Message::Select(window, sibling.clone()));
+    assert_eq!(desktop.active(window).unwrap().target, sibling);
+    let tab = desktop.active_mut(window).unwrap();
+    tab.columns.insert(
+        root.path().to_owned(),
+        super::loading::ColumnSnapshot {
+            request: 2,
+            cancellation: Cancellation::default(),
+            result: Some(Ok(Directory::read(root.path()).unwrap())),
+            scroll: 0.0,
+        },
+    );
+    let _task = desktop.update(Message::Select(window, note.clone()));
+    assert_eq!(desktop.active(window).unwrap().target, root.path());
 }

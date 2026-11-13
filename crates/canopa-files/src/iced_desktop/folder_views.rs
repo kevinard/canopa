@@ -21,8 +21,14 @@ pub(super) struct Target {
 pub(super) enum Change {
     Mode(ViewMode),
     Sort(SortField),
+    /// A List heading chose this field and direction.
+    SortBy(SortField, bool),
     Descending(bool),
     Detail(Detail, bool),
+    /// List view shows folders as a tree, in every folder.
+    Tree(bool),
+    /// Folders sort before files, in every folder.
+    FoldersFirst(bool),
     Width(i16),
     Defaults,
 }
@@ -31,6 +37,8 @@ pub(super) enum Event {
     Show(window::Id),
     Close(window::Id),
     Change(Target, Change),
+    /// A List view column heading was clicked: sort by it, or reverse it.
+    Heading(window::Id, SortField),
     Saved(u64, Result<(), String>),
     Retry,
 }
@@ -210,12 +218,27 @@ impl Desktop {
                 } else {
                     Task::none()
                 };
+                // These choices belong to every folder, not to this one.
+                match change {
+                    Change::Tree(tree) => {
+                        return self.change_shared_view(target.window, |view| view.tree = tree);
+                    }
+                    Change::FoldersFirst(first) => {
+                        return self
+                            .change_shared_view(target.window, |view| view.folders_first = first);
+                    }
+                    _ => {}
+                }
                 let mut view = self.preferences.for_folder(&target.path).clone();
                 let before = view.clone();
                 let reset = matches!(change, Change::Defaults);
                 match change {
                     Change::Mode(mode) => view.mode = mode,
                     Change::Sort(sort) => view.sort = sort,
+                    Change::SortBy(sort, descending) => {
+                        view.sort = sort;
+                        view.descending = descending;
+                    }
                     Change::Descending(descending) => view.descending = descending,
                     Change::Detail(detail, show) => {
                         view.details.retain(|old| *old != detail);
@@ -223,6 +246,7 @@ impl Desktop {
                             view.details.push(detail);
                         }
                     }
+                    Change::Tree(_) | Change::FoldersFirst(_) => {}
                     Change::Width(delta) => {
                         view.column_width =
                             (i32::from(view.column_width) + i32::from(delta)).clamp(160, 640) as u16
@@ -248,6 +272,23 @@ impl Desktop {
                     .folder_writer
                     .queue(self.preferences.clone(), target.path);
                 Task::batch([close, publish, save])
+            }
+            Event::Heading(id, field) => {
+                let Some(target) = self.folder_target(id) else {
+                    return Task::none();
+                };
+                let view = self.preferences.for_folder(&target.path);
+                // The sorting heading reverses; another one starts in the order
+                // people usually want first: newest and largest at the top.
+                let change = if view.sort == field {
+                    Change::Descending(!view.descending)
+                } else {
+                    Change::SortBy(
+                        field,
+                        matches!(field, SortField::Size | SortField::Modified),
+                    )
+                };
+                self.folder_view_event(Event::Change(target, change))
             }
             Event::Saved(revision, result) => {
                 if self.folder_writer.active != Some(revision) {
@@ -442,6 +483,11 @@ pub(super) fn overlay<'a>(
         settings.descending,
         Change::Descending(!settings.descending),
     );
+    let folders_first = check(
+        fl!("files-folders-first"),
+        settings.folders_first,
+        Change::FoldersFirst(!settings.folders_first),
+    );
     let mut details = column![].spacing(8);
     for (title, detail) in [
         (fl!("files-column-size"), Detail::Size),
@@ -451,8 +497,18 @@ pub(super) fn overlay<'a>(
         let shown = settings.details.contains(&detail);
         details = details.push(check(title, shown, Change::Detail(detail, !shown)));
     }
+    // Only List view has a tree; it follows the view choice it belongs to.
+    let tree: Element<'a, Message> = if settings.mode == ViewMode::List {
+        check(
+            fl!("files-folder-tree"),
+            settings.tree,
+            Change::Tree(!settings.tree),
+        )
+    } else {
+        space().height(0).into()
+    };
     // Control order follows visual order even though closures build the groups.
-    let indices = [0, 1, 2, 3, 4, 5, 6, 7, 11, 8, 9, 12, 13, 14, 10];
+    let indices = [0, 1, 2, 3, 16, 4, 5, 6, 7, 11, 12, 8, 9, 13, 14, 15, 10];
     order.sort_by_key(|id| {
         indices
             .iter()
@@ -463,9 +519,11 @@ pub(super) fn overlay<'a>(
         text(display_location(&target.path)).size(label).font(font),
         text(fl!("files-view")).size(size).font(font),
         mode,
+        tree,
         text(fl!("files-preferences-sort-by")).size(size).font(font),
         sort,
         reverse,
+        folders_first,
         text(fl!("files-preferences-column-width"))
             .size(size)
             .font(font),
@@ -573,6 +631,54 @@ mod tests {
         assert_eq!(desktop.preferences.for_folder(root.path()), &defaults);
         assert!(desktop.preferences.folder_override(root.path()).is_none());
     }
+    #[test]
+    fn tree_and_folders_first_are_one_choice_for_every_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let other = root.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        let target = desktop.folder_target(window).unwrap();
+        let _ = desktop.folder_view_event(Event::Change(target.clone(), Change::Tree(true)));
+        let _ = desktop.folder_view_event(Event::Change(target, Change::FoldersFirst(false)));
+        // Not remembered for this folder: the defaults change, for every folder.
+        assert!(desktop.preferences.folder_override(root.path()).is_none());
+        for folder in [root.path(), other.as_path()] {
+            let view = desktop.preferences.for_folder(folder);
+            assert!(view.tree && !view.folders_first);
+        }
+        assert!(desktop.configuration.settings.view.tree);
+        let browser = desktop.active(window).unwrap().browser.as_ref().unwrap();
+        assert!(browser.view().tree && !browser.view().folders_first);
+    }
+
+    #[test]
+    fn list_headings_sort_by_their_field_then_reverse_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        let view = |desktop: &Desktop| {
+            let view = desktop.preferences.for_folder(root.path());
+            (view.sort, view.descending)
+        };
+        assert_eq!(view(&desktop), (SortField::Name, false));
+        let _ = desktop.folder_view_event(Event::Heading(window, SortField::Name));
+        assert_eq!(view(&desktop), (SortField::Name, true));
+        // Dates and sizes start with the newest and largest.
+        let _ = desktop.folder_view_event(Event::Heading(window, SortField::Modified));
+        assert_eq!(view(&desktop), (SortField::Modified, true));
+        let _ = desktop.folder_view_event(Event::Heading(window, SortField::Modified));
+        assert_eq!(view(&desktop), (SortField::Modified, false));
+        let _ = desktop.folder_view_event(Event::Heading(window, SortField::Kind));
+        assert_eq!(view(&desktop), (SortField::Kind, false));
+        let browser = desktop.active(window).unwrap().browser.as_ref().unwrap();
+        assert_eq!(browser.view().sort, SortField::Kind);
+    }
+
     #[test]
     fn serialized_writer_keeps_the_latest_snapshot_and_reports_failures_without_erasing_it() {
         let root = tempfile::tempdir().unwrap();

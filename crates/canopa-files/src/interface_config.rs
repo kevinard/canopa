@@ -73,6 +73,13 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                             settings.view.descending =
                                 entry.value().as_bool().ok_or_else(invalid)?
                         }
+                        "tree" => {
+                            settings.view.tree = entry.value().as_bool().ok_or_else(invalid)?
+                        }
+                        "folders-first" => {
+                            settings.view.folders_first =
+                                entry.value().as_bool().ok_or_else(invalid)?
+                        }
                         "column-width" => {
                             settings.view.column_width = entry
                                 .value()
@@ -101,11 +108,38 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                 }
             }
             "toolbar" => {
-                settings.toolbar = strings(node)?
+                // `new-folder=#false` marks a toolbar saved without New Folder
+                // on purpose. Before New Folder was a toolbar item it was
+                // always shown at the end, so an unmarked list keeps it there.
+                let mut without_new_folder = false;
+                let mut unnamed = node.clone();
+                unnamed.entries_mut().retain(|entry| {
+                    if entry
+                        .name()
+                        .is_some_and(|name| name.value() == "new-folder")
+                    {
+                        without_new_folder = entry.value().as_bool() == Some(false);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                if node.entries().len() - unnamed.entries().len() > 1
+                    || node.entries().len() != unnamed.entries().len() && !without_new_folder
+                {
+                    return Err(invalid());
+                }
+                settings.toolbar = strings(&unnamed)?
                     .into_iter()
-                    .filter(|id| *id != Command::QuickLook.id())
+                    .filter(|id| {
+                        Command::from_id(id).is_none_or(|command| !command.never_on_toolbar())
+                    })
                     .map(str::to_owned)
                     .collect();
+                let new_folder = Command::NewFolder.id();
+                if !without_new_folder && !settings.toolbar.iter().any(|id| id == new_folder) {
+                    settings.toolbar.push(new_folder.to_owned());
+                }
             }
             "sidebar" => {
                 let values = strings(node)?;
@@ -283,6 +317,13 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
     ));
     view.push(("descending", settings.view.descending));
     view.push(("column-width", i128::from(settings.view.column_width)));
+    // Off is the default; files written before List view's tree stay unchanged.
+    if settings.view.tree {
+        view.push(("tree", true));
+    }
+    if !settings.view.folders_first {
+        view.push(("folders-first", false));
+    }
     let mut details = KdlNode::new("details");
     for detail in &settings.view.details {
         details.push(match detail {
@@ -297,6 +338,13 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
     let mut toolbar = KdlNode::new("toolbar");
     for id in &settings.toolbar {
         toolbar.push(id.as_str());
+    }
+    if !settings
+        .toolbar
+        .iter()
+        .any(|id| id == Command::NewFolder.id())
+    {
+        toolbar.push(("new-folder", false));
     }
     let mut sidebar = KdlNode::new("sidebar");
     sidebar.push(settings.sidebar.id());
@@ -402,6 +450,53 @@ mod tests {
             "thumbnails size=12\n",
             "thumbnails colour=\"red\"\n",
             "thumbnails show=\"local\" show=\"never\"\n",
+        ] {
+            assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn list_tree_round_trips_and_stays_out_of_default_files() {
+        let parsed = parse(&"view mode=\"list\" tree=#true\n".parse().unwrap()).unwrap();
+        assert!(parsed.view.tree);
+        assert_eq!(parse(&document(nodes(&parsed))).unwrap(), parsed);
+        assert!(
+            !document(nodes(&InterfaceSettings::default()))
+                .to_string()
+                .contains("tree")
+        );
+        assert!(parse(&"view tree=\"yes\"\n".parse().unwrap()).is_err());
+        let mixed = parse(&"view folders-first=#false\n".parse().unwrap()).unwrap();
+        assert!(!mixed.view.folders_first);
+        assert_eq!(parse(&document(nodes(&mixed))).unwrap(), mixed);
+        assert!(
+            !document(nodes(&InterfaceSettings::default()))
+                .to_string()
+                .contains("folders-first")
+        );
+    }
+
+    #[test]
+    fn new_folder_is_a_toolbar_item_that_older_toolbars_keep() {
+        // Saved before New Folder was an item, when it was always shown.
+        let older = parse(&"toolbar back location\n".parse().unwrap()).unwrap();
+        assert_eq!(older.toolbar, ["back", "location", "new-folder"]);
+        assert_eq!(parse(&document(nodes(&older))).unwrap(), older);
+        // Taken off on purpose, it stays off.
+        let mut without = InterfaceSettings::default();
+        without.toolbar.retain(|id| id != "new-folder");
+        let written = document(nodes(&without));
+        assert!(written.to_string().contains("new-folder=#false"));
+        assert_eq!(parse(&written).unwrap().toolbar, without.toolbar);
+        assert!(
+            !document(nodes(&InterfaceSettings::default()))
+                .to_string()
+                .contains("new-folder=")
+        );
+        for invalid in [
+            "toolbar location new-folder=#true\n",
+            "toolbar location new-folder=#false new-folder=#false\n",
+            "toolbar location shown=#false\n",
         ] {
             assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
         }

@@ -104,7 +104,7 @@ pub(super) fn geometry(desktop: &Desktop, tab: &Tab) -> Geometry {
     )
 }
 
-fn kind(entry: &Entry) -> String {
+pub(super) fn kind(entry: &Entry) -> String {
     if entry.kind == EntryKind::Symlink {
         fl!("files-kind-link")
     } else if entry.is_directory() {
@@ -268,6 +268,25 @@ pub(super) fn name_width(
         .map_or(room.max(260.0), |chosen| chosen.min(room).max(160.0))
 }
 
+/// The room left after the last List column, or `None` while Name fills the
+/// list, whether it follows the window or a chosen width reaches its edge.
+pub(super) fn name_slack(
+    desktop: &Desktop,
+    id: window::Id,
+    settings: &ViewSettings,
+    viewport: f32,
+) -> Option<f32> {
+    let details: f32 = settings
+        .details
+        .iter()
+        .map(|&detail| detail_width(desktop, id, detail) + DETAIL_GAP + 1.0)
+        .sum();
+    let room = viewport - details - 72.0;
+    let chosen = desktop.configuration.settings.list_columns.name?;
+    let slack = room - f32::from(chosen).max(160.0);
+    (slack > 0.5).then_some(slack)
+}
+
 pub(super) fn inline_details(
     appearance: &canopa_theme::Appearance,
     settings: &ViewSettings,
@@ -369,29 +388,141 @@ pub(super) fn detail_cells<'a>(
         if heading {
             cell_font.weight = iced::font::Weight::Semibold;
         }
-        let cell: Element<'_, Message> = if detail == Detail::Size {
-            text(value)
-                .font(cell_font)
-                .size(size)
-                .color(foreground)
-                .width(Length::Fill)
-                .align_x(Alignment::End)
-                .wrapping(text::Wrapping::None)
-                .into()
+        // Every column starts at its leading edge, headings and values alike.
+        let cell = chrome::single_line(value, cell_font, size, Some(foreground), entry.is_some());
+        // Each column starts a half gap after the divider before it.
+        cells = cells.push(space().width(DETAIL_GAP / 2.0));
+        let cell = container(cell).width(width).clip(true);
+        cells = cells.push(if heading {
+            sort_heading_button(desktop, id, field, label_for(field), cell)
         } else {
-            chrome::single_line(value, cell_font, size, Some(foreground), entry.is_some())
-        };
-        cells = cells.push(container(cell).width(width).clip(true));
+            cell.into()
+        });
         cells = cells
             .push(space().width(DETAIL_GAP / 2.0))
             .push(if heading {
                 grip(super::resize::Target::Detail(detail), width)
             } else {
                 space().width(1).into()
-            })
-            .push(space().width(DETAIL_GAP / 2.0));
+            });
     }
     cells.into()
+}
+
+/// Each tree level's step in from the one holding it.
+const TREE_INDENT: f32 = 18.0;
+const DISCLOSURE: f32 = 18.0;
+/// The room a tree row's disclosure takes before its icon, with its spacing.
+pub(super) const TREE_LEAD: f32 = DISCLOSURE + 8.0;
+
+/// A tree row's indentation and, for a folder, the chevron that opens it in
+/// place (pointing ahead when closed, down when open).
+fn disclosure<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    tab: &'a Tab,
+    entry: &'a Entry,
+    depth: usize,
+    selected: bool,
+) -> Element<'a, Message> {
+    let indent = space().width(depth as f32 * TREE_INDENT);
+    let browser = tab.browser.as_ref().unwrap();
+    if !entry.is_directory() {
+        return row![indent, space().width(DISCLOSURE)].into();
+    }
+    let open = browser.is_expanded(&entry.path);
+    let chevron = container(desktop.icons.chrome(
+        if open { Icon::Down } else { Icon::Forward },
+        14.0,
+        if selected { 1.0 } else { 0.8 },
+    ))
+    .center_x(DISCLOSURE)
+    .center_y(DISCLOSURE);
+    let message = Message::Tree(id, tab.id, tab.revision, entry.path.clone());
+    let appearance = &desktop.configuration.appearance;
+    let chevron = mouse_area(super::hover::hover(
+        chevron,
+        hover_wash(appearance),
+        5.0,
+        true,
+    ))
+    .on_press(message.clone())
+    .interaction(iced::mouse::Interaction::Pointer);
+    let chevron = super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::new(super::accessibility_ui::Role::Button)
+            .label(if open {
+                fl!("files-tree-collapse", name = entry.name().into_owned())
+            } else {
+                fl!("files-tree-expand", name = entry.name().into_owned())
+            })
+            .key(format!(
+                "files-tree-{}",
+                super::accessibility_ui::entry_key(&entry.path)
+            ))
+            .on_click(Some(message)),
+        chevron,
+    );
+    row![indent, chevron].into()
+}
+
+/// The hover wash for rows and headings: the text colour, faint enough to sit
+/// on any surface without reading as a selection.
+pub(super) fn hover_wash(appearance: &canopa_theme::Appearance) -> iced::Color {
+    let alpha = if appearance.high_contrast() {
+        0.16
+    } else {
+        0.07
+    };
+    chrome::ink(appearance, ColorRole::Text).scale_alpha(alpha)
+}
+
+fn label_for(field: SortField) -> String {
+    match field {
+        SortField::Name => fl!("files-column-name"),
+        SortField::Size => fl!("files-column-size"),
+        SortField::Modified => fl!("files-column-modified"),
+        SortField::Kind => fl!("files-column-kind"),
+    }
+}
+
+/// A List view column heading: clicking sorts by its field, and clicking the
+/// sorting heading again reverses the order.
+pub(super) fn sort_heading_button<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    field: SortField,
+    label: String,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    let message = Message::FolderView(super::folder_views::Event::Heading(id, field));
+    let enabled = desktop
+        .action_menu
+        .as_ref()
+        .is_none_or(|menu| menu.window() != id)
+        && desktop
+            .folder_options
+            .as_ref()
+            .is_none_or(|target| target.window != id);
+    let appearance = &desktop.configuration.appearance;
+    // No side padding: heading cells keep the widths their rows' cells have.
+    let content = container(content)
+        .padding([3, 0])
+        .align_y(Alignment::Center);
+    let area = mouse_area(super::hover::hover(
+        content,
+        hover_wash(appearance),
+        5.0,
+        enabled,
+    ))
+    .on_press(message.clone())
+    .interaction(iced::mouse::Interaction::Pointer);
+    super::accessibility_ui::semantic(
+        super::accessibility_ui::Node::new(super::accessibility_ui::Role::Button)
+            .label(fl!("files-sort-by-heading", field = label))
+            .key(format!("files-heading-{field:?}"))
+            .on_click(Some(message)),
+        area,
+    )
 }
 
 pub(super) struct Presentation<'a> {
@@ -440,13 +571,19 @@ pub(super) fn entry<'a>(
         .then(|| desktop.folder_counts.items(entry, browser.show_hidden()))
         .flatten();
     let content: Element<'a, Message> = if grid {
-        let name = container(
-            text(entry.name().into_owned())
+        // Two lines hold the name; a longer one loses its middle, keeping
+        // its ending and extension, rather than being cut off mid-line.
+        let full = entry.name().into_owned();
+        let name = container(responsive(move |bounds| {
+            let room = (bounds.width * 1.8).max(0.0);
+            text(chrome::ellipsize(&full, font, size, room, true))
                 .size(size)
                 .font(font)
                 .align_x(iced::alignment::Horizontal::Center)
-                .width(Length::Fill),
-        )
+                .wrapping(text::Wrapping::WordOrGlyph)
+                .width(Length::Fill)
+                .into()
+        }))
         .width(Length::Fill)
         .height((size * 1.3).ceil() * 2.0)
         .clip(true);
@@ -461,7 +598,7 @@ pub(super) fn entry<'a>(
         if selected && style_contrast(appearance) {
             name_font.weight = iced::font::Weight::Semibold;
         }
-        let name = chrome::single_line(
+        let name = chrome::file_name_line(
             entry.name().into_owned(),
             name_font,
             size,
@@ -479,12 +616,25 @@ pub(super) fn entry<'a>(
         // Inline details follow a bounded Name column, so a row's facts sit
         // beside its name instead of across the window.
         let name_width = name_width(desktop, id, settings, tab.viewport_width);
+        // In List view's tree, rows step in by depth after a disclosure
+        // chevron; the Name column gives up that room so details stay aligned.
+        let tree = current && !searching && browser.tree_view();
+        let depth = if tree { browser.depth(&entry.path) } else { 0 };
+        let lead = if tree {
+            depth as f32 * TREE_INDENT + TREE_LEAD
+        } else {
+            0.0
+        };
         let name: Element<'a, Message> = if inline {
-            container(name).width(name_width).into()
+            container(name).width((name_width - lead).max(40.0)).into()
         } else {
             name
         };
-        let mut name_line = row![file_icon, name].spacing(8).align_y(Alignment::Center);
+        let mut name_line = row![].spacing(8).align_y(Alignment::Center);
+        if tree {
+            name_line = name_line.push(disclosure(desktop, id, tab, entry, depth, selected));
+        }
+        let mut name_line = name_line.push(file_icon).push(name);
         // Chevrons promise a column to the right; List view opens folders in place.
         let drills = entry.is_directory() && (!current || settings.mode == ViewMode::Columns);
         if inline {
@@ -613,6 +763,25 @@ pub(super) fn entry<'a>(
             }
             style
         });
+    // Rows the pointer can act on show it: a faint wash under the hovered row.
+    let interactive = tab.location.is_none()
+        && desktop
+            .action_menu
+            .as_ref()
+            .is_none_or(|menu| menu.window() != id)
+        && desktop
+            .folder_options
+            .as_ref()
+            .is_none_or(|target| target.window != id);
+    let card = super::hover::hover(card, hover_wash(appearance), 7.0, interactive && !selected);
+    // Rows on their way out in a drag fade, so it is clear what is moving.
+    let card = if desktop.drag.is_dragged(&entry.path) {
+        let mut cover = chrome::ink(appearance, ColorRole::Background);
+        cover.a = 0.55;
+        super::hover::faded(card, cover, 7.0)
+    } else {
+        card
+    };
     let activate = if entry.is_directory() {
         Message::Go(id, entry.path.clone())
     } else {
@@ -639,6 +808,12 @@ pub(super) fn entry<'a>(
             },
         )))
         .on_double_click(activate);
+    // A middle click opens a folder in a new tab, as in a web browser.
+    let card = if entry.is_directory() {
+        card.on_middle_press(Message::OpenTab(id, entry.path.clone()))
+    } else {
+        card
+    };
     let card: Element<'a, Message> = card.into();
     let card = if let Some((scene, region)) =
         super::drag_ui::row_region(desktop, id, tab, entry, column_path)
@@ -657,6 +832,8 @@ pub(super) fn entry<'a>(
             text(entry.name().into_owned()).size(label_size).font(font),
             tooltip::Position::Bottom,
         )
+        .padding(6)
+        .style(super::chrome::tooltip_style)
         .into()
     } else {
         card

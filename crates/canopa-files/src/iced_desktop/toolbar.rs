@@ -12,10 +12,6 @@ use iced::{
 
 const SIDE_PADDING: f32 = 14.0;
 const COMMAND_ICON: f32 = 20.0;
-/// The New folder button joins the toolbar from this window width, and is
-/// labelled from the next.
-const NEW_FOLDER_WIDTH: f32 = 860.0;
-const NEW_FOLDER_LABEL_WIDTH: f32 = 1040.0;
 
 enum Item<'a> {
     Location,
@@ -41,7 +37,7 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
                     .map(Item::Action)
             } else {
                 Command::from_id(id)
-                    .filter(|command| *command != Command::QuickLook)
+                    .filter(|command| !command.never_on_toolbar())
                     .map(Item::Builtin)
             }
         })
@@ -49,12 +45,13 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
 }
 
 /// The icon of a toolbar command and the short caption beside it, if any.
-fn command_icon(command: Command) -> Option<(Icon, String)> {
+pub(super) fn command_icon(command: Command) -> Option<(Icon, String)> {
     Some(match command {
         Command::Back => (Icon::Back, String::new()),
         Command::Forward => (Icon::Forward, String::new()),
         Command::Parent => (Icon::Up, String::new()),
         Command::Search => (Icon::Search, fl!("files-toolbar-search")),
+        Command::NewFolder => (Icon::NewFolder, fl!("files-menu-new-folder-short")),
         Command::Columns => (Icon::Columns, String::new()),
         Command::List => (Icon::List, String::new()),
         Command::Icons => (Icon::Grid, String::new()),
@@ -77,7 +74,7 @@ enum Labels {
 
 fn action_label(command: Command, full: String, labels: Labels) -> String {
     match (command, labels) {
-        (Command::Search, Labels::Icons) => String::new(),
+        (Command::Search | Command::NewFolder, Labels::Icons) => String::new(),
         _ => full,
     }
 }
@@ -164,6 +161,9 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
             .any(|entry| Some(entry.path.as_path()) == browser.focused() && entry.is_directory()),
         Command::NextTab
         | Command::PreviousTab
+        | Command::MoveTabLeft
+        | Command::MoveTabRight
+        | Command::MoveTabToWindow
         | Command::CloseTab
         | Command::Search
         | Command::Location
@@ -214,6 +214,9 @@ fn location<'a>(
             .style(move |theme, status| view::input_style(&appearance, theme, status))
             .width(Length::Fill);
         semantic(node, input)
+    } else if let Some(session) = &tab.search {
+        // A search takes the path's place, so there is one field to type in.
+        view::search_parts(desktop, id, tab, session).field
     } else {
         semantic(
             Node::new(Role::Navigation)
@@ -301,6 +304,8 @@ fn breadcrumb<'a>(
                         text(fl!("files-place-home")).font(font).size(size),
                         tooltip::Position::Bottom,
                     )
+                    .padding(6)
+                    .style(super::chrome::tooltip_style)
                     .into()
                 };
             a11y::named_button(
@@ -360,9 +365,11 @@ fn breadcrumb<'a>(
     })
     .height(Length::Shrink);
 
+    // The path's own search button; while searching, the field's cross closes it.
+    // The current folder's name still opens the location for typing.
     let edit = crumb_button(
-        desktop.icons.chrome(Icon::Edit, 18.0, 0.93),
-        Message::Command(id, Command::Location),
+        desktop.icons.chrome(Icon::Search, 17.0, 0.93),
+        Message::Command(id, Command::Search),
     )
     .padding([4.0, button_inset]);
     let edit: Element<'_, Message> = if tab.search.is_some() || desktop.action_menu.is_some() {
@@ -370,17 +377,19 @@ fn breadcrumb<'a>(
     } else {
         tooltip(
             edit,
-            text(Command::Location.label())
+            text(Command::Search.label())
                 .font(font)
                 .size(appearance.typography().label_size.px()),
             tooltip::Position::Bottom,
         )
+        .padding(6)
+        .style(super::chrome::tooltip_style)
         .into()
     };
     let edit = a11y::named_button(
-        "files-location-edit",
-        Command::Location.label(),
-        Some(Message::Command(id, Command::Location)),
+        "files-search-open",
+        Command::Search.label(),
+        Some(Message::Command(id, Command::Search)),
         edit,
     );
     container(
@@ -552,7 +561,9 @@ fn control<'a>(
                 .font(font)
                 .size(appearance.typography().label_size.px()),
             tooltip::Position::Bottom,
-        ),
+        )
+        .padding(6)
+        .style(super::chrome::tooltip_style),
     )
 }
 
@@ -567,7 +578,6 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
         menu_padding.right -= 6.0;
     }
     let menu_width = 18.0 + menu_padding.left + menu_padding.right;
-    let icon_button_width = menu_width;
     let open_menu = source
         .as_ref()
         .map(|_| Message::Action(actions_ui::Event::Menu(id)));
@@ -589,6 +599,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
                 text(fl!("files-toolbar-actions")).size(appearance.typography().label_size.px()),
                 tooltip::Position::Bottom,
             )
+            .padding(6)
+            .style(super::chrome::tooltip_style)
             .into()
         };
     let menu = semantic(
@@ -644,86 +656,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
     } else {
         (menu, menu_width)
     };
-    let (menu, menu_width) = if tab.browser.is_some() && window_width >= NEW_FOLDER_WIDTH {
-        // Creating a folder stays one click away beside the overflow menu.
-        let create = enabled(desktop, Command::NewFolder, tab)
-            .then_some(Message::Command(id, Command::NewFolder));
-        let label = Command::NewFolder.label();
-        // Wide windows name the action; narrower ones keep the icon.
-        let labelled = window_width >= NEW_FOLDER_LABEL_WIDTH;
-        let caption_size = appearance.typography().label_size.px() + 1.0;
-        let caption = fl!("files-menu-new-folder-short");
-        let new_folder_width = if labelled {
-            icon_button_width
-                + 6.0
-                + chrome::text_width(&caption, canopa_ui::font(appearance), caption_size)
-                + 4.0
-        } else {
-            icon_button_width
-        };
-        let symbol = desktop.icons.chrome(
-            Icon::NewFolder,
-            18.0,
-            if create.is_some() { 1.0 } else { 0.45 },
-        );
-        let content: Element<'_, Message> = if labelled {
-            row![
-                symbol,
-                text(caption)
-                    .size(caption_size)
-                    .font(canopa_ui::font(appearance))
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center)
-            .into()
-        } else {
-            symbol
-        };
-        let new_folder = canopa_ui::styled_action(
-            content,
-            create.clone(),
-            canopa_ui::Action::Quiet,
-            false,
-            appearance,
-        )
-        .padding(menu_padding)
-        .width(new_folder_width);
-        let new_folder: Element<'_, Message> =
-            if labelled || tab.location.is_some() || desktop.action_menu.is_some() {
-                new_folder.into()
-            } else {
-                tooltip(
-                    new_folder,
-                    text(label.clone()).size(appearance.typography().label_size.px()),
-                    tooltip::Position::Bottom,
-                )
-                .into()
-            };
-        let new_folder = semantic(
-            Node::button(label)
-                .key("files-toolbar-new-folder")
-                .disabled(create.is_none())
-                .on_click(create),
-            new_folder,
-        );
-        (
-            row![new_folder, menu]
-                .spacing(6)
-                .align_y(Alignment::Center)
-                .into(),
-            new_folder_width + 6.0 + menu_width,
-        )
-    } else {
-        (menu, menu_width)
-    };
     let side_padding = if show_places { 10.0 } else { SIDE_PADDING };
-    let available = window_width
-        - 2.0 * side_padding
-        - if show_places {
-            0.0
-        } else {
-            chrome::BRAND_WIDTH
-        };
+    let available = window_width - 2.0 * side_padding;
     let required = |items: &[Item<'_>], labels| {
         let commands = items
             .iter()

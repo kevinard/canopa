@@ -419,7 +419,9 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
                         .font(font)
                         .size(appearance.typography().label_size.px()),
                     tooltip::Position::Right,
-                ),
+                )
+                .padding(6)
+                .style(super::chrome::tooltip_style),
             ));
         }
         body = body.push(super::row_state::keyed_row(

@@ -83,6 +83,7 @@ impl FileIcon {
             .unwrap_or_default();
         match mime {
             mime::DIRECTORY => Self::Folder,
+            _ if mime.starts_with(super::icons_ui::SPECIAL_FOLDER) => Self::Folder,
             "inode/symlink" => Self::Link,
             "application/pdf" => Self::Pdf,
             "text/markdown" => Self::Markdown,

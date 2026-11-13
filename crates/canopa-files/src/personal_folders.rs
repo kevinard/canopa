@@ -8,17 +8,32 @@ use std::{
 };
 
 const MAX_DEFINITION_BYTES: usize = 64 * 1024;
-const NAMES: [&[u8]; 4] = [
+const NAMES: [&[u8]; 8] = [
     b"XDG_DESKTOP_DIR",
     b"XDG_DOCUMENTS_DIR",
     b"XDG_DOWNLOAD_DIR",
     b"XDG_PICTURES_DIR",
+    b"XDG_MUSIC_DIR",
+    b"XDG_VIDEOS_DIR",
+    b"XDG_TEMPLATES_DIR",
+    b"XDG_PUBLICSHARE_DIR",
+];
+/// The icon-theme names of the folders in `NAMES`, as freedesktop themes name them.
+const ICONS: [&str; 8] = [
+    "user-desktop",
+    "folder-documents",
+    "folder-download",
+    "folder-pictures",
+    "folder-music",
+    "folder-videos",
+    "folder-templates",
+    "folder-publicshare",
 ];
 
 /// One process's personal-folder definitions, preserving original Unix bytes.
 #[derive(Clone, Debug)]
 pub struct PersonalFolders {
-    paths: [PathBuf; 4],
+    paths: [PathBuf; 8],
 }
 
 impl PersonalFolders {
@@ -61,7 +76,17 @@ impl PersonalFolders {
             ));
         }
         Ok(Self {
-            paths: ["Desktop", "Documents", "Downloads", "Pictures"].map(|name| home.join(name)),
+            paths: [
+                "Desktop",
+                "Documents",
+                "Downloads",
+                "Pictures",
+                "Music",
+                "Videos",
+                "Templates",
+                "Public",
+            ]
+            .map(|name| home.join(name)),
         })
     }
 
@@ -72,9 +97,26 @@ impl PersonalFolders {
             PlaceKind::Documents => 1,
             PlaceKind::Downloads => 2,
             PlaceKind::Pictures => 3,
-            _ => return None,
+            PlaceKind::Music => 4,
+            PlaceKind::Videos => 5,
+            PlaceKind::Templates => 6,
+            PlaceKind::Public => 7,
+            PlaceKind::Home | PlaceKind::Filesystem | PlaceKind::Trash | PlaceKind::Recovery => {
+                return None;
+            }
         };
         Some(&self.paths[index])
+    }
+
+    /// Each personal folder with the icon-theme name that marks it, such as
+    /// `folder-download`. A definition pointing at Home itself marks nothing:
+    /// XDG uses that to switch a folder off, and Home keeps its own icon.
+    pub fn icons<'a>(&'a self, home: &'a Path) -> impl Iterator<Item = (&'a Path, &'static str)> {
+        self.paths
+            .iter()
+            .zip(ICONS)
+            .filter(move |(path, _)| path.as_path() != home)
+            .map(|(path, icon)| (path.as_path(), icon))
     }
 }
 

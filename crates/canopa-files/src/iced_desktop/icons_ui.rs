@@ -27,6 +27,33 @@ const MAX_SNIFF_REQUEST: usize = 1024;
 /// Prepared type icons and remembered sniffed paths stay bounded.
 const MAX_TYPES: usize = 512;
 const MAX_SNIFFED: usize = 65536;
+/// The pseudo-type prefix of a folder with its own themed icon, such as
+/// `x-canopa-folder/folder-download`. It never leaves this module's lookups.
+pub(super) const SPECIAL_FOLDER: &str = "x-canopa-folder/";
+/// The pseudo-type prefix of a sidebar place's themed icon, such as
+/// `x-canopa-place/user-trash`. Unlike a folder, it has no fallback name: a
+/// theme without it leaves the place its built-in glyph.
+const PLACE: &str = "x-canopa-place/";
+
+/// The icon-theme name of a built-in place, if themes draw one.
+pub(super) fn place_icon_name(kind: crate::interface::PlaceKind) -> Option<&'static str> {
+    use crate::interface::PlaceKind;
+    Some(match kind {
+        PlaceKind::Home => "user-home",
+        PlaceKind::Desktop => "user-desktop",
+        PlaceKind::Documents => "folder-documents",
+        PlaceKind::Downloads => "folder-download",
+        PlaceKind::Music => "folder-music",
+        PlaceKind::Pictures => "folder-pictures",
+        PlaceKind::Videos => "folder-videos",
+        PlaceKind::Templates => "folder-templates",
+        PlaceKind::Public => "folder-publicshare",
+        PlaceKind::Filesystem => "drive-harddisk",
+        PlaceKind::Trash => "user-trash",
+        // Recovery is Files' own; themes have no icon for it.
+        PlaceKind::Recovery => return None,
+    })
+}
 
 struct Request {
     revision: u64,
@@ -57,6 +84,8 @@ pub(super) struct Icons {
     file_handles: BTreeMap<super::file_icon::FileIcon, image::Handle>,
     chrome_handles: BTreeMap<Icon, image::Handle>,
     file_foreground: [u8; 4],
+    /// The disc behind emblems and its edge, from the appearance.
+    emblem_colors: (iced::Color, iced::Color),
     types: Types,
     pub(super) thumbnails: super::thumbnails_ui::Thumbnails,
 }
@@ -70,6 +99,10 @@ struct Types {
     sniffed: HashMap<PathBuf, (Option<SystemTime>, Arc<str>)>,
     /// `None`: the theme has no icon for this type; the built-in glyph is used.
     handles: HashMap<Arc<str>, Option<image::Handle>>,
+    /// Each prepared type's readable name, such as "PNG image".
+    descriptions: HashMap<Arc<str>, String>,
+    /// Personal folders, by the pseudo-type that gives them their own icon.
+    special: HashMap<PathBuf, Arc<str>>,
     requested: HashSet<Arc<str>>,
     requested_paths: HashSet<PathBuf>,
     running: Option<Arc<AtomicBool>>,
@@ -91,6 +124,22 @@ pub(super) struct PreparedTypes {
     database: Arc<MimeDatabase>,
     sniffed: Vec<(PathBuf, Option<SystemTime>, Arc<str>)>,
     handles: Vec<(Arc<str>, Option<image::Handle>)>,
+    descriptions: Vec<(Arc<str>, String)>,
+}
+
+/// The emblems an entry shows on its icon: a link, then whether this person
+/// may not read it, or may read but not change it.
+pub(super) fn emblems(entry: &crate::browse::Entry) -> Vec<Icon> {
+    let mut emblems = Vec::new();
+    if entry.kind == crate::browse::EntryKind::Symlink {
+        emblems.push(Icon::Link);
+    }
+    if !entry.access.readable {
+        emblems.push(Icon::Lock);
+    } else if !entry.access.writable {
+        emblems.push(Icon::ReadOnly);
+    }
+    emblems
 }
 
 impl Icons {
@@ -150,6 +199,10 @@ impl Icons {
             .into_rgba8(),
         };
         self.file_foreground = request.file_foreground;
+        self.emblem_colors = (
+            chrome::ink(&configuration.appearance, canopa_theme::ColorRole::Surface),
+            chrome::ink(&configuration.appearance, canopa_theme::ColorRole::Border),
+        );
         if let Some((_, cancel)) = &self.running {
             cancel.store(true, Ordering::Release);
             self.pending = Some(request);
@@ -245,7 +298,64 @@ impl Icons {
             }
             FileVisual::Pending => iced::widget::space().width(size).height(size).into(),
         };
-        container(content).width(size).height(size).into()
+        let content = container(content).width(size).height(size);
+        let emblems = emblems(entry);
+        if emblems.is_empty() {
+            return content.into();
+        }
+        // Emblems sit on the icon's lower corner, on a small disc so they read
+        // on any picture: the trailing corner first, then the leading one.
+        let disc = (size * 0.46).round().clamp(11.0, 22.0);
+        let (fill, edge) = self.emblem_colors;
+        let badge = |icon| -> Element<'_, Message> {
+            container(self.chrome(icon, (disc * 0.7).round(), 1.0))
+                .center_x(disc)
+                .center_y(disc)
+                .style(move |_| {
+                    container::Style::default()
+                        .background(fill)
+                        .border(iced::Border {
+                            color: edge,
+                            width: 1.0,
+                            radius: (disc / 2.0).into(),
+                        })
+                })
+                .into()
+        };
+        let mut layers = iced::widget::Stack::new()
+            .width(size)
+            .height(size)
+            .push(content);
+        for (index, icon) in emblems.into_iter().enumerate() {
+            let placed = container(badge(icon)).width(size).height(size);
+            layers = layers.push(if index == 0 {
+                placed.align_right(size).align_bottom(size)
+            } else {
+                placed.align_left(size).align_bottom(size)
+            });
+        }
+        layers.into()
+    }
+
+    /// The RGBA pixels that stand for `entry` at a large size (its thumbnail,
+    /// type icon or built-in glyph), for pictures drawn outside a view, such
+    /// as a drag icon. `None` until they are prepared.
+    pub fn picture(&self, entry: &crate::browse::Entry) -> Option<(u32, u32, &[u8])> {
+        let handle = match self.visual(entry, false) {
+            FileVisual::Thumbnail(handle)
+            | FileVisual::Type(handle)
+            | FileVisual::Glyph(handle) => handle,
+            FileVisual::Pending => return None,
+        };
+        match handle {
+            image::Handle::Rgba {
+                width,
+                height,
+                pixels,
+                ..
+            } => Some((*width, *height, pixels.as_ref())),
+            _ => None,
+        }
     }
 
     /// What stands for an entry, in precedence order: a thumbnail prepared for
@@ -280,10 +390,45 @@ impl Icons {
             .map_or(FileVisual::Pending, FileVisual::Glyph)
     }
 
+    /// Mark Home and the XDG personal folders, such as Downloads, with the
+    /// folder icons themes draw for them.
+    pub fn set_special_folders(
+        &mut self,
+        folders: &crate::personal_folders::PersonalFolders,
+        home: &Path,
+    ) {
+        let mut special: HashMap<PathBuf, Arc<str>> = folders
+            .icons(home)
+            .map(|(path, icon)| {
+                (
+                    path.to_owned(),
+                    Arc::from(format!("{SPECIAL_FOLDER}{icon}")),
+                )
+            })
+            .collect();
+        special.insert(
+            home.to_owned(),
+            Arc::from(format!("{SPECIAL_FOLDER}user-home")),
+        );
+        self.types.special = special;
+    }
+
+    /// The readable name of `entry`'s type, such as "PNG image", once known.
+    pub fn type_description(&self, entry: &crate::browse::Entry) -> Option<String> {
+        if entry.is_directory() {
+            return None;
+        }
+        let mime = self.entry_type(entry)?;
+        self.types.descriptions.get(&mime).cloned()
+    }
+
     /// Directories, then a sniffed type for this modification time, then a
     /// unique glob match. `None` until the database arrives or sniffing finishes.
     fn entry_type(&self, entry: &crate::browse::Entry) -> Option<Arc<str>> {
         if entry.is_directory() {
+            if let Some(special) = self.types.special.get(&entry.path) {
+                return Some(special.clone());
+            }
             return Some(Arc::from(mime::DIRECTORY));
         }
         if let Some((modified, mime)) = self.types.sniffed.get(&entry.path)
@@ -342,6 +487,22 @@ impl Icons {
                     }
                 }
             }
+            // The sidebar's places ask for their themed icons once.
+            for kind in crate::interface::PlaceKind::ALL {
+                let Some(name) = place_icon_name(*kind) else {
+                    continue;
+                };
+                for name in [name, "folder"] {
+                    let mime: Arc<str> = Arc::from(format!("{PLACE}{name}"));
+                    if !self.types.handles.contains_key(&mime)
+                        && !self.types.requested.contains(&mime)
+                        && !request.types.contains(&mime)
+                    {
+                        self.types.requested.insert(mime.clone());
+                        request.types.push(mime);
+                    }
+                }
+            }
             if request.types.is_empty() && request.sniff.is_empty() {
                 return Task::none();
             }
@@ -372,6 +533,7 @@ impl Icons {
                     database: MimeDatabase::system(),
                     sniffed: Vec::new(),
                     handles: Vec::new(),
+                    descriptions: Vec::new(),
                 }))
             },
             Message::TypesReady,
@@ -399,6 +561,37 @@ impl Icons {
             for (mime, handle) in &prepared.handles {
                 types.handles.insert(mime.clone(), handle.clone());
             }
+        }
+        for (mime, description) in &prepared.descriptions {
+            types.descriptions.insert(mime.clone(), description.clone());
+        }
+    }
+
+    /// A sidebar place's icon from the icon theme: `name`'s, or for a folder
+    /// (`path`) the icon its personal folder has, else the theme's folder.
+    /// The built-in `fallback` glyph stands in until it is prepared, or when
+    /// the theme has none.
+    pub(super) fn place(
+        &self,
+        name: Option<&str>,
+        path: Option<&Path>,
+        fallback: Icon,
+        size: f32,
+        opacity: f32,
+    ) -> Element<'_, Message> {
+        let themed = |mime: &str| self.types.handles.get(mime).and_then(Option::as_ref);
+        let special = path
+            .and_then(|path| self.types.special.get(path))
+            .and_then(|mime| themed(mime));
+        let name = name.or(path.map(|_| "folder"));
+        let handle = special.or_else(|| themed(&format!("{PLACE}{}", name?)));
+        match handle {
+            Some(handle) => image(handle.clone())
+                .width(size)
+                .height(size)
+                .opacity(opacity)
+                .into(),
+            None => self.chrome(fallback, size, opacity),
         }
     }
 
@@ -521,11 +714,28 @@ fn prepare_types(
     let mut rasters = type_rasters(cancelled);
     let vector = svg_policy(FILE_SIDE, request.foreground);
     let mut handles = Vec::new();
+    let mut descriptions = Vec::new();
     for mime in types {
         if cancelled() {
             break;
         }
-        let names = database.icon_names(&mime);
+        // Personal folders ask for their own icon, then the plain folder.
+        let names = match (mime.strip_prefix(SPECIAL_FOLDER), mime.strip_prefix(PLACE)) {
+            (Some(icon), _) => vec![icon.to_owned(), "folder".to_owned()],
+            (_, Some(icon)) => vec![icon.to_owned()],
+            _ => {
+                let content_type = gio::content_type_from_mime_type(&mime);
+                if let Some(content_type) = content_type
+                    && !gio::content_type_is_unknown(&content_type)
+                {
+                    descriptions.push((
+                        mime.clone(),
+                        gio::content_type_get_description(&content_type).to_string(),
+                    ));
+                }
+                database.icon_names(&mime)
+            }
+        };
         let query = IconQuery {
             scale: 2,
             allow_unindexed_hicolor: true,
@@ -544,6 +754,7 @@ fn prepare_types(
         database,
         sniffed,
         handles,
+        descriptions,
     }
 }
 
@@ -720,6 +931,7 @@ mod tests {
             file_handles: BTreeMap::new(),
             chrome_handles: BTreeMap::new(),
             file_foreground: [255; 4],
+            emblem_colors: Default::default(),
             types: Types::default(),
             thumbnails: Default::default(),
         };
@@ -767,6 +979,53 @@ mod tests {
 
     fn entry(path: PathBuf) -> crate::browse::Entry {
         crate::browse::Entry::read(path).unwrap()
+    }
+
+    #[test]
+    fn personal_folders_and_home_ask_for_their_own_themed_icons() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let downloads = home.join("Downloads");
+        let other = home.join("Projects");
+        for folder in [&downloads, &other] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let folders = crate::personal_folders::PersonalFolders::conventional(&home).unwrap();
+        let mut icons = Icons::default();
+        icons.set_special_folders(&folders, &home);
+        let special = |path: &std::path::Path| icons.entry_type(&entry(path.to_owned()));
+        assert_eq!(
+            special(&downloads).as_deref(),
+            Some("x-canopa-folder/folder-download")
+        );
+        assert_eq!(special(&home).as_deref(), Some("x-canopa-folder/user-home"));
+        assert_eq!(special(&other).as_deref(), Some(mime::DIRECTORY));
+        // Their glyph, before the theme answers, is still a folder.
+        assert_eq!(
+            super::super::file_icon::FileIcon::for_type("x-canopa-folder/folder-download", None),
+            super::super::file_icon::FileIcon::Folder
+        );
+    }
+
+    #[test]
+    fn emblems_mark_links_and_items_this_person_cannot_read_or_change() {
+        use std::os::unix::fs::PermissionsExt;
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let plain = root.path().join("plain.txt");
+        std::fs::write(&plain, b"x").unwrap();
+        assert!(emblems(&entry(plain.clone())).is_empty());
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&plain, &link).unwrap();
+        assert_eq!(emblems(&entry(link.clone())), [Icon::Link]);
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o444)).unwrap();
+        assert_eq!(emblems(&entry(plain.clone())), [Icon::ReadOnly]);
+        assert_eq!(emblems(&entry(link)), [Icon::Link, Icon::ReadOnly]);
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert_eq!(emblems(&entry(plain.clone())), [Icon::Lock]);
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
     }
 
     #[test]
@@ -884,13 +1143,33 @@ mod tests {
         assert!(icons.types.requested.contains("inode/directory"));
         assert!(!icons.types.requested.contains("text/x-python"));
         assert!(icons.types.requested_paths.contains(&noext.path));
+        // The sidebar's places ask for their themed icons with the first types.
+        let places: Vec<Arc<str>> = icons
+            .types
+            .requested
+            .iter()
+            .filter(|mime| mime.starts_with(PLACE))
+            .cloned()
+            .collect();
+        assert!(
+            places
+                .iter()
+                .any(|mime| &**mime == "x-canopa-place/user-trash")
+        );
         // Completion installs sniffed types; their modification time keys reuse.
         icons.types_completed(&PreparedTypes {
             revision: icons.revision,
             database,
             sniffed: vec![(noext.path.clone(), noext.modified, "text/x-python".into())],
-            handles: vec![("inode/directory".into(), None)],
+            handles: std::iter::once(("inode/directory".into(), None))
+                .chain(places.into_iter().map(|mime| (mime, None)))
+                .collect(),
+            descriptions: vec![("text/x-python".into(), "Python script".into())],
         });
+        assert_eq!(
+            icons.type_description(&noext).as_deref(),
+            Some("Python script")
+        );
         assert!(icons.types.running.is_none() && icons.types.requested.is_empty());
         assert!(matches!(icons.visual(&noext, false), FileVisual::Type(h) if *h == typed));
         assert!(icons.sync_types(2, entries.iter()).units() == 0);

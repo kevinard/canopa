@@ -43,6 +43,10 @@ pub struct ViewSettings {
     pub descending: bool,
     pub details: Vec<Detail>,
     pub column_width: u16,
+    /// List view shows folders as a tree that opens in place.
+    pub tree: bool,
+    /// Folders sort before files; off, they mix in one order.
+    pub folders_first: bool,
 }
 
 impl Default for ViewSettings {
@@ -53,6 +57,8 @@ impl Default for ViewSettings {
             descending: false,
             details: vec![Detail::Size, Detail::Modified],
             column_width: 240,
+            tree: false,
+            folders_first: true,
         }
     }
 }
@@ -91,6 +97,9 @@ struct ViewOverride {
     details: Option<Vec<Detail>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     column_width: Option<u16>,
+    /// Read and ignored: the tree is one choice for every folder.
+    #[serde(skip_serializing)]
+    tree: Option<bool>,
 }
 impl ViewOverride {
     fn resolve(&self, defaults: &ViewSettings) -> ViewSettings {
@@ -103,6 +112,9 @@ impl ViewOverride {
                 .clone()
                 .unwrap_or_else(|| defaults.details.clone()),
             column_width: self.column_width.unwrap_or(defaults.column_width),
+            // One choice for every folder, never remembered per folder.
+            tree: defaults.tree,
+            folders_first: defaults.folders_first,
         }
     }
     fn full(view: &ViewSettings) -> Self {
@@ -112,6 +124,7 @@ impl ViewOverride {
             descending: Some(view.descending),
             details: Some(view.details.clone()),
             column_width: Some(view.column_width),
+            tree: None,
         }
     }
 }

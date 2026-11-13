@@ -9,8 +9,6 @@ use iced::{
 use std::{cell::RefCell, collections::HashMap};
 
 pub(super) const SIDEBAR_WIDTH: f32 = 204.0;
-/// The app mark before the toolbar when the sidebar is shown.
-pub(super) const BRAND_WIDTH: f32 = 62.0;
 /// Dialog and footer buttons match the height of a text field beside them.
 pub(super) const DIALOG_BUTTON_PADDING: [f32; 2] = [9.0, 18.0];
 
@@ -446,6 +444,8 @@ pub(super) fn dismiss(desktop: &Desktop, window: iced::window::Id) -> Element<'_
             .size(appearance.typography().label_size.px()),
         tooltip::Position::Bottom,
     )
+    .padding(6)
+    .style(super::chrome::tooltip_style)
     .delay(std::time::Duration::from_millis(400))
     .into()
 }
@@ -697,6 +697,43 @@ fn measure_text(content: &str, font: Font, size: f32) -> f32 {
     .ceil()
 }
 
+/// `label` shortened with an ellipsis until it is at most `width` wide: at its
+/// end, or in its middle so that a file name keeps its distinctive ending and
+/// extension (`Quarterly re…port 2026.pdf`).
+pub(super) fn ellipsize(label: &str, font: Font, size: f32, width: f32, middle: bool) -> String {
+    if text_width(label, font, size) <= width {
+        return label.to_owned();
+    }
+    let mut boundaries: Vec<_> = label.char_indices().map(|(index, _)| index).collect();
+    boundaries.push(label.len());
+    let characters = boundaries.len() - 1;
+    // `kept` characters of the label, around one ellipsis.
+    let shorten = |kept: usize| {
+        if middle {
+            let tail = kept / 2;
+            let head = kept - tail;
+            format!(
+                "{}…{}",
+                &label[..boundaries[head]],
+                &label[boundaries[characters - tail]..]
+            )
+        } else {
+            format!("{}…", &label[..boundaries[kept]])
+        }
+    };
+    // The most characters that fit, by bisection: widths grow with `kept`.
+    let (mut low, mut high) = (0, characters.saturating_sub(1));
+    while low < high {
+        let middle = (low + high).div_ceil(2);
+        if text_width(&shorten(middle), font, size) <= width {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    shorten(low)
+}
+
 pub(super) fn single_line<'a>(
     label: impl Into<String>,
     font: Font,
@@ -704,18 +741,34 @@ pub(super) fn single_line<'a>(
     color: Option<Color>,
     reveal: bool,
 ) -> Element<'a, Message> {
-    let label = label.into();
+    line(label.into(), font, size, color, reveal, false)
+}
+
+/// A file name on one line, shortened in its middle when it does not fit.
+pub(super) fn file_name_line<'a>(
+    label: impl Into<String>,
+    font: Font,
+    size: f32,
+    color: Option<Color>,
+    reveal: bool,
+) -> Element<'a, Message> {
+    line(label.into(), font, size, color, reveal, true)
+}
+
+fn line<'a>(
+    label: String,
+    font: Font,
+    size: f32,
+    color: Option<Color>,
+    reveal: bool,
+    middle: bool,
+) -> Element<'a, Message> {
     responsive(move |bounds| {
         let fits = text_width(&label, font, size) <= bounds.width;
         let shown = if fits {
             label.clone()
         } else {
-            let mut boundaries: Vec<_> = label.char_indices().map(|(index, _)| index).collect();
-            boundaries.push(label.len());
-            let limit = boundaries.partition_point(|&end| {
-                text_width(&format!("{}…", &label[..end]), font, size) <= bounds.width
-            });
-            format!("{}…", &label[..boundaries[limit.saturating_sub(1)]])
+            ellipsize(&label, font, size, bounds.width, middle)
         };
         let line = container(
             text(shown)
@@ -733,6 +786,8 @@ pub(super) fn single_line<'a>(
                 text(label.clone()).font(font).size(size),
                 tooltip::Position::Bottom,
             )
+            .padding(6)
+            .style(super::chrome::tooltip_style)
             .delay(std::time::Duration::from_millis(450))
             .into()
         } else {
@@ -741,6 +796,80 @@ pub(super) fn single_line<'a>(
     })
     .height(Length::Shrink)
     .into()
+}
+
+/// `content` with a blocking question over it: the window dims, nothing
+/// beneath takes input, and the question sits raised in the middle. The layer
+/// stays, empty, without a question, so the content keeps its widget state.
+pub(super) fn modal<'a>(
+    desktop: &'a Desktop,
+    content: Element<'a, Message>,
+    question: Option<(String, Element<'a, Message>)>,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let layer: Element<'a, Message> = match question {
+        Some((title, buttons)) => {
+            let mut bold = canopa_ui::font(appearance);
+            bold.weight = Weight::Semibold;
+            let card = container(
+                column![
+                    heading_parts(
+                        desktop,
+                        Icon::Warning,
+                        Tone::Danger,
+                        text(title)
+                            .font(bold)
+                            .size(appearance.typography().body_size.px() + 1.0)
+                            .wrapping(text::Wrapping::WordOrGlyph)
+                            .into(),
+                        None,
+                        None,
+                    ),
+                    container(buttons).align_right(Length::Fill),
+                ]
+                .spacing(16),
+            )
+            .padding(20)
+            .max_width(440)
+            .style(move |_| {
+                let mut style = window_surface(appearance, true);
+                style.border = iced::Border {
+                    color: ink(appearance, ColorRole::Border),
+                    width: 1.0,
+                    radius: 14.0.into(),
+                };
+                style.shadow = iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+                    offset: iced::Vector::new(0.0, 8.0),
+                    blur_radius: 28.0,
+                };
+                style
+            });
+            iced::widget::opaque(
+                container(card)
+                    .padding(24)
+                    .center(Length::Fill)
+                    .style(move |_| scrim(appearance, Recession::Prompt)),
+            )
+        }
+        None => space().width(0).height(0).into(),
+    };
+    iced::widget::stack![content, layer].into()
+}
+
+/// A tooltip's bubble: the text and background colours swapped, so it stands
+/// clear of whatever it covers, as other desktops draw them.
+pub(super) fn tooltip_style(theme: &Theme) -> container::Style {
+    let p = canopa_ui::colors(theme);
+    container::Style::default()
+        .background(p.text)
+        .color(p.background)
+        .border(iced::Border::default().rounded(6))
+        .shadow(iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.28),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 8.0,
+        })
 }
 
 pub(super) fn section<'a>(
@@ -777,6 +906,10 @@ pub(super) enum Icon {
     Documents,
     Downloads,
     Pictures,
+    Music,
+    Videos,
+    Templates,
+    Public,
     Drive,
     Trash,
     Recovery,
@@ -807,10 +940,14 @@ pub(super) enum Icon {
     Disk,
     Toolbar,
     Check,
+    /// Emblems drawn on file icons: a link, no access, and read-only.
+    Link,
+    Lock,
+    ReadOnly,
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 45] = [
+    pub(super) const ALL: [Self; 52] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -826,6 +963,10 @@ impl Icon {
         Self::Documents,
         Self::Downloads,
         Self::Pictures,
+        Self::Music,
+        Self::Videos,
+        Self::Templates,
+        Self::Public,
         Self::Drive,
         Self::Trash,
         Self::Recovery,
@@ -856,6 +997,9 @@ impl Icon {
         Self::Disk,
         Self::Toolbar,
         Self::Check,
+        Self::Link,
+        Self::Lock,
+        Self::ReadOnly,
     ];
 
     /// The icon drawn for `self` in the current writing direction: arrows and
@@ -880,6 +1024,11 @@ impl Icon {
             Self::Up => "m6 15 6-6 6 6",
             Self::Down => "m6 9 6 6 6-6",
             Self::Check => "m5 12.5 4.5 4.5L19 7.5",
+            Self::Link => {
+                "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
+            }
+            Self::Lock => "M7.5 11V8a4.5 4.5 0 0 1 9 0v3M5.5 11h13v9.5h-13Z",
+            Self::ReadOnly => "M5 19h3.5L18 9.5 14.5 6 5 15.5Zm-1.5-15.5 17 17",
             Self::Disk => {
                 "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3v12c0 1.7-3.6 3-8 3s-8-1.3-8-3Zm0 0c0 1.7 3.6 3 8 3s8-1.3 8-3m-16 6c0 1.7 3.6 3 8 3s8-1.3 8-3"
             }
@@ -901,6 +1050,14 @@ impl Icon {
             Self::Documents => "M6 3h8l4 4v14H6Zm8 0v5h4m-9 4h6m-6 4h6",
             Self::Downloads => "M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4",
             Self::Pictures => "M3 5h18v14H3Zm1 12 5-5 3 3 3-3 5 5M15 9h.01",
+            Self::Music => {
+                "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm11-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+            }
+            Self::Videos => "M3 5h18v14H3Zm7.5 4v6l5-3Z",
+            Self::Templates => "M3 4h18v6H3Zm0 10h8v6H3Zm12 0h6v6h-6Z",
+            Self::Public => {
+                "M16 20v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V20m10.5-12.5a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM21 20v-1.5a4 4 0 0 0-3-3.9m-2-11a4 4 0 0 1 0 7.8"
+            }
             Self::Drive => "M5 5h14l2 10v4H3v-4Zm-2 10h18m-4 2h.01",
             Self::Trash | Self::DangerTrash => "M4 6h16M9 6V3h6v3m3 0-1 15H7L6 6m4 4v7m4-7v7",
             Self::Warning => "M12 3 2 20h20Zm0 6v5m0 3h.01",
@@ -953,5 +1110,26 @@ mod tests {
         assert_eq!(Icon::Forward.directional(), Icon::Back);
         assert_eq!(Icon::ActiveForward.directional(), Icon::ActiveBack);
         assert_eq!(Icon::Home.directional(), Icon::Home);
+    }
+}
+
+#[cfg(test)]
+mod ellipsis_tests {
+    use super::*;
+
+    #[test]
+    fn file_names_lose_their_middle_and_keep_their_ending() {
+        let font = Font::DEFAULT;
+        let name = "Quarterly financial report for the board, final version.pdf";
+        let full = text_width(name, font, 14.0);
+        assert_eq!(ellipsize(name, font, 14.0, full + 1.0, true), name);
+        let short = ellipsize(name, font, 14.0, full / 2.0, true);
+        assert!(
+            short.starts_with("Quarterly") && short.ends_with(".pdf"),
+            "{short}"
+        );
+        assert!(short.contains('…') && text_width(&short, font, 14.0) <= full / 2.0);
+        let end = ellipsize(name, font, 14.0, full / 2.0, false);
+        assert!(end.ends_with('…') && end.starts_with("Quarterly"), "{end}");
     }
 }

@@ -1,5 +1,5 @@
 //! Directory snapshots and width-independent browsing state.
-use crate::preferences::{SortField, ViewSettings};
+use crate::preferences::{SortField, ViewMode, ViewSettings};
 use crate::search::SearchResults;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -26,6 +26,59 @@ pub struct Entry {
     #[serde(with = "crate::time_serde")]
     pub modified: Option<SystemTime>,
     directory: bool,
+    /// What this person may do with the item (its target, for a link), from
+    /// its mode bits. Entries saved before this was recorded allow both.
+    #[serde(default)]
+    pub access: Access,
+}
+
+/// Whether the current user may read and change an item, as its permission
+/// bits say. Access-control lists are not consulted: it marks emblems only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Access {
+    pub readable: bool,
+    pub writable: bool,
+}
+
+impl Default for Access {
+    fn default() -> Self {
+        Self {
+            readable: true,
+            writable: true,
+        }
+    }
+}
+
+impl Access {
+    fn of(metadata: &fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        static IDENTITY: std::sync::OnceLock<(u32, Vec<u32>)> = std::sync::OnceLock::new();
+        let (user, groups) = IDENTITY.get_or_init(|| {
+            let mut groups: Vec<u32> = rustix::process::getgroups()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|group| group.as_raw())
+                .collect();
+            groups.push(rustix::process::getegid().as_raw());
+            (rustix::process::geteuid().as_raw(), groups)
+        });
+        if *user == 0 {
+            return Self::default();
+        }
+        let mode = metadata.mode();
+        let bits = if metadata.uid() == *user {
+            mode >> 6
+        } else if groups.contains(&metadata.gid()) {
+            mode >> 3
+        } else {
+            mode
+        };
+        Self {
+            readable: bits & 0o4 != 0,
+            writable: bits & 0o2 != 0,
+        }
+    }
 }
 
 impl Entry {
@@ -41,14 +94,24 @@ impl Entry {
         } else {
             EntryKind::Other
         };
-        let directory = metadata.is_dir()
-            || (metadata.is_symlink() && fs::metadata(&path).is_ok_and(|m| m.is_dir()));
+        // A link's own mode means nothing; its target's says what it allows.
+        let target = metadata
+            .is_symlink()
+            .then(|| fs::metadata(&path).ok())
+            .flatten();
+        let directory = metadata.is_dir() || target.as_ref().is_some_and(fs::Metadata::is_dir);
+        let access = if metadata.is_symlink() {
+            target.as_ref().map(Access::of).unwrap_or_default()
+        } else {
+            Access::of(&metadata)
+        };
         Ok(Self {
             path,
             kind,
             size: metadata.len(),
             modified: metadata.modified().ok(),
             directory,
+            access,
         })
     }
 
@@ -177,10 +240,12 @@ fn sort_entries(entries: &mut [Entry], view: &ViewSettings) {
         };
         (primary, entry.name().to_lowercase(), entry.path.clone())
     };
+    // Folders lead unless the view mixes them with files in one order.
+    let group = |entry: &Entry| view.folders_first && !entry.is_directory();
     if view.descending {
-        entries.sort_by_cached_key(|entry| (!entry.is_directory(), std::cmp::Reverse(key(entry))));
+        entries.sort_by_cached_key(|entry| (group(entry), std::cmp::Reverse(key(entry))));
     } else {
-        entries.sort_by_cached_key(|entry| (!entry.is_directory(), key(entry)));
+        entries.sort_by_cached_key(|entry| (group(entry), key(entry)));
     }
 }
 
@@ -224,6 +289,9 @@ pub struct Browser {
     history: Vec<PathBuf>,
     history_index: usize,
     view: ViewSettings,
+    /// Listings of the folders opened in place in List view's tree, by path.
+    /// Only those reachable through open folders from this folder are shown.
+    tree: BTreeMap<PathBuf, Directory>,
 }
 
 impl Browser {
@@ -242,6 +310,7 @@ impl Browser {
             history,
             history_index: 0,
             view: ViewSettings::default(),
+            tree: BTreeMap::new(),
         }
     }
 
@@ -259,8 +328,102 @@ impl Browser {
         if let Some(search) = self.search.as_mut() {
             sort_entries(&mut search.results.entries, &view);
         }
+        for directory in self.tree.values_mut() {
+            sort_entries(&mut directory.entries, &view);
+        }
+        let shown = self.tree_view();
         self.view = view;
+        if shown != self.tree_view() {
+            self.prune_selection();
+        }
         Ok(())
+    }
+
+    /// Whether folders open in place, as a tree: List view asked for it, and
+    /// no search replaces the folder's listing.
+    pub fn tree_view(&self) -> bool {
+        self.view.mode == ViewMode::List && self.view.tree && self.search.is_none()
+    }
+
+    /// Whether the folder at `path` is open in the tree.
+    pub fn is_expanded(&self, path: &Path) -> bool {
+        self.tree_view() && self.tree.contains_key(path)
+    }
+
+    /// How deep `path` sits below this folder in the tree; 0 for its own items.
+    pub fn depth(&self, path: &Path) -> usize {
+        if !self.tree_view() {
+            return 0;
+        }
+        path.strip_prefix(self.path()).map_or(0, |relative| {
+            relative.components().count().saturating_sub(1)
+        })
+    }
+
+    /// Open a listed folder in place with its prepared listing. A folder that
+    /// is not listed, or a listing for elsewhere, changes nothing.
+    pub fn expand(&mut self, mut directory: Directory) -> bool {
+        if !self.tree_view()
+            || !self
+                .visible_entries()
+                .iter()
+                .any(|entry| entry.path == directory.path && entry.is_directory())
+        {
+            return false;
+        }
+        sort_entries(&mut directory.entries, &self.view);
+        self.tree.insert(directory.path.clone(), directory);
+        true
+    }
+
+    /// Replace an open folder's listing after its contents changed.
+    pub fn refresh_expanded(&mut self, mut directory: Directory) -> bool {
+        let Some(old) = self.tree.get_mut(&directory.path) else {
+            return false;
+        };
+        sort_entries(&mut directory.entries, &self.view);
+        *old = directory;
+        self.prune_selection();
+        true
+    }
+
+    /// Close an open folder and every folder open inside it. Selection inside
+    /// moves to the closed folder, so the keyboard keeps its place.
+    pub fn collapse(&mut self, path: &Path) {
+        self.tree.retain(|open, _| !open.starts_with(path));
+        let inside = |candidate: &Path| candidate != path && candidate.starts_with(path);
+        let folder = self.active_state_mut();
+        let moved = folder.focus.as_deref().is_some_and(inside)
+            || folder.selected.iter().any(|selected| inside(selected));
+        folder.selected.retain(|selected| !inside(selected));
+        if moved {
+            folder.selected.insert(path.to_owned());
+            folder.focus = Some(path.to_owned());
+            folder.anchor = Some(path.to_owned());
+        }
+        self.prune_selection();
+    }
+
+    /// The listings of the folders open in the tree.
+    pub fn expanded_listings(&self) -> impl Iterator<Item = &Directory> {
+        self.tree.values()
+    }
+
+    /// The open folders, outermost first, to read again on a refresh.
+    pub fn expanded(&self) -> Vec<PathBuf> {
+        self.tree.keys().cloned().collect()
+    }
+
+    /// Whether `path` is one of the rows this folder lists, at any depth.
+    pub fn lists(&self, path: &Path) -> bool {
+        path.parent() == Some(self.path())
+            || self.search.is_some()
+            || self.tree_view()
+                && path.starts_with(self.path())
+                && self
+                    .visible_entries()
+                    .iter()
+                    .any(|entry| entry.path == path)
     }
 
     pub fn path(&self) -> &Path {
@@ -326,10 +489,27 @@ impl Browser {
                 .filter(|entry| self.show_hidden || !entry.is_hidden())
                 .collect()
         } else {
-            self.directory.visible_with(self.show_hidden, |path| {
+            let listed = self.directory.visible_with(self.show_hidden, |path| {
                 self.folder.navigation_child.as_deref() == Some(path)
                     || self.folder.revealed.contains(path)
-            })
+            });
+            if !self.tree_view() || self.tree.is_empty() {
+                return listed;
+            }
+            let mut rows = Vec::with_capacity(listed.len());
+            self.flatten(listed, &mut rows);
+            rows
+        }
+    }
+
+    /// `entries` with each open folder's own rows after it, depth first.
+    fn flatten<'a>(&'a self, entries: Vec<&'a Entry>, rows: &mut Vec<&'a Entry>) {
+        for entry in entries {
+            rows.push(entry);
+            if let Some(directory) = self.tree.get(&entry.path).filter(|_| entry.is_directory()) {
+                let revealed = |path: &Path| self.folder.revealed.contains(path);
+                self.flatten(directory.visible_with(self.show_hidden, revealed), rows);
+            }
         }
     }
 
@@ -507,6 +687,8 @@ impl Browser {
 
     fn install(&mut self, mut directory: Directory) {
         self.close_search();
+        // Another folder starts with its folders closed.
+        self.tree.clear();
         let previous = self.directory.path.clone();
         self.remembered
             .insert(previous.clone(), std::mem::take(&mut self.folder));

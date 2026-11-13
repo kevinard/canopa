@@ -27,6 +27,7 @@ mod folder_views;
 #[cfg(test)]
 mod folder_watch_tests;
 mod folder_watch_ui;
+mod hover;
 mod icons_ui;
 mod jobs_ui;
 mod listing_ui;
@@ -54,6 +55,7 @@ mod scrolling;
 #[cfg(test)]
 mod search_tests;
 mod search_ui;
+mod tab_strip;
 #[cfg(test)]
 mod tests;
 mod thumbnails_ui;
@@ -62,6 +64,7 @@ mod toolbar_layout;
 mod transfer_dialog;
 mod trash_restore;
 mod trash_ui;
+mod tree_ui;
 mod view;
 
 use crate::{
@@ -252,8 +255,13 @@ struct BrowserWindow {
     /// The Properties side panel, when open beside this window's listing.
     properties: Option<properties_ui::Window>,
     width: f32,
+    height: f32,
     size_confirmed: bool,
     modifiers: keyboard::Modifiers,
+    /// Where the last secondary click landed, so its menu opens there.
+    pointer: Option<iced::Point>,
+    /// Where the tab bar last drew its tabs, for tabs dropped on the window.
+    tab_geometry: Arc<std::sync::Mutex<tab_strip::TabGeometry>>,
 }
 
 impl BrowserWindow {
@@ -290,6 +298,8 @@ struct Tab {
     list_epoch: u64,
     search_worker: Option<search_ui::Worker>,
     menu_after_load: Option<u64>,
+    /// Where the menu opened after that load should appear.
+    menu_anchor: Option<iced::Point>,
     needs_refresh: bool,
     /// Outside changes arrived while this tab could not rescan.
     watch_stale: bool,
@@ -389,6 +399,36 @@ enum Message {
     Properties(properties_ui::Event),
     FolderCounts(folder_counts::Counted),
     Resize(resize::Event),
+    /// A secondary button press at this position in a browser window.
+    Pointer(window::Id, iced::Point),
+    /// Close the tab with this id in a window, active or not.
+    CloseTab(window::Id, u64),
+    /// Open a folder in a new tab of a window, and show it.
+    OpenTab(window::Id, PathBuf),
+    /// Tab `u64` of a window moves to the reading-order position `usize`.
+    MoveTab(window::Id, u64, usize),
+    /// Tab `u64` leaves its window for a new one.
+    DetachTab(window::Id, u64),
+    /// A tab dropped on window `to` moves there, to reading-order `index`.
+    TransferTab {
+        from: window::Id,
+        tab: u64,
+        to: window::Id,
+        index: usize,
+    },
+    /// A mouse's Back (false) or Forward (true) button in a window.
+    MouseHistory(window::Id, bool),
+    /// A click on a folder's empty space: nothing stays selected.
+    Deselect(window::Id, u64, u64),
+    /// Open or close a folder in List view's tree: window, tab, navigation, folder.
+    Tree(window::Id, u64, u64, PathBuf),
+    TreeLoaded {
+        window: window::Id,
+        tab: u64,
+        revision: u64,
+        refresh: bool,
+        result: Arc<Result<Directory, String>>,
+    },
     ActivationPoll,
     MediaPoll,
     ActivityPoll,
@@ -522,6 +562,9 @@ impl Desktop {
             recovery_destination: None,
             accessibility: None,
         };
+        desktop
+            .icons
+            .set_special_folders(&desktop.personal_folders, &desktop.home);
         let icons = desktop.icons.refresh(&desktop.configuration);
         let initial = paths.map_or_else(Task::none, |paths| {
             desktop.new_window(if paths.is_empty() {
@@ -559,6 +602,7 @@ impl Desktop {
             list_epoch: 0,
             search_worker: None,
             menu_after_load: None,
+            menu_anchor: None,
             needs_refresh: false,
             watch_stale: false,
             watch_scanning: false,
@@ -592,17 +636,6 @@ impl Desktop {
         targets: Vec<crate::presentation::BrowserTarget>,
         preview: bool,
     ) -> Task<Message> {
-        let settings = window::Settings {
-            size: Size::new(1000.0, 640.0),
-            min_size: Some(Size::new(280.0, 220.0)),
-            exit_on_close_request: false,
-            platform_specific: window::settings::PlatformSpecific {
-                application_id: "org.canopa.Files".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let (id, opened) = window::open(settings);
         let tabs = targets
             .into_iter()
             .map(|target| {
@@ -616,6 +649,28 @@ impl Desktop {
                 tab
             })
             .collect();
+        let (id, opened) = self.open_browser_window(tabs);
+        let target = self.active(id).unwrap().target.clone();
+        Task::batch([
+            opened,
+            self.navigate(id, target, Navigation::Visit, None),
+            self.present_initial_recovery(),
+        ])
+    }
+
+    /// A new browser window holding `tabs`, the first shown. The task opens it.
+    fn open_browser_window(&mut self, tabs: Vec<Tab>) -> (window::Id, Task<Message>) {
+        let settings = window::Settings {
+            size: Size::new(1000.0, 640.0),
+            min_size: Some(Size::new(280.0, 220.0)),
+            exit_on_close_request: false,
+            platform_specific: window::settings::PlatformSpecific {
+                application_id: "org.canopa.Files".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let (id, opened) = window::open(settings);
         self.drag.open(id);
         self.windows.insert(
             id,
@@ -627,19 +682,20 @@ impl Desktop {
                     == crate::interface::PropertiesDisplay::Panel)
                     .then(|| properties_ui::Window::pending(Vec::new())),
                 width: 1000.0,
+                height: 700.0,
                 size_confirmed: false,
                 modifiers: keyboard::Modifiers::default(),
+                pointer: None,
+                tab_geometry: Arc::default(),
             },
         );
-        let target = self.active(id).unwrap().target.clone();
-        Task::batch([
+        (
+            id,
             opened.then(move |window| {
                 window::drag_drop::enable(window)
                     .map(move |endpoint| Message::Drag(drag_ui::Event::Enabled(window, endpoint)))
             }),
-            self.navigate(id, target, Navigation::Visit, None),
-            self.present_initial_recovery(),
-        ])
+        )
     }
 
     /// How strongly browser `id` recedes: fully behind its own prompt, partly
@@ -709,6 +765,7 @@ impl Desktop {
         tab.error = None;
         tab.location = None;
         tab.menu_after_load = None;
+        tab.menu_anchor = None;
         tab.target = target.clone();
         tab.needs_refresh = false;
         tab.supersede_watch();
@@ -752,6 +809,54 @@ impl Desktop {
                 Task::none()
             }
             Message::Resize(event) => self.resize_event(event),
+            Message::Tree(id, tab, revision, path) => self.toggle_tree(id, tab, revision, path),
+            Message::CloseTab(id, tab) => return self.close_tab(id, tab),
+            Message::OpenTab(id, path) => return self.open_tab(id, path),
+            Message::MoveTab(id, tab, index) => self.move_tab(id, tab, index),
+            Message::DetachTab(id, tab) => return self.detach_tab(id, tab),
+            Message::TransferTab {
+                from,
+                tab,
+                to,
+                index,
+            } => return self.transfer_tab(from, tab, to, index),
+            Message::MouseHistory(id, forward) => {
+                if self.windows.contains_key(&id) {
+                    return self.command(
+                        id,
+                        if forward {
+                            Command::Forward
+                        } else {
+                            Command::Back
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::Deselect(id, tab, revision) => {
+                if let Some(current) = self.active_mut(id).filter(|current| {
+                    current.id == tab && current.revision == revision && !current.loading
+                }) {
+                    current.location = None;
+                    if let Some(browser) = current.browser.as_mut() {
+                        browser.clear_selection();
+                    }
+                }
+                Task::none()
+            }
+            Message::TreeLoaded {
+                window,
+                tab,
+                revision,
+                refresh,
+                result,
+            } => self.tree_loaded(window, tab, revision, refresh, result),
+            Message::Pointer(id, point) => {
+                if let Some(window) = self.windows.get_mut(&id) {
+                    window.pointer = Some(point);
+                }
+                Task::none()
+            }
             Message::Drag(event) => self.drag_event(event),
             Message::Key(_, keyboard::Key::Named(keyboard::key::Named::Escape), _, _)
                 if self.cancel_drag() =>
@@ -1163,6 +1268,9 @@ impl Desktop {
             for tab in &window.tabs {
                 if let Some(browser) = &tab.browser {
                     lists.push(&browser.directory().entries);
+                    for directory in browser.expanded_listings() {
+                        lists.push(&directory.entries);
+                    }
                     if let Some(search) = browser.search() {
                         lists.push(&search.entries);
                     }
@@ -1201,6 +1309,16 @@ impl Desktop {
             | Message::Properties(_)
             | Message::FolderCounts(_)
             | Message::Resize(_)
+            | Message::Pointer(..)
+            | Message::Tree(..)
+            | Message::Deselect(..)
+            | Message::MouseHistory(..)
+            | Message::CloseTab(..)
+            | Message::OpenTab(..)
+            | Message::MoveTab(..)
+            | Message::DetachTab(..)
+            | Message::TransferTab { .. }
+            | Message::TreeLoaded { .. }
             | Message::Accessibility(_)
             | Message::Drag(_) => {}
             Message::ConfigurationPoll => return self.configuration_poll(),
@@ -1250,6 +1368,7 @@ impl Desktop {
             Message::Resized(id, size) => {
                 if let Some(window) = self.windows.get_mut(&id) {
                     window.width = size.width;
+                    window.height = size.height;
                     window.size_confirmed = true;
                 }
                 // Column count changes reorder the ordinary Row's widget tree.
@@ -1336,8 +1455,11 @@ impl Desktop {
                             },
                         );
                         let menu = tab.menu_after_load.take() == Some(revision) && active_tab;
+                        let anchor = tab.menu_anchor.take();
                         let menu = if menu {
-                            self.action_event(actions_ui::Event::Menu(id))
+                            let task = self.action_event(actions_ui::Event::Context(id));
+                            self.anchor_action_menu(id, anchor);
+                            task
                         } else {
                             Task::none()
                         };
@@ -1356,6 +1478,7 @@ impl Desktop {
                             menu,
                             refresh,
                             self.present_requested_preview(id),
+                            self.reload_tree(id),
                         ]);
                     }
                     Err(error) => {
@@ -1397,10 +1520,23 @@ impl Desktop {
                 let Some(tab) = self.active_mut(id) else {
                     return Task::none();
                 };
+                // A folder in a parent column opens, as it would in that column's
+                // own listing; a file there selects it in its folder.
+                let opens_folder = mode == SelectionMode::Replace
+                    && path.parent().is_some_and(|parent| {
+                        tab.columns
+                            .get(parent)
+                            .and_then(|column| column.result.as_ref())
+                            .and_then(|result| result.as_ref().ok())
+                            .and_then(|directory| {
+                                directory.entries.iter().find(|entry| entry.path == path)
+                            })
+                            .is_some_and(crate::browse::Entry::is_directory)
+                    });
                 if let Some(browser) = tab.browser.as_mut() {
-                    if browser.search().is_some() || path.parent() == Some(browser.path()) {
+                    if browser.lists(&path) {
                         browser.select(&path, mode);
-                    } else if path.starts_with(browser.path()) {
+                    } else if path.starts_with(browser.path()) || opens_folder {
                         return self.navigate(id, path, Navigation::Visit, None);
                     } else if let Some(parent) = path.parent() {
                         return self.navigate(id, parent.to_owned(), Navigation::Visit, Some(path));
@@ -1821,23 +1957,11 @@ impl Desktop {
             Command::NewWindow => return self.new_window(vec![tab.path().to_owned()]),
             Command::NewTab => {
                 let path = tab.path().to_owned();
-                let tab = self.new_tab(path.clone());
-                let window = self.windows.get_mut(&id).unwrap();
-                window.tabs[window.active].columns.clear();
-                window.tabs[window.active].preview_after_load = None;
-                window.tabs.push(tab);
-                window.active = window.tabs.len() - 1;
-                return self.navigate(id, path, Navigation::Visit, None);
+                return self.open_tab(id, path);
             }
             Command::CloseTab => {
-                let window = self.windows.get_mut(&id).unwrap();
-                if window.tabs.len() == 1 {
-                    return self.update(Message::Close(id));
-                }
-                window.tabs.remove(window.active);
-                window.active = window.active.min(window.tabs.len() - 1);
-                let index = window.active;
-                return self.update(Message::SwitchTab(id, index));
+                let tab = tab.id;
+                return self.close_tab(id, tab);
             }
             Command::NextTab | Command::PreviousTab => {
                 let window = self.windows.get(&id).unwrap();
@@ -1851,7 +1975,180 @@ impl Desktop {
                     % count;
                 return self.update(Message::SwitchTab(id, next));
             }
+            Command::MoveTabLeft | Command::MoveTabRight => {
+                let window = self.windows.get(&id).unwrap();
+                let index = if command == Command::MoveTabLeft {
+                    window.active.checked_sub(1)
+                } else {
+                    Some(window.active + 1).filter(|index| *index < window.tabs.len())
+                };
+                if let Some(index) = index {
+                    let tab = tab.id;
+                    return self.move_tab(id, tab, index);
+                }
+            }
+            Command::MoveTabToWindow => {
+                let tab = tab.id;
+                return self.detach_tab(id, tab);
+            }
             _ => {}
+        }
+        Task::none()
+    }
+
+    /// Open `path` in a new tab after the others, and show it.
+    fn open_tab(&mut self, id: window::Id, path: PathBuf) -> Task<Message> {
+        if !self.windows.contains_key(&id) {
+            return Task::none();
+        }
+        let tab = self.new_tab(path.clone());
+        let window = self.windows.get_mut(&id).unwrap();
+        window.tabs[window.active].columns.clear();
+        window.tabs[window.active].preview_after_load = None;
+        window.tabs.push(tab);
+        window.active = window.tabs.len() - 1;
+        self.navigate(id, path, Navigation::Visit, None)
+    }
+
+    /// Move tab `tab` of window `id` to position `index`, keeping the shown tab.
+    fn move_tab(&mut self, id: window::Id, tab: u64, index: usize) -> Task<Message> {
+        let Some(window) = self.windows.get_mut(&id) else {
+            return Task::none();
+        };
+        let Some(from) = window.tabs.iter().position(|candidate| candidate.id == tab) else {
+            return Task::none();
+        };
+        let index = index.min(window.tabs.len() - 1);
+        let shown = window.tabs[window.active].id;
+        let moved = window.tabs.remove(from);
+        window.tabs.insert(index, moved);
+        window.active = window
+            .tabs
+            .iter()
+            .position(|candidate| candidate.id == shown)
+            .unwrap_or_default();
+        Task::none()
+    }
+
+    /// Give tab `tab` of window `id` a window of its own, with its history and
+    /// selection. Its folder is read again there: work still running for it
+    /// answers the old window.
+    fn detach_tab(&mut self, id: window::Id, tab: u64) -> Task<Message> {
+        let Some(window) = self.windows.get_mut(&id) else {
+            return Task::none();
+        };
+        let Some(index) = window.tabs.iter().position(|candidate| candidate.id == tab) else {
+            return Task::none();
+        };
+        if window.tabs.len() == 1 {
+            return Task::none();
+        }
+        let shown = index == window.active;
+        let mut moved = window.tabs.remove(index);
+        if index < window.active || window.active >= window.tabs.len() {
+            window.active = window.active.saturating_sub(1);
+        }
+        let neighbour = if shown {
+            let index = window.active;
+            self.update(Message::SwitchTab(id, index))
+        } else {
+            Task::none()
+        };
+        moved.columns.clear();
+        moved.location = None;
+        let path = moved.path().to_owned();
+        let (new, opened) = self.open_browser_window(vec![moved]);
+        let navigation = if self.active(new).is_some_and(|tab| tab.browser.is_some()) {
+            Navigation::Refresh
+        } else {
+            Navigation::Visit
+        };
+        Task::batch([
+            neighbour,
+            opened,
+            self.navigate(new, path, navigation, None),
+        ])
+    }
+
+    /// Move tab `tab` of window `from` into window `to` at `index`, and show
+    /// it there; a window left without tabs closes. Its folder is read again
+    /// in its new window, as for a detached tab.
+    fn transfer_tab(
+        &mut self,
+        from: window::Id,
+        tab: u64,
+        to: window::Id,
+        index: usize,
+    ) -> Task<Message> {
+        if from == to {
+            return self.move_tab(from, tab, index);
+        }
+        if !self.windows.contains_key(&to) {
+            return Task::none();
+        }
+        let Some(window) = self.windows.get_mut(&from) else {
+            return Task::none();
+        };
+        let Some(position) = window.tabs.iter().position(|candidate| candidate.id == tab) else {
+            return Task::none();
+        };
+        let shown = position == window.active;
+        let mut moved = window.tabs.remove(position);
+        let emptied = window.tabs.is_empty();
+        if !emptied && (position < window.active || window.active >= window.tabs.len()) {
+            window.active = window.active.saturating_sub(1);
+        }
+        let neighbour = if emptied {
+            Task::none()
+        } else if shown {
+            let index = self.windows[&from].active;
+            self.update(Message::SwitchTab(from, index))
+        } else {
+            Task::none()
+        };
+        moved.columns.clear();
+        moved.location = None;
+        let path = moved.path().to_owned();
+        let navigation = if moved.browser.is_some() {
+            Navigation::Refresh
+        } else {
+            Navigation::Visit
+        };
+        let target = self.windows.get_mut(&to).unwrap();
+        target.tabs[target.active].columns.clear();
+        target.tabs[target.active].preview_after_load = None;
+        let index = index.min(target.tabs.len());
+        target.tabs.insert(index, moved);
+        target.active = index;
+        let shown_there = self.navigate(to, path, navigation, None);
+        let close = if emptied {
+            self.update(Message::Close(from))
+        } else {
+            Task::none()
+        };
+        Task::batch([neighbour, shown_there, close, window::gain_focus(to)])
+    }
+
+    /// Close one tab; the last one closes its window. Closing the shown tab
+    /// shows its neighbour.
+    fn close_tab(&mut self, id: window::Id, tab: u64) -> Task<Message> {
+        let Some(window) = self.windows.get_mut(&id) else {
+            return Task::none();
+        };
+        let Some(index) = window.tabs.iter().position(|candidate| candidate.id == tab) else {
+            return Task::none();
+        };
+        if window.tabs.len() == 1 {
+            return self.update(Message::Close(id));
+        }
+        let shown = index == window.active;
+        window.tabs.remove(index);
+        if index < window.active || window.active >= window.tabs.len() {
+            window.active = window.active.saturating_sub(1);
+        }
+        if shown {
+            let index = window.active;
+            return self.update(Message::SwitchTab(id, index));
         }
         Task::none()
     }
@@ -1884,6 +2181,16 @@ impl Desktop {
             return Task::none();
         }
         let name = key_name(&key);
+        // In List view's tree, Left and Right close and open folders in place.
+        if matches!(name.as_str(), "Left" | "Right")
+            && !modifiers.control()
+            && !modifiers.alt()
+            && !modifiers.shift()
+            && !modifiers.logo()
+            && let Some(task) = self.tree_key(id, &name)
+        {
+            return task;
+        }
         if let Some(chord) = key_chord(&key, modifiers)
             && let Some(command) = self.configuration.settings.command_for(&chord)
         {
@@ -1900,9 +2207,18 @@ impl Desktop {
             && !modifiers.logo()
             && self.active(id).is_some_and(|tab| tab.location.is_none())
         {
-            return self.action_event(actions_ui::Event::Menu(id));
+            return self.action_event(actions_ui::Event::Context(id));
         }
         if name == "Escape" {
+            // Escape in the Properties panel's name field gives the edit up.
+            if let Some(panel) = self
+                .windows
+                .get_mut(&id)
+                .and_then(|window| window.properties.as_mut())
+                && panel.discard_name_edit()
+            {
+                return Task::none();
+            }
             if self
                 .active(id)
                 .is_some_and(|tab| tab.location.is_none() && tab.search.is_some())
@@ -2225,6 +2541,9 @@ impl Desktop {
             iced::event::listen_with(|event, status, id| match event {
                 Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => Some(Message::Drag(drag_ui::Event::NativePress(id))),
                 Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => Some(Message::Drag(drag_ui::Event::Release(id))),
+                // A mouse's own Back and Forward buttons go through history.
+                Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Back)) => Some(Message::MouseHistory(id, false)),
+                Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Forward)) => Some(Message::MouseHistory(id, true)),
                 Event::Window(window::Event::CloseRequested) => Some(Message::Close(id)),
                 Event::Window(window::Event::Resized(size)) => Some(Message::Resized(id, size)),
                 Event::Window(window::Event::Focused) => Some(Message::Focus(id, true)),

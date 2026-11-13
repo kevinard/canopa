@@ -266,21 +266,20 @@ impl State {
             .last()
             .is_some_and(|last| self.snapshot.jobs.iter().any(|job| job.id < last.id))
     }
+    /// The newest operation while it still matters: running, waiting or not
+    /// finished well. A finished one leaves the status bar; Operations keeps it.
     pub fn summary(&self) -> Option<String> {
         self.snapshot
             .jobs
             .iter()
             .max_by_key(|job| job.id)
+            .filter(|job| job.phase != Phase::Finished)
             .map(|job| {
-                if job.phase == Phase::Finished {
-                    fl!("files-recent-activity")
-                } else {
-                    fl!(
-                        "files-operation-summary",
-                        status = status(job.phase),
-                        operation = crate::history_labels::display(&job.title)
-                    )
-                }
+                fl!(
+                    "files-operation-summary",
+                    status = status(job.phase),
+                    operation = crate::history_labels::display(&job.title)
+                )
             })
     }
     pub fn starting(&self) -> bool {

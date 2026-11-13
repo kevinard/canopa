@@ -80,7 +80,9 @@ Left goes to the parent at every width. Explicitly opened hidden folders stay
 visible in their hierarchy, and going up selects the folder just left while
 other hidden files stay hidden. Ctrl+H toggles hidden files; explicitly hiding
 them clears the temporary parent-selection visibility. Space toggles the source
-window's independent Quick Look. Ctrl+N opens another browser, Ctrl+T opens a tab,
+window's independent Quick Look. Ctrl+N opens another browser, Ctrl+T opens a tab (drag
+tabs to reorder them, onto another window to move them there, or anywhere else
+to give one its own window),
 Ctrl+F searches filenames and Ctrl+J opens shared Operations. Ctrl+C/X/V copy,
 cut and paste files; Delete moves the selection to Trash. Shared Ctrl+Z undoes
 the latest recorded file operation. If reversing a rename/move or Trash would
@@ -251,7 +253,7 @@ files {
     view mode="columns" sort="name" descending=#false column-width=240 {
         details "size" "modified"
     }
-    toolbar "back" "forward" "parent" "location" "search" "quick-look"
+    toolbar "back" "forward" "parent" "location" "new-folder"
     sidebar "auto"
     places {
         place "home"
@@ -270,9 +272,18 @@ files {
 ```
 
 Toolbar IDs use command names such as `copy`, `new-folder`, `preferences` or
-`action:inspect-images`; exactly one `location` field stays present. Sidebar is
+`action:inspect-images`; exactly one `location` field stays present. Search
+is the location field's own button, and Quick Look has Space and the menus, so
+`search` and `quick-look` are not toolbar buttons and are skipped if listed.
+A toolbar without `new-folder` is written with `new-folder=#false`; one without
+either, saved when New Folder was always shown, gets it at its end. Places are
+`home`, `desktop`, `documents`, `downloads`, `music`, `pictures`, `videos`,
+`templates`, `public`, `filesystem`, `trash` and `recovery`. Sidebar is
 `auto`, `always` (when there is room) or `never`. View sort fields are `name`,
-`size`, `modified` and `kind`; details are `size`, `modified` and `kind`.
+`size`, `modified` and `kind`; details are `size`, `modified` and `kind`. Add
+`tree=#true` to `view` to open folders in place, as a tree, in List view, and
+`folders-first=#false` to sort folders and files together. Both apply to every
+folder rather than being remembered per folder.
 Shortcut aliases are checked together with custom actions. Selection, focus,
 Escape, context-menu and unmodified typing keys stay available. The editor lists
 all command IDs through their labels and records shortcuts directly.

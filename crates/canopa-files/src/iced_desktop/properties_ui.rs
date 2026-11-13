@@ -23,6 +23,17 @@ pub(super) enum Event {
     ToggleAdvanced(window::Id),
     /// Choose the application that opens `path`, from window `owner`.
     ChangeOpener(window::Id, PathBuf),
+    /// The name field of browser `id`'s side panel was edited.
+    NameEdited(window::Id, String),
+    /// Rename the side panel's item to the edited name.
+    Rename(window::Id),
+    /// The rename of the panel's item was prepared for the edited name.
+    RenamePrepared(
+        window::Id,
+        Arc<super::file_operations::Origin>,
+        String,
+        Result<crate::operation_jobs::PreparedRename, String>,
+    ),
 }
 
 pub(super) struct Window {
@@ -35,6 +46,12 @@ pub(super) struct Window {
     pub(super) access_open: bool,
     /// Numeric modes and identities appear only on request.
     advanced_open: bool,
+    /// The panel's name field while it differs from the item's name.
+    name_draft: Option<String>,
+    /// Why the last rename from the panel was refused.
+    name_error: Option<String>,
+    /// A rename from the panel is being prepared.
+    renaming: bool,
 }
 impl Window {
     /// Properties for `paths`, before they have been read.
@@ -46,7 +63,19 @@ impl Window {
             access_error: None,
             access_open: false,
             advanced_open: false,
+            name_draft: None,
+            name_error: None,
+            renaming: false,
         }
+    }
+}
+impl Window {
+    /// Forget an unsubmitted name edit; whether there was one.
+    pub(super) fn discard_name_edit(&mut self) -> bool {
+        let edited = self.name_draft.is_some() || self.name_error.is_some();
+        self.name_draft = None;
+        self.name_error = None;
+        edited
     }
 }
 impl Drop for Window {
@@ -452,9 +481,139 @@ impl Desktop {
                 Task::none()
             }
             Event::ChangeOpener(owner, path) => self.show_open_with_chooser(owner, vec![path]),
+            Event::NameEdited(id, name) => {
+                if let Some(panel) = self.panel_mut(id).filter(|panel| !panel.renaming) {
+                    panel.name_draft = Some(name);
+                    panel.name_error = None;
+                }
+                Task::none()
+            }
+            Event::Rename(id) => self.rename_from_panel(id),
+            Event::RenamePrepared(id, origin, name, result) => {
+                let Some(panel) = self.panel_mut(id) else {
+                    return Task::none();
+                };
+                panel.renaming = false;
+                let source = origin.selected.first().cloned();
+                if !origin.current(self) || source.is_none() {
+                    return Task::none();
+                }
+                let source = source.unwrap();
+                let prepared = match result {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        if let Some(panel) = self.panel_mut(id) {
+                            panel.name_error = Some(error);
+                        }
+                        return Task::none();
+                    }
+                };
+                let destination = source.with_file_name(&name);
+                let result = self
+                    .file_operations
+                    .service
+                    .as_ref()
+                    .ok_or_else(|| std::io::Error::other(fl!("files-operation-queue-unavailable")))
+                    .and_then(|service| service.submit_rename(prepared, name.into()));
+                if let Some(panel) = self.panel_mut(id) {
+                    panel.name_draft = None;
+                }
+                self.await_file_admission(
+                    result,
+                    super::file_operations::Submission {
+                        origin: Some(origin),
+                        owner: id,
+                        dialog: None,
+                        affected: vec![destination.clone(), source],
+                        reveal: Some(destination),
+                        refresh_all: false,
+                    },
+                )
+            }
             Event::ClosePanel(id) => {
                 if let Some(window) = self.windows.get_mut(&id) {
                     window.properties = None;
+                }
+                Task::none()
+            }
+        }
+    }
+
+    fn panel_mut(&mut self, id: window::Id) -> Option<&mut Window> {
+        self.windows
+            .get_mut(&id)
+            .and_then(|window| window.properties.as_mut())
+    }
+
+    /// Rename the one selected item shown in browser `id`'s side panel, through
+    /// the same prepared, undoable operation as the Rename dialog.
+    fn rename_from_panel(&mut self, id: window::Id) -> Task<Message> {
+        let Some(panel) = self
+            .windows
+            .get(&id)
+            .and_then(|window| window.properties.as_ref())
+        else {
+            return Task::none();
+        };
+        let (Some(name), [path]) = (panel.name_draft.clone(), panel.paths.as_slice()) else {
+            return Task::none();
+        };
+        let path = path.clone();
+        if panel.renaming || path.file_name() == Some(std::ffi::OsStr::new(&name)) {
+            if let Some(panel) = self.panel_mut(id) {
+                panel.name_draft = None;
+            }
+            return Task::none();
+        }
+        let invalid =
+            name.is_empty() || matches!(name.as_str(), "." | "..") || name.contains(['/', '\0']);
+        let origin = super::file_operations::Origin::capture(self, id)
+            .filter(|origin| origin.selected == [path.clone()]);
+        let refusal = if invalid {
+            Some(fl!("files-name-invalid"))
+        } else if !self.file_operations.ready() || origin.is_none() {
+            Some(fl!("files-operation-queue-unavailable"))
+        } else {
+            None
+        };
+        if let Some(refusal) = refusal {
+            if let Some(panel) = self.panel_mut(id) {
+                panel.name_error = Some(refusal);
+            }
+            return Task::none();
+        }
+        let origin = origin.unwrap();
+        let result = self
+            .file_operations
+            .service
+            .as_ref()
+            .unwrap()
+            .prepare_rename(path, Some(origin.binding()));
+        match result {
+            Ok(receiver) => {
+                if let Some(panel) = self.panel_mut(id) {
+                    panel.renaming = true;
+                    panel.name_error = None;
+                }
+                Task::perform(
+                    async move {
+                        receiver
+                            .await
+                            .unwrap_or_else(|_| Err(fl!("files-rename-worker-stopped")))
+                    },
+                    move |result| {
+                        Message::Properties(Event::RenamePrepared(
+                            id,
+                            origin.clone(),
+                            name.clone(),
+                            result,
+                        ))
+                    },
+                )
+            }
+            Err(error) => {
+                if let Some(panel) = self.panel_mut(id) {
+                    panel.name_error = Some(error.to_string());
                 }
                 Task::none()
             }
@@ -836,6 +995,14 @@ fn access_section<'a>(
         line(fl!("files-properties-others"), None, 0),
     ]
     .spacing(10);
+    if metadata.kind == crate::browse::EntryKind::File {
+        access = access.push(executable_toggle(
+            desktop,
+            &item.filesystem.path,
+            metadata,
+            if stacked { size + 1.0 } else { body_size },
+        ));
+    }
     // Numeric modes and identities are for those who ask for them.
     let toggle = Message::Properties(Event::ToggleAdvanced(owner));
     access = access.push(
@@ -1107,17 +1274,14 @@ pub(super) fn panel<'a>(
                 .font(font)
                 .size(size),
             iced::widget::tooltip::Position::Bottom,
-        ),
+        )
+        .padding(6)
+        .style(super::chrome::tooltip_style),
     ]
     .align_y(iced::Alignment::Center);
     let identity = column![
         iced::widget::container(symbol).center_x(Length::Fill),
-        text(title)
-            .font(bold)
-            .size(appearance.typography().body_size.px() + 2.0)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center)
-            .wrapping(text::Wrapping::WordOrGlyph),
+        name_field(desktop, id, properties, title, bold),
     ]
     .spacing(10);
     let _ = muted;
@@ -1139,6 +1303,117 @@ pub(super) fn panel<'a>(
     .width(PANEL_WIDTH)
     .height(Length::Fill)
     .into()
+}
+
+/// The panel's item name: a field that renames the one selected item when
+/// Enter is pressed, or plain text for the open folder and several items.
+fn name_field<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    properties: &'a Window,
+    title: String,
+    font: iced::Font,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let size = appearance.typography().body_size.px() + 2.0;
+    let current_folder = desktop
+        .active(id)
+        .and_then(|tab| tab.browser.as_ref())
+        .map(Browser::path);
+    let renameable = match (properties.paths.as_slice(), properties.result.as_deref()) {
+        ([path], Some(Ok(items))) => {
+            Some(path.as_path()) != current_folder
+                && items
+                    .first()
+                    .is_some_and(|item| item.filesystem.metadata.is_ok())
+                && desktop.file_operations.ready()
+        }
+        _ => false,
+    };
+    if !renameable {
+        return text(title)
+            .font(font)
+            .size(size)
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .wrapping(text::Wrapping::WordOrGlyph)
+            .into();
+    }
+    let value = properties.name_draft.clone().unwrap_or(title);
+    let mut input = iced::widget::text_input(&fl!("files-column-name"), &value)
+        .id(iced::widget::Id::from(format!(
+            "files-properties-name-{id:?}"
+        )))
+        .font(font)
+        .size(size)
+        .align_x(iced::alignment::Horizontal::Center)
+        .padding([4, 8])
+        .style(move |theme, status| super::view::input_style(appearance, theme, status));
+    if !properties.renaming {
+        input = input
+            .on_input(move |name| Message::Properties(Event::NameEdited(id, name)))
+            .on_submit(Message::Properties(Event::Rename(id)));
+    }
+    let node = super::accessibility_ui::Node::new(super::accessibility_ui::Role::TextInput)
+        .key("files-properties-name")
+        .label(fl!("files-name-full-name"))
+        .value(value.clone())
+        .invalid(properties.name_error.is_some())
+        .read_only(properties.renaming)
+        .on_text(move |name| Message::Properties(Event::NameEdited(id, name)));
+    let mut field = column![super::accessibility_ui::semantic(node, input)].spacing(4);
+    if let Some(error) = &properties.name_error {
+        field = field.push(
+            text(error.clone())
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px() + 1.0)
+                .color(chrome::ink(appearance, canopa_theme::ColorRole::Danger))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center)
+                .wrapping(text::Wrapping::WordOrGlyph),
+        );
+    } else if properties.name_draft.is_some() {
+        field = field.push(
+            text(fl!("files-properties-rename-hint"))
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px())
+                .color(chrome::ink(appearance, canopa_theme::ColorRole::Muted))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center),
+        );
+    }
+    field.into()
+}
+
+/// "Allow executing as a program" for a regular file: its owner turns the
+/// execute permission on for each class that may read the file, or off for all.
+fn executable_toggle<'a>(
+    desktop: &'a Desktop,
+    path: &Path,
+    metadata: &crate::file_properties::Metadata,
+    size: f32,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let permissions = metadata.permissions;
+    let executable = permissions & 0o111 != 0;
+    let mode = if executable {
+        permissions & !0o111
+    } else {
+        permissions | ((permissions & 0o444) >> 2) | 0o100
+    };
+    let owner = metadata.owner == rustix::process::getuid().as_raw();
+    let message = owner.then(|| Message::Properties(Event::SetAccess(path.to_owned(), mode)));
+    let toggle = message.clone();
+    let mut check = iced::widget::checkbox(executable)
+        .label(fl!("files-properties-executable"))
+        .font(canopa_ui::font(appearance))
+        .text_size(size)
+        .size(16)
+        .style(canopa_ui::checkbox_style);
+    if let Some(toggle) = toggle {
+        check = check.on_toggle(move |_| toggle.clone());
+    }
+    super::accessibility_ui::check_box("files-properties-executable", executable, message, check)
 }
 
 fn kind(item: &Item, metadata: &crate::file_properties::Metadata) -> String {

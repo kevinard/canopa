@@ -129,6 +129,140 @@ impl<'a> Form<'a> {
             .then_some(Event::Change(self.editor.target(), change));
         self.button(label, name, event, active, true)
     }
+    /// A small icon button acting on one list row, named for assistive
+    /// technologies by `label`.
+    fn icon_change(
+        &mut self,
+        icon: chrome::Icon,
+        label: String,
+        name: &str,
+        change: Change,
+        available: bool,
+    ) -> Element<'a, Message> {
+        let enabled = self.editor.enabled() && available;
+        let id = self.register(name, true, enabled);
+        let message =
+            enabled.then(|| Message::Preferences(Event::Change(self.editor.target(), change)));
+        let button = iced::widget::button(self.desktop.icons.chrome(
+            icon,
+            15.0,
+            if enabled { 0.9 } else { 0.35 },
+        ))
+        .padding(5)
+        .on_press_maybe(message.clone())
+        .style(|theme, status| {
+            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+            style.border.radius = 7.0.into();
+            style
+        });
+        let control = focus::control(id.clone(), message.clone(), self.appearance, button);
+        let control = super::accessibility_ui::named_button(
+            super::accessibility_ui::focus_key(&id),
+            label.clone(),
+            message,
+            control,
+        );
+        iced::widget::tooltip(
+            control,
+            text(label).size(self.appearance.typography().label_size.px()),
+            iced::widget::tooltip::Position::Bottom,
+        )
+        .padding(6)
+        .style(super::chrome::tooltip_style)
+        .into()
+    }
+    /// One list row: a leading icon, its label (a button when it selects the
+    /// row), its own controls at the end, and what opens under it.
+    fn list_row(
+        &self,
+        icon: Option<chrome::Icon>,
+        label: Element<'a, Message>,
+        controls: Vec<Element<'a, Message>>,
+        detail: Option<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
+        let icon = icon.map(|icon| self.desktop.icons.chrome(icon, 16.0, 0.85));
+        self.list_row_with(icon, label, controls, detail)
+    }
+    /// A place's row, with its themed icon; `None` is a bookmark.
+    fn place_row(
+        &self,
+        place: Option<PlaceKind>,
+        label: Element<'a, Message>,
+        controls: Vec<Element<'a, Message>>,
+        detail: Option<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
+        let icon = self.desktop.icons.place(
+            place.map_or(Some("folder"), super::icons_ui::place_icon_name),
+            None,
+            place.map_or(chrome::Icon::Folder, place_icon),
+            16.0,
+            1.0,
+        );
+        self.list_row_with(Some(icon), label, controls, detail)
+    }
+    fn list_row_with(
+        &self,
+        icon: Option<Element<'a, Message>>,
+        label: Element<'a, Message>,
+        controls: Vec<Element<'a, Message>>,
+        detail: Option<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
+        let mut line: Vec<Element<'a, Message>> = Vec::new();
+        if let Some(icon) = icon {
+            line.push(icon);
+        }
+        line.push(container(label).width(Length::Fill).into());
+        line.extend(controls);
+        let mut content = column![
+            canopa_ui::direction::row(line)
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+        ]
+        .spacing(8);
+        if let Some(detail) = detail {
+            content = content.push(detail);
+        }
+        let appearance = self.appearance;
+        container(content)
+            .padding([4, 8])
+            .width(Length::Fill)
+            .style(move |_| chrome::catalogue_row(appearance, false))
+            .into()
+    }
+    /// The row controls that move a row earlier or later and remove it.
+    fn row_edits(
+        &mut self,
+        name: &str,
+        index: usize,
+        count: usize,
+        removable: bool,
+        change: impl Fn(usize, super::preferences_editor::RowEdit) -> Change,
+    ) -> Vec<Element<'a, Message>> {
+        use super::preferences_editor::RowEdit;
+        vec![
+            self.icon_change(
+                chrome::Icon::Up,
+                fl!("files-preferences-earlier"),
+                &format!("{name}-{index}-earlier"),
+                change(index, RowEdit::Earlier),
+                index > 0,
+            ),
+            self.icon_change(
+                chrome::Icon::Down,
+                fl!("files-preferences-later"),
+                &format!("{name}-{index}-later"),
+                change(index, RowEdit::Later),
+                index + 1 < count,
+            ),
+            self.icon_change(
+                chrome::Icon::Close,
+                fl!("files-preferences-remove"),
+                &format!("{name}-{index}-remove"),
+                change(index, RowEdit::Remove),
+                removable,
+            ),
+        ]
+    }
     fn field(
         &mut self,
         label: &str,
@@ -257,42 +391,41 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         form.note(notice)
     })]
     .spacing(8);
-    // The prompt has its own fixed slot, so source/error notices never reparent fields.
-    let prompt: Element<'a, Message> = if let Some(confirmation) = editor.confirmation {
-        column![
-            form.note(if confirmation == Confirmation::Close {
+    // A blocking question is shown over the window, not inside the form.
+    let question = editor.confirmation.map(|confirmation| {
+        let buttons: Element<'a, Message> = row![
+            form.button(
+                fl!("files-preferences-keep-editing"),
+                "keep",
+                Some(Event::Confirm(id, false)),
+                false,
+                false
+            ),
+            form.button(
+                if confirmation == Confirmation::Close {
+                    fl!("files-preferences-discard")
+                } else {
+                    fl!("files-preferences-reload")
+                },
+                "discard",
+                Some(Event::Confirm(id, true)),
+                false,
+                false
+            )
+        ]
+        .spacing(8)
+        .into();
+        (
+            if confirmation == Confirmation::Close {
                 fl!("files-preferences-discard-question")
             } else {
                 fl!("files-preferences-reload-question")
-            }),
-            row![
-                form.button(
-                    fl!("files-preferences-keep-editing"),
-                    "keep",
-                    Some(Event::Confirm(id, false)),
-                    false,
-                    false
-                ),
-                form.button(
-                    if confirmation == Confirmation::Close {
-                        fl!("files-preferences-discard")
-                    } else {
-                        fl!("files-preferences-reload")
-                    },
-                    "discard",
-                    Some(Event::Confirm(id, true)),
-                    false,
-                    false
-                )
-            ]
-            .spacing(8)
-        ]
-        .spacing(8)
-        .into()
-    } else {
-        space().height(0).into()
-    };
-    body = body.push(container(prompt));
+            },
+            buttons,
+        )
+    });
+    // The old prompt slot stays, so notices never reparent fields.
+    body = body.push(container(space().height(0)));
     let page = match editor.page {
         Page::Views => views(&mut form, wide),
         Page::Toolbar => toolbar(&mut form),
@@ -394,6 +527,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     } else {
         vec![]
     };
+    let content = chrome::modal(desktop, content.into(), question);
     focus::group_with_shortcuts(content, form.order, form.reveal, default, shortcuts)
 }
 fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
@@ -443,6 +577,13 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         v.descending,
         Change::Descending(!v.descending),
     );
+    // Sorting applies to every view, so it lives with the order, not List view.
+    let folders_first = form.toggle(
+        &fl!("files-folders-first"),
+        "folders-first",
+        v.folders_first,
+        Change::FoldersFirst(!v.folders_first),
+    );
     let ordering = column![
         group(
             fl!("files-preferences-default-view"),
@@ -459,7 +600,7 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         ),
         group(
             fl!("files-preferences-sort-by"),
-            column![segment(sorts.wrap().into()), descending]
+            column![segment(sorts.wrap().into()), descending, folders_first]
                 .spacing(10)
                 .into()
         ),
@@ -493,6 +634,13 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             Change::Detail(detail, !checked),
         ));
     }
+    list_details = list_details.push(form.toggle(
+        &fl!("files-folder-tree"),
+        "tree",
+        v.tree,
+        Change::Tree(!v.tree),
+    ));
+
     let thumbnails = form.editor.draft.thumbnails;
     let mut show = row![].spacing(4);
     for policy in crate::interface::ThumbnailPolicy::ALL {
@@ -613,80 +761,115 @@ fn item_label(editor: &Editor, id: &str) -> String {
 }
 fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
-    let mut body = column![form.note(fl!("files-preferences-toolbar-note"))].spacing(8);
-    for (i, id) in editor.draft.toolbar.iter().enumerate() {
-        body = body.push(form.change(
-            item_label(editor, id),
-            &format!("toolbar-{i}"),
-            Change::SelectToolbar(i),
-            editor.selected_toolbar == Some(i),
-            true,
-        ));
+    let appearance = form.appearance;
+    // The toolbar as it will look, in its order.
+    let mut preview: Vec<Element<'a, Message>> = Vec::new();
+    for id in &editor.draft.toolbar {
+        let chip: Element<'a, Message> = if id == "location" {
+            container(form.note(fl!("files-preferences-location-field")))
+                .padding([4, 10])
+                .width(Length::Fill)
+                .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Background))
+                .into()
+        } else if let Some((icon, _)) = Command::from_id(id).and_then(super::toolbar::command_icon)
+        {
+            container(form.desktop.icons.chrome(icon, 16.0, 0.9))
+                .padding(5)
+                .into()
+        } else {
+            container(form.note(item_label(editor, id)))
+                .padding([4, 6])
+                .into()
+        };
+        preview.push(chip);
     }
-    let index = editor.selected_toolbar;
-    body = body.push(
-        row![
-            form.change(
-                fl!("files-preferences-earlier"),
-                "earlier",
-                Change::MoveToolbar(-1),
-                false,
-                index.is_some_and(|i| i > 0)
-            ),
-            form.change(
-                fl!("files-preferences-later"),
-                "later",
-                Change::MoveToolbar(1),
-                false,
-                index.is_some_and(|i| i + 1 < editor.draft.toolbar.len())
-            ),
-            form.change(
-                fl!("files-preferences-remove"),
-                "remove",
-                Change::RemoveToolbar,
-                false,
-                index.is_some_and(|i| editor.draft.toolbar[i] != "location")
-            )
-        ]
-        .spacing(4)
-        .wrap(),
-    );
-    body = body.push(form.field(
-        &fl!("files-preferences-find-command-to-add"),
-        "filter",
-        &editor.filter,
-        Field::Filter,
-    ));
-    let filter = editor.filter.to_lowercase();
-    let choices = Command::ALL
-        .iter()
-        .filter(|c| **c != Command::QuickLook)
-        .map(|c| c.id().to_owned())
-        .chain(
-            editor
-                .base
-                .actions
-                .iter()
-                .map(|a| format!("action:{}", a.id)),
+    let preview = container(
+        canopa_ui::direction::row(preview)
+            .spacing(6)
+            .align_y(iced::Alignment::Center),
+    )
+    .padding([6, 8])
+    .width(Length::Fill)
+    .style(move |_| chrome::bar(appearance, true));
+    let mut body = column![form.note(fl!("files-preferences-toolbar-preview")), preview].spacing(8);
+    let count = editor.draft.toolbar.len();
+    for (index, id) in editor.draft.toolbar.iter().enumerate() {
+        let icon = Command::from_id(id)
+            .and_then(super::toolbar::command_icon)
+            .map(|(icon, _)| icon);
+        let controls = form.row_edits(
+            "toolbar",
+            index,
+            count,
+            id != "location",
+            Change::ToolbarItem,
         );
-    for id in choices.filter(|id| {
-        !editor.draft.toolbar.contains(id)
-            && item_label(editor, id).to_lowercase().contains(&filter)
-    }) {
-        let name = format!("add-{id}");
-        body = body.push(form.change(
-            fl!("files-preferences-add-item", item = item_label(editor, &id)),
-            &name,
-            Change::AddToolbar(id),
-            false,
-            editor.draft.toolbar.len() < 64,
+        body = body.push(
+            form.list_row(
+                icon,
+                text(item_label(editor, id))
+                    .font(canopa_ui::font(appearance))
+                    .size(appearance.typography().body_size.px())
+                    .into(),
+                controls,
+                None,
+            ),
+        );
+    }
+    body = body.push(form.change(
+        fl!("files-preferences-add-button"),
+        "add-open",
+        Change::Picker(!editor.picker),
+        editor.picker,
+        editor.draft.toolbar.len() < 64,
+    ));
+    if editor.picker {
+        body = body.push(form.field(
+            &fl!("files-preferences-find-command-to-add"),
+            "filter",
+            &editor.filter,
+            Field::Filter,
         ));
+        let filter = editor.filter.to_lowercase();
+        let choices = Command::ALL
+            .iter()
+            .filter(|c| !c.never_on_toolbar())
+            .map(|c| c.id().to_owned())
+            .chain(
+                editor
+                    .base
+                    .actions
+                    .iter()
+                    .map(|a| format!("action:{}", a.id)),
+            );
+        for id in choices.filter(|id| {
+            !editor.draft.toolbar.contains(id)
+                && item_label(editor, id).to_lowercase().contains(&filter)
+        }) {
+            let name = format!("add-{id}");
+            let add = form.icon_change(
+                chrome::Icon::Plus,
+                fl!("files-preferences-add-item", item = item_label(editor, &id)),
+                &name,
+                Change::AddToolbar(id.clone()),
+                true,
+            );
+            let icon = Command::from_id(&id)
+                .and_then(super::toolbar::command_icon)
+                .map(|(icon, _)| icon);
+            body =
+                body.push(form.list_row(icon, form.note(item_label(editor, &id)), vec![add], None));
+        }
     }
     body.push(form.note(fl!("files-preferences-toolbar-footer")))
         .into()
 }
+
+/// The sidebar's places, in their order. A bookmark is a place you added for
+/// a folder of your own; its name and folder are edited in its row.
 fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
+    let appearance = form.appearance;
     let mut sidebar = row![].spacing(4);
     for (mode, label) in [
         (SidebarMode::Auto, fl!("files-preferences-sidebar-auto")),
@@ -702,138 +885,176 @@ fn locations<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
         ));
     }
     let mut body = column![
-        form.note(fl!("files-sidebar")),
+        form.note(fl!("files-preferences-show-sidebar")),
         sidebar.wrap(),
-        form.note(fl!("files-preferences-locations-and-bookmarks"))
+        form.note(fl!("files-preferences-places"))
     ]
     .spacing(8);
-    for (i, place) in editor.locations.iter().enumerate() {
-        body = body.push(form.change(
-            place.label(),
-            &format!("place-{i}"),
-            Change::SelectPlace(i),
-            editor.selected_place == Some(i),
-            true,
-        ));
-    }
-    let index = editor.selected_place;
-    body = body.push(
-        row![
-            form.change(
-                fl!("files-preferences-earlier"),
-                "earlier",
-                Change::MovePlace(-1),
-                false,
-                index.is_some_and(|i| i > 0)
-            ),
-            form.change(
-                fl!("files-preferences-later"),
-                "later",
-                Change::MovePlace(1),
-                false,
-                index.is_some_and(|i| i + 1 < editor.locations.len())
-            ),
-            form.change(
-                fl!("files-preferences-remove"),
-                "remove",
-                Change::RemovePlace,
-                false,
-                index.is_some()
-            ),
-        ]
-        .spacing(4)
-        .wrap(),
-    );
-    if let Some(Location::Bookmark { name, path }) = index.and_then(|i| editor.locations.get(i)) {
-        body = body
-            .push(form.field(
-                &fl!("files-preferences-bookmark-name"),
-                "bookmark-name",
-                name,
-                Field::BookmarkName,
-            ))
-            .push(form.field(
-                &fl!("files-preferences-bookmark-folder"),
-                "bookmark-path",
-                path,
-                Field::BookmarkPath,
-            ));
+    let count = editor.locations.len();
+    for (index, place) in editor.locations.iter().enumerate() {
+        let controls = form.row_edits("place", index, count, true, Change::PlaceItem);
+        let (icon, label, detail): (_, Element<'a, Message>, Option<Element<'a, Message>>) =
+            match place {
+                Location::Builtin(kind) => (
+                    Some(*kind),
+                    text(place.label())
+                        .font(canopa_ui::font(appearance))
+                        .size(appearance.typography().body_size.px())
+                        .into(),
+                    None,
+                ),
+                Location::Bookmark { name, path } => {
+                    let open = editor.selected_place == Some(index);
+                    // A bookmark's row opens its own name and folder fields.
+                    let label = form.change(
+                        name.clone(),
+                        &format!("place-{index}"),
+                        Change::SelectPlace(index),
+                        open,
+                        true,
+                    );
+                    let detail = open.then(|| {
+                        column![
+                            form.field(
+                                &fl!("files-preferences-bookmark-name"),
+                                "bookmark-name",
+                                name,
+                                Field::BookmarkName,
+                            ),
+                            form.field(
+                                &fl!("files-preferences-bookmark-folder"),
+                                "bookmark-path",
+                                path,
+                                Field::BookmarkPath,
+                            )
+                        ]
+                        .spacing(8)
+                        .into()
+                    });
+                    (None, label, detail)
+                }
+            };
+        body = body.push(form.place_row(icon, label, controls, detail));
     }
     body = body.push(form.change(
-        fl!("files-preferences-add-bookmark"),
-        "add-bookmark",
-        Change::AddBookmark,
-        false,
+        fl!("files-preferences-add-place"),
+        "add-open",
+        Change::Picker(!editor.picker),
+        editor.picker,
         editor.locations.len() < 256,
     ));
-    for kind in PlaceKind::ALL.iter().filter(|kind| {
-        !editor
-            .locations
-            .iter()
-            .any(|p| matches!(p,Location::Builtin(k)if k==*kind))
-    }) {
-        body = body.push(form.change(
-            fl!("files-preferences-add-item", item = kind.label()),
-            &format!("add-{}", kind.id()),
-            Change::AddPlace(*kind),
-            false,
-            editor.locations.len() < 256,
+    if editor.picker {
+        let add = form.icon_change(
+            chrome::Icon::Plus,
+            fl!("files-preferences-add-bookmark"),
+            "add-bookmark",
+            Change::AddBookmark,
+            true,
+        );
+        body = body.push(form.place_row(
+            None,
+            form.note(fl!("files-preferences-add-bookmark")),
+            vec![add],
+            None,
         ));
+        for kind in PlaceKind::ALL.iter().filter(|kind| {
+            !editor
+                .locations
+                .iter()
+                .any(|p| matches!(p, Location::Builtin(k) if k == *kind))
+        }) {
+            let add = form.icon_change(
+                chrome::Icon::Plus,
+                fl!("files-preferences-add-item", item = kind.label()),
+                &format!("add-{}", kind.id()),
+                Change::AddPlace(*kind),
+                true,
+            );
+            body = body.push(form.place_row(Some(*kind), form.note(kind.label()), vec![add], None));
+        }
     }
     body.push(form.note(fl!("files-preferences-locations-footer")))
         .into()
 }
+
+fn place_icon(kind: PlaceKind) -> chrome::Icon {
+    match kind {
+        PlaceKind::Home => chrome::Icon::Home,
+        PlaceKind::Desktop => chrome::Icon::Desktop,
+        PlaceKind::Documents => chrome::Icon::Documents,
+        PlaceKind::Downloads => chrome::Icon::Downloads,
+        PlaceKind::Music => chrome::Icon::Music,
+        PlaceKind::Pictures => chrome::Icon::Pictures,
+        PlaceKind::Videos => chrome::Icon::Videos,
+        PlaceKind::Templates => chrome::Icon::Templates,
+        PlaceKind::Public => chrome::Icon::Public,
+        PlaceKind::Filesystem => chrome::Icon::Drive,
+        PlaceKind::Trash => chrome::Icon::Trash,
+        PlaceKind::Recovery => chrome::Icon::Recovery,
+    }
+}
+
+/// Every command with its shortcuts in one table. A row's Record and Reset act
+/// on it; selecting a row opens its shortcuts for typing.
 fn shortcuts<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let editor = form.editor;
+    let appearance = form.appearance;
     let mut body = column![form.field(
         &fl!("files-preferences-find-command"),
         "filter",
         &editor.filter,
         Field::Filter
     )]
-    .spacing(8);
+    .spacing(6);
     let filter = editor.filter.to_lowercase();
     for command in Command::ALL
         .iter()
         .filter(|c| c.label().to_lowercase().contains(&filter))
     {
-        body = body.push(form.change(
+        let open = editor.selected_command == *command;
+        let label = form.change(
             command.label(),
             &format!("command-{}", command.id()),
             Change::SelectCommand(*command),
-            editor.selected_command == *command,
+            open,
             true,
-        ));
-    }
-    body = body.push(form.note(fl!(
-        "files-preferences-command-shortcuts",
-        command = editor.selected_command.label()
-    )));
-    body = body.push(form.field(
-        &fl!("files-preferences-shortcuts-field"),
-        "shortcut",
-        &editor.shortcuts[&editor.selected_command],
-        Field::Shortcut,
-    ));
-    body = body.push(
-        row![
-            form.change(
-                fl!("files-preferences-record"),
-                "record",
-                Change::Record(false),
-                false,
-                true
-            ),
-            form.change(
-                fl!("files-preferences-use-defaults"),
-                "reset",
-                Change::ResetShortcut,
-                false,
-                true
+        );
+        let current = &editor.shortcuts[command];
+        let keys = container(
+            text(if current.trim().is_empty() {
+                fl!("files-preferences-no-shortcut")
+            } else {
+                current.replace(';', " ·")
+            })
+            .font(iced::Font::MONOSPACE)
+            .size(appearance.typography().label_size.px() + 1.0)
+            .color(chrome::ink(appearance, canopa_theme::ColorRole::Muted)),
+        )
+        .padding([2, 8]);
+        let record = form.icon_change(
+            chrome::Icon::Edit,
+            fl!("files-preferences-record-for", command = command.label()),
+            &format!("record-{}", command.id()),
+            Change::RecordFor(*command),
+            true,
+        );
+        let reset = form.icon_change(
+            chrome::Icon::Recovery,
+            fl!("files-preferences-reset-for", command = command.label()),
+            &format!("reset-{}", command.id()),
+            Change::ResetFor(*command),
+            *current != command.defaults().join("; "),
+        );
+        let detail = open.then(|| {
+            form.field(
+                &fl!("files-preferences-shortcuts-field"),
+                "shortcut",
+                current,
+                Field::Shortcut,
             )
-        ]
-        .spacing(8),
-    );
+        });
+        body = body.push(form.list_row(None, label, vec![keys.into(), record, reset], detail));
+    }
     body.push(form.note(fl!("files-preferences-shortcuts-footer")))
         .into()
 }

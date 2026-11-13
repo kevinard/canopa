@@ -56,12 +56,23 @@ commands! {
     CloseTab => ("close-tab", "files-command-close-tab", "window-close-symbolic", ["<Control>w"]),
     NextTab => ("next-tab", "files-command-next-tab", "go-next-symbolic", ["<Control>Tab"]),
     PreviousTab => ("previous-tab", "files-command-previous-tab", "go-previous-symbolic", ["<Control><Shift>Tab"]),
+    MoveTabLeft => ("move-tab-left", "files-command-move-tab-left", "go-previous-symbolic", ["<Control><Shift>Page_Up"]),
+    MoveTabRight => ("move-tab-right", "files-command-move-tab-right", "go-next-symbolic", ["<Control><Shift>Page_Down"]),
+    MoveTabToWindow => ("move-tab-to-window", "files-command-move-tab-to-window", "window-new-symbolic", []),
     Operations => ("operations", "files-command-operations", "view-list-symbolic", ["<Control>j"]),
     Recovery => ("recovery", "files-command-recovery", "document-revert-symbolic", []),
     CustomActions => ("custom-actions", "files-command-custom-actions", "system-run-symbolic", ["<Control><Shift>a"]),
     Preferences => ("preferences", "files-command-preferences", "preferences-system-symbolic", ["<Control>comma"]),
     Properties => ("properties", "files-command-properties", "document-properties-symbolic", ["<Alt>Return"]),
     BookmarkFolder => ("bookmark-folder", "files-command-bookmark-folder", "bookmark-new-symbolic", ["<Control>d"]),
+}
+
+impl Command {
+    /// Commands the toolbar never shows as buttons: Quick Look has Space and
+    /// the menus, and Search has the location field's own button.
+    pub fn never_on_toolbar(self) -> bool {
+        matches!(self, Self::QuickLook | Self::Search)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -157,18 +168,41 @@ pub enum PlaceKind {
     Desktop,
     Documents,
     Downloads,
+    Music,
     Pictures,
+    Videos,
+    Templates,
+    Public,
     Filesystem,
     Trash,
     Recovery,
 }
 impl PlaceKind {
+    /// Every built-in place, in the order Preferences offers them.
     pub const ALL: &'static [Self] = &[
         Self::Home,
         Self::Desktop,
         Self::Documents,
         Self::Downloads,
+        Self::Music,
         Self::Pictures,
+        Self::Videos,
+        Self::Templates,
+        Self::Public,
+        Self::Filesystem,
+        Self::Trash,
+        Self::Recovery,
+    ];
+    /// The sidebar of a new configuration: Templates and Public are offered
+    /// in Preferences but not listed until added.
+    pub const DEFAULT: &'static [Self] = &[
+        Self::Home,
+        Self::Desktop,
+        Self::Documents,
+        Self::Downloads,
+        Self::Music,
+        Self::Pictures,
+        Self::Videos,
         Self::Filesystem,
         Self::Trash,
         Self::Recovery,
@@ -179,7 +213,11 @@ impl PlaceKind {
             Self::Desktop => "desktop",
             Self::Documents => "documents",
             Self::Downloads => "downloads",
+            Self::Music => "music",
             Self::Pictures => "pictures",
+            Self::Videos => "videos",
+            Self::Templates => "templates",
+            Self::Public => "public",
             Self::Filesystem => "filesystem",
             Self::Trash => "trash",
             Self::Recovery => "recovery",
@@ -191,7 +229,11 @@ impl PlaceKind {
             Self::Desktop => fl!("files-place-desktop"),
             Self::Documents => fl!("files-place-documents"),
             Self::Downloads => fl!("files-place-downloads"),
+            Self::Music => fl!("files-place-music"),
             Self::Pictures => fl!("files-place-pictures"),
+            Self::Videos => fl!("files-place-videos"),
+            Self::Templates => fl!("files-place-templates"),
+            Self::Public => fl!("files-place-public"),
             Self::Filesystem => fl!("files-place-filesystem"),
             Self::Trash => fl!("files-place-trash"),
             Self::Recovery => fl!("files-place-recovery"),
@@ -318,10 +360,12 @@ impl Default for InterfaceSettings {
     fn default() -> Self {
         Self {
             view: ViewSettings::default(),
-            toolbar: ["back", "forward", "parent", "location", "search"]
-                .map(str::to_owned)
-                .to_vec(),
-            places: PlaceKind::ALL.iter().copied().map(Place::Builtin).collect(),
+            toolbar: Self::DEFAULT_TOOLBAR.map(str::to_owned).to_vec(),
+            places: PlaceKind::DEFAULT
+                .iter()
+                .copied()
+                .map(Place::Builtin)
+                .collect(),
             sidebar: SidebarMode::Auto,
             shortcuts: BTreeMap::new(),
             thumbnails: ThumbnailSettings::default(),
@@ -331,6 +375,8 @@ impl Default for InterfaceSettings {
     }
 }
 impl InterfaceSettings {
+    pub const DEFAULT_TOOLBAR: [&'static str; 5] =
+        ["back", "forward", "parent", "location", "new-folder"];
     pub fn bindings(&self, command: Command) -> Vec<String> {
         self.shortcuts
             .get(&command)

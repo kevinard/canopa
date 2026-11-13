@@ -36,6 +36,9 @@ files-command-new-window = New window
 files-command-close-tab = Close tab
 files-command-next-tab = Next tab
 files-command-previous-tab = Previous tab
+files-command-move-tab-left = Move tab left
+files-command-move-tab-right = Move tab right
+files-command-move-tab-to-window = Move tab to new window
 files-command-operations = Operations
 files-command-recovery = Recovery
 files-command-custom-actions = Custom actions
@@ -49,6 +52,10 @@ files-place-desktop = Desktop
 files-place-documents = Documents
 files-place-downloads = Downloads
 files-place-pictures = Pictures
+files-place-music = Music
+files-place-videos = Videos
+files-place-templates = Templates
+files-place-public = Public
 files-place-filesystem = Filesystem
 files-place-trash = Trash
 files-place-recovery = Recovery
@@ -85,6 +92,7 @@ files-close-window = Close window
 # Accessible names of window regions.
 files-toolbar = Toolbar
 files-tabs = Tabs
+files-tab-close = Close { $folder }
 files-sidebar = Sidebar
 files-view = View
 files-configuration-not-applied = Configuration was not applied: { $error }
@@ -124,6 +132,8 @@ files-status-inspected = { $count } inspected
 files-status-selected = { $count } selected
 # The selection and the total size of its files, such as 12.1 KiB.
 files-status-selected-size = { $count } selected ({ $size })
+files-status-selected-folder = “{ $name }” · { $kind }
+files-status-selected-file = “{ $name }” · { $kind } · { $size }
 files-status-stopping = Stopping…
 files-status-searching = Searching…
 files-status-stopped = Stopped
@@ -154,6 +164,8 @@ files-announce-results-stopped-selected = { $count ->
 
 files-search-include-subfolders = Include subfolders
 files-search-stop = Stop
+files-search-in = Search in { $folder }
+files-search-close = Close search
 files-search-more = More results
 files-search-reveal = Show in folder
 # $count folders or files could not be read; the button shows or hides them.
@@ -168,7 +180,7 @@ files-this-folder = This folder
 
 files-preferences-page-views = Views
 files-preferences-page-toolbar = Toolbar
-files-preferences-page-locations = Locations
+files-preferences-page-locations = Sidebar
 files-preferences-page-shortcuts = Shortcuts
 files-preferences-status-initial = Changes apply to all Files windows as you make them.
 files-preferences-too-many-locations = At most 256 locations are supported.
@@ -223,7 +235,6 @@ files-preferences-thumbnails-note = “Local files only” skips network shares 
 files-preferences-location-field = Location field
 # A toolbar item that runs the custom action $name.
 files-preferences-toolbar-action = Action: { $name }
-files-preferences-toolbar-note = Select a toolbar item to move or remove it.
 files-preferences-earlier = Earlier
 files-preferences-later = Later
 files-preferences-remove = Remove
@@ -238,7 +249,15 @@ files-preferences-locations-and-bookmarks = Locations and bookmarks
 files-preferences-bookmark-name = Bookmark name
 files-preferences-bookmark-folder = Folder (absolute path, ~/ path or local file URI)
 files-preferences-add-bookmark = Add bookmark…
-files-preferences-locations-footer = Missing folders remain bookmarked. Narrow tiles retain location navigation in the folder menu.
+files-preferences-locations-footer = Missing folders stay bookmarked. When the window is too narrow for the sidebar, the toolbar menu’s Places… lists the same places.
+files-preferences-toolbar-preview = Toolbar preview
+files-preferences-add-button = Add a button…
+files-preferences-show-sidebar = Show the sidebar
+files-preferences-places = Places in the sidebar, in order. Bookmarks are places you add for your own folders.
+files-preferences-add-place = Add a place…
+files-preferences-no-shortcut = No shortcut
+files-preferences-record-for = Record a shortcut for { $command }
+files-preferences-reset-for = Restore the default shortcut for { $command }
 files-preferences-find-command = Find a command
 # Heading of the selected command's shortcuts.
 files-preferences-command-shortcuts = { $command } shortcuts
@@ -256,6 +275,9 @@ files-column-kind = Kind
 # Name column heading when the list is sorted by a column that is not shown.
 # $field is that column's name with its sort arrow.
 files-column-name-sorted-by = Name  ·  Sorted by { $field }
+files-sort-by-heading = Sort by { $field }
+files-tree-expand = Open { $name } in place
+files-tree-collapse = Close { $name }
 files-kind-link = Link
 files-kind-link-to-folder = Link to folder
 files-kind-folder = Folder
@@ -286,6 +308,7 @@ files-operations-save-before-closing = Save the operation result before closing 
 
 files-menu-open = Open
 files-menu-open-with = Open With…
+files-menu-open-in-new-tab = Open in New Tab
 files-menu-new-folder = New folder…
 files-menu-new-folder-short = New folder
 files-menu-rename = Rename…
@@ -293,7 +316,7 @@ files-menu-delete-permanently = Delete permanently…
 files-menu-edit-custom-actions = Edit custom actions…
 files-menu-preferences = Preferences…
 files-menu-bookmark-folder = Bookmark this folder…
-files-menu-locations = Locations…
+files-menu-locations = Places…
 files-menu-view-options = View options…
 files-menu-other-application = Other Application…
 # The first application in the Open With menu.
@@ -589,7 +612,6 @@ files-dismiss-request-description = Dismiss releases this saved request. Complet
 files-retry-failed-recovery = Retry failed Recovery copies
 files-continue-recovery = Continue Recovery copy
 files-phase-completed = Completed
-files-recent-activity = Recent activity
 files-phase-queued = Queued
 files-phase-running = Running
 files-phase-awaiting-review = Not started · review needed
@@ -728,6 +750,8 @@ files-properties-display-panel = In a side panel
 files-properties-created = Created
 files-properties-opens-with = Opens with
 files-properties-change = Change…
+files-properties-executable = Allow executing as a program
+files-properties-rename-hint = Press Enter to rename
 files-properties-advanced = Mode and IDs
 files-properties-access-saving = Updating access…
 # Folder access levels, as file managers name them.
@@ -970,6 +994,8 @@ files-clipboard-cut-not-updated = The move finished, but its Cut selection could
 files-drop-copy = Copy to { $folder }
 files-drop-move = Move to { $folder }
 files-drop-refused = Cannot drop into { $folder }
+files-drop-already-there = Already in { $folder }
+files-drop-badge = { $action } · { $items }
 files-drop-checking = Checking { $folder }
 
 ## View options for one folder
@@ -978,6 +1004,8 @@ files-view-state-worker-stopped = The view-state worker stopped before saving.
 # A column width in pixels.
 files-pixels = { $pixels } px
 files-folder-reverse-order = Reverse order
+files-folder-tree = Show folders as a tree
+files-folders-first = Folders before files
 files-folder-modified-time = Modified time
 files-folder-list-details = List details
 files-folder-remembered = Choices are remembered for this folder.
@@ -1181,6 +1209,7 @@ files-drag-ended = This drag has already ended. Start a new drag.
 files-drag-too-many-folders = This drag has already checked too many folders. Start a new drag.
 files-drop-binding-invalid = A drop requires an absolute destination and original folder binding.
 files-drop-outside-folder = The drop target is outside its original browser folder.
+files-drop-same-folder = The items are already in this folder.
 files-drag-cancelled = Drag preparation cancelled.
 files-recovery-not-ready = This Recovery copy is not ready to continue.
 files-recovery-request-gone = The Recovery request is no longer available.

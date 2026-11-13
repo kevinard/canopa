@@ -34,11 +34,16 @@ pub(super) struct RowTarget {
 
 #[derive(Clone, Debug)]
 pub(super) enum Event {
+    /// The toolbar's menu: the window's, folder's and application's commands.
     Menu(window::Id),
+    /// A context menu: the selected items', or the folder's when none is selected.
+    Context(window::Id),
     Locations(window::Id),
     /// The status bar's view menu.
     ViewMenu(window::Id),
     Row(RowTarget),
+    /// A secondary click on a folder's empty space: its menu, without a selection.
+    Background(window::Id, u64, u64),
     Close(window::Id),
     Builtin(Arc<Source>, Command),
     Invoke(Arc<Source>, String),
@@ -60,11 +65,15 @@ enum Item {
     Application(Arc<canopa_apps::DesktopApplication>),
     OtherApplication,
     View(crate::preferences::ViewMode),
+    /// Open this folder in a new tab.
+    OpenTab(PathBuf),
 }
 pub(super) struct Menu {
     source: Arc<Source>,
     items: Vec<(String, Item)>,
     focused: usize,
+    /// Where a secondary click opened this menu; others open from the toolbar.
+    anchor: Option<iced::Point>,
 }
 impl Menu {
     pub fn window(&self) -> window::Id {
@@ -156,85 +165,18 @@ impl Desktop {
                 let Some(source) = self.action_source(id) else {
                     return Task::none();
                 };
-                let mut items = Vec::new();
-                if !source.paths.is_empty() {
-                    items.push((fl!("files-menu-open"), Item::Command(Command::Open)));
-                    if source.entries.len() == source.paths.len()
-                        && source.entries.iter().all(|entry| !entry.is_directory())
-                    {
-                        items.push((fl!("files-menu-open-with"), Item::OpenWith));
-                    }
-                    items.push((
-                        fl!("files-command-quick-look"),
-                        Item::Command(Command::QuickLook),
-                    ));
-                }
-                if self.file_clipboard.ready()
-                    && self.file_operations.storage.is_some()
-                    && self.file_operations.storage_error.is_none()
-                    && !source.paths.is_empty()
-                {
-                    items.push((fl!("files-command-copy"), Item::Command(Command::Copy)));
-                    items.push((fl!("files-command-cut"), Item::Command(Command::Cut)));
-                }
-                for action in &self.configuration.actions {
-                    if self.action_applicable(&source, action) {
-                        items.push((action.name.clone(), Item::Action(action.id.clone())));
-                    }
-                }
-                if self.file_operations.ready() {
-                    if self.file_clipboard.can_paste() {
-                        items.push((fl!("files-command-paste"), Item::Command(Command::Paste)));
-                    }
-                    items.push((
-                        fl!("files-menu-new-folder"),
-                        Item::Command(Command::NewFolder),
-                    ));
-                    if source.paths.len() == 1 {
-                        items.push((fl!("files-menu-rename"), Item::Command(Command::Rename)));
-                    }
-                    if !source.paths.is_empty() {
-                        items.push((fl!("files-command-trash"), Item::Command(Command::Trash)));
-                        items.push((
-                            fl!("files-menu-delete-permanently"),
-                            Item::Command(Command::DeletePermanently),
-                        ));
-                    }
-                    if !self.file_operations.has_active()
-                        && let Some(undo) = &self.file_operations.snapshot.undo
-                    {
-                        items.push((
-                            crate::history_labels::display(&undo.label),
-                            Item::Command(Command::Undo),
-                        ));
-                    }
-                }
-                items.push((
-                    fl!("files-command-properties"),
-                    Item::Command(Command::Properties),
-                ));
-                items.push((
-                    fl!("files-menu-edit-custom-actions"),
-                    Item::Command(Command::CustomActions),
-                ));
-                items.push((
-                    fl!("files-command-operations"),
-                    Item::Command(Command::Operations),
-                ));
-                items.push((
-                    fl!("files-command-show-trash"),
-                    Item::Command(Command::ShowTrash),
-                ));
-                items.push((
-                    fl!("files-menu-preferences"),
-                    Item::Command(Command::Preferences),
-                ));
-                items.push((
-                    fl!("files-menu-bookmark-folder"),
-                    Item::Command(Command::BookmarkFolder),
-                ));
-                items.push((fl!("files-menu-locations"), Item::Locations));
-                items.push((fl!("files-menu-view-options"), Item::FolderOptions));
+                let items = self.application_items(id);
+                return self.present_menu(source, items);
+            }
+            Event::Context(id) => {
+                let Some(source) = self.action_source(id) else {
+                    return Task::none();
+                };
+                let items = if source.paths.is_empty() {
+                    self.folder_items()
+                } else {
+                    self.selection_items(&source)
+                };
                 return self.present_menu(source, items);
             }
             Event::Locations(id) => {
@@ -276,7 +218,26 @@ impl Desktop {
                 }
                 return task;
             }
+            Event::Background(window, tab, navigation) => {
+                let anchor = self.windows.get(&window).and_then(|window| window.pointer);
+                let Some(current) = self.active_mut(window).filter(|current| {
+                    current.id == tab && current.revision == navigation && !current.loading
+                }) else {
+                    return Task::none();
+                };
+                current.location = None;
+                if let Some(browser) = current.browser.as_mut() {
+                    browser.clear_selection();
+                }
+                let task = self.action_event(Event::Context(window));
+                self.anchor_action_menu(window, anchor);
+                return task;
+            }
             Event::Row(target) => {
+                let anchor = self
+                    .windows
+                    .get(&target.window)
+                    .and_then(|window| window.pointer);
                 let Some(tab) = self.active(target.window).filter(|tab| {
                     tab.id == target.tab
                         && tab.revision == target.navigation
@@ -329,6 +290,7 @@ impl Desktop {
                     );
                     if let Some(tab) = self.active_mut(target.window) {
                         tab.menu_after_load = Some(tab.revision);
+                        tab.menu_anchor = anchor;
                     }
                     return task;
                 }
@@ -340,7 +302,9 @@ impl Desktop {
                 } else {
                     browser.focus_entry(&target.path, false);
                 }
-                return self.action_event(Event::Menu(target.window));
+                let task = self.action_event(Event::Context(target.window));
+                self.anchor_action_menu(target.window, anchor);
+                return task;
             }
             Event::Invoke(source, action_id) => {
                 if !self.matches_source(&source) {
@@ -440,6 +404,7 @@ impl Desktop {
                     Item::FolderOptions => {
                         self.folder_view_event(folder_views::Event::Show(source.window))
                     }
+                    Item::OpenTab(path) => self.update(Message::OpenTab(source.window, path)),
                     Item::Action(id) => self.action_event(Event::Invoke(source, id)),
                     Item::OpenWith => {
                         let paths = source.paths.to_vec();
@@ -474,12 +439,24 @@ impl Desktop {
         Task::none()
     }
 
+    /// Open the menu just shown in `window` at `anchor`, where it was asked for.
+    pub(super) fn anchor_action_menu(&mut self, window: window::Id, anchor: Option<iced::Point>) {
+        if let Some(menu) = self
+            .action_menu
+            .as_mut()
+            .filter(|menu| menu.source.window == window)
+        {
+            menu.anchor = anchor;
+        }
+    }
+
     fn present_menu(&mut self, source: Arc<Source>, items: Vec<(String, Item)>) -> Task<Message> {
         let id = source.window;
         self.action_menu = Some(Menu {
             source,
             items,
             focused: 0,
+            anchor: None,
         });
         let Some(tab) = self.active_mut(id) else {
             return Task::none();
@@ -490,6 +467,150 @@ impl Desktop {
             view::root_id(id, tab.id),
             operation::focusable::unfocus(),
         ))
+    }
+
+    /// What can be done with the selected items, and nothing else.
+    fn selection_items(&self, source: &Source) -> Vec<(String, Item)> {
+        let mut items = vec![(fl!("files-menu-open"), Item::Command(Command::Open))];
+        if let [folder] = source.entries.as_slice()
+            && folder.is_directory()
+        {
+            items.push((
+                fl!("files-menu-open-in-new-tab"),
+                Item::OpenTab(folder.path.clone()),
+            ));
+        }
+        if source.entries.len() == source.paths.len()
+            && source.entries.iter().all(|entry| !entry.is_directory())
+        {
+            items.push((fl!("files-menu-open-with"), Item::OpenWith));
+        }
+        items.push((
+            fl!("files-command-quick-look"),
+            Item::Command(Command::QuickLook),
+        ));
+        for action in &self.configuration.actions {
+            if self.action_applicable(source, action) {
+                items.push((action.name.clone(), Item::Action(action.id.clone())));
+            }
+        }
+        if self.file_clipboard.ready()
+            && self.file_operations.storage.is_some()
+            && self.file_operations.storage_error.is_none()
+        {
+            items.push((fl!("files-command-copy"), Item::Command(Command::Copy)));
+            items.push((fl!("files-command-cut"), Item::Command(Command::Cut)));
+        }
+        if self.file_operations.ready() {
+            if source.paths.len() == 1 {
+                items.push((fl!("files-menu-rename"), Item::Command(Command::Rename)));
+            }
+            items.push((fl!("files-command-trash"), Item::Command(Command::Trash)));
+            items.push((
+                fl!("files-menu-delete-permanently"),
+                Item::Command(Command::DeletePermanently),
+            ));
+        }
+        items.push((
+            fl!("files-command-properties"),
+            Item::Command(Command::Properties),
+        ));
+        items
+    }
+
+    /// What can be done in the open folder itself.
+    fn folder_items(&self) -> Vec<(String, Item)> {
+        let mut items = Vec::new();
+        if self.file_operations.ready() {
+            items.push((
+                fl!("files-menu-new-folder"),
+                Item::Command(Command::NewFolder),
+            ));
+            if self.file_clipboard.can_paste() {
+                items.push((fl!("files-command-paste"), Item::Command(Command::Paste)));
+            }
+            items.extend(self.undo_item());
+        }
+        items.push((
+            fl!("files-command-select-all"),
+            Item::Command(Command::SelectAll),
+        ));
+        items.push((
+            fl!("files-menu-bookmark-folder"),
+            Item::Command(Command::BookmarkFolder),
+        ));
+        items.push((fl!("files-menu-view-options"), Item::FolderOptions));
+        items.push((
+            fl!("files-command-properties"),
+            Item::Command(Command::Properties),
+        ));
+        items
+    }
+
+    /// The toolbar's menu: windows, the folder and the application, without
+    /// anything that acts on the selection.
+    fn application_items(&self, id: window::Id) -> Vec<(String, Item)> {
+        let mut items = vec![
+            (
+                fl!("files-command-new-window"),
+                Item::Command(Command::NewWindow),
+            ),
+            (fl!("files-command-new-tab"), Item::Command(Command::NewTab)),
+        ];
+        if self
+            .windows
+            .get(&id)
+            .is_some_and(|window| window.tabs.len() > 1)
+        {
+            items.push((
+                fl!("files-command-move-tab-to-window"),
+                Item::Command(Command::MoveTabToWindow),
+            ));
+        }
+        if self.file_operations.ready() {
+            items.push((
+                fl!("files-menu-new-folder"),
+                Item::Command(Command::NewFolder),
+            ));
+            items.extend(self.undo_item());
+        }
+        items.push((
+            fl!("files-menu-bookmark-folder"),
+            Item::Command(Command::BookmarkFolder),
+        ));
+        items.push((fl!("files-menu-locations"), Item::Locations));
+        items.push((fl!("files-menu-view-options"), Item::FolderOptions));
+        items.push((
+            fl!("files-command-show-hidden"),
+            Item::Command(Command::ShowHidden),
+        ));
+        items.push((
+            fl!("files-command-show-trash"),
+            Item::Command(Command::ShowTrash),
+        ));
+        items.push((
+            fl!("files-command-operations"),
+            Item::Command(Command::Operations),
+        ));
+        items.push((
+            fl!("files-menu-edit-custom-actions"),
+            Item::Command(Command::CustomActions),
+        ));
+        items.push((
+            fl!("files-menu-preferences"),
+            Item::Command(Command::Preferences),
+        ));
+        items
+    }
+
+    fn undo_item(&self) -> Option<(String, Item)> {
+        let undo = self.file_operations.snapshot.undo.as_ref()?;
+        (!self.file_operations.has_active()).then(|| {
+            (
+                crate::history_labels::display(&undo.label),
+                Item::Command(Command::Undo),
+            )
+        })
     }
 
     fn location_items(&self, back: bool) -> Vec<(String, Item)> {
@@ -640,6 +761,8 @@ pub(super) fn overlay<'a>(
     let size = appearance.typography().body_size.px();
     let font = canopa_ui::font(appearance);
     let view_menu = menu.is_view_menu();
+    let anchor = menu.anchor;
+    let menu_items = &menu.items;
     let current = desktop
         .active(id)
         .and_then(|tab| tab.browser.as_ref())
@@ -662,6 +785,7 @@ pub(super) fn overlay<'a>(
             | Item::Back
             | Item::Device(..)
             | Item::View(_)
+            | Item::OpenTab(_)
             | Item::Place(_) => None,
         };
         let message = Message::Action(Event::MenuItem(menu.source.clone(), index));
@@ -691,6 +815,7 @@ pub(super) fn overlay<'a>(
         .max_height(360)
         .width(Length::Fill)
         .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Menu)));
+    let count = menu_items.len();
     let placed = container(opaque(super::accessibility_ui::semantic(
         super::accessibility_ui::Node::menu(if view_menu {
             fl!("files-view")
@@ -701,10 +826,42 @@ pub(super) fn overlay<'a>(
         menu,
     )))
     .width(Length::Fill)
-    .height(Length::Fill)
-    .align_right(Length::Fill);
+    .height(Length::Fill);
+    let window = desktop.windows.get(&id);
+    // A secondary click's menu opens at the pointer, turned back from the
+    // window's right and bottom edges so it stays whole.
+    let placed = if let (Some(anchor), Some(window)) = (anchor, window) {
+        const EDGE: f32 = 8.0;
+        let height = (count as f32
+            * (super::view::row_height(&desktop.configuration.appearance) + 8.0)
+            + 20.0)
+            .min(360.0);
+        let mut padding = iced::Padding::ZERO;
+        let placed = if anchor.x + 320.0 + EDGE <= window.width {
+            padding.left = anchor.x.max(EDGE);
+            placed.align_left(Length::Fill)
+        } else {
+            padding.right = (window.width - anchor.x).max(EDGE);
+            placed.align_right(Length::Fill)
+        };
+        let placed = if anchor.y + height + EDGE <= window.height {
+            padding.top = anchor.y.max(EDGE);
+            placed.align_top(Length::Fill)
+        } else if anchor.y - height >= EDGE {
+            padding.bottom = (window.height - anchor.y).max(EDGE);
+            placed.align_bottom(Length::Fill)
+        } else {
+            padding.top = (window.height - height - EDGE).max(EDGE);
+            placed.align_top(Length::Fill)
+        };
+        placed.padding(padding)
+    } else {
+        placed.align_right(Length::Fill)
+    };
     // The view menu opens above its status bar button, at the window's end.
-    let placed = if view_menu {
+    let placed = if anchor.is_some() {
+        placed
+    } else if view_menu {
         placed
             .padding(iced::Padding {
                 bottom: VIEW_MENU_BOTTOM,

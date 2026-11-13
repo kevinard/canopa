@@ -1572,7 +1572,7 @@ checksum = "fe6d2e5af09e8c8ad56c969f2157a3d4238cebc7c55f0a517728c38f7b200f81"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.2.2",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -2012,7 +2012,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.1"
-source = "git+https://github.com/kevinard/winit?rev=5bbfe4f201cc538e426c5ca9bbf4842add9fd870#5bbfe4f201cc538e426c5ca9bbf4842add9fd870"
+source = "git+https://github.com/kevinard/winit?rev=97d7209e19ba2e7599c7044048b5b8489736b712#97d7209e19ba2e7599c7044048b5b8489736b712"
 
 [[package]]
 name = "dpi"
@@ -3266,7 +3266,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_core",
  "iced_debug",
@@ -3282,7 +3282,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "bitflags 2.13.0",
  "bytes",
@@ -3299,7 +3299,7 @@ dependencies = [
 [[package]]
 name = "iced_debug"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -3309,7 +3309,7 @@ dependencies = [
 [[package]]
 name = "iced_devtools"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_debug",
  "iced_program",
@@ -3333,7 +3333,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "futures",
  "iced_core",
@@ -3347,7 +3347,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "bitflags 2.13.0",
  "bytemuck",
@@ -3405,7 +3405,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -3414,7 +3414,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3426,7 +3426,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "bytes",
  "iced_core",
@@ -3438,7 +3438,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3455,7 +3455,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "bitflags 2.13.0",
  "bytemuck",
@@ -3476,7 +3476,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.14.2"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_renderer",
  "log",
@@ -3489,7 +3489,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=af379ca087c56c79f2b6431a219c33407218b130#af379ca087c56c79f2b6431a219c33407218b130"
+source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
 dependencies = [
  "iced_debug",
  "iced_program",
@@ -8686,7 +8686,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -9100,7 +9100,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.30.13"
-source = "git+https://github.com/kevinard/winit?rev=5bbfe4f201cc538e426c5ca9bbf4842add9fd870#5bbfe4f201cc538e426c5ca9bbf4842add9fd870"
+source = "git+https://github.com/kevinard/winit?rev=97d7209e19ba2e7599c7044048b5b8489736b712#97d7209e19ba2e7599c7044048b5b8489736b712"
 dependencies = [
  "ahash",
  "android-activity",

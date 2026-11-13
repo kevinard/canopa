@@ -201,6 +201,12 @@ impl Widget<Message, Theme, Renderer> for RegionWidget<'_> {
                     state.started = true;
                     shell.publish(Message::Drag(DragEvent::Start(window)));
                 }
+                // Before rows and the folder publish the menu this press opens.
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                    if let Some(position) = cursor.position() {
+                        shell.publish(Message::Pointer(window, position));
+                    }
+                }
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     state.pressed = None;
                     shell.publish(Message::Drag(DragEvent::Release(window)));

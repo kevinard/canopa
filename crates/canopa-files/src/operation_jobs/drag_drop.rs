@@ -295,6 +295,12 @@ impl PreparedDrop {
         {
             return Err(io::Error::other(fl!("files-drop-outside-folder")));
         }
+        if already_there(drag.paths(), &target.directory) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                fl!("files-drop-same-folder"),
+            ));
+        }
         let captured = drag.destination(&target, placement, cancellation)?;
         captured
             .placement
@@ -346,6 +352,28 @@ impl DestinationCapture {
             observed,
         })
     }
+}
+
+/// Whether dropping `sources` into `directory` would put any of them back where
+/// it is, or inside itself: such a drop has nothing to move or copy. Folder
+/// aliases compare by their actual location.
+fn already_there(sources: &[PathBuf], directory: &std::path::Path) -> bool {
+    let resolved = std::fs::canonicalize(directory).ok();
+    let mut parents = BTreeMap::new();
+    sources.iter().any(|source| {
+        if source == directory || source.parent() == Some(directory) {
+            return true;
+        }
+        let Some(resolved) = &resolved else {
+            return false;
+        };
+        let parent = source.parent().map(std::path::Path::to_path_buf);
+        let actual = parents
+            .entry(parent.clone())
+            .or_insert_with(|| parent.and_then(|parent| std::fs::canonicalize(parent).ok()));
+        actual.as_ref() == Some(resolved)
+            || std::fs::canonicalize(source).is_ok_and(|source| &source == resolved)
+    })
 }
 
 fn check_cancel(cancellation: &Cancellation) -> io::Result<()> {

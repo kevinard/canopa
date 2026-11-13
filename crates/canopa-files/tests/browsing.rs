@@ -256,3 +256,100 @@ fn explicit_reveal_selects_only_requested_hidden_items_and_survives_refresh() {
     assert!(browser.visible_entries().is_empty());
     assert!(browser.selected().is_empty());
 }
+
+#[test]
+fn list_tree_opens_folders_in_place_and_closing_keeps_the_keyboard_on_the_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let alpha = root.path().join("alpha");
+    let nested = alpha.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(alpha.join("inside.txt"), b"x").unwrap();
+    fs::write(nested.join("deep.txt"), b"x").unwrap();
+    fs::write(root.path().join("zulu.txt"), b"x").unwrap();
+    let mut browser = Browser::open(root.path()).unwrap();
+    // Columns view has no tree: a listing cannot be opened in place.
+    assert!(!browser.expand(Directory::read(&alpha).unwrap()));
+    browser
+        .set_view(ViewSettings {
+            mode: ViewMode::List,
+            tree: true,
+            ..ViewSettings::default()
+        })
+        .unwrap();
+    assert!(browser.tree_view());
+    // Only listed folders open, outermost first.
+    assert!(!browser.expand(Directory::read(&nested).unwrap()));
+    assert!(browser.expand(Directory::read(&alpha).unwrap()));
+    assert!(browser.expand(Directory::read(&nested).unwrap()));
+    let rows: Vec<_> = browser
+        .visible_entries()
+        .iter()
+        .map(|entry| entry.path.strip_prefix(root.path()).unwrap().to_owned())
+        .collect();
+    let expected: Vec<std::path::PathBuf> = [
+        "alpha",
+        "alpha/nested",
+        "alpha/nested/deep.txt",
+        "alpha/inside.txt",
+        "zulu.txt",
+    ]
+    .iter()
+    .map(Into::into)
+    .collect();
+    assert_eq!(rows, expected);
+    let deep = nested.join("deep.txt");
+    assert_eq!(browser.depth(&deep), 2);
+    assert_eq!(browser.depth(&alpha), 0);
+    assert!(browser.lists(&deep));
+    browser.select(&deep, SelectionMode::Replace);
+    assert_eq!(browser.focused(), Some(deep.as_path()));
+    // Closing the outer folder closes the inner one and keeps the keyboard there.
+    browser.collapse(&alpha);
+    assert!(!browser.is_expanded(&alpha) && !browser.is_expanded(&nested));
+    assert_eq!(browser.focused(), Some(alpha.as_path()));
+    assert_eq!(browser.selected(), &[alpha.clone()].into_iter().collect());
+    assert_eq!(browser.visible_entries().len(), 2);
+    // Leaving List view hides the open folders and their selection.
+    assert!(browser.expand(Directory::read(&alpha).unwrap()));
+    browser.select(&alpha.join("inside.txt"), SelectionMode::Replace);
+    browser
+        .set_view(ViewSettings {
+            mode: ViewMode::List,
+            ..ViewSettings::default()
+        })
+        .unwrap();
+    assert!(!browser.tree_view() && browser.selected().is_empty());
+    assert_eq!(browser.visible_entries().len(), 2);
+}
+
+#[test]
+fn folders_can_sort_among_files_instead_of_first() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("beta")).unwrap();
+    fs::write(root.path().join("alpha.txt"), b"x").unwrap();
+    fs::write(root.path().join("gamma.txt"), b"x").unwrap();
+    let mut browser = Browser::open(root.path()).unwrap();
+    let names = |browser: &Browser| -> Vec<String> {
+        browser
+            .visible_entries()
+            .iter()
+            .map(|entry| entry.name().into_owned())
+            .collect()
+    };
+    assert_eq!(names(&browser), ["beta", "alpha.txt", "gamma.txt"]);
+    browser
+        .set_view(ViewSettings {
+            folders_first: false,
+            ..ViewSettings::default()
+        })
+        .unwrap();
+    assert_eq!(names(&browser), ["alpha.txt", "beta", "gamma.txt"]);
+    browser
+        .set_view(ViewSettings {
+            folders_first: false,
+            descending: true,
+            ..ViewSettings::default()
+        })
+        .unwrap();
+    assert_eq!(names(&browser), ["gamma.txt", "beta", "alpha.txt"]);
+}

@@ -855,35 +855,33 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         );
         None
     };
-    if let Some(confirmation) = editor.confirmation {
-        body = body.push(
-            container(column![
-                text(if confirmation == Confirmation::Close {
-                    fl!("files-actions-discard-question")
+    // A blocking question: shown over the editor, not inside its form.
+    let question = editor.confirmation.map(|confirmation| {
+        let buttons: Element<'a, Message> = row![
+            action(
+                fl!("files-preferences-keep-editing"),
+                Some(Event::Confirm(id, false))
+            ),
+            action(
+                if confirmation == Confirmation::Close {
+                    fl!("files-preferences-discard")
                 } else {
-                    fl!("files-actions-reload-question")
-                })
-                .size(size)
-                .font(font),
-                row![
-                    action(
-                        fl!("files-preferences-keep-editing"),
-                        Some(Event::Confirm(id, false))
-                    ),
-                    action(
-                        if confirmation == Confirmation::Close {
-                            fl!("files-preferences-discard")
-                        } else {
-                            fl!("files-preferences-reload")
-                        },
-                        Some(Event::Confirm(id, true))
-                    )
-                ]
-                .spacing(8)
-            ])
-            .padding(10),
-        );
-    }
+                    fl!("files-preferences-reload")
+                },
+                Some(Event::Confirm(id, true))
+            )
+        ]
+        .spacing(8)
+        .into();
+        (
+            if confirmation == Confirmation::Close {
+                fl!("files-actions-discard-question")
+            } else {
+                fl!("files-actions-reload-question")
+            },
+            buttons,
+        )
+    });
     let mut form = column![].spacing(12);
     if let Some(draft) = editor
         .drafts
@@ -1103,6 +1101,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| chrome::window_surface(&appearance, false));
+    let content = chrome::modal(desktop, content.into(), question);
     super::focus::group(content, order, reveal, default)
 }
 

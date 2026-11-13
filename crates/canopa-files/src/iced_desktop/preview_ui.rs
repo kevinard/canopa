@@ -1128,7 +1128,9 @@ pub(super) fn view<'a>(
             .font(canopa_ui::font(&appearance))
             .size(appearance.typography().label_size.px()),
         iced::widget::tooltip::Position::Bottom,
-    );
+    )
+    .padding(6)
+    .style(super::chrome::tooltip_style);
     // Previous and next step through the source folder exactly as the arrow
     // keys do in the preview; they are pointer shortcuts, not extra stops.
     let step = |icon: chrome::Icon, key: keyboard::key::Named, label: String| {
@@ -1157,6 +1159,8 @@ pub(super) fn view<'a>(
                 .size(appearance.typography().label_size.px()),
             iced::widget::tooltip::Position::Bottom,
         )
+        .padding(6)
+        .style(super::chrome::tooltip_style)
     };
     let browsing = preview.target.is_some() && preview.media.is_none();
     // Where the previewed item sits in its folder's listing, shown between

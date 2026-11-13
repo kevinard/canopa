@@ -171,6 +171,16 @@ pub enum Action {
     Destructive,
 }
 
+/// `from` moved `amount` of the way toward `to`, opaque.
+fn blend(from: Color, to: Color, amount: f32) -> Color {
+    Color {
+        r: from.r + (to.r - from.r) * amount,
+        g: from.g + (to.g - from.g) * amount,
+        b: from.b + (to.b - from.b) * amount,
+        a: 1.0,
+    }
+}
+
 pub fn action_style(
     theme: &Theme,
     status: button::Status,
@@ -191,11 +201,20 @@ pub fn action_style(
         } else if engaged {
             // Quiet controls can contain explicitly styled links and muted body text.
             // Their foreground roles need the same contrast as the resting surface.
+            // Quiet controls sit on surfaces (menus, sidebars) of the surface
+            // colour itself; their hover leans toward the text so it shows there.
             Some(
                 if matches!(action, Action::Normal) {
                     p.raised
                 } else {
-                    p.surface
+                    // The lean stays small enough for muted text and links to keep
+                    // their contrast on it.
+                    let lean = if status == button::Status::Pressed {
+                        0.07
+                    } else {
+                        0.06
+                    };
+                    blend(p.surface, p.text, lean)
                 }
                 .into(),
             )
@@ -260,6 +279,9 @@ mod tests {
             let active = action_style(&theme, button::Status::Active, Action::Normal, false);
             let hover = action_style(&theme, button::Status::Hovered, Action::Normal, false);
             assert_ne!(active.background, hover.background);
+            // A quiet control's hover shows on the surface menus are drawn on.
+            let quiet = action_style(&theme, button::Status::Hovered, Action::Quiet, false);
+            assert_ne!(quiet.background, Some(p.surface.into()));
             let focus = action_style(&theme, button::Status::Active, Action::Normal, true);
             assert_eq!(focus.border.color, p.accent);
             assert_eq!(focus.border.width, 2.0);

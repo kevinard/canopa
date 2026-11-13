@@ -243,6 +243,13 @@ impl Desktop {
         {
             return self.watch_rescan(window, tab_id);
         }
+        // Folders open in List view's tree follow their folder's changes.
+        if self
+            .active(window)
+            .is_some_and(|active| active.id == tab_id)
+        {
+            return self.reload_tree(window);
+        }
         Task::none()
     }
 

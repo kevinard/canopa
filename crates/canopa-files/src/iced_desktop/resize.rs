@@ -39,6 +39,22 @@ pub(super) struct Resizing {
     target: Target,
     start: f32,
     width: f32,
+    /// While Name fills the list, a divider moves the boundary between its
+    /// two columns: the detail after it gives or takes what the one before
+    /// it gains or loses, so the divider stays under the pointer. Otherwise
+    /// widening a detail would only narrow Name, moving the column's leading
+    /// edge instead of the divider being dragged.
+    partner: Option<(Detail, f32, f32)>,
+    /// Room left after the last column when the drag began; a detail grows
+    /// into it before taking from the column after it. None: Name fills.
+    slack: Option<f32>,
+}
+
+impl Resizing {
+    /// Name follows the window during a boundary drag; only details change.
+    fn trades_with_name(&self) -> bool {
+        self.target == Target::Name && self.partner.is_some()
+    }
 }
 
 /// The widths to save once no other configuration change is in flight.
@@ -47,6 +63,8 @@ struct Wanted {
     window: window::Id,
     column_width: u16,
     list: ListColumns,
+    tree: bool,
+    folders_first: bool,
 }
 
 #[derive(Default)]
@@ -59,10 +77,15 @@ pub(super) struct Layouts {
 impl Layouts {
     /// The width being dragged for `target` in `window`, if any.
     pub fn dragged(&self, window: window::Id, target: Target) -> Option<f32> {
-        self.resizing
+        let resizing = self
+            .resizing
             .as_ref()
-            .filter(|resizing| resizing.window == window && resizing.target == target)
-            .map(|resizing| resizing.width)
+            .filter(|resizing| resizing.window == window)?;
+        match resizing.partner {
+            Some((partner, _, width)) if target == Target::Detail(partner) => Some(width),
+            _ if resizing.target == target && !resizing.trades_with_name() => Some(resizing.width),
+            _ => None,
+        }
     }
 }
 
@@ -83,14 +106,46 @@ impl Desktop {
             .unwrap_or(f32::from(settled))
     }
 
+    /// The detail after a List divider whose width trades with the column
+    /// before it: only while Name fills the list, and the divider has one.
+    /// With spare room after the last column, Name's divider simply resizes
+    /// Name; a detail's grows into the room, then trades.
+    fn boundary_partner(
+        &self,
+        window: window::Id,
+        target: Target,
+        slack: Option<f32>,
+    ) -> Option<Detail> {
+        let details = &self.active(window)?.browser.as_ref()?.view().details;
+        match target {
+            Target::Name if slack.is_some() => None,
+            Target::Name => details.first().copied(),
+            Target::Detail(detail) => {
+                let index = details.iter().position(|shown| *shown == detail)?;
+                details.get(index + 1).copied()
+            }
+            Target::Columns => None,
+        }
+    }
+
     pub(super) fn resize_event(&mut self, event: Event) -> Task<Message> {
         match event {
             Event::Begin(window, target, start) => {
+                let slack = self.active(window).and_then(|tab| {
+                    let browser = tab.browser.as_ref()?;
+                    super::listing_ui::name_slack(self, window, browser.view(), tab.viewport_width)
+                });
+                let partner = self.boundary_partner(window, target, slack).map(|detail| {
+                    let width = super::listing_ui::detail_width(self, window, detail);
+                    (detail, width, width)
+                });
                 self.layouts.resizing = Some(Resizing {
                     window,
                     target,
                     start,
                     width: clamp(target, start),
+                    partner,
+                    slack,
                 });
                 Task::none()
             }
@@ -98,7 +153,43 @@ impl Desktop {
                 if let Some(resizing) = &mut self.layouts.resizing
                     && resizing.window == window
                 {
-                    resizing.width = clamp(resizing.target, resizing.start + delta).round();
+                    match &mut resizing.partner {
+                        // Both columns stay within their limits; the boundary
+                        // stops where either would leave them.
+                        Some((partner, partner_start, partner_width)) => {
+                            let detail = Target::Detail(*partner);
+                            let (low, high) = (clamp(detail, 0.0), clamp(detail, f32::MAX));
+                            // What the partner may give (positive) or take.
+                            let (most, least) = (*partner_start - low, *partner_start - high);
+                            if resizing.target == Target::Name {
+                                *partner_width = *partner_start - delta.clamp(least, most);
+                            } else {
+                                let (own_low, own_high) = (
+                                    clamp(resizing.target, 0.0),
+                                    clamp(resizing.target, f32::MAX),
+                                );
+                                let mut delta = delta
+                                    .clamp(own_low - resizing.start, own_high - resizing.start);
+                                // Spare room is used first; a full list trades
+                                // in both directions.
+                                let taken = |delta: f32| match resizing.slack {
+                                    Some(slack) => (delta - slack).max(0.0),
+                                    None => delta,
+                                };
+                                if taken(delta) > most {
+                                    delta = most + resizing.slack.unwrap_or(0.0);
+                                } else if taken(delta) < least {
+                                    delta = least;
+                                }
+                                resizing.width = resizing.start + delta;
+                                // Unrounded, so the two columns always sum the same.
+                                *partner_width = *partner_start - taken(delta);
+                            }
+                        }
+                        None => {
+                            resizing.width = clamp(resizing.target, resizing.start + delta).round();
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -110,10 +201,24 @@ impl Desktop {
                 else {
                     return Task::none();
                 };
-                if (resizing.width - resizing.start).abs() < 1.0 {
-                    return Task::none();
+                let partner = resizing
+                    .partner
+                    .filter(|(_, start, width)| (width - start).abs() >= 1.0);
+                let own =
+                    !resizing.trades_with_name() && (resizing.width - resizing.start).abs() >= 1.0;
+                match (partner, own) {
+                    (None, false) => Task::none(),
+                    (Some((partner, _, width)), false) => {
+                        self.choose_width(window, Target::Detail(partner), Some(width as u16))
+                    }
+                    (partner, true) => {
+                        if let Some((partner, _, width)) = partner {
+                            *self.configuration.settings.list_columns.detail_mut(partner) =
+                                Some(width as u16);
+                        }
+                        self.choose_width(window, resizing.target, Some(resizing.width as u16))
+                    }
                 }
-                self.choose_width(window, resizing.target, Some(resizing.width as u16))
             }
             Event::Reset(window, target) => {
                 self.layouts.resizing = None;
@@ -153,13 +258,41 @@ impl Desktop {
             Target::Name => settings.list_columns.name = width,
             Target::Detail(detail) => *settings.list_columns.detail_mut(detail) = width,
         }
+        tasks.push(self.want_layout_saved(window));
+        Task::batch(tasks)
+    }
+
+    /// Save the current widths and every-folder view choices, after the
+    /// configuration change in flight, if any.
+    fn want_layout_saved(&mut self, window: window::Id) -> Task<Message> {
+        let settings = &self.configuration.settings;
         self.layouts.wanted = Some(Wanted {
             window,
-            column_width: self.configuration.settings.view.column_width,
-            list: self.configuration.settings.list_columns,
+            column_width: settings.view.column_width,
+            list: settings.list_columns,
+            tree: settings.view.tree,
+            folders_first: settings.view.folders_first,
         });
-        tasks.push(self.sync_layout_save());
-        Task::batch(tasks)
+        self.sync_layout_save()
+    }
+
+    /// Change a view choice that every folder shares, such as List view's tree
+    /// or folders sorting first: at once in every window, then saved.
+    pub(super) fn change_shared_view(
+        &mut self,
+        window: window::Id,
+        change: impl FnOnce(&mut crate::preferences::ViewSettings),
+    ) -> Task<Message> {
+        let view = &mut self.configuration.settings.view;
+        let before = view.clone();
+        change(view);
+        if *view == before {
+            return Task::none();
+        }
+        let defaults = view.clone();
+        let _ = self.preferences.set_defaults(defaults);
+        let publish = self.publish_folder_views(None);
+        Task::batch([publish, self.want_layout_saved(window)])
     }
 
     /// Start saving chosen widths when no other configuration change runs.
@@ -175,6 +308,8 @@ impl Desktop {
         };
         let mut settings = self.configuration.settings.clone();
         settings.view.column_width = wanted.column_width;
+        settings.view.tree = wanted.tree;
+        settings.view.folders_first = wanted.folders_first;
         settings.list_columns = wanted.list;
         let receiver = match worker.save_settings(self.configuration.clone(), settings) {
             Ok(receiver) => receiver,
@@ -443,5 +578,95 @@ mod tests {
         );
         let browser = desktop.active(window).unwrap().browser.as_ref().unwrap();
         assert_eq!(browser.view().column_width, 320);
+    }
+
+    #[test]
+    fn a_divider_in_a_full_list_moves_the_boundary_between_its_columns() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        let mut view = desktop.preferences.for_folder(root.path()).clone();
+        view.details = vec![Detail::Size, Detail::Modified, Detail::Kind];
+        desktop.preferences.set_defaults(view.clone()).unwrap();
+        let _ = desktop.publish_folder_views(None);
+        let width = |desktop: &Desktop, detail| {
+            super::super::listing_ui::detail_width(desktop, window, detail)
+        };
+        let name = super::super::listing_ui::name_width(&desktop, window, &view, 1200.0);
+        let (size, modified) = (
+            width(&desktop, Detail::Size),
+            width(&desktop, Detail::Modified),
+        );
+        // Size's divider: Size gains what Modified gives, so Name keeps its
+        // width and the divider follows the pointer.
+        let _ = desktop.resize_event(Event::Begin(window, Target::Detail(Detail::Size), size));
+        let _ = desktop.resize_event(Event::Move(window, 30.0));
+        assert_eq!(width(&desktop, Detail::Size), size + 30.0);
+        assert_eq!(width(&desktop, Detail::Modified), modified - 30.0);
+        assert_eq!(
+            super::super::listing_ui::name_width(&desktop, window, &view, 1200.0),
+            name
+        );
+        // The boundary stops where Modified reaches its narrowest.
+        let _ = desktop.resize_event(Event::Move(window, 2000.0));
+        assert_eq!(width(&desktop, Detail::Modified), 48.0);
+        let _ = desktop.resize_event(Event::Move(window, 30.0));
+        let _ = desktop.resize_event(Event::End(window));
+        let columns = desktop.configuration.settings.list_columns;
+        assert_eq!(columns.size, Some((size + 30.0) as u16));
+        assert_eq!(columns.modified, Some((modified - 30.0) as u16));
+        assert_eq!(columns.name, None);
+        // Name's divider trades with the first detail; Name keeps filling.
+        let size = width(&desktop, Detail::Size);
+        let _ = desktop.resize_event(Event::Begin(window, Target::Name, name));
+        let _ = desktop.resize_event(Event::Move(window, 20.0));
+        assert_eq!(width(&desktop, Detail::Size), size - 20.0);
+        let _ = desktop.resize_event(Event::End(window));
+        let columns = desktop.configuration.settings.list_columns;
+        assert_eq!(
+            (columns.name, columns.size),
+            (None, Some((size - 20.0) as u16))
+        );
+    }
+
+    #[test]
+    fn a_chosen_name_that_fills_still_trades_and_spare_room_is_used_first() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        desktop.active_mut(window).unwrap().viewport_width = 1200.0;
+        let width = |desktop: &Desktop, detail| {
+            super::super::listing_ui::detail_width(desktop, window, detail)
+        };
+        let size = Target::Detail(Detail::Size);
+        // A Name width saved wider than the list leaves no room: a boundary drag.
+        desktop.configuration.settings.list_columns.name = Some(1200);
+        let (start, modified) = (
+            width(&desktop, Detail::Size),
+            width(&desktop, Detail::Modified),
+        );
+        let _ = desktop.resize_event(Event::Begin(window, size, start));
+        let _ = desktop.resize_event(Event::Move(window, 25.0));
+        assert_eq!(width(&desktop, Detail::Modified), modified - 25.0);
+        let _ = desktop.resize_event(Event::End(window));
+        // A narrow Name leaves room after the last column, used before Modified.
+        desktop.configuration.settings.list_columns.name = Some(200);
+        let (start, modified) = (
+            width(&desktop, Detail::Size),
+            width(&desktop, Detail::Modified),
+        );
+        let _ = desktop.resize_event(Event::Begin(window, size, start));
+        let _ = desktop.resize_event(Event::Move(window, 25.0));
+        assert_eq!(width(&desktop, Detail::Size), start + 25.0);
+        assert_eq!(width(&desktop, Detail::Modified), modified);
+        let _ = desktop.resize_event(Event::End(window));
+        assert_eq!(
+            desktop.configuration.settings.list_columns.size,
+            Some((start + 25.0) as u16)
+        );
     }
 }

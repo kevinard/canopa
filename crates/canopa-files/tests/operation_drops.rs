@@ -637,3 +637,39 @@ fn repreparing_after_content_changes_still_moves_and_undoes() {
         b"Unrelated arrival"
     );
 }
+
+#[test]
+fn a_drop_into_the_items_own_folder_or_onto_itself_is_refused_before_release() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("folder");
+    let inner = folder.join("inner");
+    fs::create_dir_all(&inner).unwrap();
+    let file = folder.join("note.txt");
+    fs::write(&file, b"Note").unwrap();
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(&folder, &alias).unwrap();
+    let (jobs, _, _) = service(root.path());
+    let gesture = drag(&jobs, vec![file.clone(), inner.clone()]);
+    let refused = |directory: &Path| {
+        let mut reply = jobs
+            .prepare_drop(
+                gesture.clone(),
+                DropTarget {
+                    directory: directory.to_owned(),
+                    binding: None,
+                },
+                Cancellation::default(),
+            )
+            .unwrap();
+        wait(|| reply.try_recv().unwrap()).is_err()
+    };
+    // Its own folder, the same folder through an alias, and a dragged folder itself.
+    assert!(refused(&folder));
+    assert!(refused(&alias));
+    assert!(refused(&inner));
+    // Elsewhere stays an ordinary destination.
+    let elsewhere = root.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    assert!(!refused(&elsewhere));
+    assert_eq!(fs::read(&file).unwrap(), b"Note");
+}
