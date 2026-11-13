@@ -76,7 +76,11 @@ impl App {
         );
 
         let menu_watch_sub = if let Some(conn) = self.shared.dbus.session.clone() {
-            if let Some(meta) = self.foreground.active_menu_meta() {
+            if let Some(meta) = self
+                .foreground
+                .active_menu_meta()
+                .filter(|meta| meta.service != crate::modules::taskbar::MENU_SERVICE)
+            {
                 crate::dbus::sni::menu_layout_subscription(
                     conn,
                     meta.service.clone(),

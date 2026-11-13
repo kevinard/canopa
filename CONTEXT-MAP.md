@@ -61,6 +61,7 @@ The supported system installation has a dedicated session.
 - [Unified launcher and search providers](docs/shell/adr/0023-unified-launcher-providers.md)
 - [Shell session actions through logind](docs/shell/adr/0024-session-actions-through-logind.md)
 - [Device keys and the on-screen display](docs/shell/adr/0025-device-keys-and-on-screen-display.md)
+- [Taskbar menus, window cycling and saved pins](docs/shell/adr/0026-taskbar-menus-and-saved-pins.md)
 - [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
 - [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
 - [Shared AccessKit layer, high contrast and the Accessibility page](docs/adr/0144-shared-accesskit-layer.md)

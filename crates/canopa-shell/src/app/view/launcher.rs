@@ -165,11 +165,13 @@ fn contents<'a>(
         .height(LAUNCHER_HEADING_HEIGHT)
         .align_y(iced::Alignment::Center)
         .spacing(4);
+        // Calculations need no prefix: typing one shows its result first.
         if wide {
             header = header
-                .push(muted_label(fl!("shell-launcher-calculate-before")))
-                .push(keycap("="))
-                .push(muted_label(fl!("shell-launcher-calculate-after")));
+                .push(muted_label(fl!("shell-launcher-calculate-try")))
+                .push(keycap("12 × 3"))
+                .push(muted_label(fl!("shell-launcher-calculate-or")))
+                .push(keycap("5 km to mi"));
         }
         controls = controls.push(header);
     } else if count > 0 && !visible_query(model).trim().is_empty() {
@@ -407,32 +409,7 @@ fn command_controls(
     target: &Target,
     width: f32,
 ) -> Element<'static, Message> {
-    let grouped = target.result.actions.len() > 1;
     let mut toolbar = row![].spacing(6).align_y(iced::Alignment::Center);
-    if grouped {
-        let action = theme::action(
-            command_label(&fl!("shell-launcher-actions"), fl!("shell-key-tab")),
-            Some(Message::Panel(PanelEvent::LauncherActions(Some(
-                target.clone(),
-            )))),
-            canopa_ui::Action::Normal,
-            false,
-        )
-        .padding([5, 9]);
-        let name = fl!(
-            "shell-launcher-actions-for",
-            name = target.result.label.clone()
-        );
-        toolbar = toolbar.push(semantic(
-            Node::button(name.clone())
-                .key("launcher-actions")
-                .shortcut("Tab")
-                .on_click(Some(Message::Panel(PanelEvent::LauncherActions(Some(
-                    target.clone(),
-                ))))),
-            control_hint(action, name),
-        ));
-    }
     if let Some(primary) = target.result.actions.first() {
         let label = if model.can_go_back && target.result.id.starts_with("action:") {
             target.result.label.clone()
@@ -480,6 +457,33 @@ fn command_controls(
         ));
     }
     toolbar.into()
+}
+
+/// The selected result's Actions button, on its own row: a result with more
+/// than one action lists them (Tab) without leaving the row it belongs to.
+fn row_actions(target: &Target) -> Option<Element<'static, Message>> {
+    if target.result.actions.len() < 2 {
+        return None;
+    }
+    let event = Message::Panel(PanelEvent::LauncherActions(Some(target.clone())));
+    let name = fl!(
+        "shell-launcher-actions-for",
+        name = target.result.label.clone()
+    );
+    let button = theme::action(
+        command_label(&fl!("shell-launcher-actions"), fl!("shell-key-tab")),
+        Some(event.clone()),
+        canopa_ui::Action::Normal,
+        false,
+    )
+    .padding([4, 8]);
+    Some(semantic(
+        Node::button(name.clone())
+            .key("launcher-actions")
+            .shortcut("Tab")
+            .on_click(Some(event)),
+        control_hint(button, name),
+    ))
 }
 
 fn control_hint<'a>(
@@ -1095,6 +1099,9 @@ pub(super) fn result_row<'a>(
         cells.push(selection_indicator(selected));
     }
     cells.push(result_content(model, entry, target));
+    if selected && let Some(actions) = row_actions(target) {
+        cells.push(actions);
+    }
     let contents = canopa_ui::direction::row(cells)
         .spacing(7)
         .align_y(iced::Alignment::Center);
@@ -1261,6 +1268,10 @@ fn result_content<'a>(
 
 /// The scope tab a result belongs to, by what opening it does.
 fn section_glyph(target: &Target) -> Option<&'static [u8]> {
+    // A running app's row switches to its window first; it is still an app.
+    if is_window_result(target) {
+        return Some(WINDOWS_ICON);
+    }
     match &target.result.actions.first()?.action {
         Action::Application { .. } | Action::AppActionLaunch { .. } | Action::Launch { .. } => {
             Some(APPS_ICON)
@@ -1270,10 +1281,15 @@ fn section_glyph(target: &Target) -> Option<&'static [u8]> {
         | Action::Preview { .. }
         | Action::ChooseApplication { .. }
         | Action::OpenWith { .. } => Some(FILES_ICON),
-        Action::FocusWindow { .. } => Some(WINDOWS_ICON),
+        Action::FocusWindow { .. } => Some(APPS_ICON),
         Action::Provider { .. } | Action::SettingsPage { .. } => Some(SETTINGS_ICON),
         _ => None,
     }
+}
+
+/// Open-window results, as opposed to the rows of running applications.
+fn is_window_result(target: &Target) -> bool {
+    target.result.id.starts_with("window:")
 }
 
 fn action_description(target: &Target) -> Option<String> {
@@ -1385,7 +1401,8 @@ fn result_glyph(name: Option<&str>, target: &Target) -> &'static [u8] {
         _ => {}
     }
     match target.result.actions.first().map(|named| &named.action) {
-        Some(Action::FocusWindow { .. }) => WINDOWS_ICON,
+        Some(Action::FocusWindow { .. }) if is_window_result(target) => WINDOWS_ICON,
+        Some(Action::FocusWindow { .. }) => APPS_ICON,
         Some(Action::Provider { .. }) => SETTINGS_ICON,
         Some(Action::TogglePin { .. }) => PIN_ICON,
         Some(Action::EditAlias { .. } | Action::SaveAlias { .. }) => ALIAS_ICON,

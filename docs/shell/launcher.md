@@ -38,8 +38,11 @@ beside the English ones.
 Window rows show the application and workspace. Enter switches to the existing
 window and a secondary action can launch another instance. Up and Down select a
 result. Enter performs the selected result’s first action. Press Tab to filter the selected result’s
-actions. Click a result to run its primary action. The command bar shows the
-primary action, the action menu, and available shortcuts such as Copy path. A
+actions. Click a result to run its primary action. A selected result with more
+than one action carries an Actions button (Tab) on its own row; the command bar
+shows the primary action and available shortcuts such as Copy path. In mixed
+results, a running application keeps the applications mark even though its first
+action switches to its window; only open-window rows carry the windows mark. A
 single application match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
@@ -132,13 +135,16 @@ preview. Dismissing the preview returns focus to that Browser Window. Missing fi
 show an error instead of previewing a neighboring file. Non-UTF-8 paths can be opened using their original bytes but omit Copy path.
 Displayed escaped/replacement characters never become the activation path.
 
-Type `12 * (8 + 3)` or `= 12 * (8 + 3)` to get `132`. Enter copies the result.
-Arithmetic supports `+`, `-`, `*`, `/`, `^`, parentheses, signed numbers, and
+Type `12 * (8 + 3)` to get `132`; no prefix is needed, and the result leads the
+other matches. `= 12 * (8 + 3)` does the same in explicit mode. Enter copies the
+result. Arithmetic supports `+`, `-`, `*`, `/`, `^`, parentheses, signed numbers, and
 decimal points or decimal commas, postfix `%`, `pi`, `e`, and the functions
 `sqrt`, `abs`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `exp`,
 `floor`, `ceil`, and `round`. Functions require parentheses; trigonometry uses
 radians. For example, `sqrt(144)` gives `12`, `100*25%` gives `25`, and `200+10%`
-gives `220`. Function results can be amounts in conversions, such as
+gives `220`. Typed signs are accepted too: `×`, `·` and an `x` standing between
+two operands (`3x4`, `3 x 4`) multiply, `÷` divides and `−` subtracts; a leading
+`0x` is left alone. Function results can be amounts in conversions, such as
 `sqrt(144) m to cm`. Both decimal separators are interpreted as
 decimal points; thousands separators and scientific-notation input are unsupported.
 Explicit `=` mode shows incomplete/invalid expression and dependency errors.
@@ -372,7 +378,7 @@ supported alongside the two bundled extensions.
 
 ## Search actions, pins and aliases
 
-Select a result and press Tab, or choose its action menu button. Type an action name such
+Select a result and press Tab, or choose the Actions button on its row. Type an action name such
 as `copy`, `open with`, `pin`, or `alias`, then press Enter. The original result
 remains the action target. Escape clears the action query, then returns to the
 original search. Action selection and alias editing use the existing panel.

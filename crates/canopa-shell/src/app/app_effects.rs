@@ -89,6 +89,12 @@ pub(super) fn app_effects_for_foreground(
         ForegroundEffect::OpenMenuWindow { request } => Some(vec![AppEffect::OpenMenuWindow {
             request: request.clone(),
         }]),
+        // Taskbar menus are the Shell's own; only DBusMenus hear "closed".
+        ForegroundEffect::CloseMenu { window, meta }
+            if meta.service == crate::modules::taskbar::MENU_SERVICE =>
+        {
+            Some(vec![AppEffect::RemoveWindow(*window)])
+        }
         ForegroundEffect::CloseMenu { window, meta } => Some(vec![
             AppEffect::SendSniMenuClosed { meta: meta.clone() },
             AppEffect::RemoveWindow(*window),

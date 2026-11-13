@@ -245,7 +245,7 @@ impl Expression {
         if query.len() > 256 {
             return Err(fl!("shell-calculator-too-long", bytes = 256));
         }
-        let input = query
+        let input = super::math::normalize(query)
             .replace("->", " to ")
             .replace('→', " to ")
             .split_whitespace()
@@ -365,6 +365,24 @@ mod tests {
             "/save", "exrates", "2; quit", "2 +", "(2+3", "2 3", "2..3", "2(3)", "()", "1e9",
         ] {
             assert!(arithmetic(expression).is_none(), "{expression}");
+        }
+    }
+
+    #[test]
+    fn ordinary_search_recognizes_typed_operator_signs_without_a_prefix() {
+        for expression in ["12 × 3", "3x4", "10 ÷ 4", "8 − 3", "(2+3) x 4 km to m"] {
+            let parsed = Expression::parse(expression)
+                .unwrap_or_else(|error| panic!("{expression}: {error}"));
+            assert!(parsed.automatic, "{expression}");
+        }
+        let parsed = Expression::parse("3 x 4").unwrap();
+        assert_eq!(parsed.source, "3 * 4");
+        for expression in ["42", "pi", "0x1F", "box 3"] {
+            assert!(
+                Expression::parse(expression).is_err()
+                    || !Expression::parse(expression).unwrap().automatic,
+                "{expression} stays quiet in ordinary search"
+            );
         }
     }
 

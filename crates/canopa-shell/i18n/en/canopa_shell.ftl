@@ -223,6 +223,10 @@ shell-taskbar-windows = { $count ->
     [one] 1 window
    *[other] { $count } windows
 }
+shell-taskbar-open = Open
+shell-taskbar-new-window = New window
+shell-taskbar-pin = Pin to taskbar
+shell-taskbar-unpin = Unpin from taskbar
 shell-a11y-image = Image
 
 ## Notices
@@ -453,9 +457,10 @@ shell-launcher-clear = Clear
 shell-launcher-clear-search = Clear search
 shell-launcher-clear-search-hint = Clear search · { $key }
 shell-launcher-calculator = Calculator
-# Around the "=" key cap: "Type [=] to calculate".
-shell-launcher-calculate-before = Type
-shell-launcher-calculate-after = to calculate
+# Beside two example key caps: "Try [12 × 3] or [5 km to mi]". Calculations
+# need no prefix; the conversion example stays in the English unit grammar.
+shell-launcher-calculate-try = Try
+shell-launcher-calculate-or = or
 shell-launcher-select = Select
 shell-launcher-installed-apps = Installed apps
 shell-launcher-browse = Browse

@@ -160,13 +160,20 @@ impl App {
         menu_item_id: i32,
         menu_path: zbus::zvariant::OwnedObjectPath,
     ) -> Task<Message> {
-        let mut tasks = self.apply_app_effects(vec![AppEffect::SendSniMenuItemClicked {
-            activation: MenuActivation {
-                service,
-                menu_path,
-                item_id: menu_item_id,
-            },
-        }]);
+        let mut tasks = Vec::new();
+        if service == crate::modules::taskbar::MENU_SERVICE {
+            self.handle_taskbar_menu_item(menu_item_id);
+        } else {
+            tasks.extend(
+                self.apply_app_effects(vec![AppEffect::SendSniMenuItemClicked {
+                    activation: MenuActivation {
+                        service,
+                        menu_path,
+                        item_id: menu_item_id,
+                    },
+                }]),
+            );
+        }
         tasks.extend(self.close_active_menu());
         tasks.extend(self.restore_bar_keyboard_interactivity());
         Task::batch(tasks)
@@ -189,9 +196,12 @@ impl App {
                 .bar_surface_identity_for_window(origin_window)
                 .unwrap_or_else(super::surfaces::BarSurfaceIdentity::all_screens),
         };
+        // Tray menu search applies to DBusMenus; taskbar menus are short.
+        let search_enabled =
+            self.sni_menu_search_enabled() && meta.service != crate::modules::taskbar::MENU_SERVICE;
         let request = super::foreground::MenuForegroundRequest {
             meta,
-            search_enabled: self.sni_menu_search_enabled(),
+            search_enabled,
         };
         let effects = self
             .foreground

@@ -1,7 +1,11 @@
 //! Taskbar: pinned applications first, then the other running ones, as app
 //! icons. A click focuses an application's window, cycles through its windows
-//! when it is already focused, or launches it when nothing is open. Niri owns
-//! the windows; the Shell only groups them by desktop application.
+//! when it is already focused, or launches it when nothing is open. A right
+//! click opens its menu: a new window, the desktop entry's actions, and Pin or
+//! Unpin. Niri owns the windows; the Shell only groups them by desktop
+//! application.
+use std::collections::BTreeMap;
+
 use crate::desktop_apps::DesktopApplication;
 use crate::focused_window_icons::ApplicationIcon;
 use crate::modules::{InteractionEvent, ModuleId, ModuleKind, ModuleState};
@@ -28,6 +32,197 @@ pub enum TaskbarEvent {
     Activate { key: String },
     /// Start another instance.
     Launch { key: String },
+    /// Open the application's menu beside its icon on `window`.
+    Menu {
+        key: String,
+        module: ModuleId,
+        window: iced::window::Id,
+    },
+    /// The icon's bounds were measured; show the menu there.
+    MenuAt {
+        key: String,
+        window: iced::window::Id,
+        bounds: Option<iced::Rectangle>,
+    },
+}
+
+/// The menu service of taskbar menus. It cannot be a D-Bus bus name, so a
+/// taskbar menu is never confused with a tray item's DBusMenu.
+pub(crate) const MENU_SERVICE: &str = "canopa-shell/taskbar";
+/// The object path the menu popup records for a taskbar menu.
+pub(crate) const MENU_PATH: &str = "/taskbar";
+
+/// One command in an application's taskbar menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MenuCommand {
+    /// Start the application: "Open" when nothing runs, otherwise "New window".
+    Launch,
+    /// Run one of the desktop entry's `[Desktop Action]` groups.
+    DesktopAction(String),
+    Pin,
+    Unpin,
+}
+
+/// A row of the menu; `None` is a separator.
+pub(crate) type MenuRow = Option<(String, MenuCommand)>;
+
+/// The menu of `entry`: Open or New window, the desktop entry's actions, then
+/// Pin or Unpin. A running application that declares a single main window
+/// gets no New window. A desktop `new-window` action stands in for a plain
+/// launch, which a D-Bus-activated application would answer by raising its
+/// existing window.
+pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication>) -> Vec<MenuRow> {
+    let mut rows = Vec::new();
+    let Some(app) = application else {
+        return rows;
+    };
+    let running = !entry.windows.is_empty();
+    let mut actions: Vec<_> = app.actions.iter().collect();
+    if !running {
+        rows.push(Some((fl!("shell-taskbar-open"), MenuCommand::Launch)));
+    } else if !app.single_main_window {
+        let command = match actions.iter().position(|action| action.id == "new-window") {
+            Some(position) => MenuCommand::DesktopAction(actions.remove(position).id.clone()),
+            None => MenuCommand::Launch,
+        };
+        rows.push(Some((fl!("shell-taskbar-new-window"), command)));
+    }
+    if !actions.is_empty() {
+        if !rows.is_empty() {
+            rows.push(None);
+        }
+        rows.extend(actions.into_iter().map(|action| {
+            Some((
+                action.name.clone(),
+                MenuCommand::DesktopAction(action.id.clone()),
+            ))
+        }));
+    }
+    if !rows.is_empty() {
+        rows.push(None);
+    }
+    rows.push(Some(if entry.pinned {
+        (fl!("shell-taskbar-unpin"), MenuCommand::Unpin)
+    } else {
+        (fl!("shell-taskbar-pin"), MenuCommand::Pin)
+    }));
+    rows
+}
+
+/// The menu popup's tree for `rows`. Item ids are the row positions, so a
+/// selection maps back to its command.
+pub(crate) fn menu_tree(
+    rows: &[MenuRow],
+    anchor: (i32, i32),
+    screen_size: (u32, u32),
+) -> crate::surface::menu_popup::MenuTree {
+    use crate::surface::menu_popup::{MenuItem, MenuTree};
+    MenuTree {
+        items: rows
+            .iter()
+            .enumerate()
+            .map(|(position, row)| MenuItem {
+                id: position.to_string(),
+                label: row
+                    .as_ref()
+                    .map(|(label, _)| label.clone())
+                    .unwrap_or_default(),
+                enabled: row.is_some(),
+                visible: true,
+                icon_name: None,
+                children: Vec::new(),
+                is_separator: row.is_none(),
+                toggle: None,
+            })
+            .collect(),
+        anchor,
+        screen_size,
+    }
+}
+
+/// Pins changed from the bar, layered over a taskbar's configured `pinned`
+/// list: configured applications the person unpinned, and others they pinned.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PinEdits {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pinned: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unpinned: Vec<String>,
+}
+
+impl PinEdits {
+    /// The pinned applications: the configured ones still pinned, in their
+    /// order, then the ones pinned from the bar, in pinning order.
+    pub(crate) fn apply(&self, configured: &[String]) -> Vec<String> {
+        configured
+            .iter()
+            .filter(|id| !self.unpinned.contains(id))
+            .chain(self.pinned.iter().filter(|id| !configured.contains(id)))
+            .cloned()
+            .collect()
+    }
+
+    /// Record pinning or unpinning `id`, keeping only what differs from the
+    /// configuration.
+    pub(crate) fn set(&mut self, configured: &[String], id: &str, pinned: bool) {
+        self.pinned.retain(|other| other != id);
+        self.unpinned.retain(|other| other != id);
+        match (pinned, configured.iter().any(|other| other == id)) {
+            (true, false) => self.pinned.push(id.to_owned()),
+            (false, true) => self.unpinned.push(id.to_owned()),
+            _ => {}
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.pinned.is_empty() && self.unpinned.is_empty()
+    }
+}
+
+/// The saved pin edits of every taskbar, by its configured module name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PinStore {
+    pub version: u32,
+    #[serde(default)]
+    pub taskbars: BTreeMap<String, PinEdits>,
+}
+
+/// Pin files are a few desktop IDs; anything larger is not ours.
+pub(crate) const PIN_STORE_MAX_BYTES: usize = 64 * 1024;
+
+impl PinStore {
+    pub(crate) fn edits(&self, taskbar: &str) -> Option<&PinEdits> {
+        self.taskbars.get(taskbar)
+    }
+
+    pub(crate) fn set(&mut self, taskbar: &str, configured: &[String], id: &str, pinned: bool) {
+        let edits = self.taskbars.entry(taskbar.to_owned()).or_default();
+        edits.set(configured, id, pinned);
+        if edits.is_empty() {
+            self.taskbars.remove(taskbar);
+        }
+        self.version = 1;
+    }
+
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let store: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+        if store.version != 1 {
+            return Err(format!("unsupported taskbar pin version {}", store.version));
+        }
+        Ok(store)
+    }
+
+    pub(crate) fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = serde_json::to_vec_pretty(&Self {
+            version: 1,
+            taskbars: self.taskbars.clone(),
+        })
+        .expect("taskbar pins serialize");
+        bytes.push(b'\n');
+        bytes
+    }
 }
 
 /// Groups `windows` by application. Pinned applications keep their configured
@@ -103,7 +298,9 @@ fn entry_for(key: String, application: Option<&DesktopApplication>, pinned: bool
 }
 
 /// The window a click focuses: the next of the application's windows when
-/// one of them is focused, otherwise its most recently focused one.
+/// one of them is focused, otherwise its most recently focused one. Clicking
+/// the bar moves keyboard focus to it, so callers pass the window that is in
+/// front, not only Niri's keyboard-focused one.
 pub(crate) fn window_to_focus(entry: &TaskbarEntry, focused_window: Option<u64>) -> Option<u64> {
     if entry.windows.len() > 1
         && let Some(focused) = focused_window
@@ -357,12 +554,24 @@ impl crate::modules::interaction::ModuleInteractionHandler for TaskbarItemModule
                     key: self.entry.key.clone(),
                 }))
             }
+            _ => None,
+        }
+    }
+
+    fn on_interaction_in_window(
+        &self,
+        event: InteractionEvent,
+        window: iced::window::Id,
+    ) -> Option<crate::app::Message> {
+        match event {
             InteractionEvent::RightClicked(_) => {
-                Some(crate::app::Message::Taskbar(TaskbarEvent::Launch {
+                Some(crate::app::Message::Taskbar(TaskbarEvent::Menu {
                     key: self.entry.key.clone(),
+                    module: self.id.clone(),
+                    window,
                 }))
             }
-            _ => None,
+            event => self.on_interaction(event),
         }
     }
 }
@@ -533,5 +742,135 @@ mod tests {
         assert_eq!(window_to_focus(&entry, Some(4)), Some(6));
         assert_eq!(window_to_focus(&entry, Some(9)), Some(4));
         assert_eq!(window_to_focus(&entry, None), Some(9), "most recent first");
+    }
+
+    fn entry(windows: Vec<u64>, pinned: bool) -> TaskbarEntry {
+        TaskbarEntry {
+            key: "org.example.Editor.desktop".into(),
+            name: "Editor".into(),
+            icon: None,
+            desktop_id: Some("org.example.Editor.desktop".into()),
+            pinned,
+            windows,
+            focused: false,
+            urgent: false,
+        }
+    }
+
+    fn editor(actions: &[&str], single_main_window: bool) -> DesktopApplication {
+        DesktopApplication {
+            id: "org.example.Editor.desktop".into(),
+            name: "Editor".into(),
+            actions: actions
+                .iter()
+                .map(|id| crate::desktop_apps::DesktopAction {
+                    id: (*id).into(),
+                    name: format!("Action {id}"),
+                    icon: None,
+                    exec: None,
+                })
+                .collect(),
+            single_main_window,
+            ..DesktopApplication::default()
+        }
+    }
+
+    fn commands(rows: &[MenuRow]) -> Vec<Option<MenuCommand>> {
+        rows.iter()
+            .map(|row| row.as_ref().map(|(_, command)| command.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn menus_offer_a_new_window_the_desktop_actions_and_pinning() {
+        let app = editor(&["new-window", "new-private"], false);
+        let rows = menu(&entry(vec![3], false), Some(&app));
+        assert_eq!(
+            commands(&rows),
+            [
+                Some(MenuCommand::DesktopAction("new-window".into())),
+                None,
+                Some(MenuCommand::DesktopAction("new-private".into())),
+                None,
+                Some(MenuCommand::Pin),
+            ],
+            "the entry's own new-window action stands in for a launch"
+        );
+        assert_eq!(rows[0].as_ref().unwrap().0, fl!("shell-taskbar-new-window"));
+
+        let rows = menu(&entry(vec![], true), Some(&editor(&[], false)));
+        assert_eq!(
+            commands(&rows),
+            [Some(MenuCommand::Launch), None, Some(MenuCommand::Unpin)],
+            "nothing runs, so the first row opens the application"
+        );
+
+        let rows = menu(&entry(vec![3], true), Some(&editor(&["new-window"], true)));
+        assert_eq!(
+            commands(&rows),
+            [
+                Some(MenuCommand::DesktopAction("new-window".into())),
+                None,
+                Some(MenuCommand::Unpin),
+            ],
+            "a single-main-window application keeps its actions but no generic New window"
+        );
+
+        assert!(
+            menu(&entry(vec![3], false), None).is_empty(),
+            "windows without a desktop entry have nothing to launch or pin"
+        );
+    }
+
+    #[test]
+    fn menu_trees_map_item_ids_to_rows_and_separators() {
+        let rows = menu(&entry(vec![], false), Some(&editor(&["a"], false)));
+        let tree = menu_tree(&rows, (5, 6), (800, 600));
+        assert_eq!(tree.items.len(), rows.len());
+        assert_eq!(tree.items[0].id, "0");
+        assert!(tree.items[1].is_separator && !tree.items[1].enabled);
+        assert_eq!(tree.items[2].label, "Action a");
+        assert_eq!((tree.anchor, tree.screen_size), ((5, 6), (800, 600)));
+    }
+
+    #[test]
+    fn pin_edits_layer_over_the_configured_pins() {
+        let configured: Vec<String> = vec!["a.desktop".into(), "b.desktop".into()];
+        let mut edits = PinEdits::default();
+        edits.set(&configured, "c.desktop", true);
+        edits.set(&configured, "a.desktop", false);
+        assert_eq!(edits.apply(&configured), ["b.desktop", "c.desktop"]);
+        assert_eq!(edits.pinned, ["c.desktop"]);
+        assert_eq!(edits.unpinned, ["a.desktop"]);
+
+        edits.set(&configured, "a.desktop", true);
+        edits.set(&configured, "c.desktop", false);
+        assert!(
+            edits.is_empty(),
+            "edits that restore the configuration vanish"
+        );
+        assert_eq!(edits.apply(&configured), configured);
+        // A pin added later to the configuration keeps its configured place.
+        edits.set(&configured, "d.desktop", true);
+        let configured: Vec<String> = vec!["d.desktop".into(), "a.desktop".into()];
+        assert_eq!(edits.apply(&configured), ["d.desktop", "a.desktop"]);
+    }
+
+    #[test]
+    fn pin_stores_round_trip_and_reject_foreign_files() {
+        let mut store = PinStore::default();
+        store.set("apps", &[], "c.desktop", true);
+        store.set("dock", &["a.desktop".into()], "a.desktop", false);
+        let bytes = store.to_bytes();
+        assert!(bytes.len() < PIN_STORE_MAX_BYTES);
+        let parsed = PinStore::parse(&bytes).expect("own file");
+        assert_eq!(parsed, store);
+        assert_eq!(parsed.edits("apps").unwrap().pinned, ["c.desktop"]);
+
+        store.set("apps", &[], "c.desktop", false);
+        assert!(store.edits("apps").is_none());
+
+        assert!(PinStore::parse(br#"{"version":2,"taskbars":{}}"#).is_err());
+        assert!(PinStore::parse(br#"{"version":1,"other":1}"#).is_err());
     }
 }

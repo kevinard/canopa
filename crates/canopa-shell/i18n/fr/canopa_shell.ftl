@@ -201,6 +201,10 @@ shell-taskbar-windows = { $count ->
     [one] 1 fenêtre
    *[other] { $count } fenêtres
 }
+shell-taskbar-open = Ouvrir
+shell-taskbar-new-window = Nouvelle fenêtre
+shell-taskbar-pin = Épingler à la barre des tâches
+shell-taskbar-unpin = Détacher de la barre des tâches
 shell-a11y-image = Image
 
 ## Notices
@@ -419,8 +423,8 @@ shell-launcher-clear = Effacer
 shell-launcher-clear-search = Effacer la recherche
 shell-launcher-clear-search-hint = Effacer la recherche · { $key }
 shell-launcher-calculator = Calculatrice
-shell-launcher-calculate-before = Tapez
-shell-launcher-calculate-after = pour calculer
+shell-launcher-calculate-try = Essayez
+shell-launcher-calculate-or = ou
 shell-launcher-select = Sélectionner
 shell-launcher-installed-apps = Applications installées
 shell-launcher-browse = Parcourir

@@ -53,9 +53,14 @@ The taskbar shows the applications listed in its `pinned` desktop IDs (missing
 ones are skipped), then the other open applications in the order they opened,
 grouped by desktop file. A dot on the bar's screen edge marks a running
 application, a longer mark several windows, and an accent mark the focused one.
-Click focuses the application's most recent window or launches it; clicking the
-focused application cycles its windows; right- or middle-click starts another
-instance.
+Click focuses the application's most recent window or launches it; clicking it
+again cycles through its windows. Middle-click starts another instance.
+Right-click opens the application's menu: Open (or New window while it runs,
+unless the desktop file declares a single main window), the desktop file's own
+actions such as New Private Window, and Pin to taskbar or Unpin from taskbar.
+Pins changed there are saved in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`
+as changes to the configured list, so `pinned` keeps its order and later
+additions to it still appear.
 
 ```kdl
 module "taskbar" {
@@ -121,7 +126,8 @@ through the Wallpaper portal to Swaylock. Custom launch commands remain literal 
 The bundled Applications menu searches applications, open windows, file/folder
 names, desktop controls, arithmetic and unit conversions using the same panel
 facilities. Use `files budget`,
-`apps firefox`, `= 12*(8+3)`, or `10 km to miles` to search or calculate. Enter
+`apps firefox`, `12*(8+3)`, `3 x 4` or `10 km to miles` to search or calculate;
+the `=` prefix is optional and only adds error explanations. Enter
 copies a calculator result. File actions include Copy path, reveal, Open with and
 Quick Look. Recent/frequent selections improve ranking; history can be cleared or
 disabled. Use `web query`, paste a URL, or try `time in Tokyo` and `timestamp 0`.
