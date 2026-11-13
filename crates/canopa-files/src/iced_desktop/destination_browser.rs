@@ -270,6 +270,7 @@ impl Browser {
                 ),
                 scrollable(folders)
                     .id(control(id, "list"))
+                    .style(canopa_ui::scrollbar)
                     .direction(scrollable::Direction::Vertical(
                         scrollable::Scrollbar::new()
                             .width(6)

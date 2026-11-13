@@ -143,6 +143,42 @@ fn stopped_and_interrupted_results_refresh_the_origin_and_explain_its_partial_ch
 }
 
 #[test]
+fn an_operation_failure_leaves_the_status_bar_once_seen_or_gone() {
+    for dismissed in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, window) = desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        loaded(&mut desktop, window, tab, 1, root.path());
+        let origin = Origin::capture(&desktop, window).unwrap();
+        admit_phase(
+            &mut desktop,
+            window,
+            origin,
+            root.path().join("copy"),
+            Phase::Running,
+        );
+        desktop.file_operations.snapshot.jobs[0].phase = Phase::Failed;
+        desktop.file_operations.snapshot.jobs[0].error = Some("The disk is full.".into());
+        let _ = desktop.update(Message::FileOperation(Event::Poll));
+        assert_eq!(
+            desktop.active(window).unwrap().error.as_deref(),
+            Some("The disk is full.")
+        );
+        assert!(
+            desktop.file_operations.summary().is_none(),
+            "an ended operation stays out of the status summary"
+        );
+        if dismissed {
+            desktop.file_operations.snapshot.jobs.clear();
+            let _ = desktop.update(Message::FileOperation(Event::Poll));
+        } else {
+            let _ = desktop.update(Message::Command(window, Command::SelectAll));
+        }
+        assert_eq!(desktop.active(window).unwrap().error, None);
+    }
+}
+
+#[test]
 fn retrying_a_failed_start_save_keeps_the_later_completion_attached_to_its_view() {
     let root = tempfile::tempdir().unwrap();
     let (mut desktop, window) = desktop(root.path(), vec![root.path().to_owned()]);

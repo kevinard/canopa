@@ -18,6 +18,9 @@ struct Form<'a> {
     editor: &'a Editor,
     order: Vec<iced::widget::Id>,
     reveal: Vec<(iced::widget::Id, iced::widget::Id)>,
+    /// Segments share their control's width equally, so stacked controls
+    /// line up on both edges.
+    equal_segments: bool,
 }
 impl<'a> Form<'a> {
     fn register(&mut self, name: &str, in_form: bool, enabled: bool) -> iced::widget::Id {
@@ -57,14 +60,56 @@ impl<'a> Form<'a> {
         });
         let message = event.map(Message::Preferences);
         let footer = matches!(name, "save" | "reload");
+        let segment = active && !tab && !primary;
+        let centered = self.equal_segments && !tab && !footer;
+        // View choices carry the view's symbol, as the toolbar's view button.
+        let view_mode = match name {
+            "Columns" => Some(ViewMode::Columns),
+            "List" => Some(ViewMode::List),
+            "Icons" => Some(ViewMode::Icons),
+            _ => None,
+        };
         let label = text(label.into())
             .font(canopa_ui::font(self.appearance))
+            .width(if centered && view_mode.is_none() {
+                Length::Fill
+            } else {
+                Length::Shrink
+            })
+            .align_x(if centered {
+                iced::alignment::Horizontal::Center
+            } else {
+                canopa_ui::direction::start()
+            })
+            .color_maybe(
+                segment.then(|| chrome::ink(self.appearance, canopa_theme::ColorRole::OnAccent)),
+            )
             .size(if footer {
                 self.appearance.typography().body_size.px()
             } else {
-                self.appearance.typography().label_size.px() + if tab { 1.0 } else { 0.0 }
+                self.appearance.typography().label_size.px() + 1.0
             });
-        let label: Element<'a, Message> = if let Some(icon) = icon {
+        let label: Element<'a, Message> = if let Some(mode) = view_mode {
+            let symbol = if segment {
+                super::view::view_icon_on_accent(mode)
+            } else {
+                super::view::view_icon(mode)
+            };
+            container(
+                canopa_ui::direction::row([
+                    self.desktop.icons.chrome(symbol, 16.0, 0.9),
+                    label.into(),
+                ])
+                .spacing(7)
+                .align_y(iced::Alignment::Center),
+            )
+            .center_x(if centered {
+                Length::Fill
+            } else {
+                Length::Shrink
+            })
+            .into()
+        } else if let Some(icon) = icon {
             canopa_ui::direction::row([self.desktop.icons.chrome(icon, 16.0, 0.9), label.into()])
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
@@ -86,11 +131,13 @@ impl<'a> Form<'a> {
             false,
             self.appearance,
         )
-        .width(if tab && self.wide {
-            Length::Fill
-        } else {
-            Length::Shrink
-        });
+        .width(
+            if tab && self.wide || self.equal_segments && !tab && !footer {
+                Length::Fill
+            } else {
+                Length::Shrink
+            },
+        );
         let button = if footer {
             button.padding(chrome::DIALOG_BUTTON_PADDING)
         } else {
@@ -100,16 +147,9 @@ impl<'a> Form<'a> {
             let appearance = self.appearance;
             move |_| {
                 if active && tab {
-                    chrome::highlight(appearance, canopa_theme::ColorRole::AccentSurface)
+                    chrome::sidebar_current(appearance)
                 } else if active && !primary {
-                    container::Style::default()
-                        .background(chrome::selected_fill(appearance))
-                        .border(iced::Border {
-                            width: 1.0,
-                            color: chrome::ink(appearance, canopa_theme::ColorRole::Accent)
-                                .scale_alpha(0.55),
-                            radius: 11.0.into(),
-                        })
+                    chrome::selected_segment_style(appearance)
                 } else {
                     container::Style::default()
                 }
@@ -170,6 +210,44 @@ impl<'a> Form<'a> {
         .padding(6)
         .style(super::chrome::tooltip_style)
         .into()
+    }
+    /// A round −/+ step button, as View options draws them.
+    fn round_change(
+        &mut self,
+        icon: chrome::Icon,
+        label: String,
+        name: &str,
+        change: Change,
+        available: bool,
+    ) -> Element<'a, Message> {
+        let enabled = self.editor.enabled() && available;
+        let id = self.register(name, true, enabled);
+        let message =
+            enabled.then(|| Message::Preferences(Event::Change(self.editor.target(), change)));
+        let button = canopa_ui::styled_action(
+            container(
+                self.desktop
+                    .icons
+                    .chrome(icon, 14.0, if enabled { 0.9 } else { 0.35 }),
+            )
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
+            message.clone(),
+            canopa_ui::Action::Quiet,
+            false,
+            self.appearance,
+        )
+        .width(28)
+        .height(28)
+        .padding(4)
+        .style(chrome::close_style(self.appearance));
+        let control = focus::control(id.clone(), message.clone(), self.appearance, button);
+        super::accessibility_ui::named_button(
+            super::accessibility_ui::focus_key(&id),
+            label,
+            message,
+            control,
+        )
     }
     /// One list row: a leading icon, its label (a button when it selects the
     /// row), its own controls at the end, and what opens under it.
@@ -295,7 +373,10 @@ impl<'a> Form<'a> {
                 Message::Preferences(Event::Change(target, Change::Field(which, v)))
             });
         }
-        // Named by the note drawn before it.
+        // Named by the note drawn before it, or by its row's label.
+        if label.is_empty() {
+            return super::accessibility_ui::semantic(node, input);
+        }
         column![
             self.note(label),
             super::accessibility_ui::semantic(node, input)
@@ -308,6 +389,43 @@ impl<'a> Form<'a> {
             .font(canopa_ui::font(self.appearance))
             .size(self.appearance.typography().label_size.px())
             .into()
+    }
+    /// A setting's line with its name at the start and a switch at the end;
+    /// the whole line toggles it.
+    fn switch(
+        &mut self,
+        label: &str,
+        name: &str,
+        value: bool,
+        change: Change,
+    ) -> Element<'a, Message> {
+        let enabled = self.editor.enabled();
+        let id = self.register(name, true, enabled);
+        let event = Event::Change(self.editor.target(), change);
+        let message = enabled.then_some(Message::Preferences(event));
+        let toggled = message.clone();
+        let control = iced::widget::toggler(value)
+            .size(20)
+            .style(canopa_ui::switch_style)
+            .on_toggle_maybe(toggled.map(|message| move |_| message.clone()));
+        let mut line = iced::widget::mouse_area(
+            container(
+                row![
+                    text(label.to_owned())
+                        .font(canopa_ui::font(self.appearance))
+                        .size(self.appearance.typography().body_size.px())
+                        .width(Length::Fill),
+                    control,
+                ]
+                .spacing(16)
+                .align_y(iced::Alignment::Center),
+            )
+            .padding(2),
+        );
+        if let Some(message) = message.clone() {
+            line = line.on_press(message);
+        }
+        focus::check_box(id, value, message, self.appearance, line)
     }
     fn toggle(
         &mut self,
@@ -351,6 +469,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         editor,
         order: vec![],
         reveal: vec![],
+        equal_segments: false,
     };
     let target = editor.target();
     let id = editor.window;
@@ -432,7 +551,8 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         Page::Locations => locations(&mut form),
         Page::Shortcuts => shortcuts(&mut form),
     };
-    let page = scrollable(column![page, space().height(8)].spacing(0))
+    let page = scrollable(column![page].spacing(0))
+        .style(canopa_ui::scrollbar)
         .direction(scrollable::Direction::Vertical(
             scrollable::Scrollbar::new()
                 .width(6)
@@ -442,23 +562,6 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         .id(editor.focus_id("scroll"))
         .width(Length::Fill)
         .height(Length::Fill);
-    let page: Element<'a, Message> = if wide {
-        row![
-            navigation,
-            iced::widget::rule::vertical(1).style(chrome::divider),
-            page
-        ]
-        .spacing(10)
-        .height(Length::Fill)
-        .into()
-    } else {
-        column![navigation, page]
-            .spacing(8)
-            .height(Length::Fill)
-            .into()
-    };
-    body = body.push(page);
-    body = body.push(iced::widget::rule::horizontal(1).style(chrome::divider));
     let changed_outside = !editor.base.same_source(&desktop.configuration);
     // Changes save as they are made, so the footer reports state instead of
     // offering Save. A newer version saved elsewhere can still be loaded.
@@ -487,11 +590,29 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     } else {
         form.note(&editor.status)
     };
-    body = body.push(
+    // The footer belongs to the page it reports on, under its settings.
+    let footer = container(
         row![container(status).width(Length::Fill), reload]
             .align_y(iced::Alignment::Center)
             .spacing(8),
-    );
+    )
+    .padding([0, 4]);
+    let page: Element<'a, Message> = if wide {
+        row![
+            navigation,
+            iced::widget::rule::vertical(1).style(chrome::divider),
+            column![page, footer].spacing(10)
+        ]
+        .spacing(10)
+        .height(Length::Fill)
+        .into()
+    } else {
+        column![navigation, page, footer]
+            .spacing(8)
+            .height(Length::Fill)
+            .into()
+    };
+    body = body.push(page);
     form.order.push(chrome::dismiss_id(id));
     let default = editor.confirmation.map(|_| editor.focus_id("keep"));
     let appearance = appearance.clone();
@@ -507,7 +628,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
             body,
         ]
         .spacing(8),
-        760.0,
+        920.0,
     )
     .padding(16)
     .width(Length::Fill)
@@ -531,6 +652,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     focus::group_with_shortcuts(content, form.order, form.reveal, default, shortcuts)
 }
 fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
+    form.equal_segments = wide;
     let v = &form.editor.draft.view;
     let mut modes = row![].spacing(4);
     // The second item names the control's focus ID, which stays in English.
@@ -561,86 +683,129 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
         ));
     }
     let appearance = form.appearance;
-    let segment = |choices: Element<'a, Message>| {
+    // Wide windows give every choice row one width, its segments equal.
+    let segment = move |choices: iced::widget::Row<'a, Message>| {
+        let choices: Element<'a, Message> = if wide {
+            choices.width(Length::Fill).into()
+        } else {
+            choices.wrap().into()
+        };
         container(choices)
             .padding(3)
+            .width(if wide {
+                Length::Fixed(SEGMENT_WIDTH)
+            } else {
+                Length::Shrink
+            })
             .style(move |_| chrome::segmented(appearance))
     };
-    let group = |title: String, control: Element<'a, Message>| -> Element<'a, Message> {
-        column![chrome::section_title(appearance, title), control]
-            .spacing(8)
-            .into()
+    let font = canopa_ui::font(appearance);
+    let body_size = appearance.typography().body_size.px();
+    let caption = move |label: String| {
+        text(label)
+            .font(font)
+            .size(appearance.typography().label_size.px() + 1.0)
+            .style(canopa_ui::muted)
+            .wrapping(text::Wrapping::WordOrGlyph)
     };
-    let descending = form.toggle(
+    // One setting per line, as in Settings: its name and note at the start,
+    // its control at the end; narrow windows put the control below.
+    let line = move |label: String,
+                     note: Option<String>,
+                     control: Element<'a, Message>|
+          -> Element<'a, Message> {
+        let mut name = column![text(label).font(font).size(body_size)].spacing(2);
+        if let Some(note) = note {
+            name = name.push(caption(note));
+        }
+        let content: Element<'a, Message> = if wide {
+            row![name.width(Length::Fill), control]
+                .spacing(16)
+                .align_y(iced::Alignment::Center)
+                .into()
+        } else {
+            column![name, control].spacing(8).into()
+        };
+        container(content).padding([7, 14]).into()
+    };
+    let plain = |control: Element<'a, Message>| -> Element<'a, Message> {
+        container(control).padding([6, 12]).into()
+    };
+    // Related lines share one card, parted by hairlines, under a quiet title.
+    let section = move |title: String, lines: Vec<Element<'a, Message>>| -> Element<'a, Message> {
+        let mut list = column![].spacing(0);
+        for (index, line) in lines.into_iter().enumerate() {
+            if index > 0 {
+                list = list.push(
+                    container(iced::widget::rule::horizontal(1).style(chrome::divider))
+                        .padding([0, 14]),
+                );
+            }
+            list = list.push(line);
+        }
+        let mut bold = font;
+        bold.weight = iced::font::Weight::Semibold;
+        column![
+            container(text(title).font(bold).size(body_size + 1.0)).padding([0, 4]),
+            chrome::section_card(appearance, list).padding([2, 0]),
+        ]
+        .spacing(6)
+        .into()
+    };
+    let descending = form.switch(
         &fl!("files-preferences-descending"),
         "descending",
         v.descending,
         Change::Descending(!v.descending),
     );
     // Sorting applies to every view, so it lives with the order, not List view.
-    let folders_first = form.toggle(
+    let folders_first = form.switch(
         &fl!("files-folders-first"),
         "folders-first",
         v.folders_first,
         Change::FoldersFirst(!v.folders_first),
     );
-    let ordering = column![
-        group(
-            fl!("files-preferences-default-view"),
-            column![
-                segment(modes.wrap().into()),
-                text(fl!("files-preferences-views-note"))
-                    .font(canopa_ui::font(appearance))
-                    .size(appearance.typography().label_size.px() + 1.0)
-                    .style(canopa_ui::muted)
-                    .wrapping(text::Wrapping::WordOrGlyph),
-            ]
-            .spacing(8)
-            .into()
-        ),
-        group(
-            fl!("files-preferences-sort-by"),
-            column![segment(sorts.wrap().into()), descending, folders_first]
-                .spacing(10)
-                .into()
-        ),
-    ]
-    .spacing(22);
-    let width = column![
-        container(form.field(
-            &fl!("files-preferences-column-width"),
-            "width",
-            &form.editor.width,
-            Field::Width
-        ))
-        .max_width(150),
-        text(fl!("files-preferences-column-width-range"))
-            .font(canopa_ui::font(form.appearance))
-            .size(form.appearance.typography().label_size.px() + 1.0)
-            .style(canopa_ui::muted),
-    ]
-    .spacing(6);
-    let mut list_details = column![].spacing(8);
+    // The column width is a spin button: typed, or stepped like View
+    // options' round −/+ buttons.
+    let typed = form.editor.width.trim().parse::<i32>().ok();
+    let narrower = form.round_change(
+        chrome::Icon::Minus,
+        fl!("files-column-narrower"),
+        "width-narrower",
+        Change::WidthStep(-super::folder_views::WIDTH_STEP),
+        typed.is_none_or(|width| width > 160),
+    );
+    let field = container(form.field("", "width", &form.editor.width, Field::Width)).width(72);
+    let wider = form.round_change(
+        chrome::Icon::Plus,
+        fl!("files-column-wider"),
+        "width-wider",
+        Change::WidthStep(super::folder_views::WIDTH_STEP),
+        typed.is_none_or(|width| width < 640),
+    );
+    let width = row![narrower, field, wider]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+    let mut details = row![].spacing(18).align_y(iced::Alignment::Center);
     for (detail, label) in [
         (Detail::Size, fl!("files-column-size")),
         (Detail::Modified, fl!("files-preferences-modified-date")),
         (Detail::Kind, fl!("files-column-kind")),
     ] {
         let checked = v.details.contains(&detail);
-        list_details = list_details.push(form.toggle(
+        details = details.push(form.toggle(
             &label,
             &format!("detail-{detail:?}"),
             checked,
             Change::Detail(detail, !checked),
         ));
     }
-    list_details = list_details.push(form.toggle(
+    let tree = form.switch(
         &fl!("files-folder-tree"),
         "tree",
         v.tree,
         Change::Tree(!v.tree),
-    ));
-
+    );
     let thumbnails = form.editor.draft.thumbnails;
     let mut show = row![].spacing(4);
     for policy in crate::interface::ThumbnailPolicy::ALL {
@@ -652,16 +817,58 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             true,
         ));
     }
-    let mut sizes = row![].spacing(4);
-    for size in crate::interface::IconSize::ALL {
-        sizes = sizes.push(form.change(
-            size.label(),
-            &format!("icon-size-{}", size.id()),
-            Change::IconSize(size),
-            thumbnails.size == size,
-            true,
-        ));
-    }
+    // Any size from small to large: the grid lays itself out again for it.
+    let target = form.editor.target();
+    let enabled = form.editor.enabled();
+    let size_slider = iced::widget::slider(
+        f32::from(crate::interface::IconSize::MIN)..=f32::from(crate::interface::IconSize::MAX),
+        thumbnails.size.pixels(),
+        move |pixels| {
+            Message::Preferences(Event::Change(
+                target,
+                Change::IconSize(crate::interface::IconSize::new(pixels.round() as u16)),
+            ))
+        },
+    )
+    .step(8.0)
+    .width(Length::Fill);
+    let size_slider = if enabled {
+        size_slider.on_release(Message::Preferences(Event::Save(target.window)))
+    } else {
+        size_slider
+    };
+    // The keyboard steps it as the pointer does, saving each step.
+    let slider_id = form.register("icon-size", true, enabled);
+    let size = thumbnails.size.value();
+    let step = |pixels: i32| {
+        Message::Preferences(Event::Change(
+            target,
+            Change::IconSizeStep(crate::interface::IconSize::new(
+                pixels.clamp(0, i32::from(u16::MAX)) as u16,
+            )),
+        ))
+    };
+    let steps = enabled.then(|| super::focus::Steps {
+        decrease: step(i32::from(size) - 8),
+        increase: step(i32::from(size) + 8),
+        page_decrease: step(i32::from(size) - 32),
+        page_increase: step(i32::from(size) + 32),
+        first: step(i32::from(crate::interface::IconSize::MIN)),
+        last: step(i32::from(crate::interface::IconSize::MAX)),
+    });
+    let sizes = row![
+        super::focus::slider(slider_id, steps, appearance, size_slider),
+        text(fl!(
+            "files-preferences-icon-pixels",
+            pixels = thumbnails.size.value()
+        ))
+        .font(font)
+        .size(appearance.typography().label_size.px() + 1.0)
+        .width(64)
+        .align_x(canopa_ui::direction::end()),
+    ]
+    .spacing(12)
+    .align_y(iced::Alignment::Center);
     // Registered after the existing Views controls, keeping their keyboard order.
     let mut displays = row![].spacing(4);
     for display in crate::interface::PropertiesDisplay::ALL {
@@ -673,83 +880,85 @@ fn views<'a>(form: &mut Form<'a>, wide: bool) -> Element<'a, Message> {
             true,
         ));
     }
-    let caption = |label: String| {
-        text(label)
-            .font(canopa_ui::font(appearance))
-            .size(appearance.typography().label_size.px() + 1.0)
-            .style(canopa_ui::muted)
-            .wrapping(text::Wrapping::WordOrGlyph)
-    };
-    // Shared browsing choices on the left; each view's own options on the
-    // right under that view's name, so their scope is explicit.
-    let ordering = ordering
-        .push(group(
-            fl!("files-preferences-thumbnails"),
-            column![
-                segment(show.wrap().into()),
-                caption(fl!("files-preferences-thumbnails-note")),
-            ]
-            .spacing(8)
-            .into(),
-        ))
-        .push(group(
-            fl!("files-preferences-properties"),
-            segment(displays.wrap().into()).into(),
-        ));
-    let details = column![
-        group(fl!("files-preferences-columns-view"), width.into()),
-        group(
-            fl!("files-preferences-list-view"),
-            column![caption(fl!("files-preferences-list-details")), list_details]
-                .spacing(8)
-                .into()
+    // Lines read in the order their controls take focus.
+    let settings = column![
+        section(
+            fl!("files-preferences-section-browsing"),
+            vec![
+                line(
+                    fl!("files-preferences-default-view"),
+                    Some(fl!("files-preferences-views-note")),
+                    segment(modes).into(),
+                ),
+                line(
+                    fl!("files-preferences-sort-by"),
+                    None,
+                    segment(sorts).into(),
+                ),
+                plain(descending),
+                plain(folders_first),
+            ],
         ),
-        group(
-            fl!("files-preferences-icons-view"),
-            column![
-                caption(fl!("files-preferences-icon-size")),
-                segment(sizes.wrap().into())
-            ]
-            .spacing(8)
-            .into()
+        section(
+            fl!("files-preferences-section-layouts"),
+            vec![
+                line(
+                    fl!("files-preferences-column-width"),
+                    Some(fl!("files-preferences-column-width-range")),
+                    width.into(),
+                ),
+                line(
+                    fl!("files-preferences-list-view"),
+                    Some(fl!("files-preferences-list-details")),
+                    details.wrap().into(),
+                ),
+                plain(tree),
+            ],
+        ),
+        section(
+            fl!("files-preferences-section-previews"),
+            vec![
+                line(
+                    fl!("files-preferences-thumbnails"),
+                    Some(fl!("files-preferences-thumbnails-note")),
+                    segment(show).into(),
+                ),
+                line(
+                    fl!("files-preferences-icon-size"),
+                    None,
+                    container(sizes).width(SEGMENT_WIDTH).into(),
+                ),
+                line(
+                    fl!("files-preferences-properties"),
+                    None,
+                    segment(displays).into(),
+                ),
+            ],
         ),
     ]
-    .spacing(20);
-    // Each column opens with what it governs: every view, or one view.
-    let eyebrow = |label: String| {
-        let mut font = canopa_ui::font(appearance);
-        font.weight = iced::font::Weight::Semibold;
-        text(label)
-            .font(font)
-            .size(appearance.typography().body_size.px() + 2.0)
-    };
-    let ordering = column![eyebrow(fl!("files-preferences-all-views")), ordering].spacing(12);
-    let details = column![eyebrow(fl!("files-preferences-each-view")), details].spacing(12);
-    let settings: Element<'a, Message> = if wide {
-        row![
-            container(ordering).width(Length::FillPortion(1)),
-            container(details).width(Length::FillPortion(1)),
-        ]
-        .spacing(28)
-        .into()
-    } else {
-        column![
-            ordering,
-            iced::widget::rule::horizontal(1).style(chrome::divider),
-            details,
-        ]
-        .spacing(14)
-        .into()
-    };
+    .spacing(12);
+    form.equal_segments = false;
     container(settings)
-        .padding([6, 4])
+        .padding([2, 4])
         .width(Length::Fill)
         .into()
+}
+
+/// A toolbar item's symbol in the Toolbar page.
+fn toolbar_icon(id: &str) -> Option<chrome::Icon> {
+    if id == super::toolbar::VIEW_ITEM {
+        return Some(chrome::Icon::List);
+    }
+    Command::from_id(id)
+        .and_then(super::toolbar::command_icon)
+        .map(|(icon, _)| icon)
 }
 
 fn item_label(editor: &Editor, id: &str) -> String {
     if id == "location" {
         fl!("files-preferences-location-field")
+    } else if id == super::toolbar::VIEW_ITEM {
+        fl!("files-preferences-view-button")
     } else if let Some(command) = Command::from_id(id) {
         command.label()
     } else {
@@ -771,8 +980,7 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
                 .width(Length::Fill)
                 .style(move |_| chrome::highlight(appearance, canopa_theme::ColorRole::Background))
                 .into()
-        } else if let Some((icon, _)) = Command::from_id(id).and_then(super::toolbar::command_icon)
-        {
+        } else if let Some(icon) = toolbar_icon(id) {
             container(form.desktop.icons.chrome(icon, 16.0, 0.9))
                 .padding(5)
                 .into()
@@ -794,9 +1002,7 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     let mut body = column![form.note(fl!("files-preferences-toolbar-preview")), preview].spacing(8);
     let count = editor.draft.toolbar.len();
     for (index, id) in editor.draft.toolbar.iter().enumerate() {
-        let icon = Command::from_id(id)
-            .and_then(super::toolbar::command_icon)
-            .map(|(icon, _)| icon);
+        let icon = toolbar_icon(id);
         let controls = form.row_edits(
             "toolbar",
             index,
@@ -831,10 +1037,13 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
             Field::Filter,
         ));
         let filter = editor.filter.to_lowercase();
-        let choices = Command::ALL
-            .iter()
-            .filter(|c| !c.never_on_toolbar())
-            .map(|c| c.id().to_owned())
+        let choices = std::iter::once(super::toolbar::VIEW_ITEM.to_owned())
+            .chain(
+                Command::ALL
+                    .iter()
+                    .filter(|c| !c.never_on_toolbar())
+                    .map(|c| c.id().to_owned()),
+            )
             .chain(
                 editor
                     .base
@@ -854,9 +1063,7 @@ fn toolbar<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
                 Change::AddToolbar(id.clone()),
                 true,
             );
-            let icon = Command::from_id(&id)
-                .and_then(super::toolbar::command_icon)
-                .map(|(icon, _)| icon);
+            let icon = toolbar_icon(&id);
             body =
                 body.push(form.list_row(icon, form.note(item_label(editor, &id)), vec![add], None));
         }
@@ -1058,3 +1265,6 @@ fn shortcuts<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
     body.push(form.note(fl!("files-preferences-shortcuts-footer")))
         .into()
 }
+
+/// The width of every segmented choice on the Views page.
+const SEGMENT_WIDTH: f32 = 400.0;

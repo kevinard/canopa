@@ -632,6 +632,7 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         column![
             scrollable(facts)
                 .id(scroll(dialog.window))
+                .style(canopa_ui::scrollbar)
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new()
                         .width(6)

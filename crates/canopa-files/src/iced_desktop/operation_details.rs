@@ -716,12 +716,14 @@ fn contents<'a>(desktop: &'a Desktop, dialog: &'a Dialog, viewport: Size) -> Ele
             .wrap(),
     )
     .id(section_scroll(dialog.window))
+    .style(canopa_ui::scrollbar)
     .direction(scrollable::Direction::Horizontal(scrollbar))
     .width(Length::Fill);
     let appearance = appearance.clone();
     let body = container(
         column![
             scrollable(facts)
+                .style(canopa_ui::scrollbar)
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new()
                         .width(6)

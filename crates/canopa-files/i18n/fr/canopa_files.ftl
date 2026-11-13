@@ -66,10 +66,7 @@ files-place-recovery = Récupération
 files-thumbnails-local = Fichiers locaux uniquement
 files-thumbnails-always = Tous les fichiers
 files-thumbnails-never = Jamais
-files-icon-size-small = Petite
-files-icon-size-medium = Moyenne
-files-icon-size-large = Grande
-files-icon-size-huge = Très grande
+files-preferences-icon-pixels = { $pixels } px
 
 ## Toolbar and location bar
 
@@ -183,6 +180,7 @@ files-search-unreadable-hide = { $count ->
 }
 files-search-failure = { $location } — { $error }
 files-this-folder = Ce dossier
+files-view-options-title = Options d’affichage
 
 ## Preferences window: pages and status line
 
@@ -222,21 +220,20 @@ files-preferences-pending = Appuyez sur Entrée pour appliquer la valeur saisie.
 files-preferences-keys = Alt+1–4 pages · Ctrl+S Enregistrer · Ctrl+R Recharger
 files-preferences-default-view = Vue par défaut
 files-preferences-sort-by = Trier par
-files-preferences-descending = Ordre décroissant
-files-preferences-columns-view = Affichage en colonnes
-files-preferences-all-views = Valeurs par défaut
-files-preferences-each-view = Réglages par affichage
+files-preferences-descending = Ordre inversé
 files-preferences-list-view = Affichage en liste
-files-preferences-icons-view = Affichage en icônes
 files-preferences-column-width = Largeur des colonnes
 files-preferences-column-width-range = 160 à 640 pixels
+files-column-narrower = Colonnes plus étroites
+files-column-wider = Colonnes plus larges
 files-preferences-list-details = Détails à afficher
-files-preferences-modified-date = Date de modification
+files-preferences-modified-date = Heure de modification
 files-preferences-thumbnails = Miniatures
 files-preferences-icon-size = Taille des icônes
 files-preferences-views-note = Les dossiers héritent de ces réglages sauf s’ils ont leurs propres options d’affichage.
 files-preferences-thumbnails-note = « Fichiers locaux uniquement » ignore les partages réseau et les supports amovibles.
 files-preferences-location-field = Champ d’emplacement
+files-preferences-view-button = Affichage
 files-preferences-toolbar-action = Action : { $name }
 files-preferences-earlier = Avant
 files-preferences-later = Après
@@ -302,8 +299,10 @@ files-operations-save-before-closing = Enregistrez le résultat de l’opératio
 ## Actions menu (toolbar menu and context menu)
 
 files-menu-open = Ouvrir
-files-menu-open-with = Ouvrir avec…
+files-menu-open-with = Ouvrir avec
 files-menu-open-in-new-tab = Ouvrir dans un nouvel onglet
+files-menu-duplicate-tab = Dupliquer l’onglet
+files-menu-close-other-tabs = Fermer les autres onglets
 files-menu-new-folder = Nouveau dossier…
 files-menu-new-folder-short = Nouveau dossier
 files-menu-rename = Renommer…
@@ -311,11 +310,26 @@ files-menu-delete-permanently = Supprimer définitivement…
 files-menu-edit-custom-actions = Modifier les actions personnalisées…
 files-menu-preferences = Préférences…
 files-menu-bookmark-folder = Ajouter ce dossier aux signets…
-files-menu-locations = Emplacements…
+files-menu-locations = Emplacements
 files-menu-view-options = Options d’affichage…
 files-menu-other-application = Autre application…
 files-menu-default-application = { $application } (par défaut)
 files-action-not-applicable = « { $action } » ne s’applique pas à cette sélection.
+
+## Shortcut hints in menus, joined with "+" (Ctrl+Shift+N)
+
+files-key-ctrl = Ctrl
+files-key-shift = Maj
+files-key-alt = Alt
+files-key-super = Super
+files-key-enter = Entrée
+files-key-space = Espace
+files-key-delete = Suppr
+files-key-backspace = Retour arrière
+files-key-escape = Échap
+files-key-tab = Tab
+files-key-page-up = Page préc.
+files-key-page-down = Page suiv.
 
 ## Devices: removal and menu items ($device is a device name)
 
@@ -370,7 +384,7 @@ files-delete-title = Supprimer définitivement ?
 files-delete-title-empty-trash = Vider la corbeille ?
 files-delete-title-no-trash = Impossible de mettre à la corbeille
 files-delete-one = « { $name } » sera supprimé immédiatement. Cette action est irréversible.
-files-delete-cannot-undo = L’élément ci-dessous sera supprimé immédiatement. Cette action est irréversible.
+files-delete-cannot-undo = Il sera supprimé immédiatement, sans retour possible.
 files-delete-many = { $count ->
     [one] { $count } élément sera supprimé immédiatement. Cette action est irréversible.
    *[other] { $count } éléments seront supprimés immédiatement. Cette action est irréversible.
@@ -719,6 +733,9 @@ files-properties-link-target = Cible du lien
 files-properties-dimensions = Dimensions
 files-command-properties = Propriétés
 files-preferences-properties = Propriétés
+files-preferences-section-browsing = Navigation
+files-preferences-section-layouts = Colonnes et listes
+files-preferences-section-previews = Aperçus et détails
 files-properties-display-window = Dans une fenêtre
 files-properties-display-panel = Dans un panneau latéral
 files-properties-created = Création
@@ -970,7 +987,6 @@ files-folder-reverse-order = Ordre inversé
 files-folder-tree = Afficher les dossiers en arborescence
 files-folders-first = Dossiers avant les fichiers
 files-folder-modified-time = Heure de modification
-files-folder-list-details = Détails de la liste
 files-folder-remembered = Les choix sont mémorisés pour ce dossier.
 
 ## Custom Actions editor
@@ -1307,6 +1323,7 @@ files-config-toolbar-unknown = élément de barre d’outils inconnu ou en doubl
 files-config-too-many-places = 256 emplacements au maximum sont pris en charge
 files-config-duplicate-place = emplacement intégré en double
 files-config-list-columns-invalid = les largeurs des colonnes de la liste sont hors de leur plage
+files-config-panes-invalid = les largeurs des panneaux sont hors de leur plage
 files-config-bookmark-invalid = un signet nécessite un nom et un dossier local absolu
 files-config-too-many-shortcuts = huit raccourcis au maximum sont pris en charge par commande
 files-config-action-modifier = les actions personnalisées nécessitent un raccourci avec Ctrl, Alt, Super ou une touche de fonction

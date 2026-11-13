@@ -4,12 +4,12 @@
     "repository": "https://github.com/kevinard/niri",
     "upstream": "https://github.com/niri-wm/niri",
     "branch": "canopa/main",
-    "commit": "9389bbaaa37ba91b9c110ebe457a2f6386e69299",
+    "commit": "c12bf50929952056b7e7299739eb7d40d45e0a8a",
     "base": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
-    "archive": "niri-9389bbaaa37ba91b9c110ebe457a2f6386e69299.tar.gz",
-    "url": "https://codeload.github.com/kevinard/niri/tar.gz/9389bbaaa37ba91b9c110ebe457a2f6386e69299",
-    "archive_sha256": "1d6cb7383198ccb37b27e9046d120900b5b0d1b71c9eb34fbe57fe5500b5eb28",
-    "archive_root": "niri-9389bbaaa37ba91b9c110ebe457a2f6386e69299",
+    "archive": "niri-c12bf50929952056b7e7299739eb7d40d45e0a8a.tar.gz",
+    "url": "https://codeload.github.com/kevinard/niri/tar.gz/c12bf50929952056b7e7299739eb7d40d45e0a8a",
+    "archive_sha256": "7c175b7da8af8ae8146c46e126fa793f468929cd997b6b2d230f8f8bd2353348",
+    "archive_root": "niri-c12bf50929952056b7e7299739eb7d40d45e0a8a",
     "license": "GPL-3.0-or-later",
     "notices": {
       "LICENSE": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"

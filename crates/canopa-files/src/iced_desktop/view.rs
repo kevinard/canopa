@@ -88,19 +88,17 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     // The toolbar keeps its tree index, where Iced stores the active location
     // editor's focus and caret.
     let brand: Element<'_, Message> = space().width(0).into();
+    let sidebar_width = desktop.sidebar_width(id);
+    let properties_width = desktop.properties_width(id);
     let paths = tab.column_paths(
         window.width,
-        desktop.configuration.settings.sidebar,
-        window.panel_width(),
+        (desktop.configuration.settings.sidebar, sidebar_width),
+        window.panel_width(properties_width),
         &desktop.home,
     );
     let content_width = window.width
-        - window.panel_width()
-        - if sidebar {
-            chrome::SIDEBAR_WIDTH + 1.0
-        } else {
-            0.0
-        };
+        - window.panel_width(properties_width)
+        - if sidebar { sidebar_width + 1.0 } else { 0.0 };
     // While a divider is dragged, the current column keeps a usable width.
     let minimum = tab.browser.as_ref().map_or(0.0, |browser| {
         let fitting = if paths.len() > 1 {
@@ -117,6 +115,16 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     // Share surplus with the immediate parent while keeping the larger share
     // available for the current folder.
     let parent_extra = if paths.len() > 1 {
+        (spare * 0.46).min(68.0)
+    } else {
+        0.0
+    };
+    // In Columns view the current folder, a column like its parents, takes
+    // that surplus itself: its names are the ones being read.
+    let columned_view = tab.browser.as_ref().is_some_and(|browser| {
+        browser.search().is_none() && browser.view().mode == crate::preferences::ViewMode::Columns
+    });
+    let current_extra = if columned_view {
         (spare * 0.46).min(68.0)
     } else {
         0.0
@@ -174,24 +182,36 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
         space().height(0).into()
     };
     body = body.push(container(persistence_notice));
-    // A tab dragged over a one-tab window shows its bar, to show where it lands.
-    if window.tabs.len() > 1 || desktop.drag.tab_hover(id).is_some() {
-        body = body.push(tab_bar(desktop, id, window, tab));
-    }
     if let Some(session) = &tab.search {
         // The field is in the toolbar and the options beside the results.
         if let Some(problems) = search_parts(desktop, id, tab, session).problems {
             body = body.push(problems);
         }
     }
+    // The sidebar runs from the toolbar to the status bar. Tabs head only the
+    // folders they switch, in the toolbar's tone, the current one opening
+    // into the folder below it.
+    let mut outer = row![].height(Length::Fill);
     let mut content = row![].height(Length::Fill);
     if sidebar {
-        content = content
+        // The divider at the sidebar's end resizes it.
+        outer = outer
             .push(semantic(
                 Node::navigation(fl!("files-sidebar")).key("files-sidebar"),
                 places(desktop, id),
             ))
-            .push(rule::vertical(1).style(chrome::divider));
+            .push(super::resize::Grip {
+                window: id,
+                target: super::resize::Target::Sidebar,
+                width: 1.0,
+                current: sidebar_width,
+                height: Length::Fill,
+                line: None,
+                color: divider_color,
+                share: 1.0,
+                quiet: false,
+                enabled: desktop.dividers_take_pointer(id),
+            });
     }
     if let Some(browser) = &tab.browser {
         for (index, path) in paths.iter().enumerate() {
@@ -207,6 +227,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     color: divider_color,
                     share: 1.0 / index as f32,
                     quiet: false,
+                    enabled: desktop.dividers_take_pointer(id),
                 });
             }
             let current = path == browser.path();
@@ -329,6 +350,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             let epoch = tab.list_epoch;
             let rendered = Size::new(tab.viewport_width, tab.viewport_height);
             let list = scrollable(entries)
+                .style(canopa_ui::scrollbar)
                 .id(scroll_id(tab.id, &path, epoch))
                 .height(Length::Fill)
                 .on_scroll(move |viewport| {
@@ -398,14 +420,9 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 18.0,
                 if current { 1.0 } else { 0.82 },
             );
-            let symbol: Element<'_, Message> = if current {
-                container(symbol)
-                    .padding(5)
-                    .style(move |_| chrome::highlight(appearance, ColorRole::Raised))
-                    .into()
-            } else {
-                container(symbol).padding(5).into()
-            };
+            // The accent underline marks the current column; its symbol
+            // only stays at full strength.
+            let symbol: Element<'_, Message> = container(symbol).padding(5).into();
             let inline = current
                 && !searching
                 && super::listing_ui::inline_details(
@@ -425,7 +442,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 };
                 let heading_width = name_width - lead;
                 row![
-                    space().width(30.0 + lead),
+                    space().width(32.0 + lead),
                     container(super::listing_ui::sort_heading_button(
                         desktop,
                         id,
@@ -458,7 +475,7 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     space().width(trailing),
                     space().width(Length::Fill),
                 ]
-            } else {
+            } else if searching {
                 let mut title = row![
                     symbol,
                     chrome::single_line(
@@ -470,34 +487,36 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     ),
                 ];
                 // A search's options sit beside its results.
-                if searching && let Some(session) = &tab.search {
+                if let Some(session) = &tab.search {
                     title = title.push(search_parts(desktop, id, tab, session).controls);
                 }
                 title
+            } else {
+                // Without details or a search there is no heading to show.
+                let _ = (symbol, heading);
+                row![]
             }
             .spacing(7)
             .align_y(Alignment::Center);
+            // Headings sit close to the rows' height, alike in every view.
             let heading = container(heading)
-                .height((body_size * 1.3 + 23.0).ceil())
+                .height(heading_height(appearance))
                 .align_y(Alignment::Center)
                 .padding([0, 11])
-                .width(Length::Fill)
-                .style(move |_| {
-                    // Columns share one neutral heading, the current one marked
-                    // by its accent underline. Icons view keeps only a quiet title.
-                    if grid {
-                        return container::Style::default();
-                    }
-                    let mut background = chrome::ink(appearance, ColorRole::Raised);
-                    background.a = if current { 0.72 } else { 0.58 };
-                    container::Style::default().background(background)
-                });
+                // Headings stand on the folder's own surface, parted from
+                // the rows by a hairline, so the window keeps few tones.
+                .width(Length::Fill);
             let list = container(list)
                 .padding(if grid { [14, 14] } else { [6, 7] })
                 .height(Length::Fill);
             // Rows take their own secondary clicks; the space around them is the
             // folder's. Every column keeps the same widgets, keeping their state.
             let mut list = iced::widget::mouse_area(list);
+            // A parent column's empty space goes back to its folder, the
+            // child it showed selected.
+            if !current && let Some(child) = child {
+                list = list.on_press(Message::Select(id, child.to_owned()));
+            }
             if current && !searching {
                 list = list
                     .on_press(Message::Deselect(id, tab.id, tab.revision))
@@ -508,39 +527,49 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                     )));
             }
             // The toolbar's path already names an Icons view's folder.
-            let folder = if grid {
-                column![list]
+            // Only List view's details and a search have a heading: Columns
+            // and Icons views let the path name the folder.
+            let folder: Element<'_, Message> = if grid || !(inline || searching) {
+                column![list].into()
             } else {
-                column![
-                    heading,
-                    rule::horizontal(if current { 2 } else { 1 }).style(move |theme| {
-                        let mut style = chrome::divider(theme);
-                        if current && !inline {
-                            style.color = chrome::ink(appearance, ColorRole::Accent);
-                            style.color.a = 0.72;
-                        }
-                        style
-                    }),
-                    list,
+                column![heading, rule::horizontal(1).style(chrome::divider), list,].into()
+            };
+            // In Columns view the current folder is a column like its parents,
+            // so its rows stay near their names; the space after it is still
+            // the folder's. The last column needs no divider after it.
+            let columned = current
+                && !searching
+                && browser.view().mode == crate::preferences::ViewMode::Columns;
+            let folder: Element<'_, Message> = if columned {
+                let rest =
+                    iced::widget::mouse_area(space().width(Length::Fill).height(Length::Fill))
+                        .on_press(Message::Deselect(id, tab.id, tab.revision))
+                        .on_right_press(Message::Action(actions_ui::Event::Background(
+                            id,
+                            tab.id,
+                            tab.revision,
+                        )));
+                row![
+                    container(folder)
+                        .width(minimum + current_extra - 1.0)
+                        .height(Length::Fill),
+                    rest,
                 ]
+                .into()
+            } else {
+                folder
             };
             let folder: Element<'_, Message> = container(folder)
                 .width(if current {
                     Length::Fill
-                } else if index + 2 == paths.len() {
+                } else if index + 2 == paths.len() && !columned_view {
                     Length::Fixed(minimum + parent_extra - 1.0)
                 } else {
                     Length::Fixed(minimum - 1.0)
                 })
+                // Parent columns share the folder's surface; their dividers
+                // and selections set them apart.
                 .height(Length::Fill)
-                .style(move |_| {
-                    if current {
-                        container::Style::default()
-                    } else {
-                        container::Style::default()
-                            .background(chrome::ink(appearance, ColorRole::Spine))
-                    }
-                })
                 .into();
             content = content.push(super::drag_ui::target_region(
                 desktop,
@@ -565,13 +594,39 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     }
     if let Some(panel) = &window.properties {
         let panel_appearance = appearance.clone();
-        content = content.push(rule::vertical(1).style(chrome::divider)).push(
-            container(super::properties_ui::panel(desktop, id, panel))
-                .height(Length::Fill)
-                .style(move |_| chrome::panel_surface(&panel_appearance)),
-        );
+        // The divider at the panel's start resizes it: moving it left
+        // widens the panel.
+        content = content
+            .push(super::resize::Grip {
+                window: id,
+                target: super::resize::Target::Properties,
+                width: 1.0,
+                current: properties_width,
+                height: Length::Fill,
+                line: None,
+                color: divider_color,
+                share: -1.0,
+                quiet: false,
+                enabled: desktop.dividers_take_pointer(id),
+            })
+            .push(
+                container(super::properties_ui::panel(desktop, id, panel))
+                    .width(properties_width)
+                    .height(Length::Fill)
+                    .style(move |_| chrome::panel_surface(&panel_appearance)),
+            );
     }
-    body = body.push(content);
+    // A tab dragged over a one-tab window shows its bar, to show where it lands.
+    let outer = if window.tabs.len() > 1 || desktop.drag.tab_hover(id).is_some() {
+        outer.push(
+            column![tab_bar(desktop, id, window, tab, sidebar), content]
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+    } else {
+        outer.push(content)
+    };
+    body = body.push(outer);
     let status = if let Some(error) = &tab.error {
         error.clone()
     } else if tab.loading {
@@ -720,11 +775,6 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     if wide_status && !summary.is_empty() {
         footer = footer.push(operation_button());
     }
-    if let Some(browser) = &tab.browser
-        && browser.search().is_none()
-    {
-        footer = footer.push(view_button(desktop, id, tab, browser.view().mode));
-    }
     let mut status_bar = column![footer].spacing(3);
     if !summary.is_empty() && (!wide_status || tab.error.is_some()) {
         let activity = row![
@@ -742,9 +792,10 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
         });
     }
     body = body.push(rule::horizontal(1).style(chrome::divider)).push(
+        // Status text starts where the sidebar's labels do.
         container(status_bar)
             .width(Length::Fill)
-            .padding([5, 14])
+            .padding([5, 20])
             .style(move |_| chrome::bar(appearance, false)),
     );
     let shortcuts = if desktop
@@ -788,11 +839,28 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
         tab.location.as_ref().map(|_| location_id(id)),
     );
     if let Some(scene) = desktop.drag.scene(id) {
-        super::drag_geometry::root(id, scene, desktop.drag.outlined(id), content)
+        super::drag_geometry::root(
+            id,
+            scene,
+            desktop.drag.outlined(id),
+            desktop.drag.grabbing(id),
+            content,
+        )
     } else {
         content
     }
 }
+
+const TAB_SPACING: f32 = 2.0;
+
+/// The height of every view's heading band.
+fn heading_height(appearance: &canopa_theme::Appearance) -> f32 {
+    (appearance.typography().body_size.px() * 1.3 + 15.0).ceil()
+}
+/// A tab's room beside its name: the folder symbol, the close button and padding.
+const TAB_CHROME: f32 = 100.0;
+const TAB_MIN: f32 = 150.0;
+const TAB_MAX: f32 = 260.0;
 
 /// The window's tabs, once it has more than one: each names its folder, closes
 /// with its cross or a middle click, and takes dropped files into that folder.
@@ -801,11 +869,44 @@ fn tab_bar<'a>(
     id: window::Id,
     window: &'a BrowserWindow,
     active: &'a Tab,
+    sidebar: bool,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     let label_size = appearance.typography().label_size.px() + 1.0;
     let mut tabs: Vec<(u64, Element<'_, Message>)> = Vec::new();
+    // Tabs share the bar like a browser's: as wide as their folder names
+    // need, narrowing together when many are open, never stretched across it.
+    let count = window.tabs.len() as f32;
+    let lead = if sidebar {
+        desktop.sidebar_width(id) + 1.0
+    } else {
+        0.0
+    };
+    let share =
+        ((window.width - lead - 16.0 - 34.0 - (count + 1.0) * TAB_SPACING) / count - 1.0).max(72.0);
+    let mut semibold = font;
+    semibold.weight = Weight::Semibold;
+    // Every tab takes the width the longest name needs, so the strip reads
+    // as one row of equal tabs.
+    let tab_width = window
+        .tabs
+        .iter()
+        .map(|candidate| {
+            let path = candidate.path();
+            let label = if path == desktop.home {
+                fl!("files-place-home")
+            } else {
+                path.file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            chrome::text_width(&label, semibold, label_size) + TAB_CHROME
+        })
+        .fold(TAB_MIN, f32::max)
+        .min(TAB_MAX)
+        .min(share);
     for (index, candidate) in window.tabs.iter().enumerate() {
         let current = index == window.active;
         let path = candidate.path();
@@ -826,66 +927,123 @@ fn tab_bar<'a>(
             format!("files-tab-close-{}", candidate.id),
             fl!("files-tab-close", folder = label.clone()),
             Some(close_message.clone()),
-            iced::widget::button(desktop.icons.chrome(Icon::Close, 12.0, 0.85))
-                .padding(3)
-                .on_press(close_message.clone())
-                .style(|theme, status| {
-                    let mut style =
-                        canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
-                    style.border.radius = 5.0.into();
-                    style
-                }),
+            iced::widget::button(desktop.icons.chrome(
+                Icon::Close,
+                16.0,
+                if current { 0.9 } else { 0.7 },
+            ))
+            .padding(4)
+            .on_press(close_message.clone())
+            .style(|theme, status| {
+                let mut style =
+                    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+                style.border.radius = 6.0.into();
+                style
+            }),
         );
+        // Neighbouring inactive tabs are parted by a short line; the active
+        // tab's own edge parts it from the others.
+        let next_current = index + 1 == window.active;
+        let last = index + 1 == window.tabs.len();
+        let mut divider = chrome::ink(appearance, ColorRole::Border);
+        divider.a = if current || next_current || last {
+            0.0
+        } else {
+            0.45
+        };
         let content = row![
             desktop
                 .icons
-                .chrome(Icon::Folder, 15.0, if current { 1.0 } else { 0.75 }),
+                .chrome(Icon::Folder, 15.0, if current { 0.95 } else { 0.7 }),
             container(chrome::file_name_line(
                 label.clone(),
                 label_font,
                 label_size,
-                Some(chrome::ink(
-                    appearance,
-                    if current {
-                        ColorRole::Text
-                    } else {
-                        ColorRole::Muted
-                    }
-                )),
+                Some(if current {
+                    chrome::ink(appearance, ColorRole::Text)
+                } else {
+                    chrome::ink(appearance, ColorRole::Text).scale_alpha(0.74)
+                }),
                 true,
             ))
             .width(Length::Fill),
             close,
         ]
-        .spacing(6)
+        .spacing(8)
         .align_y(Alignment::Center);
         let tab_appearance = appearance.clone();
-        let card = container(content)
-            .padding([4, 6])
-            .width(Length::FillPortion(1))
-            .max_width(220)
-            .style(move |_| {
-                let appearance = &tab_appearance;
-                if current {
-                    container::Style::default()
-                        .background(chrome::ink(appearance, ColorRole::Background))
-                        .border(iced::Border {
-                            color: chrome::ink(appearance, ColorRole::Border),
-                            width: 1.0,
-                            radius: 8.0.into(),
-                        })
-                } else {
-                    container::Style::default()
-                }
-            });
-        let card = super::hover::hover(
+        // The current tab takes the tone of what lies below it, so the two
+        // read as one piece: a list's or grid's surface, or the first
+        // column's heading.
+        // The current tab takes the tone right below it: List's headings, a
+        // search's, the first column (an ancestor's, when there are several)
+        // or the folder's own surface.
+        // The current tab is cut from the tone below it, rounded only at the
+        // top and flush with the bar's lower edge; a short accent bar rides
+        // straight along its top, clear of the rounded corners.
+        let fill_appearance = tab_appearance.clone();
+        let bar_appearance = tab_appearance.clone();
+        let body = container(content)
+            .padding(iced::Padding {
+                top: 3.0,
+                bottom: if current { 5.0 } else { 3.0 },
+                left: 12.0,
+                right: 5.0,
+            })
+            .width(Length::Fill);
+        let body: Element<'_, Message> = if current {
+            column![
+                container(
+                    container(space().width(Length::Fill).height(3)).style(move |_| {
+                        container::Style::default()
+                            .background(chrome::ink(&bar_appearance, ColorRole::Accent))
+                            .border(iced::Border::default().rounded(1.5))
+                    })
+                )
+                .padding([0, 12]),
+                body,
+            ]
+            .into()
+        } else {
+            body.into()
+        };
+        let card = container(body).width(tab_width).style(move |_| {
+            let appearance = &fill_appearance;
+            if current {
+                container::Style::default()
+                    .background(chrome::ink(appearance, ColorRole::Surface))
+                    .border(iced::Border {
+                        radius: iced::border::Radius {
+                            top_left: 9.0,
+                            top_right: 9.0,
+                            bottom_right: 0.0,
+                            bottom_left: 0.0,
+                        },
+                        ..Default::default()
+                    })
+            } else {
+                // Other tabs keep a faint shape of their own.
+                container::Style::default()
+                    .background(chrome::ink(appearance, ColorRole::Text).scale_alpha(0.045))
+                    .border(iced::Border::default().rounded(9))
+            }
+        });
+        let card = container(super::hover::hover(
             card,
             super::listing_ui::hover_wash(appearance),
-            8.0,
+            9.0,
             !current,
-        );
+        ))
+        .padding(if current { 0.0 } else { 2.0 });
+        let card = row![
+            card,
+            container(space().width(1).height(16))
+                .style(move |_| container::Style::default().background(divider)),
+        ]
+        .align_y(Alignment::Center);
         let card = iced::widget::mouse_area(card)
             .on_press(Message::SwitchTab(id, index))
+            .on_right_press(Message::Action(super::actions_ui::Event::Tab(id, index)))
             .on_middle_press(close_message);
         let card = super::drag_ui::target_region(
             desktop,
@@ -912,8 +1070,8 @@ fn tab_bar<'a>(
         "files-tab-new",
         Command::NewTab.label(),
         Some(add.clone()),
-        iced::widget::button(desktop.icons.chrome(Icon::Plus, 15.0, 0.85))
-            .padding(5)
+        iced::widget::button(desktop.icons.chrome(Icon::Plus, 18.0, 0.85))
+            .padding(6)
             .on_press(add)
             .style(|theme, status| {
                 let mut style =
@@ -924,7 +1082,7 @@ fn tab_bar<'a>(
     );
     // A tab being dragged away leaves a ghost of itself, outlined in the
     // accent like the pin that marks where a dragged tab would land.
-    let mut cover = chrome::ink(appearance, ColorRole::Spine);
+    let mut cover = chrome::ink(appearance, ColorRole::Surface);
     cover.a = 0.82;
     let pin = desktop.drag.tab_hover(id).and_then(|hover| {
         let geometry = window.tab_geometry.lock().ok()?.clone();
@@ -942,7 +1100,7 @@ fn tab_bar<'a>(
         container(super::tab_strip::tab_strip(
             tabs,
             add,
-            4.0,
+            TAB_SPACING,
             id,
             Size::new(window.width, window.height),
             desktop.drag.native(id),
@@ -954,9 +1112,16 @@ fn tab_bar<'a>(
                 cover,
             },
         ))
-        .padding([4, 8])
+        .padding(iced::Padding {
+            top: 6.0,
+            bottom: 0.0,
+            left: 8.0,
+            right: 8.0,
+        })
         .width(Length::Fill)
-        .style(move |_| chrome::bar(&bar_appearance, false)),
+        // The toolbar's tone, so the strip reads as part of it and the
+        // current tab, on the folder's surface, opens out of it.
+        .style(move |_| container::Style::default().background(chrome::bar_tint(&bar_appearance))),
     )
 }
 
@@ -1329,6 +1494,7 @@ pub(super) fn search_parts<'a>(
         problems = Some(
             scrollable(errors)
                 .height(100)
+                .style(canopa_ui::scrollbar)
                 .direction(scrollable::Direction::Both {
                     vertical: scrollable::Scrollbar::new(),
                     horizontal: scrollable::Scrollbar::new(),
@@ -1381,68 +1547,20 @@ pub(super) fn search_parts<'a>(
     }
 }
 
-/// The current view's symbol in the status bar; it opens the view menu.
-fn view_button<'a>(
-    desktop: &'a Desktop,
-    id: window::Id,
-    tab: &Tab,
-    current: crate::preferences::ViewMode,
-) -> Element<'a, Message> {
-    use iced::widget::{button, tooltip};
-
-    let appearance = &desktop.configuration.appearance;
-    let font = canopa_ui::font(appearance);
-    let size = appearance.typography().label_size.px();
-    let label = fl!("files-view-current", view = view_label(current));
-    let open = (!tab.loading).then_some(Message::Action(super::actions_ui::Event::ViewMenu(id)));
-    let expanded = desktop
-        .action_menu
-        .as_ref()
-        .is_some_and(|menu| menu.window() == id && menu.is_view_menu());
-    let content = row![
-        desktop.icons.chrome(view_icon(current), 16.0, 0.92),
-        desktop.icons.chrome(Icon::Down, 12.0, 0.6),
-    ]
-    .spacing(2)
-    .align_y(Alignment::Center);
-    let control = button(content)
-        .padding([3, 6])
-        .on_press_maybe(open.clone())
-        .style(move |theme, status| {
-            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
-            style.border.radius = 7.0.into();
-            if expanded {
-                style.background = Some(chrome::selected_fill(appearance).into());
-            }
-            style
-        });
-    let control: Element<'_, Message> = if expanded || tab.location.is_some() {
-        control.into()
-    } else {
-        tooltip(
-            control,
-            text(label.clone()).font(font).size(size),
-            tooltip::Position::Top,
-        )
-        .padding(6)
-        .style(super::chrome::tooltip_style)
-        .into()
-    };
-    semantic(
-        Node::button(label)
-            .key("files-view-menu-button")
-            .expanded(expanded)
-            .disabled(open.is_none())
-            .on_click(open),
-        control,
-    )
-}
-
 pub(super) fn view_icon(mode: crate::preferences::ViewMode) -> Icon {
     match mode {
         crate::preferences::ViewMode::Columns => Icon::Columns,
         crate::preferences::ViewMode::List => Icon::List,
         crate::preferences::ViewMode::Icons => Icon::Grid,
+    }
+}
+
+/// The view's symbol drawn on the accent, for a chosen segment.
+pub(super) fn view_icon_on_accent(mode: crate::preferences::ViewMode) -> Icon {
+    match mode {
+        crate::preferences::ViewMode::Columns => Icon::ActiveColumns,
+        crate::preferences::ViewMode::List => Icon::ActiveList,
+        crate::preferences::ViewMode::Icons => Icon::ActiveGrid,
     }
 }
 
@@ -1466,8 +1584,11 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         .enumerate()
         .filter_map(|(index, place)| {
             let path = desktop.place_path(place)?;
-            (path == tab.path() || path != Path::new("/") && tab.path().starts_with(&path))
-                .then(|| (index, path.components().count()))
+            // A place stays current inside its folders, except the Filesystem
+            // and Home, which hold nearly everything and would always be lit.
+            (path == tab.path()
+                || path != Path::new("/") && path != desktop.home && tab.path().starts_with(&path))
+            .then(|| (index, path.components().count()))
         })
         .max_by_key(|&(index, depth)| (depth, std::cmp::Reverse(index)))
         .map(|(index, _)| index);
@@ -1539,7 +1660,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
                         style.border.color = chrome::ink(appearance, ColorRole::Accent);
                         style
                     } else {
-                        chrome::highlight(appearance, ColorRole::Raised)
+                        chrome::sidebar_current(appearance)
                     }
                 })
                 .into()
@@ -1637,8 +1758,8 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
     places = places
         .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
         .push(super::network_ui::places(desktop, id));
-    container(scrollable(places))
-        .width(chrome::SIDEBAR_WIDTH)
+    container(scrollable(places).style(canopa_ui::scrollbar))
+        .width(desktop.sidebar_width(id))
         .height(Length::Fill)
         .style(move |_| {
             container::Style::default().background(chrome::ink(appearance, ColorRole::Background))
@@ -1675,7 +1796,14 @@ pub(super) fn input_style(
     result.selection = if appearance.high_contrast() {
         chrome::ink(appearance, ColorRole::AccentSurface)
     } else {
-        chrome::ink(appearance, ColorRole::Accent).scale_alpha(0.55)
+        // Light enough that the selected characters keep their contrast.
+        chrome::ink(appearance, ColorRole::Accent).scale_alpha(
+            if appearance.color_scheme == canopa_theme::ColorScheme::Dark {
+                0.36
+            } else {
+                0.42
+            },
+        )
     };
     result.border = frame.border;
     if focused && style.states[4].border_color.is_none() {

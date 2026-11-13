@@ -1,8 +1,9 @@
 //! Every visible command control carries the selection and catalog it described.
 //! Accepted requests keep their captured paths even when browsing moves on.
+use super::chrome::Icon;
 use super::*;
 use crate::browse::Entry;
-use canopa_theme::UiKind;
+use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Length,
     widget::{column, container, mouse_area, opaque, scrollable, space, stack},
@@ -41,9 +42,13 @@ pub(super) enum Event {
     Locations(window::Id),
     /// The status bar's view menu.
     ViewMenu(window::Id),
+    /// The toolbar's view menu, opening below its button.
+    ToolbarViewMenu(window::Id),
     Row(RowTarget),
     /// A secondary click on a folder's empty space: its menu, without a selection.
     Background(window::Id, u64, u64),
+    /// A secondary click on a tab: it becomes current and shows its menu.
+    Tab(window::Id, usize),
     Close(window::Id),
     Builtin(Arc<Source>, Command),
     Invoke(Arc<Source>, String),
@@ -67,6 +72,10 @@ enum Item {
     View(crate::preferences::ViewMode),
     /// Open this folder in a new tab.
     OpenTab(PathBuf),
+    /// Close every tab of the window but the current one.
+    CloseOtherTabs,
+    /// Open the current tab's folder again in a new tab.
+    DuplicateTab(PathBuf),
 }
 pub(super) struct Menu {
     source: Arc<Source>,
@@ -74,6 +83,9 @@ pub(super) struct Menu {
     focused: usize,
     /// Where a secondary click opened this menu; others open from the toolbar.
     anchor: Option<iced::Point>,
+    /// Whether the focused item is shown: a menu opened from the keyboard or
+    /// navigated with it highlights it, one opened by the pointer follows hover.
+    keyboard: bool,
 }
 impl Menu {
     pub fn window(&self) -> window::Id {
@@ -185,6 +197,26 @@ impl Desktop {
                 };
                 return self.present_menu(source, self.location_items(false));
             }
+            Event::ToolbarViewMenu(id) => {
+                let below = self.windows.get(&id).and_then(|window| window.pointer);
+                let task = self.action_event(Event::ViewMenu(id));
+                if let Some(pointer) = below
+                    && self
+                        .action_menu
+                        .as_ref()
+                        .is_some_and(|menu| menu.window() == id)
+                {
+                    // Under the toolbar, where the button was pressed.
+                    self.anchor_action_menu(
+                        id,
+                        Some(iced::Point::new(pointer.x, TOOLBAR_MENU_TOP)),
+                    );
+                    if let Some(menu) = &mut self.action_menu {
+                        menu.keyboard = false;
+                    }
+                }
+                return task;
+            }
             Event::ViewMenu(id) => {
                 // The button toggles its menu.
                 if self
@@ -217,6 +249,42 @@ impl Desktop {
                     menu.focused = focused;
                 }
                 return task;
+            }
+            Event::Tab(window, index) => {
+                // The menu opens below the bar, so the tabs stay in view.
+                let anchor = self.windows.get(&window).and_then(|window| {
+                    let pointer = window.pointer?;
+                    let bottom = window.tab_geometry.lock().ok()?.bottom();
+                    Some(iced::Point::new(pointer.x, bottom + 2.0))
+                });
+                let switched = self.update(Message::SwitchTab(window, index));
+                let Some(source) = self.action_source(window) else {
+                    return switched;
+                };
+                let several = self
+                    .windows
+                    .get(&window)
+                    .is_some_and(|window| window.tabs.len() > 1);
+                let mut items = vec![
+                    (Command::NewTab.label(), Item::Command(Command::NewTab)),
+                    (
+                        fl!("files-menu-duplicate-tab"),
+                        Item::DuplicateTab(source.directory.clone()),
+                    ),
+                ];
+                if several {
+                    items.push((
+                        Command::MoveTabToWindow.label(),
+                        Item::Command(Command::MoveTabToWindow),
+                    ));
+                }
+                items.push((Command::CloseTab.label(), Item::Command(Command::CloseTab)));
+                if several {
+                    items.push((fl!("files-menu-close-other-tabs"), Item::CloseOtherTabs));
+                }
+                let menu = self.present_menu(source, items);
+                self.anchor_action_menu(window, anchor);
+                return Task::batch([switched, menu]);
             }
             Event::Background(window, tab, navigation) => {
                 let anchor = self.windows.get(&window).and_then(|window| window.pointer);
@@ -258,8 +326,11 @@ impl Desktop {
                     let window = &self.windows[&target.window];
                     let columns = tab.column_paths(
                         window.width,
-                        self.configuration.settings.sidebar,
-                        window.panel_width(),
+                        (
+                            self.configuration.settings.sidebar,
+                            self.sidebar_width(target.window),
+                        ),
+                        window.panel_width(self.properties_width(target.window)),
                         &self.home,
                     );
                     let child = columns
@@ -370,6 +441,9 @@ impl Desktop {
                 let Some((_, item)) = menu.items.get(index).cloned() else {
                     return Task::none();
                 };
+                if !self.item_enabled(&item) {
+                    return Task::none();
+                }
                 self.action_menu = None;
                 return match item {
                     Item::Locations => self.present_menu(source, self.location_items(true)),
@@ -404,7 +478,29 @@ impl Desktop {
                     Item::FolderOptions => {
                         self.folder_view_event(folder_views::Event::Show(source.window))
                     }
-                    Item::OpenTab(path) => self.update(Message::OpenTab(source.window, path)),
+                    Item::OpenTab(path) | Item::DuplicateTab(path) => {
+                        self.update(Message::OpenTab(source.window, path))
+                    }
+                    Item::CloseOtherTabs => {
+                        let others: Vec<u64> = self
+                            .windows
+                            .get(&source.window)
+                            .map(|window| {
+                                let current = window.tabs.get(window.active).map(|tab| tab.id);
+                                window
+                                    .tabs
+                                    .iter()
+                                    .map(|tab| tab.id)
+                                    .filter(|tab| Some(*tab) != current)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let mut tasks = Vec::new();
+                        for tab in others {
+                            tasks.push(self.close_tab(source.window, tab));
+                        }
+                        Task::batch(tasks)
+                    }
                     Item::Action(id) => self.action_event(Event::Invoke(source, id)),
                     Item::OpenWith => {
                         let paths = source.paths.to_vec();
@@ -439,6 +535,14 @@ impl Desktop {
         Task::none()
     }
 
+    /// Whether a shown item can be chosen now; others are drawn unavailable.
+    fn item_enabled(&self, item: &Item) -> bool {
+        match item {
+            Item::Command(Command::Paste) => self.file_clipboard.can_paste(),
+            _ => true,
+        }
+    }
+
     /// Open the menu just shown in `window` at `anchor`, where it was asked for.
     pub(super) fn anchor_action_menu(&mut self, window: window::Id, anchor: Option<iced::Point>) {
         if let Some(menu) = self
@@ -446,17 +550,26 @@ impl Desktop {
             .as_mut()
             .filter(|menu| menu.source.window == window)
         {
+            menu.keyboard = anchor.is_none();
             menu.anchor = anchor;
         }
     }
 
     fn present_menu(&mut self, source: Arc<Source>, items: Vec<(String, Item)>) -> Task<Message> {
         let id = source.window;
+        // A menu that replaces another in the same window, such as Open With
+        // after its applications resolve, opens where the first one was.
+        let (anchor, keyboard) = self
+            .action_menu
+            .as_ref()
+            .filter(|menu| menu.source.window == id)
+            .map_or((None, true), |menu| (menu.anchor, menu.keyboard));
         self.action_menu = Some(Menu {
             source,
             items,
             focused: 0,
-            anchor: None,
+            anchor,
+            keyboard,
         });
         let Some(tab) = self.active_mut(id) else {
             return Task::none();
@@ -526,7 +639,8 @@ impl Desktop {
                 fl!("files-menu-new-folder"),
                 Item::Command(Command::NewFolder),
             ));
-            if self.file_clipboard.can_paste() {
+            // Paste keeps its place, unavailable while there is nothing to paste.
+            if self.file_clipboard.ready() {
                 items.push((fl!("files-command-paste"), Item::Command(Command::Paste)));
             }
             items.extend(self.undo_item());
@@ -689,6 +803,13 @@ impl Desktop {
         else {
             return Task::none();
         };
+        if !matches!(
+            key.as_ref(),
+            keyboard::Key::Named(keyboard::key::Named::Enter | keyboard::key::Named::Space)
+                | keyboard::Key::Character(" ")
+        ) {
+            menu.keyboard = true;
+        }
         match key.as_ref() {
             keyboard::Key::Named(
                 keyboard::key::Named::Escape | keyboard::key::Named::ContextMenu,
@@ -767,55 +888,51 @@ pub(super) fn overlay<'a>(
         .active(id)
         .and_then(|tab| tab.browser.as_ref())
         .map(|browser| browser.view().mode);
-    let mut items = column![].spacing(4);
+    let keyboard_focus = menu.keyboard;
+    let width = menu_width(desktop, &menu.items, view_menu);
+    let mut items = column![].spacing(1);
+    let mut previous_group = None;
     for (index, (label, item)) in menu.items.iter().enumerate() {
-        let icon = match item {
-            Item::Action(id) => desktop
-                .configuration
-                .actions
-                .iter()
-                .find(|action| &action.id == id)
-                .and_then(|action| action.icon.as_deref()),
-            Item::Command(_)
-            | Item::OpenWith
-            | Item::Application(_)
-            | Item::OtherApplication
-            | Item::FolderOptions
-            | Item::Locations
-            | Item::Back
-            | Item::Device(..)
-            | Item::View(_)
-            | Item::OpenTab(_)
-            | Item::Place(_) => None,
-        };
+        let group = item_group(item);
+        if previous_group.is_some_and(|previous| previous != group) {
+            items = items.push(menu_separator(appearance));
+        }
+        previous_group = Some(group);
+        let destructive = matches!(item, Item::Command(Command::DeletePermanently));
+        let enabled = desktop.item_enabled(item);
         let message = Message::Action(Event::MenuItem(menu.source.clone(), index));
+        let content = match item {
+            Item::View(mode) => view_item(desktop, *mode, current, label, size, font),
+            _ => menu_row(desktop, item, label, size, font, destructive, enabled),
+        };
+        let focused = keyboard_focus && index == menu.focused;
+        let row_appearance = appearance.clone();
         items = items.push(super::accessibility_ui::semantic(
             super::accessibility_ui::Node::menu_item(label.clone())
                 .key(format!("files-menu-item-{index}"))
                 .position(index + 1, menu.items.len())
                 .focused(index == menu.focused)
                 .on_click(Some(message.clone())),
-            canopa_ui::styled_action(
-                match item {
-                    Item::View(mode) => view_item(desktop, *mode, current, label, size, font),
-                    _ => desktop.icons.label(icon, label, size, font, true),
-                },
-                Some(message),
-                canopa_ui::Action::Quiet,
-                index == menu.focused,
-                appearance,
-            )
-            .width(Length::Fill),
+            iced::widget::button(content)
+                .padding(MENU_ROW_PADDING)
+                .on_press_maybe(enabled.then_some(message))
+                .width(Length::Fill)
+                .style(move |_, status| {
+                    menu_row_style(&row_appearance, status, focused, destructive)
+                }),
         ));
     }
     let appearance = appearance.clone();
-    let menu = container(scrollable(items).id(menu_id(id)).height(Length::Shrink))
-        .padding(if view_menu { 6 } else { 8 })
-        .max_width(if view_menu { 200 } else { 320 })
-        .max_height(360)
-        .width(Length::Fill)
-        .style(move |_| canopa_ui::frame(&appearance, appearance.style(UiKind::Menu)));
-    let count = menu_items.len();
+    let menu = container(
+        scrollable(items)
+            .style(canopa_ui::scrollbar)
+            .id(menu_id(id))
+            .height(Length::Shrink),
+    )
+    .padding(MENU_PADDING)
+    .width(width)
+    .max_height(MENU_MAX_HEIGHT)
+    .style(move |_| menu_surface(&appearance));
     let placed = container(opaque(super::accessibility_ui::semantic(
         super::accessibility_ui::Node::menu(if view_menu {
             fl!("files-view")
@@ -832,12 +949,9 @@ pub(super) fn overlay<'a>(
     // window's right and bottom edges so it stays whole.
     let placed = if let (Some(anchor), Some(window)) = (anchor, window) {
         const EDGE: f32 = 8.0;
-        let height = (count as f32
-            * (super::view::row_height(&desktop.configuration.appearance) + 8.0)
-            + 20.0)
-            .min(360.0);
+        let height = menu_height(desktop, menu_items);
         let mut padding = iced::Padding::ZERO;
-        let placed = if anchor.x + 320.0 + EDGE <= window.width {
+        let placed = if anchor.x + width + EDGE <= window.width {
             padding.left = anchor.x.max(EDGE);
             placed.align_left(Length::Fill)
         } else {
@@ -858,17 +972,18 @@ pub(super) fn overlay<'a>(
     } else {
         placed.align_right(Length::Fill)
     };
-    // The view menu opens above its status bar button, at the window's end.
+    // Opened from the keyboard, the view menu drops from the toolbar's end,
+    // where its button sits.
     let placed = if anchor.is_some() {
         placed
     } else if view_menu {
         placed
             .padding(iced::Padding {
-                bottom: VIEW_MENU_BOTTOM,
-                right: 8.0,
+                top: TOOLBAR_MENU_TOP,
+                right: 52.0,
                 ..Default::default()
             })
-            .align_bottom(Length::Fill)
+            .align_top(Length::Fill)
     } else {
         placed.padding([74, 10]).align_top(Length::Fill)
     };
@@ -882,8 +997,301 @@ pub(super) fn overlay<'a>(
         .into()
 }
 
-/// Space below the view menu: the status bar and a small gap.
-const VIEW_MENU_BOTTOM: f32 = 40.0;
+/// Where a menu opened from the toolbar starts: just below its bar.
+const TOOLBAR_MENU_TOP: f32 = 62.0;
+const MENU_MIN_WIDTH: f32 = 220.0;
+const MENU_MAX_WIDTH: f32 = 380.0;
+const VIEW_MENU_WIDTH: f32 = 200.0;
+const MENU_MAX_HEIGHT: f32 = 520.0;
+const MENU_PADDING: f32 = 6.0;
+const MENU_ROW_PADDING: [f32; 2] = [6.0, 10.0];
+/// A separator's line and the space around it.
+const MENU_SEPARATOR: f32 = 9.0;
+const MENU_ICON: f32 = 16.0;
+
+/// Items that belong together; a line separates neighbouring groups.
+fn item_group(item: &Item) -> u8 {
+    match item {
+        Item::Command(command) => match command {
+            Command::Open | Command::QuickLook => 0,
+            Command::NewWindow | Command::NewTab | Command::MoveTabToWindow => 2,
+            Command::NewFolder
+            | Command::Copy
+            | Command::Cut
+            | Command::Paste
+            | Command::Undo
+            | Command::SelectAll => 4,
+            Command::Rename | Command::Trash | Command::DeletePermanently => 5,
+            Command::BookmarkFolder | Command::ShowHidden => 6,
+            Command::ShowTrash | Command::Operations | Command::Recovery => 7,
+            Command::CustomActions | Command::Preferences => 8,
+            Command::Properties => 9,
+            _ => 10,
+        },
+        Item::OpenTab(_) | Item::OpenWith => 0,
+        Item::CloseOtherTabs => 10,
+        Item::DuplicateTab(_) => 2,
+        Item::Action(_) => 1,
+        Item::Back => 11,
+        Item::Application(_) => 12,
+        Item::OtherApplication => 13,
+        Item::Locations | Item::FolderOptions => 6,
+        Item::Place(_) | Item::Device(..) => 14,
+        Item::View(_) => 15,
+    }
+}
+
+fn item_icon(item: &Item) -> Option<Icon> {
+    Some(match item {
+        Item::Command(command) => match command {
+            Command::Open => Icon::Open,
+            Command::QuickLook => Icon::Eye,
+            Command::NewWindow | Command::MoveTabToWindow => Icon::Window,
+            Command::NewTab => Icon::Plus,
+            Command::NewFolder => Icon::NewFolder,
+            Command::Copy => Icon::Copy,
+            Command::Cut => Icon::Cut,
+            Command::Paste => Icon::Paste,
+            Command::Undo => Icon::Undo,
+            Command::SelectAll => Icon::SelectAll,
+            Command::Rename => Icon::Edit,
+            Command::Trash | Command::ShowTrash => Icon::Trash,
+            Command::DeletePermanently => Icon::DangerTrash,
+            Command::BookmarkFolder => Icon::Bookmark,
+            Command::ShowHidden => Icon::Hidden,
+            Command::Operations => Icon::Activity,
+            Command::Recovery => Icon::Recovery,
+            Command::CustomActions => Icon::Terminal,
+            Command::Preferences => Icon::Settings,
+            Command::Properties => Icon::Info,
+            Command::CloseTab => Icon::Close,
+            _ => return None,
+        },
+        Item::OpenTab(_) | Item::DuplicateTab(_) => Icon::Tab,
+        Item::CloseOtherTabs => Icon::CloseOthers,
+        Item::OpenWith => Icon::OpenWith,
+        Item::Back => Icon::Back,
+        Item::Locations => Icon::Places,
+        Item::FolderOptions => Icon::Grid,
+        Item::Place(_) => Icon::Folder,
+        Item::Device(_, true) => Icon::Eject,
+        Item::Device(_, false) => Icon::Drive,
+        Item::OtherApplication => Icon::More,
+        Item::Action(_) | Item::Application(_) | Item::View(_) => return None,
+    })
+}
+
+fn item_shortcut(desktop: &Desktop, item: &Item) -> Option<String> {
+    let Item::Command(command) = item else {
+        return None;
+    };
+    desktop
+        .configuration
+        .settings
+        .bindings(*command)
+        .iter()
+        .find_map(|binding| crate::interface::KeyChord::parse(binding).ok())
+        .map(|chord| chord.display())
+}
+
+/// The width that shows every item's name and shortcut whole, within bounds.
+fn menu_width(desktop: &Desktop, items: &[(String, Item)], view_menu: bool) -> f32 {
+    if view_menu {
+        return VIEW_MENU_WIDTH;
+    }
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let body = appearance.typography().body_size.px();
+    let small = appearance.typography().label_size.px();
+    let widest = items
+        .iter()
+        .map(|(label, item)| {
+            chrome::text_width(label, font, body)
+                + item_shortcut(desktop, item).map_or(0.0, |shortcut| {
+                    24.0 + chrome::text_width(&shortcut, font, small)
+                })
+        })
+        .fold(0.0, f32::max);
+    (widest + MENU_ICON + 10.0 + MENU_ROW_PADDING[1] * 2.0 + MENU_PADDING * 2.0 + 6.0)
+        .ceil()
+        .clamp(MENU_MIN_WIDTH, MENU_MAX_WIDTH)
+}
+
+/// An item's symbol, its name and, at the end, its first shortcut.
+fn menu_row<'a>(
+    desktop: &'a Desktop,
+    item: &Item,
+    label: &str,
+    size: f32,
+    font: iced::Font,
+    destructive: bool,
+    enabled: bool,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let custom = match item {
+        Item::Action(id) => desktop
+            .configuration
+            .actions
+            .iter()
+            .find(|action| &action.id == id)
+            .and_then(|action| action.icon.as_deref()),
+        _ => None,
+    };
+    let icon: Element<'a, Message> = match (custom, item_icon(item)) {
+        (Some(name), _) => desktop.icons.named(name, MENU_ICON),
+        (None, Some(icon)) => desktop.icons.chrome(
+            icon,
+            MENU_ICON,
+            if !enabled {
+                0.35
+            } else if destructive {
+                1.0
+            } else {
+                0.78
+            },
+        ),
+        (None, None) => space().width(MENU_ICON).height(MENU_ICON).into(),
+    };
+    let shortcut = item_shortcut(desktop, item);
+    let mut label = iced::widget::text(label.to_owned())
+        .font(font)
+        .size(size)
+        .wrapping(iced::widget::text::Wrapping::None);
+    if !enabled {
+        label = label.color(chrome::ink(appearance, ColorRole::Disabled));
+    } else if destructive {
+        label = label.color(chrome::ink(appearance, ColorRole::Danger));
+    }
+    let mut content = iced::widget::row![icon, container(label).width(Length::Fill).clip(true),]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+    // Items that open another menu end with a chevron instead of a shortcut.
+    if matches!(item, Item::OpenWith | Item::Locations) {
+        content = content.push(desktop.icons.chrome(Icon::Forward, 14.0, 0.6));
+    } else if let Some(shortcut) = shortcut {
+        content = content.push(
+            iced::widget::text(shortcut)
+                .font(font)
+                .size(appearance.typography().label_size.px())
+                .color(chrome::ink(
+                    appearance,
+                    if enabled {
+                        ColorRole::Muted
+                    } else {
+                        ColorRole::Disabled
+                    },
+                ))
+                .wrapping(iced::widget::text::Wrapping::None),
+        );
+    }
+    content.into()
+}
+
+/// Hover and keyboard focus fill the row with the selection tint; a
+/// destructive row takes a wash of its own colour instead.
+fn menu_row_style(
+    appearance: &canopa_theme::Appearance,
+    status: iced::widget::button::Status,
+    focused: bool,
+    destructive: bool,
+) -> iced::widget::button::Style {
+    use iced::widget::button::Status;
+    let engaged = focused || matches!(status, Status::Hovered | Status::Pressed);
+    let background = engaged.then(|| {
+        if destructive {
+            chrome::ink(appearance, ColorRole::Danger).scale_alpha(
+                if appearance.color_scheme == canopa_theme::ColorScheme::Dark {
+                    0.18
+                } else {
+                    0.1
+                },
+            )
+        } else if status == Status::Pressed {
+            chrome::mix(
+                chrome::ink(appearance, ColorRole::AccentSurface),
+                chrome::ink(appearance, ColorRole::Accent),
+                0.12,
+            )
+        } else {
+            chrome::ink(appearance, ColorRole::AccentSurface)
+        }
+    });
+    iced::widget::button::Style {
+        background: background.map(Into::into),
+        text_color: chrome::ink(appearance, ColorRole::Text),
+        border: iced::Border {
+            radius: 8.0.into(),
+            // High contrast keeps an outline on the focused row.
+            width: if focused && appearance.high_contrast() {
+                2.0
+            } else {
+                0.0
+            },
+            color: chrome::ink(appearance, ColorRole::Focus),
+        },
+        ..Default::default()
+    }
+}
+
+fn menu_separator<'a>(appearance: &canopa_theme::Appearance) -> Element<'a, Message> {
+    let mut line = chrome::ink(appearance, ColorRole::Border);
+    line.a = 0.32;
+    container(
+        container(space().height(1))
+            .width(Length::Fill)
+            .height(1)
+            .style(move |_| container::Style::default().background(line)),
+    )
+    .padding([((MENU_SEPARATOR - 1.0) / 2.0), 8.0])
+    .into()
+}
+
+/// The menu's raised surface: the shared menu frame on a soft shadow.
+pub(super) fn menu_surface(appearance: &canopa_theme::Appearance) -> container::Style {
+    let style = appearance.style(UiKind::Menu);
+    let mut frame = canopa_ui::frame(appearance, style);
+    let dark = appearance.color_scheme == canopa_theme::ColorScheme::Dark;
+    if !style.custom_radius {
+        frame.border.radius = 12.0.into();
+    }
+    if !style.custom_border && !appearance.high_contrast() {
+        frame.border.color.a = if dark { 0.55 } else { 0.38 };
+    }
+    if dark
+        && appearance.customization.ui[UiKind::Menu as usize]
+            .background
+            .is_none()
+    {
+        // A menu over a dark browser is lifted above the raised tone so it
+        // separates from lists and dialogs alike.
+        frame.background = Some(
+            chrome::mix(
+                chrome::ink(appearance, ColorRole::Raised),
+                chrome::ink(appearance, ColorRole::Text),
+                0.05,
+            )
+            .into(),
+        );
+    }
+    frame.shadow = iced::Shadow {
+        color: iced::Color::BLACK.scale_alpha(if dark { 0.5 } else { 0.16 }),
+        offset: iced::Vector::new(0.0, 8.0),
+        blur_radius: 24.0,
+    };
+    frame
+}
+
+/// The height the menu will take, to turn it back from the window's edges.
+fn menu_height(desktop: &Desktop, items: &[(String, Item)]) -> f32 {
+    let size = desktop.configuration.appearance.typography().body_size.px();
+    let row = (size * 1.3).ceil() + MENU_ROW_PADDING[0] * 2.0 + 1.0;
+    let separators = items
+        .windows(2)
+        .filter(|pair| item_group(&pair[0].1) != item_group(&pair[1].1))
+        .count();
+    (items.len() as f32 * row + separators as f32 * MENU_SEPARATOR + MENU_PADDING * 2.0 + 2.0)
+        .min(MENU_MAX_HEIGHT)
+}
 
 /// A view menu item: the view's symbol, its name, and a check on the current one.
 fn view_item<'a>(

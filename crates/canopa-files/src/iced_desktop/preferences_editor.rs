@@ -50,6 +50,10 @@ pub(super) enum Change {
     Sidebar(SidebarMode),
     Thumbnails(crate::interface::ThumbnailPolicy),
     IconSize(crate::interface::IconSize),
+    /// A keyboard step of the icon size, which applies at once.
+    IconSizeStep(crate::interface::IconSize),
+    /// A −/+ step of the column width, which applies at once.
+    WidthStep(i16),
     Properties(crate::interface::PropertiesDisplay),
     Field(Field, String),
     MoveToolbar(isize),
@@ -309,8 +313,16 @@ impl Editor {
             Change::FoldersFirst(v) => self.draft.view.folders_first = v,
             Change::Sidebar(v) => self.draft.sidebar = v,
             Change::Thumbnails(v) => self.draft.thumbnails.show = v,
-            Change::IconSize(v) => self.draft.thumbnails.size = v,
+            Change::IconSize(v) | Change::IconSizeStep(v) => self.draft.thumbnails.size = v,
             Change::Properties(v) => self.draft.properties = v,
+            Change::WidthStep(delta) => {
+                let current = self
+                    .width
+                    .trim()
+                    .parse::<u16>()
+                    .unwrap_or(self.draft.view.column_width);
+                self.width = super::folder_views::step_width(current, delta).to_string();
+            }
             Change::Field(field, value) => {
                 let max = match field {
                     Field::Width => 5,
@@ -379,6 +391,7 @@ impl Editor {
                     || self.draft.toolbar.contains(&id)
                     || Command::from_id(&id).is_some_and(Command::never_on_toolbar)
                     || !(Command::from_id(&id).is_some()
+                        || id == super::toolbar::VIEW_ITEM
                         || id
                             .strip_prefix("action:")
                             .is_some_and(|id| self.base.actions.iter().any(|a| a.id == id)))
@@ -496,17 +509,19 @@ impl Editor {
 
 /// Typed fields apply when submitted, so a half-typed value never saves.
 fn applies_on_change(change: &Change) -> bool {
-    !matches!(
-        change,
-        Change::Field(
-            Field::Width
-                | Field::Filter
-                | Field::BookmarkName
-                | Field::BookmarkPath
-                | Field::Shortcut,
-            _
+    // A dragged icon size applies when the slider is let go.
+    !matches!(change, Change::IconSize(_))
+        && !matches!(
+            change,
+            Change::Field(
+                Field::Width
+                    | Field::Filter
+                    | Field::BookmarkName
+                    | Field::BookmarkPath
+                    | Field::Shortcut,
+                _
+            )
         )
-    )
 }
 
 impl Desktop {
@@ -518,7 +533,7 @@ impl Desktop {
             return window::gain_focus(editor.window);
         }
         let settings = window::Settings {
-            size: Size::new(780.0, 660.0),
+            size: Size::new(940.0, 780.0),
             min_size: Some(Size::new(280.0, 240.0)),
             exit_on_close_request: false,
             platform_specific: window::settings::PlatformSpecific {
@@ -640,6 +655,7 @@ impl Desktop {
         }
         editor.draft.view.column_width = width;
         editor.draft.list_columns = current.settings.list_columns;
+        editor.draft.panes = current.settings.panes;
         editor.draft.view.tree = current.settings.view.tree;
         editor.draft.view.folders_first = current.settings.view.folders_first;
         editor.base = current.clone();
@@ -1063,6 +1079,11 @@ mod tests {
         assert!(e.picker);
         e.change(Change::AddToolbar("refresh".into()));
         assert!(!e.picker, "adding closes the picker");
+        // The view button is added like any command, and only once.
+        e.draft.toolbar.retain(|id| id != "view");
+        e.change(Change::AddToolbar("view".into()));
+        e.change(Change::AddToolbar("view".into()));
+        assert_eq!(e.draft.toolbar.iter().filter(|s| *s == "view").count(), 1);
         e.change(Change::AddToolbar("refresh".into()));
         assert_eq!(
             e.draft.toolbar.iter().filter(|s| *s == "refresh").count(),
@@ -1073,9 +1094,29 @@ mod tests {
         assert!(!e.draft.toolbar.contains(&"search".into()));
         e.change(Change::AddToolbar("unknown".into()));
         assert!(e.settings(root.path()).is_ok());
-        let last = e.draft.toolbar.len() - 1;
-        e.change(Change::ToolbarItem(last, RowEdit::Remove));
+        let refresh = e.draft.toolbar.iter().position(|s| s == "refresh").unwrap();
+        e.change(Change::ToolbarItem(refresh, RowEdit::Remove));
         assert!(!e.draft.toolbar.contains(&"refresh".into()));
+    }
+
+    #[test]
+    fn column_width_steps_within_its_range_from_what_is_typed() {
+        let root = tempfile::tempdir().unwrap();
+        let mut e = editor(root.path());
+        // Steps land on multiples of the step.
+        e.change(Change::Field(Field::Width, "250".into()));
+        e.change(Change::WidthStep(20));
+        assert_eq!(e.width, "260");
+        e.change(Change::WidthStep(-20));
+        assert_eq!(e.width, "240");
+        e.change(Change::Field(Field::Width, "630".into()));
+        e.change(Change::WidthStep(20));
+        assert_eq!(e.width, "640");
+        // A half-typed value steps from the saved width.
+        e.change(Change::Field(Field::Width, "2x".into()));
+        e.change(Change::WidthStep(-20));
+        assert_eq!(e.width, (e.draft.view.column_width - 20).to_string());
+        assert!(applies_on_change(&Change::WidthStep(-20)));
     }
 
     #[test]

@@ -717,6 +717,7 @@ fn contents(desktop: &Desktop, width: f32) -> Element<'_, Message> {
             bottom: 8.0,
             ..iced::Padding::ZERO
         }))
+        .style(canopa_ui::scrollbar)
         .direction(scrollable::Direction::Vertical(
             scrollable::Scrollbar::new()
                 .width(6)

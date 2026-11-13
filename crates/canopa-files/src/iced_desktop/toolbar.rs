@@ -11,10 +11,14 @@ use iced::{
 };
 
 const SIDE_PADDING: f32 = 14.0;
+/// The toolbar item showing the current view; it opens the view menu.
+pub(super) const VIEW_ITEM: &str = "view";
 const COMMAND_ICON: f32 = 20.0;
 
 enum Item<'a> {
     Location,
+    /// The current view, opening the view menu.
+    View,
     Builtin(Command),
     Action(&'a CustomAction),
 }
@@ -28,6 +32,8 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
         .filter_map(|id| {
             if id == "location" {
                 Some(Item::Location)
+            } else if id == VIEW_ITEM {
+                Some(Item::View)
             } else if let Some(id) = id.strip_prefix("action:") {
                 desktop
                     .configuration
@@ -104,6 +110,7 @@ fn width(item: &Item<'_>, appearance: &canopa_theme::Appearance, labels: Labels)
     let size = appearance.typography().label_size.px() + 1.0;
     match item {
         Item::Location => 144.0,
+        Item::View => view_item_width(padding),
         Item::Builtin(command) => match command_icon(*command) {
             Some((_, label)) => {
                 let label = action_label(*command, label, labels);
@@ -438,8 +445,11 @@ fn control<'a>(
     labels: Labels,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
+    if matches!(item, Item::View) {
+        return view_item(desktop, tab, source, labels);
+    }
     let (title, content, message) = match item {
-        Item::Location => unreachable!("location fills its own layout slot"),
+        Item::Location | Item::View => unreachable!("handled above"),
         Item::Builtin(command) => (
             command.label(),
             command.label(),
@@ -465,7 +475,7 @@ fn control<'a>(
     let key = match item {
         Item::Builtin(command) => format!("files-toolbar-{}", command.id()),
         Item::Action(action) => format!("files-toolbar-action-{}", action.id),
-        Item::Location => unreachable!("location fills its own layout slot"),
+        Item::Location | Item::View => unreachable!("handled above"),
     };
     let node = Node::button(title.clone())
         .key(key)
@@ -721,9 +731,92 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
 
 fn horizontal(content: Element<'_, Message>) -> Element<'_, Message> {
     scrollable(content)
+        .style(canopa_ui::scrollbar)
         .direction(scrollable::Direction::Horizontal(
             scrollable::Scrollbar::new(),
         ))
         .width(Length::Fill)
         .into()
+}
+
+/// The view item's width: its symbol and the menu's chevron.
+fn view_item_width(padding: iced::Padding) -> f32 {
+    (COMMAND_ICON + 6.0 + 12.0 + padding.left + padding.right).ceil()
+}
+
+/// The current view's symbol with a chevron; it opens the view menu below it.
+/// The view's name is its tooltip and accessible name, not a caption.
+fn view_item<'a>(
+    desktop: &'a Desktop,
+    tab: &'a Tab,
+    source: &Option<Arc<actions_ui::Source>>,
+    labels: Labels,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let mode = tab
+        .browser
+        .as_ref()
+        .map(|browser| browser.view().mode)
+        .unwrap_or_default();
+    let message = source
+        .as_ref()
+        .filter(|_| !tab.loading)
+        .map(|source| Message::Action(actions_ui::Event::ToolbarViewMenu(source.window)));
+    let expanded = desktop.action_menu.as_ref().is_some_and(|menu| {
+        source
+            .as_ref()
+            .is_some_and(|source| menu.window() == source.window && menu.is_view_menu())
+    });
+    let content = row![
+        desktop.icons.chrome(
+            super::view::view_icon(mode),
+            COMMAND_ICON,
+            if message.is_some() { 1.0 } else { 0.48 },
+        ),
+        desktop.icons.chrome(Icon::Down, 12.0, 0.7),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+    let label = fl!("files-view-current", view = super::view::view_label(mode));
+    let button = canopa_ui::styled_action(
+        content,
+        message.clone(),
+        canopa_ui::Action::Quiet,
+        false,
+        appearance,
+    )
+    .padding(control_padding(&Item::View, appearance, labels))
+    .style({
+        let appearance = appearance.clone();
+        move |theme, status| {
+            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+            if expanded {
+                style.background = Some(chrome::selected_fill(&appearance).into());
+            }
+            style
+        }
+    });
+    let button: Element<'_, Message> = if expanded || tab.location.is_some() {
+        button.into()
+    } else {
+        tooltip(
+            button,
+            text(label.clone())
+                .font(font)
+                .size(appearance.typography().label_size.px()),
+            tooltip::Position::Bottom,
+        )
+        .padding(6)
+        .style(super::chrome::tooltip_style)
+        .into()
+    };
+    semantic(
+        Node::button(label)
+            .key("files-toolbar-view")
+            .expanded(expanded)
+            .disabled(message.is_none())
+            .on_click(message),
+        button,
+    )
 }

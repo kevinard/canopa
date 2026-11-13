@@ -287,7 +287,7 @@ impl Desktop {
         // A fixed size lets compositors float Properties like other inspectors
         // instead of tiling a short card across a full column.
         let size = if paths.len() == 1 {
-            Size::new(480.0, 612.0)
+            Size::new(480.0, 664.0)
         } else {
             Size::new(620.0, 520.0)
         };
@@ -682,12 +682,14 @@ fn sections<'a>(
     let size = appearance.typography().label_size.px();
     let body_size = appearance.typography().body_size.px();
     let muted = chrome::ink(appearance, canopa_theme::ColorRole::Muted);
+    // Keys share one column across the facts and Access, wide enough for
+    // "Owner · name", so every value and control starts at the same edge.
     let key_width = if compact {
         78.0
     } else if wide {
-        112.0
+        136.0
     } else {
-        96.0
+        120.0
     };
     let value_size = if compact { size + 1.0 } else { body_size };
     let label = |value: String| {
@@ -779,25 +781,68 @@ fn sections<'a>(
                                 owner,
                                 item.filesystem.path.clone(),
                             ));
-                            let button = canopa_ui::styled_action(
+                            // An outlined button as tall as the access
+                            // fields below, rounded like them.
+                            let button = iced::widget::button(
                                 text(fl!("files-properties-change"))
                                     .font(font)
                                     .size(size + 1.0),
-                                Some(change),
-                                canopa_ui::Action::Normal,
-                                false,
-                                appearance,
                             )
-                            .padding([5, 12]);
+                            .on_press(change)
+                            .padding([5, 12])
+                            .style(|theme, status| {
+                                let mut style = canopa_ui::action_style(
+                                    theme,
+                                    status,
+                                    canopa_ui::Action::Normal,
+                                    false,
+                                );
+                                style.border.radius = 8.0.into();
+                                style
+                            });
                             let opens = fact(fl!("files-properties-opens-with"), opener.clone());
-                            // The narrow panel puts the action under the application.
+                            // In the narrow panel the application itself is the
+                            // button that changes it, so the facts keep one column.
                             details = details.push(if compact {
-                                Element::from(
-                                    column![
-                                        opens,
-                                        row![iced::widget::space().width(key_width + 8.0), button]
+                                let change = Message::Properties(Event::ChangeOpener(
+                                    owner,
+                                    item.filesystem.path.clone(),
+                                ));
+                                let chooser = iced::widget::button(
+                                    row![
+                                        text(opener.clone())
+                                            .font(font)
+                                            .size(value_size)
+                                            .wrapping(text::Wrapping::WordOrGlyph),
+                                        desktop.icons.chrome(chrome::Icon::Down, 12.0, 0.7),
                                     ]
-                                    .spacing(6),
+                                    .spacing(6)
+                                    .align_y(iced::Alignment::Center),
+                                )
+                                .on_press(change)
+                                .padding([3, 8])
+                                .style(|theme, status| {
+                                    let mut style = canopa_ui::action_style(
+                                        theme,
+                                        status,
+                                        canopa_ui::Action::Normal,
+                                        false,
+                                    );
+                                    style.border.radius = 7.0.into();
+                                    style
+                                });
+                                let _ = (opens, button);
+                                Element::from(
+                                    row![
+                                        text(fl!("files-properties-opens-with"))
+                                            .font(font)
+                                            .size(value_size)
+                                            .color(muted)
+                                            .width(key_width),
+                                        chooser,
+                                    ]
+                                    .spacing(8)
+                                    .align_y(iced::Alignment::Center),
                                 )
                             } else {
                                 row![iced::widget::container(opens).width(Length::Fill), button]
@@ -924,14 +969,20 @@ fn access_section<'a>(
             let selected = choices.iter().find(|level| level.bits == current).cloned();
             let path = path.clone();
             let permissions = metadata.permissions;
-            iced::widget::pick_list(choices, selected, move |level: Level| {
+            let list = iced::widget::pick_list(choices, selected, move |level: Level| {
                 let mode = (permissions & !(7 << shift)) | (level.bits << shift);
                 Message::Properties(Event::SetAccess(path.clone(), mode))
             })
             .placeholder(permission_label(current))
             .font(font)
             .text_size(body_size)
-            .padding([5, 10])
+            .padding(iced::Padding {
+                top: 7.0,
+                bottom: 7.0,
+                left: 12.0,
+                right: 32.0,
+            })
+            .handle(iced::widget::pick_list::Handle::None)
             .width(Length::Fill)
             .style(move |theme, status| {
                 // Rounded like the other controls, with the accent on hover.
@@ -954,7 +1005,21 @@ fn access_section<'a>(
                     chrome::ink(appearance, canopa_theme::ColorRole::AccentSurface).into();
                 style.selected_text_color = chrome::ink(appearance, canopa_theme::ColorRole::Text);
                 style
-            })
+            });
+            // The same thin chevron as the app's other disclosures; it lets
+            // clicks through to the list beneath it.
+            iced::widget::stack![
+                list,
+                iced::widget::container(desktop.icons.chrome(chrome::Icon::Down, 14.0, 0.75))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_right(Length::Fill)
+                    .center_y(Length::Fill)
+                    .padding(iced::Padding {
+                        right: 11.0,
+                        ..Default::default()
+                    }),
+            ]
             .into()
         } else {
             text(permission_label(current))
@@ -976,7 +1041,7 @@ fn access_section<'a>(
         let line: Element<'a, Message> = if stacked {
             column![who.size(size), value].spacing(4).into()
         } else {
-            row![who.size(body_size).width(key_width + 60.0), value]
+            row![who.size(body_size).width(key_width), value]
                 .spacing(12)
                 .align_y(iced::Alignment::Center)
                 .into()
@@ -1007,22 +1072,24 @@ fn access_section<'a>(
     let toggle = Message::Properties(Event::ToggleAdvanced(owner));
     access = access.push(
         canopa_ui::styled_action(
+            // A disclosure: its chevron turns down while the details show.
             row![
-                text(fl!("files-properties-advanced"))
-                    .font(font)
-                    .size(size + 1.0)
-                    .color(muted)
-                    .width(Length::Fill),
                 desktop.icons.chrome(
                     if advanced {
-                        chrome::Icon::Up
-                    } else {
                         chrome::Icon::Down
+                    } else {
+                        chrome::Icon::Forward
                     },
                     14.0,
-                    0.8
+                    0.85
                 ),
+                text(fl!("files-properties-advanced"))
+                    .font(font)
+                    .size(body_size)
+                    .style(canopa_ui::link),
+                iced::widget::space().width(Length::Fill),
             ]
+            .spacing(6)
             .align_y(iced::Alignment::Center),
             Some(toggle),
             canopa_ui::Action::Quiet,
@@ -1173,35 +1240,33 @@ fn window_contents<'a>(
     let (symbol, title, copy_label) = header(desktop, properties, 48.0);
     let mut title_font = font;
     title_font.weight = iced::font::Weight::Semibold;
+    // Like the other Files dialogs: the item, then what this window is.
     let heading = row![
         symbol,
         column![
-            text(fl!("files-properties"))
-                .font(font)
-                .size(size)
-                .color(muted),
             text(title)
                 .font(title_font)
                 .size(appearance.typography().title_size.px())
                 .wrapping(text::Wrapping::WordOrGlyph),
+            text(fl!("files-properties"))
+                .font(font)
+                .size(size + 1.0)
+                .color(muted),
         ]
         .spacing(2)
         .width(Length::Fill),
+        close_button(desktop, id),
     ]
     .spacing(14)
     .align_y(iced::Alignment::Center);
+    // Properties closes like Preferences and Quick Look, from its heading;
+    // the footer keeps the item's own action.
     let actions = canopa_ui::direction::row([
+        iced::widget::space().width(Length::Fill).into(),
         action(
             0,
             copy_label,
             Message::Properties(Event::Copy(id)),
-            canopa_ui::Action::Normal,
-        ),
-        iced::widget::space().width(Length::Fill).into(),
-        action(
-            1,
-            fl!("files-close"),
-            Message::Close(id),
             canopa_ui::Action::Normal,
         ),
     ])
@@ -1210,6 +1275,7 @@ fn window_contents<'a>(
         column![
             heading,
             scrollable(sections(desktop, id, properties, wide, None))
+                .style(canopa_ui::scrollbar)
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new()
                         .width(6)
@@ -1252,6 +1318,24 @@ pub(super) fn panel<'a>(
     let mut bold = font;
     bold.weight = iced::font::Weight::Semibold;
     let (symbol, title, _) = header(desktop, properties, 80.0);
+    // One item shows its picture as large as the panel allows, so the panel
+    // previews it as well as describing it.
+    let picture = (desktop.properties_width(id) - 28.0).max(120.0);
+    let symbol: Element<'a, Message> = match properties
+        .result
+        .as_deref()
+        .and_then(|result| result.as_ref().ok())
+        .and_then(|items| items.first())
+        .and_then(|item| item.entry.as_ref())
+    {
+        Some(entry) if properties.paths.len() == 1 => {
+            let _ = symbol;
+            desktop
+                .icons
+                .file_in(entry, picture, (picture * 0.62).clamp(96.0, 220.0))
+        }
+        _ => symbol,
+    };
     let close = Message::Properties(Event::ClosePanel(id));
     let top = row![
         chrome::section(appearance, fl!("files-properties")),
@@ -1293,14 +1377,16 @@ pub(super) fn panel<'a>(
     .spacing(14)
     .padding([12, 14]);
     iced::widget::container(
-        scrollable(body).direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new()
-                .width(6)
-                .scroller_width(6)
-                .spacing(2),
-        )),
+        scrollable(body)
+            .style(canopa_ui::scrollbar)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new()
+                    .width(6)
+                    .scroller_width(6)
+                    .spacing(2),
+            )),
     )
-    .width(PANEL_WIDTH)
+    .width(Length::Fill)
     .height(Length::Fill)
     .into()
 }
@@ -1348,7 +1434,15 @@ fn name_field<'a>(
         .size(size)
         .align_x(iced::alignment::Horizontal::Center)
         .padding([4, 8])
-        .style(move |theme, status| super::view::input_style(appearance, theme, status));
+        // A title until pointed at or focused, then a field.
+        .style(move |theme, status| {
+            let mut style = super::view::input_style(appearance, theme, status);
+            if matches!(status, iced::widget::text_input::Status::Active) {
+                style.border.color = iced::Color::TRANSPARENT;
+                style.background = iced::Color::TRANSPARENT.into();
+            }
+            style
+        });
     if !properties.renaming {
         input = input
             .on_input(move |name| Message::Properties(Event::NameEdited(id, name)))
@@ -1425,6 +1519,31 @@ fn kind(item: &Item, metadata: &crate::file_properties::Metadata) -> String {
         crate::browse::EntryKind::Symlink => fl!("files-kind-symlink"),
         crate::browse::EntryKind::Other => fl!("files-kind-special-file"),
     }
+}
+
+/// The heading's round close button, the window's default control.
+fn close_button(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let message = Some(Message::Close(id));
+    let button = canopa_ui::styled_action(
+        iced::widget::container(desktop.icons.chrome(chrome::Icon::Close, 16.0, 0.86))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
+        message.clone(),
+        canopa_ui::Action::Quiet,
+        false,
+        appearance,
+    )
+    .width(32)
+    .height(32)
+    .padding(4)
+    .style(chrome::close_style(appearance));
+    super::accessibility_ui::named_button(
+        super::accessibility_ui::focus_key(&control(id, 1)),
+        fl!("files-close-window"),
+        message.clone(),
+        super::focus::control(control(id, 1), message, appearance, button),
+    )
 }
 
 #[cfg(test)]

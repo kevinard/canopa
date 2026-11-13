@@ -27,9 +27,16 @@ pub(super) fn divider(theme: &Theme) -> rule::Style {
     }
 }
 
-pub(super) fn bar(appearance: &Appearance, top: bool) -> container::Style {
+/// The toolbar's and status bar's tint over the window's surface; the tab
+/// strip takes it too.
+pub(super) fn bar_tint(appearance: &Appearance) -> Color {
     let mut tint = ink(appearance, ColorRole::Raised);
     tint.a = 0.56;
+    tint
+}
+
+pub(super) fn bar(appearance: &Appearance, top: bool) -> container::Style {
+    let tint = bar_tint(appearance);
     let mut frame = window_surface(appearance, false);
     let radius = frame.border.radius;
     frame.border = iced::Border::default().rounded(if top {
@@ -104,12 +111,19 @@ pub(super) fn scrim(appearance: &Appearance, recession: Recession) -> container:
     let dark = appearance.color_scheme == canopa_theme::ColorScheme::Dark;
     let alpha = match (recession, dark) {
         (Recession::None, _) => return container::Style::default(),
-        (Recession::Inactive, true) => 0.25,
-        (Recession::Inactive, false) => 0.1,
-        (Recession::Prompt, true) => 0.55,
-        (Recession::Prompt, false) => 0.28,
+        // Every Files window over a browser dims it alike, so Properties,
+        // Quick Look and prompts read as one family.
+        (Recession::Inactive | Recession::Prompt, true) => 0.34,
+        (Recession::Inactive | Recession::Prompt, false) => 0.09,
     };
-    container::Style::default().background(Color::BLACK.scale_alpha(alpha))
+    // Light windows dim toward their own ink, keeping their hue; dark ones
+    // toward black.
+    let shade = if dark {
+        Color::BLACK
+    } else {
+        ink(appearance, ColorRole::Text)
+    };
+    container::Style::default().background(shade.scale_alpha(alpha))
 }
 
 /// The recessed area that presents an image or page with even margins.
@@ -124,12 +138,10 @@ pub(super) fn stage(appearance: &Appearance) -> container::Style {
 }
 
 /// The Properties side panel: the sidebar's quieter surface, on the other side.
+/// The Properties side panel: the folder's own surface, parted by its
+/// divider, with the same cards as the Properties window.
 pub(super) fn panel_surface(appearance: &Appearance) -> container::Style {
-    container::Style::default().background(mix(
-        ink(appearance, ColorRole::Surface),
-        ink(appearance, ColorRole::Background),
-        0.35,
-    ))
+    container::Style::default().background(ink(appearance, ColorRole::Surface))
 }
 
 /// The track behind a group of segmented controls.
@@ -150,6 +162,26 @@ pub(super) fn segmented(appearance: &Appearance) -> container::Style {
 pub(super) fn highlight(appearance: &Appearance, role: ColorRole) -> container::Style {
     container::Style::default()
         .background(ink(appearance, role))
+        .border(iced::Border::default().rounded(8))
+}
+
+/// The current place in the sidebar: a neutral fill that stands out from the
+/// sidebar's own tint in both appearances, leaving the accent to the selection.
+pub(super) fn sidebar_current(appearance: &Appearance) -> container::Style {
+    let fill = match appearance.color_scheme {
+        canopa_theme::ColorScheme::Dark => mix(
+            ink(appearance, ColorRole::Raised),
+            ink(appearance, ColorRole::Text),
+            0.1,
+        ),
+        canopa_theme::ColorScheme::Light => mix(
+            ink(appearance, ColorRole::Background),
+            ink(appearance, ColorRole::Text),
+            0.12,
+        ),
+    };
+    container::Style::default()
+        .background(fill)
         .border(iced::Border::default().rounded(8))
 }
 
@@ -177,6 +209,8 @@ pub(super) fn symbol_tile(appearance: &Appearance, tone: Tone) -> container::Sty
             .background(ink(appearance, ColorRole::Danger).scale_alpha(
                 if appearance.high_contrast() {
                     0.0
+                } else if appearance.color_scheme == canopa_theme::ColorScheme::Dark {
+                    0.22
                 } else {
                     0.16
                 },
@@ -234,7 +268,7 @@ pub(super) fn danger_action<'a>(
         // The dark scheme's danger role is a light tint for text on dark
         // surfaces; a fill reads as danger when deepened to carry white text.
         let danger = ink(&appearance, ColorRole::Danger);
-        let deep = mix(danger, Color::from_rgb8(150, 0, 30), 0.55);
+        let deep = mix(danger, Color::from_rgb8(150, 0, 30), 0.72);
         let danger = if appearance.color_scheme == canopa_theme::ColorScheme::Dark
             && !appearance.high_contrast()
             && rgb(deep).contrast(canopa_theme::Rgb(255, 255, 255)) >= 4.5
@@ -315,6 +349,38 @@ pub(super) fn heading_line<'a>(
     heading(desktop, icon, title, subtitle, Some(action))
 }
 
+/// `heading_line` led by an item's own picture instead of a symbol tile.
+pub(super) fn heading_line_picture<'a>(
+    desktop: &'a Desktop,
+    picture: Element<'a, Message>,
+    title: String,
+    subtitle: String,
+    action: Element<'a, Message>,
+) -> Element<'a, Message> {
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let mut bold = font;
+    bold.weight = Weight::Semibold;
+    let title = single_line(
+        title,
+        bold,
+        appearance.typography().title_size.px(),
+        None,
+        true,
+    );
+    let subtitle = (!subtitle.is_empty()).then(|| {
+        text(subtitle)
+            .font(font)
+            .size(appearance.typography().label_size.px() + 1.0)
+            .color(ink(appearance, ColorRole::Muted))
+            .wrapping(text::Wrapping::WordOrGlyph)
+            .into()
+    });
+    container(heading_with_symbol(picture, title, subtitle, Some(action)))
+        .padding([4, 0])
+        .into()
+}
+
 fn heading<'a>(
     desktop: &'a Desktop,
     icon: Icon,
@@ -356,14 +422,24 @@ pub(super) fn heading_parts<'a>(
     action: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
+    let symbol = container(desktop.icons.chrome(icon, 21.0, 1.0))
+        .padding(9)
+        .style(move |_| symbol_tile(appearance, tone));
+    heading_with_symbol(symbol.into(), title, subtitle, action)
+}
+
+/// A heading led by `symbol`, such as an item's own picture.
+pub(super) fn heading_with_symbol<'a>(
+    symbol: Element<'a, Message>,
+    title: Element<'a, Message>,
+    subtitle: Option<Element<'a, Message>>,
+    action: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
     let mut labels = column![title].width(Length::Fill).spacing(2);
     if let Some(subtitle) = subtitle {
         labels = labels.push(subtitle);
     }
-    let symbol = container(desktop.icons.chrome(icon, 21.0, 1.0))
-        .padding(9)
-        .style(move |_| symbol_tile(appearance, tone));
-    let mut content: Vec<Element<'a, Message>> = vec![symbol.into(), labels.into()];
+    let mut content: Vec<Element<'a, Message>> = vec![symbol, labels.into()];
     if let Some(action) = action {
         content.push(action);
     }
@@ -484,15 +560,25 @@ pub(super) fn selected_segment(
     let appearance = appearance.clone();
     move |theme, status| {
         let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
-        style.text_color = ink(&appearance, ColorRole::Text);
-        style.background = Some(selected_fill(&appearance).into());
-        style.border = iced::Border {
-            width: 1.0,
-            color: ink(&appearance, ColorRole::Accent).scale_alpha(0.55),
-            radius: 11.0.into(),
-        };
+        let selected = selected_segment_style(&appearance);
+        style.text_color = ink(&appearance, ColorRole::OnAccent);
+        style.background = selected.background;
+        style.border = selected.border;
         style
     }
+}
+
+/// The selected segment of a segmented control: the accent, as checked boxes
+/// and primary buttons carry it, with its own foreground.
+pub(super) fn selected_segment_style(appearance: &Appearance) -> container::Style {
+    container::Style::default()
+        .background(ink(appearance, ColorRole::Accent))
+        .color(ink(appearance, ColorRole::OnAccent))
+        .border(iced::Border {
+            width: if appearance.high_contrast() { 1.0 } else { 0.0 },
+            color: ink(appearance, ColorRole::Focus),
+            radius: 11.0.into(),
+        })
 }
 
 /// The fill of a selected segment: a clear accent tint over the track.
@@ -588,8 +674,20 @@ pub(super) fn section_card<'a>(
         .width(Length::Fill)
         .padding(14)
         .style(move |_| {
+            // Dark dialogs are already lifted to the raised tone; their cards
+            // step a little further toward the text so they still separate.
+            let background = match appearance.color_scheme {
+                canopa_theme::ColorScheme::Dark => mix(
+                    ink(appearance, ColorRole::Raised),
+                    ink(appearance, ColorRole::Text),
+                    0.06,
+                ),
+                canopa_theme::ColorScheme::Light => {
+                    ink(appearance, ColorRole::Raised).scale_alpha(0.55)
+                }
+            };
             container::Style::default()
-                .background(ink(appearance, ColorRole::Raised).scale_alpha(0.55))
+                .background(background)
                 .border(iced::Border {
                     width: if appearance.high_contrast() { 1.0 } else { 0.0 },
                     color: ink(appearance, ColorRole::Border),
@@ -625,6 +723,7 @@ pub(super) fn catalogue<'a>(
     let inspector = inspector.map(|(id, width, details)| {
         scrollable(card(appearance, details))
             .id(id)
+            .style(canopa_ui::scrollbar)
             .direction(scrollable::Direction::Vertical(
                 scrollable::Scrollbar::new()
                     .width(6)
@@ -732,6 +831,51 @@ pub(super) fn ellipsize(label: &str, font: Font, size: f32, width: f32, middle: 
         }
     }
     shorten(low)
+}
+
+/// `label` set in at most two lines of `width`: whole when it fits, else
+/// broken after a space, underscore or hyphen (never just before the
+/// extension), or between characters when no such break fits. A second line
+/// that is still too long loses its middle, keeping the extension.
+pub(super) fn two_lines(label: &str, font: Font, size: f32, width: f32) -> String {
+    if text_width(label, font, size) <= width {
+        return label.to_owned();
+    }
+    let extension = label.rfind('.').filter(|dot| *dot > 0);
+    let fits = |end: usize| text_width(label[..end].trim_end(), font, size) <= width;
+    let separator = label
+        .char_indices()
+        .filter(|(_, c)| matches!(c, ' ' | '_' | '-'))
+        .map(|(index, c)| index + c.len_utf8())
+        .filter(|end| *end < label.len() && Some(*end) != extension)
+        .rfind(|end| fits(*end));
+    let end = separator.unwrap_or_else(|| {
+        // The most characters that fit, by bisection.
+        let boundaries: Vec<_> = label
+            .char_indices()
+            .map(|(index, _)| index)
+            .skip(1)
+            .collect();
+        let (mut low, mut high) = (0, boundaries.len());
+        while low < high {
+            let middle = (low + high).div_ceil(2);
+            if fits(boundaries[middle - 1]) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        boundaries
+            .get(low.max(1) - 1)
+            .copied()
+            .unwrap_or(label.len())
+    });
+    let (first, rest) = label.split_at(end);
+    format!(
+        "{}\n{}",
+        first.trim_end(),
+        ellipsize(rest.trim_start(), font, size, width, true)
+    )
 }
 
 pub(super) fn single_line<'a>(
@@ -901,6 +1045,9 @@ pub(super) enum Icon {
     More,
     Folder,
     ActiveFolder,
+    ActiveColumns,
+    ActiveList,
+    ActiveGrid,
     Home,
     Desktop,
     Documents,
@@ -940,6 +1087,19 @@ pub(super) enum Icon {
     Disk,
     Toolbar,
     Check,
+    /// Menu commands.
+    CloseOthers,
+    Open,
+    OpenWith,
+    Copy,
+    Cut,
+    Paste,
+    Tab,
+    Window,
+    Bookmark,
+    SelectAll,
+    Undo,
+    Hidden,
     /// Emblems drawn on file icons: a link, no access, and read-only.
     Link,
     Lock,
@@ -947,7 +1107,7 @@ pub(super) enum Icon {
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 52] = [
+    pub(super) const ALL: [Self; 67] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -958,6 +1118,9 @@ impl Icon {
         Self::More,
         Self::Folder,
         Self::ActiveFolder,
+        Self::ActiveColumns,
+        Self::ActiveList,
+        Self::ActiveGrid,
         Self::Home,
         Self::Desktop,
         Self::Documents,
@@ -997,6 +1160,18 @@ impl Icon {
         Self::Disk,
         Self::Toolbar,
         Self::Check,
+        Self::CloseOthers,
+        Self::Open,
+        Self::OpenWith,
+        Self::Copy,
+        Self::Cut,
+        Self::Paste,
+        Self::Tab,
+        Self::Window,
+        Self::Bookmark,
+        Self::SelectAll,
+        Self::Undo,
+        Self::Hidden,
         Self::Link,
         Self::Lock,
         Self::ReadOnly,
@@ -1024,6 +1199,24 @@ impl Icon {
             Self::Up => "m6 15 6-6 6 6",
             Self::Down => "m6 9 6 6 6-6",
             Self::Check => "m5 12.5 4.5 4.5L19 7.5",
+            Self::CloseOthers => "M9 4h11v11M4 9h11v11H4Zm3.5 3.5 4 4m0-4-4 4",
+            Self::Open => "M14 4h6v6m0-6-9 9m7 1v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+            Self::OpenWith => {
+                "M4 4h6.5v6.5H4Zm9.5 0H20v6.5h-6.5ZM4 13.5h6.5V20H4Zm12.75 0v6.5M13.5 16.75H20"
+            }
+            Self::Copy => "M9 9h11v11H9Zm-4 6H4V4h11v1",
+            Self::Cut => {
+                "M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm0 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM20 4 8.1 15.9m6.4-1.4L20 20M8.1 8.1 12 12"
+            }
+            Self::Paste => "M9 3h6v4H9Zm0 2H5v16h14V5h-4",
+            Self::Tab => "M3 5h18v14H3Zm0 4h18M10 5v4",
+            Self::Window => "M8 4h12v11H8Zm0 3.5h12M4 9v11h12",
+            Self::Bookmark => "M6 3h12v18l-6-4.5L6 21Z",
+            Self::SelectAll => "M4 4h16v16H4Zm4.5 8.5 2.5 2.5 5-5.5",
+            Self::Undo => "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4",
+            Self::Hidden => {
+                "M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Zm12.5 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM4 4l16 16"
+            }
             Self::Link => {
                 "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
             }
@@ -1068,9 +1261,11 @@ impl Icon {
             Self::Image => "M4 5h16v14H4Zm0 11 4.5-4.5 3.5 3.5 2.5-2.5L20 17M15.5 9h.01",
             Self::Recovery => "M3 10a9 9 0 1 1 1 7m-1-13v6h6m3-4v6l3 2",
             Self::Eject => "m6 14 6-8 6 8Zm0 4h12",
-            Self::Columns => "M3 5h4.5v14H3Zm6.75 0h4.5v14h-4.5ZM16.5 5H21v14h-4.5Z",
-            Self::List => "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
-            Self::Grid => "M4 4h6v6H4Zm10 0h6v6h-6ZM4 14h6v6H4Zm10 0h6v6h-6Z",
+            Self::Columns | Self::ActiveColumns => {
+                "M3 5h4.5v14H3Zm6.75 0h4.5v14h-4.5ZM16.5 5H21v14h-4.5Z"
+            }
+            Self::List | Self::ActiveList => "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
+            Self::Grid | Self::ActiveGrid => "M4 4h6v6H4Zm10 0h6v6h-6ZM4 14h6v6H4Zm10 0h6v6h-6Z",
             Self::Edit => "m15 5 4 4M4 20l4-.8L20 7l-3-3L5 16Z",
             Self::Places => "M3 5h18v14H3Zm6 0v14M5.5 9h1m-1 3h1m-1 3h1",
             Self::Settings => {
@@ -1131,5 +1326,18 @@ mod ellipsis_tests {
         assert!(short.contains('…') && text_width(&short, font, 14.0) <= full / 2.0);
         let end = ellipsize(name, font, 14.0, full / 2.0, false);
         assert!(end.ends_with('…') && end.starts_with("Quarterly"), "{end}");
+    }
+
+    #[test]
+    fn grid_names_break_after_separators_and_keep_their_extension() {
+        let font = Font::DEFAULT;
+        let name = "IMG_20260104_1200.png";
+        let full = text_width(name, font, 13.0);
+        assert_eq!(two_lines(name, font, 13.0, full + 1.0), name);
+        let broken = two_lines(name, font, 13.0, full - 4.0);
+        assert_eq!(broken, "IMG_20260104_\n1200.png");
+        let long = two_lines(&name.repeat(4), font, 13.0, full);
+        let (_, second) = long.split_once('\n').unwrap();
+        assert!(second.contains('…') && second.ends_with(".png"), "{long}");
     }
 }

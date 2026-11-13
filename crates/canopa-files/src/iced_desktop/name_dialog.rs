@@ -4,7 +4,7 @@ use crate::{operation_jobs::Request, operations::OperationRequest};
 use canopa_theme::UiKind;
 use iced::{
     Length,
-    widget::{column, container, text, text_input},
+    widget::{column, container, row, text, text_input},
 };
 
 pub(super) struct Dialog {
@@ -117,8 +117,8 @@ impl Desktop {
         let (window, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(440.0, 240.0),
-                min_size: Some(Size::new(320.0, 228.0)),
+                size: Size::new(440.0, 226.0),
+                min_size: Some(Size::new(320.0, 220.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Files".into(),
@@ -158,8 +158,30 @@ impl Desktop {
             self.file_operations.error = Some(fl!("files-name-dialog-failed"));
             return Task::none();
         }
+        // Renaming a file selects its name without the extension, so typing
+        // replaces only the part people usually change; folders and new
+        // names select everything.
+        let stem = self.file_operations.name.as_ref().and_then(|dialog| {
+            let original = dialog.original.as_ref()?;
+            let listed_file = self
+                .active(dialog.origin.window)
+                .and_then(|tab| tab.browser.as_ref())
+                .and_then(|browser| {
+                    browser
+                        .visible_entries()
+                        .into_iter()
+                        .find(|entry| &entry.path == original)
+                        .map(|entry| !entry.is_directory())
+                })
+                .unwrap_or(false);
+            listed_file.then(|| stem_length(&dialog.value)).flatten()
+        });
+        let select = match stem {
+            Some(end) => iced::widget::operation::select_range(control(id, "name"), 0, end),
+            None => iced::widget::operation::select_all(control(id, "name")),
+        };
         iced::widget::operation::focus(control(id, "name"))
-            .chain(iced::widget::operation::select_all(control(id, "name")))
+            .chain(select)
             .chain(window::gain_focus(id))
     }
 
@@ -365,45 +387,46 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             None,
         ),
         column![
-            chrome::section_title(
-                appearance,
-                if dialog.original.is_some() {
-                    fl!("files-name-full-name")
-                } else {
-                    fl!("files-name-folder-name")
-                },
-            )
-            .size(small + 1.0),
+            // A problem or progress shows beside the field's name, so the
+            // dialog keeps one compact height.
+            row![
+                chrome::section_title(
+                    appearance,
+                    if dialog.original.is_some() {
+                        fl!("files-name-full-name")
+                    } else {
+                        fl!("files-name-folder-name")
+                    },
+                )
+                .size(small + 1.0),
+                iced::widget::space().width(Length::Fill),
+                super::accessibility_ui::semantic(
+                    feedback,
+                    text(dialog.error.clone().unwrap_or_else(|| {
+                        if dialog.busy {
+                            fl!("files-accepting-operation")
+                        } else {
+                            String::new()
+                        }
+                    }))
+                    .font(font)
+                    .size(small)
+                    .color(chrome::ink(
+                        appearance,
+                        if dialog.error.is_some() {
+                            canopa_theme::ColorRole::Danger
+                        } else {
+                            canopa_theme::ColorRole::Muted
+                        }
+                    ))
+                    .wrapping(text::Wrapping::None),
+                ),
+            ]
+            .spacing(12)
+            .align_y(iced::Alignment::Center),
             input,
         ]
         .spacing(6),
-        super::accessibility_ui::semantic(
-            feedback,
-            container(
-                text(dialog.error.clone().unwrap_or_else(|| {
-                    if dialog.busy {
-                        fl!("files-accepting-operation")
-                    } else {
-                        String::new()
-                    }
-                }))
-                .font(font)
-                .size(small)
-                .color(chrome::ink(
-                    appearance,
-                    if dialog.error.is_some() {
-                        canopa_theme::ColorRole::Danger
-                    } else {
-                        canopa_theme::ColorRole::Muted
-                    }
-                ))
-            )
-            .height(if dialog.error.is_some() || dialog.busy {
-                Length::Fixed(22.0)
-            } else {
-                Length::Fill
-            })
-        ),
         canopa_ui::direction::row([
             iced::widget::space().width(Length::Fill).into(),
             action(fl!("files-cancel"), "cancel", Event::NameCancel(id)),
@@ -447,4 +470,44 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             (!dialog.busy).then(|| control(id, "name")),
         ),
     )
+}
+
+/// The length in graphemes of `name` before its extension, counting a
+/// compressed tarball's two suffixes as one; `None` without an extension.
+fn stem_length(name: &str) -> Option<usize> {
+    use unicode_segmentation::UnicodeSegmentation;
+    const COMPOUND: [&str; 6] = [
+        ".tar.gz",
+        ".tar.bz2",
+        ".tar.xz",
+        ".tar.zst",
+        ".tar.lz",
+        ".tar.lzma",
+    ];
+    let end = COMPOUND
+        .iter()
+        .find_map(|suffix| {
+            let start = name
+                .len()
+                .checked_sub(suffix.len())
+                .filter(|start| *start > 0)?;
+            (name.is_char_boundary(start) && name[start..].eq_ignore_ascii_case(suffix))
+                .then_some(start)
+        })
+        .or_else(|| name.rfind('.').filter(|dot| *dot > 0))?;
+    Some(name[..end].graphemes(true).count())
+}
+
+#[cfg(test)]
+mod stem_tests {
+    use super::stem_length;
+
+    #[test]
+    fn rename_selects_the_name_before_its_extension() {
+        assert_eq!(stem_length("Report Q3.txt"), Some(9));
+        assert_eq!(stem_length("backup.tar.gz"), Some(6));
+        assert_eq!(stem_length("Café.png"), Some(4));
+        assert_eq!(stem_length(".bashrc"), None);
+        assert_eq!(stem_length("README"), None);
+    }
 }

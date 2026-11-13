@@ -1,7 +1,6 @@
 //! Immediate shared folder choices, with serialized/coalesced private-state writes.
 use super::*;
 use crate::preferences::{Detail, SortField, ViewMode};
-use canopa_theme::UiKind;
 use iced::{
     Length,
     futures::channel::oneshot,
@@ -135,11 +134,21 @@ impl Desktop {
     pub(super) fn save_folder_views(&mut self, folder: PathBuf) -> Task<Message> {
         self.folder_writer.queue(self.preferences.clone(), folder)
     }
-    pub(super) fn change_folder_mode(&mut self, id: window::Id, mode: ViewMode) -> Task<Message> {
-        let Some(target) = self.folder_target(id) else {
+    /// Show the active tab of window `id` in `mode` for now: the folder's
+    /// saved view options stay as they are.
+    pub(super) fn show_view_mode(&mut self, id: window::Id, mode: ViewMode) -> Task<Message> {
+        let Some(tab) = self.active_mut(id).filter(|tab| !tab.loading) else {
             return Task::none();
         };
-        self.folder_view_event(Event::Change(target, Change::Mode(mode)))
+        tab.view_mode = Some(mode);
+        let Some(folder) = tab
+            .browser
+            .as_ref()
+            .map(|browser| browser.path().to_owned())
+        else {
+            return Task::none();
+        };
+        self.publish_folder_views(Some(&folder))
     }
     pub(super) fn publish_folder_views(&mut self, folder: Option<&Path>) -> Task<Message> {
         let mut changed = Vec::new();
@@ -149,10 +158,18 @@ impl Desktop {
                 let Some(browser) = tab.browser.as_mut() else {
                     continue;
                 };
-                if folder.is_some_and(|folder| browser.path() != folder) {
+                if let Some(folder) = folder.filter(|folder| browser.path() != *folder) {
+                    // A changed folder shown as an ancestor column is listed
+                    // again in its new order.
+                    if tab.columns.remove(folder).is_some() {
+                        active_changed |= index == window.active;
+                    }
                     continue;
                 }
-                let view = self.preferences.for_folder(browser.path()).clone();
+                let mut view = self.preferences.for_folder(browser.path()).clone();
+                if let Some(mode) = tab.view_mode {
+                    view.mode = mode;
+                }
                 if browser.view() == &view {
                     continue;
                 }
@@ -229,6 +246,11 @@ impl Desktop {
                     }
                     _ => {}
                 }
+                let temporary = matches!(change, Change::Mode(_) | Change::Defaults)
+                    && self
+                        .active_mut(target.window)
+                        .and_then(|tab| tab.view_mode.take())
+                        .is_some();
                 let mut view = self.preferences.for_folder(&target.path).clone();
                 let before = view.clone();
                 let reset = matches!(change, Change::Defaults);
@@ -248,19 +270,25 @@ impl Desktop {
                     }
                     Change::Tree(_) | Change::FoldersFirst(_) => {}
                     Change::Width(delta) => {
-                        view.column_width =
-                            (i32::from(view.column_width) + i32::from(delta)).clamp(160, 640) as u16
+                        view.column_width = step_width(view.column_width, delta)
                     }
                     Change::Defaults => {}
                 }
+                // Ending a temporary view shows the saved one even when the
+                // saved options themselves do not change.
+                let unchanged = if temporary {
+                    self.publish_folder_views(Some(&target.path))
+                } else {
+                    Task::none()
+                };
                 if reset {
                     if self.preferences.folder_override(&target.path).is_none() {
-                        return close;
+                        return Task::batch([close, unchanged]);
                     }
                     self.preferences.use_defaults(&target.path);
                 } else {
                     if view == before {
-                        return close;
+                        return Task::batch([close, unchanged]);
                     }
                     if let Err(error) = self.preferences.remember_changes(&target.path, view) {
                         self.folder_writer.error = Some(error.to_string());
@@ -321,21 +349,26 @@ pub(super) fn overlay<'a>(
     target: &'a Target,
     content: Element<'a, Message>,
 ) -> Element<'a, Message> {
+    use canopa_theme::ColorRole;
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().body_size.px();
-    let label = appearance.typography().label_size.px();
+    let label = appearance.typography().label_size.px() + 1.0;
+    let mut bold = font;
+    bold.weight = iced::font::Weight::Semibold;
     let settings = desktop.preferences.for_folder(&target.path);
     let scroll = iced::widget::Id::from(format!("files-folder-options-scroll-{:?}", target.window));
     let mut order = Vec::new();
     let mut reveal = Vec::new();
     let mut next = 0;
-    let mut action = |title: String,
-                      change: Option<Change>,
-                      selected: bool,
-                      enabled: bool,
-                      in_form: bool|
-     -> Element<'a, Message> {
+    let message_for = |change: Option<Change>| {
+        Message::FolderView(change.map_or(Event::Close(target.window), |change| {
+            Event::Change(target.clone(), change)
+        }))
+    };
+    // Every control keeps its id and place in the keyboard order; only its
+    // look follows the rest of Files.
+    let mut register = |enabled: bool, in_form: bool| {
         let id = control_id(target, next);
         next += 1;
         if enabled {
@@ -344,230 +377,396 @@ pub(super) fn overlay<'a>(
                 reveal.push((id.clone(), scroll.clone()));
             }
         }
-        let event = change.map_or(Event::Close(target.window), |change| {
-            Event::Change(target.clone(), change)
-        });
-        let message = enabled.then_some(Message::FolderView(event));
+        id
+    };
+    let close = {
+        let id = register(true, false);
+        let message = Some(message_for(None));
+        let button = canopa_ui::styled_action(
+            container(desktop.icons.chrome(chrome::Icon::Close, 16.0, 0.86))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill),
+            message.clone(),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        )
+        .width(30)
+        .height(30)
+        .padding(4)
+        .style(chrome::close_style(appearance));
+        super::accessibility_ui::named_button(
+            super::accessibility_ui::focus_key(&id),
+            fl!("files-close"),
+            message.clone(),
+            focus::control(id, message, appearance, button),
+        )
+    };
+    // A segment of an equal-width choice, the chosen one on the accent.
+    let mut segment = |title: String, change: Change, selected: bool| -> Element<'a, Message> {
+        let id = register(true, true);
+        // View choices carry the view's symbol, as the toolbar's view button.
+        let symbol = match change {
+            Change::Mode(mode) if selected => Some(super::view::view_icon_on_accent(mode)),
+            Change::Mode(mode) => Some(super::view::view_icon(mode)),
+            _ => None,
+        };
+        let message = Some(message_for(Some(change)));
+        let mut text = text(title).size(label).font(font);
+        if selected {
+            text = text.color(chrome::ink(appearance, ColorRole::OnAccent));
+        }
+        let content: Element<'a, Message> = match symbol {
+            Some(symbol) => row![desktop.icons.chrome(symbol, 15.0, 0.9), text]
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .into(),
+            None => text.into(),
+        };
+        let button = iced::widget::button(container(content).center_x(Length::Fill))
+            .padding([5, 6])
+            .width(Length::Fill)
+            .on_press_maybe(message.clone());
+        let button = if selected {
+            button.style(chrome::selected_segment(appearance))
+        } else {
+            button.style(|theme, status| {
+                let mut style =
+                    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+                style.border.radius = 11.0.into();
+                style
+            })
+        };
+        focus::button(id, message, appearance, button)
+    };
+    let track = |segments: Vec<Element<'a, Message>>| -> Element<'a, Message> {
+        container(
+            iced::widget::Row::from_vec(segments)
+                .spacing(2)
+                .width(Length::Fill),
+        )
+        .padding(3)
+        .width(Length::Fill)
+        .style(move |_| chrome::segmented(appearance))
+        .into()
+    };
+    // The view shown is the tab's, which the view button may have changed
+    // for now; choosing one here saves it for the folder.
+    let shown = desktop
+        .windows
+        .get(&target.window)
+        .and_then(|window| window.tabs.iter().find(|tab| tab.id == target.tab))
+        .and_then(|tab| tab.view_mode)
+        .unwrap_or(settings.mode);
+    let modes = vec![
+        segment(
+            fl!("files-view-columns"),
+            Change::Mode(ViewMode::Columns),
+            shown == ViewMode::Columns,
+        ),
+        segment(
+            fl!("files-view-list"),
+            Change::Mode(ViewMode::List),
+            shown == ViewMode::List,
+        ),
+        segment(
+            fl!("files-view-icons"),
+            Change::Mode(ViewMode::Icons),
+            shown == ViewMode::Icons,
+        ),
+    ];
+    let mode = track(modes);
+    let sorts = vec![
+        segment(
+            fl!("files-column-name"),
+            Change::Sort(SortField::Name),
+            settings.sort == SortField::Name,
+        ),
+        segment(
+            fl!("files-column-size"),
+            Change::Sort(SortField::Size),
+            settings.sort == SortField::Size,
+        ),
+        segment(
+            fl!("files-column-modified"),
+            Change::Sort(SortField::Modified),
+            settings.sort == SortField::Modified,
+        ),
+        segment(
+            fl!("files-column-kind"),
+            Change::Sort(SortField::Kind),
+            settings.sort == SortField::Kind,
+        ),
+    ];
+    let sort = track(sorts);
+    // The column width steps with round buttons around its value.
+    let mut stepper = |glyph: chrome::Icon,
+                       name: String,
+                       change: Change,
+                       enabled: bool|
+     -> Element<'a, Message> {
+        let id = register(enabled, true);
+        let message = enabled.then(|| message_for(Some(change)));
+        let button = canopa_ui::styled_action(
+            container(
+                desktop
+                    .icons
+                    .chrome(glyph, 14.0, if enabled { 0.9 } else { 0.35 }),
+            )
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
+            message.clone(),
+            canopa_ui::Action::Quiet,
+            false,
+            appearance,
+        )
+        .width(28)
+        .height(28)
+        .padding(4)
+        .style(chrome::close_style(appearance));
+        super::accessibility_ui::named_button(
+            super::accessibility_ui::focus_key(&id),
+            name,
+            message.clone(),
+            focus::control(id, message, appearance, button),
+        )
+    };
+    let narrower = stepper(
+        chrome::Icon::Minus,
+        fl!("files-column-narrower"),
+        Change::Width(-WIDTH_STEP),
+        settings.column_width > 160,
+    );
+    let wider = stepper(
+        chrome::Icon::Plus,
+        fl!("files-column-wider"),
+        Change::Width(WIDTH_STEP),
+        settings.column_width < 640,
+    );
+    let widths = row![
+        text(fl!("files-preferences-column-width"))
+            .size(size)
+            .font(font)
+            .width(Length::Fill),
+        narrower,
+        text(fl!("files-pixels", pixels = settings.column_width))
+            .size(label)
+            .font(font)
+            .width(64)
+            .align_x(iced::alignment::Horizontal::Center),
+        wider,
+    ]
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
+    let has_override = desktop.preferences.folder_override(&target.path).is_some();
+    let reset = {
+        let id = register(has_override, true);
+        let message = has_override.then(|| message_for(Some(Change::Defaults)));
         focus::button(
             id,
             message.clone(),
             appearance,
             canopa_ui::styled_action(
-                text(title).size(label).font(font),
+                text(fl!("files-preferences-use-defaults"))
+                    .size(label)
+                    .font(font),
                 message,
-                if selected {
-                    canopa_ui::Action::Normal
-                } else {
-                    canopa_ui::Action::Quiet
-                },
+                canopa_ui::Action::Normal,
                 false,
                 appearance,
-            ),
+            )
+            .padding([5, 12]),
         )
     };
-    let close = action(fl!("files-close"), None, false, true, false);
-    let mode = row![
-        action(
-            fl!("files-view-columns"),
-            Some(Change::Mode(ViewMode::Columns)),
-            settings.mode == ViewMode::Columns,
-            true,
-            true
-        ),
-        action(
-            fl!("files-view-list"),
-            Some(Change::Mode(ViewMode::List)),
-            settings.mode == ViewMode::List,
-            true,
-            true
-        ),
-        action(
-            fl!("files-view-icons"),
-            Some(Change::Mode(ViewMode::Icons)),
-            settings.mode == ViewMode::Icons,
-            true,
-            true
-        )
-    ]
-    .spacing(4);
-    let sort = column![
-        row![
-            action(
-                fl!("files-column-name"),
-                Some(Change::Sort(SortField::Name)),
-                settings.sort == SortField::Name,
-                true,
-                true
-            ),
-            action(
-                fl!("files-column-size"),
-                Some(Change::Sort(SortField::Size)),
-                settings.sort == SortField::Size,
-                true,
-                true
-            )
-        ]
-        .spacing(4),
-        row![
-            action(
-                fl!("files-column-modified"),
-                Some(Change::Sort(SortField::Modified)),
-                settings.sort == SortField::Modified,
-                true,
-                true
-            ),
-            action(
-                fl!("files-column-kind"),
-                Some(Change::Sort(SortField::Kind)),
-                settings.sort == SortField::Kind,
-                true,
-                true
-            )
-        ]
-        .spacing(4)
-    ]
-    .spacing(4);
-    let widths = row![
-        action(
-            "−".to_owned(),
-            Some(Change::Width(-20)),
-            false,
-            settings.column_width > 160,
-            true
-        ),
-        container(
-            text(fl!("files-pixels", pixels = settings.column_width))
-                .size(size)
-                .font(font)
-        )
-        .width(Length::Fill),
-        action(
-            "+".to_owned(),
-            Some(Change::Width(20)),
-            false,
-            settings.column_width < 640,
-            true
-        )
-    ]
-    .spacing(6)
-    .align_y(iced::Alignment::Center);
-    let reset = action(
-        fl!("files-preferences-use-defaults"),
-        Some(Change::Defaults),
-        false,
-        desktop.preferences.folder_override(&target.path).is_some(),
-        true,
-    );
-    let mut check = |title: String, value: bool, change: Change| -> Element<'a, Message> {
-        let id = control_id(target, next);
-        next += 1;
-        order.push(id.clone());
-        reveal.push((id.clone(), scroll.clone()));
-        let message = Message::FolderView(Event::Change(target.clone(), change));
+    // On/off choices are switches, as in Preferences.
+    let switch = |id: iced::widget::Id,
+                  title: String,
+                  value: bool,
+                  change: Change|
+     -> Element<'a, Message> {
+        let message = message_for(Some(change));
+        let toggled = message.clone();
+        let control = iced::widget::toggler(value)
+            .size(20)
+            .style(canopa_ui::switch_style)
+            .on_toggle(move |_| toggled.clone());
         focus::check_box(
             id,
             value,
             Some(message.clone()),
             appearance,
-            checkbox(value)
-                .label(title)
-                .size(16)
-                .text_size(size)
-                .font(font)
-                .on_toggle(move |_| message.clone())
-                .width(Length::Fill),
+            mouse_area(
+                container(
+                    row![
+                        text(title).size(size).font(font).width(Length::Fill),
+                        control
+                    ]
+                    .spacing(12)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding([2, 0]),
+            )
+            .on_press(message),
         )
     };
-    let reverse = check(
+    let reverse = switch(
+        register(true, true),
         fl!("files-folder-reverse-order"),
         settings.descending,
         Change::Descending(!settings.descending),
     );
-    let folders_first = check(
+    let folders_first = switch(
+        register(true, true),
         fl!("files-folders-first"),
         settings.folders_first,
         Change::FoldersFirst(!settings.folders_first),
     );
-    let mut details = column![].spacing(8);
+    let mut details = row![].spacing(14).align_y(iced::Alignment::Center);
     for (title, detail) in [
         (fl!("files-column-size"), Detail::Size),
         (fl!("files-folder-modified-time"), Detail::Modified),
         (fl!("files-column-kind"), Detail::Kind),
     ] {
         let shown = settings.details.contains(&detail);
-        details = details.push(check(title, shown, Change::Detail(detail, !shown)));
+        let id = register(true, true);
+        let message = message_for(Some(Change::Detail(detail, !shown)));
+        details = details.push(focus::check_box(
+            id,
+            shown,
+            Some(message.clone()),
+            appearance,
+            checkbox(shown)
+                .label(title)
+                .size(16)
+                .text_size(size)
+                .font(font)
+                .style(canopa_ui::checkbox_style)
+                .on_toggle(move |_| message.clone()),
+        ));
     }
-    // Only List view has a tree; it follows the view choice it belongs to.
-    let tree: Element<'a, Message> = if settings.mode == ViewMode::List {
-        check(
-            fl!("files-folder-tree"),
-            settings.tree,
-            Change::Tree(!settings.tree),
-        )
-    } else {
-        space().height(0).into()
-    };
+    let tree = switch(
+        register(true, true),
+        fl!("files-folder-tree"),
+        settings.tree,
+        Change::Tree(!settings.tree),
+    );
     // Control order follows visual order even though closures build the groups.
-    let indices = [0, 1, 2, 3, 16, 4, 5, 6, 7, 11, 12, 8, 9, 13, 14, 15, 10];
+    let indices = [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 8, 9, 13, 14, 15, 16, 10];
     order.sort_by_key(|id| {
         indices
             .iter()
             .position(|index| *id == control_id(target, *index))
             .unwrap_or(usize::MAX)
     });
+    let caption = |title: String| -> Element<'a, Message> {
+        text(title)
+            .size(label)
+            .font(bold)
+            .color(chrome::ink(appearance, ColorRole::Muted))
+            .into()
+    };
+    let divider = || -> Element<'a, Message> {
+        container(iced::widget::rule::horizontal(1).style(chrome::divider))
+            .padding([2, 0])
+            .into()
+    };
+    // The same settings, in the same groups and order, as Preferences' Views.
+    let section =
+        |title: String| -> Element<'a, Message> { text(title).size(size).font(bold).into() };
     let form = column![
-        text(display_location(&target.path)).size(label).font(font),
-        text(fl!("files-view")).size(size).font(font),
-        mode,
-        tree,
-        text(fl!("files-preferences-sort-by")).size(size).font(font),
-        sort,
-        reverse,
-        folders_first,
-        text(fl!("files-preferences-column-width"))
-            .size(size)
-            .font(font),
+        section(fl!("files-preferences-section-browsing")),
+        column![caption(fl!("files-view")), mode].spacing(6),
+        column![caption(fl!("files-preferences-sort-by")), sort].spacing(6),
+        column![reverse, folders_first].spacing(6),
+        divider(),
+        section(fl!("files-preferences-section-layouts")),
         widths,
-        text(fl!("files-folder-list-details")).size(size).font(font),
-        details,
-        reset
+        column![caption(fl!("files-preferences-list-view")), details].spacing(6),
+        tree,
     ]
     .spacing(10);
-    let panel = column![
-        row![
-            text(fl!("files-this-folder"))
-                .size(size)
+    let folder = target.path.file_name().map_or_else(
+        || display_location(&target.path),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let heading = row![
+        column![
+            text(fl!("files-view-options-title"))
+                .size(size + 1.0)
+                .font(bold),
+            text(folder)
+                .size(label)
                 .font(font)
-                .width(Length::Fill),
-            close
+                .color(chrome::ink(appearance, ColorRole::Muted)),
         ]
-        .align_y(iced::Alignment::Center),
-        scrollable(form).id(scroll.clone()).height(Length::Fill),
-        text(fl!("files-folder-remembered")).size(label).font(font)
+        .spacing(2)
+        .width(Length::Fill),
+        close,
     ]
-    .spacing(8);
+    .spacing(8)
+    .align_y(iced::Alignment::Center);
+    let footer = row![
+        text(fl!("files-folder-remembered"))
+            .size(label)
+            .font(font)
+            .color(chrome::ink(appearance, ColorRole::Muted))
+            .width(Length::Fill),
+        reset,
+    ]
+    .spacing(8)
+    .align_y(iced::Alignment::Center);
+    let panel = column![
+        heading,
+        divider(),
+        scrollable(form)
+            .id(scroll.clone())
+            .style(canopa_ui::scrollbar)
+            .height(Length::Shrink),
+        divider(),
+        footer,
+    ]
+    .spacing(12);
     let styled = appearance.clone();
     let panel = container(panel)
-        .padding(12)
-        .width(Length::Fill)
-        .max_width(340)
-        .height(Length::Fill)
-        .max_height(540)
-        .style(move |_| canopa_ui::frame(&styled, styled.style(UiKind::Menu)));
+        .padding(16)
+        .width(360)
+        .max_height(600)
+        .style(move |_| super::actions_ui::menu_surface(&styled));
     let panel = focus::group(panel, order, reveal, Some(control_id(target, 0)));
     stack![
         content,
         mouse_area(space().width(Length::Fill).height(Length::Fill))
             .on_press(Message::FolderView(Event::Close(target.window)))
             .on_right_press(Message::FolderView(Event::Close(target.window))),
+        // Below the toolbar at the window's end, where its menus open.
         container(opaque(panel))
-            .padding(10)
+            .padding(iced::Padding {
+                top: 62.0,
+                right: 12.0,
+                ..Default::default()
+            })
             .width(Length::Fill)
             .height(Length::Fill)
             .align_right(Length::Fill)
             .align_top(Length::Fill)
     ]
     .into()
+}
+
+/// The column width steps by.
+pub(super) const WIDTH_STEP: i16 = 20;
+
+/// A column width one step wider or narrower, on the step's multiples: a
+/// width dragged to 287 steps to 300 or 280, not to 307 or 267.
+pub(super) fn step_width(width: u16, delta: i16) -> u16 {
+    let step = i32::from(WIDTH_STEP);
+    let width = i32::from(width);
+    let snapped = if delta > 0 {
+        (width.div_euclid(step) + 1) * step
+    } else {
+        (width + step - 1).div_euclid(step) * step - step
+    };
+    snapped.clamp(160, 640) as u16
 }
 
 #[cfg(test)]
@@ -631,6 +830,37 @@ mod tests {
         assert_eq!(desktop.preferences.for_folder(root.path()), &defaults);
         assert!(desktop.preferences.folder_override(root.path()).is_none());
     }
+    #[test]
+    fn the_view_switch_changes_only_this_tab_and_view_options_save_and_end_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        let saved = desktop.preferences.for_folder(root.path()).mode;
+        let shown = if saved == ViewMode::Icons {
+            ViewMode::List
+        } else {
+            ViewMode::Icons
+        };
+        let command = match shown {
+            ViewMode::Icons => Command::Icons,
+            _ => Command::List,
+        };
+        let _ = desktop.update(Message::Command(window, command));
+        let browser = desktop.active(window).unwrap().browser.as_ref().unwrap();
+        assert_eq!(browser.view().mode, shown);
+        // Nothing is remembered for the folder.
+        assert!(desktop.preferences.folder_override(root.path()).is_none());
+        assert_eq!(desktop.preferences.for_folder(root.path()).mode, saved);
+        // Choosing the saved view in View options shows it again.
+        let target = desktop.folder_target(window).unwrap();
+        let _ = desktop.folder_view_event(Event::Change(target, Change::Mode(saved)));
+        let current = desktop.active(window).unwrap();
+        assert_eq!(current.view_mode, None);
+        assert_eq!(current.browser.as_ref().unwrap().view().mode, saved);
+    }
+
     #[test]
     fn tree_and_folders_first_are_one_choice_for_every_folder() {
         let root = tempfile::tempdir().unwrap();

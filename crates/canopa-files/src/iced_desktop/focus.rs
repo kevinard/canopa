@@ -10,6 +10,7 @@ use iced::{
     },
     keyboard,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Default)]
 struct Snapshot {
@@ -254,24 +255,62 @@ pub(super) fn control_with_keyboard<'a>(
     appearance: &Appearance,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let style = appearance.style(UiKind::Button);
-    let mut border = canopa_ui::frame(appearance, style).border;
-    border.width = if style.custom_border {
-        border.width.max(1.0)
-    } else {
-        1.5
-    };
-    border.color = canopa_ui::color(appearance.role(ColorRole::Focus));
     Element::new(Frame {
         mode: Mode::Control {
             id,
             message,
             keyboard_message,
-            border,
+            border: focus_border(appearance),
+            steps: None,
         },
         content: content.into(),
     })
 }
+
+/// A focusable slider: Tab reaches it, the arrows step it, Page Up and
+/// Page Down take larger steps, Home and End go to its ends.
+pub(super) fn slider<'a>(
+    id: Id,
+    steps: Option<Steps>,
+    appearance: &Appearance,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    Element::new(Frame {
+        mode: Mode::Control {
+            id,
+            // Focusable while it can change; a click on it takes focus.
+            message: steps.as_ref().map(|steps| steps.first.clone()),
+            keyboard_message: None,
+            border: focus_border(appearance),
+            steps: steps.map(Box::new),
+        },
+        content: pointer_slider(content),
+    })
+}
+
+/// The keyboard focus ring: a soft halo that hugs the control's edge; high
+/// contrast and custom borders keep a thin opaque ring standing apart from it.
+fn focus_border(appearance: &Appearance) -> Border {
+    let style = appearance.style(UiKind::Button);
+    let mut border = canopa_ui::frame(appearance, style).border;
+    border.color = canopa_ui::color(appearance.role(ColorRole::Focus));
+    border.width = if style.custom_border {
+        border.width.max(1.0)
+    } else if appearance.high_contrast() {
+        1.5
+    } else {
+        border.color.a = 0.5;
+        FOCUS_OFFSET
+    };
+    border
+}
+
+/// How far the keyboard focus ring stands outside a control.
+const FOCUS_OFFSET: f32 = 3.0;
+
+/// Whether keyboard navigation has shown focus since the last click; shared
+/// by every Files window, as focus rings follow the person's input.
+static FOCUS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn activation_key(key: &keyboard::Key) -> bool {
     matches!(
@@ -298,7 +337,19 @@ enum Mode {
         message: Option<Message>,
         keyboard_message: Option<Message>,
         border: Border,
+        /// A slider's keys: smaller and larger steps, its ends.
+        steps: Option<Box<Steps>>,
     },
+}
+
+/// What the keyboard does to a focused slider.
+pub(super) struct Steps {
+    pub decrease: Message,
+    pub increase: Message,
+    pub page_decrease: Message,
+    pub page_increase: Message,
+    pub first: Message,
+    pub last: Message,
 }
 struct Frame<'a> {
     mode: Mode,
@@ -476,6 +527,28 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        // Rings show once the keyboard moves focus and hide at the next click,
+        // so a dialog's default button opens without one.
+        let visible = match event {
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key:
+                    keyboard::Key::Named(
+                        keyboard::key::Named::Tab
+                        | keyboard::key::Named::ArrowUp
+                        | keyboard::key::Named::ArrowDown
+                        | keyboard::key::Named::ArrowLeft
+                        | keyboard::key::Named::ArrowRight,
+                    ),
+                ..
+            }) => Some(true),
+            Event::Mouse(mouse::Event::ButtonPressed(_)) => Some(false),
+            _ => None,
+        };
+        if let Some(visible) = visible
+            && FOCUS_VISIBLE.swap(visible, Ordering::Relaxed) != visible
+        {
+            shell.request_redraw();
+        }
         if matches!(self.mode, Mode::Group { .. })
             && self.activate_shortcut(tree, event, layout, renderer, shell)
         {
@@ -549,6 +622,7 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
             Mode::Control {
                 message,
                 keyboard_message,
+                steps,
                 ..
             } => {
                 let state = tree.state.downcast_mut::<State>();
@@ -557,6 +631,33 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
                     Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
                 ) {
                     state.focused = message.is_some() && cursor.is_over(layout.bounds());
+                }
+                if state.focused
+                    && let Some(steps) = steps
+                    && let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) =
+                        event
+                    && modifiers.is_empty()
+                {
+                    use keyboard::key::Named;
+                    let step = match key.as_ref() {
+                        keyboard::Key::Named(Named::ArrowLeft | Named::ArrowDown) => {
+                            Some(&steps.decrease)
+                        }
+                        keyboard::Key::Named(Named::ArrowRight | Named::ArrowUp) => {
+                            Some(&steps.increase)
+                        }
+                        keyboard::Key::Named(Named::PageDown) => Some(&steps.page_decrease),
+                        keyboard::Key::Named(Named::PageUp) => Some(&steps.page_increase),
+                        keyboard::Key::Named(Named::Home) => Some(&steps.first),
+                        keyboard::Key::Named(Named::End) => Some(&steps.last),
+                        _ => None,
+                    };
+                    if let Some(step) = step {
+                        shell.publish(step.clone());
+                        shell.capture_event();
+                        shell.request_redraw();
+                        return;
+                    }
                 }
                 if state.focused
                     && let Some(message) = keyboard_message
@@ -634,11 +735,12 @@ impl Widget<Message, Theme, Renderer> for Frame<'_> {
             ..
         } = &self.mode
             && tree.state.downcast_ref::<State>().focused
+            && (FOCUS_VISIBLE.load(Ordering::Relaxed) || border.width < FOCUS_OFFSET)
         {
             use iced::advanced::Renderer as _;
-            // The ring stands a little outside the control, so keyboard focus
-            // never reads as an outlined button style.
-            const OFFSET: f32 = 3.0;
+            // The ring stands outside the control, so keyboard focus never
+            // reads as an outlined button style.
+            const OFFSET: f32 = FOCUS_OFFSET;
             let bounds = layout.bounds();
             let radius = border.radius;
             renderer.fill_quad(

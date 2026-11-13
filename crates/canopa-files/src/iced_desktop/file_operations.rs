@@ -266,14 +266,20 @@ impl State {
             .last()
             .is_some_and(|last| self.snapshot.jobs.iter().any(|job| job.id < last.id))
     }
-    /// The newest operation while it still matters: running, waiting or not
-    /// finished well. A finished one leaves the status bar; Operations keeps it.
+    /// The newest operation while it is under way or needs the person:
+    /// queued, running, waiting, under review or unsaved. Once it ends, its
+    /// result is told where it was asked for and Operations keeps it.
     pub fn summary(&self) -> Option<String> {
         self.snapshot
             .jobs
             .iter()
             .max_by_key(|job| job.id)
-            .filter(|job| job.phase != Phase::Finished)
+            .filter(|job| {
+                matches!(
+                    job.phase,
+                    Phase::Queued | Phase::Running | Phase::Waiting | Phase::AwaitingReview
+                ) || job.phase.needs_save()
+            })
             .map(|job| {
                 fl!(
                     "files-operation-summary",
@@ -843,6 +849,8 @@ impl Desktop {
             {
                 tasks.push(self.offer_permanent_deletion(&submission, report.unavailable.clone()));
             }
+            // A failure, or what a stop left unfinished, is reported where
+            // the operation was asked for.
             if let Some(error) = &job.error
                 && let Some(origin) = &submission.origin
                 && let Some(tab) = self
@@ -851,6 +859,30 @@ impl Desktop {
                     .and_then(|window| window.tabs.iter_mut().find(|tab| tab.id == origin.tab))
             {
                 tab.error = Some(error.clone());
+                tab.error_job = Some(job.id);
+            }
+        }
+        // An operation's failure leaves the status bar once it is cancelled,
+        // dismissed, retried or otherwise no longer failing.
+        let jobs = &self.file_operations.snapshot.jobs;
+        for tab in self
+            .windows
+            .values_mut()
+            .flat_map(|window| window.tabs.iter_mut())
+        {
+            let Some(id) = tab.error_job else {
+                continue;
+            };
+            let failing = jobs.iter().find(|job| job.id == id).is_some_and(|job| {
+                job.error.is_some()
+                    && matches!(
+                        job.phase,
+                        Phase::Failed | Phase::Interrupted | Phase::SaveFailed | Phase::Stopped
+                    )
+            });
+            if !failing {
+                tab.error = None;
+                tab.error_job = None;
             }
         }
         let retained: BTreeSet<_> = self

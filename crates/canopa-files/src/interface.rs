@@ -162,6 +162,25 @@ impl ListColumns {
     }
 }
 
+/// The sidebar's and the Properties side panel's widths chosen by dragging
+/// their dividers, in logical pixels. `None` keeps the default width.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PaneWidths {
+    pub sidebar: Option<u16>,
+    pub properties: Option<u16>,
+}
+impl PaneWidths {
+    pub const SIDEBAR: std::ops::RangeInclusive<u16> = 160..=420;
+    pub const PROPERTIES: std::ops::RangeInclusive<u16> = 260..=640;
+    fn valid(&self) -> bool {
+        self.sidebar
+            .is_none_or(|width| Self::SIDEBAR.contains(&width))
+            && self
+                .properties
+                .is_none_or(|width| Self::PROPERTIES.contains(&width))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaceKind {
     Home,
@@ -291,49 +310,41 @@ impl ThumbnailPolicy {
     }
 }
 
-/// The icon size of the Icons view, which thumbnails fill.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum IconSize {
-    Small,
-    #[default]
-    Medium,
-    Large,
-    Huge,
+/// The icon size of the Icons view, which thumbnails fill, in logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IconSize(u16);
+
+impl Default for IconSize {
+    fn default() -> Self {
+        Self(96)
+    }
 }
 
 impl IconSize {
-    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::Huge];
+    pub const MIN: u16 = 48;
+    pub const MAX: u16 = 256;
 
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Small => "small",
-            Self::Medium => "medium",
-            Self::Large => "large",
-            Self::Huge => "huge",
-        }
+    /// `pixels`, kept within the sizes the Icons view lays out.
+    pub fn new(pixels: u16) -> Self {
+        Self(pixels.clamp(Self::MIN, Self::MAX))
     }
 
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|size| size.id() == id)
+    /// A size from configuration, in pixels within the laid-out range.
+    pub fn from_value(value: &str) -> Option<Self> {
+        value
+            .parse::<u16>()
+            .ok()
+            .filter(|pixels| (Self::MIN..=Self::MAX).contains(pixels))
+            .map(Self)
     }
 
-    pub fn label(self) -> String {
-        match self {
-            Self::Small => fl!("files-icon-size-small"),
-            Self::Medium => fl!("files-icon-size-medium"),
-            Self::Large => fl!("files-icon-size-large"),
-            Self::Huge => fl!("files-icon-size-huge"),
-        }
+    pub fn value(self) -> u16 {
+        self.0
     }
 
     /// Logical pixels of an Icons-view icon or thumbnail.
     pub fn pixels(self) -> f32 {
-        match self {
-            Self::Small => 48.0,
-            Self::Medium => 64.0,
-            Self::Large => 96.0,
-            Self::Huge => 128.0,
-        }
+        f32::from(self.0)
     }
 }
 
@@ -355,6 +366,7 @@ pub struct InterfaceSettings {
     pub thumbnails: ThumbnailSettings,
     pub properties: PropertiesDisplay,
     pub list_columns: ListColumns,
+    pub panes: PaneWidths,
 }
 impl Default for InterfaceSettings {
     fn default() -> Self {
@@ -371,12 +383,19 @@ impl Default for InterfaceSettings {
             thumbnails: ThumbnailSettings::default(),
             properties: PropertiesDisplay::default(),
             list_columns: ListColumns::default(),
+            panes: PaneWidths::default(),
         }
     }
 }
 impl InterfaceSettings {
-    pub const DEFAULT_TOOLBAR: [&'static str; 5] =
-        ["back", "forward", "parent", "location", "new-folder"];
+    pub const DEFAULT_TOOLBAR: [&'static str; 6] = [
+        "back",
+        "forward",
+        "parent",
+        "location",
+        "new-folder",
+        "view",
+    ];
     pub fn bindings(&self, command: Command) -> Vec<String> {
         self.shortcuts
             .get(&command)
@@ -395,6 +414,9 @@ impl InterfaceSettings {
         if !self.list_columns.valid() {
             return Err(invalid(fl!("files-config-list-columns-invalid")));
         }
+        if !self.panes.valid() {
+            return Err(invalid(fl!("files-config-panes-invalid")));
+        }
         if self.toolbar.len() > 64
             || self
                 .toolbar
@@ -409,6 +431,7 @@ impl InterfaceSettings {
         for id in &self.toolbar {
             if !seen.insert(id)
                 || !(id == "location"
+                    || id == "view"
                     || Command::from_id(id).is_some()
                     || id
                         .strip_prefix("action:")
@@ -603,6 +626,50 @@ impl KeyChord {
         }
         text.push_str(&self.key);
         text
+    }
+    /// The chord as people read it beside a menu item: "Ctrl+Shift+N",
+    /// "Alt+Enter", "F2".
+    pub fn display(&self) -> String {
+        let mut parts = Vec::new();
+        for (bit, name) in [
+            (1, fl!("files-key-ctrl")),
+            (2, fl!("files-key-shift")),
+            (4, fl!("files-key-alt")),
+            (8, fl!("files-key-super")),
+        ] {
+            if self.modifiers & bit != 0 {
+                parts.push(name);
+            }
+        }
+        parts.push(match self.key.as_str() {
+            "Return" => fl!("files-key-enter"),
+            "space" => fl!("files-key-space"),
+            "Delete" => fl!("files-key-delete"),
+            "BackSpace" => fl!("files-key-backspace"),
+            "Escape" => fl!("files-key-escape"),
+            "Tab" => fl!("files-key-tab"),
+            "Page_Up" => fl!("files-key-page-up"),
+            "Page_Down" => fl!("files-key-page-down"),
+            "Left" => "←".into(),
+            "Right" => "→".into(),
+            "Up" => "↑".into(),
+            "Down" => "↓".into(),
+            "comma" => ",".into(),
+            "period" => ".".into(),
+            "slash" => "/".into(),
+            "backslash" => "\\".into(),
+            "minus" => "-".into(),
+            "plus" => "+".into(),
+            "equal" => "=".into(),
+            "semicolon" => ";".into(),
+            "apostrophe" => "'".into(),
+            "bracketleft" => "[".into(),
+            "bracketright" => "]".into(),
+            "grave" => "`".into(),
+            key if key.chars().count() == 1 => key.to_uppercase(),
+            key => key.to_owned(),
+        });
+        parts.join("+")
     }
     /// Selection and ordinary typing remain available to the browser and editors.
     pub(crate) fn can_bind_action(&self) -> bool {

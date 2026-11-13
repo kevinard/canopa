@@ -58,6 +58,7 @@ pub(super) fn root<'a>(
     window: iced::window::Id,
     scene: Scene,
     feedback: Option<Rectangle>,
+    grabbing: bool,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     Element::new(RegionWidget {
@@ -66,6 +67,7 @@ pub(super) fn root<'a>(
         marker: None,
         root: Some(window),
         feedback,
+        grabbing,
     })
 }
 pub(super) fn mark<'a>(
@@ -79,6 +81,7 @@ pub(super) fn mark<'a>(
         marker: Some(region),
         root: None,
         feedback: None,
+        grabbing: false,
     })
 }
 struct RegionWidget<'a> {
@@ -87,6 +90,8 @@ struct RegionWidget<'a> {
     marker: Option<Region>,
     root: Option<iced::window::Id>,
     feedback: Option<Rectangle>,
+    /// Items are being dragged from this window: the pointer grabs them.
+    grabbing: bool,
 }
 #[derive(Default)]
 struct State {
@@ -191,6 +196,10 @@ impl Widget<Message, Theme, Renderer> for RegionWidget<'_> {
                     // Native Origins are consumed once by the global event listener,
                     // which also sees presses captured by an overlay.
                     shell.publish(Message::Drag(DragEvent::Press(window, source)));
+                    // Menus a button opens start where it was pressed.
+                    if let Some(position) = cursor.position() {
+                        shell.publish(Message::Pointer(window, position));
+                    }
                 }
                 Event::Mouse(mouse::Event::CursorMoved { position })
                     if !state.started
@@ -241,6 +250,9 @@ impl Widget<Message, Theme, Renderer> for RegionWidget<'_> {
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
+        if self.grabbing {
+            return mouse::Interaction::Grabbing;
+        }
         self.content.as_widget().mouse_interaction(
             &tree.children[0],
             layout,

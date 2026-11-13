@@ -150,6 +150,11 @@ pub struct ReadFailure {
 }
 
 impl Directory {
+    /// Order the entries as `view` sorts them, as when this folder is shown.
+    pub fn sort(&mut self, view: &ViewSettings) {
+        sort_entries(&mut self.entries, view);
+    }
+
     pub fn read(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::read_cancellable(path, &crate::Cancellation::default())
     }

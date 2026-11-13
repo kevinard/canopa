@@ -65,6 +65,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Menus, tabs, views and secondary windows](adr/0171-menus-tabs-views-and-secondary-windows.md).
 - [Network locations, phones and cameras through GVFS](adr/0168-network-locations-through-gvfs.md).
 - [Live preferences, folder item counts and the Properties panel](adr/0169-live-preferences-folder-counts-and-properties-panel.md).
 

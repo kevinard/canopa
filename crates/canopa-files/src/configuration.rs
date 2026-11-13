@@ -275,6 +275,7 @@ fn parse_actions(document: &KdlDocument) -> Result<Vec<CustomAction>, Diagnostic
                 | "thumbnails"
                 | "properties"
                 | "list-columns"
+                | "panes"
         ) {
             continue;
         }
@@ -401,4 +402,37 @@ fn action_node(action: &CustomAction) -> KdlNode {
     }
     node.set_children(children);
     node
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every node the interface settings write is one the schema accepts
+    /// beside custom actions, so a saved choice is never refused on reload.
+    #[test]
+    fn every_written_interface_node_passes_the_schema() {
+        let mut settings = InterfaceSettings {
+            properties: crate::interface::PropertiesDisplay::Panel,
+            ..Default::default()
+        };
+        settings.list_columns.name = Some(300);
+        settings.panes.sidebar = Some(240);
+        settings.panes.properties = Some(360);
+        settings.thumbnails.size = crate::interface::IconSize::new(128);
+        settings
+            .shortcuts
+            .insert(crate::interface::Command::Refresh, vec!["F9".into()]);
+        let mut document = KdlDocument::new();
+        document
+            .nodes_mut()
+            .extend(crate::interface_config::nodes(&settings));
+        let names: Vec<_> = document
+            .nodes()
+            .iter()
+            .map(|node| node.name().value().to_owned())
+            .collect();
+        assert!(names.iter().any(|name| name == "panes"), "{names:?}");
+        assert!(parse_actions(&document).unwrap().is_empty());
+    }
 }

@@ -16,14 +16,15 @@ impl Drop for ColumnSnapshot {
 
 impl Desktop {
     pub(super) fn load_columns(&mut self, id: window::Id) -> Task<Message> {
-        let sidebar = self.configuration.settings.sidebar;
+        let sidebar = (self.configuration.settings.sidebar, self.sidebar_width(id));
+        let properties = self.properties_width(id);
         let Some(window) = self.windows.get_mut(&id) else {
             return Task::none();
         };
         if !window.size_confirmed {
             return Task::none();
         }
-        let reserved = window.panel_width();
+        let reserved = window.panel_width(properties);
         let Some(tab) = window.tabs.get_mut(window.active) else {
             return Task::none();
         };
@@ -55,9 +56,16 @@ impl Desktop {
             );
             let (tab_id, revision) = (tab.id, tab.revision);
             let result_path = path.clone();
+            // An ancestor column lists its folder in that folder's own order,
+            // as it would show when opened.
+            let view = self.preferences.for_folder(&path).clone();
             tasks.push(Task::perform(
                 async move {
                     Directory::read_cancellable(path, &cancellation)
+                        .map(|mut directory| {
+                            directory.sort(&view);
+                            directory
+                        })
                         .map_err(|error| error.to_string())
                 },
                 move |result| Message::ColumnLoaded {

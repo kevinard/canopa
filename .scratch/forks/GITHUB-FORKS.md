@@ -82,9 +82,9 @@ SSH prompts and hangs in agent shells. Large repositories use
 | reis | `02bc1b52` (0.7.1) | `c99f5a71` | #1 |
 | coreutils | `dc1efd89` (uucore 0.12.0) | `1e4f136e` | #1 |
 | winit | `e9809ef5` (0.30.13) | `5bbfe4f2` | #1–#7 |
-| iced | `595af03a` (`0.14` branch, iced_widget 0.14.2) | `af379ca0` | #1–#8 |
+| iced | `595af03a` (`0.14` branch, iced_widget 0.14.2) | `6590c039` | #1–#10 |
 | exwlshelleventloop | `5e39311c` (v0.19.1) | `fecb4f1a` (#6 pins the iced and winit forks; #4 records the keyboard serial) | #1–#6 |
-| niri | `b22eb842` | `9389bbaa` | #1–#12 (`canopa/fixes` = base + the six fixes; features stack on it) |
+| niri | `b22eb842` | `c12bf509` | #1–#13 (`canopa/fixes` = base + the six fixes; features stack on it) |
 | smithay | `8a270232` | `55163887` | pushed; 4 to open |
 | xdg-desktop-portal | `1d20fad` (1.22.1) | `5272cf5` | #1–#11 |
 | cups | `ef80eea` (v2.4.20) | `aed09bb` | pushed; 13 to open |

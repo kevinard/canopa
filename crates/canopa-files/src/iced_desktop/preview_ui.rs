@@ -247,10 +247,15 @@ fn root_id(id: window::Id) -> iced::widget::Id {
 impl PreviewWindow {
     fn scale(&self) -> f32 {
         self.zoom.unwrap_or_else(|| match self.content() {
-            Some(PreviewContent::Image(bitmap) | PreviewContent::Pdf { bitmap, .. }) => {
-                (self.viewport.width / bitmap.width.max(1) as f32)
-                    .min(self.viewport.height / bitmap.height.max(1) as f32)
-            }
+            // A fitted picture shrinks to the stage but is never enlarged past
+            // its own pixels; pages fill the stage.
+            Some(PreviewContent::Image(bitmap)) => (self.viewport.width
+                / bitmap.width.max(1) as f32)
+                .min(self.viewport.height / bitmap.height.max(1) as f32)
+                .min(1.0),
+            Some(PreviewContent::Pdf { bitmap, .. }) => (self.viewport.width
+                / bitmap.width.max(1) as f32)
+                .min(self.viewport.height / bitmap.height.max(1) as f32),
             _ => 1.0,
         })
     }
@@ -865,8 +870,16 @@ pub(super) fn view<'a>(
             .disabled(message.is_none())
             .on_click(message)
     };
+    // Text buttons are the dialogs' outlined secondary buttons; only icon
+    // buttons (step and close) are round.
     let button = |label: String, control: Control| {
-        super::accessibility_ui::semantic(semantics(control), raw(label, control))
+        let button = raw(label, control);
+        let button = if control == Control::Open && preview.media.is_none() {
+            button.padding([7, 14])
+        } else {
+            button
+        };
+        super::accessibility_ui::semantic(semantics(control), button)
     };
     let caption = |label: String| -> Element<'a, Message> {
         text(label)
@@ -875,7 +888,7 @@ pub(super) fn view<'a>(
             .into()
     };
     let glyph =
-        |icon: chrome::Icon| -> Element<'a, Message> { desktop.icons.chrome(icon, 16.0, 0.9) };
+        |icon: chrome::Icon| -> Element<'a, Message> { desktop.icons.chrome(icon, 18.0, 0.92) };
     // Two groups in focus order: the sizing modes, then the zoom steps around
     // the live scale, so Fit never reads as if it were 100%.
     let mut modes_row = row![].spacing(4).align_y(iced::Alignment::Center);
@@ -955,6 +968,7 @@ pub(super) fn view<'a>(
                     .width(width as f32 * zoom)
                     .height(height as f32 * zoom),
             )
+            .style(canopa_ui::scrollbar)
             .direction(scrollable::Direction::Both {
                 vertical: scrollable::Scrollbar::new(),
                 horizontal: scrollable::Scrollbar::new(),
@@ -966,7 +980,13 @@ pub(super) fn view<'a>(
             image(bitmap.clone())
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .content_fit(iced::ContentFit::Contain)
+                .content_fit(
+                    if matches!(preview.content(), Some(PreviewContent::Image(_))) {
+                        iced::ContentFit::ScaleDown
+                    } else {
+                        iced::ContentFit::Contain
+                    },
+                )
                 .into()
         }
     } else if let Some(content) = &preview.text {
@@ -1119,8 +1139,8 @@ pub(super) fn view<'a>(
                 Control::Close,
                 canopa_ui::Action::Quiet,
             )
-            .width(30)
-            .height(30)
+            .width(32)
+            .height(32)
             .padding(4)
             .style(chrome::close_style(&appearance)),
         ),
@@ -1142,7 +1162,7 @@ pub(super) fn view<'a>(
         );
         iced::widget::tooltip(
             canopa_ui::styled_action(
-                container(desktop.icons.chrome(icon, 16.0, 0.9))
+                container(desktop.icons.chrome(icon, 18.0, 0.92))
                     .center_x(Length::Fill)
                     .center_y(Length::Fill),
                 Some(message),
@@ -1150,10 +1170,15 @@ pub(super) fn view<'a>(
                 false,
                 &appearance,
             )
-            .width(34)
-            .height(34)
+            .width(28)
+            .height(28)
             .padding(4)
-            .style(chrome::close_style(&appearance)),
+            .style(|theme, status| {
+                let mut style =
+                    canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
+                style.border.radius = 11.0.into();
+                style
+            }),
             text(label)
                 .font(canopa_ui::font(&appearance))
                 .size(appearance.typography().label_size.px()),
@@ -1171,12 +1196,15 @@ pub(super) fn view<'a>(
         let index = visible.iter().position(|entry| entry.path == target.path)?;
         Some((index + 1, visible.len()))
     });
-    let mut body = column![chrome::heading_line(
-        desktop,
-        icon,
-        filename,
-        subtitle,
-        canopa_ui::direction::row([
+    let mut body = column![{
+        // The item's own picture leads the heading, as in Properties.
+        let picture = preview.target.as_ref().and_then(|target| {
+            let browser = desktop.active(preview.source)?.browser.as_ref()?;
+            let entries = browser.visible_entries();
+            let entry = entries.iter().find(|entry| entry.path == target.path)?;
+            Some(desktop.icons.file(entry, 40.0))
+        });
+        let action: Element<'a, Message> = canopa_ui::direction::row([
             button(
                 preview
                     .result
@@ -1190,26 +1218,35 @@ pub(super) fn view<'a>(
                 Control::Open,
             ),
             if browsing {
+                // Stepping through the folder is one pager, apart from Open and Close.
+                let pager_appearance = appearance.clone();
                 row![
-                    // Stepping through the folder stands apart from Open and Close.
-                    iced::widget::space().width(6),
-                    step(
-                        chrome::Icon::Back,
-                        keyboard::key::Named::ArrowUp,
-                        fl!("files-preview-previous-item")
-                    ),
-                    text(position.map_or_else(String::new, |(index, count)| {
-                        fl!("files-preview-position", index = index, count = count)
-                    }))
-                    .font(canopa_ui::font(&appearance))
-                    .size(appearance.typography().label_size.px() + 1.0)
-                    .color(chrome::ink(&appearance, canopa_theme::ColorRole::Muted)),
-                    step(
-                        chrome::Icon::Forward,
-                        keyboard::key::Named::ArrowDown,
-                        fl!("files-preview-next-item")
-                    ),
-                    iced::widget::space().width(10),
+                    iced::widget::space().width(14),
+                    container(
+                        row![
+                            step(
+                                chrome::Icon::Back,
+                                keyboard::key::Named::ArrowUp,
+                                fl!("files-preview-previous-item")
+                            ),
+                            text(position.map_or_else(String::new, |(index, count)| {
+                                fl!("files-preview-position", index = index, count = count)
+                            }))
+                            .font(canopa_ui::font(&appearance))
+                            .size(appearance.typography().label_size.px() + 1.0)
+                            .color(chrome::ink(&appearance, canopa_theme::ColorRole::Muted)),
+                            step(
+                                chrome::Icon::Forward,
+                                keyboard::key::Named::ArrowDown,
+                                fl!("files-preview-next-item")
+                            ),
+                        ]
+                        .spacing(4)
+                        .align_y(iced::Alignment::Center)
+                    )
+                    .padding(2)
+                    .style(move |_| chrome::segmented(&pager_appearance)),
+                    iced::widget::space().width(14),
                 ]
                 .spacing(6)
                 .align_y(iced::Alignment::Center)
@@ -1219,16 +1256,27 @@ pub(super) fn view<'a>(
             },
             close.into(),
         ])
-        .spacing(4)
+        .spacing(6)
         .align_y(iced::Alignment::Center)
-        .into(),
-    )]
+        .into();
+        match picture {
+            Some(picture) => {
+                chrome::heading_line_picture(desktop, picture, filename, subtitle, action)
+            }
+            None => chrome::heading_line(desktop, icon, filename, subtitle, action),
+        }
+    }]
     .spacing(12)
     .padding(16);
     let staged = preview.bitmap.is_some() && preview.media.is_none();
     let stage_appearance = appearance.clone();
+    // A fitted picture keeps an even margin of the stage around it.
     let stage = container(content)
-        .padding(4)
+        .padding(if staged && preview.zoom.is_none() {
+            18
+        } else {
+            4
+        })
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_| {
@@ -1550,9 +1598,10 @@ mod tests {
         fs::write(root.path().join("a.txt"), b"selected").unwrap();
         let (mut desktop, _source, id) = setup(root.path());
         let revision = desktop.previews[&id].revision;
-        for (pixels, viewport, control) in
-            [(1, 500.0, Control::ZoomIn), (1000, 50.0, Control::ZoomOut)]
+        // Fit never enlarges a picture past its own pixels, so only shrinking
+        // can leave the manual limits; a tiny picture fits at 100%.
         {
+            let (pixels, viewport, control) = (1000, 50.0, Control::ZoomOut);
             let prepared = PreparedPreview {
                 path: root.path().join("a.txt"),
                 size: 1,
@@ -1584,6 +1633,30 @@ mod tests {
             let _task = desktop.update(Message::Preview(Event::Activate(id, revision, control)));
             assert_eq!(desktop.previews[&id].scale(), before);
         }
+        let prepared = PreparedPreview {
+            path: root.path().join("a.txt"),
+            size: 1,
+            content: PreviewContent::Image(crate::preview::Bitmap {
+                width: 1,
+                height: 1,
+                rgba: Arc::from(vec![0u8; 4]),
+            }),
+        };
+        let _task = desktop.update(Message::Preview(Event::Ready(
+            id,
+            revision,
+            Some(Arc::new(Ok(Prepared::new(
+                prepared,
+                &Cancellation::default(),
+            )
+            .unwrap()))),
+        )));
+        let _task = desktop.update(Message::Preview(Event::Viewport(
+            id,
+            revision,
+            Size::new(500.0, 500.0),
+        )));
+        assert_eq!(desktop.previews[&id].scale(), 1.0);
     }
 
     #[test]

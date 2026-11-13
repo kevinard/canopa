@@ -206,11 +206,11 @@ impl Desktop {
                 }),
             _ => None,
         };
-        let height = if subject.is_some() { 266.0 } else { 212.0 };
+        let height = if subject.is_some() { 234.0 } else { 190.0 };
         let (window, opened) = window::open_transient(
             owner,
             window::Settings {
-                size: Size::new(480.0, height),
+                size: Size::new(440.0, height),
                 min_size: Some(Size::new(320.0, 200.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -388,24 +388,19 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         )
     };
     let body = column![
+        // Like the other dialogs, the heading's subtitle states the stakes;
+        // the item is set apart below it.
         chrome::toned_heading(
             desktop,
             chrome::Icon::DangerTrash,
             chrome::Tone::Danger,
             dialog.title(),
-            ""
+            if dialog.subject.is_some() {
+                fl!("files-delete-cannot-undo")
+            } else {
+                dialog.message()
+            }
         ),
-        // With the item set apart below, the sentence only states the stakes.
-        text(if dialog.subject.is_some() {
-            fl!("files-delete-cannot-undo")
-        } else {
-            dialog.message()
-        })
-        .font(font)
-        .size(size)
-        .line_height(1.4)
-        .color(chrome::ink(appearance, canopa_theme::ColorRole::Muted))
-        .wrapping(text::Wrapping::WordOrGlyph),
         subject(desktop, dialog),
         iced::widget::space().height(Length::Fill),
         canopa_ui::direction::row([

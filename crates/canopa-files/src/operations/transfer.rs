@@ -1187,8 +1187,13 @@ fn run_transfer_inner(
                 }
                 return Ok(false);
             }
+            // Pasting into the item's own folder: a copy lands beside it under
+            // the next free numbered name; a move has nothing to do.
             if source == destination {
-                return Err(invalid("source and destination are the same item"));
+                match request.kind {
+                    TransferKind::Copy => destination = unique_name(&destination)?,
+                    TransferKind::Move => return Ok(false),
+                }
             }
             let mut move_selection = (request.kind == TransferKind::Move)
                 .then(|| entry_move::Selection::open(&source, &destination))

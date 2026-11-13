@@ -32,10 +32,12 @@ impl Geometry {
     ) -> Self {
         let padding = canopa_ui::content_padding(appearance.style(UiKind::MenuRow));
         if !searching && settings.mode == ViewMode::Icons {
-            let minimum =
-                (appearance.typography().body_size.px() * 7.5 + padding.left + padding.right)
-                    .max(128.0)
-                    .max(icon + 32.0 + padding.left + padding.right);
+            let tile = grid_tile(icon);
+            let icon = tile.height;
+            // Cells follow the icon size, so small icons pack many to a row;
+            // names that need it take a second line.
+            let minimum = (tile.width + 40.0 + padding.left + padding.right)
+                .max(appearance.typography().body_size.px() * 6.5 + padding.left + padding.right);
             Self {
                 // Keep the stride stable if a height change makes the rail
                 // appear. Embedded scrollbars reserve this same width.
@@ -88,6 +90,12 @@ impl Geometry {
         browser.set_scroll(offset);
         old != offset
     }
+}
+
+/// An Icons-view tile for the chosen icon size: wider than tall, so the
+/// landscape pictures most folders hold fill it, and symbols take its height.
+pub(super) fn grid_tile(size: f32) -> Size {
+    Size::new((size * 1.16).round(), (size * 0.9).round())
 }
 
 pub(super) fn geometry(desktop: &Desktop, tab: &Tab) -> Geometry {
@@ -149,7 +157,7 @@ fn folder_items(items: Option<usize>) -> Option<String> {
     })
 }
 
-fn detail_value(entry: &Entry, detail: Detail, items: Option<usize>) -> Option<String> {
+pub(super) fn detail_value(entry: &Entry, detail: Detail, items: Option<usize>) -> Option<String> {
     match detail {
         Detail::Size if entry.is_directory() => folder_items(items),
         Detail::Size => Some(size(entry.size)),
@@ -206,13 +214,15 @@ pub(super) fn details(entry: &Entry, settings: &ViewSettings, items: Option<usiz
 }
 
 /// Gap after each detail column; a header divider sits in its middle.
-const DETAIL_GAP: f32 = 28.0;
+const DETAIL_GAP: f32 = 36.0;
 
+/// Default detail widths, in label heights: roomy enough that the metadata
+/// reads as its own area beside the names.
 fn detail_units(detail: Detail) -> f32 {
     match detail {
-        Detail::Size => 6.5,
-        Detail::Modified => 11.5,
-        Detail::Kind => 9.0,
+        Detail::Size => 7.5,
+        Detail::Modified => 12.5,
+        Detail::Kind => 10.0,
     }
 }
 
@@ -236,24 +246,86 @@ pub(super) fn detail_width(desktop: &Desktop, id: window::Id, detail: Detail) ->
                 .detail(detail)
                 .map(f32::from)
         })
-        .unwrap_or(detail_units(detail) * size)
+        .unwrap_or_else(|| fitted_width(desktop, detail).unwrap_or(detail_units(detail) * size))
 }
 
-/// The Name column's width in a List `viewport` wide: it takes the room the
-/// details leave, unless a width was chosen by dragging. A chosen width gives
-/// way before the details would leave the window.
+/// The width that shows a detail's widest likely value and its heading
+/// whole: the largest sizes and item counts, every form a date takes.
+/// Kinds vary too much to sample and keep their text-size width.
+fn fitted_width(desktop: &Desktop, detail: Detail) -> Option<f32> {
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let mut heading_font = font;
+    heading_font.weight = iced::font::Weight::Semibold;
+    let size = appearance.typography().label_size.px() + 1.0;
+    let (heading, values) = match detail {
+        Detail::Size => (
+            fl!("files-column-size"),
+            vec![
+                super::listing_ui::size(1023 * 1024 * 1024 + 900 * 1024 * 1024),
+                super::listing_ui::size(999),
+                fl!("files-folder-empty"),
+                fl!("files-status-items", count = 9999),
+            ],
+        ),
+        Detail::Modified => {
+            use chrono::{Datelike, NaiveDate, NaiveTime};
+            let today = chrono::Local::now().date_naive();
+            let late = NaiveTime::from_hms_opt(12, 58, 0)?;
+            let earlier = NaiveDate::from_ymd_opt(today.year(), 9, 28)
+                .filter(|date| *date < today.pred_opt().unwrap_or(today))
+                .unwrap_or(today);
+            let older = NaiveDate::from_ymd_opt(today.year() - 1, 9, 28)?;
+            (
+                fl!("files-column-modified"),
+                [today, today.pred_opt()?, earlier, older]
+                    .into_iter()
+                    .map(|date| relative_date_time(date.and_time(late), today))
+                    .collect(),
+            )
+        }
+        Detail::Kind => return None,
+    };
+    // A sorted heading also shows its arrow.
+    let heading = chrome::text_width(&format!("{heading}  ↓"), heading_font, size);
+    let widest = values
+        .iter()
+        .map(|value| chrome::text_width(value, font, size))
+        .fold(heading, f32::max);
+    Some((widest + 4.0).ceil())
+}
+
+/// The row width the details take, with their gaps and dividers.
+fn details_width(desktop: &Desktop, id: window::Id, settings: &ViewSettings) -> f32 {
+    settings
+        .details
+        .iter()
+        .map(|&detail| detail_width(desktop, id, detail) + DETAIL_GAP + 1.0)
+        .sum()
+}
+
+/// The room a List row leaves for Name beside its details.
+fn name_room(desktop: &Desktop, id: window::Id, settings: &ViewSettings, viewport: f32) -> f32 {
+    viewport - details_width(desktop, id, settings) - 72.0
+}
+
+/// Name's width unless one was chosen: a bounded share of the list, so the
+/// details stay beside the names instead of across the window.
+fn default_name_width(viewport: f32) -> f32 {
+    (viewport * 0.38).clamp(280.0, 440.0).round()
+}
+
+/// The Name column's width in a List `viewport` wide: being dragged, chosen
+/// earlier, or by default a bounded share of the list. It gives way before
+/// the details would leave the window; the room after the last column stays
+/// empty.
 pub(super) fn name_width(
     desktop: &Desktop,
     id: window::Id,
     settings: &ViewSettings,
     viewport: f32,
 ) -> f32 {
-    let details: f32 = settings
-        .details
-        .iter()
-        .map(|&detail| detail_width(desktop, id, detail) + DETAIL_GAP + 1.0)
-        .sum();
-    let room = viewport - details - 72.0;
+    let room = name_room(desktop, id, settings, viewport);
     desktop
         .layouts
         .dragged(id, super::resize::Target::Name)
@@ -265,26 +337,21 @@ pub(super) fn name_width(
                 .name
                 .map(f32::from)
         })
-        .map_or(room.max(260.0), |chosen| chosen.min(room).max(160.0))
+        .unwrap_or_else(|| default_name_width(viewport))
+        .min(room)
+        .max(f32::from(*crate::interface::ListColumns::NAME.start()))
 }
 
-/// The room left after the last List column, or `None` while Name fills the
-/// list, whether it follows the window or a chosen width reaches its edge.
-pub(super) fn name_slack(
+/// The room left after the last List column, into which a dragged column
+/// may grow.
+pub(super) fn list_room(
     desktop: &Desktop,
     id: window::Id,
     settings: &ViewSettings,
     viewport: f32,
 ) -> Option<f32> {
-    let details: f32 = settings
-        .details
-        .iter()
-        .map(|&detail| detail_width(desktop, id, detail) + DETAIL_GAP + 1.0)
-        .sum();
-    let room = viewport - details - 72.0;
-    let chosen = desktop.configuration.settings.list_columns.name?;
-    let slack = room - f32::from(chosen).max(160.0);
-    (slack > 0.5).then_some(slack)
+    let room = name_room(desktop, id, settings, viewport);
+    Some((room - name_width(desktop, id, settings, viewport)).max(0.0))
 }
 
 pub(super) fn inline_details(
@@ -340,8 +407,8 @@ pub(super) fn detail_cells<'a>(
     let font = canopa_ui::font(appearance);
     let heading = entry.is_none();
     let mut divider = chrome::divider(&desktop.theme).color;
-    divider.a = 0.9;
-    let last = settings.details.last().copied();
+    divider.a = 0.6;
+
     let grip = |target, current| -> Element<'a, Message> {
         super::resize::Grip {
             window: id,
@@ -352,7 +419,10 @@ pub(super) fn detail_cells<'a>(
             line: Some(14.0),
             color: divider,
             share: 1.0,
-            quiet: last.is_some_and(|last| target == super::resize::Target::Detail(last)),
+            // Every divider shows and resizes the column before it, the
+            // last one too.
+            quiet: false,
+            enabled: desktop.dividers_take_pointer(id),
         }
         .into()
     };
@@ -388,8 +458,20 @@ pub(super) fn detail_cells<'a>(
         if heading {
             cell_font.weight = iced::font::Weight::Semibold;
         }
-        // Every column starts at its leading edge, headings and values alike.
-        let cell = chrome::single_line(value, cell_font, size, Some(foreground), entry.is_some());
+        // Columns start at their leading edge, headings and values alike,
+        // except sizes, which end at the trailing edge so their units align.
+        let cell: Element<'a, Message> = if detail == Detail::Size {
+            text(value)
+                .font(cell_font)
+                .size(size)
+                .color(foreground)
+                .wrapping(text::Wrapping::None)
+                .width(Length::Fill)
+                .align_x(canopa_ui::direction::end())
+                .into()
+        } else {
+            chrome::single_line(value, cell_font, size, Some(foreground), entry.is_some())
+        };
         // Each column starts a half gap after the divider before it.
         cells = cells.push(space().width(DETAIL_GAP / 2.0));
         let cell = container(cell).width(width).clip(true);
@@ -574,20 +656,22 @@ pub(super) fn entry<'a>(
         // Two lines hold the name; a longer one loses its middle, keeping
         // its ending and extension, rather than being cut off mid-line.
         let full = entry.name().into_owned();
+        // Grid names are set a step smaller than list rows, like captions.
+        let size = size - 1.0;
         let name = container(responsive(move |bounds| {
-            let room = (bounds.width * 1.8).max(0.0);
-            text(chrome::ellipsize(&full, font, size, room, true))
+            text(chrome::two_lines(&full, font, size, bounds.width.max(0.0)))
                 .size(size)
                 .font(font)
                 .align_x(iced::alignment::Horizontal::Center)
-                .wrapping(text::Wrapping::WordOrGlyph)
+                .wrapping(text::Wrapping::None)
                 .width(Length::Fill)
                 .into()
         }))
         .width(Length::Fill)
         .height((size * 1.3).ceil() * 2.0)
         .clip(true);
-        column![desktop.icons.file(entry, desktop.icon_size()), name]
+        let tile = grid_tile(desktop.icon_size());
+        column![desktop.icons.file_in(entry, tile.width, tile.height), name]
             .spacing(6)
             .align_x(Alignment::Center)
             .into()
@@ -716,10 +800,23 @@ pub(super) fn entry<'a>(
             if selected && base.states[0].background.is_none() {
                 // Ancestors share one neutral fill; the accent stays with the
                 // current folder's selection and keyboard focus.
-                let color = if current || contrast {
+                let color = if contrast {
                     chrome::ink(&style_appearance, ColorRole::AccentSurface)
+                } else if current {
+                    // A firmer tint than hover so the selection reads at a glance.
+                    chrome::mix(
+                        chrome::ink(&style_appearance, ColorRole::AccentSurface),
+                        chrome::ink(&style_appearance, ColorRole::Accent),
+                        0.22,
+                    )
                 } else {
-                    chrome::ink(&style_appearance, ColorRole::Raised)
+                    // Ancestors' trail: a neutral fill that still reads on the
+                    // column's own tint.
+                    chrome::mix(
+                        chrome::ink(&style_appearance, ColorRole::Raised),
+                        chrome::ink(&style_appearance, ColorRole::Text),
+                        0.07,
+                    )
                 };
                 // The current folder's selection is the accent surface without an
                 // outline, so it never reads as the keyboard focus ring.
@@ -748,7 +845,7 @@ pub(super) fn entry<'a>(
             {
                 style.background = Some(
                     chrome::ink(&style_appearance, ColorRole::Raised)
-                        .scale_alpha(0.22)
+                        .scale_alpha(0.4)
                         .into(),
                 );
             }
@@ -914,6 +1011,7 @@ pub(super) fn icons<'a>(
         let list = scrollable(items)
             .id(super::view::scroll_id(tab_id, &path, epoch))
             .height(Length::Fill)
+            .style(canopa_ui::scrollbar)
             .direction(scrollable::Direction::Vertical(
                 scrollable::Scrollbar::new()
                     .width(ICON_SCROLLBAR_WIDTH)
@@ -977,6 +1075,10 @@ mod tests {
         browser.select(&root.path().join("099.txt"), SelectionMode::Replace);
         let geometry = Geometry::new(&Default::default(), &settings, false, 360.0, 48.0);
         assert_eq!(geometry.columns, 2);
+        // Smaller icons fit more to a row; larger ones fewer.
+        let wide =
+            |icon| Geometry::new(&Default::default(), &settings, false, 1200.0, icon).columns;
+        assert!(wide(48.0) > wide(96.0) && wide(96.0) > wide(256.0));
         assert!(geometry.reveal(&mut browser, 400.0));
         assert!(geometry.visible(99, browser.scroll(), 400.0));
         assert!(!geometry.reveal(&mut browser, 400.0));

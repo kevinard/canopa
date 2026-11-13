@@ -72,6 +72,8 @@ pub(super) struct Prepared {
     revision: u64,
     handles: BTreeMap<String, image::Handle>,
     file_handles: BTreeMap<super::file_icon::FileIcon, image::Handle>,
+    /// The built-in folder standing on its square's lower edge, for grids.
+    grid_folder: Option<image::Handle>,
     chrome_handles: BTreeMap<Icon, image::Handle>,
 }
 
@@ -82,12 +84,16 @@ pub(super) struct Icons {
     pending: Option<Request>,
     handles: BTreeMap<String, image::Handle>,
     file_handles: BTreeMap<super::file_icon::FileIcon, image::Handle>,
+    grid_folder: Option<image::Handle>,
     chrome_handles: BTreeMap<Icon, image::Handle>,
     file_foreground: [u8; 4],
     /// The disc behind emblems and its edge, from the appearance.
     emblem_colors: (iced::Color, iced::Color),
     types: Types,
     pub(super) thumbnails: super::thumbnails_ui::Thumbnails,
+    /// Each symbol's drawn rows: its pixel height and the row after its
+    /// lowest visible pixel, so grid symbols stand on the tile's edge.
+    drawn: std::sync::Mutex<HashMap<iced::advanced::image::Id, (u32, u32, u32)>>,
 }
 
 /// shared-mime-info types and their themed icons. The database and sniffed
@@ -148,6 +154,7 @@ impl Icons {
         // Never display pixels prepared for a superseded catalog/appearance.
         self.handles.clear();
         self.file_handles.clear();
+        self.grid_folder = None;
         self.chrome_handles.clear();
         // Type icons follow the same appearance and theme; types stay known.
         self.types.handles.clear();
@@ -231,6 +238,7 @@ impl Icons {
                     revision,
                     handles: BTreeMap::new(),
                     file_handles: BTreeMap::new(),
+                    grid_folder: None,
                     chrome_handles: BTreeMap::new(),
                 }))
             },
@@ -247,7 +255,13 @@ impl Icons {
         if prepared.revision == self.revision {
             self.handles = prepared.handles.clone();
             self.file_handles = prepared.file_handles.clone();
+            self.grid_folder = prepared.grid_folder.clone();
             self.chrome_handles = prepared.chrome_handles.clone();
+            // Symbols drawn from the old pixels are measured again.
+            self.drawn
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .clear();
         }
         self.pending.take()
     }
@@ -258,6 +272,21 @@ impl Icons {
     }
 
     pub fn file(&self, entry: &crate::browse::Entry, size: f32) -> Element<'_, Message> {
+        self.file_in(entry, size, size)
+    }
+
+    /// `entry`'s picture in a `width` by `height` tile: thumbnails keep their
+    /// proportions within it, symbols take its height. A wide grid tile lets
+    /// landscape pictures fill it; both stand on its lower edge.
+    pub fn file_in(
+        &self,
+        entry: &crate::browse::Entry,
+        width: f32,
+        height: f32,
+    ) -> Element<'_, Message> {
+        let size = width.min(height);
+        let square = (width - height).abs() < 0.5;
+        let (tile_width, tile_height) = (width, height);
         let content: Element<'_, Message> = match self.visual(entry, size <= 32.0) {
             // Row-sized thumbnails fill the icon square like the type icons
             // beside them; larger ones show the whole picture.
@@ -283,22 +312,85 @@ impl Icons {
                 })
                 .into()
             }
-            FileVisual::Thumbnail(handle) => image(handle.clone()).width(size).height(size).into(),
+            // A picture keeps its proportions on a small mat: rounded, with
+            // a hairline and a soft shadow, so it reads as a print, not a cut-out.
+            FileVisual::Thumbnail(handle) => {
+                let (width, height) = self
+                    .picture(entry)
+                    .map_or((size, size), |(w, h, _)| (w as f32, h as f32));
+                let fit = (tile_width / width.max(1.0)).min(tile_height / height.max(1.0));
+                let (width, height) = ((width * fit).round(), (height * fit).round());
+                let [r, g, b, _] = self.file_foreground;
+                let edge = iced::Color::from_rgba8(r, g, b, 0.22);
+                container(
+                    container(
+                        image(handle.clone())
+                            .width(width - 2.0)
+                            .height(height - 2.0)
+                            .content_fit(iced::ContentFit::Cover)
+                            .border_radius(4.0),
+                    )
+                    .padding(1)
+                    .style(move |_| {
+                        container::Style::default()
+                            .border(iced::Border {
+                                color: edge,
+                                width: 1.0,
+                                radius: 5.0.into(),
+                            })
+                            .shadow(iced::Shadow {
+                                color: iced::Color::BLACK.scale_alpha(0.16),
+                                offset: iced::Vector::new(0.0, 1.5),
+                                blur_radius: 4.0,
+                            })
+                    }),
+                )
+                // Pictures stand on the tile's lower edge, beside their name.
+                .center_x(tile_width)
+                .height(tile_height)
+                .align_bottom(tile_height)
+                .into()
+            }
             // Large glyphs sit slightly inside the square so documents and
             // thumbnails read at the same optical size in a grid.
-            FileVisual::Type(handle) | FileVisual::Glyph(handle) if size > 32.0 => {
-                let inner = (size * 0.84).round();
-                container(image(handle.clone()).width(inner).height(inner))
-                    .center_x(size)
-                    .center_y(size)
+            // In a wide tile the built-in folder takes the tile's width,
+            // standing on its lower edge like the pictures.
+            FileVisual::Glyph(handle)
+                if !square
+                    && self.file_handles.get(&super::file_icon::FileIcon::Folder)
+                        == Some(handle)
+                    && self.grid_folder.is_some() =>
+            {
+                let side = tile_width.round();
+                container(self.standing(self.grid_folder.clone().expect("checked above"), side))
+                    .center_x(tile_width)
+                    .height(tile_height)
+                    .align_bottom(tile_height)
+                    .clip(true)
                     .into()
+            }
+            FileVisual::Type(handle) | FileVisual::Glyph(handle) if size > 32.0 => {
+                let inner = (size * if square { 0.84 } else { 0.94 }).round();
+                let symbol: Element<'_, Message> = if square {
+                    image(handle.clone()).width(inner).height(inner).into()
+                } else {
+                    // Theme symbols leave room under their drawing; trimmed,
+                    // they stand on the tile's edge like pictures and folders.
+                    self.standing(handle.clone(), inner)
+                };
+                let placed = container(symbol).center_x(tile_width).height(tile_height);
+                if square {
+                    placed.center_y(tile_height).into()
+                } else {
+                    placed.align_bottom(tile_height).into()
+                }
             }
             FileVisual::Type(handle) | FileVisual::Glyph(handle) => {
                 image(handle.clone()).width(size).height(size).into()
             }
             FileVisual::Pending => iced::widget::space().width(size).height(size).into(),
         };
-        let content = container(content).width(size).height(size);
+        let content = container(content).width(tile_width).height(tile_height);
         let emblems = emblems(entry);
         if emblems.is_empty() {
             return content.into();
@@ -323,18 +415,47 @@ impl Icons {
                 .into()
         };
         let mut layers = iced::widget::Stack::new()
-            .width(size)
-            .height(size)
+            .width(tile_width)
+            .height(tile_height)
             .push(content);
         for (index, icon) in emblems.into_iter().enumerate() {
-            let placed = container(badge(icon)).width(size).height(size);
+            let placed = container(badge(icon)).width(tile_width).height(tile_height);
             layers = layers.push(if index == 0 {
-                placed.align_right(size).align_bottom(size)
+                placed.align_right(tile_width).align_bottom(tile_height)
             } else {
-                placed.align_left(size).align_bottom(size)
+                placed.align_left(tile_width).align_bottom(tile_height)
             });
         }
         layers.into()
+    }
+
+    /// A square symbol `side` wide without the empty rows below its drawing,
+    /// so its lowest visible pixel meets the bottom of its bounds.
+    fn standing(&self, handle: image::Handle, side: f32) -> Element<'_, Message> {
+        let drawn = {
+            let mut drawn = self
+                .drawn
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            *drawn
+                .entry(handle.id())
+                .or_insert_with(|| drawn_rows(&handle))
+        };
+        let (width, height, bottom) = drawn;
+        if width == 0 || height == 0 || bottom == 0 || bottom >= height {
+            return image(handle).width(side).height(side).into();
+        }
+        let shown = (side * bottom as f32 / height as f32).round();
+        image(handle)
+            .crop(iced::Rectangle {
+                x: 0,
+                y: 0,
+                width,
+                height: bottom,
+            })
+            .width(side)
+            .height(shown)
+            .into()
     }
 
     /// The RGBA pixels that stand for `entry` at a large size (its thumbnail,
@@ -606,6 +727,14 @@ impl Icons {
         }
     }
 
+    /// A configured action's themed icon at `size`, or the same space empty.
+    pub(super) fn named(&self, name: &str, size: f32) -> Element<'_, Message> {
+        match self.handles.get(name) {
+            Some(handle) => image(handle.clone()).width(size).height(size).into(),
+            None => iced::widget::space().width(size).height(size).into(),
+        }
+    }
+
     pub fn label<'a>(
         &self,
         name: Option<&str>,
@@ -791,7 +920,12 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         .take_while(|_| !cancelled())
         .filter_map(|icon| {
             let ink = match icon {
-                Icon::ActiveFolder | Icon::ActiveForward | Icon::ActiveBack => request.on_accent,
+                Icon::ActiveFolder
+                | Icon::ActiveForward
+                | Icon::ActiveBack
+                | Icon::ActiveColumns
+                | Icon::ActiveList
+                | Icon::ActiveGrid => request.on_accent,
                 Icon::DangerTrash | Icon::Warning => request.danger,
                 _ => request.foreground,
             };
@@ -800,6 +934,7 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         })
         .collect();
     let mut file_handles = BTreeMap::new();
+    let mut grid_folder = None;
     for icon in super::file_icon::FileIcon::ALL {
         if cancelled() {
             break;
@@ -818,16 +953,36 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
             FileIcon::Archive | FileIcon::Presentation => request.warning,
             _ => request.file_foreground,
         };
-        let raster = lookup(&icon.name().to_owned(), 48)
-            .and_then(|path| rasters.load_image_or_svg(&path, &svg_policy(FILE_SIDE, foreground)))
-            .or_else(|| {
-                svg_sized(icon.fallback(), foreground, FILE_SIDE).filter(|raster| {
-                    rasters.admit_rgba(raster.width, raster.height, raster.pixels.len())
-                })
-            });
+        let themed = lookup(&icon.name().to_owned(), 48)
+            .and_then(|path| rasters.load_image_or_svg(&path, &svg_policy(FILE_SIDE, foreground)));
+        let fallback = themed.is_none();
+        let raster = themed.or_else(|| {
+            svg_sized(icon.fallback(), foreground, FILE_SIDE).filter(|raster| {
+                rasters.admit_rgba(raster.width, raster.height, raster.pixels.len())
+            })
+        });
         if let Some(mut raster) = raster.filter(|_| !cancelled()) {
             raster.recolor(foreground);
             file_handles.insert(icon, canopa_ui::icons::handle(raster));
+        }
+        // The built-in folder also comes standing on its square's lower edge,
+        // so a grid tile can show it as wide as the pictures beside it.
+        if fallback && icon == FileIcon::Folder {
+            let standing = String::from_utf8_lossy(icon.fallback())
+                .replacen(
+                    "viewBox=\"2 2.5 44 43\">",
+                    "viewBox=\"2 2.5 44 43\"><g transform=\"translate(0 5.5)\">",
+                    1,
+                )
+                .replacen("</svg>", "</g></svg>", 1);
+            if let Some(mut raster) =
+                svg_sized(standing.as_bytes(), foreground, FILE_SIDE).filter(|raster| {
+                    rasters.admit_rgba(raster.width, raster.height, raster.pixels.len())
+                })
+            {
+                raster.recolor(foreground);
+                grid_folder = Some(canopa_ui::icons::handle(raster));
+            }
         }
     }
     let mut handles = BTreeMap::new();
@@ -850,6 +1005,7 @@ fn prepare(request: Request, resolver: &IconResolver, cancelled: &dyn Fn() -> bo
         revision: request.revision,
         handles,
         file_handles,
+        grid_folder,
         chrome_handles,
     }
 }
@@ -860,6 +1016,34 @@ fn svg(bytes: &[u8], foreground: [u8; 4]) -> Option<Raster> {
 fn svg_sized(bytes: &[u8], foreground: [u8; 4], side: u32) -> Option<Raster> {
     // Neither image references nor fonts can escape the bounded icon input.
     canopa_assets::svg::rasterize(bytes, svg_policy(side, foreground))
+}
+
+/// An RGBA symbol's width, height and the row after its lowest pixel with
+/// visible alpha; `(0, 0, 0)` for pixels it cannot read.
+fn drawn_rows(handle: &image::Handle) -> (u32, u32, u32) {
+    let image::Handle::Rgba {
+        width,
+        height,
+        pixels,
+        ..
+    } = handle
+    else {
+        return (0, 0, 0);
+    };
+    let (width, height) = (*width, *height);
+    let row = width as usize * 4;
+    if row == 0 || pixels.len() < row * height as usize {
+        return (0, 0, 0);
+    }
+    let bottom = (0..height as usize)
+        .rev()
+        .find(|&y| {
+            pixels[y * row..(y + 1) * row]
+                .chunks_exact(4)
+                .any(|pixel| pixel[3] > 24)
+        })
+        .map_or(0, |y| y as u32 + 1);
+    (width, height, bottom)
 }
 
 #[cfg(test)]
@@ -929,15 +1113,18 @@ mod tests {
             }),
             handles: BTreeMap::new(),
             file_handles: BTreeMap::new(),
+            grid_folder: None,
             chrome_handles: BTreeMap::new(),
             file_foreground: [255; 4],
             emblem_colors: Default::default(),
             types: Types::default(),
             thumbnails: Default::default(),
+            drawn: Default::default(),
         };
         let old = Prepared {
             revision: 1,
             file_handles: BTreeMap::new(),
+            grid_folder: None,
             chrome_handles: BTreeMap::new(),
             handles: BTreeMap::from([("old".into(), image::Handle::from_rgba(1, 1, vec![255; 4]))]),
         };
@@ -950,6 +1137,7 @@ mod tests {
         let current = Prepared {
             revision: 3,
             file_handles: BTreeMap::new(),
+            grid_folder: None,
             chrome_handles: BTreeMap::new(),
             handles: BTreeMap::from([("new".into(), image::Handle::from_rgba(1, 1, vec![255; 4]))]),
         };

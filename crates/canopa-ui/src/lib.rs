@@ -112,9 +112,18 @@ pub fn colors(theme: &Theme) -> Colors {
 pub fn checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
     let p = colors(theme);
     let mut style = checkbox::primary(theme, status);
+    // An empty box shows the surface it sits on, so it never reads as a hole.
+    if let checkbox::Status::Active { is_checked: false }
+    | checkbox::Status::Hovered { is_checked: false }
+    | checkbox::Status::Disabled { is_checked: false } = status
+    {
+        style.background = Color::TRANSPARENT.into();
+    }
     style.border.color = match status {
         checkbox::Status::Hovered { .. } => p.focus,
         checkbox::Status::Disabled { .. } => p.disabled,
+        // An empty box's edge leans toward the text so it reads on any card.
+        checkbox::Status::Active { is_checked: false } => blend(p.border, p.text, 0.25),
         checkbox::Status::Active { .. } => p.border,
     };
     style
@@ -245,6 +254,106 @@ pub fn action_style(
         },
         ..Default::default()
     }
+}
+
+/// An on/off switch: the accent track when on, a quiet outlined track when
+/// off, with a light knob in both.
+pub fn switch_style(
+    theme: &Theme,
+    status: iced::widget::toggler::Status,
+) -> iced::widget::toggler::Style {
+    use iced::widget::toggler::Status;
+    let p = colors(theme);
+    let mut style = iced::widget::toggler::default(theme, status);
+    let (on, hovered, disabled) = match status {
+        Status::Active { is_toggled } => (is_toggled, false, false),
+        Status::Hovered { is_toggled } => (is_toggled, true, false),
+        Status::Disabled { is_toggled } => (is_toggled, false, true),
+    };
+    let dark = theme.extended_palette().is_dark;
+    let off_track = blend(p.surface, p.text, if hovered { 0.34 } else { 0.28 });
+    style.background = if disabled {
+        p.disabled.scale_alpha(0.4).into()
+    } else if on {
+        if hovered {
+            blend(p.accent, p.text, 0.1).into()
+        } else {
+            p.accent.into()
+        }
+    } else {
+        off_track.into()
+    };
+    style.background_border_width = 0.0;
+    style.background_border_color = Color::TRANSPARENT;
+    style.foreground = if on {
+        p.on_accent.into()
+    } else if dark {
+        p.text.into()
+    } else {
+        Color::WHITE.into()
+    };
+    style.foreground_border_width = 0.0;
+    style.foreground_border_color = Color::TRANSPARENT;
+    style.padding_ratio = 0.12;
+    style
+}
+
+/// A quiet scrollbar: no track, a slim rounded thumb in the text colour that
+/// firms up under the pointer and while dragged.
+pub fn scrollbar(
+    theme: &Theme,
+    status: iced::widget::scrollable::Status,
+) -> iced::widget::scrollable::Style {
+    use iced::widget::scrollable::{Rail, Scroller, Status};
+    let mut style = iced::widget::scrollable::default(theme, status);
+    let text = colors(theme).text;
+    let rail = |alpha: f32| Rail {
+        background: None,
+        border: iced::Border::default(),
+        scroller: Scroller {
+            background: text.scale_alpha(alpha).into(),
+            border: iced::border::rounded(u32::MAX),
+        },
+    };
+    let (vertical, horizontal) = match status {
+        Status::Active { .. } => (0.24, 0.24),
+        Status::Hovered {
+            is_horizontal_scrollbar_hovered,
+            is_vertical_scrollbar_hovered,
+            ..
+        } => (
+            if is_vertical_scrollbar_hovered {
+                0.42
+            } else {
+                0.3
+            },
+            if is_horizontal_scrollbar_hovered {
+                0.42
+            } else {
+                0.3
+            },
+        ),
+        Status::Dragged {
+            is_horizontal_scrollbar_dragged,
+            is_vertical_scrollbar_dragged,
+            ..
+        } => (
+            if is_vertical_scrollbar_dragged {
+                0.52
+            } else {
+                0.3
+            },
+            if is_horizontal_scrollbar_dragged {
+                0.52
+            } else {
+                0.3
+            },
+        ),
+    };
+    style.vertical_rail = rail(vertical);
+    style.horizontal_rail = rail(horizontal);
+    style.gap = None;
+    style
 }
 
 /// A standard Iced button: preserves toolkit input semantics and caller-owned messages.

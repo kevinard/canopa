@@ -976,6 +976,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "unicode-segmentation",
  "url",
  "uucore",
  "wayland-client",
@@ -1572,7 +1573,7 @@ checksum = "fe6d2e5af09e8c8ad56c969f2157a3d4238cebc7c55f0a517728c38f7b200f81"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -3266,7 +3267,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_core",
  "iced_debug",
@@ -3282,7 +3283,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "bitflags 2.13.0",
  "bytes",
@@ -3299,7 +3300,7 @@ dependencies = [
 [[package]]
 name = "iced_debug"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -3309,7 +3310,7 @@ dependencies = [
 [[package]]
 name = "iced_devtools"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_debug",
  "iced_program",
@@ -3333,7 +3334,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "futures",
  "iced_core",
@@ -3347,7 +3348,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "bitflags 2.13.0",
  "bytemuck",
@@ -3405,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -3414,7 +3415,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3426,7 +3427,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "bytes",
  "iced_core",
@@ -3438,7 +3439,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3455,7 +3456,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "bitflags 2.13.0",
  "bytemuck",
@@ -3476,7 +3477,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.14.2"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_renderer",
  "log",
@@ -3489,7 +3490,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.14.0"
-source = "git+https://github.com/kevinard/iced?rev=2bfd541372766d75dbaa5a48d8ef1015f22b45c9#2bfd541372766d75dbaa5a48d8ef1015f22b45c9"
+source = "git+https://github.com/kevinard/iced?rev=6590c03941200731d06f32ed64c71fb63f344f0f#6590c03941200731d06f32ed64c71fb63f344f0f"
 dependencies = [
  "iced_debug",
  "iced_program",
@@ -8686,7 +8687,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

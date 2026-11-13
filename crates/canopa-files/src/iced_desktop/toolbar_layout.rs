@@ -86,6 +86,7 @@ pub(super) fn primary<'a>(
         |row, (_, item)| row.push(item.unwrap_or_else(|| Element::new(Spacer(spacer.clone())))),
     );
     let commands = scrollable(commands)
+        .style(canopa_ui::scrollbar)
         .direction(scrollable::Direction::Horizontal(
             scrollable::Scrollbar::new(),
         ))

@@ -794,6 +794,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
         ),
         scrollable(chooser)
             .id(chooser_id(id))
+            .style(canopa_ui::scrollbar)
             .direction(scrollable::Direction::Horizontal(
                 scrollable::Scrollbar::new()
             ))
@@ -1039,6 +1040,7 @@ fn contents<'a>(desktop: &'a Desktop, editor: &'a Editor, wide: bool) -> Element
     } else {
         body = body.push(
             scrollable(form)
+                .style(canopa_ui::scrollbar)
                 .direction(scrollable::Direction::Vertical(
                     scrollable::Scrollbar::new()
                         .width(6)

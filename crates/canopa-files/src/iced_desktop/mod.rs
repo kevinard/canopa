@@ -265,10 +265,10 @@ struct BrowserWindow {
 }
 
 impl BrowserWindow {
-    /// The width the Properties panel takes beside the listing.
-    fn panel_width(&self) -> f32 {
+    /// The width the Properties panel, `width` wide, takes beside the listing.
+    fn panel_width(&self, width: f32) -> f32 {
         if self.properties.is_some() {
-            properties_ui::PANEL_WIDTH + 1.0
+            width + 1.0
         } else {
             0.0
         }
@@ -287,6 +287,12 @@ struct Tab {
     revision: u64,
     loading: bool,
     error: Option<String>,
+    /// A view chosen from the view switch or its shortcuts: it applies to
+    /// this tab only and is never saved as a folder's view options.
+    view_mode: Option<crate::preferences::ViewMode>,
+    /// The operation whose failure `error` reports; the message leaves once
+    /// that operation is no longer failing or the person moves on.
+    error_job: Option<u64>,
     location: Option<String>,
     prefix: String,
     last_typing: Option<Instant>,
@@ -326,10 +332,11 @@ impl Tab {
     fn column_paths(
         &self,
         width: f32,
-        sidebar: SidebarMode,
+        sidebar: (SidebarMode, f32),
         reserved: f32,
         home: &Path,
     ) -> Vec<PathBuf> {
+        let (sidebar, sidebar_width) = sidebar;
         self.browser.as_ref().map_or_else(Vec::new, |browser| {
             if browser.search().is_some()
                 || browser.view().mode != crate::preferences::ViewMode::Columns
@@ -340,7 +347,7 @@ impl Tab {
                 width
                     - reserved
                     - if sidebar_visible(sidebar, width) {
-                        chrome::SIDEBAR_WIDTH + 1.0
+                        sidebar_width + 1.0
                     } else {
                         0.0
                     },
@@ -591,6 +598,8 @@ impl Desktop {
             revision: 0,
             loading: false,
             error: None,
+            view_mode: None,
+            error_job: None,
             location: None,
             prefix: String::new(),
             last_typing: None,
@@ -1414,7 +1423,10 @@ impl Desktop {
                             || tab.browser.as_ref().is_some_and(|browser| {
                                 browser.path().parent() == Some(scan.directory.path.as_path())
                             });
-                        let view = self.preferences.for_folder(&scan.directory.path).clone();
+                        let mut view = self.preferences.for_folder(&scan.directory.path).clone();
+                        if let Some(mode) = tab.view_mode {
+                            view.mode = mode;
+                        }
                         if let Some(browser) = &mut tab.browser {
                             match navigation {
                                 Navigation::Visit => browser.visit(scan.directory),
@@ -1508,6 +1520,7 @@ impl Desktop {
                 result,
             } => return self.finish_watch_rescan(window, tab, revision, request, result),
             Message::Select(id, path) => {
+                self.acknowledge_error(id);
                 if self.drag.suppress_select(id, &path) {
                     return Task::none();
                 }
@@ -1536,6 +1549,13 @@ impl Desktop {
                 if let Some(browser) = tab.browser.as_mut() {
                     if browser.lists(&path) {
                         browser.select(&path, mode);
+                    } else if browser.path().starts_with(&path)
+                        && let Some(parent) = path.parent()
+                    {
+                        // The open folder, or one on its trail, in a parent
+                        // column: that column becomes the current folder, with
+                        // the item selected in it.
+                        return self.navigate(id, parent.to_owned(), Navigation::Visit, Some(path));
                     } else if path.starts_with(browser.path()) || opens_folder {
                         return self.navigate(id, path, Navigation::Visit, None);
                     } else if let Some(parent) = path.parent() {
@@ -1813,7 +1833,18 @@ impl Desktop {
         }
     }
 
+    /// An operation's failure shown in the status bar has been seen once the
+    /// person selects or runs something else; Operations keeps the record.
+    fn acknowledge_error(&mut self, id: window::Id) {
+        if let Some(tab) = self.active_mut(id)
+            && tab.error_job.take().is_some()
+        {
+            tab.error = None;
+        }
+    }
+
     fn command(&mut self, id: window::Id, command: Command) -> Task<Message> {
+        self.acknowledge_error(id);
         match command {
             Command::Recovery => return self.show_recovery(),
             Command::ShowTrash => return self.show_trash(),
@@ -1858,7 +1889,7 @@ impl Desktop {
                 Command::Icons => crate::preferences::ViewMode::Icons,
                 _ => crate::preferences::ViewMode::Columns,
             };
-            return self.change_folder_mode(id, mode);
+            return self.show_view_mode(id, mode);
         }
         let Some(tab) = self.active(id) else {
             return Task::none();

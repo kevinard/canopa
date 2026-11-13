@@ -65,10 +65,7 @@ files-place-recovery = Recovery
 files-thumbnails-local = Local files only
 files-thumbnails-always = All files
 files-thumbnails-never = Never
-files-icon-size-small = Small
-files-icon-size-medium = Medium
-files-icon-size-large = Large
-files-icon-size-huge = Huge
+files-preferences-icon-pixels = { $pixels } px
 
 ## Toolbar and location bar
 
@@ -175,6 +172,7 @@ files-search-unreadable-hide = { $count } unreadable · Hide
 files-search-failure = { $location } — { $error }
 # A search failure in the folder being searched itself.
 files-this-folder = This folder
+files-view-options-title = View options
 
 ## Preferences window: pages and status line
 
@@ -217,22 +215,21 @@ files-preferences-pending = Press Enter to apply the typed value.
 files-preferences-keys = Alt+1–4 pages · Ctrl+S Save · Ctrl+R Reload
 files-preferences-default-view = Default view
 files-preferences-sort-by = Sort by
-files-preferences-descending = Descending order
-files-preferences-columns-view = Columns view
-files-preferences-all-views = Defaults
-files-preferences-each-view = View-specific settings
+files-preferences-descending = Reverse order
 files-preferences-list-view = List view
-files-preferences-icons-view = Icons view
 files-preferences-column-width = Column width
 files-preferences-column-width-range = 160–640 pixels
+files-column-narrower = Narrower columns
+files-column-wider = Wider columns
 files-preferences-list-details = Details to show
-files-preferences-modified-date = Modified date
+files-preferences-modified-date = Modified time
 files-preferences-thumbnails = Thumbnails
 files-preferences-icon-size = Icon size
 files-preferences-views-note = Folders inherit these settings unless they have their own view options.
 files-preferences-thumbnails-note = “Local files only” skips network shares and removable media.
 # The toolbar item that is the location field.
 files-preferences-location-field = Location field
+files-preferences-view-button = View
 # A toolbar item that runs the custom action $name.
 files-preferences-toolbar-action = Action: { $name }
 files-preferences-earlier = Earlier
@@ -307,8 +304,10 @@ files-operations-save-before-closing = Save the operation result before closing 
 ## Actions menu (toolbar menu and context menu)
 
 files-menu-open = Open
-files-menu-open-with = Open With…
-files-menu-open-in-new-tab = Open in New Tab
+files-menu-open-with = Open with
+files-menu-open-in-new-tab = Open in new tab
+files-menu-duplicate-tab = Duplicate tab
+files-menu-close-other-tabs = Close other tabs
 files-menu-new-folder = New folder…
 files-menu-new-folder-short = New folder
 files-menu-rename = Rename…
@@ -316,12 +315,27 @@ files-menu-delete-permanently = Delete permanently…
 files-menu-edit-custom-actions = Edit custom actions…
 files-menu-preferences = Preferences…
 files-menu-bookmark-folder = Bookmark this folder…
-files-menu-locations = Places…
+files-menu-locations = Places
 files-menu-view-options = View options…
-files-menu-other-application = Other Application…
+files-menu-other-application = Other application…
 # The first application in the Open With menu.
 files-menu-default-application = { $application } (default)
 # $action is a custom action's name.
+
+## Shortcut hints in menus, joined with "+" (Ctrl+Shift+N)
+
+files-key-ctrl = Ctrl
+files-key-shift = Shift
+files-key-alt = Alt
+files-key-super = Super
+files-key-enter = Enter
+files-key-space = Space
+files-key-delete = Delete
+files-key-backspace = Backspace
+files-key-escape = Esc
+files-key-tab = Tab
+files-key-page-up = Page Up
+files-key-page-down = Page Down
 files-action-not-applicable = { $action } does not apply to this selection.
 
 ## Devices: removal and menu items ($device is a device name)
@@ -379,7 +393,7 @@ files-delete-title = Delete permanently?
 files-delete-title-empty-trash = Empty Trash?
 files-delete-title-no-trash = Can't move to Trash
 files-delete-one = “{ $name }” will be deleted immediately. This can't be undone.
-files-delete-cannot-undo = The item below will be deleted immediately. This can't be undone.
+files-delete-cannot-undo = It will be deleted immediately and can't be undone.
 files-delete-many = { $count ->
     [one] { $count } item will be deleted immediately. This can't be undone.
    *[other] { $count } items will be deleted immediately. This can't be undone.
@@ -745,6 +759,9 @@ files-properties-link-target = Link target
 files-properties-dimensions = Dimensions
 files-command-properties = Properties
 files-preferences-properties = Properties
+files-preferences-section-browsing = Browsing
+files-preferences-section-layouts = Columns and lists
+files-preferences-section-previews = Previews and details
 files-properties-display-window = In a window
 files-properties-display-panel = In a side panel
 files-properties-created = Created
@@ -1007,7 +1024,6 @@ files-folder-reverse-order = Reverse order
 files-folder-tree = Show folders as a tree
 files-folders-first = Folders before files
 files-folder-modified-time = Modified time
-files-folder-list-details = List details
 files-folder-remembered = Choices are remembered for this folder.
 
 ## Custom Actions editor
@@ -1358,6 +1374,7 @@ files-config-toolbar-unknown = unknown or duplicate toolbar item
 files-config-too-many-places = at most 256 locations are supported
 files-config-duplicate-place = duplicate built-in location
 files-config-list-columns-invalid = list column widths are outside their supported range
+files-config-panes-invalid = pane widths are outside their supported range
 files-config-bookmark-invalid = a bookmark needs a name and an absolute local folder
 files-config-too-many-shortcuts = at most eight shortcuts per command are supported
 files-config-action-modifier = custom actions need a Ctrl, Alt, Super or function-key shortcut

@@ -28,6 +28,8 @@ thumbnails show="local" size="medium"
 - `size`: `small`, `medium` (default), `large` or `huge`: 48, 64, 96 or 128 pixel
   Icons-view icons. Medium replaces the earlier fixed 48 pixels. Thumbnails use
   the cache size covering twice the icon size (`normal` or `large`).
+  [0171](0171-menus-tabs-views-and-secondary-windows.md) makes the size a number
+  of pixels, 48–256 (`size=96`, the default); the names are no longer read.
 
 Both are in Preferences → Views. Placement comes from `/proc/self/mountinfo`
 (network filesystem types, `//server` sources), sysfs (`removable`, USB, MMC or

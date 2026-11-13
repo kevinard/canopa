@@ -1836,3 +1836,63 @@ fn crash_copy_helper() {
     }).unwrap();
     panic!("copy fixture did not reach the crash point");
 }
+
+#[test]
+fn pasting_into_the_same_folder_copies_beside_the_original_and_a_move_does_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    let file = folder.join("Report.txt");
+    let nested = folder.join("Invoices");
+    fs::write(&file, b"Original report").unwrap();
+    fs::create_dir(&nested).unwrap();
+    fs::write(nested.join("march.txt"), b"March").unwrap();
+    let engine = OperationEngine::open(root.path().join("state/history")).unwrap();
+    let transfer = |kind| {
+        engine
+            .transfer(
+                &TransferRequest {
+                    kind,
+                    sources: vec![file.clone(), nested.clone()],
+                    destination: folder.clone(),
+                },
+                &Cancellation::default(),
+                |_| TransferReply::Continue,
+            )
+            .unwrap()
+    };
+    let copied = transfer(TransferKind::Copy);
+    assert!(!copied.cancelled);
+    assert_eq!(
+        fs::read(folder.join("Report (2).txt")).unwrap(),
+        b"Original report"
+    );
+    assert_eq!(
+        fs::read(folder.join("Invoices (2)/march.txt")).unwrap(),
+        b"March"
+    );
+    assert_eq!(fs::read(&file).unwrap(), b"Original report");
+    let copied_again = transfer(TransferKind::Copy);
+    assert!(!copied_again.cancelled);
+    assert!(folder.join("Report (3).txt").exists());
+    let moved = transfer(TransferKind::Move);
+    assert!(!moved.cancelled);
+    assert_eq!(fs::read(&file).unwrap(), b"Original report");
+    assert_eq!(fs::read(nested.join("march.txt")).unwrap(), b"March");
+    let mut names: Vec<_> = fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        [
+            "Invoices",
+            "Invoices (2)",
+            "Invoices (3)",
+            "Report (2).txt",
+            "Report (3).txt",
+            "Report.txt"
+        ]
+    );
+}

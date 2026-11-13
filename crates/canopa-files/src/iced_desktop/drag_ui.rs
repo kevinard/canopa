@@ -260,6 +260,13 @@ impl State {
             },
         );
     }
+    /// Whether items picked up in window `id` are being dragged.
+    pub fn grabbing(&self, id: window::Id) -> bool {
+        self.pointer
+            .as_ref()
+            .is_some_and(|gesture| gesture.origin.window == id && gesture.requested)
+            || self.outgoing.values().any(|outgoing| outgoing.owner == id)
+    }
     pub fn scene(&self, id: window::Id) -> Option<Scene> {
         self.hosts.get(&id).map(|host| host.scene.clone())
     }

@@ -181,6 +181,29 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                     } = Some(width);
                 }
             }
+            "panes" => {
+                if node.children().is_some() {
+                    return Err(invalid());
+                }
+                let mut props = BTreeSet::new();
+                for entry in node.entries() {
+                    let name = entry.name().ok_or_else(invalid)?.value();
+                    if entry.ty().is_some() || !props.insert(name) {
+                        return Err(invalid());
+                    }
+                    let width = entry
+                        .value()
+                        .as_integer()
+                        .and_then(|n| u16::try_from(n).ok())
+                        .ok_or_else(invalid)?;
+                    let panes = &mut settings.panes;
+                    *match name {
+                        "sidebar" => &mut panes.sidebar,
+                        "properties" => &mut panes.properties,
+                        _ => return Err(invalid()),
+                    } = Some(width);
+                }
+            }
             "places" => {
                 if !node.entries().is_empty() {
                     return Err(invalid());
@@ -255,7 +278,12 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                 let mut props = BTreeSet::new();
                 for entry in node.entries() {
                     let name = entry.name().ok_or_else(invalid)?.value();
-                    let value = entry.value().as_string().ok_or_else(invalid)?;
+                    // The size is a number of pixels.
+                    let number = entry.value().as_integer().map(|pixels| pixels.to_string());
+                    let value = match &number {
+                        Some(number) if name == "size" => number.as_str(),
+                        _ => entry.value().as_string().ok_or_else(invalid)?,
+                    };
                     if entry.ty().is_some() || !props.insert(name) {
                         return Err(invalid());
                     }
@@ -266,7 +294,7 @@ pub(crate) fn parse(document: &KdlDocument) -> io::Result<InterfaceSettings> {
                         }
                         "size" => {
                             settings.thumbnails.size =
-                                IconSize::from_id(value).ok_or_else(invalid)?
+                                IconSize::from_value(value).ok_or_else(invalid)?
                         }
                         _ => return Err(invalid()),
                     }
@@ -400,10 +428,22 @@ pub(crate) fn nodes(settings: &InterfaceSettings) -> Vec<KdlNode> {
         }
         nodes.push(columns);
     }
+    if settings.panes != Default::default() {
+        let mut panes = KdlNode::new("panes");
+        for (name, width) in [
+            ("sidebar", settings.panes.sidebar),
+            ("properties", settings.panes.properties),
+        ] {
+            if let Some(width) = width {
+                panes.push((name, i128::from(width)));
+            }
+        }
+        nodes.push(panes);
+    }
     if settings.thumbnails != Default::default() {
         let mut thumbnails = KdlNode::new("thumbnails");
         thumbnails.push(("show", settings.thumbnails.show.id()));
-        thumbnails.push(("size", settings.thumbnails.size.id()));
+        thumbnails.push(("size", i128::from(settings.thumbnails.size.value())));
         nodes.push(thumbnails);
     }
     for (command, bindings) in &settings.shortcuts {
@@ -429,14 +469,9 @@ mod tests {
 
     #[test]
     fn thumbnail_settings_parse_round_trip_and_stay_out_of_default_files() {
-        let parsed = parse(
-            &"thumbnails show=\"always\" size=\"huge\"\n"
-                .parse()
-                .unwrap(),
-        )
-        .unwrap();
+        let parsed = parse(&"thumbnails show=\"always\" size=160\n".parse().unwrap()).unwrap();
         assert_eq!(parsed.thumbnails.show, ThumbnailPolicy::Always);
-        assert_eq!(parsed.thumbnails.size, IconSize::Huge);
+        assert_eq!(parsed.thumbnails.size, IconSize::new(160));
         assert_eq!(parse(&document(nodes(&parsed))).unwrap(), parsed);
         let defaults = InterfaceSettings::default();
         assert_eq!(defaults.thumbnails.show, ThumbnailPolicy::Local);
@@ -474,6 +509,29 @@ mod tests {
                 .to_string()
                 .contains("folders-first")
         );
+    }
+
+    #[test]
+    fn pane_widths_round_trip_only_when_chosen_and_within_range() {
+        let parsed = parse(&"panes sidebar=240 properties=380\n".parse().unwrap()).unwrap();
+        assert_eq!(parsed.panes.sidebar, Some(240));
+        assert_eq!(parsed.panes.properties, Some(380));
+        assert_eq!(parse(&document(nodes(&parsed))).unwrap(), parsed);
+        assert!(
+            !document(nodes(&InterfaceSettings::default()))
+                .to_string()
+                .contains("panes")
+        );
+        for invalid in [
+            "panes sidebar=240 sidebar=250\n",
+            "panes width=240\n",
+            "panes sidebar=\"wide\"\n",
+        ] {
+            assert!(parse(&invalid.parse().unwrap()).is_err(), "{invalid}");
+        }
+        let mut narrow = InterfaceSettings::default();
+        narrow.panes.sidebar = Some(20);
+        assert!(narrow.validate(&[]).is_err());
     }
 
     #[test]

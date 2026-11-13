@@ -49,6 +49,11 @@ pub(super) struct Landing {
 }
 
 impl TabGeometry {
+    /// The lower edge of the bar, where a tab's menu opens.
+    pub fn bottom(&self) -> f32 {
+        self.bar.y + self.bar.height
+    }
+
     #[cfg(test)]
     pub(super) fn fixture(
         bar: Rectangle,
