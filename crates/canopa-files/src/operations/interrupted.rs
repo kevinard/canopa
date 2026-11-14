@@ -48,6 +48,7 @@ impl Pending {
             Self::UndoCleanup { cleanup } => cleanup.id,
             Self::UndoCopied { removal } => removal.id,
             Self::UndoSavedReturn { returning } => returning.id(),
+            Self::CopyBatch { batch } => batch.id,
             Self::Preparing { id, .. }
             | Self::Cleanup { id, .. }
             | Self::Forward { id, .. }
@@ -58,6 +59,12 @@ impl Pending {
     fn paths(&self) -> Vec<PathBuf> {
         let mut paths = Vec::new();
         match self {
+            Self::CopyBatch { batch } => {
+                paths.push(batch.stage.directory.clone());
+                for item in &batch.items {
+                    paths.extend([item.source.clone(), item.destination.clone()]);
+                }
+            }
             Self::UndoSavedReturn { returning } => {
                 paths.extend(returning.origin.paths());
             }
@@ -282,9 +289,35 @@ impl Pending {
         if let Self::StageMigration { migration } = self {
             return (part == 0).then(|| migration.record(label));
         }
+        if let Self::CopyBatch { batch } = self {
+            // The whole batch stage is one work folder in Recovery.
+            if part != 0 {
+                return None;
+            }
+            let first = batch.items.first()?;
+            validate_stage(Some(&batch.stage), &first.destination).ok()?;
+            return Some(Record {
+                context_moves: Vec::new(),
+                retained: Retained {
+                    replacement_facts: None,
+                    physical_identity: None,
+                    stage: batch.stage.clone(),
+                    identity: batch.stage.identity,
+                    recovery: true,
+                    version: None,
+                },
+                context: Some(Context {
+                    original: first.destination.parent()?.to_owned(),
+                    label,
+                }),
+                payload: true,
+                container: true,
+            });
+        }
         let (target, change, work) = match self {
             Self::Expiry { .. } => return None,
             Self::StageMigration { .. }
+            | Self::CopyBatch { .. }
             | Self::Disposing { .. }
             | Self::UndoCleanup { .. }
             | Self::UndoSavedReturn { .. }

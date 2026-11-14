@@ -1,6 +1,7 @@
-# 0180 Batched Copy journal (proposed)
+# 0180 Batched Copy journal
 
-Status: **proposed 2026-11-14, for review before implementation.** Follows
+Status: accepted and implemented 2026-11-14 (see [Implementation](#implementation)
+and [Results](#results)); proposed the same day. Follows
 [0165](0165-batched-copy-durability-and-progress.md),
 [0177](0177-small-file-copy-costs.md) and
 [0179](0179-exact-checkpoint-costs.md). Replaces the proposal in
@@ -141,11 +142,94 @@ writes and checkpoints also shrink. Files would still be far slower than `gio`
 for very small files. The remaining per-file proofs are the price of verifiable
 Undo and Recovery.
 
-## Questions for review
+## Implementation
 
-1. Is a fixed batch limit of 64 items or 4 MiB right, or should it follow the
-   ADR0165 barrier (1 s or 32 MiB)?
-2. Should Move join later? Its per-item source removal needs its own intent, so
-   this proposal leaves it out.
-3. Is refusing old Files versions (the `user_version` bump) acceptable, rather
-   than keeping batches out of histories that older versions might open?
+`operations/copy_batch.rs` (the protocol, recovery and gathering) and
+`operations/store/copy_batch.rs` (the binding and its transactions). The
+review questions were settled as follows, and the implementation differs from
+the proposal where noted.
+
+- **Size.** At most 64 files, 4 MiB of content and about 96 KiB of encoded
+  intent. Every journal value has a 128 KiB budget, and 64 long paths with
+  their proofs exceed it, so gathering estimates each file's share. Before
+  saving Forward, the batch drops copies from its end until the intent
+  actually fits.
+- **At least 8 files.** Fewer consecutive plain files keep single-item steps,
+  so a small copy keeps its exact per-file visibility. Batched files appear
+  together when their batch publishes.
+- **Move, Replace, Merge, Recovery copies and Undo** stay single-item.
+- **`user_version` 61.** Older Files refuses the history instead of misreading
+  a batch.
+- **Binding.** `copy_batch_intents` holds one digest over the history
+  identity, the lane and the encoded intent, plus the history file's
+  generation, checked before every transition and before recovery touches a
+  file.
+- **Restart cursor.** There is no new head structure. The Forward transaction
+  writes one step receipt per copied file, bound in order to the consecutive
+  queued tasks (the head and the tasks after it). Completion retires the
+  receipts of unpublished files. Restart verification and `cursor::advance`
+  accept a run of plain Copy steps, one per consecutive task. A step that is
+  not a plain copy keeps the old limit of two steps for the head task.
+- **Failures.** A file whose copy fails ends the batch and is reported as a
+  failure, exactly as its single step would be. A failure that means
+  cancellation or an unavailable destination instead returns the file to the
+  queue, where the single-item step pauses or stops. Files after it return to
+  the queue unpublished.
+- **Cancellation** publishes the files whose copies had finished.
+- **A batch that fails as a whole** (a journal error, for example) is retired
+  by its own recovery. The transfer then continues with single-item steps.
+- **Keep in Recovery.** A batch whose recovery refuses (an unknown entry in its
+  stage, a changed copy) is listed as one work folder. Keep archives the whole
+  stage as a Recovery record and retires the journal without moving, removing
+  or appending anything.
+- `prepared_copy::fill_regular` is shared by single and batched copies, so
+  content, holes, attributes, metadata and fingerprints are produced
+  identically.
+
+## Verification
+
+`transfer::copy_batch_boundary::tests` cover:
+
+- one Undo for a batch;
+- a name taken during a batch (that file is asked about, the rest publish);
+- a source changed during a batch (it alone fails);
+- cancellation;
+- long paths still batching inside the journal budget;
+- a SIGKILLed engine at registration, payloads, Forward, after 1 and 5
+  publications and after the append: reopening leaves no pending journal and
+  no stage, and exactly the published files have one Undo step each;
+- the same kills through the job service with a restart cursor: after
+  Reconcile and Continue, every file arrives exactly once, with no stage and no
+  "(2)" copies;
+- Keep in Recovery of a stuck batch.
+
+The Files library (516), the full `integration` executable (651) and the
+`uutils_copy` checks pass.
+
+## Results
+
+The release probe (`examples/copy_throughput.rs`) compares the ADR0179 build
+with this one, alternating, three rounds each, as median seconds. The machine
+was shared with other builds, so ext4 wall times are noisy; CPU time is the
+reliable comparison.
+
+| Workload | ADR0179 CPU | Batched CPU | Batched wall | `gio`+sync wall |
+| --- | ---: | ---: | ---: | ---: |
+| tmpfs, 1,000 × 4 KiB (journal on tmpfs) | 1.47 | **0.42** | 0.48 | |
+| ext4, 10,000 × 4 KiB (journal on ext4) | 19.1 | **4.88** | **12.0** | 2.4 |
+
+System calls per file (1,000 files) fall from 578 to 213 on tmpfs, and WAL
+frame writes from 73 to 6.6. On ext4, 10,000 small files are now about 5×
+`gio`+sync, down from about 40× (ADR0177). That meets the acceptance target
+first set in `.scratch/file-manager/issues/04-journal-group-commit.md`.
+
+The full native Files matrix passes against a debug build of this change
+(`.scratch/artifacts/files-acceptance-batch/`), including the 25-file
+transfer, which now runs as a batch in the app. Twelve cases first failed while
+another session's builds loaded the machine; all passed when rerun serially on
+a quiet machine. `files-iced-claim-review` now expects history version 61.
+
+## Not verified
+
+- Power loss: as ADR0165 says, the suite establishes process interruption, not
+  power-loss acceptance.

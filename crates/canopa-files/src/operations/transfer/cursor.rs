@@ -792,6 +792,19 @@ pub(in crate::operations) fn advance(
     if progress.counts.len() != 10 {
         return Err(invalid("Invalid active transfer counts."));
     }
+    // A Copy task consumes exactly one step, so several steps of a Copy are a
+    // copy batch: one plain copy per consecutive queued task (ADR0180).
+    if spec.kind == TransferKind::Copy
+        && steps.len() > 1
+        && steps
+            .iter()
+            .all(|change| matches!(change, Change::Copied { retained: None, .. }))
+    {
+        for step in steps {
+            advance(record, operation, std::slice::from_ref(step))?;
+        }
+        return Ok(());
+    }
     let index = record
         .rows
         .iter()

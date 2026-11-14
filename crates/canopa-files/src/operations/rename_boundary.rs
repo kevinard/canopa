@@ -491,7 +491,7 @@ fn schema23_completed_rename_and_queued_requests_upgrade_without_rewriting_their
         database
             .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
-        60
+        61
     );
     engine.undo(&Cancellation::default()).unwrap();
     assert_eq!(fs::read(&source).unwrap(), b"Original version");

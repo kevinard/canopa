@@ -1,6 +1,6 @@
 # Group commit for small-file Copy journals
 
-Status: ready-for-human
+Status: done (ADR0180, branch files-batched-copy-journal)
 
 ## Context
 
@@ -80,3 +80,10 @@ implementation:
   [ADR0180 (proposed)](../../../docs/files/adr/0180-batched-copy-journal.md),
   for review before implementation. Its open questions are at the end of that
   ADR.
+
+### 2026-11-14: implemented
+
+ADR0180 is implemented on branch `files-batched-copy-journal`. 10,000 × 4 KiB
+on ext4 now takes 4.9 s of CPU and about 12 s wall, against 2.4 s for `gio`+sync
+(about 5×, the acceptance target here). Kill-point cases cover every batch
+phase, both without and with a restart cursor.

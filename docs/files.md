@@ -65,7 +65,11 @@ the copies missing them. `security.*` and `trusted.*` attributes follow the
 destination, and hard links become separate files
 ([ADR0174](files/adr/0174-copy-attributes-acls-and-sparse-files.md)). The shared
 copy preparation and its verification are documented in
-[ADR0153](files/adr/0153-uutils-prepared-copy.md).
+[ADR0153](files/adr/0153-uutils-prepared-copy.md). Eight or more consecutive small new
+files of one folder are copied in batches of up to 64 under one journal intent,
+with the same proofs, Undo steps and crash recovery as single copies; batched
+files appear in the destination together
+([ADR0180](files/adr/0180-batched-copy-journal.md)).
 
 The Iced executable uses GIO/GLib 2.58 or newer for live local-volume observation
 through a private helper process. These are platform libraries, with no GTK widgets. The

@@ -4,6 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::os::unix::fs::PermissionsExt;
 mod checkpoint;
 #[cfg(test)]
+pub(super) mod copy_batch_boundary;
+#[cfg(test)]
 pub(super) mod copy_boundary;
 pub(in crate::operations) mod cursor;
 pub(super) mod directory;
@@ -953,6 +955,7 @@ fn run_transfer_inner(
     let mut file_choice = None;
     let mut folder_choice = None;
     let mut mixed_choice = None;
+    let mut batching = true;
     while !pending.is_empty() {
         state.restore_directory_access()?;
         if let Some(cursor) = &mut cursor {
@@ -1038,6 +1041,154 @@ fn run_transfer_inner(
             }
             Ok(())
         };
+        // ADR0180: consecutive plain new files share one journal batch. Each
+        // copied file's Forward step is bound to its own queued cursor task.
+        if batching
+            && request.kind == TransferKind::Copy
+            && recovery_label.is_none()
+            && finish.is_none()
+            && let Some(candidates) = super::copy_batch::gather(
+                (&source, &destination),
+                pending.iter().map(|(source, destination, finish)| {
+                    (source.as_path(), destination.as_path(), finish.is_some())
+                }),
+                |path| saved_receipts.contains_key(path) || copied_receipts.contains_key(path),
+            )
+        {
+            for _ in 1..candidates.len() {
+                pending.pop_front();
+            }
+            let access_parent = directories
+                .get(source.parent().unwrap())
+                .filter(|(_, finish)| finish.created.is_some())
+                .map(|(_, finish)| finish.destination_identity);
+            let ancestors: Vec<_> = source.ancestors().skip(1).collect();
+            for ancestor in ancestors.into_iter().rev() {
+                if let Some((target, owner)) = directories.get(ancestor)
+                    && owner.created.is_some()
+                {
+                    let original = owner.original.ok_or_else(|| {
+                        invalid(
+                            "Temporary transfer access needs its original created folder proof.",
+                        )
+                    })?;
+                    state.permit_transfer_directory(
+                        target,
+                        owner.destination_identity,
+                        original.destination_origins(),
+                    )?;
+                }
+            }
+            let tasks: Vec<_> = candidates
+                .iter()
+                .map(|candidate| (candidate.source.clone(), candidate.destination.clone()))
+                .collect();
+            let bytes_before = result.bytes;
+            let batched = state.deferred(true, |state| {
+                super::copy_batch::run(
+                    state,
+                    id,
+                    candidates,
+                    access_parent,
+                    cancellation,
+                    &mut |path, count| {
+                        result.bytes = result.bytes.saturating_add(count);
+                        if interact(TransferEvent::Progress {
+                            path: path.to_owned(),
+                            completed: result.completed,
+                            bytes: result.bytes,
+                        }) == TransferReply::Cancel
+                        {
+                            cancellation.cancel();
+                        }
+                    },
+                    &mut |source, destination| {
+                        checkpoint(&mut check, source, destination, &directories, false)
+                    },
+                )
+            });
+            match batched {
+                Ok(outcome) => {
+                    result.bytes = result.bytes.saturating_sub(outcome.unpublished_bytes);
+                    for returned in outcome.returned.into_iter().rev() {
+                        pending.push_front((returned.source, returned.destination, None));
+                    }
+                    if let Some((file, error)) = outcome.failed {
+                        // Cancellation and an unavailable destination belong to
+                        // the single-item step, which pauses or stops exactly.
+                        let pausing = error.kind() == io::ErrorKind::Interrupted
+                            || placement_failure(&error).is_some()
+                            || check_location(
+                                &mut check,
+                                file.destination.parent().unwrap(),
+                                TransferAccess::DestinationFolder,
+                            )
+                            .is_err()
+                            || destination_observation.confirm_reachable().is_err();
+                        if pausing {
+                            pending.push_front((file.source, file.destination, None));
+                        } else {
+                            failed.push((file.source.clone(), file.destination.clone(), None));
+                            result.failures.push(TransferFailure {
+                                source: file.source,
+                                destination: file.destination,
+                                kind: error.kind(),
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    if outcome.copied.is_empty() {
+                        // Nothing gained here; leave the rest to single steps.
+                        batching = false;
+                        continue;
+                    }
+                    let mut unconfirmed_barrier = None;
+                    for copied in &outcome.copied {
+                        result.completed += 1;
+                        result.id = Some(id);
+                        if copied.destination.parent() == Some(request.destination.as_path()) {
+                            result.destinations.push(copied.destination.clone());
+                        }
+                        if copied.attributes == super::attributes::Kept::Partly {
+                            result.attributes_omitted.push(copied.destination.clone());
+                        }
+                        if unconfirmed_barrier.is_none()
+                            && let Err(error) = super::durability::completed(copied.bytes)
+                        {
+                            unconfirmed_barrier = Some(error);
+                        }
+                    }
+                    if let Some(error) = unconfirmed_barrier {
+                        result.needs_attention = true;
+                        result.attention = Some(unconfirmed(&error));
+                        break;
+                    }
+                    let last = &outcome.copied[outcome.copied.len() - 1];
+                    if interact(TransferEvent::Progress {
+                        path: last.source.clone(),
+                        completed: result.completed,
+                        bytes: result.bytes,
+                    }) == TransferReply::Cancel
+                    {
+                        cancellation.cancel();
+                    }
+                    continue;
+                }
+                Err(error) => {
+                    // The batch itself failed. Retire what its intent holds and
+                    // let single steps copy, ask about or report every file.
+                    result.bytes = bytes_before;
+                    if let Some(Pending::CopyBatch { batch }) = state.pending()? {
+                        super::copy_batch::recover(state, *batch).map_err(|_| error)?;
+                    }
+                    for (source, destination) in tasks.into_iter().rev() {
+                        pending.push_front((source, destination, None));
+                    }
+                    batching = false;
+                    continue;
+                }
+            }
+        }
         let mut reconciled = None;
         // Content bytes of a committed deferred item, accounted after the step.
         let mut deferred_item = None;

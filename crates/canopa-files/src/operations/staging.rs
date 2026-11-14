@@ -334,6 +334,9 @@ impl Opened {
     pub(super) fn directory(&self) -> &fs::File {
         &self.directory
     }
+    pub(super) fn parent(&self) -> &fs::File {
+        &self.parent
+    }
     pub(super) fn sync(&self) -> io::Result<()> {
         self.directory.sync_all()?;
         fs::File::from(openat(
@@ -576,6 +579,9 @@ pub(super) struct Published {
     entry: Original,
 }
 impl Published {
+    pub(super) fn new(parent: Original, entry: Original) -> Self {
+        Self { parent, entry }
+    }
     pub(super) fn require(&self, path: &Path) -> io::Result<fs::File> {
         let parent = fs::File::from(open(
             path.parent()
@@ -654,7 +660,10 @@ fn named(parent: &fs::File, name: impl rustix::path::Arg) -> io::Result<fs::File
 }
 /// The identity of `name` in `parent` without following a final symlink: one
 /// `fstatat` instead of opening, statting and closing an `O_PATH` descriptor.
-fn named_identity(parent: &fs::File, name: impl rustix::path::Arg) -> io::Result<Identity> {
+pub(super) fn named_identity(
+    parent: &fs::File,
+    name: impl rustix::path::Arg,
+) -> io::Result<Identity> {
     let stat = rustix::fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
     Ok(Identity {
         device: stat.st_dev,

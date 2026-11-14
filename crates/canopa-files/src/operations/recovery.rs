@@ -37,6 +37,8 @@ pub struct RecoveryItem {
     #[serde(skip)]
     disposal_review: Option<std::sync::Arc<store::disposal_review::Review>>,
     #[serde(skip)]
+    copy_batch_review: Option<std::sync::Arc<store::copy_batch::Review>>,
+    #[serde(skip)]
     directory_reads: Vec<std::sync::Arc<store::directory_reads::Lease>>,
     #[serde(skip)]
     undo_review: Option<std::sync::Arc<store::undo_work::Review>>,
@@ -417,6 +419,7 @@ impl RecoveryItem {
     pub fn can_keep_in_recovery(&self) -> bool {
         (self.claim_review.is_some()
             || self.disposal_review.is_some()
+            || self.copy_batch_review.is_some()
             || self.undo_cleanup_review.is_some()
             || self.copy_undo_review.is_some()
             || self.saved_return_review.is_some()
@@ -550,6 +553,7 @@ impl RecoveryItem {
             observed: observed.ok(),
             claim_review: None,
             disposal_review: None,
+            copy_batch_review: None,
             directory_reads: Vec::new(),
             undo_review: None,
             undo_cleanup_review: None,
@@ -615,6 +619,18 @@ impl OperationEngine {
                 .ok_or_else(|| invalid("The interrupted Undo work is unavailable."))?;
             require_observed(item, &record)?;
             return state.keep_undo_work(reviewed);
+        }
+        if let Some(reviewed) = &item.copy_batch_review {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| io::Error::other("operation history failed"))?;
+            check_cancel(cancellation)?;
+            let record = state
+                .recovery_record(&item.key)?
+                .ok_or_else(|| invalid("The interrupted copies are unavailable."))?;
+            require_observed(item, &record)?;
+            return state.keep_copy_batch(reviewed);
         }
         if let Some(reviewed) = &item.disposal_review {
             let mut state = self
@@ -734,6 +750,14 @@ impl OperationEngine {
                         .ok()
                         .flatten()
                         .map(std::sync::Arc::new);
+                    item.copy_batch_review = state
+                        .copy_batch_review(slot)
+                        .ok()
+                        .flatten()
+                        .map(std::sync::Arc::new);
+                    if item.copy_batch_review.is_some() {
+                        item.message = fl!("files-recovery-work-folder");
+                    }
                     if let Some(review) = &item.disposal_review {
                         item.message = if review.is_undo() {
                             fl!("files-recovery-undo-recovery")

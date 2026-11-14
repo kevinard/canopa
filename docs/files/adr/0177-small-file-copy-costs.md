@@ -93,8 +93,8 @@ Group commit, registering several items' stages, intents and completions per
 transaction, is the only change that addresses the first and largest cost. It is
 not attempted here. A later profile ([0179](0179-exact-checkpoint-costs.md))
 found the cost to be mostly system calls in repeated checks, and removed a
-quarter of it exactly. The batched protocol is proposed in
-[0180](0180-batched-copy-journal.md).
+quarter of it exactly. The batched protocol of [0180](0180-batched-copy-journal.md) then
+brought 10,000 small files on ext4 to about 5× `gio`+sync.
 
 ## Verification
 

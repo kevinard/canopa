@@ -3,6 +3,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::{collections::BTreeSet, sync::Arc};
 mod claim;
 mod context;
+pub(in crate::operations) mod copy_batch;
 pub(super) mod copy_undo;
 mod cross;
 mod directory;
@@ -66,7 +67,7 @@ pub(in crate::operations) mod undo_work;
 // v58 reserves selected saved-return consumption and completion.
 // v59 binds ordinary Undo displacement and its consumed compensation.
 // v60 reserves proved saved-return refusal and exact paired saved-only history.
-const VERSION: u32 = 60;
+const VERSION: u32 = 61;
 
 type Problems = Arc<Mutex<[Option<String>; 2]>>;
 
@@ -255,6 +256,7 @@ impl Store {
         stage_intent::create(&transaction)?;
         undo_work::create(&transaction)?;
         reverse_cleanup::create(&transaction)?;
+        copy_batch::create(&transaction)?;
         copy_undo::create(&transaction)?;
         saved_return::create(&transaction)?;
         if version < 6 {
@@ -1439,6 +1441,18 @@ fn append_transaction(
     ordinal: u64,
     change: &Change,
 ) -> io::Result<()> {
+    append_rows(transaction, lane, id, ordinal, change)?;
+    clear_intent(transaction, lane)
+}
+
+/// The history rows of one completed step, without retiring its intent.
+fn append_rows(
+    transaction: &rusqlite::Transaction<'_>,
+    lane: IntentLane,
+    id: u64,
+    ordinal: u64,
+    change: &Change,
+) -> io::Result<()> {
     let body = encode(change)?;
     let bindings = context::for_append(transaction, lane, id, ordinal, change)?;
     transaction
@@ -1461,7 +1475,6 @@ fn append_transaction(
     references::index(transaction, id, ordinal, change, false)?;
     stages::move_parent(transaction, id, ordinal, change, false)?;
     let _followed = follow_archived(transaction, id, ordinal, change, false)?;
-    clear_intent(transaction, lane)?;
     Ok(())
 }
 
@@ -1544,6 +1557,7 @@ fn clear_intent(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     }
     stage_intent::clear(connection, lane)?;
     context::clear(connection, lane)?;
+    copy_batch::clear(connection, lane)?;
     connection
         .execute_cached(
             match lane {
@@ -1556,8 +1570,8 @@ fn clear_intent(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     let remains: bool = connection
         .query_row_cached(
             match lane {
-                IntentLane::Primary => "SELECT EXISTS(SELECT 1 FROM pending) OR EXISTS(SELECT 1 FROM undo_work) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=0) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=0)",
-                IntentLane::RecoveryCopy => "SELECT EXISTS(SELECT 1 FROM recovery_pending) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=1) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=1)",
+                IntentLane::Primary => "SELECT EXISTS(SELECT 1 FROM pending) OR EXISTS(SELECT 1 FROM undo_work) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=0) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=0) OR EXISTS(SELECT 1 FROM copy_batch_intents WHERE lane=0)",
+                IntentLane::RecoveryCopy => "SELECT EXISTS(SELECT 1 FROM recovery_pending) OR EXISTS(SELECT 1 FROM stage_intents WHERE lane=1) OR EXISTS(SELECT 1 FROM pending_bindings WHERE lane=1) OR EXISTS(SELECT 1 FROM copy_batch_intents WHERE lane=1)",
             },
             [],
             |row| row.get(0),

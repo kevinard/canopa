@@ -72,7 +72,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
-- [Batched Copy journal (proposed)](adr/0180-batched-copy-journal.md).
+- [Batched Copy journal](adr/0180-batched-copy-journal.md).
 - [Exact Copy speed-ups: fewer system calls for the same checks](adr/0179-exact-checkpoint-costs.md).
 - [Recording recent files](adr/0178-recording-recent-files.md).
 - [Small-file Copy costs: cached journal statements and a profile](adr/0177-small-file-copy-costs.md).

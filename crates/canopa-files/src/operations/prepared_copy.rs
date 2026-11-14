@@ -64,7 +64,7 @@ pub(super) fn prepare_new(
 
 /// The times the prepared output keeps.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Times {
+pub(super) enum Times {
     Source,
     Now,
 }
@@ -146,7 +146,7 @@ fn prepare_using(
             attributes::Kept::All,
         )
     } else {
-        let mut input = source.regular()?;
+        let input = source.regular()?;
         let file = opened.regular()?;
         let mut payload = opened.payload(file, &mut stage)?;
         // Record the actual new leaf before the first data write. A crash
@@ -157,75 +157,39 @@ fn prepare_using(
         payload.require_current()?;
         // A duplicate of the owned output descriptor lets the callback validate
         // its namespace without borrowing the writer. No user path is reopened.
-        let mut output = payload.file().try_clone()?;
-        let mut behind = copy_backend::WriteBehind::new(&output)?;
-        let mut holes = copy_backend::Holes::find(&input, &output)?;
-        copy_backend::copy_regular(&mut input, &mut output, |count| {
-            check_cancel(cancellation)?;
-            checkpoint()?;
-            source.require_current()?;
-            payload.require_current()?;
-            if count > 0 {
+        let output = payload.file().try_clone()?;
+        let (digest, kept) = fill_regular(
+            &source,
+            input,
+            output,
+            before,
+            times,
+            cancellation,
+            &mut progress,
+            &mut checkpoint,
+            || payload.require_current(),
+            |_point| {
                 #[cfg(test)]
-                super::transfer::stage_boundary::preparing("written", source.path(), &stage);
-                #[cfg(test)]
-                super::undo::abort_boundary::preparing(source.path(), &stage);
-                #[cfg(test)]
-                super::transfer::stage_boundary::restricted_preparing(
-                    source.path(),
-                    &stage,
-                    cancellation,
-                );
-                progress(count);
-                // Punch passed holes before the window sync writes them.
-                holes.written(count)?;
-                behind.written(count)?;
-                check_cancel(cancellation)?;
-                source.require_current()?;
-                payload.require_current()?;
-            }
-            Ok(())
-        })?;
-        #[cfg(test)]
-        super::transfer::stage_boundary::preparing("transferred", source.path(), &stage);
-        if !same_snapshot(before, &input.metadata()?) {
-            return Err(changed());
-        }
-        checkpoint()?;
-        payload.require_current()?;
-        // Trust upstream copying. Hash only the actual output for Undo and later
-        // destructive checks; source removal separately verifies both contents.
-        let digest = fingerprint::copied_output_digest(&output, cancellation)?;
-        if !same_snapshot(before, &input.metadata()?) {
-            return Err(changed());
-        }
-        // The source is unchanged, so the destination must hold all of it. On
-        // a network share or phone this is the end-to-end check that the
-        // server accepted the whole file (ADR0168).
-        let kept = output.metadata()?.len();
-        if kept != before.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "The destination kept {kept} of {} bytes. The copy was not completed.",
-                    before.len()
-                ),
-            ));
-        }
-        source.require_current()?;
-        payload.require_current()?;
-        // ACLs precede the permission restore, which then keeps their mask.
-        let kept = attributes::Attributes::of_file(&input).apply(&output);
-        copy_backend::restore_metadata(&output, before)?;
-        if times == Times::Now {
-            let now = std::time::SystemTime::now();
-            output.set_times(fs::FileTimes::new().set_modified(now).set_accessed(now))?;
-        }
-        // Sync is a host durability boundary, after backend content/metadata.
-        // A batched Copy span defers it to the batch barrier (ADR0165).
-        durability::sync(&output)?;
-        #[cfg(test)]
-        super::transfer::stage_boundary::preparing("completed", source.path(), &stage);
+                match _point {
+                    "written" => {
+                        super::transfer::stage_boundary::preparing(
+                            "written",
+                            source.path(),
+                            &stage,
+                        );
+                        super::undo::abort_boundary::preparing(source.path(), &stage);
+                        super::transfer::stage_boundary::restricted_preparing(
+                            source.path(),
+                            &stage,
+                            cancellation,
+                        );
+                    }
+                    point => {
+                        super::transfer::stage_boundary::preparing(point, source.path(), &stage)
+                    }
+                }
+            },
+        )?;
         (payload, digest, kept)
     };
     source.require_current()?;
@@ -247,4 +211,81 @@ fn prepare_using(
         source,
         attributes: kept,
     })
+}
+
+/// Copy a regular source's content and metadata into a new owned `output`
+/// and fingerprint the result. `require` proves the output's namespace is
+/// still the owned one; `boundary` names the test cut points. Shared by single
+/// copies and batched copies (ADR0180).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn fill_regular(
+    source: &source::Opened,
+    mut input: fs::File,
+    mut output: fs::File,
+    before: &fs::Metadata,
+    times: Times,
+    cancellation: &Cancellation,
+    progress: &mut impl FnMut(u64),
+    checkpoint: &mut impl FnMut() -> io::Result<()>,
+    require: impl Fn() -> io::Result<()>,
+    mut boundary: impl FnMut(&'static str),
+) -> io::Result<([u8; 16], attributes::Kept)> {
+    let mut behind = copy_backend::WriteBehind::new(&output)?;
+    let mut holes = copy_backend::Holes::find(&input, &output)?;
+    copy_backend::copy_regular(&mut input, &mut output, |count| {
+        check_cancel(cancellation)?;
+        checkpoint()?;
+        source.require_current()?;
+        require()?;
+        if count > 0 {
+            boundary("written");
+            progress(count);
+            // Punch passed holes before the window sync writes them.
+            holes.written(count)?;
+            behind.written(count)?;
+            check_cancel(cancellation)?;
+            source.require_current()?;
+            require()?;
+        }
+        Ok(())
+    })?;
+    boundary("transferred");
+    if !same_snapshot(before, &input.metadata()?) {
+        return Err(changed());
+    }
+    checkpoint()?;
+    require()?;
+    // Trust upstream copying. Hash only the actual output for Undo and later
+    // destructive checks; source removal separately verifies both contents.
+    let digest = fingerprint::copied_output_digest(&output, cancellation)?;
+    if !same_snapshot(before, &input.metadata()?) {
+        return Err(changed());
+    }
+    // The source is unchanged, so the destination must hold all of it. On
+    // a network share or phone this is the end-to-end check that the
+    // server accepted the whole file (ADR0168).
+    let kept = output.metadata()?.len();
+    if kept != before.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "The destination kept {kept} of {} bytes. The copy was not completed.",
+                before.len()
+            ),
+        ));
+    }
+    source.require_current()?;
+    require()?;
+    // ACLs precede the permission restore, which then keeps their mask.
+    let kept = attributes::Attributes::of_file(&input).apply(&output);
+    copy_backend::restore_metadata(&output, before)?;
+    if times == Times::Now {
+        let now = std::time::SystemTime::now();
+        output.set_times(fs::FileTimes::new().set_modified(now).set_accessed(now))?;
+    }
+    // Sync is a host durability boundary, after backend content/metadata.
+    // A batched Copy span defers it to the batch barrier (ADR0165).
+    durability::sync(&output)?;
+    boundary("completed");
+    Ok((digest, kept))
 }

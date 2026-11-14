@@ -865,6 +865,85 @@ pub(super) fn bind_forward(
     budget(connection)
 }
 
+/// Bind each Forward change of a copy batch to its queued task, in queue
+/// order, before any of them is published (ADR0180). A transfer without an
+/// active cursor has nothing to bind.
+pub(super) fn bind_copy_batch(
+    connection: &Connection,
+    history: Identity,
+    id: u64,
+    first: u64,
+    changes: &[&Change],
+) -> io::Result<()> {
+    let Some(Head {
+        request,
+        prefix,
+        first: watermark,
+        ..
+    }) = active_head(connection, history, id)?
+    else {
+        return Ok(());
+    };
+    if watermark != first {
+        return Err(invalid("The copy batch crossed another filesystem step."));
+    }
+    let mut statement = connection
+        .prepare_cached("SELECT position,body,body_sha256 FROM request_transfer_tasks WHERE request=?1 AND role=0 ORDER BY position LIMIT ?2")
+        .map_err(db_error)?;
+    let tasks: Vec<(Vec<u8>, String, Vec<u8>)> = statement
+        .query_map(params![request, changes.len() as u64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .map_err(db_error)?
+        .collect::<Result<_, _>>()
+        .map_err(db_error)?;
+    if tasks.len() != changes.len() {
+        return Err(invalid("The copy batch has no exact queued tasks."));
+    }
+    for (offset, ((key, task, task_sha), change)) in tasks.into_iter().zip(changes).enumerate() {
+        let row = Row {
+            role: transfer::cursor::QUEUE,
+            key,
+            body: task,
+        };
+        if task_sha != row_digest(&prefix, row.role, &row.key, &row.body)
+            || !transfer::cursor::binds(&row, change)?
+        {
+            return Err(invalid("The copy batch differs from its queued tasks."));
+        }
+        let ordinal = first + offset as u64;
+        let body = encode(change)?;
+        let sha = step_digest(&prefix, ordinal, &row.key, &task_sha, &body);
+        connection
+            .execute_cached(
+                "INSERT INTO request_transfer_cursor_steps VALUES(?1,?2,?3,?4,?5,?6)",
+                params![request, ordinal, row.key, task_sha, body, &sha[..]],
+            )
+            .map_err(db_error)?;
+    }
+    budget(connection)
+}
+
+/// Retire the receipts of a batch's files that were not published, so the
+/// cursor's proved steps are exactly the appended ones.
+pub(super) fn retire_copy_batch_steps(
+    connection: &Connection,
+    history: Identity,
+    id: u64,
+    from: u64,
+) -> io::Result<()> {
+    let Some(Head { request, .. }) = active_head(connection, history, id)? else {
+        return Ok(());
+    };
+    connection
+        .execute_cached(
+            "DELETE FROM request_transfer_cursor_steps WHERE request=?1 AND ordinal>=?2",
+            params![request, from],
+        )
+        .map_err(db_error)?;
+    Ok(())
+}
+
 /// Only a descriptor-verified replacement refresh can rewrite its existing
 /// canonical step receipt, in the same transaction as its committed history.
 pub(super) fn refresh_replacement(
@@ -980,16 +1059,21 @@ fn verified_steps(
     next: u64,
     rows: &[Row],
 ) -> io::Result<Vec<Change>> {
-    if next < first || next - first > 2 {
+    if next < first || next - first > crate::operations::copy_batch::MAX_ITEMS as u64 {
         return Err(invalid(
             "The active cursor cannot prove its completed filesystem steps.",
         ));
     }
-    let head = rows
+    let queued: Vec<&Row> = rows
         .iter()
-        .find(|row| row.role == transfer::cursor::QUEUE)
+        .filter(|row| row.role == transfer::cursor::QUEUE)
+        .collect();
+    let head = *queued
+        .first()
         .ok_or_else(|| invalid("The completed filesystem step has no active task."))?;
-    let task_sha = row_digest(&scope.prefix, head.role, &head.key, &head.body);
+    // More than two steps are only a copy batch: one plain copy per queued
+    // task, in queue order (ADR0180).
+    let batched = next - first > 2;
     let mut statement = connection.prepare_cached("SELECT s.ordinal,s.position,s.task_sha256,s.body,s.body_sha256,c.body
         FROM request_transfer_cursor_steps s LEFT JOIN changes c ON c.operation=?2 AND c.ordinal=s.ordinal
         WHERE s.request=?1 ORDER BY s.ordinal").map_err(db_error)?;
@@ -1005,6 +1089,17 @@ fn verified_steps(
         let sha: Vec<u8> = row.get(4).map_err(db_error)?;
         let committed: Option<String> = row.get(5).map_err(db_error)?;
         let change: Change = decode(&body)?;
+        let head = if batched {
+            if !matches!(change, Change::Copied { retained: None, .. }) {
+                return Err(invalid("A copy batch step is not a plain copy."));
+            }
+            *queued
+                .get(steps.len())
+                .ok_or_else(|| invalid("A copy batch step has no queued task."))?
+        } else {
+            head
+        };
+        let task_sha = row_digest(&scope.prefix, head.role, &head.key, &head.body);
         let expected_task = if matches!(change, Change::CreatedFolder { .. }) {
             let expansion = rows
                 .iter()

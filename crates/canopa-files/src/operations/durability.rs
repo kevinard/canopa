@@ -326,8 +326,9 @@ mod tests {
         let copied = transfer(TransferKind::Copy, vec![source.clone()], &output);
         assert_eq!(copied.completed, 23);
         let (deferred, barriers) = take_counts();
-        // Payload, stage and parent syncs for 21 files and 2 folders.
-        assert!(deferred >= 3 * 21, "{deferred} deferred syncs");
+        // A payload sync for each of the 21 files. The 20 plain files of one
+        // folder share one batch (ADR0180) and its stage and parent syncs.
+        assert!(deferred >= 21, "{deferred} deferred syncs");
         assert!((1..=3).contains(&barriers), "{barriers} barriers");
         assert!(!batching() && !deferring());
         assert_eq!(

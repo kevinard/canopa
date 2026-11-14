@@ -12,6 +12,7 @@ use std::{
 };
 mod attributes;
 mod copy_backend;
+mod copy_batch;
 pub(crate) mod execution;
 mod fingerprint;
 mod history_lock;
@@ -578,6 +579,10 @@ enum Pending {
         #[serde(default)]
         displaced: Option<Box<recovery::Record>>,
     },
+    /// Several new-file copies under one intent (ADR0180).
+    CopyBatch {
+        batch: Box<copy_batch::CopyBatch>,
+    },
 }
 
 impl OperationEngine {
@@ -1068,6 +1073,7 @@ fn recover_pending(state: &mut Store, cancellation: &Cancellation) -> io::Result
             record,
             parent,
         } => state.recover_expiry(entry, &record, parent)?,
+        Pending::CopyBatch { batch } => copy_batch::recover(state, *batch)?,
         Pending::StageMigration { migration } => saved_stage::recover(state, &migration)?,
         Pending::DirectoryDestination {
             id,

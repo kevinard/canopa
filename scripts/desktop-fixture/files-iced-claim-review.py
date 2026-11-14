@@ -89,7 +89,7 @@ def verify(session, fixture, browser, scheme, scale, process):
         target.write_bytes(b"Newer destination occupant\n")
         expected = identity(payload)
         with sqlite3.connect(history) as db:
-            assert db.execute("PRAGMA user_version").fetchone() == (60,)
+            assert db.execute("PRAGMA user_version").fetchone() == (61,)
             assert db.execute("SELECT count(*) FROM pending").fetchone() == (0,)
             operation = db.execute("INSERT INTO operations(label) VALUES(?)", (f"rename source-{name} to renamed-{name}",)).lastrowid
             pending = {"direction": "forward", "id": operation, "ordinal": 0,

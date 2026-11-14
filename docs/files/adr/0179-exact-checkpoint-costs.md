@@ -80,8 +80,8 @@ Wall times on ext4 (37–38 s for both) were dominated by the machine's load
 - **Merging adjacent commits.** In the plain-copy path every journal
   transaction is followed by a filesystem step before the next one. The only
   exception is clearing an intent followed by the cursor checkpoint. They live
-  in separate store methods, each with its own `IMMEDIATE` transaction, and
-  joining them needs the store-level open transaction that ADR0180 introduces.
+  in separate store methods, each with its own `IMMEDIATE` transaction.
+  ADR0180 instead gives a batch of files one intent and fewer transactions.
 - **Fewer checkpoints per file.** That would detect outside changes later, so it
   is a change of policy, not an exact speed-up.
 
