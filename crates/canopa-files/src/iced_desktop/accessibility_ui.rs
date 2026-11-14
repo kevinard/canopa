@@ -220,6 +220,22 @@ pub(super) fn check_box<'a>(
     )
 }
 
+pub(super) fn radio<'a>(
+    key: impl Into<String>,
+    selected: bool,
+    message: Option<Message>,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    semantic(
+        Node::new(Role::RadioButton)
+            .key(key)
+            .toggled(selected)
+            .disabled(message.is_none())
+            .on_click(message),
+        content,
+    )
+}
+
 /// A dialog window's content, described by its message for screen readers
 /// that read a dialog's description when it opens.
 pub(super) fn dialog<'a>(

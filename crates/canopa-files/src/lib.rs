@@ -6,6 +6,7 @@ pub mod actions;
 pub mod activation;
 #[cfg(feature = "local-runtime")]
 pub mod application;
+pub mod archives;
 pub mod browse;
 pub mod configuration;
 #[cfg(feature = "desktop")]

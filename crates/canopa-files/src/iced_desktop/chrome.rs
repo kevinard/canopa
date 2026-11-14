@@ -1100,6 +1100,8 @@ pub(super) enum Icon {
     SelectAll,
     Undo,
     Hidden,
+    Compress,
+    Extract,
     /// Emblems drawn on file icons: a link, no access, and read-only.
     Link,
     Lock,
@@ -1107,7 +1109,7 @@ pub(super) enum Icon {
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 67] = [
+    pub(super) const ALL: [Self; 69] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -1172,6 +1174,8 @@ impl Icon {
         Self::SelectAll,
         Self::Undo,
         Self::Hidden,
+        Self::Compress,
+        Self::Extract,
         Self::Link,
         Self::Lock,
         Self::ReadOnly,
@@ -1214,6 +1218,9 @@ impl Icon {
             Self::Bookmark => "M6 3h12v18l-6-4.5L6 21Z",
             Self::SelectAll => "M4 4h16v16H4Zm4.5 8.5 2.5 2.5 5-5.5",
             Self::Undo => "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4",
+            // A box with its lid; an arrow goes into it or comes out.
+            Self::Compress => "M3 4h18v4H3Zm2 4v12h14V8m-7 2.5v6.5m-3-3 3 3 3-3",
+            Self::Extract => "M3 4h18v4H3Zm2 4v12h14V8m-7 9v-6.5m-3 3 3-3 3 3",
             Self::Hidden => {
                 "M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Zm12.5 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM4 4l16 16"
             }

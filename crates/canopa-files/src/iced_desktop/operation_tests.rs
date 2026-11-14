@@ -87,6 +87,7 @@ fn admit_phase(
         delete: None,
         recovery: None,
         recovery_actions: Default::default(),
+        archive: None,
         transfer_actions: Default::default(),
         dismissible: false,
     });

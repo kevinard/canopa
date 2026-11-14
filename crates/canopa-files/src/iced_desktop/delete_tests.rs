@@ -131,6 +131,7 @@ fn a_volume_without_trash_offers_permanent_deletion_of_exactly_those_items() {
         delete: None,
         recovery: None,
         recovery_actions: Default::default(),
+        archive: None,
         transfer_actions: Default::default(),
         dismissible: false,
     });

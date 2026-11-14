@@ -31,7 +31,8 @@ impl Worker {
                     request: Request::Mutation(_)
                         | Request::KeepRecovery { .. }
                         | Request::Delete { .. }
-                        | Request::DeleteTrash { .. },
+                        | Request::DeleteTrash { .. }
+                        | Request::Archive(_),
                     ..
                 }
             )

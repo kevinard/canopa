@@ -6,6 +6,7 @@ mod cases {
     mod action_jobs;
     mod actions;
     mod activation;
+    mod archives;
     mod browsing;
     mod clipboard_capacity;
     mod configuration_jobs;

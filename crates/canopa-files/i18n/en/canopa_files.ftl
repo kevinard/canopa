@@ -312,6 +312,9 @@ files-menu-new-folder = New folder…
 files-menu-new-folder-short = New folder
 files-menu-rename = Rename…
 files-menu-delete-permanently = Delete permanently…
+files-menu-compress = Compress…
+files-menu-extract-here = Extract here
+files-menu-extract-to = Extract to…
 files-menu-edit-custom-actions = Edit custom actions…
 files-menu-preferences = Preferences…
 files-menu-bookmark-folder = Bookmark this folder…
@@ -554,6 +557,57 @@ files-job-delete-from-trash = { $count ->
     [one] Delete { $count } item from Trash permanently
    *[other] Delete { $count } items from Trash permanently
 }
+# Archive jobs. $name is a file or folder name; $count a number of items or
+# archive entries.
+files-job-compress = { $count ->
+    [one] Compress { $count } item into “{ $name }”
+   *[other] Compress { $count } items into “{ $name }”
+}
+files-job-extract = Extract “{ $name }”
+# The proposed name of an archive made from several items, without a suffix.
+files-archive-default-name = Archive
+files-archive-compressed = { $count ->
+    [one] Created “{ $name }” with { $count } entry.
+   *[other] Created “{ $name }” with { $count } entries.
+}
+files-archive-extracted = { $count ->
+    [one] Extracted { $count } entry as “{ $name }”.
+   *[other] Extracted { $count } entries as “{ $name }”.
+}
+files-archive-skipped-unsafe = { $count ->
+    [one] { $count } entry leading outside the extracted folder was skipped.
+   *[other] { $count } entries leading outside the extracted folder were skipped.
+}
+files-archive-skipped-special = { $count ->
+    [one] { $count } device, pipe or socket was skipped.
+   *[other] { $count } devices, pipes or sockets were skipped.
+}
+files-archive-cancelled = Cancelled. Nothing was kept.
+files-archive-interrupted = The operation was interrupted before it finished. Any unfinished result was removed.
+files-archive-interrupted-kept = The operation was interrupted. Its unfinished result “{ $name }” could not be removed: { $error }
+files-archive-no-name = No free name was found for the result.
+files-archive-changed = “{ $name }” changed while it was being compressed.
+files-archive-zip-name = “{ $name }” cannot be stored in a .zip archive. Choose a .tar format instead.
+files-archive-encrypted = This archive is encrypted. Password-protected archives are not supported.
+files-archive-unsupported = This archive uses a feature or compression method that is not supported.
+files-archive-damaged = The archive is damaged or is not in a supported format.
+files-archive-too-many-entries = The archive has more than { $limit } entries.
+files-archive-conflict = The archive has conflicting entries for “{ $name }”.
+files-archive-no-space = There is not enough free space to extract the archive.
+files-archive-empty = The archive has nothing to extract.
+# The Compress dialog: an archive's name, without its suffix, and its format.
+files-compress-title = Compress
+files-compress-name = Archive name
+files-compress-format = Format
+files-compress-submit = Compress
+# The Extract to dialog. $count is the number of archives.
+files-extract-to-title = Extract to
+files-extract-submit = Extract
+files-extract-archives = { $count ->
+    [one] { $count } archive
+   *[other] { $count } archives
+}
+files-extract-folder-invalid = Enter a folder to extract to.
 files-job-copy = { $count ->
     [one] Copy { $count } item to { $destination }
    *[other] Copy { $count } items to { $destination }

@@ -124,6 +124,7 @@ fn the_newest_operation_is_announced_once_and_failures_assertively() {
         delete: None,
         recovery: None,
         recovery_actions: Default::default(),
+        archive: None,
         transfer_actions: Default::default(),
         dismissible: false,
     };

@@ -23,6 +23,9 @@ Shell and Notify retain their established ownership and lifetimes.
 - A Permanent Deletion is a confirmed, non-undoable Operation that removes a
   selection or Trash items through the same queue. Empty Trash is one over the
   listed Trash items.
+- An Archive Job compresses a selection or extracts an archive through the same
+  queue. It publishes one new item under a free name and is neither undone nor
+  resumed; an interrupted one only has its own partial result removed.
 - A Transfer is the asynchronous execution of an Operation. It can outlive all
   Browser Windows and exposes progress, conflicts, failures, and cancellation.
 - A Source Lease protects catalogued retained data while an owned clipboard
@@ -65,6 +68,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Compressed archives: create and extract](adr/0172-compressed-archives.md).
 - [Menus, tabs, views and secondary windows](adr/0171-menus-tabs-views-and-secondary-windows.md).
 - [Network locations, phones and cameras through GVFS](adr/0168-network-locations-through-gvfs.md).
 - [Live preferences, folder item counts and the Properties panel](adr/0169-live-preferences-folder-counts-and-properties-panel.md).

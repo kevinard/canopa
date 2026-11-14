@@ -1,6 +1,6 @@
 # Compressed archives: create and extract
 
-Status: needs-triage
+Status: done
 
 ## Context
 
@@ -44,3 +44,15 @@ able to read or write archives.
 - Never run against real user folders in tests; use temporary directories.
 
 ## Comments
+
+### 2026-11-14 — implemented
+
+Decided: Rust crates in-process, not libarchive. The written formats are
+`.zip`, `.tar.gz`, `.tar.xz` and `.tar.zst`; `.tar` and `.tar.bz2` are also
+read. There is no Undo in the first version, and no password prompt. Results
+are published under the next free name with a no-replace rename, so the
+replacement review is not used. See
+[ADR 0172](../../../docs/files/adr/0172-compressed-archives.md).
+
+Not done: native rendering checks of the Compress and Extract to dialogs; 7z
+and rar; remembering the format across sessions.

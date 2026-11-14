@@ -6,6 +6,8 @@ mod accessibility_ui;
 mod action_editor;
 mod actions_ui;
 mod activation_ui;
+#[cfg(test)]
+mod archive_tests;
 mod catalog_notices;
 mod chrome;
 mod clipboard_ui;

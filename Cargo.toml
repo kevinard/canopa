@@ -44,6 +44,13 @@ canopa-theme = { path = "crates/canopa-theme" }
 canopa-ui = { path = "crates/canopa-ui" }
 canopa-i18n = { path = "crates/canopa-i18n" }
 sha2 = "0.10"
+# Files archives: pure-Rust deflate, xz and bzip2; zstd links its bundled C library.
+zip = { version = "9.5", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "zstd"] }
+tar = { version = "0.4.46", default-features = false }
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+zstd = { version = "0.14", default-features = false }
+bzip2 = "0.6"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 uucore = { version = "=0.12.0", features = ["buf-copy"] }
 reis = "=0.7.1"

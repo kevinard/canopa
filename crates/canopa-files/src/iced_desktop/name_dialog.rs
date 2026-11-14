@@ -1,6 +1,10 @@
 use super::file_operations::{Event, Origin, Submission};
 use super::*;
-use crate::{operation_jobs::Request, operations::OperationRequest};
+use crate::{
+    archives::{ArchiveRequest, Format},
+    operation_jobs::Request,
+    operations::OperationRequest,
+};
 use canopa_theme::UiKind;
 use iced::{
     Length,
@@ -16,13 +20,32 @@ pub(super) struct Dialog {
     original: Option<PathBuf>,
     initial: String,
     prepared: Option<crate::operation_jobs::PreparedRename>,
+    /// Set for Compress, whose value is the archive's name without its suffix,
+    /// and for Extract to, whose value is the destination folder.
+    pub archive: Option<Archive>,
 }
+
+pub(super) enum Archive {
+    Compress {
+        sources: Vec<PathBuf>,
+        format: Format,
+    },
+    Extract {
+        archives: Vec<PathBuf>,
+        browser: destination_browser::Browser,
+    },
+}
+
 impl Dialog {
     pub fn title(&self) -> String {
-        if self.original.is_some() {
-            fl!("files-command-rename")
-        } else {
-            fl!("files-command-new-folder")
+        match &self.archive {
+            Some(Archive::Compress { .. }) => fl!("files-compress-title"),
+            Some(Archive::Extract { browser, .. }) if browser.open() => {
+                fl!("files-choose-folder")
+            }
+            Some(Archive::Extract { .. }) => fl!("files-extract-to-title"),
+            None if self.original.is_some() => fl!("files-command-rename"),
+            None => fl!("files-command-new-folder"),
         }
     }
 }
@@ -74,6 +97,188 @@ impl Desktop {
             return Task::none();
         }
         self.open_name_dialog(origin, None)
+    }
+
+    /// Compress the selection beside it, after choosing a name and format.
+    pub(super) fn show_compress_dialog(&mut self, owner: window::Id) -> Task<Message> {
+        if let Some(dialog) = &self.file_operations.name {
+            return window::gain_focus(dialog.window);
+        }
+        if !self.file_operations.ready() {
+            return self.show_operations();
+        }
+        let Some(origin) = Origin::capture(self, owner) else {
+            return Task::none();
+        };
+        if origin.selected.is_empty() {
+            return Task::none();
+        }
+        let directories = self
+            .active(owner)
+            .and_then(|tab| tab.browser.as_ref())
+            .map(|browser| {
+                browser
+                    .visible_entries()
+                    .into_iter()
+                    .filter(|entry| entry.is_directory())
+                    .map(|entry| entry.path.clone())
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let items: Vec<_> = origin
+            .selected
+            .iter()
+            .filter_map(|path| Some((path.file_name()?, directories.contains(path))))
+            .collect();
+        let name = crate::archives::suggested_name(&items)
+            .to_string_lossy()
+            .into_owned();
+        let sources = origin.selected.clone();
+        let format = self.file_operations.archive_format;
+        self.open_archive_dialog(origin, name, Archive::Compress { sources, format })
+    }
+
+    /// Extract the selected archives to a chosen folder.
+    pub(super) fn show_extract_dialog(&mut self, owner: window::Id) -> Task<Message> {
+        if let Some(dialog) = &self.file_operations.name {
+            return window::gain_focus(dialog.window);
+        }
+        if !self.file_operations.ready() {
+            return self.show_operations();
+        }
+        let Some(origin) = Origin::capture(self, owner) else {
+            return Task::none();
+        };
+        if origin.selected.is_empty() {
+            return Task::none();
+        }
+        let folder = super::display_location(&origin.directory);
+        let archives = origin.selected.clone();
+        self.open_archive_dialog(
+            origin,
+            folder,
+            Archive::Extract {
+                archives,
+                browser: destination_browser::Browser::default(),
+            },
+        )
+    }
+
+    /// Extract each selected archive into the folder that shows it.
+    pub(super) fn extract_here(&mut self, owner: window::Id) -> Task<Message> {
+        if !self.file_operations.ready() {
+            return self.show_operations();
+        }
+        let Some(origin) = Origin::capture(self, owner) else {
+            return Task::none();
+        };
+        let destination = origin.directory.clone();
+        self.submit_extractions(&origin, origin.selected.clone(), destination, None)
+    }
+
+    fn submit_extractions(
+        &mut self,
+        origin: &Arc<Origin>,
+        archives: Vec<PathBuf>,
+        destination: PathBuf,
+        dialog: Option<window::Id>,
+    ) -> Task<Message> {
+        let tasks: Vec<_> = archives
+            .into_iter()
+            .map(|archive| {
+                let stem = crate::archives::stem(archive.file_name().unwrap_or_default());
+                let submission = Submission {
+                    origin: Some(origin.clone()),
+                    owner: origin.window,
+                    dialog,
+                    affected: vec![destination.join(stem)],
+                    reveal: None,
+                    refresh_all: false,
+                };
+                self.submit_file_operation(
+                    Request::Archive(ArchiveRequest::extract(archive, destination.clone())),
+                    submission,
+                )
+            })
+            .collect();
+        Task::batch(tasks)
+    }
+
+    fn open_archive_dialog(
+        &mut self,
+        origin: Arc<Origin>,
+        value: String,
+        archive: Archive,
+    ) -> Task<Message> {
+        let height = match archive {
+            Archive::Compress { .. } => 284.0,
+            Archive::Extract { .. } => 236.0,
+        };
+        let (window, opened) = window::open_transient(
+            origin.window,
+            window::Settings {
+                size: Size::new(460.0, height),
+                min_size: Some(Size::new(340.0, height)),
+                exit_on_close_request: false,
+                platform_specific: window::settings::PlatformSpecific {
+                    application_id: "org.canopa.Files".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        self.file_operations.name = Some(Dialog {
+            window,
+            origin,
+            initial: value.clone(),
+            value,
+            original: None,
+            prepared: None,
+            busy: false,
+            error: None,
+            archive: Some(archive),
+        });
+        opened.map(move |opened| Message::FileOperation(Event::NameOpened(window, opened)))
+    }
+
+    pub(super) fn name_format(&mut self, id: window::Id, chosen: Format) {
+        if let Some(Dialog {
+            archive: Some(Archive::Compress { format, .. }),
+            ..
+        }) = self
+            .file_operations
+            .name
+            .as_mut()
+            .filter(|dialog| dialog.window == id && !dialog.busy)
+        {
+            *format = chosen;
+            // The next archive starts from the last choice.
+            self.file_operations.archive_format = chosen;
+        }
+    }
+
+    pub(super) fn name_browse(
+        &mut self,
+        id: window::Id,
+        event: destination_browser::Event,
+    ) -> Task<Message> {
+        let home = self.home.clone();
+        let Some(dialog) = self
+            .file_operations
+            .name
+            .as_mut()
+            .filter(|dialog| dialog.window == id && !dialog.busy)
+        else {
+            return Task::none();
+        };
+        let Some(Archive::Extract { browser, .. }) = dialog.archive.as_mut() else {
+            return Task::none();
+        };
+        let task = browser.update(id, event, &mut dialog.value, &home, move |event| {
+            Message::FileOperation(Event::NameBrowse(id, event))
+        });
+        dialog.error = None;
+        task
     }
 
     pub(super) fn rename_prepared(
@@ -136,6 +341,7 @@ impl Desktop {
             prepared,
             busy: false,
             error: None,
+            archive: None,
         });
         opened.map(move |opened| Message::FileOperation(Event::NameOpened(window, opened)))
     }
@@ -194,6 +400,9 @@ impl Desktop {
         else {
             return Task::none();
         };
+        if let Some(choice) = dialog.archive.as_ref().map(archive_choice) {
+            return self.submit_archive_dialog(id, choice);
+        }
         if dialog.original.is_some() && dialog.value == dialog.initial {
             return self.finish_name_dialog(id);
         }
@@ -242,6 +451,62 @@ impl Desktop {
         }
     }
 
+    fn submit_archive_dialog(&mut self, id: window::Id, choice: Choice) -> Task<Message> {
+        let home = self.home.clone();
+        let Some(dialog) = self.file_operations.name.as_mut() else {
+            return Task::none();
+        };
+        let origin = dialog.origin.clone();
+        match choice {
+            Choice::Compress(sources, format) => {
+                let name = std::ffi::OsString::from(dialog.value.trim());
+                if !crate::archives::valid_name(&name) {
+                    dialog.error = Some(fl!("files-name-invalid"));
+                    return Task::none();
+                }
+                let mut archive = name.clone();
+                archive.push(format.suffix());
+                let submission = Submission {
+                    origin: Some(origin.clone()),
+                    owner: origin.window,
+                    dialog: Some(id),
+                    affected: vec![origin.directory.join(archive)],
+                    reveal: None,
+                    refresh_all: false,
+                };
+                dialog.busy = true;
+                dialog.error = None;
+                self.submit_file_operation(
+                    Request::Archive(ArchiveRequest::compress(
+                        sources,
+                        origin.directory.clone(),
+                        name,
+                        format,
+                    )),
+                    submission,
+                )
+            }
+            Choice::Extract(archives) => {
+                let folder = dialog.value.trim();
+                let destination = if folder.is_empty() || folder.contains('\0') {
+                    Err(io::Error::other(fl!("files-extract-folder-invalid")))
+                } else {
+                    super::local_path(Path::new(folder), &home, Some(&home))
+                };
+                let destination = match destination {
+                    Ok(destination) => destination,
+                    Err(error) => {
+                        dialog.error = Some(error.to_string());
+                        return Task::none();
+                    }
+                };
+                dialog.busy = true;
+                dialog.error = None;
+                self.submit_extractions(&origin, archives, destination, Some(id))
+            }
+        }
+    }
+
     pub(super) fn finish_name_dialog(&mut self, id: window::Id) -> Task<Message> {
         if self
             .file_operations
@@ -276,6 +541,13 @@ impl Desktop {
         key: keyboard::Key,
         modifiers: keyboard::Modifiers,
     ) -> Task<Message> {
+        let browsing = self.file_operations.name.as_ref().is_some_and(|dialog| {
+            dialog.window == id
+                && matches!(&dialog.archive, Some(Archive::Extract { browser, .. }) if browser.open())
+        });
+        if browsing && key == keyboard::Key::Named(keyboard::key::Named::Escape) {
+            return self.name_browse(id, destination_browser::Event::Cancel);
+        }
         if key == keyboard::Key::Named(keyboard::key::Named::Escape)
             || modifiers.control() && key.as_ref() == keyboard::Key::Character("w")
         {
@@ -285,13 +557,39 @@ impl Desktop {
     }
 }
 
+/// What an archive dialog submits, detached from its borrowed state.
+enum Choice {
+    Compress(Vec<PathBuf>, Format),
+    Extract(Vec<PathBuf>),
+}
+
+fn archive_choice(archive: &Archive) -> Choice {
+    match archive {
+        Archive::Compress { sources, format } => Choice::Compress(sources.clone(), *format),
+        Archive::Extract { archives, .. } => Choice::Extract(archives.clone()),
+    }
+}
+
 pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
+    if let Some(Archive::Extract { browser, .. }) = &dialog.archive {
+        let id = dialog.window;
+        if let Some(view) = browser.view(desktop, id, move |event| {
+            Message::FileOperation(Event::NameBrowse(id, event))
+        }) {
+            return view;
+        }
+    }
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
     let size = appearance.typography().body_size.px();
     let small = appearance.typography().label_size.px();
     let id = dialog.window;
-    let placeholder = fl!("files-column-name");
+    let extracting = matches!(dialog.archive, Some(Archive::Extract { .. }));
+    let placeholder = if extracting {
+        fl!("files-folder-path")
+    } else {
+        fl!("files-column-name")
+    };
     let mut input = text_input(&placeholder, &dialog.value)
         .id(control(id, "name"))
         .font(font)
@@ -349,28 +647,39 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
         .as_deref()
         .and_then(Path::parent)
         .unwrap_or(&dialog.origin.directory);
-    let location = folder.strip_prefix(&desktop.home).map_or_else(
-        |_| folder.to_string_lossy().into_owned(),
-        |path| {
-            if path.as_os_str().is_empty() {
-                fl!("files-place-home")
-            } else {
-                fl!(
-                    "files-home-path",
-                    path = path.to_string_lossy().replace('/', " › ")
-                )
-            }
-        },
-    );
+    let location = match &dialog.archive {
+        Some(Archive::Extract { archives, .. }) if archives.len() == 1 => archives[0]
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        Some(Archive::Extract { archives, .. }) => {
+            fl!("files-extract-archives", count = archives.len())
+        }
+        _ => folder.strip_prefix(&desktop.home).map_or_else(
+            |_| folder.to_string_lossy().into_owned(),
+            |path| {
+                if path.as_os_str().is_empty() {
+                    fl!("files-place-home")
+                } else {
+                    fl!(
+                        "files-home-path",
+                        path = path.to_string_lossy().replace('/', " › ")
+                    )
+                }
+            },
+        ),
+    };
     let mut title_font = font;
     title_font.weight = iced::font::Weight::Semibold;
     let body = column![
         chrome::heading_parts(
             desktop,
-            if dialog.original.is_some() {
-                chrome::Icon::Edit
-            } else {
-                chrome::Icon::Folder
+            match &dialog.archive {
+                Some(Archive::Compress { .. }) => chrome::Icon::Compress,
+                Some(Archive::Extract { .. }) => chrome::Icon::Extract,
+                None if dialog.original.is_some() => chrome::Icon::Edit,
+                None => chrome::Icon::Folder,
             },
             chrome::Tone::Accent,
             text(dialog.title())
@@ -392,10 +701,11 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             row![
                 chrome::section_title(
                     appearance,
-                    if dialog.original.is_some() {
-                        fl!("files-name-full-name")
-                    } else {
-                        fl!("files-name-folder-name")
+                    match &dialog.archive {
+                        Some(Archive::Compress { .. }) => fl!("files-compress-name"),
+                        Some(Archive::Extract { .. }) => fl!("files-destination-folder"),
+                        None if dialog.original.is_some() => fl!("files-name-full-name"),
+                        None => fl!("files-name-folder-name"),
                     },
                 )
                 .size(small + 1.0),
@@ -424,17 +734,37 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             ]
             .spacing(12)
             .align_y(iced::Alignment::Center),
-            input,
+            if extracting {
+                Element::from(
+                    row![
+                        input,
+                        destination_browser::browse_button(
+                            desktop,
+                            id,
+                            (!dialog.busy).then_some(Message::FileOperation(Event::NameBrowse(
+                                id,
+                                destination_browser::Event::Browse
+                            ))),
+                        )
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
+                )
+            } else {
+                input
+            },
+            formats(desktop, dialog),
         ]
         .spacing(6),
         canopa_ui::direction::row([
             iced::widget::space().width(Length::Fill).into(),
             action(fl!("files-cancel"), "cancel", Event::NameCancel(id)),
             action(
-                if dialog.original.is_some() {
-                    fl!("files-command-rename")
-                } else {
-                    fl!("files-create")
+                match &dialog.archive {
+                    Some(Archive::Compress { .. }) => fl!("files-compress-submit"),
+                    Some(Archive::Extract { .. }) => fl!("files-extract-submit"),
+                    None if dialog.original.is_some() => fl!("files-command-rename"),
+                    None => fl!("files-create"),
                 },
                 "submit",
                 Event::NameSubmit(id),
@@ -452,11 +782,18 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let order = if dialog.busy {
         Vec::new()
     } else {
-        vec![
-            control(id, "name"),
-            control(id, "cancel"),
-            control(id, "submit"),
-        ]
+        let mut order = vec![control(id, "name")];
+        match &dialog.archive {
+            Some(Archive::Compress { .. }) => order.extend(
+                Format::WRITABLE
+                    .iter()
+                    .map(|format| control(id, format.suffix())),
+            ),
+            Some(Archive::Extract { .. }) => order.push(destination_browser::browse_id(id)),
+            None => {}
+        }
+        order.extend([control(id, "cancel"), control(id, "submit")]);
+        order
     };
     super::accessibility_ui::dialog(
         "files-name-dialog",
@@ -470,6 +807,46 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
             (!dialog.busy).then(|| control(id, "name")),
         ),
     )
+}
+
+/// The Compress dialog's format choice; nothing for other dialogs.
+fn formats<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
+    let Some(Archive::Compress { format, .. }) = &dialog.archive else {
+        return iced::widget::space().height(0).into();
+    };
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let small = appearance.typography().label_size.px();
+    let id = dialog.window;
+    let choices = Format::WRITABLE.iter().map(|choice| {
+        let selected = choice == format;
+        let message =
+            (!dialog.busy).then_some(Message::FileOperation(Event::NameFormat(id, *choice)));
+        super::focus::radio(
+            control(id, choice.suffix()),
+            selected,
+            message.clone(),
+            appearance,
+            canopa_ui::styled_action(
+                text(choice.suffix()).font(font).size(small + 1.0),
+                message,
+                if selected {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Normal
+                },
+                false,
+                appearance,
+            ),
+        )
+    });
+    column![
+        iced::widget::space().height(4),
+        chrome::section_title(appearance, fl!("files-compress-format")).size(small + 1.0),
+        canopa_ui::direction::row(choices).spacing(6),
+    ]
+    .spacing(6)
+    .into()
 }
 
 /// The length in graphemes of `name` before its extension, counting a

@@ -76,6 +76,12 @@ enum Item {
     CloseOtherTabs,
     /// Open the current tab's folder again in a new tab.
     DuplicateTab(PathBuf),
+    /// Compress the selection, after choosing a name and format.
+    Compress,
+    /// Extract the selected archives beside them.
+    ExtractHere,
+    /// Extract the selected archives to a chosen folder.
+    ExtractTo,
 }
 pub(super) struct Menu {
     source: Arc<Source>,
@@ -502,6 +508,9 @@ impl Desktop {
                         Task::batch(tasks)
                     }
                     Item::Action(id) => self.action_event(Event::Invoke(source, id)),
+                    Item::Compress => self.show_compress_dialog(source.window),
+                    Item::ExtractHere => self.extract_here(source.window),
+                    Item::ExtractTo => self.show_extract_dialog(source.window),
                     Item::OpenWith => {
                         let paths = source.paths.to_vec();
                         Task::perform(
@@ -615,6 +624,21 @@ impl Desktop {
             items.push((fl!("files-command-cut"), Item::Command(Command::Cut)));
         }
         if self.file_operations.ready() {
+            // Archives can be extracted only when every selected item is one.
+            if source.entries.len() == source.paths.len()
+                && source.entries.iter().all(|entry| {
+                    !entry.is_directory()
+                        && entry
+                            .path
+                            .file_name()
+                            .and_then(crate::archives::Format::detect)
+                            .is_some()
+                })
+            {
+                items.push((fl!("files-menu-extract-here"), Item::ExtractHere));
+                items.push((fl!("files-menu-extract-to"), Item::ExtractTo));
+            }
+            items.push((fl!("files-menu-compress"), Item::Compress));
             if source.paths.len() == 1 {
                 items.push((fl!("files-menu-rename"), Item::Command(Command::Rename)));
             }
@@ -1029,6 +1053,7 @@ fn item_group(item: &Item) -> u8 {
             _ => 10,
         },
         Item::OpenTab(_) | Item::OpenWith => 0,
+        Item::Compress | Item::ExtractHere | Item::ExtractTo => 16,
         Item::CloseOtherTabs => 10,
         Item::DuplicateTab(_) => 2,
         Item::Action(_) => 1,
@@ -1070,6 +1095,8 @@ fn item_icon(item: &Item) -> Option<Icon> {
         Item::OpenTab(_) | Item::DuplicateTab(_) => Icon::Tab,
         Item::CloseOtherTabs => Icon::CloseOthers,
         Item::OpenWith => Icon::OpenWith,
+        Item::Compress => Icon::Compress,
+        Item::ExtractHere | Item::ExtractTo => Icon::Extract,
         Item::Back => Icon::Back,
         Item::Locations => Icon::Places,
         Item::FolderOptions => Icon::Grid,
@@ -1325,6 +1352,76 @@ fn view_item<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archive_items_appear_only_where_they_apply() {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let archive = root.path().join("photos.tar.gz");
+        let text = root.path().join("notes.txt");
+        let folder = root.path().join("folder.zip");
+        std::fs::write(&archive, b"x").unwrap();
+        std::fs::write(&text, b"x").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        let (mut desktop, window) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let tab = desktop.active(window).unwrap().id;
+        super::super::tests::loaded(&mut desktop, window, tab, 1, root.path());
+        let labels = |desktop: &mut Desktop, selection: &[&PathBuf]| {
+            desktop
+                .active_mut(window)
+                .unwrap()
+                .browser
+                .as_mut()
+                .unwrap()
+                .set_selection(selection.iter().map(|path| path.to_path_buf()));
+            let source = desktop.action_source(window).unwrap();
+            desktop
+                .selection_items(&source)
+                .into_iter()
+                .map(|(label, _)| label)
+                .collect::<Vec<_>>()
+        };
+        // Nothing that writes files is offered before the operation queue.
+        assert!(!labels(&mut desktop, &[&archive]).contains(&"Compress…".to_owned()));
+        let service = crate::operation_jobs::OperationJobs::start(
+            state.path().join("history.sqlite3"),
+            state.path().join("volumes.json"),
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while service.snapshot().initializing || service.storage().is_none() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        desktop.file_operations.storage = service.storage();
+        desktop.file_operations.snapshot = service.snapshot();
+        desktop.file_operations.service = Some(service.clone());
+
+        let items = labels(&mut desktop, &[&archive]);
+        let position = |label: &str| items.iter().position(|item| item == label);
+        // Their own group, just before Rename.
+        let rename = position("Rename…").expect("Rename");
+        assert_eq!(
+            (
+                position("Extract here"),
+                position("Extract to…"),
+                position("Compress…")
+            ),
+            (Some(rename - 3), Some(rename - 2), Some(rename - 1)),
+            "{items:?}"
+        );
+        // A folder named like an archive, or a mixed selection, only compresses.
+        for selection in [&[&folder][..], &[&archive, &text][..]] {
+            let items = labels(&mut desktop, selection);
+            assert!(items.contains(&"Compress…".to_owned()), "{items:?}");
+            assert!(!items.contains(&"Extract here".to_owned()), "{items:?}");
+        }
+        drop(desktop);
+        iced::futures::executor::block_on(service.shutdown().unwrap())
+            .unwrap()
+            .unwrap();
+    }
 
     #[test]
     fn old_action_controls_cannot_follow_selection_tabs_or_configuration() {

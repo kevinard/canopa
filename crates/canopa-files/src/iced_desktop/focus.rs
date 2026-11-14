@@ -248,6 +248,22 @@ pub(super) fn check_box<'a>(
     )
 }
 
+/// A focusable choice among several, named by its drawn label.
+pub(super) fn radio<'a>(
+    id: Id,
+    selected: bool,
+    message: Option<Message>,
+    appearance: &Appearance,
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    super::accessibility_ui::radio(
+        super::accessibility_ui::focus_key(&id),
+        selected,
+        message.clone(),
+        control(id, message, appearance, content),
+    )
+}
+
 pub(super) fn control_with_keyboard<'a>(
     id: Id,
     message: Option<Message>,

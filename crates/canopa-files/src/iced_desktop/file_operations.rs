@@ -96,6 +96,8 @@ pub(super) enum Event {
     NameChanged(window::Id, String),
     NameSubmit(window::Id),
     NameCancel(window::Id),
+    NameFormat(window::Id, crate::archives::Format),
+    NameBrowse(window::Id, super::destination_browser::Event),
     Undo(window::Id, u64),
     Cancel(u64),
     RetrySave(u64),
@@ -164,6 +166,8 @@ pub(super) struct State {
     pub before: Option<u64>,
     pub name: Option<super::name_dialog::Dialog>,
     pub preparing_name: Option<Arc<Origin>>,
+    /// The format the Compress dialog offers first: the last one chosen.
+    pub archive_format: crate::archives::Format,
     pub question: Option<super::question_dialog::Dialog>,
     pub details: Option<super::operation_details::Dialog>,
     pub seen_questions: BTreeSet<(u64, u64)>,
@@ -195,6 +199,7 @@ impl Default for State {
             before: None,
             name: None,
             preparing_name: None,
+            archive_format: crate::archives::Format::Zip,
             question: None,
             details: None,
             seen_questions: BTreeSet::new(),
@@ -617,6 +622,8 @@ impl Desktop {
             }
             Event::NameSubmit(id) => return self.submit_name_dialog(id),
             Event::NameCancel(id) => return self.close_name_dialog(id, false),
+            Event::NameFormat(id, format) => self.name_format(id, format),
+            Event::NameBrowse(id, event) => return self.name_browse(id, event),
             Event::Undo(owner, expected) => {
                 if self.file_operations.ready() {
                     return self.submit_file_operation(
@@ -842,6 +849,15 @@ impl Desktop {
             let mut refreshed = (*submission).clone();
             if let Some(report) = &job.transfer {
                 refreshed.reveal = report.destinations.first().cloned();
+            }
+            // An archive's result has a free name only known once published.
+            if let Some(output) = job
+                .archive
+                .as_ref()
+                .and_then(|report| report.output.clone())
+            {
+                refreshed.affected.push(output.clone());
+                refreshed.reveal = Some(output);
             }
             tasks.push(self.refresh_after_operation(&refreshed));
             if let Some(report) = &job.trash

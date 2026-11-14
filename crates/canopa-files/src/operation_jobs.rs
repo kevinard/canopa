@@ -11,6 +11,7 @@ use crate::{
 };
 use futures_channel::{mpsc as asynchronous, oneshot};
 use serde::{Deserialize, Serialize};
+mod archive;
 mod attention;
 mod clipboard;
 mod dismissal;
@@ -26,6 +27,7 @@ mod transfer_resume;
 mod trash;
 use crate::operations::execution::{MutationConfirmation, TransferConfirmation};
 use crate::transfers::{ObservedTransfer, TransferKind, TransferReply, TransferRequest};
+pub use archive::ArchiveReport;
 pub use attention::{Attention, AttentionObserver, AttentionStatus};
 use clipboard::ClipboardPaste;
 pub use clipboard::{ClipboardSnapshot, PreparedSelection};
@@ -84,6 +86,9 @@ pub enum Request {
         items: Vec<crate::trash::TrashItem>,
         empty: bool,
     },
+    /// Compress a selection or extract an archive. Its result is published
+    /// under a free name; it is neither undone nor resumed.
+    Archive(crate::archives::ArchiveRequest),
 }
 
 /// The resolved browsing directory captured when the user invoked the command.
@@ -132,6 +137,7 @@ pub struct JobSnapshot {
     pub trash: Option<Arc<TrashReport>>,
     pub restore: Option<Arc<RestoreReport>>,
     pub delete: Option<Arc<DeleteReport>>,
+    pub archive: Option<Arc<ArchiveReport>>,
     pub recovery: Option<Arc<RecoveryReport>>,
     pub recovery_actions: RecoveryActions,
     pub transfer_actions: TransferActions,
@@ -428,6 +434,11 @@ enum Saved {
         version: u8,
         title: String,
         report: DeleteReport,
+    },
+    ArchiveResult {
+        version: u8,
+        title: String,
+        report: ArchiveReport,
     },
 }
 
@@ -1002,7 +1013,10 @@ impl Worker {
                 };
                 let restored = match worker.restore_mutation(&record, &saved)? {
                     Some(restored) => Some(restored),
-                    None => worker.restore_transfer(&record, &saved, false)?,
+                    None => match worker.restore_archive(&record, &saved)? {
+                        Some(restored) => Some(restored),
+                        None => worker.restore_transfer(&record, &saved, false)?,
+                    },
                 };
                 let (record, saved, phase, restored_error, transfer_confirmation) = match restored {
                     Some(restored) => (
@@ -1614,6 +1628,7 @@ impl Worker {
             delete: None,
             recovery: None,
             recovery_actions: RecoveryActions::default(),
+            archive: None,
             transfer_actions: TransferActions::default(),
             dismissible: false,
         });
@@ -1812,6 +1827,29 @@ impl Worker {
                             detail: Some(report.detail()), transfer: None, trash: None, restore: None, delete: Some(report), recovery: None, mutation_confirmation: None,
                         })
                     }
+                    Request::Archive(archive) => {
+                        let title = Request::Archive(archive.clone()).title();
+                        let publication = transfer::Publication { id, snapshot, notice, sender: sender.clone() };
+                        let mut last = None::<std::time::Instant>;
+                        let mut progress = |progress: &crate::archives::Progress| {
+                            // Bound presentation work for archives with many entries.
+                            if last.is_none_or(|last| last.elapsed() >= std::time::Duration::from_millis(100)) {
+                                last = Some(std::time::Instant::now());
+                                publication.progress(TransferProgress {
+                                    path: progress.path.clone(),
+                                    completed: usize::try_from(progress.entries).unwrap_or(usize::MAX),
+                                    bytes: progress.bytes,
+                                    total: progress.total_entries.zip(progress.total_bytes).map(|(items, bytes)| TransferTotal { items, bytes, complete: true }),
+                                    ..TransferProgress::default()
+                                });
+                            }
+                        };
+                        let outcome = crate::archives::run(&archive, &cancellation, crate::archives::Limits::default(), &mut progress)?;
+                        Ok(Completion {
+                            summary: OperationSummary { id: 0, label: title, paths: vec![outcome.output.clone()] },
+                            detail: Some(outcome.detail(&archive)), transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: None,
+                        })
+                    }
                     Request::Undo { expected } => {
                         let outcome = engine.undo_interactive(Some(expected), &cancellation, |conflict| {
                             let (reply, receiver) = mpsc::sync_channel(1);
@@ -1986,7 +2024,24 @@ impl Worker {
                 if let Some(transfer) = completion.transfer.as_ref() {
                     job.transfer_pending = transfer.pending.clone();
                 }
-                let saved = if let Some(finished) = completion.recovery {
+                let saved = if let Saved::Plan {
+                    request: request @ Request::Archive(_),
+                    ..
+                } = &job.saved
+                {
+                    // A successful run has exactly one result; none means it
+                    // was cancelled before it started.
+                    Saved::ArchiveResult {
+                        version: 1,
+                        title: request.title(),
+                        report: match completion.summary.paths.first() {
+                            Some(output) => {
+                                ArchiveReport::finished(output.clone(), completion.detail.clone())
+                            }
+                            None => ArchiveReport::cancelled(),
+                        },
+                    }
+                } else if let Some(finished) = completion.recovery {
                     job.recovery_pending = finished.pending;
                     Saved::RecoveryResult {
                         version: 1,
@@ -2157,6 +2212,18 @@ impl Worker {
                         requirements: requirements.clone(),
                         source_requirements: sources.clone(),
                     },
+                    Saved::Plan {
+                        request: request @ Request::Archive(_),
+                        ..
+                    } => Saved::ArchiveResult {
+                        version: 1,
+                        title: request.title(),
+                        report: if job.cancellation.is_cancelled() {
+                            ArchiveReport::cancelled()
+                        } else {
+                            ArchiveReport::failed(error)
+                        },
+                    },
                     _ => {
                         let mut saved = job.saved.clone();
                         if let Saved::Plan {
@@ -2205,6 +2272,7 @@ impl Worker {
                     | Saved::TrashResult { .. }
                     | Saved::RestoreResult { .. }
                     | Saved::DeleteResult { .. }
+                    | Saved::ArchiveResult { .. }
                     | Saved::RecoveryResult { .. }
             )
         {
@@ -2346,6 +2414,7 @@ impl Request {
                             .all(|source| source.file_name().is_some())
                 }
                 Self::Undo { expected } => *expected != 0,
+                Self::Archive(request) => request.valid(),
                 _ => true,
             }
     }
@@ -2400,6 +2469,23 @@ impl Request {
                     fl!("files-job-move", count = count, destination = destination)
                 }
             }
+            Self::Archive(crate::archives::ArchiveRequest::Compress {
+                sources,
+                name,
+                format,
+                ..
+            }) => {
+                let mut name = name.as_os_str().to_os_string();
+                name.push(format.suffix());
+                fl!(
+                    "files-job-compress",
+                    count = sources.len(),
+                    name = name.to_string_lossy().into_owned()
+                )
+            }
+            Self::Archive(crate::archives::ArchiveRequest::Extract { archive, .. }) => {
+                fl!("files-job-extract", name = name(archive))
+            }
         }
     }
     fn paths(&self) -> Vec<PathBuf> {
@@ -2431,6 +2517,7 @@ impl Request {
                 .cloned()
                 .chain(std::iter::once(request.destination.clone()))
                 .collect(),
+            Self::Archive(request) => request.paths(),
         }
     }
     fn accesses(&self, engine: &OperationEngine) -> io::Result<Vec<Access>> {
@@ -2443,6 +2530,17 @@ impl Request {
 
         if let Self::Transfer(request) = self {
             return Ok(vec![Access::folder(request.destination.clone())]);
+        }
+        if let Self::Archive(request) = self {
+            let mut paths = request.paths();
+            paths.pop();
+            return Ok(paths
+                .into_iter()
+                .map(Access::entry)
+                .chain(std::iter::once(Access::folder(
+                    request.destination().to_owned(),
+                )))
+                .collect());
         }
         if let Self::Trash { sources, data_home } = self {
             return Ok(sources
@@ -2528,6 +2626,9 @@ impl Saved {
             Self::DeleteResult {
                 version: 1, report, ..
             } => report.valid(),
+            Self::ArchiveResult {
+                version: 1, report, ..
+            } => report.valid(),
             Self::RecoveryResult {
                 version: 1, report, ..
             } => report.valid(),
@@ -2553,6 +2654,7 @@ impl Saved {
             | Self::TrashResult { .. }
             | Self::RestoreResult { .. }
             | Self::DeleteResult { .. }
+            | Self::ArchiveResult { .. }
             | Self::RecoveryResult { .. } => None,
         }
     }
@@ -2572,6 +2674,7 @@ impl Saved {
             | Self::TrashResult { .. }
             | Self::RestoreResult { .. }
             | Self::DeleteResult { .. }
+            | Self::ArchiveResult { .. }
             | Self::RecoveryResult { .. } => None,
         }
     }
@@ -2585,6 +2688,7 @@ impl Saved {
             Self::TrashResult { report, .. } => report.phase(),
             Self::RestoreResult { report, .. } => report.phase(),
             Self::DeleteResult { report, .. } => report.phase(),
+            Self::ArchiveResult { report, .. } => report.phase(),
             Self::RecoveryResult { report, .. } => report.phase(),
             Self::TransferPending { outcome, .. } => outcome.phase(),
         }
@@ -2598,6 +2702,7 @@ impl Saved {
             Self::Completed { .. } => Phase::Finished,
             Self::RestoreResult { report, .. } => report.status(),
             Self::DeleteResult { report, .. } => report.status(),
+            Self::ArchiveResult { report, .. } => report.status(),
             Self::RecoveryResult { report, .. } => report.status(),
             Self::TrashResult { report, .. } => {
                 if report.interrupted.is_some() {
@@ -2635,6 +2740,7 @@ impl Saved {
                 })
             }
             Self::Completed { .. } => None,
+            Self::ArchiveResult { report, .. } => report.error.clone(),
             Self::RestoreResult { report, .. } => report.error.clone(),
             Self::RecoveryResult { report, .. } => report
                 .error
@@ -2677,6 +2783,7 @@ impl Saved {
             delete: None,
             recovery: None,
             recovery_actions: RecoveryActions::default(),
+            archive: None,
             transfer_actions: TransferActions::default(),
             dismissible: false,
         };
@@ -2707,6 +2814,7 @@ impl Saved {
                         | Request::KeepRecovery { .. }
                         | Request::Delete { .. }
                         | Request::DeleteTrash { .. }
+                        | Request::Archive(_)
                 ) && matches!(
                     phase,
                     Phase::Failed | Phase::AwaitingReview | Phase::Interrupted
@@ -2776,6 +2884,16 @@ impl Saved {
                 snapshot.paths = report.completed.clone().into();
                 snapshot.detail = Some(report.detail());
                 snapshot.delete = Some(Arc::new(report.clone()));
+            }
+            Self::ArchiveResult {
+                version: 1,
+                title,
+                report,
+            } => {
+                snapshot.title = title.clone();
+                snapshot.paths = report.output.iter().cloned().collect::<Vec<_>>().into();
+                snapshot.detail = report.detail.clone();
+                snapshot.archive = Some(Arc::new(report.clone()));
             }
             _ => {
                 return Err(io::Error::new(

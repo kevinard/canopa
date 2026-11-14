@@ -307,6 +307,9 @@ files-menu-new-folder = Nouveau dossier…
 files-menu-new-folder-short = Nouveau dossier
 files-menu-rename = Renommer…
 files-menu-delete-permanently = Supprimer définitivement…
+files-menu-compress = Compresser…
+files-menu-extract-here = Extraire ici
+files-menu-extract-to = Extraire vers…
 files-menu-edit-custom-actions = Modifier les actions personnalisées…
 files-menu-preferences = Préférences…
 files-menu-bookmark-folder = Ajouter ce dossier aux signets…
@@ -538,6 +541,52 @@ files-job-delete-from-trash = { $count ->
     [one] Supprimer définitivement { $count } élément de la corbeille
    *[other] Supprimer définitivement { $count } éléments de la corbeille
 }
+files-job-compress = { $count ->
+    [one] Compresser { $count } élément dans « { $name } »
+   *[other] Compresser { $count } éléments dans « { $name } »
+}
+files-job-extract = Extraire « { $name } »
+files-archive-default-name = Archive
+files-archive-compressed = { $count ->
+    [one] « { $name } » a été créée avec { $count } entrée.
+   *[other] « { $name } » a été créée avec { $count } entrées.
+}
+files-archive-extracted = { $count ->
+    [one] { $count } entrée extraite sous « { $name } ».
+   *[other] { $count } entrées extraites sous « { $name } ».
+}
+files-archive-skipped-unsafe = { $count ->
+    [one] { $count } entrée qui sortait du dossier extrait a été ignorée.
+   *[other] { $count } entrées qui sortaient du dossier extrait ont été ignorées.
+}
+files-archive-skipped-special = { $count ->
+    [one] { $count } périphérique, tube ou socket a été ignoré.
+   *[other] { $count } périphériques, tubes ou sockets ont été ignorés.
+}
+files-archive-cancelled = Annulé. Rien n’a été conservé.
+files-archive-interrupted = L’opération a été interrompue avant la fin. Tout résultat inachevé a été supprimé.
+files-archive-interrupted-kept = L’opération a été interrompue. Son résultat inachevé « { $name } » n’a pas pu être supprimé : { $error }
+files-archive-no-name = Aucun nom libre n’a été trouvé pour le résultat.
+files-archive-changed = « { $name } » a changé pendant sa compression.
+files-archive-zip-name = « { $name } » ne peut pas être enregistré dans une archive .zip. Choisissez plutôt un format .tar.
+files-archive-encrypted = Cette archive est chiffrée. Les archives protégées par un mot de passe ne sont pas prises en charge.
+files-archive-unsupported = Cette archive utilise une fonction ou une méthode de compression non prise en charge.
+files-archive-damaged = L’archive est endommagée ou n’est pas dans un format pris en charge.
+files-archive-too-many-entries = L’archive contient plus de { $limit } entrées.
+files-archive-conflict = L’archive contient des entrées en conflit pour « { $name } ».
+files-archive-no-space = Il n’y a pas assez d’espace libre pour extraire l’archive.
+files-archive-empty = L’archive ne contient rien à extraire.
+files-compress-title = Compresser
+files-compress-name = Nom de l’archive
+files-compress-format = Format
+files-compress-submit = Compresser
+files-extract-to-title = Extraire vers
+files-extract-submit = Extraire
+files-extract-archives = { $count ->
+    [one] { $count } archive
+   *[other] { $count } archives
+}
+files-extract-folder-invalid = Saisissez un dossier où extraire.
 files-job-copy = { $count ->
     [one] Copier { $count } élément vers { $destination }
    *[other] Copier { $count } éléments vers { $destination }
