@@ -3,6 +3,8 @@ use crate::secret::Edit;
 use xkbcommon::xkb::{self, Keysym};
 
 pub const LAYOUT_CONTROL: usize = usize::MAX - 1;
+/// Shows or masks the current secret response (`SessionView::toggle_reveal`).
+pub const REVEAL_CONTROL: usize = usize::MAX - 5;
 #[derive(Default)]
 pub struct Keyboard {
     state: Option<xkb::State>,

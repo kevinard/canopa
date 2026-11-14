@@ -144,7 +144,8 @@ fn run() -> Result<()> {
     }) = cli.command
     {
         background::dimensions(width, height)?;
-        let mut ui = LockUi::preview(&settings, auth::username()?)?;
+        let name = auth::display_name().map_or_else(auth::username, Ok)?;
+        let mut ui = LockUi::preview(&settings, name)?;
         canopa_session::lock_ui::configure(&mut ui);
         canopa_session::lock_ui::update_actions(&mut ui, false);
         ui.render(&settings, &monitor, width, height)?

@@ -6,9 +6,9 @@ pub(crate) const CHANGE_PASSWORD: usize = usize::MAX - 2;
 
 pub fn configure(ui: &mut LockUi) {
     ui.authentication_panel = Some(AuthenticationPanel {
-        height_reserve: 408.,
+        height_reserve: 300.,
         heading: fl!("lock-heading"),
-        eyebrow: fl!("lock-eyebrow"),
+        subtitle: fl!("lock-subtitle"),
         emblem: Emblem::Lock,
         dialog: false,
         choices: &[],
@@ -18,6 +18,7 @@ pub fn configure(ui: &mut LockUi) {
         checked_control: None,
         choice_details: Default::default(),
         account: None,
+        confirm_identity: false,
     });
 }
 

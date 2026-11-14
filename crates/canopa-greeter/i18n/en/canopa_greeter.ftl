@@ -19,6 +19,10 @@ greeter-choose-account = Choose account
 greeter-change-account = Change account
 # Screen-reader names of that row. $account is a name and username, or a username.
 greeter-choose-account-for = Choose account · { $account }
+# An account row on the sign-in screen. $account is its name and username.
+greeter-sign-in-as = Sign in as { $account }
+# Below the account list: type a username that is not listed.
+greeter-not-listed = Not listed?
 greeter-change-account-for = Change account · { $account }
 # Stands in for the account while no username is typed.
 greeter-enter-username-placeholder = enter username

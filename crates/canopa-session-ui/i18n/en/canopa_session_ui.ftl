@@ -11,14 +11,15 @@ session-battery-charging = { $level } · Charging
 session-keyboard-control = Keyboard: { $layout }   · F6
 # Accessible name of the keyboard layout switch. $layout is the layout name.
 session-keyboard-layout = Keyboard: { $layout }
-# Keyboard layout shown beside the field; F6 switches it.
-session-keyboard-layout-shortcut = { $layout } · F6
 # Placeholders inside the response field.
 session-placeholder-type-response = Type response
 session-placeholder-enter-response = Enter response
 session-placeholder-authenticate = Enter to authenticate
 session-waiting-for-authentication = Waiting for authentication…
 session-caps-lock-on = Caps Lock is on
+# Button in a secret field that shows or masks what was typed.
+session-show-response = Show typed text
+session-hide-response = Hide typed text
 # Hints below the response field.
 session-hint-follow-instructions = Follow the authentication instructions
 session-hint-press-enter = Press Enter to continue
@@ -45,22 +46,13 @@ session-account = Account: { $name }
 # Request card in authorization dialogs.
 session-policy-source = Policy source
 session-requested-for = Requested for
-session-policy-source-value = Policy source: { $value }
-session-requested-for-value = Requested for: { $value }
+session-requested-by = Requested by
 session-authenticating-as = Authenticating as
-# Card labels shown in capitals.
-session-policy-request = POLICY REQUEST
-session-key-identity-caps = KEY IDENTITY
-session-request-context = REQUEST CONTEXT
 session-fingerprint = Fingerprint
 session-key-identity = Key identity
-# Lock screen heading above the person's name.
-session-locked-heading = Session locked
 # A back button. $arrow is ← (→ in right-to-left languages); $label is the action.
 session-back-label = { $arrow } { $label }
 # Chip on the current choice in a list (short).
 session-current = Current
-# Login screen row that opens the desktop chooser. $session is the desktop's name.
-session-desktop-choice = Desktop · { $session }
 # Keyboard help in choice lists.
 session-chooser-shortcuts = ↑ ↓ to move · Enter to select

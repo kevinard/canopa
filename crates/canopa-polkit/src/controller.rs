@@ -28,6 +28,8 @@ pub struct Controller {
     action: String,
     description: String,
     subject_pid: Option<u32>,
+    /// The requesting program's name, as the agent read it for this request.
+    subject_name: Option<String>,
     policy_publisher: String,
     notice: String,
     prompt: Option<Prompt>,
@@ -39,7 +41,7 @@ impl Controller {
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
             heading: fl!("polkit-heading"),
-            eyebrow: fl!("polkit-eyebrow"),
+            subtitle: fl!("polkit-subtitle"),
             emblem: Emblem::Shield,
             dialog: true,
             choices: &[(1, Emblem::Cycle)],
@@ -49,6 +51,7 @@ impl Controller {
             checked_control: None,
             choice_details: Default::default(),
             account: None,
+            confirm_identity: false,
         });
         Ok(Self {
             ui,
@@ -62,6 +65,7 @@ impl Controller {
             action: String::new(),
             description: String::new(),
             subject_pid: None,
+            subject_name: None,
             policy_publisher: String::new(),
             notice: String::new(),
             prompt: None,
@@ -110,6 +114,7 @@ impl Controller {
                 self.prompt = None;
                 self.action = action;
                 self.subject_pid = subject_pid;
+                self.subject_name = None;
                 self.policy_publisher.clear();
                 self.description = message
                     .chars()
@@ -204,6 +209,7 @@ impl Controller {
         self.action.clear();
         self.description.clear();
         self.subject_pid = None;
+        self.subject_name = None;
         self.policy_publisher.clear();
         self.details = None;
         self.notice.clear();
@@ -243,9 +249,16 @@ impl Controller {
                         .map(|uid| fl!("polkit-uid", uid = uid.to_string()))
                 })
                 .unwrap_or_default();
-            let process = self.subject_pid.map_or_else(String::new, |pid| {
-                fl!("polkit-request-subject", pid = pid.to_string())
-            });
+            let process =
+                self.subject_pid
+                    .map_or_else(String::new, |pid| match &self.subject_name {
+                        Some(name) => fl!(
+                            "polkit-request-subject-named",
+                            name = name.as_str(),
+                            pid = pid.to_string()
+                        ),
+                        None => fl!("polkit-request-subject", pid = pid.to_string()),
+                    });
             let publisher = if self.policy_publisher.is_empty() {
                 String::new()
             } else {
@@ -331,6 +344,9 @@ impl Controller {
                     "subject-process".into(),
                     fl!("polkit-process", pid = pid.to_string()),
                 );
+            }
+            if let Some(name) = &self.subject_name {
+                self.ui.custom.insert("subject-name".into(), name.clone());
             }
             if !self.policy_publisher.is_empty() {
                 self.ui
@@ -450,6 +466,13 @@ impl Controller {
             self.refresh();
         }
     }
+    /// Name the program that asked, for the current request only.
+    pub fn subject_name(&mut self, generation: u64, name: Option<String>) {
+        if generation == self.generation && self.active() {
+            self.subject_name = name;
+        }
+    }
+
     pub fn preview(settings: &Settings) -> anyhow::Result<Self> {
         let mut c = Self::new(settings)?;
         c.event(Event::Begin {
@@ -476,8 +499,39 @@ impl Controller {
             name: "Alex Morgan".into(),
             rgba: None,
         });
+        c.subject_name(1, Some("Advanced Network Configuration".into()));
+        c.refresh();
         Ok(c)
     }
+}
+
+/// The requesting program's application name from its desktop entry, else its
+/// program name. Read once per request for display; the process can choose it.
+pub fn process_name(pid: u32) -> Option<String> {
+    let program = canopa_session_ui::process::program_name(pid)?;
+    let applications = canopa_apps::discover_choice_metadata().unwrap_or_default();
+    Some(application_name(&applications, &program).unwrap_or(program))
+}
+
+/// The display name of the desktop entry whose program is `program`.
+pub fn application_name(
+    applications: &[canopa_apps::DesktopApplication],
+    program: &str,
+) -> Option<String> {
+    applications
+        .iter()
+        .find(|app| {
+            app.exec_program.as_deref() == Some(program)
+                || app.startup_wm_class.as_deref() == Some(program)
+        })
+        .map(|app| {
+            app.name
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(48)
+                .collect()
+        })
+        .filter(|name: &String| !name.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -651,5 +705,34 @@ mod tests {
         assert_eq!(c.phase, Phase::Prompt);
         assert!(c.ui.secret.is_empty());
         assert!(c.ui.prompt.is_some());
+    }
+    #[test]
+    fn requesters_are_named_by_their_desktop_entry_or_program() {
+        let editor = canopa_apps::DesktopApplication {
+            id: "nm-connection-editor".into(),
+            name: "Advanced Network Configuration".into(),
+            exec_program: Some("nm-connection-editor".into()),
+            ..Default::default()
+        };
+        let apps = [editor];
+        assert_eq!(
+            application_name(&apps, "nm-connection-editor").as_deref(),
+            Some("Advanced Network Configuration")
+        );
+        assert_eq!(application_name(&apps, "pkexec"), None);
+        let mut c = controller();
+        c.subject_name(c.generation, Some("Advanced Network Configuration".into()));
+        c.refresh();
+        assert_eq!(
+            c.ui.custom["subject-name"],
+            "Advanced Network Configuration"
+        );
+        // A later request starts without the previous requester's name.
+        c.subject_name(c.generation + 1, Some("Stale".into()));
+        c.refresh();
+        assert_ne!(
+            c.ui.custom.get("subject-name").map(String::as_str),
+            Some("Stale")
+        );
     }
 }

@@ -235,7 +235,7 @@ lockscreen {
     font "Inter"                  // defaults to the shared theme's first font family
     clock-format "%H:%M"          // Chrono pattern; unset follows the language's time format
     date-format "%A, %B %-d"      // unset shows the language's long weekday and date
-    clock-size 80                 // 8..160; scales with the available viewport
+    clock-size 72                 // 8..160; scales with the available viewport
     text-size 19                  // 8..160
     auth-timeout 120               // total PAM transaction timeout, seconds
     widgets "username" "keyboard" "battery" "media" "weather" "avatar" "notifications"
@@ -372,7 +372,9 @@ distribution's PAM policy.
 
 ## Shared authentication input
 
-Lock, Greeter, Polkit and Pinentry use the same bounded UTF-8 input. Left/Right
+Lock, Greeter, Polkit and Pinentry use the same bounded UTF-8 input. Secret fields
+have an eye button (also an accessible action) that shows the typed response; any
+new prompt is masked again. Left/Right
 moves by grapheme, Shift extends a selection, Home/End moves to an edge, and
 Backspace/Delete removes the selected or adjacent grapheme. Ctrl+A selects all;
 Ctrl+U clears. Insertion replaces the selection, with rejected oversized input

@@ -11,7 +11,11 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
-use canopa_session_ui::{layout::Rect, settings::Settings, view::DIALOG_SIZE};
+use canopa_session_ui::{
+    layout::Rect,
+    settings::Settings,
+    view::{DIALOG_MAX_HEIGHT, DIALOG_MIN_HEIGHT, DIALOG_SIZE},
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     output::{OutputHandler, OutputState},
@@ -58,6 +62,8 @@ struct App {
     settings: Settings,
     width: u32,
     height: u32,
+    /// The logical height last asked of the compositor; it only grows.
+    requested: u32,
     scale: i32,
     dirty: bool,
     exit: bool,
@@ -120,6 +126,8 @@ fn run_inner(
     } else {
         fl!("pinentry-secure-input")
     };
+    let mut request = request.clone();
+    request.requester = request.owner.and_then(requester);
     let controller = Controller::new_named(settings, request.clone(), heading)?;
     let window = shell.create_window(
         compositor.create_surface(&qh),
@@ -142,8 +150,12 @@ fn run_inner(
             title = title.as_str()
         )
     });
-    window.set_min_size(Some(DIALOG_SIZE));
-    window.set_max_size(Some(DIALOG_SIZE));
+    // The window fits the request; it grows if a later step needs more room.
+    let height = controller
+        .ui
+        .dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT);
+    window.set_min_size(Some((DIALOG_SIZE.0, height)));
+    window.set_max_size(Some((DIALOG_SIZE.0, height)));
     window.commit();
     let mut app = App {
         accessibility: None,
@@ -162,7 +174,8 @@ fn run_inner(
         controller: Some(controller),
         settings: settings.clone(),
         width: DIALOG_SIZE.0,
-        height: DIALOG_SIZE.1,
+        height,
+        requested: height,
         scale: 1,
         dirty: true,
         exit: false,
@@ -343,6 +356,13 @@ impl App {
             self.dirty = true;
             return;
         }
+        if id == canopa_session_ui::input::REVEAL_CONTROL {
+            if let Some(c) = &mut self.controller {
+                c.ui.toggle_reveal();
+            }
+            self.dirty = true;
+            return;
+        }
         let c = self.controller.as_mut().unwrap();
         if id == 1 {
             c.cycle();
@@ -419,6 +439,17 @@ impl App {
         if let Some(a) = &mut self.accessibility {
             a.update(&fl!("pinentry-title"), &c.ui, &self.settings, self.focused);
         }
+        let desired = c.ui.dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT);
+        if desired > self.requested
+            && let Some(window) = &self.window
+        {
+            // Grow with this frame: compositors need not configure a mapped
+            // floating window again after its size limits change.
+            self.requested = desired;
+            self.height = self.height.max(desired);
+            window.set_min_size(Some((DIALOG_SIZE.0, desired)));
+            window.set_max_size(Some((DIALOG_SIZE.0, desired)));
+        }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
         let (image, hits) =
@@ -471,7 +502,12 @@ impl WindowHandler for App {
             return;
         }
         self.width = c.new_size.0.map(|v| v.get()).unwrap_or(DIALOG_SIZE.0);
-        self.height = c.new_size.1.map(|v| v.get()).unwrap_or(DIALOG_SIZE.1);
+        // Never below the content height asked for: that would clip the footer.
+        self.height = c
+            .new_size
+            .1
+            .map_or(self.requested, |v| v.get())
+            .max(self.requested);
         self.configured = true;
         self.dirty = true;
     }
@@ -737,3 +773,19 @@ smithay_client_toolkit::delegate_xdg_window!(App);
 smithay_client_toolkit::delegate_shm!(App);
 smithay_client_toolkit::delegate_registry!(App);
 wayland_client::delegate_noop!(App:ignore wayland_client::protocol::wl_buffer::WlBuffer);
+
+/// The program that asked gpg-agent: the client's name, or for GnuPG's own
+/// tools the program that ran them (`git` rather than `gpg`).
+fn requester(pid: u32) -> Option<String> {
+    use canopa_session_ui::process::{parent, program_name};
+    let name = program_name(pid)?;
+    if matches!(
+        name.as_str(),
+        "gpg" | "gpg2" | "gpgsm" | "gpg-connect-agent"
+    ) && let Some(caller) = parent(pid).and_then(program_name)
+        && !matches!(caller.as_str(), "sh" | "bash" | "zsh" | "fish" | "dash")
+    {
+        return Some(caller);
+    }
+    Some(name)
+}

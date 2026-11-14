@@ -182,6 +182,17 @@ impl Accessibility {
                 .collect(),
             layout: None,
         };
+        if view.can_reveal() {
+            meaning.controls.push((
+                crate::input::REVEAL_CONTROL,
+                if view.revealed() {
+                    fl!("session-hide-response")
+                } else {
+                    fl!("session-show-response")
+                },
+                false,
+            ));
+        }
         if view.can_select_layout {
             meaning.controls.push((
                 crate::input::LAYOUT_CONTROL,

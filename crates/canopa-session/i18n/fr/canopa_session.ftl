@@ -5,7 +5,7 @@
 
 lock-title = Verrouillage Canopa
 lock-heading = Déverrouiller la session
-lock-eyebrow = SESSION VERROUILLÉE
+lock-subtitle = Session verrouillée
 lock-unlock = Déverrouiller
 lock-try-again = Réessayer
 lock-starting-authentication = Démarrage de l’authentification…

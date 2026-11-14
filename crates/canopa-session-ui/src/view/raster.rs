@@ -17,6 +17,19 @@ pub enum Emblem {
     Check,
     Display,
     Keyboard,
+    /// One person, for an account without a picture.
+    Person,
+    Power,
+    /// An arrow toward the end of a left-to-right line (submit).
+    Arrow,
+    ArrowBack,
+    /// A chevron pointing down (opens a menu).
+    ChevronDown,
+    Battery,
+    /// Show the typed secret.
+    Eye,
+    /// Mask the typed secret again.
+    EyeOff,
 }
 
 impl Rect {
@@ -46,6 +59,26 @@ pub(super) fn rounded(image: &mut RgbImage, r: Rect, radius: f32, color: Rgb, op
     paint_distance(image, r, radius, 1., color, |distance| {
         (0.5 - distance).clamp(0., 1.) * opacity
     });
+}
+
+/// An anti-aliased disc shaded from `top` to `bottom`.
+pub(super) fn gradient_disc(image: &mut RgbImage, r: Rect, top: Rgb, bottom: Rgb) {
+    let radius = r.width / 2.;
+    let (cx, cy) = (r.x + radius, r.y + r.height / 2.);
+    let y_end = (r.y + r.height).ceil().min(image.height() as f32) as u32;
+    let x_end = (r.x + r.width).ceil().min(image.width() as f32) as u32;
+    for y in r.y.floor().max(0.) as u32..y_end {
+        let t = ((y as f32 + 0.5 - r.y) / r.height).clamp(0., 1.);
+        let color = mix(top, bottom, t);
+        for x in r.x.floor().max(0.) as u32..x_end {
+            let distance = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy) - radius;
+            blend(
+                image.get_pixel_mut(x, y),
+                color,
+                (0.5 - distance).clamp(0., 1.),
+            );
+        }
+    }
 }
 
 pub(super) fn shadow(image: &mut RgbImage, mut r: Rect, radius: f32, scale: f32, strength: f32) {
@@ -150,6 +183,172 @@ pub(super) fn emblem(
         Emblem::Chevron => &[&[(9., 6.), (15., 12.), (9., 18.)]],
         Emblem::ChevronBack => &[&[(15., 6.), (9., 12.), (15., 18.)]],
         Emblem::Check => &[&[(5., 12.), (10., 17.), (19., 7.)]],
+        Emblem::ChevronDown => &[&[(6., 9.), (12., 15.), (18., 9.)]],
+        Emblem::Eye => &[
+            &[
+                (2.0, 12.0),
+                (4.0, 10.11),
+                (6.0, 8.64),
+                (8.0, 7.59),
+                (10.0, 6.96),
+                (12.0, 6.75),
+                (14.0, 6.96),
+                (16.0, 7.59),
+                (18.0, 8.64),
+                (20.0, 10.11),
+                (22.0, 12.0),
+            ],
+            &[
+                (2.0, 12.0),
+                (4.0, 13.89),
+                (6.0, 15.36),
+                (8.0, 16.41),
+                (10.0, 17.04),
+                (12.0, 17.25),
+                (14.0, 17.04),
+                (16.0, 16.41),
+                (18.0, 15.36),
+                (20.0, 13.89),
+                (22.0, 12.0),
+            ],
+            &[
+                (15.0, 12.0),
+                (14.7, 13.3),
+                (13.87, 14.35),
+                (12.67, 14.92),
+                (11.33, 14.92),
+                (10.13, 14.35),
+                (9.3, 13.3),
+                (9.0, 12.0),
+                (9.3, 10.7),
+                (10.13, 9.65),
+                (11.33, 9.08),
+                (12.67, 9.08),
+                (13.87, 9.65),
+                (14.7, 10.7),
+                (15.0, 12.0),
+            ],
+        ],
+        Emblem::EyeOff => &[
+            &[
+                (2.0, 12.0),
+                (4.0, 10.11),
+                (6.0, 8.64),
+                (8.0, 7.59),
+                (10.0, 6.96),
+                (12.0, 6.75),
+                (14.0, 6.96),
+                (16.0, 7.59),
+                (18.0, 8.64),
+                (20.0, 10.11),
+                (22.0, 12.0),
+            ],
+            &[
+                (2.0, 12.0),
+                (4.0, 13.89),
+                (6.0, 15.36),
+                (8.0, 16.41),
+                (10.0, 17.04),
+                (12.0, 17.25),
+                (14.0, 17.04),
+                (16.0, 16.41),
+                (18.0, 15.36),
+                (20.0, 13.89),
+                (22.0, 12.0),
+            ],
+            &[
+                (15.0, 12.0),
+                (14.7, 13.3),
+                (13.87, 14.35),
+                (12.67, 14.92),
+                (11.33, 14.92),
+                (10.13, 14.35),
+                (9.3, 13.3),
+                (9.0, 12.0),
+                (9.3, 10.7),
+                (10.13, 9.65),
+                (11.33, 9.08),
+                (12.67, 9.08),
+                (13.87, 9.65),
+                (14.7, 10.7),
+                (15.0, 12.0),
+            ],
+            &[(4., 4.), (20., 20.)],
+        ],
+        Emblem::Battery => &[
+            &[(3., 7.), (19., 7.), (19., 17.), (3., 17.), (3., 7.)],
+            &[(21.5, 10.5), (21.5, 13.5)],
+        ],
+        Emblem::Arrow => &[
+            &[(5., 12.), (19., 12.)],
+            &[(13., 6.), (19., 12.), (13., 18.)],
+        ],
+        Emblem::ArrowBack => &[
+            &[(19., 12.), (5., 12.)],
+            &[(11., 6.), (5., 12.), (11., 18.)],
+        ],
+        Emblem::Power => &[
+            &[(12., 3.5), (12., 11.)],
+            &[
+                (16.3, 6.86),
+                (17.7, 8.13),
+                (18.74, 9.71),
+                (19.35, 11.5),
+                (19.49, 13.39),
+                (19.15, 15.26),
+                (18.36, 16.97),
+                (17.16, 18.44),
+                (15.64, 19.56),
+                (13.88, 20.26),
+                (12.0, 20.5),
+                (10.12, 20.26),
+                (8.36, 19.56),
+                (6.84, 18.44),
+                (5.64, 16.97),
+                (4.85, 15.26),
+                (4.51, 13.39),
+                (4.65, 11.5),
+                (5.26, 9.71),
+                (6.3, 8.13),
+                (7.7, 6.86),
+            ],
+        ],
+        Emblem::Person => &[
+            &[
+                (15.6, 8.0),
+                (15.33, 9.38),
+                (14.55, 10.55),
+                (13.38, 11.33),
+                (12.0, 11.6),
+                (10.62, 11.33),
+                (9.45, 10.55),
+                (8.67, 9.38),
+                (8.4, 8.0),
+                (8.67, 6.62),
+                (9.45, 5.45),
+                (10.62, 4.67),
+                (12.0, 4.4),
+                (13.38, 4.67),
+                (14.55, 5.45),
+                (15.33, 6.62),
+                (15.6, 8.0),
+            ],
+            &[
+                (5.0, 20.5),
+                (5.24, 18.69),
+                (5.94, 17.0),
+                (7.05, 15.55),
+                (8.5, 14.44),
+                (10.19, 13.74),
+                (12.0, 13.5),
+                (13.81, 13.74),
+                (15.5, 14.44),
+                (16.95, 15.55),
+                (18.06, 17.0),
+                (18.76, 18.69),
+                (19.0, 20.5),
+            ],
+        ],
         Emblem::Display => &[
             &[(3., 4.), (21., 4.), (21., 16.), (3., 16.), (3., 4.)],
             &[(12., 16.), (12., 20.)],
@@ -225,6 +424,17 @@ pub(super) fn emblem(
     }
 }
 
+/// An emblem for passive widgets outside the authentication panel.
+pub(super) fn emblem_at(
+    image: &mut RgbImage,
+    at: (f32, f32),
+    scale: f32,
+    kind: Emblem,
+    color: Rgb,
+) {
+    emblem(image, at, scale, kind, color);
+}
+
 /// A static theme-derived wallpaper for the greeter and lock when no image is configured.
 /// Rasterized once per output by the existing background cache.
 pub(super) fn backdrop(
@@ -250,7 +460,8 @@ pub(super) fn backdrop(
             let bend = phase.sin();
             let fold = (phase * 1.34 - 1.6).sin();
             let crest = 0.71 + 0.18 * bend + 0.12 * fold;
-            let hue = mix(brand, palette.accent, (x * 1.13 + 0.10).min(1.));
+            // Stay within the green family: the brand only tints the left edge.
+            let hue = mix(brand, palette.accent, (0.55 + x * 0.6).min(1.));
             (x, crest, 1. + 0.43 * bend, hue)
         })
         .collect();

@@ -8,8 +8,8 @@ polkit-title = Canopa Authorization
 # Window title.
 polkit-window-title = Authentication required
 polkit-heading = Authorize system change
-# Shown in capitals above the heading.
-polkit-eyebrow = SYSTEM AUTHORIZATION
+# Shown below the heading.
+polkit-subtitle = This change needs administrator permission
 polkit-request-details = Request details
 polkit-details-hint = Details · Page Up/Down: page · Enter: back
 polkit-retry = Retry
@@ -35,6 +35,7 @@ polkit-identity-named = { $name } · { $username } (UID { $uid })
 # The process that asked. $pid is a process ID.
 polkit-process = Process { $pid }
 polkit-request-subject = Request subject: Process { $pid }
+polkit-request-subject-named = Request subject: { $name } (process { $pid })
 # $publisher is the vendor of the polkit policy.
 polkit-policy-publisher = Policy publisher: { $publisher }
 # Sample request in rendered previews, standing in for polkit's own text.

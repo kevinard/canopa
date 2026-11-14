@@ -5,8 +5,8 @@
 # Window title and screen-reader name of the lock screen.
 lock-title = Canopa Lock
 lock-heading = Unlock session
-# Shown in capitals above the heading.
-lock-eyebrow = SESSION LOCKED
+# Shown below the person's name.
+lock-subtitle = Session locked
 lock-unlock = Unlock
 lock-try-again = Try again
 lock-starting-authentication = Starting authentication…

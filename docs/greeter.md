@@ -302,9 +302,17 @@ a circular mask using the shared presentation widget. Preview loads only an
 explicitly configured avatar for its selected user, without account discovery.
 `list-users` can include optional `icon_file` metadata but never decodes images.
 
+When accounts are known, the sign-in screen lists up to four of them; the selected
+row is Enter's target and clicking any row signs in as that account, keeping a
+desktop chosen on this screen. Typing replaces the list with a username field, as
+does **Not listed?**; Change account opens the full chooser. Without known accounts
+the screen shows the username field directly. The desktop chooser sits in the
+bottom-left corner and keyboard layout, battery and power in the bottom-right; when
+a layout region occupies those corners, they move into the sign-in column instead.
+
 Enter continues/submits; Escape clears nonempty input, then cancels the transaction;
 Up/Down selects a configured user while entering a username; Tab cycles sessions.
-Clickable User/Session/Continue controls provide the same actions. During a session
+Clickable account rows and Session/Continue controls provide the same actions. During a session
 start, selection is frozen until greetd acknowledges or refuses the handoff.
 Input supports keyboard, pointer and protected AT-SPI actions, with complex-script
 shaping and layout selection; see [shared input](session-tools.md#shared-authentication-input).
@@ -402,12 +410,20 @@ and [session environment keys](https://specifications.freedesktop.org/desktop-en
 The greeter remembers the last successfully started user and that user's desktop
 session ID. It writes only after greetd acknowledges session startup; failed or
 cancelled authentication and refused session launches do not update preferences.
-An explicit `default-user` takes priority over the remembered user. Switching users
+At startup the greeter begins signing in as the remembered user, so the screen
+opens on their password with their desktop selected. If that untouched attempt
+reaches `auth-timeout`, it starts again quietly instead of showing a timeout.
+Escape or **Change account** cancels it and shows the account list; nothing then
+starts by itself. The desktop chooser and power remain available: a desktop
+chosen during the password step applies to that attempt, and power cancels the
+attempt before opening its menu. Tab still cycles desktops by cancelling.
+An explicit `default-user` takes priority over the remembered user and is only
+preselected, never started automatically. Switching users
 recalls each user's last successful desktop when it is still installed. State is
 bounded, mode 0600, and atomically replaced in the greeter account's
 `$XDG_STATE_HOME/canopa/greeter.json` (or `~/.local/state/canopa/greeter.json`).
 No credentials or desktop commands are stored. Invalid/unreadable state uses the
-configured defaults. Set `remember-selection #false` to disable loading/saving.
+configured defaults. Set `remember-selection #false` to disable loading/saving and the automatic start.
 Preview and configuration checks do not read or write this file.
 
 AccountsService signals refresh account names and avatar sources. Local NSS file

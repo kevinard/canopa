@@ -42,6 +42,11 @@ Requests for a new passphrase show a second entry; mismatches restart the pair.
 Caller descriptions, labels, errors and window titles are displayed as plain text;
 underscore accelerator markers are removed from labels. Letter accelerators are
 not bound. Confirmation/message windows have no secret field.
+gpg-agent's `OPTION owner=PID/UID HOST` names the requesting program under the
+heading ("Requested by git"): the client's command name, or for GnuPG's own tools
+the program that ran them. A forwarded agent's PID from another host is ignored.
+The window's height fits the current request and grows when a later step, such
+as a mismatch message, needs more room.
 
 Shared configuration is optional:
 

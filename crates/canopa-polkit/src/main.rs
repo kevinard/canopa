@@ -83,7 +83,11 @@ fn run(cli: Cli) -> Result<()> {
     let (settings, _) = loaded?;
     if let Some(Operation::Preview { output }) = cli.command {
         let controller = canopa_polkit::controller::Controller::preview(&settings)?;
-        let (width, height) = canopa_session_ui::view::AUTHORIZATION_DIALOG_SIZE;
+        let width = canopa_session_ui::view::AUTHORIZATION_DIALOG_SIZE.0;
+        let height = controller.ui.dialog_height(
+            canopa_session_ui::view::DIALOG_MIN_HEIGHT,
+            canopa_session_ui::view::DIALOG_MAX_HEIGHT,
+        );
         controller
             .ui
             .render_dialog(&settings, width, height, 1.)?

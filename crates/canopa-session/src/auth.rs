@@ -364,6 +364,38 @@ impl Drop for Worker {
 pub fn take_text(text: Option<String>) -> Zeroizing<String> {
     Zeroizing::new(text.unwrap_or_default())
 }
+/// The account's full name from the passwd GECOS field, for display only;
+/// authentication always uses [`username`].
+pub fn display_name() -> Option<String> {
+    let mut buffer = vec![0u8; 65536];
+    // SAFETY: as in `username`; pointers are only read after success.
+    unsafe {
+        let mut passwd: libc::passwd = std::mem::zeroed();
+        let mut result = ptr::null_mut();
+        if libc::getpwuid_r(
+            libc::getuid(),
+            &mut passwd,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        ) != 0
+            || result.is_null()
+            || passwd.pw_gecos.is_null()
+        {
+            return None;
+        }
+        let gecos = CStr::from_ptr(passwd.pw_gecos).to_string_lossy();
+        let name: String = gecos
+            .split(',')
+            .next()?
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(64)
+            .collect();
+        let name = name.trim();
+        (!name.is_empty()).then(|| name.to_owned())
+    }
+}
 pub fn preflight() -> Result<String> {
     std::fs::metadata("/etc/pam.d/canopa-lock")
         .context("install the canopa-lock PAM service before locking")?;

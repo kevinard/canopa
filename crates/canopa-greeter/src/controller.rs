@@ -9,7 +9,7 @@ use canopa_session_ui::view::{
 };
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     User,
     Waiting,
@@ -25,6 +25,12 @@ const OPTIONS_PER_PAGE: usize = 3;
 const CLOSE_CHOOSER: usize = 30;
 const PREVIOUS_PAGE: usize = 31;
 const NEXT_PAGE: usize = 32;
+/// Shows the username field in place of the account list.
+pub const ENTER_USERNAME: usize = 5;
+/// Account rows on the sign-in screen: this plus the account's index.
+pub const FIRST_ACCOUNT: usize = 200;
+/// The sign-in screen lists at most this many accounts; the chooser has the rest.
+const LISTED_ACCOUNTS: usize = 4;
 
 #[derive(Clone, Copy)]
 pub enum Choice {
@@ -63,8 +69,16 @@ pub struct Controller {
     session_edited: bool,
     accounts: Vec<Account>,
     user_edited: bool,
+    /// A username is being typed, so the field shows instead of the chosen account.
+    typing: bool,
     /// The status still shows "Starting authentication…".
     starting: bool,
+    /// The startup selection is the remembered last user, not yet signed in as.
+    remembered: bool,
+    /// The current attempt started by itself and nobody has touched it yet.
+    automatic: bool,
+    /// Open the power menu once the current attempt's cancellation completes.
+    power_after_cancel: bool,
 }
 impl Controller {
     pub fn new(config: &Config) -> Result<Self> {
@@ -75,9 +89,9 @@ impl Controller {
         };
         let mut ui = SessionView::new(&config.view, user.clone())?;
         ui.authentication_panel = Some(AuthenticationPanel {
-            height_reserve: 408.,
+            height_reserve: 300.,
             heading: fl!("greeter-sign-in"),
-            eyebrow: "CANOPA".into(),
+            subtitle: String::new(),
             emblem: Emblem::Canopa,
             dialog: false,
             choices: &[(1, Emblem::Accounts), (2, Emblem::Cycle)],
@@ -87,6 +101,7 @@ impl Controller {
             checked_control: None,
             choice_details: Default::default(),
             account: None,
+            confirm_identity: false,
         });
         let mut this = Self {
             ui,
@@ -105,7 +120,11 @@ impl Controller {
             session_edited: false,
             accounts: accounts::merge(&config.users, Vec::new()),
             user_edited: false,
+            typing: false,
             starting: false,
+            remembered: false,
+            automatic: false,
+            power_after_cancel: false,
         };
         this.choose_user(&if config.sessions.is_empty() {
             fl!("greeter-no-sessions-help")
@@ -126,6 +145,7 @@ impl Controller {
         {
             self.user = user.clone();
             self.choose_user("");
+            self.remembered = true;
         }
         self.recall_session();
         self.refresh(config);
@@ -213,6 +233,7 @@ impl Controller {
     }
     fn choose_user(&mut self, message: &str) {
         self.phase = Phase::User;
+        self.typing = false;
         self.starting = false;
         self.ui.secret.clear();
         self.ui.secret.push(&self.user);
@@ -244,7 +265,7 @@ impl Controller {
         (panel.heading, panel.emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
             Some(Choice::Account) => (fl!("greeter-choose-an-account"), Emblem::Accounts),
             Some(Choice::Desktop) => (fl!("greeter-choose-a-desktop"), Emblem::Display),
-            None if self.ui.hide_input => (fl!("greeter-power-options"), Emblem::Canopa),
+            None if self.ui.hide_input => (fl!("greeter-power-options"), Emblem::Power),
             None => (fl!("greeter-sign-in"), Emblem::Canopa),
         };
         if let Some(chooser) = &self.chooser {
@@ -329,11 +350,30 @@ impl Controller {
         self.ui.username = account
             .map(|a| a.display_name.clone())
             .unwrap_or_else(|| displayed_user.to_owned());
+        let known = self.phase != Phase::User || account.is_some();
+        // A chosen account signs in with one action; typing switches to a username.
+        if let Some(panel) = self.ui.authentication_panel.as_mut() {
+            panel.confirm_identity = self.phase == Phase::User && !self.typing && account.is_some();
+        }
         self.ui.set_avatar_initials(
-            (config.avatars_enabled() && self.phase != Phase::User)
+            (config.avatars_enabled() && known && !self.ui.username.is_empty())
                 .then(|| crate::avatars::initials(&self.ui.username)),
         );
-        let (account_label, account_text) = if self.phase == Phase::User && account_is_username {
+        // The form names the account once it is known; otherwise it asks to sign in.
+        if known && !self.ui.username.is_empty() {
+            let name = self.ui.username.clone();
+            panel_heading(&mut self.ui, name);
+        }
+        let chosen = self.phase == Phase::User && !self.typing && account.is_some();
+        let (account_label, account_text) = if chosen {
+            (
+                fl!(
+                    "greeter-change-account-for",
+                    account = chooser_label.as_str()
+                ),
+                fl!("greeter-change-account"),
+            )
+        } else if self.phase == Phase::User && account_is_username {
             (fl!("greeter-choose-account"), fl!("greeter-choose-account"))
         } else if self.phase == Phase::User {
             (
@@ -367,6 +407,7 @@ impl Controller {
             Control::new(
                 3,
                 match self.phase {
+                    Phase::User if !self.typing && account.is_some() => fl!("greeter-sign-in"),
                     Phase::User => fl!("greeter-continue"),
                     Phase::Prompt => fl!("greeter-submit-response"),
                     Phase::Failed => fl!("greeter-retry"),
@@ -379,13 +420,61 @@ impl Controller {
         if self.phase == Phase::User && self.accounts.is_empty() {
             self.ui.controls.retain(|control| control.id != 1);
         }
+        if chosen {
+            let current_user = account.map(|a| a.username.clone());
+            // The account list: Enter or a row signs in; typing enters a username.
+            let current = self
+                .accounts
+                .iter()
+                .position(|a| Some(a.username.as_str()) == current_user.as_deref())
+                .unwrap_or(0);
+            let start = current
+                .saturating_sub(LISTED_ACCOUNTS - 1)
+                .min(self.accounts.len().saturating_sub(LISTED_ACCOUNTS));
+            let rows = self
+                .accounts
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(LISTED_ACCOUNTS)
+                .map(|(index, account)| {
+                    let label = account.chooser_label();
+                    let mut control = Control::new(
+                        FIRST_ACCOUNT + index,
+                        fl!("greeter-sign-in-as", account = label.as_str()),
+                    )
+                    .with_kind(ControlKind::Account {
+                        name: account.display_name.clone(),
+                        detail: (account.display_name != account.username)
+                            .then(|| account.username.clone()),
+                        initials: crate::avatars::initials(&account.display_name),
+                    });
+                    control.selected = index == current;
+                    control
+                });
+            let mut controls: Vec<_> = rows.collect();
+            controls.push(
+                Control::new(ENTER_USERNAME, fl!("greeter-not-listed")).with_kind(
+                    ControlKind::AccountChooser {
+                        text: fl!("greeter-not-listed"),
+                    },
+                ),
+            );
+            self.ui.controls.retain(|control| control.id == 2);
+            controls.append(&mut self.ui.controls);
+            self.ui.controls = controls;
+            self.ui.primary_control = None;
+        }
         if config.power_controls
-            && matches!(self.phase, Phase::User | Phase::Failed)
+            && matches!(
+                self.phase,
+                Phase::User | Phase::Failed | Phase::Waiting | Phase::Prompt
+            )
             && (self.power_capabilities.shutdown || self.power_capabilities.restart)
         {
             self.ui
                 .controls
-                .push(Control::new(20, fl!("greeter-power-control")));
+                .push(Control::new(20, fl!("greeter-power-control")).with_kind(ControlKind::Power));
         }
     }
     pub fn avatar_request(&self, config: &Config) -> (String, Vec<std::path::PathBuf>) {
@@ -444,6 +533,7 @@ impl Controller {
             Phase::Prompt => {
                 self.phase = Phase::Waiting;
                 self.ui.prompt = None;
+                self.ui.busy = true;
                 Some(Command::Answer {
                     generation: self.generation,
                     answer: std::mem::take(&mut self.ui.secret),
@@ -453,6 +543,8 @@ impl Controller {
         }
     }
     pub fn cancel(&mut self) -> Option<Command> {
+        // A person cancelled: an automatic attempt does not restart itself.
+        self.automatic = false;
         match self.phase {
             Phase::Starting | Phase::Done | Phase::Fatal | Phase::Canceling => None,
             Phase::User | Phase::Failed => {
@@ -528,9 +620,14 @@ impl Controller {
     }
 
     pub fn open_chooser(&mut self, kind: Choice) {
-        if self.phase != Phase::User || self.power_menu != crate::power::Menu::Closed {
+        // The desktop can also be changed while a password is asked for.
+        let desktop_during_prompt = matches!(kind, Choice::Desktop) && self.phase == Phase::Prompt;
+        if (self.phase != Phase::User && !desktop_during_prompt)
+            || self.power_menu != crate::power::Menu::Closed
+        {
             return;
         }
+        self.automatic = false;
         let (options, current) = match kind {
             Choice::Account => (
                 self.accounts
@@ -601,7 +698,11 @@ impl Controller {
             NEXT_PAGE => {
                 chooser.selected = (start + OPTIONS_PER_PAGE).min(chooser.options.len() - 1)
             }
-            id if id >= FIRST_OPTION && self.phase == Phase::User => {
+            id if id >= FIRST_OPTION
+                && (self.phase == Phase::User
+                    || (self.phase == Phase::Prompt
+                        && matches!(chooser.kind, Choice::Desktop))) =>
+            {
                 let Some(option) = chooser.options.get(id - FIRST_OPTION) else {
                     return;
                 };
@@ -622,11 +723,70 @@ impl Controller {
                     (Choice::Desktop, Some(index)) => {
                         self.session = index;
                         self.session_edited = true;
+                        // Chosen during the password step: this attempt starts it.
+                        if self.phase == Phase::Prompt {
+                            self.auth_session = self.sessions.get(index).cloned();
+                        }
                     }
                     _ => self.ui.message = fl!("greeter-choice-unavailable"),
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Begin signing in as the remembered last user, once, so the screen opens
+    /// on their password. Returns nothing when there is no remembered user.
+    pub fn start_remembered(&mut self) -> Option<Command> {
+        if !std::mem::take(&mut self.remembered)
+            || self.phase != Phase::User
+            || self.typing
+            || self.power_menu != crate::power::Menu::Closed
+            || self.chooser.is_some()
+        {
+            return None;
+        }
+        let command = self.submit();
+        self.automatic = command.is_some();
+        command
+    }
+
+    /// The power control during the password step: cancel the attempt, then
+    /// open the power menu.
+    pub fn power_from_prompt(&mut self) -> Option<Command> {
+        if !matches!(self.phase, Phase::Waiting | Phase::Prompt) {
+            return None;
+        }
+        let command = self.cancel();
+        self.power_after_cancel = command.is_some();
+        command
+    }
+
+    /// Sign in as a listed account: choose it and begin authentication.
+    pub fn sign_in_as(&mut self, index: usize) -> Option<Command> {
+        if self.phase != Phase::User
+            || self.power_menu != crate::power::Menu::Closed
+            || index >= self.accounts.len()
+        {
+            return None;
+        }
+        // A desktop chosen on this screen applies to the account signed in as.
+        let chosen = self.session_edited.then_some(self.session);
+        self.pick_account(index);
+        if let Some(session) = chosen {
+            self.session = session;
+            self.session_edited = true;
+        }
+        self.submit()
+    }
+
+    /// Replace the account list with an empty username field.
+    pub fn enter_username(&mut self) {
+        if self.phase == Phase::User && self.power_menu == crate::power::Menu::Closed {
+            self.user_edited = true;
+            self.user.clear();
+            self.choose_user("");
+            self.typing = true;
         }
     }
 
@@ -644,15 +804,23 @@ impl Controller {
         }
     }
     pub fn clear_input(&mut self) {
+        self.automatic = false;
         if self.phase == Phase::User {
             self.user_edited = true;
+            self.typing = true;
         }
         self.ui.secret.clear();
     }
     pub fn input(&mut self, text: &str) {
+        self.automatic = false;
         if matches!(self.phase, Phase::User | Phase::Prompt) {
             if self.phase == Phase::User && !text.is_empty() {
                 self.user_edited = true;
+                // Typing over a chosen account starts a new username.
+                if !self.typing {
+                    self.ui.secret.clear();
+                    self.typing = true;
+                }
             }
             self.ui.secret.push(text);
         }
@@ -661,9 +829,11 @@ impl Controller {
         self.edit(canopa_session_ui::secret::Edit::Backspace);
     }
     pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
+        self.automatic = false;
         if matches!(self.phase, Phase::User | Phase::Prompt) {
             if self.phase == Phase::User {
                 self.user_edited = true;
+                self.typing = true;
             }
             self.ui.secret.edit(edit);
         }
@@ -690,6 +860,7 @@ impl Controller {
                     echo,
                 });
                 self.phase = Phase::Prompt;
+                self.ui.busy = false;
                 if starting {
                     self.ui.message.clear();
                 }
@@ -718,7 +889,22 @@ impl Controller {
                     self.preferences.record_success(&self.user, &session.id);
                 }
             }
-            Kind::Cancelled(message) => self.choose_user(&message),
+            Kind::Cancelled(message) => {
+                let restart = self.automatic && !self.power_after_cancel;
+                self.automatic = false;
+                if std::mem::take(&mut self.power_after_cancel) {
+                    self.choose_user("");
+                    self.power_action(20);
+                } else if restart {
+                    // Nobody is at the screen: ask again rather than show a timeout.
+                    self.choose_user("");
+                    let command = self.submit();
+                    self.automatic = command.is_some();
+                    return command;
+                } else {
+                    self.choose_user(&message);
+                }
+            }
             Kind::Failed(message) => {
                 self.retry_after =
                     Instant::now() + Duration::from_secs(2).saturating_sub(self.started.elapsed());
@@ -732,6 +918,11 @@ impl Controller {
             _ => {}
         }
         None
+    }
+}
+fn panel_heading(ui: &mut SessionView, heading: String) {
+    if let Some(panel) = ui.authentication_panel.as_mut() {
+        panel.heading = heading;
     }
 }
 #[cfg(test)]
@@ -828,21 +1019,44 @@ mod tests {
         let _french = crate::i18n::French::select();
         let config = configured();
         let mut c = Controller::new(&config).unwrap();
-        c.apply_accounts(&config, vec![alice()]);
         c.refresh(&config);
         let panel = c.ui.authentication_panel.as_ref().unwrap();
         assert_eq!(panel.heading, "Se connecter");
+        // A known account is named; the field still holds its username.
+        c.apply_accounts(&config, vec![alice()]);
+        c.refresh(&config);
+        let panel = c.ui.authentication_panel.as_ref().unwrap();
+        assert_eq!(panel.heading, "Alice Example");
+        assert_eq!(c.ui.secret.text(), "alice");
         assert_eq!(
             c.ui.prompt.as_ref().unwrap().text,
             "Nom d\u{2019}utilisateur\u{a0}:"
         );
-        assert_eq!(c.ui.controls[1].label, "Bureau\u{a0}: Test");
+        // The account list: rows that sign in, manual entry, then the desktop.
         assert_eq!(
-            c.ui.controls[1].kind,
+            c.ui.controls[0].label,
+            "Se connecter en tant que Alice Example (alice)"
+        );
+        assert!(c.ui.controls[0].selected);
+        assert!(matches!(
+            &c.ui.controls[0].kind,
+            ControlKind::Account { name, detail: Some(detail), initials }
+                if name == "Alice Example" && detail == "alice" && initials == "AE"
+        ));
+        assert!(matches!(
+            &c.ui.controls[1].kind,
+            ControlKind::AccountChooser { text } if text == "Compte absent\u{a0}?"
+        ));
+        assert_eq!(c.ui.controls[2].label, "Bureau\u{a0}: Test");
+        assert_eq!(
+            c.ui.controls[2].kind,
             ControlKind::DesktopChooser {
                 session: "Test".into()
             }
         );
+        // Typing a username shows the field and the account chooser link.
+        c.input("b");
+        c.refresh(&config);
         assert!(matches!(
             &c.ui.controls[0].kind,
             ControlKind::AccountChooser { text } if text == "Choisir un compte"
@@ -853,6 +1067,195 @@ mod tests {
         assert_eq!(back.kind, ControlKind::Back);
         assert_eq!(back.label, "Retour à la connexion");
         assert!(c.ui.controls[0].selected);
+    }
+    #[test]
+    fn a_chosen_account_signs_in_with_one_action_and_typing_starts_a_new_username() {
+        let config = configured();
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_accounts(&config, vec![alice()]);
+        c.refresh(&config);
+        let confirming =
+            |c: &Controller| c.ui.authentication_panel.as_ref().unwrap().confirm_identity;
+        assert!(confirming(&c));
+        assert_eq!(c.ui.secret.text(), "alice");
+        // Typing replaces the chosen account's username and shows the field.
+        c.input("b");
+        c.refresh(&config);
+        assert!(!confirming(&c));
+        assert_eq!(c.ui.secret.text(), "b");
+        c.input("ob");
+        assert_eq!(c.ui.secret.text(), "bob");
+        // Choosing the account again returns to the one-action sign-in.
+        c.user_next(false);
+        c.refresh(&config);
+        assert!(confirming(&c));
+        assert_eq!(c.ui.secret.text(), "alice");
+        assert!(matches!(c.submit(), Some(Command::Begin { user, .. }) if user == "alice"));
+    }
+    #[test]
+    fn listed_accounts_sign_in_directly_and_manual_entry_starts_empty() {
+        let mut config = configured();
+        let mut other = config.sessions[0].clone();
+        other.id = "other".into();
+        config.sessions.push(other);
+        let bob = Account {
+            username: "bob".into(),
+            display_name: "Bob Example".into(),
+            uid: Some(1001),
+            icon_file: None,
+        };
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_accounts(&config, vec![alice(), bob]);
+        c.refresh(&config);
+        // An explicitly chosen desktop survives signing in from a row.
+        c.session_next(&config);
+        let desktop = c.session;
+        assert_eq!(desktop, 1);
+        assert!(matches!(c.sign_in_as(1), Some(Command::Begin { user, .. }) if user == "bob"));
+        assert_eq!(c.session, desktop);
+        assert!(
+            c.sign_in_as(0).is_none(),
+            "an attempt is already in progress"
+        );
+        let mut c = Controller::new(&config).unwrap();
+        c.apply_accounts(&config, vec![alice()]);
+        c.refresh(&config);
+        assert!(c.sign_in_as(5).is_none());
+        c.enter_username();
+        c.refresh(&config);
+        assert!(c.ui.secret.is_empty());
+        assert!(!c.ui.authentication_panel.as_ref().unwrap().confirm_identity);
+        assert!(
+            c.ui.controls
+                .iter()
+                .all(|control| !matches!(control.kind, ControlKind::Account { .. }))
+        );
+    }
+    fn remembered(config: &Config) -> Controller {
+        let mut preferences = crate::preferences::Preferences::default();
+        preferences.record_success("bob", "other");
+        let mut c = Controller::new(config).unwrap();
+        c.apply_preferences(config, preferences);
+        c
+    }
+    fn two_desktops() -> Config {
+        let mut config = configured();
+        let mut other = config.sessions[0].clone();
+        other.id = "other".into();
+        config.sessions.push(other);
+        config
+    }
+    fn prompt(c: &mut Controller, config: &Config) {
+        let generation = c.generation;
+        c.event(
+            Event {
+                generation,
+                kind: Kind::Prompt {
+                    text: "Password:".into(),
+                    echo: false,
+                },
+            },
+            config,
+        );
+    }
+    fn cancelled(c: &mut Controller, config: &Config) -> Option<Command> {
+        let generation = c.generation;
+        c.event(
+            Event {
+                generation,
+                kind: Kind::Cancelled("Authentication timed out".into()),
+            },
+            config,
+        )
+    }
+    #[test]
+    fn a_remembered_user_opens_on_their_password_once() {
+        let config = two_desktops();
+        let mut c = remembered(&config);
+        assert!(matches!(c.start_remembered(), Some(Command::Begin { user, .. }) if user == "bob"));
+        assert!(c.start_remembered().is_none(), "only once per startup");
+        prompt(&mut c, &config);
+        // Escape returns to the account list and nothing starts by itself again.
+        assert!(matches!(c.cancel(), Some(Command::Cancel { .. })));
+        assert!(cancelled(&mut c, &config).is_none());
+        assert_eq!(c.phase, Phase::User);
+        assert!(c.start_remembered().is_none());
+        // No remembered user, or an administrator's default user: no automatic start.
+        assert!(
+            Controller::new(&config)
+                .unwrap()
+                .start_remembered()
+                .is_none()
+        );
+        let mut fixed = config.clone();
+        fixed.default_user = "alice".into();
+        assert!(remembered(&fixed).start_remembered().is_none());
+    }
+    #[test]
+    fn an_untouched_automatic_attempt_restarts_quietly_but_a_touched_one_does_not() {
+        let config = two_desktops();
+        let mut c = remembered(&config);
+        c.start_remembered();
+        prompt(&mut c, &config);
+        let first = c.generation;
+        // The greetd deadline passed with nobody at the screen.
+        let restart = cancelled(&mut c, &config);
+        assert!(
+            matches!(restart, Some(Command::Begin { user, generation }) if user == "bob" && generation > first)
+        );
+        assert_ne!(c.ui.message, "Authentication timed out");
+        assert!(!c.ui.failed);
+        prompt(&mut c, &config);
+        c.input("x");
+        assert!(cancelled(&mut c, &config).is_none());
+        assert_eq!(c.ui.message, "Authentication timed out");
+        assert_eq!(c.phase, Phase::User);
+    }
+    #[test]
+    fn power_and_desktop_stay_available_during_the_password_step() {
+        let config = two_desktops();
+        let mut c = remembered(&config);
+        c.power_capabilities = crate::power::Capabilities {
+            shutdown: true,
+            restart: true,
+        };
+        c.start_remembered();
+        prompt(&mut c, &config);
+        c.refresh(&config);
+        assert!(c.ui.controls.iter().any(|control| control.id == 20));
+        // The desktop chooser applies to this attempt without cancelling it.
+        c.open_chooser(Choice::Desktop);
+        assert!(c.choosing());
+        c.chooser_action(FIRST_OPTION);
+        assert_eq!(c.phase, Phase::Prompt);
+        c.input("password");
+        assert!(matches!(c.submit(), Some(Command::Answer { .. })));
+        let generation = c.generation;
+        let commit = c.event(
+            Event {
+                generation,
+                kind: Kind::Authenticated,
+            },
+            &config,
+        );
+        assert!(matches!(commit, Some(Command::Commit { session, .. }) if session.id == "test"));
+        // Power cancels the attempt first, then opens its menu.
+        let mut c = remembered(&config);
+        c.power_capabilities = crate::power::Capabilities {
+            shutdown: true,
+            restart: true,
+        };
+        c.start_remembered();
+        prompt(&mut c, &config);
+        assert!(matches!(
+            c.power_from_prompt(),
+            Some(Command::Cancel { .. })
+        ));
+        assert!(
+            cancelled(&mut c, &config).is_none(),
+            "no restart after a person acted"
+        );
+        assert!(matches!(c.power_menu, crate::power::Menu::Choose(_)));
     }
     fn configured() -> Config {
         let (mut config, _) = Config::load(&canopa_config::Request::Defaults).unwrap();

@@ -80,7 +80,11 @@ schema validation need no compositor, logind, polkit connection or credentials.
 Preview uses a sample request and performs no authentication.
 
 Each dialog shows the request description, canonical action ID and the account
-being authenticated. Only the supplied `unix-user` identities can be selected;
+being authenticated. "Requested by" names the requesting program: the display
+name of the desktop entry whose program matches its command line, else that
+program's name. The process chooses its own name, so this is context, not proof
+of identity; Policy details lists the process ID. The window's height fits the
+current step and grows when a later step needs more room. Only the supplied `unix-user` identities can be selected;
 there is no arbitrary username entry. Root is labeled `root`, the current UID as
 “Your account”, and other identities by UID. Tab cycles accounts while entering a
 response or after a failed attempt; switching clears the response and starts a

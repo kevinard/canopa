@@ -30,6 +30,7 @@ pub fn load(request: &Request) -> Result<(Settings, Document)> {
         "action".into(),
         "account".into(),
         "subject-process".into(),
+        "subject-name".into(),
         "policy-publisher".into(),
         "request-title".into(),
     ];
@@ -43,6 +44,7 @@ pub fn load(request: &Request) -> Result<(Settings, Document)> {
                 "action".into(),
                 "account".into(),
                 "subject-process".into(),
+                "subject-name".into(),
                 "policy-publisher".into(),
                 "request-title".into(),
                 "authentication".into(),

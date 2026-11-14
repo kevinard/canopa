@@ -88,14 +88,19 @@ fn run(cli: Cli) -> Result<i32> {
         let controller = canopa_pinentry::controller::Controller::new(
             &settings,
             canopa_pinentry::protocol::Request {
-                title: "Alex Morgan · OpenPGP signing key".into(),
+                title: "Alex Morgan · alex@example.org · Ed25519 OpenPGP key".into(),
                 description: "Fingerprint\n3CE7 7DD6 4F0A 2C50 27D5 45F4 C6C4 1BA5 2B00 921E"
                     .into(),
                 ok: "Unlock key".into(),
+                requester: Some("git".into()),
                 ..Default::default()
             },
         )?;
-        let (width, height) = canopa_session_ui::view::DIALOG_SIZE;
+        let width = canopa_session_ui::view::DIALOG_SIZE.0;
+        let height = controller.ui.dialog_height(
+            canopa_session_ui::view::DIALOG_MIN_HEIGHT,
+            canopa_session_ui::view::DIALOG_MAX_HEIGHT,
+        );
         controller
             .ui
             .render_dialog(&settings, width, height, 1.)?

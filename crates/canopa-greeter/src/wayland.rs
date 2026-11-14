@@ -197,6 +197,11 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         ready_socket,
         frame_requested: false,
     };
+    // A remembered user opens straight onto their password; the worker sends
+    // this after resetting greetd, so it follows the startup cancellation.
+    let command = app.controller.start_remembered();
+    app.send(command);
+    app.controller.refresh(&app.config);
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
         &fl!("greeter-title"),
@@ -372,8 +377,22 @@ impl App {
         }
     }
     fn action(&mut self, id: usize) {
+        if id == canopa_session_ui::input::REVEAL_CONTROL {
+            self.controller.ui.toggle_reveal();
+            self.dirty = true;
+            return;
+        }
         if self.controller.choosing() && id != canopa_session_ui::input::LAYOUT_CONTROL {
             self.controller.chooser_action(id);
+            self.dirty = true;
+            return;
+        }
+        if id == 20
+            && self.config.power_controls
+            && matches!(self.controller.phase, Phase::Waiting | Phase::Prompt)
+        {
+            let command = self.controller.power_from_prompt();
+            self.send(command);
             self.dirty = true;
             return;
         }
@@ -405,13 +424,20 @@ impl App {
                     self.controller.cancel()
                 }
             }
-            2 if self.controller.phase == Phase::User => {
+            2 if matches!(self.controller.phase, Phase::User | Phase::Prompt) => {
                 self.controller
                     .open_chooser(crate::controller::Choice::Desktop);
                 None
             }
             2 => self.controller.session_next(&self.config),
             3 => self.controller.submit(),
+            crate::controller::ENTER_USERNAME => {
+                self.controller.enter_username();
+                None
+            }
+            id if id >= crate::controller::FIRST_ACCOUNT => self
+                .controller
+                .sign_in_as(id - crate::controller::FIRST_ACCOUNT),
             _ => None,
         };
         self.send(command);

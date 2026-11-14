@@ -391,7 +391,8 @@ pub fn lock(
             eprintln!("lock wallpaper unavailable; using the theme background");
         }
     }
-    let mut ui = LockUi::new(&settings, username)?;
+    // The lock shows the person's full name; PAM uses the login name.
+    let mut ui = LockUi::new(&settings, auth::display_name().unwrap_or(username))?;
     crate::lock_ui::configure(&mut ui);
     let ready = if let Some(fd) = ready_fd {
         ensure!(
@@ -1183,6 +1184,10 @@ impl App {
             self.input.cycle();
             if let Some(ui) = &mut self.ui {
                 ui.layout = self.input.label();
+            }
+        } else if id == canopa_session_ui::input::REVEAL_CONTROL {
+            if let Some(ui) = &mut self.ui {
+                ui.toggle_reveal();
             }
         } else if self.confirmed
             && self

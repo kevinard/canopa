@@ -90,7 +90,7 @@ impl Settings {
             dim: 65,
             avatar: None,
             weather_file: None,
-            clock_size: 80,
+            clock_size: 72,
             text_size: 19,
             use_wallpaper: true,
             auth_timeout: 120,
@@ -130,8 +130,9 @@ impl Settings {
             value.use_wallpaper = false;
         }
         if component == Component::Lockscreen {
+            // The same geometry as the login screen, so locking and signing in match.
+            value.layout.margin = 42.;
             value.layout.gap = 18.;
-            value.layout.regions[0].y = 16.;
             value.layout.regions[0].widgets.push("keyboard".into());
             value.layout.regions[1]
                 .widgets

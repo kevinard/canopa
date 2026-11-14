@@ -7,7 +7,7 @@
 polkit-title = Autorisation Canopa
 polkit-window-title = Authentification requise
 polkit-heading = Autoriser une modification du système
-polkit-eyebrow = AUTORISATION SYSTÈME
+polkit-subtitle = Cette modification nécessite l’autorisation d’un administrateur
 polkit-request-details = Détails de la demande
 polkit-details-hint = Détails · Page préc./suiv. : page · Entrée : retour
 polkit-retry = Réessayer
@@ -28,6 +28,7 @@ polkit-identity = { $username } (UID { $uid })
 polkit-identity-named = { $name } · { $username } (UID { $uid })
 polkit-process = Processus { $pid }
 polkit-request-subject = Objet de la demande : processus { $pid }
+polkit-request-subject-named = Objet de la demande : { $name } (processus { $pid })
 polkit-policy-publisher = Éditeur de la règle : { $publisher }
 polkit-preview-message = Modifier les serveurs DNS
 polkit-preview-prompt = Mot de passe :

@@ -10,7 +10,11 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
-use canopa_session_ui::{layout::Rect, settings::Settings, view::AUTHORIZATION_DIALOG_SIZE};
+use canopa_session_ui::{
+    layout::Rect,
+    settings::Settings,
+    view::{AUTHORIZATION_DIALOG_SIZE, DIALOG_MAX_HEIGHT, DIALOG_MIN_HEIGHT},
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     output::{OutputHandler, OutputState},
@@ -63,6 +67,8 @@ struct App {
     settings: Settings,
     width: u32,
     height: u32,
+    /// The logical height last asked of the compositor; it grows within a request.
+    requested: u32,
     scale: i32,
     dirty: bool,
     exit: bool,
@@ -128,6 +134,7 @@ pub fn run(settings: Settings, session: &str, notify: Option<PathBuf>) -> Result
         settings,
         width: AUTHORIZATION_DIALOG_SIZE.0,
         height: AUTHORIZATION_DIALOG_SIZE.1,
+        requested: AUTHORIZATION_DIALOG_SIZE.1,
         scale: 1,
         dirty: false,
         exit: false,
@@ -302,6 +309,14 @@ impl App {
             }
             event => {
                 let begin = matches!(event, AuthEvent::Begin { .. });
+                let subject = match &event {
+                    AuthEvent::Begin {
+                        generation,
+                        subject_pid: Some(pid),
+                        ..
+                    } => Some((*generation, crate::controller::process_name(*pid))),
+                    _ => None,
+                };
                 if begin {
                     self.remove_watchdog();
                     if self.controller.is_none() {
@@ -315,19 +330,32 @@ impl App {
                         );
                         window.set_app_id("org.canopa.Polkit");
                         window.set_title(fl!("polkit-window-title"));
-                        window.set_min_size(Some(AUTHORIZATION_DIALOG_SIZE));
-                        window.set_max_size(Some(AUTHORIZATION_DIALOG_SIZE));
-                        window.commit();
                         self.window = Some(window);
                         self.configured = false;
                         self.focused = false;
                         self.width = AUTHORIZATION_DIALOG_SIZE.0;
-                        self.height = AUTHORIZATION_DIALOG_SIZE.1;
+                        self.requested = 0;
                         self.scale = 1;
                     }
                 }
                 if let Some(c) = &mut self.controller {
                     c.event(event);
+                    if let Some((generation, name)) = subject {
+                        c.subject_name(generation, name);
+                    }
+                }
+                if begin
+                    && self.requested == 0
+                    && let (Some(window), Some(c)) = (&self.window, &mut self.controller)
+                {
+                    // The new window fits the request; it grows if a later step needs room.
+                    c.refresh();
+                    let height = c.ui.dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT);
+                    window.set_min_size(Some((AUTHORIZATION_DIALOG_SIZE.0, height)));
+                    window.set_max_size(Some((AUTHORIZATION_DIALOG_SIZE.0, height)));
+                    window.commit();
+                    self.height = height;
+                    self.requested = height;
                 }
                 if begin {
                     let generation = self.controller.as_ref().unwrap().generation;
@@ -375,6 +403,13 @@ impl App {
     fn action(&mut self, id: usize) {
         if id == canopa_session_ui::input::LAYOUT_CONTROL {
             self.input.cycle();
+            self.dirty = true;
+            return;
+        }
+        if id == canopa_session_ui::input::REVEAL_CONTROL {
+            if let Some(c) = &mut self.controller {
+                c.ui.toggle_reveal();
+            }
             self.dirty = true;
             return;
         }
@@ -483,6 +518,17 @@ impl App {
         if let Some(a) = &mut self.accessibility {
             a.update(&fl!("polkit-title"), &c.ui, &self.settings, self.focused);
         }
+        let desired = c.ui.dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT);
+        if desired > self.requested
+            && let Some(window) = &self.window
+        {
+            // Grow with this frame: compositors need not configure a mapped
+            // floating window again after its size limits change.
+            self.requested = desired;
+            self.height = self.height.max(desired);
+            window.set_min_size(Some((AUTHORIZATION_DIALOG_SIZE.0, desired)));
+            window.set_max_size(Some((AUTHORIZATION_DIALOG_SIZE.0, desired)));
+        }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
         let (image, hits) =
@@ -542,8 +588,10 @@ impl WindowHandler for App {
         self.height = c
             .new_size
             .1
-            .map(|v| v.get())
-            .unwrap_or(AUTHORIZATION_DIALOG_SIZE.1);
+            .map_or(self.requested, |v| v.get())
+            // Never below the content height asked for: that would clip the footer.
+            .max(self.requested)
+            .max(DIALOG_MIN_HEIGHT);
         self.configured = true;
         self.dirty = true;
     }

@@ -116,29 +116,30 @@ greeter {{
     def no_handoff(after):assert not event('handoff',after),'unauthorized session handoff'
 
     app,before=start('otp')
-    def controls():
+    def selected_row():
         image=session.capture('startup.png')
         w,h=image.size
-        # Find the button fill across a strip inside the left selector.
-        # Sampling a strip lets labels and the pointer interrupt individual pixels.
-        scale=min(w/1280,h/800)
-        columns=range(round(w/2-156*scale),round(w/2-34*scale),4)
-        def center(color, columns, area):
-            rows=[y for y in area if sum(image.getpixel((x,y))==color for x in columns)>len(columns)//2]
-            if len(rows)>=20:return rows[len(rows)//2]
-        desktop_columns=range(round(w/2+34*scale),round(w/2+156*scale),4)
-        primary=center((176,222,195),columns,range(h))
-        if primary is None:return None
-        desktop=center((40,55,59),desktop_columns,range(primary))
-        if desktop is not None:
-            return tuple(round(y/h*1000) for y in (desktop,primary))
-    choices,primary=wait(controls,'authentication controls presented')
-    for name,x in [('account',680),('desktop',920)]:
-        session.run([str(click),str(x),str(choices)])
-        time.sleep(.2)
-        session.capture(name+'-chooser.png')
-        key('Down');key('Return');time.sleep(.2)
-    session.run([str(click),'800',str(primary)])
+        # The selected account row carries the only accent-filled submit button.
+        pixels=image.load()
+        points=[(x,y) for y in range(0,h,2) for x in range(0,w,2) if pixels[x,y][:3]==(176,222,195)]
+        if len(points)<100:return None
+        ys=sorted(y for _,y in points)
+        return w,h,ys[len(ys)//2]
+    w,h,selected=wait(selected_row,'account list presented')
+    scale=min(w/1280,h/800)
+    # The desktop chooser by its accessible action, then the pointer on Bob's row.
+    a11y.request(session,'--window','Canopa Login','--name','Desktop: Canopa','--click')
+    time.sleep(.2)
+    session.capture('desktop-chooser.png')
+    key('Down');key('Return')
+    # Back on the account list, whose manual-entry action only it exposes.
+    def listed():
+        try:return a11y.request(session,'--window','Canopa Login','--name','Not listed?')
+        except RuntimeError:return None
+    wait(listed,'account list after choosing a desktop')
+    w,h,selected=wait(selected_row,'selected account row')
+    # The click fixture spans 1600x1000 units: 800 is the horizontal centre.
+    session.run([str(click),'800',str(round((selected+86*scale)/h*1000))])
     prompt('Password:',before)
     assert event('begin',before,user='bob')
     answer('wrong');time.sleep(2.3);no_handoff(before);assert app.poll() is None;assert event('failed-worker-cleanup',before)
@@ -205,9 +206,17 @@ greeter {{
         assert not Path('/proc/'+line.split()[0]).exists(),'NSS helper was not reaped'
     (session.output/'nss-events').write_text(nss_events)
     config.write_text(configured)
+    # A remembered user opens straight onto their password and desktop.
+    state=root/'state';(state/'canopa').mkdir(parents=True,mode=0o700);state.chmod(0o700)
+    saved=state/'canopa'/'greeter.json';saved.write_text(json.dumps({'last_user':'bob','sessions':{'bob':'other'}}));saved.chmod(0o600)
+    config.write_text(configured.replace('remember-selection #false','remember-selection #true'));session.env['XDG_STATE_HOME']=str(state)
+    app,before=start('remembered','password');prompt('Password:',before);assert event('begin',before,user='bob')
+    session.capture('remembered.png');answer('canopa-fixture-password');done(app)
+    handoff=event('handoff',before);assert handoff['user']=='bob' and handoff['cmd']==['/usr/bin/true','arg with spaces']
+    session.env.pop('XDG_STATE_HOME');config.write_text(configured)
     empty=root/'empty-sessions';empty.mkdir();config.write_text(configured.replace(str(sessions),str(empty)))
     app,before=start('no-sessions','password');key('Return');time.sleep(.5);no_handoff(before);assert not event('begin',before);assert app.poll() is None;session.retire(app)
-    result=dict(status='passed',compositor=compositor,checks=['AccountsService avatars follow selection and password prompts','per-user avatar override takes priority','avatar directory works with NSS','disabled avatars leave login available','NSS username selection and labels','automatic NSS fallback after service denial','NSS timeout keeps manual authentication available and reaps helpers','AccountsService cached user filtering and labels','AccountsService-only username selection','late account metadata preserves manual username','AccountsService timeout keeps manual authentication available','installed desktop session discovery','empty catalog stays in greeter','command-free preview','fullscreen software rendering','configured user selection','pointer selection and submit','keyboard user/session selection','manual username entry','held Backspace edits username','session selection and argv/environment boundaries','fresh password and visible OTP prompts','failed authentication retry','authenticated exit/handoff','custom widget environment and cleanup','hardware cue','cancel in-flight PAM and drain late success','fresh authentication after cancellation','fingerprint-style no-password authentication','bounded transaction timeout','retry after timeout','oversized protocol rejection','disconnect fails closed','failed session launch stays in greeter','unacknowledged cancellation fails closed'])
+    result=dict(status='passed',compositor=compositor,checks=['AccountsService avatars follow selection and password prompts','per-user avatar override takes priority','avatar directory works with NSS','disabled avatars leave login available','NSS username selection and labels','automatic NSS fallback after service denial','NSS timeout keeps manual authentication available and reaps helpers','AccountsService cached user filtering and labels','AccountsService-only username selection','late account metadata preserves manual username','AccountsService timeout keeps manual authentication available','installed desktop session discovery','empty catalog stays in greeter','command-free preview','fullscreen software rendering','configured user selection','pointer account selection and submit','keyboard user/session selection','manual username entry','held Backspace edits username','session selection and argv/environment boundaries','fresh password and visible OTP prompts','failed authentication retry','authenticated exit/handoff','custom widget environment and cleanup','hardware cue','cancel in-flight PAM and drain late success','fresh authentication after cancellation','fingerprint-style no-password authentication','bounded transaction timeout','retry after timeout','oversized protocol rejection','disconnect fails closed','failed session launch stays in greeter','remembered user opens on their password and desktop','unacknowledged cancellation fails closed'])
     (session.output/'summary.json').write_text(json.dumps(result,indent=2)+'\n');(session.output/'greetd-events.json').write_text(json.dumps(events(),indent=2));print(json.dumps(result,indent=2))
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--binary',type=Path,default=ROOT/'target/debug/canopa-greeter');p.add_argument('--output',type=Path,default=ROOT/'.scratch/greeter/evidence');p.add_argument('--cage',type=Path,help='Compatibility alias for --compositor cage --compositor-bin PATH');p.add_argument('--compositor',choices=['direct','cage','weston'],default='direct');p.add_argument('--compositor-bin',type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)

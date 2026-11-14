@@ -9,7 +9,7 @@ crates/canopa-services/src/upower.rs: "Vendor"  # UPower D-Bus property name rea
 crates/canopa-services/src/upower.rs: "Model"  # UPower D-Bus property name read by a local `text` closure
 crates/canopa-services/src/testing/*.rs: *  # fake services for consumers' tests (feature test-support), never shown to people
 crates/canopa-greeter/src/config.rs: "X11 wrapper"  # label of a throwaway Session built only to validate the configured x11-wrapper argv; never shown
-crates/canopa-pinentry/src/main.rs: "Alex Morgan · OpenPGP signing key"  # preview sample standing in for GnuPG's own SETTITLE text, which is shown as sent
+crates/canopa-pinentry/src/main.rs: "Alex Morgan · alex@example.org · Ed25519 OpenPGP key"  # preview sample standing in for GnuPG's own SETTITLE text, which is shown as sent
 crates/canopa-pinentry/src/main.rs: "Fingerprint\n3CE7 7DD6 4F0A 2C50 27D5 45F4 C6C4 1BA5 2B00 921E"  # preview sample of GnuPG's SETDESC key layout, which the panel recognizes by this word
 crates/canopa-portal/src/input_capture_transport/worker.rs: "EI connection already handed off"  # worker-to-portal protocol reply, returned to the app as a D-Bus error
 crates/canopa-portal/src/input_capture_transport/worker.rs: "ConnectToEIS must precede Enable"  # worker-to-portal protocol reply naming D-Bus methods, returned as a D-Bus error

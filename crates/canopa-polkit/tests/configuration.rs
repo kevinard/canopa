@@ -20,9 +20,12 @@ fn configuration_preview_and_validation_do_not_connect_or_execute_commands() {
             .assert()
             .success();
     }
-    assert_eq!(
-        image::open(output).unwrap().to_rgb8().dimensions(),
-        canopa_session_ui::view::AUTHORIZATION_DIALOG_SIZE
+    // Dialogs keep their width and fit their height to the content.
+    let (width, height) = image::open(output).unwrap().to_rgb8().dimensions();
+    assert_eq!(width, canopa_session_ui::view::AUTHORIZATION_DIALOG_SIZE.0);
+    assert!(
+        (canopa_session_ui::view::DIALOG_MIN_HEIGHT..=canopa_session_ui::view::DIALOG_MAX_HEIGHT)
+            .contains(&height)
     );
     for setting in [
         "auth-timeout 1;",

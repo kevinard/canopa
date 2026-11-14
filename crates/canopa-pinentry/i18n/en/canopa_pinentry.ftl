@@ -9,14 +9,19 @@ pinentry-keyring-title = Canopa Keyring
 # Window title with the request's title. $name is pinentry-title or
 # pinentry-keyring-title.
 pinentry-window-title = { $name } · { $title }
-# Shown in capitals above the heading.
+# Shown below the heading.
 pinentry-secure-input = Canopa Secure Input
-pinentry-eyebrow = SECURE INPUT
 pinentry-passphrase-required = Passphrase required
 pinentry-request-details = Request details
 pinentry-key-details = Key details
 pinentry-confirm-passphrase = Confirm passphrase
 pinentry-unlock-openpgp-key = Unlock OpenPGP key
+# Instructions below the heading.
+pinentry-subtitle-unlock = GnuPG needs this key to continue
+pinentry-subtitle-repeat = Enter the same passphrase again
+pinentry-subtitle-confirm = Review this request before continuing
+# Under the heading. $name is the program that asked, such as git.
+pinentry-requested-by = Requested by { $name }
 pinentry-confirmation-required = Confirmation required
 pinentry-message = Message
 # Defaults when the agent sends none.

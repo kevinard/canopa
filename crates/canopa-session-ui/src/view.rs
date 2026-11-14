@@ -6,7 +6,8 @@ use image::RgbImage;
 mod panel;
 mod raster;
 pub use panel::{
-    AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_SIZE, account_label,
+    AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_MAX_HEIGHT,
+    DIALOG_MIN_HEIGHT, DIALOG_SIZE, account_label,
 };
 pub use raster::Emblem;
 
@@ -32,8 +33,18 @@ pub enum ControlKind {
     DesktopChooser { session: String },
     /// Chooses the identity that authenticates, drawn with its avatar.
     Identity,
+    /// Opens the power menu; drawn as a round button with the power symbol.
+    Power,
+    /// Signs in as a listed account; `selected` marks the current one, which
+    /// shows the consumer's avatar.
+    Account {
+        name: String,
+        detail: Option<String>,
+        initials: String,
+    },
 }
 
+#[derive(Clone)]
 pub struct Control {
     pub id: usize,
     /// The accessible name, and the visible text unless `kind` draws its own.
@@ -88,6 +99,8 @@ pub struct SessionView {
     /// Lock-screen notification lines from Notify, display text only.
     pub notifications: Option<String>,
     pub custom: std::collections::BTreeMap<String, String>,
+    /// The prompt whose secret response is shown; any other prompt is masked.
+    reveal: Option<u64>,
 }
 impl SessionView {
     pub fn new(settings: &Settings, username: String) -> Result<Self> {
@@ -120,7 +133,31 @@ impl SessionView {
             media: None,
             notifications: None,
             custom: Default::default(),
+            reveal: None,
         })
+    }
+    /// Show or mask the current secret response. Returns false when no masked
+    /// response is being entered. A new prompt is always masked again.
+    pub fn toggle_reveal(&mut self) -> bool {
+        let Some(prompt) = self.prompt.as_ref().filter(|p| !p.echo && !self.hide_input) else {
+            return false;
+        };
+        self.reveal = if self.revealed() {
+            None
+        } else {
+            Some(prompt.id)
+        };
+        true
+    }
+    /// Whether the current secret response is shown as typed.
+    pub fn revealed(&self) -> bool {
+        self.prompt
+            .as_ref()
+            .is_some_and(|p| !p.echo && !self.hide_input && self.reveal == Some(p.id))
+    }
+    /// Whether the reveal control is offered for the current prompt.
+    pub fn can_reveal(&self) -> bool {
+        self.prompt.as_ref().is_some_and(|p| !p.echo) && !self.hide_input
     }
     /// The consumer owns asynchronous loading, selection and stale-result policy.
     pub fn set_user_avatar(&mut self, image: Option<std::sync::Arc<image::RgbaImage>>) {
@@ -270,6 +307,8 @@ impl SessionView {
                 lines: vec![settings.clock_text(&now)],
                 size: settings.clock_size as f32,
                 color: palette.text,
+                weight: cosmic_text::Weight::LIGHT,
+                icon: None,
             },
         );
         content.insert(
@@ -277,7 +316,9 @@ impl SessionView {
             Content::Text {
                 lines: vec![settings.date_text(&now)],
                 size: settings.text_size as f32,
-                color: palette.muted,
+                color: raster::mix(palette.muted, palette.text, 0.3),
+                weight: cosmic_text::Weight::MEDIUM,
+                icon: None,
             },
         );
         content.insert("authentication".to_owned(), Content::Authentication);
@@ -299,6 +340,7 @@ impl SessionView {
                             | "action"
                             | "account"
                             | "subject-process"
+                            | "subject-name"
                             | "policy-publisher"
                             | "avatar"
                     )
@@ -363,6 +405,12 @@ impl SessionView {
                         lines: wrap(&text, 64, 4),
                         size,
                         color,
+                        weight: cosmic_text::Weight::NORMAL,
+                        icon: match widget.as_str() {
+                            "battery" => Some(Emblem::Battery),
+                            "keyboard" => Some(Emblem::Keyboard),
+                            _ => None,
+                        },
                     },
                 );
             }
@@ -371,12 +419,7 @@ impl SessionView {
         let label = prompt.map(|prompt| wrap(prompt.text.trim_end_matches(':'), 56, 8));
         let label_height = label.as_ref().map_or(0., |lines| 21. * lines.len() as f32);
         let hints = self.authentication_hints();
-        let layout_control = self.can_select_layout.then(|| {
-            Control::new(
-                crate::input::LAYOUT_CONTROL,
-                fl!("session-keyboard-control", layout = self.layout.as_str()),
-            )
-        });
+        let layout_control = self.layout_control();
         let rtl = canopa_i18n::direction().is_rtl();
         let input_offset = if self.hide_input { 52. } else { 0. };
         let columns = if self.pair_controls { 2 } else { 1 };
@@ -409,7 +452,15 @@ impl SessionView {
                 .iter()
                 .any(|name| name == "clock" || name == "date")
         });
-        let panel = self.authentication_panel.as_ref().map(|panel| {
+        let corners_free = !settings.layout.regions.iter().any(|region| {
+            use crate::layout::Anchor;
+            matches!(region.anchor, Anchor::BottomLeft | Anchor::BottomRight)
+                && region
+                    .widgets
+                    .iter()
+                    .any(|name| content.contains_key(name) || settings.widgets.contains(name))
+        });
+        let mut panel = self.authentication_panel.as_ref().map(|panel| {
             let username =
                 inline_identity == Some("username") && content.remove("username").is_some();
             let avatar = inline_identity == Some("avatar") && content.remove("avatar").is_some();
@@ -428,18 +479,40 @@ impl SessionView {
                 username,
                 avatar,
                 pin_origin,
+                corners_free,
+                height as f32 / scale,
             )
         });
+        // A battery level at the bottom centre joins the corner controls.
+        if let Some(plan) = panel.as_mut()
+            && settings.layout.regions.iter().any(|region| {
+                region.anchor == crate::layout::Anchor::BottomCenter
+                    && region.widgets.iter().any(|name| name == "battery")
+            })
+            && let Some(Content::Text { lines, .. }) = content.get("battery")
+            && plan.add_status(
+                Emblem::Battery,
+                lines.concat(),
+                self.battery
+                    .as_ref()
+                    .map(|battery| (battery.percentage / 100.).clamp(0., 1.) as f32),
+            )
+        {
+            content.remove("battery");
+        }
         let items: Vec<_> = content
             .iter()
             .map(|(name, content)| {
                 let (w, h) = match content {
-                    Content::Text { lines, size, .. } => (
+                    Content::Text {
+                        lines, size, icon, ..
+                    } => (
                         lines
                             .iter()
-                            .map(|s| self.text_width(s, *size))
+                            .map(|s| self.clock_width(s, *size, name == "clock"))
                             .fold(0., f32::max)
-                            .max(1.),
+                            .max(1.)
+                            + if icon.is_some() { size * 1.6 } else { 0. },
                         (size + 7.) * lines.len() as f32,
                     ),
                     Content::Avatar => (64., 64.),
@@ -462,11 +535,54 @@ impl SessionView {
             let scale = scale * placement.scale;
             let center = bounds.x + bounds.width / 2.;
             match &content[&placement.name] {
-                Content::Text { lines, size, color } => {
-                    for (index, line) in lines.iter().enumerate() {
-                        self.text(
+                Content::Text {
+                    lines,
+                    size,
+                    color,
+                    weight,
+                    icon,
+                } => {
+                    let center = if let Some(icon) = icon {
+                        let side = size * 1.2 * scale;
+                        let rtl = canopa_i18n::direction().is_rtl();
+                        let x = if rtl {
+                            bounds.x + bounds.width - side
+                        } else {
+                            bounds.x
+                        };
+                        raster::emblem_at(
                             &mut image,
-                            line,
+                            (x, bounds.y + (size * 0.85) * scale - side * 0.78),
+                            side / 24.,
+                            *icon,
+                            *color,
+                        );
+                        center + if rtl { -1. } else { 1. } * size * 0.8 * scale
+                    } else {
+                        center
+                    };
+                    if placement.name == "clock" && lines.len() == 1 {
+                        self.draw_clock(
+                            &mut image,
+                            &lines[0],
+                            (center, bounds.y + size * 0.85 * scale),
+                            *size * scale,
+                            bounds.width,
+                            *color,
+                            *weight,
+                        );
+                        continue;
+                    }
+                    for (index, line) in lines.iter().enumerate() {
+                        let text = zeroize::Zeroizing::new(
+                            line.chars()
+                                .filter(|c| !c.is_control())
+                                .take(256)
+                                .collect::<String>(),
+                        );
+                        self.text_renderer.borrow_mut().draw_styled(
+                            &mut image,
+                            &text,
                             (
                                 center,
                                 bounds.y + (size * 0.85 + index as f32 * (size + 7.)) * scale,
@@ -474,6 +590,8 @@ impl SessionView {
                             *size * scale,
                             bounds.width,
                             *color,
+                            None,
+                            crate::text::Style::Centered(*weight),
                         );
                     }
                 }
@@ -713,6 +831,35 @@ impl SessionView {
         }
         Ok((image, hits))
     }
+    fn layout_control(&self) -> Option<Control> {
+        self.can_select_layout.then(|| {
+            Control::new(
+                crate::input::LAYOUT_CONTROL,
+                fl!("session-keyboard-control", layout = self.layout.as_str()),
+            )
+        })
+    }
+
+    /// The logical height a dialog window needs for its current content, between
+    /// `minimum` and `maximum`. Dialog clients size their windows from it.
+    pub fn dialog_height(&self, minimum: u32, maximum: u32) -> u32 {
+        let Some(panel) = self.authentication_panel.as_ref().filter(|p| p.dialog) else {
+            return maximum;
+        };
+        let layout_control = self.layout_control();
+        let plan = panel.plan(
+            self,
+            layout_control.as_ref(),
+            false,
+            false,
+            false,
+            false,
+            true,
+            maximum as f32,
+        );
+        (plan.natural_dialog_height(self).ceil() as u32).clamp(minimum, maximum)
+    }
+
     fn authentication_hints(&self) -> Vec<String> {
         let mut hints = Vec::new();
         if self.hide_input
@@ -737,6 +884,79 @@ impl SessionView {
         }
         hints
     }
+    /// The clock's digits, and its day period ("PM") at a smaller size.
+    fn clock_parts(text: &str) -> Vec<(&str, bool)> {
+        // ICU separates the day period with a narrow no-break space.
+        let parts: Vec<_> = text
+            .split(char::is_whitespace)
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let period =
+                    !part.chars().any(|c| c.is_numeric()) && part.chars().any(char::is_alphabetic);
+                (part, period)
+            })
+            .collect();
+        if parts.iter().any(|(_, period)| *period) && parts.iter().any(|(_, period)| !period) {
+            parts
+        } else {
+            vec![(text, false)]
+        }
+    }
+
+    fn clock_width(&self, text: &str, size: f32, clock: bool) -> f32 {
+        if !clock {
+            return self.text_width(text, size);
+        }
+        let parts = Self::clock_parts(text);
+        let gap = size * 0.1;
+        parts
+            .iter()
+            .map(|(part, period)| self.text_width(part, if *period { size * 0.34 } else { size }))
+            .sum::<f32>()
+            + gap * parts.len().saturating_sub(1) as f32
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_clock(
+        &self,
+        image: &mut RgbImage,
+        text: &str,
+        (center, baseline): (f32, f32),
+        size: f32,
+        max_width: f32,
+        color: Rgb,
+        weight: cosmic_text::Weight,
+    ) {
+        let parts = Self::clock_parts(text);
+        let width = self.clock_width(text, size, true).min(max_width);
+        let rtl = canopa_i18n::direction().is_rtl();
+        let ordered: Vec<_> = if rtl {
+            parts.iter().rev().collect()
+        } else {
+            parts.iter().collect()
+        };
+        let gap = size * 0.1;
+        let mut x = center - width / 2.;
+        for (part, period) in ordered {
+            let (size, weight) = if *period {
+                (size * 0.34, cosmic_text::Weight::LIGHT)
+            } else {
+                (size, weight)
+            };
+            self.text_renderer.borrow_mut().draw_styled(
+                image,
+                part,
+                (x, baseline),
+                size,
+                max_width,
+                color,
+                None,
+                crate::text::Style::Leading(weight),
+            );
+            x += self.text_width(part, size) + gap;
+        }
+    }
+
     fn text_width(&self, text: &str, size: f32) -> f32 {
         self.text_renderer.borrow_mut().width(text, size)
     }
@@ -778,6 +998,9 @@ enum Content {
         lines: Vec<String>,
         size: f32,
         color: Rgb,
+        weight: cosmic_text::Weight,
+        /// A glyph before a one-line passive status.
+        icon: Option<Emblem>,
     },
     Avatar,
     Authentication,
@@ -794,6 +1017,14 @@ fn wrap(text: &str, columns: usize, maximum: usize) -> Vec<String> {
                     .iter()
                     .rposition(|c| c.is_whitespace())
                     .filter(|&position| position > 0)
+                    // Long identifiers break after a separator, not mid-word.
+                    .or_else(|| {
+                        remaining[..limit]
+                            .iter()
+                            .rposition(|c| matches!(c, '.' | '/' | '-' | '_'))
+                            .filter(|&position| position > limit / 2)
+                            .map(|position| position + 1)
+                    })
                     .unwrap_or(limit)
             } else {
                 limit
@@ -905,7 +1136,7 @@ output "DP-1" { hide-widgets "username"; }
         view.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
             heading: "Choose".into(),
-            eyebrow: "CANOPA".into(),
+            subtitle: String::new(),
             emblem: Emblem::Accounts,
             dialog: false,
             choices: &[],
@@ -915,6 +1146,7 @@ output "DP-1" { hide-widgets "username"; }
             checked_control: None,
             choice_details: Default::default(),
             account: None,
+            confirm_identity: false,
         });
         view.controls = vec![
             Control::new(1, "Alice"),

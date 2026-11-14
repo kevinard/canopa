@@ -31,6 +31,10 @@ pub struct Request {
     pub constraints: bool,
     pub constraints_hint: String,
     pub constraints_hint_short: String,
+    /// The local process gpg-agent serves, from `OPTION owner`, for display.
+    pub owner: Option<u32>,
+    /// The requesting program's name, resolved by the frontend from `owner`.
+    pub requester: Option<String>,
 }
 impl Default for Request {
     fn default() -> Self {
@@ -55,6 +59,8 @@ impl Default for Request {
             constraints: false,
             constraints_hint: String::new(),
             constraints_hint_short: String::new(),
+            owner: None,
+            requester: None,
         }
     }
 }
@@ -244,6 +250,16 @@ pub fn serve_agent(
                         request.constraints_hint = value.into();
                     }
                     "constraints-error-title" => {}
+                    // "PID/UID HOST": the agent's client. Only a local PID names a process.
+                    "owner" => {
+                        let (id, host) = value.split_once(' ').unwrap_or((value, ""));
+                        let pid = id.split('/').next().and_then(|pid| pid.parse().ok());
+                        let local = host.is_empty()
+                            || canopa_session_ui::process::hostname()
+                                .is_some_and(|name| name == host);
+                        defaults.owner = pid.filter(|pid| *pid > 0 && local);
+                        request.owner = defaults.owner;
+                    }
                     // Terminal/X11 metadata is accepted for gpg-agent interoperability.
                     // It never selects another display or causes terminal/file access.
                     "ttyname" | "ttytype" | "lc-ctype" | "lc-messages" | "display" => {}
@@ -352,6 +368,27 @@ mod tests {
         assert!(output.contains("INQUIRE QUALITY draft\n"));
         assert!(output.lines().last().unwrap().starts_with("ERR "));
         assert!(!output.contains("must-not-return"));
+    }
+    #[test]
+    fn a_local_owner_names_the_requester_and_a_forwarded_one_does_not() {
+        let host = canopa_session_ui::process::hostname().unwrap();
+        for (line, expected) in [
+            (format!("OPTION owner=4242/1000 {host}"), Some(4242)),
+            ("OPTION owner=4242/1000 elsewhere.example".into(), None),
+            ("OPTION owner=0/1000".into(), None),
+        ] {
+            let mut output = Vec::new();
+            let mut seen = None;
+            let input = format!("{line}\nCONFIRM\nBYE\n");
+            serve(input.as_bytes(), &mut output, 30, |request| {
+                seen = Some(request.owner);
+                Response::Accepted
+            })
+            .unwrap();
+            let output = String::from_utf8(output).unwrap();
+            assert!(!output.contains("Unknown option"), "{output}");
+            assert_eq!(seen, Some(expected), "{line}");
+        }
     }
     #[test]
     fn commands_escape_reset_defaults_and_repeat_are_serialized() {

@@ -61,7 +61,7 @@ impl Controller {
         ui.authentication_panel = Some(AuthenticationPanel {
             height_reserve: 0.,
             heading: fl!("pinentry-passphrase-required"),
-            eyebrow: fl!("pinentry-eyebrow"),
+            subtitle: String::new(),
             emblem: Emblem::Key,
             dialog: true,
             choices: &[(7, Emblem::Key), (8, Emblem::Cycle)],
@@ -71,6 +71,7 @@ impl Controller {
             checked_control: None,
             choice_details: Default::default(),
             account: None,
+            confirm_identity: false,
         });
         ui.secret = Secret::with_capacity(8193);
         ui.message = excerpt(&request.error, 96);
@@ -126,6 +127,25 @@ impl Controller {
             (false, Kind::Pin, false) => fl!("pinentry-passphrase-required"),
             (false, Kind::Confirm, _) => fl!("pinentry-confirmation-required"),
             (false, Kind::Message, _) => fl!("pinentry-message"),
+        };
+        // Who asked, when known; else an instruction or the dialog's name.
+        let requester = self.request.requester.as_deref();
+        panel.subtitle = match (
+            self.details.is_some(),
+            self.request.kind,
+            self.first.is_some(),
+        ) {
+            (true, _, _) => String::new(),
+            (false, Kind::Pin, true) => fl!("pinentry-subtitle-repeat"),
+            (false, _, false) if requester.is_some() => {
+                fl!(
+                    "pinentry-requested-by",
+                    name = requester.unwrap_or_default()
+                )
+            }
+            (false, Kind::Pin, false) if openpgp => fl!("pinentry-subtitle-unlock"),
+            (false, Kind::Confirm, _) => fl!("pinentry-subtitle-confirm"),
+            _ => String::new(),
         };
         if self.details.is_none() && !self.request.title.is_empty() {
             self.ui
