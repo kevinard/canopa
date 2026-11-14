@@ -364,6 +364,26 @@ pub struct TaskbarConfig {
     pub tooltip: TooltipSetting,
 }
 
+/// Configuration for the minimap module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinimapConfig {
+    /// The strip's thickness across the bar, in logical pixels. A screen's
+    /// height is drawn at this size and widths keep its aspect.
+    pub size: u8,
+    /// The strip's longest extent along the bar; wider strips shrink to fit.
+    /// Zero disables the limit.
+    pub max_length: u32,
+}
+
+impl Default for MinimapConfig {
+    fn default() -> Self {
+        Self {
+            size: 18,
+            max_length: 240,
+        }
+    }
+}
+
 /// Configuration for the focused-window module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FocusedWindowConfig {
@@ -470,6 +490,7 @@ pub enum ModuleParams {
     Tray(TrayConfig),
     Taskbar(TaskbarConfig),
     FocusedWindow(FocusedWindowConfig),
+    Minimap(MinimapConfig),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

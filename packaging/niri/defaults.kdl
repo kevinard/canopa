@@ -4,6 +4,12 @@ layout {
     gaps 12
     center-focused-column "on-overflow"
     default-column-width { proportion 0.5; }
+    // Mod+R cycles the focused column through these widths.
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
     focus-ring { width 2; active-color "#7d938e"; inactive-color "#3e5450"; }
     border { off; }
     // Windows sit on a soft shadow so floating dialogs separate from their parent.
@@ -21,6 +27,26 @@ window-rule {
     focus-ring { off; }
     border { on; width 1; active-color "#9aaba78c"; inactive-color "#9aaba759"; }
     shadow { on; softness 20; spread 0; offset x=0 y=6; color "#00000040"; }
+}
+// Authentication and passphrase prompts float over the strip instead of
+// opening a column. Niri already floats Quick Look and other parented dialogs.
+window-rule {
+    match app-id="^org\\.canopa\\.(Pinentry|Keyring|Polkit)$"
+    open-floating true
+}
+// The wallpaper stays behind the zoomed-out workspaces in the overview.
+layer-rule {
+    match namespace="^canopa-shell-wallpaper$"
+    place-within-backdrop true
+}
+// Typing in the overview searches the launcher: Niri reports the text and
+// Canopa Shell opens Applications with it.
+overview {
+    emit-typed-text
+}
+// Pushing the pointer into the top-left corner opens the overview.
+gestures {
+    hot-corners { top-left; }
 }
 hotkey-overlay { skip-at-startup; }
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
@@ -43,6 +69,43 @@ binds {
     Mod+Ctrl+Down { focus-workspace-down; }
     Mod+Shift+Ctrl+Up { move-column-to-workspace-up; }
     Mod+Shift+Ctrl+Down { move-column-to-workspace-down; }
+    Mod+Home { focus-column-first; }
+    Mod+End { focus-column-last; }
+    Mod+Shift+Home { move-column-to-first; }
+    Mod+Shift+End { move-column-to-last; }
+    Mod+BracketLeft { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+    Mod+W { toggle-column-tabbed-display; }
+    Mod+R { switch-preset-column-width; }
+    Mod+Shift+R { switch-preset-column-width-back; }
+    Mod+Ctrl+F { expand-column-to-available-width; }
+    Mod+C { center-column; }
+    Mod+P { toggle-pinned-column "left"; }
+    Mod+Shift+P { toggle-pinned-column "right"; }
+    Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+    Mod+WheelScrollUp cooldown-ms=150 { focus-workspace-up; }
+    Mod+WheelScrollRight { focus-column-right; }
+    Mod+WheelScrollLeft { focus-column-left; }
+    Mod+Shift+WheelScrollDown { focus-column-right; }
+    Mod+Shift+WheelScrollUp { focus-column-left; }
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+    Mod+Shift+1 { move-column-to-workspace 1; }
+    Mod+Shift+2 { move-column-to-workspace 2; }
+    Mod+Shift+3 { move-column-to-workspace 3; }
+    Mod+Shift+4 { move-column-to-workspace 4; }
+    Mod+Shift+5 { move-column-to-workspace 5; }
+    Mod+Shift+6 { move-column-to-workspace 6; }
+    Mod+Shift+7 { move-column-to-workspace 7; }
+    Mod+Shift+8 { move-column-to-workspace 8; }
+    Mod+Shift+9 { move-column-to-workspace 9; }
     Mod+F { maximize-column; }
     Mod+Shift+F { fullscreen-window; }
     Mod+V { toggle-window-floating; }

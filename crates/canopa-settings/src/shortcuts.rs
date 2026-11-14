@@ -1089,6 +1089,19 @@ fn label(node: &KdlNode) -> Result<String> {
         "Mod+L" => fl!("settings-shortcut-lock-screen"),
         "Mod+Q" => fl!("settings-shortcut-close-window"),
         "Mod+F" => fl!("settings-shortcut-maximize-column"),
+        "Mod+Home" => fl!("settings-shortcut-focus-first-column"),
+        "Mod+End" => fl!("settings-shortcut-focus-last-column"),
+        "Mod+Shift+Home" => fl!("settings-shortcut-move-column-to-first"),
+        "Mod+Shift+End" => fl!("settings-shortcut-move-column-to-last"),
+        "Mod+BracketLeft" => fl!("settings-shortcut-stack-window-left"),
+        "Mod+BracketRight" => fl!("settings-shortcut-stack-window-right"),
+        "Mod+W" => fl!("settings-shortcut-toggle-tabbed-column"),
+        "Mod+R" => fl!("settings-shortcut-next-column-width"),
+        "Mod+Shift+R" => fl!("settings-shortcut-previous-column-width"),
+        "Mod+Ctrl+F" => fl!("settings-shortcut-fill-available-width"),
+        "Mod+C" => fl!("settings-shortcut-center-column"),
+        "Mod+P" => fl!("settings-shortcut-pin-column-left"),
+        "Mod+Shift+P" => fl!("settings-shortcut-pin-column-right"),
         "Mod+Shift+F" => fl!("settings-shortcut-toggle-fullscreen"),
         "Mod+V" => fl!("settings-shortcut-toggle-floating-window"),
         "Mod+O" => fl!("settings-shortcut-toggle-overview"),
@@ -1111,6 +1124,25 @@ fn label(node: &KdlNode) -> Result<String> {
         "XF86AudioNext" => fl!("settings-shortcut-next-track"),
         "XF86AudioPrev" => fl!("settings-shortcut-previous-track"),
         _ => {
+            // Numbered workspace bindings would otherwise all read the same.
+            let number = action
+                .entries()
+                .first()
+                .filter(|entry| entry.name().is_none())
+                .and_then(|entry| entry.value().as_integer())
+                .and_then(|number| i64::try_from(number).ok());
+            match (action.name().value(), number) {
+                ("focus-workspace", Some(number)) => {
+                    return Ok(fl!("settings-shortcut-focus-workspace", number = number));
+                }
+                ("move-column-to-workspace", Some(number)) => {
+                    return Ok(fl!(
+                        "settings-shortcut-move-column-to-workspace",
+                        number = number
+                    ));
+                }
+                _ => {}
+            }
             let mut label = action.name().value().replace('-', " ");
             if let Some(initial) = label.get_mut(..1) {
                 initial.make_ascii_uppercase();
@@ -1130,11 +1162,33 @@ fn normalize(key: &str) -> Option<String> {
         let mut parts = key.split('+').map(str::trim);
         (parts.next_back()?, parts)
     };
-    let trigger =
-        xkbcommon::xkb::keysym_from_name(trigger, xkbcommon::xkb::KEYSYM_CASE_INSENSITIVE);
-    if trigger.raw() == 0 {
-        return None;
-    }
+    // Niri's pointer triggers are not keysyms.
+    const POINTER_TRIGGERS: [&str; 13] = [
+        "wheelscrolldown",
+        "wheelscrollup",
+        "wheelscrollleft",
+        "wheelscrollright",
+        "touchpadscrolldown",
+        "touchpadscrollup",
+        "touchpadscrollleft",
+        "touchpadscrollright",
+        "mouseleft",
+        "mouseright",
+        "mousemiddle",
+        "mouseback",
+        "mouseforward",
+    ];
+    let pointer = trigger.to_ascii_lowercase();
+    let trigger = if POINTER_TRIGGERS.contains(&pointer.as_str()) {
+        format!("pointer:{pointer}")
+    } else {
+        let keysym =
+            xkbcommon::xkb::keysym_from_name(trigger, xkbcommon::xkb::KEYSYM_CASE_INSENSITIVE);
+        if keysym.raw() == 0 {
+            return None;
+        }
+        keysym.raw().to_string()
+    };
     let mut set = Vec::new();
     for modifier in modifiers {
         // The supported physical Canopa session uses Super as Niri's Mod key.
@@ -1153,7 +1207,7 @@ fn normalize(key: &str) -> Option<String> {
         set.push(modifier);
     }
     set.sort_unstable();
-    Some(format!("{}/{}", set.join("+"), trigger.raw()))
+    Some(format!("{}/{}", set.join("+"), trigger))
 }
 
 fn collect_included_keys(

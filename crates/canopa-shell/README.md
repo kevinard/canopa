@@ -50,14 +50,17 @@ the focused one, a filled pill when occupied and an outline when empty. The bell
 carries the unread count as a badge.
 
 The taskbar shows the applications listed in its `pinned` desktop IDs (missing
-ones are skipped), then the other open applications in the order they opened,
-grouped by desktop file. A dot on the bar's screen edge marks a running
+ones are skipped), then the other open applications in screen order: by
+workspace, then column, as Niri lays them out, grouped by desktop file. A dot on the bar's screen edge marks a running
 application, a longer mark several windows, and an accent mark the focused one.
 Click focuses the application's most recent window or launches it; clicking it
-again cycles through its windows. Middle-click starts another instance.
+again cycles through its windows from left to right. Middle-click starts another instance.
 Right-click opens the application's menu: Open (or New window while it runs,
 unless the desktop file declares a single main window), the desktop file's own
-actions such as New Private Window, and Pin to taskbar or Unpin from taskbar.
+actions such as New Private Window, then, while it runs, layout commands for its
+window in front or its most recent one (one-third, half or two-thirds width,
+tabs, center, float or tile, move to the workspace above or below), and Pin to
+taskbar or Unpin from taskbar.
 Pins changed there are saved in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`
 as changes to the configured list, so `pinned` keeps its order and later
 additions to it still appear.
@@ -65,6 +68,24 @@ additions to it still appear.
 ```kdl
 module "taskbar" {
     pinned "org.canopa.Files.desktop" "firefox.desktop"
+}
+```
+
+The minimap draws Niri's scrolling strip for the workspace shown on the bar's
+output: one block per column, from left to right, split by the column's stacked
+windows. Widths are to scale with the screen, the focused window is in the
+accent color and the rest of its column is brighter than the other columns.
+Click a block to focus that window; scroll over the strip to move focus to the
+next or previous column. It does not mark which columns are on screen yet,
+because Niri does not report that for tiled windows. Floating windows are not
+drawn; the accessible description counts them. `size` is the strip's thickness
+across the bar (8–64, default 18) and `max-length` the longest it grows along
+the bar before every column shrinks to fit (default 240, 0 for no limit).
+
+```kdl
+module "minimap" {
+    size 18
+    max-length 240
 }
 ```
 
@@ -309,6 +330,55 @@ both companions. Use one notification daemon in the session. See the
 [notification and session guide](../../docs/notifications.md) for controls and restart
 behavior. Canopa Shell can still be launched directly from Niri's startup configuration;
 use one startup mechanism for each process.
+
+## Windows, workspaces and the overview
+
+These use the Canopa Niri fork; the packaged compositor provides them.
+
+Typing in Niri's overview searches the launcher: the first key opens the
+launcher menu (the one whose source is `launcher`, Applications by default)
+over the overview with that text, and closing the launcher closes the overview.
+The shipped Niri defaults turn on `overview { emit-typed-text; }`, which this
+needs.
+
+With `windows { restore #true; }`, the Shell records the open applications and
+where they sit (workspace, column, window width) in
+`$XDG_STATE_HOME/canopa/shell/windows.json` and starts them again in the same
+places at the start of the next session, if no application windows are open
+yet. Only applications with a desktop entry are recorded; the later windows of
+a stacked column and dialogs are left out, and an application that declares a
+single main window is started once. Window closes are recorded after eight
+seconds, so ending the session does not empty the record. Workspaces without a
+name are restored by index on the focused output. D-Bus-activated applications
+may not carry Niri's activation token to their window and then open in Niri's
+usual place.
+
+A taskbar application's tooltip shows thumbnails of up to four of its windows,
+in screen order, from Niri's window preview service
+(`org.canopa.Niri.WindowPreview1`; `window-previews { off; }` in Niri turns it
+off). The taskbar asks for fresh thumbnails each time its tooltip opens and
+shows the last ones meanwhile.
+
+A column pinned to an edge of the view (`Mod+P` left, `Mod+Shift+P` right in
+the shipped defaults, or the taskbar menu's Pin column entries) stays on screen
+while the rest of the strip scrolls. The minimap outlines it and sets it apart
+from the strip. Window session restore does not restore pins.
+
+A workspace template opens applications together, one column each, on the empty
+workspace at the end of the focused output, and shows it:
+
+```kdl
+templates {
+    template "dev" {
+        app "code.desktop" width=66.667
+        app "foot.desktop" width=33.333
+    }
+}
+```
+
+`width` is a percentage of the working area, like Niri's `proportion`; without
+it Niri's default column width applies. Open one with
+`canopa-shell --open-template dev`, for example from a Niri key binding.
 
 ## Device keys and on-screen display
 

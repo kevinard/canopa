@@ -47,6 +47,10 @@ pub enum IpcRequest {
     ToggleMenu {
         name: String,
     },
+    /// Open a configured workspace template.
+    OpenTemplate {
+        name: String,
+    },
     /// A device key (`canopa-shell volume up`); answered when it has run.
     DeviceKey(canopa_shell::device_keys::Request),
 }

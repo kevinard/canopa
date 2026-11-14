@@ -179,6 +179,17 @@ class PinTests(unittest.TestCase):
         self.assertEqual(portal["subprojects"]["archive"], portal["subprojects"]["url"].rsplit("/", 1)[1])
         self.assertNotIn("vendor", recipe)
 
+    def test_shell_niri_ipc_is_the_pinned_compositor_commit(self):
+        # The Shell and Settings speak the IPC of the compositor they ship with.
+        commit = fork_sources.pins()["niri"]["commit"]
+        manifest = (ROOT / "Cargo.toml").read_text()
+        self.assertIn(
+            f'niri-ipc = {{ git = "https://github.com/kevinard/niri", rev = "{commit}" }}',
+            manifest,
+        )
+        lock = (ROOT / "Cargo.lock").read_text()
+        self.assertIn(f"git+https://github.com/kevinard/niri?rev={commit}#{commit}", lock)
+
     def test_every_pin_is_a_commit_archive_of_its_fork(self):
         for name, value in fork_sources.pins().items():
             with self.subTest(name=name):

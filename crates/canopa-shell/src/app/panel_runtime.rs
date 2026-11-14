@@ -184,6 +184,9 @@ pub(super) struct PanelRuntime {
     menu_viewport_height: f32,
     search_focus_pending: bool,
     dmenu_responder: Option<super::messages::IpcResponder>,
+    /// A query that arrived before the menu's session opened, such as text
+    /// typed into Niri's overview while the launcher's sources load.
+    pending_search_query: Option<String>,
     #[cfg(test)]
     pub(super) installed_apps_for_test: Option<Vec<crate::desktop_apps::DesktopApplication>>,
     #[cfg(test)]
@@ -290,6 +293,7 @@ impl PanelRuntime {
         self.menu_viewport_height = 0.0;
         self.search_focus_pending = false;
         self.dmenu_responder = None;
+        self.pending_search_query = None;
     }
 
     pub(super) fn active_panel_tree(&self) -> Option<&crate::surface::panel::PanelTree> {
@@ -352,6 +356,7 @@ impl PanelRuntime {
         if let Some(source) = menu_source {
             self.open_session(source);
         }
+        self.pending_search_query = None;
 
         self.module_detail_sessions = module_detail_sessions;
         self.menu_scroll_y = 0.0;
@@ -540,7 +545,10 @@ impl PanelRuntime {
     }
 
     fn open_session(&mut self, source: SelectableMenuSource) {
-        let session = SelectableMenuSession::open(source);
+        let mut session = SelectableMenuSession::open(source);
+        if let Some(query) = self.pending_search_query.take() {
+            session.set_search_query(query);
+        }
         let _ = session.snapshot();
         self.session = Some(session);
     }
@@ -607,9 +615,14 @@ impl PanelRuntime {
     }
 
     fn search_changed(&mut self, query: String) {
-        if let Some(session) = self.session.as_mut() {
-            session.clear_hover();
-            session.set_search_query(query);
+        match self.session.as_mut() {
+            Some(session) => {
+                session.clear_hover();
+                session.set_search_query(query);
+            }
+            // The menu is still loading its sources: apply the query when its
+            // session opens. The next panel to open consumes it either way.
+            None => self.pending_search_query = Some(query),
         }
         self.search_focus_pending = false;
         self.menu_scroll_y = 0.0;

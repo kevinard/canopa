@@ -1,15 +1,15 @@
 {
   "niri": {
-    "description": "Canopa compositor: Niri with Canopa's drag-source, screencast, remote-input, capture and shortcut-lease changes",
+    "description": "Canopa compositor: Niri with Canopa's drag-source, screencast, remote-input, capture, shortcut-lease, layout IPC, spawn placement, overview typing, touchscreen gesture, window preview and pinned column changes",
     "repository": "https://github.com/kevinard/niri",
     "upstream": "https://github.com/niri-wm/niri",
     "branch": "canopa/main",
-    "commit": "c12bf50929952056b7e7299739eb7d40d45e0a8a",
+    "commit": "b4fc5ea74941f68ddf014135a61051888da5b6b8",
     "base": "b22eb842ca9506d4e2ff997b116031cdb3f650f8",
-    "archive": "niri-c12bf50929952056b7e7299739eb7d40d45e0a8a.tar.gz",
-    "url": "https://codeload.github.com/kevinard/niri/tar.gz/c12bf50929952056b7e7299739eb7d40d45e0a8a",
-    "archive_sha256": "7c175b7da8af8ae8146c46e126fa793f468929cd997b6b2d230f8f8bd2353348",
-    "archive_root": "niri-c12bf50929952056b7e7299739eb7d40d45e0a8a",
+    "archive": "niri-b4fc5ea74941f68ddf014135a61051888da5b6b8.tar.gz",
+    "url": "https://codeload.github.com/kevinard/niri/tar.gz/b4fc5ea74941f68ddf014135a61051888da5b6b8",
+    "archive_sha256": "ff64a1fffe210d3147766a08e5bb06dfa89079e8235d51e218c4582e7ca23214",
+    "archive_root": "niri-b4fc5ea74941f68ddf014135a61051888da5b6b8",
     "license": "GPL-3.0-or-later",
     "notices": {
       "LICENSE": "e57f1c320b8cf8798a7d2ff83a6f9e06a33a03585f6e065fea97f1d86db84052"

@@ -164,6 +164,140 @@ pub(crate) fn set_reduced_motion(paths: &crate::session::Paths, enabled: bool) -
     Ok(())
 }
 
+/// Window layout choices Settings writes over the shipped Niri defaults.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowLayout {
+    /// Space around and between windows, in logical pixels.
+    pub gaps: u8,
+    pub center: CenterColumn,
+    pub width: ColumnWidth,
+}
+
+/// Niri's `center-focused-column`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CenterColumn {
+    Never,
+    OnOverflow,
+    Always,
+}
+
+/// The width new columns open at, as a share of the working area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColumnWidth {
+    Third,
+    Half,
+    TwoThirds,
+    Full,
+}
+
+impl CenterColumn {
+    pub const ALL: [Self; 3] = [Self::Never, Self::OnOverflow, Self::Always];
+    fn kdl(self) -> &'static str {
+        match self {
+            Self::Never => "never",
+            Self::OnOverflow => "on-overflow",
+            Self::Always => "always",
+        }
+    }
+}
+
+impl ColumnWidth {
+    pub const ALL: [Self; 4] = [Self::Third, Self::Half, Self::TwoThirds, Self::Full];
+    fn kdl(self) -> &'static str {
+        match self {
+            Self::Third => "0.33333",
+            Self::Half => "0.5",
+            Self::TwoThirds => "0.66667",
+            Self::Full => "1.0",
+        }
+    }
+}
+
+impl WindowLayout {
+    /// Gap sizes offered by Settings.
+    pub const GAPS: [u8; 4] = [0, 6, 12, 20];
+    /// The values in `packaging/niri/defaults.kdl`.
+    pub const SHIPPED: Self = Self {
+        gaps: 12,
+        center: CenterColumn::OnOverflow,
+        width: ColumnWidth::Half,
+    };
+
+    fn kdl(self) -> String {
+        format!(
+            "{LAYOUT_MARKER}\nlayout {{\n    gaps {}\n    center-focused-column \"{}\"\n    default-column-width {{ proportion {}; }}\n}}\n",
+            self.gaps,
+            self.center.kdl(),
+            self.width.kdl()
+        )
+    }
+
+    /// Every layout Settings can write; the block is recognised only when it
+    /// is exactly one of them.
+    fn all() -> impl Iterator<Item = Self> {
+        Self::GAPS.into_iter().flat_map(|gaps| {
+            CenterColumn::ALL.into_iter().flat_map(move |center| {
+                ColumnWidth::ALL.into_iter().map(move |width| Self {
+                    gaps,
+                    center,
+                    width,
+                })
+            })
+        })
+    }
+}
+
+const LAYOUT_MARKER: &str = "\n// Canopa Settings: window layout.";
+
+/// `niri.kdl` as Settings sees its tail: the person's text, then an optional
+/// window layout block, then the optional reduced-motion block.
+#[cfg(feature = "desktop")]
+fn split_layout(text: &str) -> Result<(&str, Option<WindowLayout>, &str)> {
+    let (rest, motion) = match text.strip_suffix(MOTION_OVERRIDE) {
+        Some(rest) => (rest, MOTION_OVERRIDE),
+        None => (text, ""),
+    };
+    let Some(start) = rest.rfind(LAYOUT_MARKER) else {
+        return Ok((rest, None, motion));
+    };
+    let block = &rest[start..];
+    let layout = WindowLayout::all()
+        .find(|layout| layout.kdl() == block)
+        .with_context(|| fl!("settings-error-window-layout-edited"))?;
+    Ok((&rest[..start], Some(layout), motion))
+}
+
+/// The window layout Settings wrote, or `None` for the shipped defaults.
+#[cfg(feature = "desktop")]
+pub(crate) fn window_layout(source: &crate::storage::Snapshot) -> Result<Option<WindowLayout>> {
+    split_layout(&source.text).map(|(_, layout, _)| layout)
+}
+
+/// Write `layout` over the shipped defaults, or remove Settings' block for
+/// `None`. The block stays before the reduced-motion block, which must end
+/// the file.
+#[cfg(feature = "desktop")]
+pub(crate) fn set_window_layout(
+    paths: &crate::session::Paths,
+    layout: Option<WindowLayout>,
+) -> Result<()> {
+    ensure!(paths.active(), "{}", fl!("settings-error-motion-session"));
+    let source = crate::storage::Snapshot::load(paths.niri())?;
+    let text = with_window_layout(&source.text, layout)?;
+    if text == source.text {
+        return Ok(());
+    }
+    save_main(&source, &text, || Ok(()))?;
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+fn with_window_layout(text: &str, layout: Option<WindowLayout>) -> Result<String> {
+    let (base, _, motion) = split_layout(text)?;
+    let block = layout.map(WindowLayout::kdl).unwrap_or_default();
+    Ok(format!("{base}{block}{motion}"))
+}
+
 pub(crate) fn save_main(
     source: &crate::storage::Snapshot,
     text: &str,
@@ -220,4 +354,63 @@ pub fn validate_fragment(
     wrapper.write_all(document.to_string().as_bytes())?;
     validate(wrapper.path())?;
     snapshot.unchanged()
+}
+
+#[cfg(all(test, feature = "desktop"))]
+mod window_layout_tests {
+    use super::*;
+
+    const BASE: &str = "include \"/usr/share/canopa/niri-defaults.kdl\"\n";
+
+    #[test]
+    fn the_layout_block_sits_before_reduced_motion_and_round_trips() {
+        let layout = WindowLayout {
+            gaps: 6,
+            center: CenterColumn::Always,
+            width: ColumnWidth::TwoThirds,
+        };
+        let with_motion = format!("{BASE}{MOTION_OVERRIDE}");
+        let written = with_window_layout(&with_motion, Some(layout)).unwrap();
+        assert!(written.starts_with(BASE));
+        assert!(written.ends_with(MOTION_OVERRIDE));
+        assert!(written.contains("default-column-width { proportion 0.66667; }"));
+        assert_eq!(split_layout(&written).unwrap().1, Some(layout));
+        assert_eq!(with_window_layout(&written, None).unwrap(), with_motion);
+
+        let without_motion = with_window_layout(BASE, Some(layout)).unwrap();
+        assert_eq!(
+            split_layout(&without_motion).unwrap(),
+            (BASE, Some(layout), "")
+        );
+    }
+
+    #[test]
+    fn an_edited_block_is_refused() {
+        let written = with_window_layout(BASE, Some(WindowLayout::SHIPPED)).unwrap();
+        let edited = written.replace("gaps 12", "gaps 13");
+        assert!(split_layout(&edited).is_err());
+    }
+
+    #[test]
+    fn every_layout_is_valid_niri_configuration() {
+        for layout in WindowLayout::all() {
+            let document = kdl::KdlDocument::parse_v1(&layout.kdl()).unwrap();
+            assert_eq!(document.nodes().len(), 1);
+        }
+    }
+
+    #[test]
+    fn the_shipped_values_match_the_packaged_defaults() {
+        let defaults = include_str!("../../../packaging/niri/defaults.kdl");
+        let layout = WindowLayout::SHIPPED;
+        assert!(defaults.contains(&format!("    gaps {}\n", layout.gaps)));
+        assert!(defaults.contains(&format!(
+            "    center-focused-column \"{}\"\n",
+            layout.center.kdl()
+        )));
+        assert!(defaults.contains(&format!(
+            "    default-column-width {{ proportion {}; }}\n",
+            layout.width.kdl()
+        )));
+    }
 }

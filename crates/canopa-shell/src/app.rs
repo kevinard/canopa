@@ -1,4 +1,5 @@
 mod animation;
+mod announcer;
 mod app_effects;
 mod bar_surface_plan;
 mod canopa_accessibility;
@@ -39,6 +40,7 @@ pub(crate) mod quick_toggles;
 mod render;
 mod selectable_menu_session;
 mod session_actions;
+mod session_restore;
 mod shared;
 mod shell_accessibility;
 mod subscriptions;
@@ -83,6 +85,8 @@ pub(crate) struct App {
     /// The shared AT-SPI bridge for the Shell's own surfaces; absent in unit tests.
     accessibility: Option<shell_accessibility::ShellAccessibility>,
     accessibility_focused_window: Option<iced::window::Id>,
+    module_scroll: module_events::ScrollSteps,
+    session_restore: session_restore::SessionRestore,
     notices: crate::notice::Outbox,
     session: session_actions::SessionRuntime,
     osd: osd::OsdRuntime,
@@ -173,6 +177,10 @@ pub enum Message {
     QuickToggles(quick_toggles::Event),
     /// A taskbar application was clicked.
     Taskbar(crate::modules::taskbar::TaskbarEvent),
+    /// A window or column was chosen on the minimap.
+    Minimap(crate::modules::minimap::MinimapEvent),
+    /// A delayed save of the window session, by generation.
+    WindowSessionSave(u64),
     /// D-Bus connection handles established at startup (Story 5.1).
     DbusReady(DbusConnections),
     /// User clicked a workspace pill -- switch to that workspace via niri IPC.
@@ -211,6 +219,8 @@ impl Message {
             Message::VolumeToggleMute => "VolumeToggleMute",
             Message::QuickToggles(_) => "QuickToggles",
             Message::Taskbar(_) => "Taskbar",
+            Message::Minimap(_) => "Minimap",
+            Message::WindowSessionSave(_) => "WindowSessionSave",
             Message::DbusReady(_) => "DbusReady",
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
@@ -236,39 +246,7 @@ impl Message {
                 "Niri::Unavailable"
             }
             Message::Niri(messages::AppNiriEvent::Ipc(crate::niri::NiriEvent::Event(event))) => {
-                match event {
-                    niri_ipc::Event::WorkspacesChanged { .. } => "Niri::WorkspacesChanged",
-                    niri_ipc::Event::WorkspaceUrgencyChanged { .. } => {
-                        "Niri::WorkspaceUrgencyChanged"
-                    }
-                    niri_ipc::Event::WorkspaceActivated { .. } => "Niri::WorkspaceActivated",
-                    niri_ipc::Event::WorkspaceActiveWindowChanged { .. } => {
-                        "Niri::WorkspaceActiveWindowChanged"
-                    }
-                    niri_ipc::Event::WindowFocusChanged { .. } => "Niri::WindowFocusChanged",
-                    niri_ipc::Event::WindowsChanged { .. } => "Niri::WindowsChanged",
-                    niri_ipc::Event::WindowOpenedOrChanged { .. } => "Niri::WindowOpenedOrChanged",
-                    niri_ipc::Event::WindowClosed { .. } => "Niri::WindowClosed",
-                    niri_ipc::Event::WindowFocusTimestampChanged { .. } => {
-                        "Niri::WindowFocusTimestampChanged"
-                    }
-                    niri_ipc::Event::WindowUrgencyChanged { .. } => "Niri::WindowUrgencyChanged",
-                    niri_ipc::Event::WindowLayoutsChanged { .. } => "Niri::WindowLayoutsChanged",
-                    niri_ipc::Event::KeyboardLayoutsChanged { .. } => {
-                        "Niri::KeyboardLayoutsChanged"
-                    }
-                    niri_ipc::Event::KeyboardLayoutSwitched { .. } => {
-                        "Niri::KeyboardLayoutSwitched"
-                    }
-                    niri_ipc::Event::OverviewOpenedOrClosed { .. } => {
-                        "Niri::OverviewOpenedOrClosed"
-                    }
-                    niri_ipc::Event::ConfigLoaded { .. } => "Niri::ConfigLoaded",
-                    niri_ipc::Event::ScreenshotCaptured { .. } => "Niri::ScreenshotCaptured",
-                    niri_ipc::Event::CastsChanged { .. } => "Niri::CastsChanged",
-                    niri_ipc::Event::CastStartedOrChanged { .. } => "Niri::CastStartedOrChanged",
-                    niri_ipc::Event::CastStopped { .. } => "Niri::CastStopped",
-                }
+                messages::niri_event_diagnostic_label(event)
             }
             Message::VolumeAdjust { .. } => "VolumeAdjust",
             Message::VolumeSet(_) => "VolumeSet",
@@ -313,6 +291,14 @@ impl App {
             }
             messages::IpcEvent::ToggleMenu { name, responder } => {
                 self.handle_toggle_menu_request(name, responder)
+            }
+            messages::IpcEvent::OpenTemplate { name, responder } => {
+                let response = match self.open_template(&name) {
+                    Ok(()) => crate::ipc::protocol::IpcResponse::Accepted,
+                    Err(reason) => crate::ipc::protocol::IpcResponse::Rejected { reason },
+                };
+                app_effects::send_ipc_response(responder, response);
+                Task::none()
             }
             messages::IpcEvent::DmenuSelection { request, responder } => {
                 self.handle_dmenu_selection_request(request, responder)
@@ -384,6 +370,8 @@ impl App {
             canopa_accessibility: None,
             accessibility: (!cfg!(test)).then(shell_accessibility::ShellAccessibility::new),
             accessibility_focused_window: None,
+            module_scroll: Default::default(),
+            session_restore: Default::default(),
             quick_toggles: Default::default(),
             taskbar: Default::default(),
             notices: Default::default(),
@@ -558,6 +546,31 @@ impl App {
             ])),
             Message::QuickToggles(event) => self.handle_quick_toggle_event(event),
             Message::Taskbar(event) => self.handle_taskbar_event(event),
+            Message::WindowSessionSave(generation) => {
+                self.save_window_session(generation);
+                Task::none()
+            }
+            Message::Minimap(event) => {
+                use crate::modules::minimap::MinimapEvent;
+                let action = match event {
+                    MinimapEvent::FocusWindow(id) => niri_ipc::Action::FocusWindow { id },
+                    MinimapEvent::FocusColumn { right: true } => {
+                        niri_ipc::Action::FocusColumnRight {}
+                    }
+                    MinimapEvent::FocusColumn { right: false } => {
+                        niri_ipc::Action::FocusColumnLeft {}
+                    }
+                };
+                #[cfg(not(test))]
+                tokio::spawn(async move {
+                    if let Err(error) = crate::command::niri_action(action).await {
+                        tracing::warn!(target: "canopa_shell::niri", %error, "minimap action failed");
+                    }
+                });
+                #[cfg(test)]
+                let _ = action;
+                Task::none()
+            }
             Message::VolumeToggleMute => Task::batch(self.apply_app_effects(vec![
                 app_effects::AppEffect::ChangeDefaultSink(
                     canopa_services::audio::DefaultChange::ToggleMute,
@@ -629,6 +642,7 @@ impl App {
         if !cfg!(test) {
             self.sync_canopa_accessibility();
         }
+        self.finish_overview_search();
         self.seed_launcher_index();
         self.sync_launcher_context();
         let task = Task::batch([
@@ -1700,6 +1714,8 @@ mod tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1867,6 +1883,8 @@ mod tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1898,6 +1916,8 @@ mod tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1930,6 +1950,8 @@ mod tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1964,6 +1986,8 @@ mod tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 crate::config::BarConfig {

@@ -530,6 +530,10 @@ _Avoid_: Active window
 The compositor-reported window active on a specific **Output**.
 _Avoid_: Focused window
 
+**Minimap**:
+A **Module** that draws the scrolling strip of the **Workspace** active on its **Bar Surface**'s **Output**: one block per column of **Compositor Windows**, in Niri's layout order and to scale.
+_Avoid_: Overview, workspace preview
+
 **Dmenu Selection Mode**:
 A one-shot Canopa Shell invocation that reads candidate entries from standard input, shows a searchable selector through the running Canopa Shell instance, writes the selected value to standard output, and exits.
 _Avoid_: Dmenu compatibility mode, launcher mode, panel menu mode

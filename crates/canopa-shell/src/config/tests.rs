@@ -438,6 +438,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -463,6 +465,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "x".into(),
@@ -785,6 +789,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -809,6 +815,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -843,6 +851,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "external".into(),
@@ -864,6 +874,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "not-laptop".into(),
@@ -885,6 +897,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -915,6 +929,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -939,6 +955,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -964,6 +982,8 @@ mod config_tests {
         let config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),

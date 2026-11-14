@@ -18,6 +18,10 @@ pub struct NiriState {
     pub windows: std::collections::HashMap<u64, Window>,
     /// True once the IPC connection has established and initial state received.
     pub connected: bool,
+    /// True once Niri has sent its window list since connecting.
+    pub windows_known: bool,
+    /// Logical (width, height) of each output by name, from Niri's output list.
+    pub output_sizes: std::collections::HashMap<String, (f64, f64)>,
 }
 
 impl NiriState {
@@ -66,8 +70,77 @@ impl NiriState {
     }
 }
 
+/// The logical size of each enabled output, by name, or `None` when Niri
+/// cannot be asked.
+pub async fn output_sizes() -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    tokio::task::spawn_blocking(|| {
+        let mut socket = niri_ipc::socket::Socket::connect().ok()?;
+        match socket.send(niri_ipc::Request::Outputs).ok()? {
+            Ok(niri_ipc::Response::Outputs(outputs)) => Some(
+                outputs
+                    .into_iter()
+                    .filter_map(|(name, output)| {
+                        output.logical.map(|logical| {
+                            (name, (f64::from(logical.width), f64::from(logical.height)))
+                        })
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        }
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Where the focused window sits in the scrolling layout, all 1-based.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayoutPlace {
+    pub workspace_id: u64,
+    pub workspace: u8,
+    pub column: usize,
+    pub columns: usize,
+    pub tile: usize,
+    pub tiles: usize,
+}
+
+impl NiriState {
+    /// The keyboard-focused tiled window's place, or `None` for floating
+    /// windows, no focus, or a Shell surface holding the keyboard.
+    pub fn focused_place(&self) -> Option<LayoutPlace> {
+        let window = self.focused_window()?;
+        let (column, tile) = window.layout.pos_in_scrolling_layout?;
+        let workspace_id = window.workspace_id?;
+        let workspace = self
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.id == workspace_id)?;
+        let tiled = || {
+            self.windows.values().filter_map(|other| {
+                (other.workspace_id == Some(workspace_id))
+                    .then_some(other.layout.pos_in_scrolling_layout)
+                    .flatten()
+            })
+        };
+        Some(LayoutPlace {
+            workspace_id,
+            workspace: workspace.idx,
+            column,
+            columns: tiled().map(|(column, _)| column).max().unwrap_or(column),
+            tile,
+            tiles: tiled()
+                .filter(|(other, _)| *other == column)
+                .count()
+                .max(tile),
+        })
+    }
+}
+
 /// Events emitted by the niri IPC subscription into the Iced message bus.
 #[derive(Debug, Clone)]
+// Moved once per IPC line into the message bus; see `DecodedNiriEvent`.
+#[allow(clippy::large_enum_variant)]
 pub enum NiriEvent {
     /// Connection established; niri will immediately follow with WorkspacesChanged etc.
     Connected,
@@ -139,6 +212,7 @@ mod tests {
             title: title.map(|t| t.to_string()),
             app_id: None,
             pid: None,
+            parent_id: None,
             workspace_id: None,
             is_focused: false,
             is_floating: false,
@@ -149,6 +223,7 @@ mod tests {
                 window_size: (0, 0),
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
+                pinned: None,
             },
             focus_timestamp: None,
         }

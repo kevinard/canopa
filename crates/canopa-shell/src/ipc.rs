@@ -255,6 +255,9 @@ fn ipc_message_for_request(
         protocol::IpcRequest::ToggleMenu { name } => {
             Message::Ipc(crate::app::messages::IpcEvent::ToggleMenu { name, responder })
         }
+        protocol::IpcRequest::OpenTemplate { name } => {
+            Message::Ipc(crate::app::messages::IpcEvent::OpenTemplate { name, responder })
+        }
         protocol::IpcRequest::DmenuSelection(request) => {
             Message::Ipc(crate::app::messages::IpcEvent::DmenuSelection { request, responder })
         }

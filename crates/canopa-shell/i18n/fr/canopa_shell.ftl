@@ -197,6 +197,17 @@ shell-a11y-tray = Zone de notification
 shell-a11y-taskbar = Barre des tâches
 shell-a11y-taskbar-pinned = épinglée
 shell-a11y-taskbar-focused = au premier plan
+shell-a11y-minimap = Bande des fenêtres
+shell-a11y-minimap-column = colonne { $column } sur { $columns }
+shell-a11y-minimap-empty = aucune fenêtre
+shell-a11y-layout-announcer = Disposition des fenêtres
+shell-a11y-layout-column = Colonne { $column } sur { $columns }
+shell-a11y-layout-tile = fenêtre { $tile } sur { $tiles }
+shell-a11y-layout-workspace = espace de travail { $workspace }
+shell-a11y-minimap-floating = { $count ->
+    [one] { $count } fenêtre flottante
+   *[other] { $count } fenêtres flottantes
+}
 shell-taskbar-windows = { $count ->
     [one] 1 fenêtre
    *[other] { $count } fenêtres
@@ -205,6 +216,20 @@ shell-taskbar-open = Ouvrir
 shell-taskbar-new-window = Nouvelle fenêtre
 shell-taskbar-pin = Épingler à la barre des tâches
 shell-taskbar-unpin = Détacher de la barre des tâches
+shell-taskbar-width-third = Un tiers de la largeur
+shell-taskbar-width-half = Moitié de la largeur
+shell-taskbar-width-two-thirds = Deux tiers de la largeur
+shell-taskbar-toggle-tabs = Afficher la colonne en onglets ou empilée
+shell-taskbar-center = Centrer la colonne
+shell-taskbar-float = Rendre la fenêtre flottante
+shell-taskbar-tile = Remettre la fenêtre en mosaïque
+shell-taskbar-move-up = Déplacer vers l’espace de travail au-dessus
+shell-taskbar-move-down = Déplacer vers l’espace de travail en dessous
+shell-taskbar-pin-left = Épingler la colonne au bord gauche
+shell-taskbar-pin-right = Épingler la colonne au bord droit
+shell-taskbar-unpin-column = Désépingler la colonne
+shell-a11y-minimap-pinned-left = épinglée au bord gauche
+shell-a11y-minimap-pinned-right = épinglée au bord droit
 shell-a11y-image = Image
 
 ## Notices

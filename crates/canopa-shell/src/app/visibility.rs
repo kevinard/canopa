@@ -224,6 +224,7 @@ mod tests {
             volume.clone(),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
+                previews: Vec::new(),
                 anchor: (0, 0),
                 bar_size: (48, 800),
                 screen_size: (1280, 800),

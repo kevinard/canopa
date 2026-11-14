@@ -27,6 +27,10 @@ pub enum IpcEvent {
         name: String,
         responder: IpcResponder,
     },
+    OpenTemplate {
+        name: String,
+        responder: IpcResponder,
+    },
     DmenuSelection {
         request: crate::ipc::protocol::DmenuRequest,
         responder: IpcResponder,
@@ -43,6 +47,7 @@ impl IpcEvent {
             IpcEvent::Reload { .. } => "Ipc::Reload",
             IpcEvent::OpenMenu { .. } => "Ipc::OpenMenu",
             IpcEvent::ToggleMenu { .. } => "Ipc::ToggleMenu",
+            IpcEvent::OpenTemplate { .. } => "Ipc::OpenTemplate",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
             IpcEvent::DeviceKey { .. } => "Ipc::DeviceKey",
         }
@@ -397,8 +402,8 @@ pub enum ModuleRuntimeEvent {
     },
     ModuleClick(ModuleId, iced::window::Id),
     ModuleRightClick(ModuleId, iced::window::Id),
-    ModuleScrollUp(ModuleId, iced::window::Id),
-    ModuleScrollDown(ModuleId, iced::window::Id),
+    /// A raw scroll over a module, turned into Up/Down steps by the app.
+    ModuleScroll(ModuleId, iced::window::Id, iced::mouse::ScrollDelta),
     Battery(crate::modules::battery::BatteryEvent),
     Network(crate::modules::network::NetworkEvent),
     Volume(crate::modules::volume::VolumeEvent),
@@ -418,8 +423,7 @@ impl ModuleRuntimeEvent {
             ModuleRuntimeEvent::Detail { .. } => "Modules::Detail",
             ModuleRuntimeEvent::ModuleClick(_, _) => "Modules::ModuleClick",
             ModuleRuntimeEvent::ModuleRightClick(_, _) => "Modules::ModuleRightClick",
-            ModuleRuntimeEvent::ModuleScrollUp(_, _) => "Modules::ModuleScrollUp",
-            ModuleRuntimeEvent::ModuleScrollDown(_, _) => "Modules::ModuleScrollDown",
+            ModuleRuntimeEvent::ModuleScroll(..) => "Modules::ModuleScroll",
             ModuleRuntimeEvent::Battery(event) => match event {
                 crate::modules::battery::BatteryEvent::StateChanged { .. } => {
                     "Modules::Battery::StateChanged"
@@ -468,6 +472,8 @@ pub(super) fn module_event_diagnostic_label(event: &ModuleEvent) -> &'static str
 #[derive(Debug, Clone)]
 pub enum AppNiriEvent {
     Ipc(crate::niri::NiriEvent),
+    /// Niri's output sizes, which set the minimap's scale.
+    OutputSizes(std::collections::HashMap<String, (f64, f64)>),
 }
 
 impl AppNiriEvent {
@@ -478,6 +484,7 @@ impl AppNiriEvent {
             AppNiriEvent::Ipc(crate::niri::NiriEvent::Event(event)) => {
                 niri_event_diagnostic_label(event)
             }
+            AppNiriEvent::OutputSizes(_) => "Niri::OutputSizes",
         }
     }
 }
@@ -505,6 +512,8 @@ pub(super) fn niri_event_diagnostic_label(event: &niri_ipc::Event) -> &'static s
         niri_ipc::Event::CastsChanged { .. } => "Niri::CastsChanged",
         niri_ipc::Event::CastStartedOrChanged { .. } => "Niri::CastStartedOrChanged",
         niri_ipc::Event::CastStopped { .. } => "Niri::CastStopped",
+        niri_ipc::Event::TouchpadToggled { .. } => "Niri::TouchpadToggled",
+        niri_ipc::Event::OverviewTyped { .. } => "Niri::OverviewTyped",
     }
 }
 

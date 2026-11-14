@@ -23,7 +23,7 @@ pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
     CommandPolicy, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig, IconThreshold,
     IdleBackend, IdleInhibitorConfig, MediaConfig, MenuConfig, MenuItemConfig, MenuSourceConfig,
-    MenuSourceKind, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig,
+    MenuSourceKind, MinimapConfig, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig,
     NotificationsConfig, PanelAction, PanelProviderConfig, ScriptConfig, StateRule, StatesConfig,
     TaskbarConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
 };
@@ -75,6 +75,32 @@ pub struct Config {
     pub menus: Vec<MenuConfig>,
     pub panel_providers: Vec<PanelProviderConfig>,
     pub osd: OsdConfig,
+    pub windows: WindowsConfig,
+    pub templates: Vec<TemplateConfig>,
+}
+
+/// A workspace template: applications opened together, one column each, on
+/// a new workspace (`canopa-shell --open-template NAME`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateConfig {
+    pub name: String,
+    pub apps: Vec<TemplateApp>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateApp {
+    /// The desktop ID it is started from.
+    pub desktop_id: String,
+    /// The column's width as a percentage of the working area, like Niri's
+    /// `proportion`; Niri's default width when absent.
+    pub width_percent: Option<f64>,
+}
+
+/// Application windows across sessions (the `windows` block).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WindowsConfig {
+    /// Start the applications of the last session again, in their places.
+    pub restore: bool,
 }
 
 impl Default for Config {
@@ -87,6 +113,8 @@ impl Default for Config {
             menus: vec![],
             panel_providers: vec![],
             osd: OsdConfig::default(),
+            windows: WindowsConfig::default(),
+            templates: vec![],
         }
     }
 }

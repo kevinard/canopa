@@ -13,6 +13,8 @@ pub enum Command {
     IpcCommand(String),
     OpenMenu(String),
     ToggleMenu(String),
+    /// `--open-template NAME`: open a configured workspace template.
+    OpenTemplate(String),
     Dmenu(DmenuOptions),
     /// `volume up`, `brightness down`, `media play-pause` and the other keys.
     DeviceKey(canopa_shell::device_keys::Request),
@@ -98,23 +100,32 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            arg if matches!(arg.split('=').next(), Some("--open-menu" | "--toggle-menu")) => {
+            arg if matches!(
+                arg.split('=').next(),
+                Some("--open-menu" | "--toggle-menu" | "--open-template")
+            ) =>
+            {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
                 }
                 let (flag, inline_name) = arg
                     .split_once('=')
                     .map_or((arg, None), |(flag, name)| (flag, Some(name)));
+                let what = if flag == "--open-template" {
+                    "template"
+                } else {
+                    "menu"
+                };
                 let Some(name) = inline_name.map(str::to_owned).or_else(|| args.next()) else {
-                    return Command::UsageError(format!("{flag} requires a menu name"));
+                    return Command::UsageError(format!("{flag} requires a {what} name"));
                 };
                 if name.is_empty() || (inline_name.is_none() && name.starts_with('-')) {
-                    return Command::UsageError(format!("{flag} requires a menu name"));
+                    return Command::UsageError(format!("{flag} requires a {what} name"));
                 }
-                special_mode = Some(if flag == "--toggle-menu" {
-                    Command::ToggleMenu(name)
-                } else {
-                    Command::OpenMenu(name)
+                special_mode = Some(match flag {
+                    "--toggle-menu" => Command::ToggleMenu(name),
+                    "--open-template" => Command::OpenTemplate(name),
+                    _ => Command::OpenMenu(name),
                 });
             }
             "--version" | "-V" | "--toggle-panel" | "reload" | "--reload" | "lock" => {
@@ -252,6 +263,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             command,
             Command::OpenMenu(_)
                 | Command::ToggleMenu(_)
+                | Command::OpenTemplate(_)
                 | Command::Reload
                 | Command::Lock
                 | Command::LauncherExtension(..)
@@ -344,6 +356,22 @@ mod tests {
                 Command::UsageError(_)
             ));
         }
+    }
+
+    #[test]
+    fn open_template_names_a_template() {
+        assert!(matches!(
+            parse_args(["--open-template", "dev"].map(str::to_string)),
+            Command::OpenTemplate(name) if name == "dev"
+        ));
+        assert!(matches!(
+            parse_args(["--open-template=dev"].map(str::to_string)),
+            Command::OpenTemplate(name) if name == "dev"
+        ));
+        assert!(matches!(
+            parse_args(["--open-template"].map(str::to_string)),
+            Command::UsageError(message) if message.contains("template name")
+        ));
     }
 
     #[test]

@@ -219,6 +219,17 @@ shell-a11y-tray = Tray
 shell-a11y-taskbar = Taskbar
 shell-a11y-taskbar-pinned = pinned
 shell-a11y-taskbar-focused = focused
+shell-a11y-minimap = Window strip
+shell-a11y-minimap-column = column { $column } of { $columns }
+shell-a11y-minimap-empty = no windows
+shell-a11y-layout-announcer = Window layout
+shell-a11y-layout-column = Column { $column } of { $columns }
+shell-a11y-layout-tile = window { $tile } of { $tiles }
+shell-a11y-layout-workspace = workspace { $workspace }
+shell-a11y-minimap-floating = { $count ->
+    [one] { $count } floating window
+   *[other] { $count } floating windows
+}
 shell-taskbar-windows = { $count ->
     [one] 1 window
    *[other] { $count } windows
@@ -227,6 +238,20 @@ shell-taskbar-open = Open
 shell-taskbar-new-window = New window
 shell-taskbar-pin = Pin to taskbar
 shell-taskbar-unpin = Unpin from taskbar
+shell-taskbar-width-third = One-third width
+shell-taskbar-width-half = Half width
+shell-taskbar-width-two-thirds = Two-thirds width
+shell-taskbar-toggle-tabs = Show column as tabs or stacked
+shell-taskbar-center = Center column
+shell-taskbar-float = Float window
+shell-taskbar-tile = Tile window
+shell-taskbar-move-up = Move to workspace above
+shell-taskbar-move-down = Move to workspace below
+shell-taskbar-pin-left = Pin column to the left edge
+shell-taskbar-pin-right = Pin column to the right edge
+shell-taskbar-unpin-column = Unpin column
+shell-a11y-minimap-pinned-left = pinned to the left edge
+shell-a11y-minimap-pinned-right = pinned to the right edge
 shell-a11y-image = Image
 
 ## Notices

@@ -19,6 +19,9 @@ fn should_emit_event(event: &Event) -> bool {
 }
 
 #[derive(Debug)]
+// Each decoded event is moved once on its way to the app; boxing it would
+// only add an allocation per IPC line.
+#[allow(clippy::large_enum_variant)]
 enum DecodedNiriEvent {
     Event(Event),
     Ignored,

@@ -115,6 +115,10 @@ enum Message {
     CursorSizeStored(Result<Snapshot, String>),
     CompositorMotion(bool),
     CompositorMotionStored(Result<bool, String>),
+    /// Apply a window layout over the shipped defaults at once (`None`:
+    /// the shipped layout).
+    WindowLayout(Option<crate::niri::WindowLayout>),
+    WindowLayoutStored(Result<Option<crate::niri::WindowLayout>, String>),
     Dim(f64),
     IdleTime(bool, usize, String),
     IdleAction(&'static str),
@@ -184,6 +188,8 @@ struct State {
     shortcuts: Option<Result<crate::shortcuts::Editor, String>>,
     shortcut_query: String,
     compositor_motion: Option<bool>,
+    /// `None` outside the Canopa session; an error when the block was edited.
+    window_layout: Option<Result<Option<crate::niri::WindowLayout>, String>>,
     page: Page,
     search: String,
     notice: String,
@@ -286,6 +292,16 @@ impl State {
             .flatten()
     }
 
+    fn load_window_layout(
+        paths: &Paths,
+    ) -> Option<Result<Option<crate::niri::WindowLayout>, String>> {
+        paths.active().then(|| {
+            Snapshot::load(paths.niri())
+                .and_then(|source| crate::niri::window_layout(&source))
+                .map_err(|error| error.to_string())
+        })
+    }
+
     fn boot_with(paths: Paths) -> (Self, Task<Message>) {
         let (input, input_error) = FileDraft::load(&paths);
         let (personal, personal_error) = FileDraft::load(&paths);
@@ -293,6 +309,7 @@ impl State {
         let (idle, _) = FileDraft::load(&paths);
         let (power_choices, _) = FileDraft::load(&paths);
         let compositor_motion = Self::load_motion(&paths);
+        let window_layout = Self::load_window_layout(&paths);
         let notice = personal_error.or(input_error).unwrap_or_default();
         let profile_task = profiles::Editor::load(&paths);
         let state = Self {
@@ -303,6 +320,7 @@ impl State {
             shortcuts: None,
             shortcut_query: String::new(),
             compositor_motion,
+            window_layout,
             page: Page::Displays,
             search: String::new(),
             notice,
@@ -745,6 +763,33 @@ impl State {
                     Message::CompositorMotionStored,
                 );
             }
+            Message::WindowLayout(layout) if !self.busy && self.trial.is_none() => {
+                if matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()) {
+                    self.notice = fl!("settings-compositor-motion-unsaved-shortcuts");
+                    return Task::none();
+                }
+                self.busy = true;
+                self.notice.clear();
+                let paths = self.paths.clone();
+                return task(
+                    move || {
+                        crate::niri::set_window_layout(&paths, layout)?;
+                        Ok(layout)
+                    },
+                    Message::WindowLayoutStored,
+                );
+            }
+            Message::WindowLayoutStored(result) => {
+                self.busy = false;
+                match result {
+                    Ok(layout) => {
+                        self.window_layout = Some(Ok(layout));
+                        self.notice = fl!("settings-window-layout-saved");
+                        self.document_saved(Page::Personal, Document::Niri, None);
+                    }
+                    Err(error) => self.notice = error,
+                }
+            }
             Message::CompositorMotionStored(result) => {
                 self.busy = false;
                 match result {
@@ -1140,6 +1185,7 @@ impl State {
                 (Page::Shortcuts, Document::Niri, _) => self.shortcuts = None,
                 (Page::Personal, Document::Niri, _) => {
                     self.compositor_motion = Self::load_motion(&self.paths);
+                    self.window_layout = Self::load_window_layout(&self.paths);
                 }
                 _ => {}
             }
@@ -1166,6 +1212,7 @@ impl State {
             Page::Personal | Page::Accessibility => {
                 self.notice = self.personal.reload(&paths).unwrap_or_default();
                 self.compositor_motion = Self::load_motion(&paths);
+                self.window_layout = Self::load_window_layout(&paths);
                 if self.page == Page::Accessibility {
                     let _ = self.input.reload(&paths);
                 }
@@ -1940,12 +1987,114 @@ impl State {
         column![
             settings_group(fl!("settings-personal-appearance"), appearance),
             settings_group(fl!("settings-personal-lock-screen"), lockscreen),
+            settings_group(fl!("settings-window-layout"), self.window_layout_view()),
             settings_group(fl!("settings-personal-motion"), motion),
         ]
         .spacing(14)
         .into()
     }
 }
+impl State {
+    /// Gaps, centering and the width of new columns, applied to Niri at once.
+    fn window_layout_view(&self) -> Element<'_, Message> {
+        use crate::niri::{CenterColumn, ColumnWidth, WindowLayout};
+        let layout = match &self.window_layout {
+            None => {
+                return text(fl!("settings-motion-needs-session"))
+                    .size(14)
+                    .style(canopa_ui::muted)
+                    .into();
+            }
+            Some(Err(error)) => {
+                return text(error.clone()).size(14).style(canopa_ui::muted).into();
+            }
+            Some(Ok(layout)) => *layout,
+        };
+        let current = layout.unwrap_or(WindowLayout::SHIPPED);
+        let gaps = WindowLayout::GAPS
+            .into_iter()
+            .map(|gaps| {
+                let label = match gaps {
+                    0 => fl!("settings-window-gaps-none"),
+                    6 => fl!("settings-window-gaps-small"),
+                    12 => fl!("settings-window-gaps-medium"),
+                    _ => fl!("settings-window-gaps-large"),
+                };
+                (gaps, label)
+            })
+            .collect();
+        let center = CenterColumn::ALL
+            .into_iter()
+            .map(|center| {
+                let label = match center {
+                    CenterColumn::Never => fl!("settings-window-center-never"),
+                    CenterColumn::OnOverflow => fl!("settings-window-center-on-overflow"),
+                    CenterColumn::Always => fl!("settings-window-center-always"),
+                };
+                (center, label)
+            })
+            .collect();
+        let width = ColumnWidth::ALL
+            .into_iter()
+            .map(|width| {
+                let label = match width {
+                    ColumnWidth::Third => fl!("settings-window-width-third"),
+                    ColumnWidth::Half => fl!("settings-window-width-half"),
+                    ColumnWidth::TwoThirds => fl!("settings-window-width-two-thirds"),
+                    ColumnWidth::Full => fl!("settings-window-width-full"),
+                };
+                (width, label)
+            })
+            .collect();
+        let labelled = |label: String, control: Element<'static, Message>| {
+            row![text(label).width(Length::Fill), control]
+                .spacing(12)
+                .align_y(iced::Alignment::Center)
+        };
+        let mut content = column![
+            labelled(
+                fl!("settings-window-gaps"),
+                pick(
+                    "settings-window-gaps",
+                    gaps,
+                    Some(current.gaps),
+                    move |gaps| { Message::WindowLayout(Some(WindowLayout { gaps, ..current })) }
+                )
+            ),
+            labelled(
+                fl!("settings-window-center"),
+                pick(
+                    "settings-window-center",
+                    center,
+                    Some(current.center),
+                    move |center| {
+                        Message::WindowLayout(Some(WindowLayout { center, ..current }))
+                    }
+                )
+            ),
+            labelled(
+                fl!("settings-window-width"),
+                pick(
+                    "settings-window-width",
+                    width,
+                    Some(current.width),
+                    move |width| { Message::WindowLayout(Some(WindowLayout { width, ..current })) }
+                )
+            ),
+        ]
+        .spacing(10);
+        if layout.is_some() {
+            content = content.push(self.action(
+                "settings-button-window-layout-reset",
+                fl!("settings-window-layout-reset"),
+                Some(Message::WindowLayout(None)),
+                false,
+            ));
+        }
+        content.into()
+    }
+}
+
 /// A labelled text field. `key` is its focus and accessibility identity.
 fn field<'a>(
     key: impl Into<String>,

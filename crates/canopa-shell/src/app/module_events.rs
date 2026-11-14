@@ -99,16 +99,21 @@ impl App {
                 crate::modules::InteractionEvent::RightClicked(window),
                 window,
             ),
-            ModuleRuntimeEvent::ModuleScrollUp(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::ScrollUp,
-                window,
-            ),
-            ModuleRuntimeEvent::ModuleScrollDown(id, window) => self.dispatch_module_interaction(
-                &id,
-                crate::modules::InteractionEvent::ScrollDown,
-                window,
-            ),
+            ModuleRuntimeEvent::ModuleScroll(id, window, delta) => {
+                match self.module_scroll.step(&id, delta) {
+                    Some(true) => self.dispatch_module_interaction(
+                        &id,
+                        crate::modules::InteractionEvent::ScrollUp,
+                        window,
+                    ),
+                    Some(false) => self.dispatch_module_interaction(
+                        &id,
+                        crate::modules::InteractionEvent::ScrollDown,
+                        window,
+                    ),
+                    None => Task::none(),
+                }
+            }
             ModuleRuntimeEvent::Battery(event) => self.handle_battery_event(event),
             ModuleRuntimeEvent::Network(event) => self.handle_network_event(event),
             ModuleRuntimeEvent::Volume(event) => self.handle_volume_event(event),
@@ -415,6 +420,89 @@ impl App {
             "volume adjustment requested"
         );
         Task::batch(self.apply_app_effects(vec![AppEffect::AdjustDefaultSinkVolume { step, up }]))
+    }
+}
+
+/// Scrolled pixels that make one step, for touchpads and other smooth sources.
+const SCROLL_PIXELS_PER_STEP: f32 = 20.0;
+
+/// Turns scroll events over modules into Up/Down steps. A wheel notch is one
+/// step. Smooth scrolling accumulates pixels, so a touchpad gesture is not a
+/// step per event, and the zero-length event that ends it is not a step.
+#[derive(Debug, Default)]
+pub(super) struct ScrollSteps {
+    pending: Option<(ModuleId, f32)>,
+}
+
+impl ScrollSteps {
+    /// `Some(true)` for a step up, `Some(false)` for a step down.
+    pub(super) fn step(&mut self, id: &ModuleId, delta: iced::mouse::ScrollDelta) -> Option<bool> {
+        match delta {
+            iced::mouse::ScrollDelta::Lines { y, .. } => {
+                self.pending = None;
+                (y != 0.0).then_some(y > 0.0)
+            }
+            iced::mouse::ScrollDelta::Pixels { y, .. } => {
+                if y == 0.0 {
+                    return None;
+                }
+                let pending = match self.pending.take() {
+                    Some((module, pending)) if &module == id && (pending > 0.0) == (y > 0.0) => {
+                        pending + y
+                    }
+                    _ => y,
+                };
+                if pending.abs() >= SCROLL_PIXELS_PER_STEP {
+                    let remainder = pending - SCROLL_PIXELS_PER_STEP.copysign(pending);
+                    self.pending = Some((id.clone(), remainder));
+                    Some(pending > 0.0)
+                } else {
+                    self.pending = Some((id.clone(), pending));
+                    None
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod scroll_step_tests {
+    use super::ScrollSteps;
+    use crate::modules::ModuleId;
+    use iced::mouse::ScrollDelta;
+
+    #[test]
+    fn wheel_notches_step_and_zero_lines_do_not() {
+        let id = ModuleId::new("volume");
+        let mut steps = ScrollSteps::default();
+        assert_eq!(
+            steps.step(&id, ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+            Some(true)
+        );
+        assert_eq!(
+            steps.step(&id, ScrollDelta::Lines { x: 0.0, y: -1.0 }),
+            Some(false)
+        );
+        assert_eq!(steps.step(&id, ScrollDelta::Lines { x: 0.0, y: 0.0 }), None);
+    }
+
+    #[test]
+    fn smooth_scrolling_accumulates_pixels_into_steps() {
+        let id = ModuleId::new("minimap");
+        let mut steps = ScrollSteps::default();
+        let pixels = |y| ScrollDelta::Pixels { x: 0.0, y };
+        assert_eq!(steps.step(&id, pixels(-8.0)), None);
+        assert_eq!(steps.step(&id, pixels(-8.0)), None);
+        assert_eq!(steps.step(&id, pixels(-8.0)), Some(false));
+        // The gesture's end is not a step.
+        assert_eq!(steps.step(&id, pixels(0.0)), None);
+        // Reversing direction or moving to another module starts over.
+        assert_eq!(steps.step(&id, pixels(12.0)), None);
+        assert_eq!(steps.step(&ModuleId::new("volume"), pixels(12.0)), None);
+        assert_eq!(
+            steps.step(&ModuleId::new("volume"), pixels(12.0)),
+            Some(true)
+        );
     }
 }
 

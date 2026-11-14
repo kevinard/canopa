@@ -60,6 +60,8 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
             "menus",
             "panel-providers",
             "osd",
+            "windows",
+            "templates",
         ],
         &[
             "command-policy",
@@ -67,6 +69,8 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
             "menus",
             "panel-providers",
             "osd",
+            "windows",
+            "templates",
         ],
     )?;
     let command_policy = parse_command_policy(doc, &ctx.child("command-policy"))?;
@@ -80,6 +84,8 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
     let menus = parse_menus_section(doc, &ctx, &command_policy)?;
     let panel_providers = parse_panel_providers_section(doc, &ctx, &command_policy)?;
     let osd = parse_osd(doc, &ctx.child("osd"))?;
+    let windows = parse_windows(doc, &ctx.child("windows"))?;
+    let templates = parse_templates(doc, &ctx.child("templates"))?;
     Ok(Config {
         appearance: Default::default(),
         element_ui: parse_element_ui(doc, &ctx)?,
@@ -88,6 +94,87 @@ pub(crate) fn parse_document(doc: &KdlDocument, source: ConfigSource) -> ConfigR
         menus,
         panel_providers,
         osd,
+        windows,
+        templates,
+    })
+}
+
+fn parse_templates(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<Vec<super::TemplateConfig>> {
+    let Some(children) = doc.get("templates").and_then(KdlNode::children) else {
+        return Ok(Vec::new());
+    };
+    let mut templates: Vec<super::TemplateConfig> = Vec::new();
+    for (index, node) in children.nodes().iter().enumerate() {
+        let ctx = ctx.index(index);
+        if node.name().value() != "template" {
+            return Err(ctx.node_err(node, "expected `template \"NAME\" { app ... }`", None));
+        }
+        let name = node
+            .get(0)
+            .and_then(|entry| entry.as_string())
+            .filter(|name| !name.trim().is_empty())
+            .ok_or_else(|| ctx.node_err(node, "a template needs a name", None))?
+            .to_owned();
+        if templates.iter().any(|other| other.name == name) {
+            return Err(ctx.node_err(node, format!("duplicate template {name:?}"), None));
+        }
+        let mut apps = Vec::new();
+        for app in node.children().map(|apps| apps.nodes()).unwrap_or_default() {
+            if app.name().value() != "app" {
+                return Err(ctx.node_err(
+                    app,
+                    "expected `app \"org.example.App.desktop\" width=50`",
+                    None,
+                ));
+            }
+            let Some(id) = app.get(0).and_then(|entry| entry.as_string()) else {
+                return Err(ctx.node_err(app, "an app needs its desktop ID", None));
+            };
+            let desktop_id = if id.ends_with(".desktop") {
+                id.to_owned()
+            } else {
+                format!("{id}.desktop")
+            };
+            let width_percent = match app.get("width") {
+                None => None,
+                Some(value) => match value
+                    .as_float()
+                    .or_else(|| value.as_integer().map(|v| v as f64))
+                {
+                    Some(width) if (5.0..=100.0).contains(&width) => Some(width),
+                    _ => {
+                        return Err(ctx.node_err(
+                            app,
+                            "width is a percentage of the screen, 5-100",
+                            None,
+                        ));
+                    }
+                },
+            };
+            apps.push(super::TemplateApp {
+                desktop_id,
+                width_percent,
+            });
+        }
+        if apps.is_empty() {
+            return Err(ctx.node_err(node, format!("template {name:?} has no apps"), None));
+        }
+        templates.push(super::TemplateConfig { name, apps });
+    }
+    Ok(templates)
+}
+
+fn parse_windows(doc: &KdlDocument, ctx: &ParseCtx) -> ConfigResult<super::WindowsConfig> {
+    let Some(children) = doc.get("windows").and_then(KdlNode::children) else {
+        return Ok(super::WindowsConfig::default());
+    };
+    ctx.validate_child_schema(children, &["restore"], &["restore"])?;
+    Ok(super::WindowsConfig {
+        restore: field(children, ctx, "restore")
+            .optional()
+            .help("use `restore #true` or `restore #false`")
+            .bool()
+            .unwrap_or(false)?,
     })
 }
 

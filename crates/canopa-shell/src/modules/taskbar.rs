@@ -22,6 +22,10 @@ pub(crate) struct TaskbarEntry {
     pub pinned: bool,
     /// Open windows, most recently focused first.
     pub windows: Vec<u64>,
+    /// The same windows in screen order: by output, workspace, column and
+    /// tile, floating windows after their workspace's columns. Clicks cycle
+    /// through them in this order.
+    pub layout_order: Vec<u64>,
     pub focused: bool,
     pub urgent: bool,
 }
@@ -44,6 +48,8 @@ pub enum TaskbarEvent {
         window: iced::window::Id,
         bounds: Option<iced::Rectangle>,
     },
+    /// Window thumbnails arrived from Niri: window ID, width, height, PNG.
+    Previews(Vec<(u64, u32, u32, Vec<u8>)>),
 }
 
 /// The menu service of taskbar menus. It cannot be a D-Bus bus name, so a
@@ -61,17 +67,97 @@ pub(crate) enum MenuCommand {
     DesktopAction(String),
     Pin,
     Unpin,
+    /// Layout commands for the application's current window.
+    Layout(LayoutCommand),
+}
+
+/// Niri layout commands offered for an application's current window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutCommand {
+    /// Set its column's width to this percentage of the working area.
+    Width(u8),
+    ToggleTabs,
+    Center,
+    ToggleFloating,
+    MoveToWorkspace(u64),
+    /// Keep the column at an edge of the view while the strip scrolls.
+    Pin(niri_ipc::PinSide),
+    Unpin,
+}
+
+/// What the layout commands need to know about the window they act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LayoutTarget {
+    pub floating: bool,
+    /// The edge the window's column is pinned to.
+    pub pinned: Option<niri_ipc::PinSide>,
+    /// The workspaces above and below the window's, on its output.
+    pub above: Option<u64>,
+    pub below: Option<u64>,
+}
+
+impl LayoutTarget {
+    pub(crate) fn of(window: &niri_ipc::Window, workspaces: &[niri_ipc::Workspace]) -> Self {
+        let current = window
+            .workspace_id
+            .and_then(|id| workspaces.iter().find(|workspace| workspace.id == id));
+        let neighbour = |offset: i16| {
+            let current = current?;
+            let index = i16::from(current.idx) + offset;
+            workspaces
+                .iter()
+                .find(|workspace| {
+                    workspace.output == current.output && i16::from(workspace.idx) == index
+                })
+                .map(|workspace| workspace.id)
+        };
+        Self {
+            floating: window.is_floating,
+            pinned: window.layout.pinned,
+            above: neighbour(-1),
+            below: neighbour(1),
+        }
+    }
+}
+
+/// The Niri actions that run `command` on `window`. Column commands act on
+/// the focused column, so they focus the window first.
+pub(crate) fn layout_actions(command: LayoutCommand, window: u64) -> Vec<niri_ipc::Action> {
+    use niri_ipc::Action;
+    let focus = Action::FocusWindow { id: window };
+    match command {
+        LayoutCommand::Width(percent) => vec![
+            focus,
+            Action::SetColumnWidth {
+                change: niri_ipc::SizeChange::SetProportion(f64::from(percent)),
+            },
+        ],
+        LayoutCommand::ToggleTabs => vec![focus, Action::ToggleColumnTabbedDisplay {}],
+        LayoutCommand::Center => vec![focus, Action::CenterColumn {}],
+        LayoutCommand::ToggleFloating => vec![Action::ToggleWindowFloating { id: Some(window) }],
+        LayoutCommand::Pin(side) => vec![focus, Action::PinColumn { side }],
+        LayoutCommand::Unpin => vec![focus, Action::UnpinColumn {}],
+        LayoutCommand::MoveToWorkspace(workspace) => vec![Action::MoveWindowToWorkspace {
+            window_id: Some(window),
+            reference: niri_ipc::WorkspaceReferenceArg::Id(workspace),
+            focus: false,
+        }],
+    }
 }
 
 /// A row of the menu; `None` is a separator.
 pub(crate) type MenuRow = Option<(String, MenuCommand)>;
 
-/// The menu of `entry`: Open or New window, the desktop entry's actions, then
-/// Pin or Unpin. A running application that declares a single main window
-/// gets no New window. A desktop `new-window` action stands in for a plain
-/// launch, which a D-Bus-activated application would answer by raising its
-/// existing window.
-pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication>) -> Vec<MenuRow> {
+/// The menu of `entry`: Open or New window, the desktop entry's actions, the
+/// layout commands for its current window when it runs, then Pin or Unpin. A
+/// running application that declares a single main window gets no New
+/// window. A desktop `new-window` action stands in for a plain launch, which
+/// a D-Bus-activated application would answer by raising its existing window.
+pub(crate) fn menu(
+    entry: &TaskbarEntry,
+    application: Option<&DesktopApplication>,
+    target: Option<LayoutTarget>,
+) -> Vec<MenuRow> {
     let mut rows = Vec::new();
     let Some(app) = application else {
         return rows;
@@ -98,6 +184,12 @@ pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication
             ))
         }));
     }
+    if let Some(target) = target {
+        if !rows.is_empty() {
+            rows.push(None);
+        }
+        rows.extend(layout_rows(target));
+    }
     if !rows.is_empty() {
         rows.push(None);
     }
@@ -106,6 +198,57 @@ pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication
     } else {
         (fl!("shell-taskbar-pin"), MenuCommand::Pin)
     }));
+    rows
+}
+
+fn layout_rows(target: LayoutTarget) -> Vec<MenuRow> {
+    let row = |label: String, command| Some((label, MenuCommand::Layout(command)));
+    let mut rows = Vec::new();
+    if !target.floating {
+        rows.extend([
+            row(fl!("shell-taskbar-width-third"), LayoutCommand::Width(33)),
+            row(fl!("shell-taskbar-width-half"), LayoutCommand::Width(50)),
+            row(
+                fl!("shell-taskbar-width-two-thirds"),
+                LayoutCommand::Width(67),
+            ),
+            row(fl!("shell-taskbar-toggle-tabs"), LayoutCommand::ToggleTabs),
+            row(fl!("shell-taskbar-center"), LayoutCommand::Center),
+        ]);
+        match target.pinned {
+            Some(_) => rows.push(row(fl!("shell-taskbar-unpin-column"), LayoutCommand::Unpin)),
+            None => rows.extend([
+                row(
+                    fl!("shell-taskbar-pin-left"),
+                    LayoutCommand::Pin(niri_ipc::PinSide::Left),
+                ),
+                row(
+                    fl!("shell-taskbar-pin-right"),
+                    LayoutCommand::Pin(niri_ipc::PinSide::Right),
+                ),
+            ]),
+        }
+    }
+    rows.push(row(
+        if target.floating {
+            fl!("shell-taskbar-tile")
+        } else {
+            fl!("shell-taskbar-float")
+        },
+        LayoutCommand::ToggleFloating,
+    ));
+    if let Some(workspace) = target.above {
+        rows.push(row(
+            fl!("shell-taskbar-move-up"),
+            LayoutCommand::MoveToWorkspace(workspace),
+        ));
+    }
+    if let Some(workspace) = target.below {
+        rows.push(row(
+            fl!("shell-taskbar-move-down"),
+            LayoutCommand::MoveToWorkspace(workspace),
+        ));
+    }
     rows
 }
 
@@ -225,11 +368,39 @@ impl PinStore {
     }
 }
 
+/// Where `window` sits on screen, for ordering: windows on a workspace come
+/// first, by output name, workspace index, column and tile; floating windows
+/// follow the columns of their workspace.
+fn layout_key<'a>(
+    window: &'a niri_ipc::Window,
+    workspaces: &'a [niri_ipc::Workspace],
+) -> (bool, &'a str, u8, usize, usize, u64) {
+    let workspace = window
+        .workspace_id
+        .and_then(|id| workspaces.iter().find(|workspace| workspace.id == id));
+    let (column, tile) = window
+        .layout
+        .pos_in_scrolling_layout
+        .unwrap_or((usize::MAX, usize::MAX));
+    (
+        workspace.is_none(),
+        workspace
+            .and_then(|workspace| workspace.output.as_deref())
+            .unwrap_or(""),
+        workspace.map_or(u8::MAX, |workspace| workspace.idx),
+        column,
+        tile,
+        window.id,
+    )
+}
+
 /// Groups `windows` by application. Pinned applications keep their configured
-/// order; others follow in the order they were first opened.
+/// order; others follow in screen order of their leftmost window, so the
+/// taskbar reads like the strip.
 pub(crate) fn entries(
     pinned: &[String],
     windows: &[&niri_ipc::Window],
+    workspaces: &[niri_ipc::Workspace],
     focused_window: Option<u64>,
     applications: &[DesktopApplication],
 ) -> Vec<TaskbarEntry> {
@@ -240,7 +411,20 @@ pub(crate) fn entries(
         .collect();
 
     let mut ordered: Vec<_> = windows.to_vec();
-    ordered.sort_by_key(|window| window.id);
+    ordered.sort_by_key(|window| layout_key(window, workspaces));
+    let app_key = |window: &niri_ipc::Window| {
+        window
+            .app_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .map(|app_id| {
+                crate::focused_window_icons::match_desktop_application_for_app_id(
+                    app_id,
+                    applications,
+                )
+                .map_or_else(|| app_id.to_owned(), |app| app.id.clone())
+            })
+    };
     let mut recency: Vec<(u64, (u64, u32))> = Vec::new();
     for window in ordered {
         let Some(app_id) = window.app_id.as_deref().filter(|id| !id.is_empty()) else {
@@ -249,6 +433,14 @@ pub(crate) fn entries(
         let application =
             crate::focused_window_icons::match_desktop_application_for_app_id(app_id, applications);
         let key = application.map_or_else(|| app_id.to_owned(), |app| app.id.clone());
+        // A dialog of another of the application's windows is not a window
+        // of its own: it neither counts nor takes a turn when clicks cycle.
+        let dialog = window.parent_id.is_some_and(|parent| {
+            windows
+                .iter()
+                .find(|other| other.id == parent)
+                .is_some_and(|parent| app_key(parent).as_ref() == Some(&key))
+        });
         let index = match entries.iter().position(|entry| entry.key == key) {
             Some(index) => index,
             None => {
@@ -257,9 +449,13 @@ pub(crate) fn entries(
             }
         };
         let entry = &mut entries[index];
-        entry.windows.push(window.id);
         entry.focused |= focused_window == Some(window.id);
         entry.urgent |= window.is_urgent;
+        if dialog {
+            continue;
+        }
+        entry.windows.push(window.id);
+        entry.layout_order.push(window.id);
         recency.push((
             window.id,
             window
@@ -292,6 +488,7 @@ fn entry_for(key: String, application: Option<&DesktopApplication>, pinned: bool
         icon: None,
         pinned,
         windows: Vec::new(),
+        layout_order: Vec::new(),
         focused: false,
         urgent: false,
     }
@@ -306,9 +503,15 @@ pub(crate) fn window_to_focus(entry: &TaskbarEntry, focused_window: Option<u64>)
         && let Some(focused) = focused_window
         && entry.windows.contains(&focused)
     {
-        // Cycle in a stable order so repeated clicks visit every window.
-        let mut stable = entry.windows.clone();
-        stable.sort_unstable();
+        // Cycle in screen order so repeated clicks visit every window, left
+        // to right.
+        let stable = if entry.layout_order.len() == entry.windows.len() {
+            entry.layout_order.clone()
+        } else {
+            let mut stable = entry.windows.clone();
+            stable.sort_unstable();
+            stable
+        };
         let next = stable
             .iter()
             .position(|id| *id == focused)
@@ -664,6 +867,7 @@ mod tests {
             title: None,
             app_id: Some(app_id.into()),
             pid: None,
+            parent_id: None,
             workspace_id: None,
             is_focused: false,
             is_floating: false,
@@ -674,6 +878,7 @@ mod tests {
                 window_size: (0, 0),
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
+                pinned: None,
             },
             focus_timestamp: Some(niri_ipc::Timestamp {
                 secs: focus_secs,
@@ -683,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn pinned_apps_lead_then_running_apps_in_opening_order() {
+    fn pinned_apps_lead_then_running_apps_in_window_order_without_layouts() {
         let apps = [
             app("org.gnome.Nautilus.desktop", "Files", None),
             app("firefox.desktop", "Firefox", None),
@@ -701,6 +906,7 @@ mod tests {
                 "missing.desktop".into(),
             ],
             &refs,
+            &[],
             Some(9),
             &apps,
         );
@@ -722,7 +928,7 @@ mod tests {
     fn unknown_app_ids_still_get_an_entry_without_a_launcher() {
         let windows = [window(1, "org.example.Unknown", 0)];
         let refs: Vec<_> = windows.iter().collect();
-        let entries = entries(&[], &refs, None, &[]);
+        let entries = entries(&[], &refs, &[], None, &[]);
         assert_eq!(entries[0].key, "org.example.Unknown");
         assert_eq!(entries[0].desktop_id, None);
     }
@@ -736,12 +942,79 @@ mod tests {
             desktop_id: Some("foot.desktop".into()),
             pinned: false,
             windows: vec![9, 4, 6],
+            layout_order: Vec::new(),
             focused: true,
             urgent: false,
         };
         assert_eq!(window_to_focus(&entry, Some(4)), Some(6));
         assert_eq!(window_to_focus(&entry, Some(9)), Some(4));
         assert_eq!(window_to_focus(&entry, None), Some(9), "most recent first");
+    }
+
+    fn placed(
+        id: u64,
+        app_id: &str,
+        workspace: u64,
+        column: usize,
+        tile: usize,
+    ) -> niri_ipc::Window {
+        let mut placed = window(id, app_id, 0);
+        placed.workspace_id = Some(workspace);
+        placed.layout.pos_in_scrolling_layout = Some((column, tile));
+        placed
+    }
+
+    fn workspace(id: u64, output: &str, idx: u8) -> niri_ipc::Workspace {
+        niri_ipc::Workspace {
+            id,
+            idx,
+            name: None,
+            output: Some(output.into()),
+            is_urgent: false,
+            is_active: true,
+            is_focused: false,
+            active_window_id: None,
+        }
+    }
+
+    #[test]
+    fn running_apps_follow_the_strip_and_cycle_left_to_right() {
+        let apps = [
+            app("firefox.desktop", "Firefox", None),
+            app("foot.desktop", "Foot", None),
+            app("org.gnome.Nautilus.desktop", "Files", None),
+        ];
+        let workspaces = [workspace(10, "eDP-1", 2), workspace(11, "eDP-1", 1)];
+        let mut floating = placed(1, "foot", 11, 0, 0);
+        floating.layout.pos_in_scrolling_layout = None;
+        let windows = [
+            // Workspace 2: Firefox in column 1.
+            placed(2, "firefox", 10, 1, 1),
+            // Workspace 1: Files in column 2, Foot in column 3 and stacked
+            // under Files, and a floating Foot.
+            placed(3, "foot", 11, 3, 1),
+            placed(4, "org.gnome.Nautilus", 11, 2, 1),
+            placed(5, "foot", 11, 2, 2),
+            floating,
+        ];
+        let refs: Vec<_> = windows.iter().collect();
+
+        let entries = entries(&[], &refs, &workspaces, Some(5), &apps);
+
+        let keys: Vec<_> = entries.iter().map(|entry| entry.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "org.gnome.Nautilus.desktop",
+                "foot.desktop",
+                "firefox.desktop"
+            ]
+        );
+        let foot = &entries[1];
+        assert_eq!(foot.layout_order, [5, 3, 1]);
+        assert_eq!(window_to_focus(foot, Some(5)), Some(3));
+        assert_eq!(window_to_focus(foot, Some(3)), Some(1));
+        assert_eq!(window_to_focus(foot, Some(1)), Some(5));
     }
 
     fn entry(windows: Vec<u64>, pinned: bool) -> TaskbarEntry {
@@ -751,6 +1024,7 @@ mod tests {
             icon: None,
             desktop_id: Some("org.example.Editor.desktop".into()),
             pinned,
+            layout_order: windows.clone(),
             windows,
             focused: false,
             urgent: false,
@@ -784,7 +1058,7 @@ mod tests {
     #[test]
     fn menus_offer_a_new_window_the_desktop_actions_and_pinning() {
         let app = editor(&["new-window", "new-private"], false);
-        let rows = menu(&entry(vec![3], false), Some(&app));
+        let rows = menu(&entry(vec![3], false), Some(&app), None);
         assert_eq!(
             commands(&rows),
             [
@@ -798,14 +1072,18 @@ mod tests {
         );
         assert_eq!(rows[0].as_ref().unwrap().0, fl!("shell-taskbar-new-window"));
 
-        let rows = menu(&entry(vec![], true), Some(&editor(&[], false)));
+        let rows = menu(&entry(vec![], true), Some(&editor(&[], false)), None);
         assert_eq!(
             commands(&rows),
             [Some(MenuCommand::Launch), None, Some(MenuCommand::Unpin)],
             "nothing runs, so the first row opens the application"
         );
 
-        let rows = menu(&entry(vec![3], true), Some(&editor(&["new-window"], true)));
+        let rows = menu(
+            &entry(vec![3], true),
+            Some(&editor(&["new-window"], true)),
+            None,
+        );
         assert_eq!(
             commands(&rows),
             [
@@ -817,14 +1095,144 @@ mod tests {
         );
 
         assert!(
-            menu(&entry(vec![3], false), None).is_empty(),
+            menu(&entry(vec![3], false), None, None).is_empty(),
             "windows without a desktop entry have nothing to launch or pin"
         );
     }
 
     #[test]
+    fn dialogs_belong_to_their_parent_window() {
+        let apps = [app("org.canopa.Files.desktop", "Files", None)];
+        let mut quick_look = placed(3, "org.canopa.Files", 11, 0, 0);
+        quick_look.layout.pos_in_scrolling_layout = None;
+        quick_look.parent_id = Some(1);
+        // Another application's dialog parented to Files keeps its own entry.
+        let mut portal = window(4, "org.canopa.Portal", 0);
+        portal.parent_id = Some(1);
+        let windows = [
+            placed(1, "org.canopa.Files", 11, 1, 1),
+            placed(2, "org.canopa.Files", 11, 2, 1),
+            quick_look,
+            portal,
+        ];
+        let refs: Vec<_> = windows.iter().collect();
+
+        let entries = entries(&[], &refs, &[workspace(11, "eDP-1", 1)], Some(3), &apps);
+
+        let files = &entries[0];
+        assert_eq!(files.layout_order, [1, 2]);
+        assert!(files.focused, "a focused dialog marks its application");
+        assert_eq!(entries[1].key, "org.canopa.Portal");
+        assert_eq!(entries[1].windows, [4]);
+    }
+
+    #[test]
+    fn running_windows_get_layout_commands_for_their_place() {
+        let tiled = LayoutTarget {
+            floating: false,
+            pinned: None,
+            above: None,
+            below: Some(12),
+        };
+        let rows = menu(
+            &entry(vec![3], false),
+            Some(&editor(&[], false)),
+            Some(tiled),
+        );
+        let layout: Vec<_> = commands(&rows)
+            .into_iter()
+            .flatten()
+            .filter_map(|command| match command {
+                MenuCommand::Layout(command) => Some(command),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            layout,
+            [
+                LayoutCommand::Width(33),
+                LayoutCommand::Width(50),
+                LayoutCommand::Width(67),
+                LayoutCommand::ToggleTabs,
+                LayoutCommand::Center,
+                LayoutCommand::Pin(niri_ipc::PinSide::Left),
+                LayoutCommand::Pin(niri_ipc::PinSide::Right),
+                LayoutCommand::ToggleFloating,
+                LayoutCommand::MoveToWorkspace(12),
+            ]
+        );
+        let pinned = LayoutTarget {
+            pinned: Some(niri_ipc::PinSide::Left),
+            ..tiled
+        };
+        let rows = menu(
+            &entry(vec![3], false),
+            Some(&editor(&[], false)),
+            Some(pinned),
+        );
+        assert!(commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Unpin))));
+        assert!(
+            !commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Pin(
+                niri_ipc::PinSide::Left
+            ))))
+        );
+
+        let floating = LayoutTarget {
+            floating: true,
+            pinned: None,
+            above: Some(10),
+            below: Some(12),
+        };
+        let rows = menu(
+            &entry(vec![3], false),
+            Some(&editor(&[], false)),
+            Some(floating),
+        );
+        assert!(!commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Center))));
+        assert!(commands(&rows).contains(&Some(MenuCommand::Layout(
+            LayoutCommand::MoveToWorkspace(10)
+        ))));
+    }
+
+    #[test]
+    fn layout_targets_find_the_neighbouring_workspaces_on_the_same_output() {
+        let workspaces = [
+            workspace(10, "eDP-1", 1),
+            workspace(11, "eDP-1", 2),
+            workspace(12, "eDP-1", 3),
+            workspace(20, "DP-1", 3),
+        ];
+        let window = placed(1, "foot", 11, 1, 1);
+        let target = LayoutTarget::of(&window, &workspaces);
+        assert_eq!((target.above, target.below), (Some(10), Some(12)));
+        let first = LayoutTarget::of(&placed(2, "foot", 10, 1, 1), &workspaces);
+        assert_eq!((first.above, first.below), (None, Some(11)));
+    }
+
+    #[test]
+    fn column_commands_focus_the_window_first() {
+        use niri_ipc::Action;
+        let actions = layout_actions(LayoutCommand::Width(33), 7);
+        assert!(matches!(actions[0], Action::FocusWindow { id: 7 }));
+        assert!(matches!(
+            actions[1],
+            Action::SetColumnWidth {
+                change: niri_ipc::SizeChange::SetProportion(value)
+            } if value == 33.0
+        ));
+        assert!(matches!(
+            layout_actions(LayoutCommand::MoveToWorkspace(12), 7).as_slice(),
+            [Action::MoveWindowToWorkspace {
+                window_id: Some(7),
+                focus: false,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn menu_trees_map_item_ids_to_rows_and_separators() {
-        let rows = menu(&entry(vec![], false), Some(&editor(&["a"], false)));
+        let rows = menu(&entry(vec![], false), Some(&editor(&["a"], false)), None);
         let tree = menu_tree(&rows, (5, 6), (800, 600));
         assert_eq!(tree.items.len(), rows.len());
         assert_eq!(tree.items[0].id, "0");

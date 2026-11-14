@@ -1396,3 +1396,45 @@ fn shipped_defaults_follow_the_language() {
     assert_eq!(logout.title.as_deref(), Some("Se déconnecter\u{a0}?"));
     assert_eq!(logout.items[0].label, "Annuler");
 }
+
+#[test]
+fn windows_restore_is_opt_in() {
+    assert!(!super::parse("").unwrap().windows.restore);
+    assert!(
+        super::parse("windows { restore #true; }")
+            .unwrap()
+            .windows
+            .restore
+    );
+    assert!(super::parse("windows { restore #true; keep 1; }").is_err());
+}
+
+#[test]
+fn templates_list_apps_with_optional_widths() {
+    let config = super::parse(
+        r#"templates {
+            template "dev" {
+                app "code" width=66.667
+                app "foot.desktop" width=33
+            }
+            template "chat" { app "signal.desktop"; }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(config.templates.len(), 2);
+    let dev = &config.templates[0];
+    assert_eq!(dev.name, "dev");
+    assert_eq!(dev.apps[0].desktop_id, "code.desktop");
+    assert_eq!(dev.apps[0].width_percent, Some(66.667));
+    assert_eq!(dev.apps[1].width_percent, Some(33.0));
+    assert_eq!(config.templates[1].apps[0].width_percent, None);
+
+    for refused in [
+        r#"templates { template "a" { app "x" width=2; } }"#,
+        r#"templates { template "a" { } }"#,
+        r#"templates { template "a" { app "x"; } template "a" { app "y"; } }"#,
+        r#"templates { layout "a" { app "x"; } }"#,
+    ] {
+        assert!(super::parse(refused).is_err(), "{refused}");
+    }
+}

@@ -181,7 +181,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
     // A package update moves one binding, adds two, one of them on the user's
     // key, and changes a layout default.
     let updated = DEFAULTS
-        .replace("    Mod+Q { close-window; }\n", "    Mod+W { close-window; }\n")
+        .replace("    Mod+Q { close-window; }\n", "    Mod+Y { close-window; }\n")
         .replace("gaps 12", "gaps 16")
         .replace(
             "    Print { screenshot; }\n",
@@ -199,7 +199,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
             .find(|(bound, _)| bound == key)
             .map(|(_, action)| action.as_str())
     };
-    assert_eq!(action("Mod+W"), Some("close-window"));
+    assert_eq!(action("Mod+Y"), Some("close-window"));
     assert_eq!(action("Mod+Q"), None);
     assert!(action("Mod+B").unwrap().contains("canopa-browser"));
     assert!(action("Mod+Shift+Space").unwrap().contains("--toggle-menu"));
@@ -586,4 +586,18 @@ fn retired_actions_wait_for_defaults_that_replace_them() {
     assert_eq!(refresh(&paths, Some(&defaults), check).unwrap(), None);
     let editor = Editor::load(&paths).unwrap();
     assert_eq!(editor.rows[row(&editor, "XF86AudioMute")].key, "Mod+M");
+}
+
+#[test]
+fn pointer_triggers_are_shortcuts() {
+    assert_eq!(
+        super::normalize("Mod+WheelScrollDown"),
+        super::normalize("Super+wheelscrolldown")
+    );
+    assert_ne!(
+        super::normalize("Mod+WheelScrollDown"),
+        super::normalize("Mod+WheelScrollUp")
+    );
+    assert!(super::normalize("Mod+Shift+MouseMiddle").is_some());
+    assert!(super::normalize("Mod+WheelScrollSideways").is_none());
 }

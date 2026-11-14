@@ -55,6 +55,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
+        cli::Command::OpenTemplate(_) => "open-template",
         cli::Command::Dmenu(_) => "dmenu",
         cli::Command::DeviceKey(_) => "device-key",
         cli::Command::UsageError(_) => "usage-error",
@@ -114,6 +115,7 @@ fn main() {
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),
         cli::Command::ToggleMenu(name) => std::process::exit(run_menu_cli(name, true)),
+        cli::Command::OpenTemplate(name) => std::process::exit(run_template_cli(name)),
         cli::Command::Dmenu(options) => std::process::exit(run_dmenu_cli(options)),
         cli::Command::DeviceKey(request) => std::process::exit(run_device_key_cli(request)),
         cli::Command::UsageError(message) => {
@@ -342,6 +344,29 @@ fn run_menu_cli(name: String, toggle: bool) -> i32 {
         }
         Err(error) => {
             eprintln!("canopa-shell: {operation} request failed: {error}");
+            1
+        }
+    }
+}
+
+fn run_template_cli(name: String) -> i32 {
+    use ipc::protocol::{IpcRequest, IpcResponse};
+
+    match send_framed_request(
+        &IpcRequest::OpenTemplate { name },
+        Some(std::time::Duration::from_secs(2)),
+    ) {
+        Ok(IpcResponse::Accepted) => 0,
+        Ok(IpcResponse::Rejected { reason }) => {
+            eprintln!("canopa-shell: open-template request rejected: {reason}");
+            1
+        }
+        Ok(_) => {
+            eprintln!("canopa-shell: unexpected open-template response");
+            1
+        }
+        Err(error) => {
+            eprintln!("canopa-shell: open-template request failed: {error}");
             1
         }
     }

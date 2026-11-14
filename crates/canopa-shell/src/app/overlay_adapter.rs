@@ -327,6 +327,7 @@ mod tests {
         let module = ModuleId::new("clock");
         let tree = crate::surface::tooltip_popup::TooltipTree {
             segments: Vec::new(),
+            previews: Vec::new(),
             anchor: (0, 0),
             bar_size: (48, 1080),
             screen_size: (48, 1080),

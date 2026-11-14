@@ -8,6 +8,7 @@ pub mod focused_window;
 pub mod idle_inhibitor;
 pub mod interaction;
 pub mod media;
+pub mod minimap;
 pub mod network;
 pub mod notifications;
 pub mod render;
@@ -199,6 +200,7 @@ pub enum ModuleKind {
     TrayIcon,
     Taskbar,
     TaskbarItem,
+    Minimap,
 }
 
 impl ModuleKind {
@@ -231,6 +233,7 @@ impl ModuleKind {
             ModuleKind::TrayIcon => "tray_icon",
             ModuleKind::Taskbar => "taskbar",
             ModuleKind::TaskbarItem => "taskbar_item",
+            ModuleKind::Minimap => "minimap",
         }
     }
 
@@ -272,6 +275,8 @@ pub enum ModuleState {
     Script(script::ScriptState),
     Button(button::ButtonState),
     FocusedWindow(focused_window::FocusedWindowState),
+    /// The scrolling strip of the workspace on the bar's output.
+    Minimap(minimap::MinimapState),
     /// Surface output name passed to workspace_item modules so they can filter rendering.
     WorkspaceOutput(String),
 }
@@ -403,12 +408,13 @@ macro_rules! config_module_descriptors {
             (ModuleKind::Button, "button", button_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Clock, "clock", clock_ctor, Some(clock_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::FocusedWindow, "focused-window", focused_window_ctor, Some(focused_window_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Minimap, "minimap", minimap_ctor, Some(minimap_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
             (ModuleKind::Media, "media", media_ctor, Some(media_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY),
             (ModuleKind::Notifications, "notifications", notifications_ctor, Some(notifications_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities::NONE, ModuleInteractionProfile::PRIMARY_AND_SECONDARY),
             (ModuleKind::Network, "network", network_ctor, Some(network_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_system_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Script, "script", script_ctor, None, ModuleCapabilities::NONE, ModuleInteractionProfile::NONE),
             (ModuleKind::Tray, "tray", tray_ctor, Some(tray_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
-            (ModuleKind::Taskbar, "taskbar", taskbar_ctor, Some(taskbar_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
+            (ModuleKind::Taskbar, "taskbar", taskbar_ctor, Some(taskbar_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, needs_session_dbus: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
             (ModuleKind::Volume, "volume", volume_ctor, Some(volume_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_wireplumber: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::SCROLL),
             (ModuleKind::Workspaces, "workspaces", workspaces_ctor, Some(workspaces_synthesized_params as SynthesizedParamsFactory), ModuleCapabilities { needs_niri: true, ..ModuleCapabilities::NONE }, ModuleInteractionProfile::NONE),
         }
@@ -694,6 +700,21 @@ fn taskbar_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Modu
     ))))
 }
 
+fn minimap_ctor(mc: &crate::config::ModuleConfig) -> anyhow::Result<Box<dyn Module>> {
+    let config = match &mc.params {
+        ModuleParams::Minimap(config) => config.clone(),
+        _ => crate::config::MinimapConfig::default(),
+    };
+    Ok(Box::new(minimap::MinimapModule::new(
+        ModuleId::new(&mc.name),
+        config,
+    )))
+}
+
+fn minimap_synthesized_params() -> ModuleParams {
+    ModuleParams::Minimap(crate::config::MinimapConfig::default())
+}
+
 fn taskbar_synthesized_params() -> ModuleParams {
     ModuleParams::Taskbar(crate::config::TaskbarConfig::default())
 }
@@ -739,6 +760,7 @@ mod tests {
             (ModuleKind::Button, "button"),
             (ModuleKind::Clock, "clock"),
             (ModuleKind::FocusedWindow, "focused-window"),
+            (ModuleKind::Minimap, "minimap"),
             (ModuleKind::Notifications, "notifications"),
             (ModuleKind::Network, "network"),
             (ModuleKind::Script, "script"),
@@ -804,6 +826,7 @@ mod tests {
             ModuleKind::Network,
             ModuleKind::Notifications,
             ModuleKind::Media,
+            ModuleKind::Minimap,
             ModuleKind::Script,
             ModuleKind::Taskbar,
             ModuleKind::Tray,

@@ -6,13 +6,58 @@ use crate::niri::NiriEvent;
 
 pub(super) struct AppNiriState {
     state: crate::niri::NiriState,
+    /// The last place announced to screen readers.
+    announced_place: Option<crate::niri::LayoutPlace>,
+    /// Text typed into the overview that the launcher is searching.
+    overview_query: String,
+    /// The launcher opened for that text has appeared; it may still be
+    /// loading its sources before it does.
+    overview_launcher_shown: bool,
+    #[cfg(not(test))]
+    announcer: Option<super::announcer::Announcer>,
+    #[cfg(test)]
+    announcements: Vec<String>,
 }
 
 impl AppNiriState {
     pub(super) fn new() -> Self {
         Self {
             state: crate::niri::NiriState::default(),
+            announced_place: None,
+            overview_query: String::new(),
+            overview_launcher_shown: false,
+            #[cfg(not(test))]
+            announcer: None,
+            #[cfg(test)]
+            announcements: Vec::new(),
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn overview_query(&self) -> &str {
+        &self.overview_query
+    }
+
+    /// Tell screen readers where focus went when it moves to another column,
+    /// window or workspace. Window titles are left to the application's own
+    /// focus announcement.
+    fn announce_place(&mut self) {
+        let Some(place) = self.state.focused_place() else {
+            return;
+        };
+        let announcement = place_announcement(self.announced_place, place);
+        self.announced_place = Some(place);
+        let Some(text) = announcement else {
+            return;
+        };
+        #[cfg(not(test))]
+        self.announcer
+            .get_or_insert_with(|| {
+                super::announcer::Announcer::new(fl!("shell-a11y-layout-announcer"))
+            })
+            .announce(&text);
+        #[cfg(test)]
+        self.announcements.push(text);
     }
 
     pub(super) fn state(&self) -> &crate::niri::NiriState {
@@ -22,6 +67,57 @@ impl AppNiriState {
     pub(super) fn state_mut(&mut self) -> &mut crate::niri::NiriState {
         &mut self.state
     }
+}
+
+/// What changed between two places, worded for a screen reader, or `None`
+/// when focus stayed put.
+fn place_announcement(
+    previous: Option<crate::niri::LayoutPlace>,
+    place: crate::niri::LayoutPlace,
+) -> Option<String> {
+    if previous.is_some_and(|previous| {
+        (previous.workspace_id, previous.column, previous.tile)
+            == (place.workspace_id, place.column, place.tile)
+    }) {
+        return None;
+    }
+    let mut parts = vec![fl!(
+        "shell-a11y-layout-column",
+        column = place.column,
+        columns = place.columns
+    )];
+    if place.tiles > 1 {
+        parts.push(fl!(
+            "shell-a11y-layout-tile",
+            tile = place.tile,
+            tiles = place.tiles
+        ));
+    }
+    if previous.is_none_or(|previous| previous.workspace_id != place.workspace_id) {
+        parts.push(fl!(
+            "shell-a11y-layout-workspace",
+            workspace = place.workspace
+        ));
+    }
+    Some(parts.join(", "))
+}
+
+fn run_niri_action(action: niri_ipc::Action) {
+    #[cfg(not(test))]
+    tokio::spawn(async move {
+        if let Err(error) = crate::command::niri_action(action).await {
+            tracing::warn!(target: "canopa_shell::niri", %error, "niri action failed");
+        }
+    });
+    #[cfg(test)]
+    let _ = action;
+}
+
+fn workspace_outputs(workspaces: &[niri_ipc::Workspace]) -> std::collections::BTreeSet<&str> {
+    workspaces
+        .iter()
+        .filter_map(|workspace| workspace.output.as_deref())
+        .collect()
 }
 
 pub(super) fn workspace_render_state_equal(
@@ -50,7 +146,7 @@ impl App {
                     target: "canopa_shell::niri",
                     "niri ipc connected"
                 );
-                Task::none()
+                self.refresh_niri_output_sizes()
             }
             NiriEvent::Unavailable => {
                 *self.niri.state_mut() = crate::niri::NiriState::default();
@@ -79,6 +175,7 @@ impl App {
             }
             NiriEvent::Event(event) => {
                 use niri_ipc::Event;
+                let mut task = Task::none();
                 match event {
                     Event::WorkspacesChanged { workspaces } => {
                         let changed = !workspace_render_state_equal(
@@ -92,9 +189,15 @@ impl App {
                             "niri workspaces changed"
                         );
                         if changed {
+                            // Outputs come and go with their workspaces.
+                            let outputs_changed = workspace_outputs(&self.niri.state().workspaces)
+                                != workspace_outputs(&workspaces);
                             self.rebuild_workspace_item_modules(&workspaces);
                             self.niri.state_mut().workspaces = workspaces;
                             self.push_focused_window_state();
+                            if outputs_changed {
+                                task = self.refresh_niri_output_sizes();
+                            }
                         }
                     }
                     Event::WindowFocusChanged { id } => {
@@ -154,6 +257,7 @@ impl App {
                             windows.iter().find(|w| w.is_focused).map(|w| w.id);
                         self.niri.state_mut().windows =
                             windows.into_iter().map(|w| (w.id, w)).collect();
+                        self.niri.state_mut().windows_known = true;
                         self.push_focused_window_state();
                     }
                     Event::WindowOpenedOrChanged { window } => {
@@ -181,12 +285,120 @@ impl App {
                         }
                         self.push_focused_window_state();
                     }
+                    Event::WindowLayoutsChanged { changes } => {
+                        let windows = &mut self.niri.state_mut().windows;
+                        for (id, layout) in changes {
+                            if let Some(window) = windows.get_mut(&id) {
+                                window.layout = layout;
+                            }
+                        }
+                    }
+                    Event::WindowUrgencyChanged { id, urgent } => {
+                        if let Some(window) = self.niri.state_mut().windows.get_mut(&id) {
+                            window.is_urgent = urgent;
+                        }
+                    }
+                    Event::OverviewTyped { text } => {
+                        task = self.search_from_overview(&text);
+                    }
+                    Event::ConfigLoaded { .. } => {
+                        // Output modes and scales live in the configuration.
+                        task = self.refresh_niri_output_sizes();
+                    }
                     _ => {}
                 }
                 self.refresh_taskbar();
-                Task::none()
+                self.niri.announce_place();
+                Task::batch([task, self.sync_window_session()])
             }
         }
+    }
+
+    /// Typing in the overview searches the launcher: the first key opens the
+    /// launcher over the overview with the text, and keys Niri reports before
+    /// the launcher takes the keyboard extend it. Niri gives the keyboard to
+    /// the launcher's top-layer surface while the overview stays open, so no
+    /// key reaches a window in between; the overview closes with the
+    /// launcher (`finish_overview_search`).
+    fn search_from_overview(&mut self, text: &str) -> Task<Message> {
+        let Some(menu) = self
+            .config
+            .menus
+            .iter()
+            .find(|menu| {
+                menu.source.as_ref().is_some_and(|source| {
+                    matches!(source.kind, crate::config::MenuSourceKind::Launcher(_))
+                })
+            })
+            .map(|menu| menu.name.clone())
+        else {
+            return Task::none();
+        };
+        // Keys typed before the launcher takes the keyboard still arrive from
+        // the overview; they extend the query of the launcher already opening.
+        let launcher_open = self.foreground.active_panel_tree().is_some_and(|tree| {
+            tree.content == crate::surface::panel::PanelContent::Menu(menu.clone())
+        });
+        if launcher_open && !self.niri.overview_query.is_empty() {
+            self.niri.overview_query.push_str(text);
+            return Task::done(Message::Panel(super::messages::PanelEvent::SearchChanged(
+                self.niri.overview_query.clone(),
+            )));
+        }
+        let Some(origin_window) = self
+            .surfaces
+            .select_global_panel_surface(self.niri.state().focused_output())
+        else {
+            return Task::none();
+        };
+        self.niri.overview_query = text.to_owned();
+        self.niri.overview_launcher_shown = false;
+        let open = self.handle_panel_event(super::messages::PanelEvent::Open {
+            origin_window,
+            origin: crate::surface::panel::PanelOrigin::Bar,
+            content: crate::surface::panel::PanelContent::Menu(menu),
+            anchor: None,
+        });
+        Task::batch([
+            open,
+            Task::done(Message::Panel(super::messages::PanelEvent::SearchChanged(
+                self.niri.overview_query.clone(),
+            ))),
+        ])
+    }
+
+    /// Close the overview once the launcher opened from it has closed,
+    /// whether a result was chosen or the search was dismissed.
+    pub(super) fn finish_overview_search(&mut self) {
+        if self.niri.overview_query.is_empty() {
+            return;
+        }
+        let launcher_open = self.foreground.active_panel_tree().is_some_and(|tree| {
+            matches!(&tree.content, crate::surface::panel::PanelContent::Menu(name)
+            if self.config.menus.iter().any(|menu| &menu.name == name
+                && menu.source.as_ref().is_some_and(|source| {
+                    matches!(source.kind, crate::config::MenuSourceKind::Launcher(_))
+                })))
+        });
+        if launcher_open {
+            self.niri.overview_launcher_shown = true;
+        } else if self.niri.overview_launcher_shown {
+            self.niri.overview_query.clear();
+            self.niri.overview_launcher_shown = false;
+            run_niri_action(niri_ipc::Action::CloseOverview {});
+        }
+    }
+
+    /// Ask Niri for output sizes, which set the minimap's scale.
+    pub(super) fn refresh_niri_output_sizes(&self) -> Task<Message> {
+        if cfg!(test) || self.modules.count_by_kind(ModuleKind::Minimap) == 0 {
+            return Task::none();
+        }
+        Task::perform(crate::niri::output_sizes(), |sizes| {
+            Message::Niri(super::messages::AppNiriEvent::OutputSizes(
+                sizes.unwrap_or_default(),
+            ))
+        })
     }
 
     pub(super) fn handle_app_niri_event(
@@ -195,6 +407,10 @@ impl App {
     ) -> Task<Message> {
         match event {
             super::messages::AppNiriEvent::Ipc(event) => self.handle_niri_event(event),
+            super::messages::AppNiriEvent::OutputSizes(sizes) => {
+                self.niri.state_mut().output_sizes = sizes;
+                self.sync_window_session()
+            }
         }
     }
 
@@ -612,6 +828,7 @@ mod tests {
             title: title.map(|t| t.to_string()),
             app_id: None,
             pid: None,
+            parent_id: None,
             workspace_id: None,
             is_focused,
             is_floating: false,
@@ -622,6 +839,7 @@ mod tests {
                 window_size: (0, 0),
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
+                pinned: None,
             },
             focus_timestamp: None,
         }
@@ -848,5 +1066,91 @@ mod tests {
             }
             state => panic!("expected focused-window state, got {state:?}"),
         }
+    }
+
+    #[test]
+    fn layout_and_urgency_changes_update_the_window_cache() {
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowsChanged {
+                windows: vec![make_window(1, Some("Files"), false)],
+            },
+        ))));
+        let mut layout = app.niri.state().windows[&1].layout.clone();
+        layout.pos_in_scrolling_layout = Some((3, 1));
+        layout.tile_size = (960.0, 1000.0);
+
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowLayoutsChanged {
+                changes: vec![(1, layout.clone()), (99, layout)],
+            },
+        ))));
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            Event::WindowUrgencyChanged {
+                id: 1,
+                urgent: true,
+            },
+        ))));
+
+        let window = &app.niri.state().windows[&1];
+        assert_eq!(window.layout.pos_in_scrolling_layout, Some((3, 1)));
+        assert_eq!(window.layout.tile_size, (960.0, 1000.0));
+        assert!(window.is_urgent);
+        assert_eq!(app.niri.state().windows.len(), 1);
+    }
+
+    #[test]
+    fn output_sizes_are_stored() {
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let _ = app.update(Message::Niri(AppNiriEvent::OutputSizes(
+            [("eDP-1".to_owned(), (1920.0, 1080.0))].into(),
+        )));
+        assert_eq!(
+            app.niri.state().output_sizes.get("eDP-1"),
+            Some(&(1920.0, 1080.0))
+        );
+    }
+
+    #[test]
+    fn moving_focus_between_columns_is_announced_once_per_place() {
+        use niri_ipc::Event;
+        let (mut app, _) = App::boot(make_config(), vec![]);
+        let tiled = |id, column, tile| {
+            let mut window = make_window(id, Some("Window"), false);
+            window.workspace_id = Some(2);
+            window.layout.pos_in_scrolling_layout = Some((column, tile));
+            window
+        };
+        let send = |app: &mut App, event| {
+            let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(event))));
+        };
+        send(
+            &mut app,
+            Event::WorkspacesChanged {
+                workspaces: vec![make_workspace(1, true)],
+            },
+        );
+        send(
+            &mut app,
+            Event::WindowsChanged {
+                windows: vec![tiled(1, 1, 1), tiled(2, 2, 1), tiled(3, 2, 2)],
+            },
+        );
+        send(&mut app, Event::WindowFocusChanged { id: Some(1) });
+        send(&mut app, Event::WindowFocusChanged { id: Some(3) });
+        // The same place again, and the Shell taking the keyboard, say nothing.
+        send(&mut app, Event::WindowFocusChanged { id: Some(3) });
+        send(&mut app, Event::WindowFocusChanged { id: None });
+        send(&mut app, Event::WindowFocusChanged { id: Some(2) });
+
+        assert_eq!(
+            app.niri.announcements,
+            [
+                "Column 1 of 2, workspace 1",
+                "Column 2 of 2, window 2 of 2",
+                "Column 2 of 2, window 1 of 2",
+            ]
+        );
     }
 }

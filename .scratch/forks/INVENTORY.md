@@ -152,6 +152,18 @@ private sockets.
 | `org.canopa.Niri.InputCapture1` v1 (pointer) and v2 (keyboard, keymap revisions) | input-capture, input-capture-keyboard | Pointer barriers on outer zone edges; keyboard routing before seat XKB with separate capture state | InputCapture portal (ADR 0059–0063, 0111) | No upstream work; no standard protocol | **Keep, optional**; propose a Mutter-compatible interface on Smithay EIS |
 | `org.canopa.Niri.GlobalShortcuts1` | global-shortcuts | Up to 16 leases; atomic replace; Activated/Deactivated with source timestamps; per-keyboard press ownership; conflict detection with binds and a11y grabs | GlobalShortcuts portal (ADR 0066, 0068) | **Upstream merged `org.gnome.Shell` GrabAccelerator (PR #4744, 2026-11-07, unreleased)** | **Re-evaluate now**: try the upstream API; upstream timestamp and ownership gaps |
 
+### Layout and input features (2026-11-14, tracking PRs #14–#18)
+
+| Change | Topic, base | Why | Upstream | Verdict |
+| --- | --- | --- | --- | --- |
+| `tile_pos_in_workspace_view` for scrolling tiles (settled view position) | `canopa/viewport-ipc`, base (#14) | Shell minimap frames the visible area (`.scratch/niri-scrolling` 07) | Not upstream | **Upstream** |
+| IPC `Window.parent_id` | `canopa/window-parent-ipc`, base (#15) | Taskbar groups dialogs under their parent (11) | Not upstream | **Upstream** |
+| `SpawnPlaced` action bound to the activation token | `canopa/spawn-placement`, base (#16) | Session restore and workspace templates (09) | Not upstream | **Discuss upstream** |
+| `overview { emit-typed-text; }` and `Event::OverviewTyped` | `canopa/overview-typing`, on global-shortcuts (#17) | Type to search from the overview (04) | Related upstream branch `focus-on-type` | **Keep**, compare with upstream |
+| Touchscreen 3/4-finger swipes, `gestures { touchscreen-swipe }` | `canopa/touch-gestures`, on remote-input-touch (#18) | Strip and overview by touch (13) | Touchpad-only upstream | **Upstream** after hardware tests |
+| `org.canopa.Niri.WindowPreview1.Capture`, `window-previews { off; }` | `canopa/window-preview`, base (#19) | Taskbar thumbnails (08) | No upstream service | **Keep**, private |
+| Pinned columns: `PinColumn`/`UnpinColumn`/`TogglePinnedColumn`, `open-pinned`, `WindowLayout.pinned` | `canopa/pinned-columns`, base (#20) | Columns that stay on screen (10) | No upstream equivalent | **Discuss upstream** |
+
 Where the shipped patch lives: about 10,100 added lines are new modules
 (`dbus/global_shortcuts*` 3,162, `dbus/remote_input*` 2,525,
 `dbus/input_capture*` 2,462, `input/remote_touch*` 638, plus 134 tests). About

@@ -518,21 +518,11 @@ impl App {
                     super::messages::ModuleRuntimeEvent::ModuleRightClick(id.clone(), window),
                 ))
                 .on_scroll(move |delta| {
-                    let up = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. }
-                        | iced::mouse::ScrollDelta::Pixels { y, .. } => y > 0.0,
-                    };
-                    if up {
-                        Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollUp(
-                            scroll_id.clone(),
-                            window,
-                        ))
-                    } else {
-                        Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScrollDown(
-                            scroll_id.clone(),
-                            window,
-                        ))
-                    }
+                    Message::Modules(super::messages::ModuleRuntimeEvent::ModuleScroll(
+                        scroll_id.clone(),
+                        window,
+                        delta,
+                    ))
                 })
                 .into();
             // A button named after the module and its value; keyboard focus
@@ -605,6 +595,14 @@ impl App {
         if kind == ModuleKind::WorkspaceItem {
             return ModuleState::WorkspaceOutput(surface.output_name.clone());
         }
+        if kind == ModuleKind::Minimap {
+            let niri = self.niri.state();
+            if !niri.connected {
+                return ModuleState::Unavailable;
+            }
+            return crate::modules::minimap::strip(niri, &surface.output_name)
+                .map_or(ModuleState::Empty, ModuleState::Minimap);
+        }
 
         let stored_state = self.modules.render_state_for(id);
 
@@ -650,6 +648,7 @@ mod tests {
             title: Some(title.to_string()),
             app_id: None,
             pid: None,
+            parent_id: None,
             workspace_id: None,
             is_focused,
             is_floating: false,
@@ -660,6 +659,7 @@ mod tests {
                 window_size: (0, 0),
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
+                pinned: None,
             },
             focus_timestamp: None,
         }
@@ -1251,6 +1251,8 @@ mod tests {
         let mut config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1290,6 +1292,8 @@ mod tests {
         let mut config = Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {

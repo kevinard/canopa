@@ -18,6 +18,7 @@ fork's `canopa/main` branch; `Cargo.lock` records the exact commits.
 | [kevinard/exwlshelleventloop](https://github.com/kevinard/exwlshelleventloop) | waycrate/exwlshelleventloop | iced_layershell, iced_layershell_macros, iced_exdevtools, layershellev, waycrate_xkbkeycode | v0.19.1 (`5e39311c`) |
 | [kevinard/reis](https://github.com/kevinard/reis) | ids1024/reis | reis | 0.7.1 (`02bc1b52`) |
 | [kevinard/coreutils](https://github.com/kevinard/coreutils) | uutils/coreutils | uucore, uucore_procs | uucore 0.12.0 (`dc1efd89`) |
+| [kevinard/niri](https://github.com/kevinard/niri) | niri-wm/niri | niri-ipc | Niri `b22eb842`; the `rev` is always the compositor pin in `packaging/forks.json`, so the Shell and Settings speak the IPC of the compositor they ship with (`scripts/test-fork-sources.py` checks it) |
 
 Every fork uses the same branches:
 - `canopa/base` is the exact upstream commit.
@@ -170,6 +171,19 @@ of a former recipe rather than an identical tree:
 | `niri-global-shortcuts` | `canopa/global-shortcuts` | [0066](adr/0066-compositor-owned-shortcut-leases.md) |
 | `niri-input-capture-keyboard` | `canopa/input-capture-keyboard` | [0111](adr/0111-input-capture-keyboard-ownership.md) |
 | `niri-remote-touch` (packaged) | `canopa/main` (the pin) | [0117](adr/0117-remote-touch-ownership-and-transport.md) |
+
+Topics added after the recipes, each a tracking PR in the fork and part of the
+pin (`.scratch/niri-scrolling/PRD.md`):
+
+| Fork ref | Base | Canopa use |
+| --- | --- | --- |
+| `canopa/viewport-ipc` (#14) | `canopa/base` | Minimap visible-area frame |
+| `canopa/window-parent-ipc` (#15) | `canopa/base` | Taskbar dialog grouping; the Shell's `niri-ipc` comes from the fork pin |
+| `canopa/spawn-placement` (#16) | `canopa/base` | Window session restore and workspace templates |
+| `canopa/overview-typing` (#17) | `canopa/global-shortcuts` | Type to search from the overview (`overview { emit-typed-text; }` in the shipped defaults) |
+| `canopa/touch-gestures` (#18) | `canopa/remote-input-touch` | Touchscreen strip and overview gestures |
+| `canopa/window-preview` (#19) | `canopa/base` | Taskbar tooltip thumbnails (`org.canopa.Niri.WindowPreview1`) |
+| `canopa/pinned-columns` (#20) | `canopa/base` | Pinned columns in the minimap, taskbar menu and `Mod+P` defaults |
 
 The std-only checks `scripts/test-remote-touch-core.py` (workspace gate) and
 `scripts/test-input-capture-keyboard-core.py` read their pure modules from the

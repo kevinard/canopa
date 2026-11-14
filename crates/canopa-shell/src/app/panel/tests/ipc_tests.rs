@@ -180,3 +180,63 @@ fn open_menu_replacement_completes_a_pending_dmenu_request() {
     assert_eq!(rx.try_recv().unwrap(), IpcResponse::Cancelled);
     assert_eq!(active_menu_entries(&app)[0].label, "Terminal");
 }
+
+fn overview_typed(app: &mut App, text: &str) {
+    let _ = app.update(Message::Niri(crate::app::messages::AppNiriEvent::Ipc(
+        crate::niri::NiriEvent::Event(niri_ipc::Event::OverviewTyped { text: text.into() }),
+    )));
+}
+
+#[test]
+fn typing_in_the_overview_opens_the_launcher_with_the_text() {
+    let launcher = crate::config::MenuConfig {
+        name: "Applications".into(),
+        title: None,
+        show_icons: true,
+        prompt: None,
+        source: Some(crate::config::MenuSourceConfig {
+            kind: crate::config::MenuSourceKind::Launcher(Default::default()),
+        }),
+        items: Vec::new(),
+    };
+    let (mut app, _) = App::boot(config_with_menu(launcher), vec![]);
+    app.surface_mut(iced::window::Id::unique());
+
+    overview_typed(&mut app, "f");
+
+    assert_eq!(
+        app.foreground.active_panel_tree().unwrap().content,
+        PanelContent::Menu("Applications".into())
+    );
+    assert_eq!(app.niri.overview_query(), "f");
+    // The query reaches the launcher even when it arrives before the
+    // launcher's session opens.
+    let _ = app.update(Message::Panel(
+        crate::app::messages::PanelEvent::SearchChanged("f".into()),
+    ));
+    assert_eq!(
+        app.foreground.active_panel_menu_render_state().search_query,
+        "f"
+    );
+    // Keys Niri reports before the launcher takes the keyboard are appended,
+    // without opening the launcher again.
+    let panel = app.foreground.active_panel_window();
+    overview_typed(&mut app, "i");
+    overview_typed(&mut app, "x");
+    assert_eq!(app.niri.overview_query(), "fix");
+    assert_eq!(app.foreground.active_panel_window(), panel);
+
+    // Closing the launcher ends the search and closes the overview.
+    let _ = app.update(Message::Panel(crate::app::messages::PanelEvent::Close));
+    assert_eq!(app.niri.overview_query(), "");
+}
+
+#[test]
+fn typing_in_the_overview_does_nothing_without_a_launcher_menu() {
+    let (mut app, _) = App::boot(config_with_menu(menu_with_two_entries()), vec![]);
+    app.surface_mut(iced::window::Id::unique());
+
+    overview_typed(&mut app, "f");
+
+    assert!(!app.foreground.has_active_panel());
+}

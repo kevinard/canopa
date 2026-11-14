@@ -15,6 +15,7 @@ mod formats;
 mod icons;
 mod idle_inhibitor;
 mod media;
+mod minimap;
 mod network;
 mod notifications;
 mod script;
@@ -55,6 +56,7 @@ pub(super) fn dispatch(
         ModuleKind::FocusedWindow => {
             focused_window::parse_ctx(node, ctx).map(ModuleParams::FocusedWindow)
         }
+        ModuleKind::Minimap => minimap::parse_ctx(node, ctx).map(ModuleParams::Minimap),
         ModuleKind::Tray => tray::parse_ctx(node, ctx).map(ModuleParams::Tray),
         ModuleKind::Taskbar => taskbar::parse_ctx(node, ctx).map(ModuleParams::Taskbar),
         ModuleKind::WorkspaceItem | ModuleKind::TrayIcon | ModuleKind::TaskbarItem => Err(ctx
@@ -87,6 +89,7 @@ mod tests {
                 | ModuleKind::Button
                 | ModuleKind::Workspaces
                 | ModuleKind::FocusedWindow
+                | ModuleKind::Minimap
                 | ModuleKind::Tray
                 | ModuleKind::Taskbar
         )

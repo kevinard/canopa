@@ -46,3 +46,12 @@ the unpinned ones, in its order, followed by those pinned from the bar. Edits
 that restore the configuration are dropped, so later changes to `pinned`
 still apply. An unreadable or foreign file is ignored with a warning and
 replaced on the next change.
+
+## Update 2026-11-14: screen order
+
+Running applications that are not pinned now follow screen order instead of
+opening order: the output, workspace index, column and tile of their leftmost
+window, with floating windows after their workspace's columns. Clicks cycle an
+application's windows in that order, left to right, instead of by window ID.
+The Shell keeps Niri's `WindowLayoutsChanged` positions for this
+(`.scratch/niri-scrolling/issues/02-layout-ordered-taskbar.md`).

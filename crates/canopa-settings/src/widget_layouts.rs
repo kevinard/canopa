@@ -20,6 +20,7 @@ const SYNTHESIZED: &[&str] = &[
     "focused-window",
     "idle-inhibitor",
     "media",
+    "minimap",
     "network",
     "notifications",
     "tray",

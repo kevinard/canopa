@@ -750,19 +750,54 @@ impl App {
 
         let placement = self.tooltip_anchor_for(target_window);
 
+        let (previews, request) = self.taskbar_tooltip_previews(&module);
         let tree = crate::surface::tooltip_popup::TooltipTree {
             segments: rendered,
+            previews,
             anchor: placement.anchor,
             bar_size: placement.bar_size,
             screen_size: placement.screen_size,
             bar_edge: placement.bar_edge,
         };
 
-        Task::batch(self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
+        let mut tasks = self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
             target_window,
             target_module: module,
             tree,
-        }]))
+        }]);
+        tasks.push(request);
+        Task::batch(tasks)
+    }
+
+    /// Reopen the tooltips of taskbar items whose thumbnails changed, without
+    /// asking for thumbnails again.
+    pub(super) fn refresh_taskbar_tooltips(&mut self) -> Task<Message> {
+        let open: Vec<_> = self
+            .surfaces
+            .tooltip_popups
+            .values()
+            .map(|popup| {
+                (
+                    popup.target_window,
+                    popup.target_module.clone(),
+                    popup.tree.clone(),
+                )
+            })
+            .collect();
+        let mut tasks = Vec::new();
+        for (target_window, module, mut tree) in open {
+            let previews = self.taskbar_cached_previews(&module);
+            if previews.is_empty() || previews.len() == tree.previews.len() {
+                continue;
+            }
+            tree.previews = previews;
+            tasks.extend(self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
+                target_window,
+                target_module: module,
+                tree,
+            }]));
+        }
+        Task::batch(tasks)
     }
 
     fn tooltip_values_for(
@@ -834,6 +869,8 @@ impl App {
             ModuleParams::Script(c) => (&c.tooltip, td::script_default()),
             ModuleParams::Tray(c) => (&c.tooltip, td::tray_default()),
             ModuleParams::Taskbar(c) => (&c.tooltip, td::taskbar_default()),
+            // Each window on the strip is its own target; the strip has no tooltip.
+            ModuleParams::Minimap(_) => return None,
             #[cfg(test)]
             ModuleParams::None => return None,
         };
@@ -878,6 +915,7 @@ mod tests {
     fn tooltip_tree(edge: crate::config::Edge) -> crate::surface::tooltip_popup::TooltipTree {
         crate::surface::tooltip_popup::TooltipTree {
             segments: vec![],
+            previews: Vec::new(),
             anchor: (24, 500),
             bar_size: (48, 1080),
             screen_size: (48, 1080),
@@ -1118,6 +1156,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1144,6 +1184,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1163,6 +1205,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 BarConfig {
@@ -1277,6 +1321,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1305,6 +1351,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![BarConfig {
                 name: "main".into(),
@@ -1343,6 +1391,8 @@ mod tests {
         let config = crate::config::Config {
             appearance: Default::default(),
             osd: Default::default(),
+            windows: Default::default(),
+            templates: Default::default(),
             element_ui: Default::default(),
             bars: vec![
                 crate::config::BarConfig {
@@ -1550,6 +1600,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
+                previews: Vec::new(),
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (48, 1080),
@@ -1650,6 +1701,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
+                previews: Vec::new(),
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),
@@ -1673,6 +1725,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
+                previews: Vec::new(),
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),

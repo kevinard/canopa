@@ -172,7 +172,7 @@ bar "main" {
 // ─── Modules ─────────────────────────────────────────────────────────────────
 // Declare each module referenced in bar.modules above.
 // Module names must match exactly. Type is inferred from the name when the name
-// matches a known type (workspaces, focused-window, battery, clock, network,
+// matches a known type (workspaces, focused-window, minimap, battery, clock, network,
 // volume, script, button). For custom names, add a "type" child node.
 //
 // Format templates can be written as quoted string segments:

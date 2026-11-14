@@ -249,10 +249,13 @@ pub fn spawn_command_with_timeout_fire_and_forget(
 
 pub(crate) mod app_scope;
 mod applications;
+#[cfg(not(test))]
+pub use applications::run_niri_action as niri_action;
 pub use applications::{focus_window, launch_application};
 #[cfg(not(test))]
 pub use applications::{
     launch_desktop_action, open_desktop_application, spawn_desktop_application_fire_and_forget,
+    spawn_desktop_application_placed,
 };
 
 pub fn spawn_configured_command_fire_and_forget(

@@ -72,9 +72,13 @@ async fn launch_through_niri(path: &Path, argv: &[String]) -> io::Result<()> {
     .await
 }
 pub async fn focus_window(id: u64) -> io::Result<()> {
+    run_niri_action(niri_ipc::Action::FocusWindow { id }).await
+}
+/// Ask Niri to perform `action`.
+pub async fn run_niri_action(action: niri_ipc::Action) -> io::Result<()> {
     let path = std::env::var_os(niri_ipc::socket::SOCKET_PATH_ENV)
         .ok_or_else(|| io::Error::other("Niri is unavailable"))?;
-    niri_action(Path::new(&path), niri_ipc::Action::FocusWindow { id }).await
+    niri_action(Path::new(&path), action).await
 }
 async fn niri_action(path: &Path, action: niri_ipc::Action) -> io::Result<()> {
     tokio::time::timeout(Duration::from_secs(2), async {
@@ -169,6 +173,34 @@ pub async fn spawn_desktop_application_fire_and_forget(
     } else {
         launch_application(&scoped_launch_argv(app, &[])?).await
     }
+}
+
+/// Start `app` through Niri, in its own scope like other launches, with its
+/// first window opening at `placement`. The placement follows Niri's
+/// activation token, which an Exec application inherits; a D-Bus-activated
+/// application may open its window without it.
+#[cfg(not(test))]
+pub async fn spawn_desktop_application_placed(
+    app: &crate::desktop_apps::DesktopApplication,
+    placement: niri_ipc::Placement,
+) -> io::Result<()> {
+    check_desktop_launch(app, &crate::desktop_apps::process_search_path())?;
+    let mut argv = scoped_launch_argv(app, &[])?;
+    let executable = executable_path(&argv[0]).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "application executable is unavailable",
+        )
+    })?;
+    argv[0] = executable
+        .to_str()
+        .ok_or_else(|| io::Error::other("application executable path is not UTF-8"))?
+        .into();
+    run_niri_action(niri_ipc::Action::SpawnPlaced {
+        command: argv,
+        placement,
+    })
+    .await
 }
 
 #[cfg(not(test))]

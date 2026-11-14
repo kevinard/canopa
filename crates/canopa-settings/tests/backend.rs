@@ -384,6 +384,7 @@ fn output() -> Output {
             scale: 1.,
             transform: Transform::Normal,
         }),
+        max_bpc: None,
     }
 }
 #[test]

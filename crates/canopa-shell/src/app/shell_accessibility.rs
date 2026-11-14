@@ -358,6 +358,30 @@ pub(super) fn module_summary(
         ModuleKind::Workspaces => (fl!("shell-panel-workspaces"), Vec::new()),
         ModuleKind::Tray => (fl!("shell-a11y-tray"), Vec::new()),
         ModuleKind::Taskbar => (fl!("shell-a11y-taskbar"), Vec::new()),
+        ModuleKind::Minimap => {
+            let number = |key| get(key).and_then(|value| value.parse::<usize>().ok());
+            let columns = number("columns").unwrap_or(0);
+            let mut parts = Vec::new();
+            if columns == 0 {
+                parts.push(fl!("shell-a11y-minimap-empty"));
+            } else if let Some(column) = number("column") {
+                parts.push(fl!(
+                    "shell-a11y-minimap-column",
+                    column = column,
+                    columns = columns
+                ));
+            }
+            parts.extend(get("title").map(str::to_owned));
+            match get("pinned") {
+                Some("left") => parts.push(fl!("shell-a11y-minimap-pinned-left")),
+                Some("right") => parts.push(fl!("shell-a11y-minimap-pinned-right")),
+                _ => {}
+            }
+            if let Some(count) = number("floating") {
+                parts.push(fl!("shell-a11y-minimap-floating", count = count));
+            }
+            (fl!("shell-a11y-minimap"), parts)
+        }
         ModuleKind::TaskbarItem => {
             let mut parts = Vec::new();
             let count = get("count")

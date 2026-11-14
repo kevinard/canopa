@@ -26,6 +26,8 @@ use iced_layershell::reexport::{
     Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings, OutputOption,
 };
 
+#[cfg(not(test))]
+use super::announcer::Announcer;
 use super::{App, Message, messages::IpcResponder};
 
 const WIDTH: u32 = 340;
@@ -372,7 +374,7 @@ impl App {
                 if let Some(visible) = self.osd.state.visible() {
                     self.osd
                         .announcer
-                        .get_or_insert_with(Announcer::new)
+                        .get_or_insert_with(|| Announcer::new(fl!("shell-osd-name")))
                         .announce(&visible.indicator.announcement());
                 }
                 let output = self
@@ -402,71 +404,6 @@ impl App {
         responder: Option<IpcResponder>,
     ) -> Task<Message> {
         self.handle_osd_event(Event::Key { request, responder })
-    }
-}
-
-/// The indicator as an AT-SPI status announcement. AccessKit announces a
-/// polite live region whenever its name changes.
-#[cfg(not(test))]
-struct Announcer {
-    adapter: accesskit_unix::Adapter,
-    tree: Arc<std::sync::Mutex<accesskit::TreeUpdate>>,
-}
-
-#[cfg(not(test))]
-mod announce {
-    use accesskit::{ActionRequest, Live, Node, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
-    use std::sync::{Arc, Mutex};
-
-    pub(super) const ROOT: NodeId = NodeId(1);
-    pub(super) const STATUS: NodeId = NodeId(2);
-
-    pub(super) fn tree(text: &str) -> TreeUpdate {
-        let mut root = Node::new(Role::Window);
-        root.set_label(fl!("shell-osd-name"));
-        root.set_children(vec![STATUS]);
-        let mut status = Node::new(Role::Status);
-        status.set_label(text);
-        status.set_live(Live::Polite);
-        TreeUpdate {
-            nodes: vec![(ROOT, root), (STATUS, status)],
-            tree: Some(TreeInfo::new(ROOT)),
-            tree_id: TreeId::ROOT,
-            focus: ROOT,
-        }
-    }
-
-    pub(super) struct Handler(pub(super) Arc<Mutex<TreeUpdate>>);
-    impl accesskit::ActivationHandler for Handler {
-        fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
-            Some(self.0.lock().unwrap().clone())
-        }
-    }
-    impl accesskit::ActionHandler for Handler {
-        fn do_action(&mut self, _: ActionRequest) {}
-    }
-    pub(super) struct Deactivate;
-    impl accesskit::DeactivationHandler for Deactivate {
-        fn deactivate_accessibility(&mut self) {}
-    }
-}
-
-#[cfg(not(test))]
-impl Announcer {
-    fn new() -> Self {
-        let tree = Arc::new(std::sync::Mutex::new(announce::tree("")));
-        let adapter = accesskit_unix::Adapter::new(
-            announce::Handler(tree.clone()),
-            announce::Handler(tree.clone()),
-            announce::Deactivate,
-        );
-        Self { adapter, tree }
-    }
-
-    fn announce(&mut self, text: &str) {
-        let update = announce::tree(text);
-        *self.tree.lock().unwrap() = update.clone();
-        self.adapter.update_if_active(|| update);
     }
 }
 

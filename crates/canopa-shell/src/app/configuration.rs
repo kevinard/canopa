@@ -378,6 +378,9 @@ impl App {
         self.reconcile_workspace_dynamic_modules(&workspaces);
         if self.niri.state().connected {
             self.push_focused_window_state();
+            if self.niri.state().output_sizes.is_empty() {
+                tasks.push(self.refresh_niri_output_sizes());
+            }
         } else {
             for kind in [
                 crate::modules::ModuleKind::Workspaces,
