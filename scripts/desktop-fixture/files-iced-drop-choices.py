@@ -110,6 +110,30 @@ def workflow(session, fixture, browser, scheme, scale, process, cross_destinatio
         {"source_device": source.stat().st_dev, "cross_device": cross.stat().st_dev,
          "source": str(source), "cross": str(cross)}, indent=2) + "\n")
 
+    def selected_row(painted, top, bottom, record=None):
+        # The source toolbar and search filters can wrap. Locate the single
+        # selected row's painted band at an x beyond its short label (in the
+        # left-hand source tile), ignoring thin borders, glyphs and chrome
+        # already present at the scan's first row.
+        x = round(260 * scale)
+        background = painted.getpixel((x, round(min(bottom + 90, 600) * scale)))
+        runs, start = [], None
+        for y in range(round(top * scale), round(bottom * scale) + 1):
+            selected = y < round(bottom * scale) and max(
+                abs(a - b) for a, b in zip(painted.getpixel((x, y)), background)) > 8
+            if selected and start is None:
+                start = y
+            elif not selected and start is not None:
+                if y - start >= round(20 * scale) and start > round(top * scale):
+                    runs.append((start, y))
+                start = None
+        assert len(runs) == 1, f"expected one painted selected row: {runs}"
+        logical_y = sum(runs[0]) / (2 * scale)
+        if record:
+            (session.output / record).write_text(json.dumps(
+                {"x": x, "background": background, "selected_band": runs[0], "logical_y": logical_y}, indent=2) + "\n")
+        return logical_y
+
     def align_browsers():
         # center-visible-columns only centers columns already fully visible.
         # After resizing, reveal the target first so both fitting tiles are in
@@ -200,8 +224,10 @@ def workflow(session, fixture, browser, scheme, scale, process, cross_destinatio
     session.wait_for(lambda: any(w["title"] == query_title for w in windows()), "query editing after recursive toggle")
     chord("Return")
     chord("Down")
-    session.capture("choice-04-search-before.png")
-    drag("choice-04-search-source", "Move", source_y=260)
+    searched = session.capture("choice-04-search-before.png")
+    # The result row follows the location bar, the search filters (which wrap
+    # in narrower tiles) and the results heading: find its painted selection.
+    drag("choice-04-search-source", "Move", source_x=260, source_y=selected_row(searched, 155, 420))
     assert not needle.exists() and (destination / needle.name).read_bytes() == b"Recursive search drag bytes\n"
     undo(lambda: needle.exists() and needle.read_bytes() == b"Recursive search drag bytes\n" and not (destination / needle.name).exists())
     check("a recursive filename-search result captures its actual nested source and moves with shared Undo")
@@ -226,26 +252,9 @@ def workflow(session, fixture, browser, scheme, scale, process, cross_destinatio
     time.sleep(.7)
     align_browsers()
     painted = session.capture("choice-05-sidebar-before.png")
-    # The narrow source's toolbar can wrap. Locate the single selected file's
-    # painted band at an x beyond its short label, rather than using a row y
-    # from the wider layout. Ignore thin borders and toolbar glyphs.
-    x = round(260 * scale)
-    background = painted.getpixel((x, round(350 * scale)))
-    runs, start = [], None
-    for y in range(round(100 * scale), round(260 * scale) + 1):
-        selected = y < round(260 * scale) and max(
-            abs(a - b) for a, b in zip(painted.getpixel((x, y)), background)) > 8
-        if selected and start is None:
-            start = y
-        elif not selected and start is not None:
-            if y - start >= round(20 * scale):
-                runs.append((start, y))
-            start = None
-    assert len(runs) == 1, f"expected one painted selected file row: {runs}"
-    source_y = sum(runs[0]) / (2 * scale)
-    (session.output / "choices-sidebar-source-paint.json").write_text(json.dumps(
-        {"x": x, "background": background, "selected_band": runs[0], "logical_y": source_y}, indent=2) + "\n")
-    drag("choice-05-sidebar-target", "Move", source_x=260, source_y=source_y, target_x=70, target_y=130)
+    source_y = selected_row(painted, 100, 260, "choices-sidebar-source-paint.json")
+    # The bookmark is the only place, listed below the Places heading.
+    drag("choice-05-sidebar-target", "Move", source_x=260, source_y=source_y, target_x=70, target_y=152)
     bookmarked = root / "Bookmark destination" / source.name
     assert not source.exists() and bookmarked.read_bytes() == original and not (destination / source.name).exists()
     assert title(destination.name)["id"] == target["id"], "dropping onto a bookmark navigated the destination Browser"
@@ -262,7 +271,8 @@ def workflow(session, fixture, browser, scheme, scale, process, cross_destinatio
     time.sleep(.7)
     align_browsers()
     session.capture("choice-06-ancestor-before.png")
-    drag("choice-06-ancestor-source", "Move", source_x=100, source_y=144)
+    # The column trail opens with Ancestor's listing, whose first row is Inside.
+    drag("choice-06-ancestor-source", "Move", source_x=100, source_y=115)
     moved_folder = destination / "Inside"
     assert not (root / "Ancestor/Inside").exists() and (moved_folder / "child.txt").read_bytes() == b"Ancestor folder drag bytes\n"
     undo(lambda: (root / "Ancestor/Inside/child.txt").exists() and not moved_folder.exists())

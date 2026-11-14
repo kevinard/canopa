@@ -24,6 +24,7 @@ files-command-open-terminal = Ouvrir dans un terminal
 files-command-rename = Renommer
 files-command-trash = Mettre à la corbeille
 files-command-delete-permanently = Supprimer définitivement
+files-command-show-recent = Fichiers récents
 files-command-show-trash = Ouvrir la corbeille
 files-command-connect-to-server = Se connecter à un serveur…
 files-command-undo = Annuler
@@ -49,6 +50,7 @@ files-command-bookmark-folder = Ajouter ce dossier aux signets
 
 ## Built-in places in the sidebar
 
+files-place-recent = Récents
 files-place-home = Dossier personnel
 files-place-desktop = Bureau
 files-place-documents = Documents
@@ -93,8 +95,8 @@ files-configuration-not-applied = La configuration n’a pas été appliquée :
 files-view-preferences-not-saved = Les préférences d’affichage n’ont pas été enregistrées : { $error }
 files-retry = Réessayer
 files-close = Fermer
-files-searching-filenames = Recherche des noms de fichiers…
-files-no-matching-filenames = Aucun nom de fichier correspondant
+files-searching-filenames = Recherche…
+files-no-matching-filenames = Aucun élément correspondant
 files-empty-folder = Dossier vide
 files-loading-folder = Chargement du dossier…
 files-folder-unavailable = Dossier indisponible
@@ -167,6 +169,28 @@ files-announce-results-stopped-selected = { $count ->
 ## Search bar
 
 files-search-include-subfolders = Inclure les sous-dossiers
+files-search-filters = Filtres de recherche
+files-search-kind = Type
+files-search-kind-any = Tous les types
+files-search-kind-folders = Dossiers
+files-search-kind-documents = Documents
+files-search-kind-images = Images
+files-search-kind-audio = Audio
+files-search-kind-video = Vidéo
+files-search-kind-archives = Archives
+files-search-date = Modification
+files-search-date-any = N’importe quand
+files-search-date-today = Aujourd’hui
+files-search-date-week = Semaine passée
+files-search-date-month = Mois passé
+files-search-date-year = Année passée
+files-search-size = Taille
+files-search-size-any = Toutes les tailles
+files-search-size-small = Moins de 1 Mio
+files-search-size-medium = De 1 à 100 Mio
+files-search-size-large = Plus de 100 Mio
+files-search-contents = Rechercher dans le contenu
+files-search-recent = Rechercher dans les fichiers récents
 files-search-stop = Arrêter
 files-search-in = Rechercher dans { $folder }
 files-search-close = Fermer la recherche
@@ -1477,6 +1501,10 @@ files-report-needs-attention = attention requise
 files-report-source-folders = { $count ->
     [one] { $count } dossier source à examiner
    *[other] { $count } dossiers source à examiner
+}
+files-report-attributes-omitted = { $count ->
+    [one] { $count } copie sans ses attributs étendus
+   *[other] { $count } copies sans leurs attributs étendus
 }
 files-report-failed-handed-off = travail en échec transmis
 files-report-failed-abandoned = travail en échec abandonné

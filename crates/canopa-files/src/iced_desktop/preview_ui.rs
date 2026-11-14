@@ -787,6 +787,15 @@ pub(super) fn title(preview: &PreviewWindow) -> String {
     )
 }
 
+/// The Open button's label. A compact preview names no application, so the
+/// heading keeps room for its title instead of pushing the stage away.
+fn open_label(opener: Option<&str>, compact: bool) -> String {
+    match opener {
+        Some(app) if !compact => fl!("files-preview-open-with", app = app),
+        _ => fl!("files-menu-open"),
+    }
+}
+
 pub(super) fn view<'a>(
     desktop: &'a Desktop,
     id: window::Id,
@@ -1206,15 +1215,14 @@ pub(super) fn view<'a>(
         });
         let action: Element<'a, Message> = canopa_ui::direction::row([
             button(
-                preview
-                    .result
-                    .as_deref()
-                    .and_then(|result| result.as_ref().ok())
-                    .and_then(|prepared| prepared.opener.clone())
-                    .map_or_else(
-                        || fl!("files-menu-open"),
-                        |app| fl!("files-preview-open-with", app = app),
-                    ),
+                open_label(
+                    preview
+                        .result
+                        .as_deref()
+                        .and_then(|result| result.as_ref().ok())
+                        .and_then(|prepared| prepared.opener.as_deref()),
+                    compact,
+                ),
                 Control::Open,
             ),
             if browsing {
@@ -1328,6 +1336,17 @@ mod tests {
     use super::super::tests::{desktop, loaded};
     use super::*;
     use std::fs;
+
+    #[test]
+    fn compact_previews_open_without_naming_the_application() {
+        let open = fl!("files-menu-open");
+        assert_eq!(open_label(Some("Videos"), true), open);
+        assert_eq!(open_label(None, false), open);
+        assert_eq!(
+            open_label(Some("Videos"), false),
+            fl!("files-preview-open-with", app = "Videos")
+        );
+    }
 
     fn setup(root: &Path) -> (Desktop, window::Id, window::Id) {
         let (mut desktop, source) = desktop(root, vec![root.to_owned()]);

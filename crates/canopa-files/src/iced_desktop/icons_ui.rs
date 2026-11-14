@@ -49,6 +49,7 @@ pub(super) fn place_icon_name(kind: crate::interface::PlaceKind) -> Option<&'sta
         PlaceKind::Templates => "folder-templates",
         PlaceKind::Public => "folder-publicshare",
         PlaceKind::Filesystem => "drive-harddisk",
+        PlaceKind::Recent => "document-open-recent",
         PlaceKind::Trash => "user-trash",
         // Recovery is Files' own; themes have no icon for it.
         PlaceKind::Recovery => return None,

@@ -73,8 +73,9 @@ pub(super) enum Change {
     PlaceItem(usize, RowEdit),
     /// Show or hide the page's picker of buttons or places to add.
     Picker(bool),
-    /// A shortcut row's Record and Reset, for that command.
-    RecordFor(Command),
+    /// A shortcut row's Record and Reset, for that command. Record carries
+    /// whether the keyboard activated it, as `Record` does.
+    RecordFor(Command, bool),
     ResetFor(Command),
 }
 
@@ -473,9 +474,9 @@ impl Editor {
                 self.revision += 1;
                 return;
             }
-            Change::RecordFor(command) => {
+            Change::RecordFor(command, keyboard) => {
                 self.selected_command = command;
-                self.change(Change::Record(false));
+                self.change(Change::Record(keyboard));
                 return;
             }
             Change::ResetFor(command) => {
@@ -909,7 +910,7 @@ impl Desktop {
                 | PlaceKind::Videos
                 | PlaceKind::Templates
                 | PlaceKind::Public => self.personal_folders.path(*kind)?.to_owned(),
-                PlaceKind::Trash | PlaceKind::Recovery => return None,
+                PlaceKind::Recent | PlaceKind::Trash | PlaceKind::Recovery => return None,
             },
         })
     }
@@ -951,6 +952,32 @@ mod tests {
         let editor = desktop.preferences_editor.as_ref().unwrap();
         assert!(!editor.recording);
         assert_eq!(editor.shortcuts[&Command::Search], "Return");
+    }
+    #[test]
+    fn keyboard_activation_of_a_command_record_button_is_not_recorded() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut desktop, _) =
+            super::super::tests::desktop(root.path(), vec![root.path().to_owned()]);
+        let _ = desktop.show_preferences(root.path().to_owned(), false);
+        let target = desktop.preferences_editor.as_ref().unwrap().target();
+        let _ = desktop.preferences_event(Event::Change(
+            target,
+            Change::RecordFor(Command::NewTab, true),
+        ));
+        let _ = desktop.update(Message::CapturedKey(
+            target.window,
+            keyboard::Key::Named(keyboard::key::Named::Enter),
+            keyboard::Modifiers::empty(),
+        ));
+        assert!(desktop.preferences_editor.as_ref().unwrap().recording);
+        let _ = desktop.update(Message::CapturedKey(
+            target.window,
+            keyboard::Key::Named(keyboard::key::Named::F8),
+            keyboard::Modifiers::empty(),
+        ));
+        let editor = desktop.preferences_editor.as_ref().unwrap();
+        assert!(!editor.recording);
+        assert_eq!(editor.shortcuts[&Command::NewTab], "F8");
     }
     fn editor(root: &Path) -> Editor {
         let path = root.join("config.kdl");
@@ -1129,7 +1156,7 @@ mod tests {
             e.shortcuts[&Command::Refresh],
             Command::Refresh.defaults().join("; ")
         );
-        e.change(Change::RecordFor(Command::NewTab));
+        e.change(Change::RecordFor(Command::NewTab, false));
         assert!(e.recording && e.selected_command == Command::NewTab);
     }
 }

@@ -232,7 +232,8 @@ def workflow(session, fixture, browser, scheme, scale, process):
     before = len(completed("Move"))
     source_height = next(w["layout"]["window_size"][1] for w in windows() if w["id"] == source_window["id"])
     target_height = next(w["layout"]["window_size"][1] for w in windows() if w["id"] == target["id"])
-    drag("iced-drop-06-scrolled", source_x=420, target_x=420, source_y=source_height - 100, target_y=target_height - 100)
+    # The last rows end directly above the status bar.
+    drag("iced-drop-06-scrolled", source_x=420, target_x=420, source_y=source_height - 55, target_y=target_height - 55)
     nested = root / "Scroll destination/Folder-39/file-39.txt"
     session.wait_for(lambda: nested.exists() and not scrolled.exists(), "visible scrolled source and destination rows")
     session.wait_for(lambda: len(completed("Move")) > before, "saved scrolled-row Move")
@@ -267,7 +268,7 @@ def workflow(session, fixture, browser, scheme, scale, process):
     time.sleep(.5)
     assert all(w["layout"]["window_size"][0] == 360 for w in windows())
     before = len(completed("Move"))
-    drag("iced-drop-08-narrow", source_y=178)
+    drag("iced-drop-08-narrow", source_y=155)  # a.txt, the first narrow column row
     session.wait_for(lambda: not a.exists() and (destination / a.name).exists(), "actual drop between narrow column browsers")
     session.wait_for(lambda: len(completed("Move")) > before, "saved narrow-browser Move")
     undo([a], [destination / a.name])

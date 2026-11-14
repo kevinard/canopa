@@ -52,6 +52,18 @@ def verify(session, fixture, browser, scheme, scale, process, window_navigation_
         session.wait_for(lambda: any(w["id"] == window["id"] and w["is_focused"] for w in windows()), "browser focus")
         time.sleep(.2)
 
+    def settled():
+        # Each wtype command installs its own keymap. If the renderer lags
+        # behind a long location, the next command's keymap can replace it
+        # before the tail is read. Wait for the typed field to stop painting.
+        previous = None
+        def stable():
+            nonlocal previous
+            frame = session.capture("operations-settling.png").tobytes()
+            same, previous = frame == previous, frame
+            return same
+        session.wait_for(stable, "typed location painted")
+
     def navigate(path, burst=False):
         location = "file://" + quote_from_bytes(os.fsencode(path), safe="/")
         if burst:
@@ -59,18 +71,23 @@ def verify(session, fixture, browser, scheme, scale, process, window_navigation_
         else:
             chord("l", "ctrl")
             session.run(["wtype", location])
+            settled()
         key("Return")
         directory = path if os.path.isdir(path) else os.path.dirname(path)
         name = os.fsdecode(os.path.basename(directory))
         session.wait_for(lambda: any(w["is_focused"] and w.get("title") == f"{name} — Canopa Files" for w in windows()), "operation folder navigation")
         time.sleep(.3)
 
-    def prompt(name, shortcut, *modifiers):
+    def prompt(name, shortcut, *modifiers, select_all=True):
         chord(shortcut, *modifiers) if modifiers else key(shortcut)
         dialog = session.wait_for(lambda: title(name), f"Iced {name} dialog")
         session.wait_for(lambda: any(w["id"] == dialog["id"] and w["is_focused"] for w in windows()), "name field focus")
         assert dialog["is_floating"], "name prompt remains comfortable above a narrow browser"
         time.sleep(.25)
+        if name == "Rename" and select_all:
+            # ADR0171: Rename initially selects a file's name without its
+            # extension. Callers typing a complete name replace all of it.
+            chord("a", "ctrl")
         return dialog
 
     def commit(name, target):
@@ -175,12 +192,13 @@ def verify(session, fixture, browser, scheme, scale, process, window_navigation_
 
     focus(browser)
     navigate(root / "rename-me.txt")
-    prompt("Rename", "F2")
+    prompt("Rename", "F2", select_all=False)
     renamed = root / "renamed.txt"
-    commit(renamed.name, renamed)
+    # Typing replaces only the initially selected stem; the extension remains.
+    commit("renamed", renamed)
     assert not (root / "rename-me.txt").exists()
     assert renamed.read_bytes() == b"Original file contents\n"
-    checks.append("Rename starts with selected editable text and preserves actual file contents")
+    checks.append("Rename starts with the name selected without its extension and preserves actual file contents")
     focus(browser)
     chord("z", "ctrl")
     session.wait_for(lambda: (root / "rename-me.txt").exists() and not renamed.exists(), "Undo rename")

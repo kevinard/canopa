@@ -49,8 +49,9 @@ def verify(session, config, fixture, scheme, scale):
     def surface(name, expected):
         def rendered():
             frame = session.capture(name).convert("RGB")
-            color = frame.getpixel((frame.width - 35, frame.height - 80))
-            return all(abs(a - b) < 8 for a, b in zip(color, expected))
+            # List view stripes alternate rows; an unstriped row shows the surface.
+            column = [frame.getpixel((frame.width - 35, y)) for y in range(frame.height // 2, frame.height - 80, 3)]
+            return any(all(abs(a - b) < 8 for a, b in zip(color, expected)) for color in column)
         session.wait_for(rendered, name)
 
     def pdf_color(name, expected):
@@ -67,15 +68,21 @@ def verify(session, config, fixture, scheme, scale):
     base = f'schema-version 1\nappearance {{ color-scheme "{opposite}"; }}\n'
     browser = wait_title("Downloads — Canopa Files")
     keys("Home", "Down", "Down", "Down", "space")
-    preview = wait_title("D-document.pdf — Quick Look")
+    preview = wait_title("Quick Look: D-document.pdf — Canopa Files")
     pdf_color("reload-00-pdf-first.png", (255, 0, 0))
     keys("Page_Down")
     pdf_green("reload-01-pdf-second.png")
     replace(config, base)
-    surface("reload-02-appearance.png", expected)
-    assert title("D-document.pdf — Quick Look")["id"] == preview["id"]
+    # ADR0171: the floating Quick Look dims the browser behind it, so this
+    # probe checks the repainted scheme's brightness instead of its exact color.
+    def repainted():
+        frame = session.capture("reload-02-appearance.png").convert("RGB")
+        color = frame.getpixel((frame.width - 35, frame.height - 80))
+        return min(color) > 200 if opposite == "light" else max(color) < 70
+    session.wait_for(repainted, "reload-02-appearance.png")
+    assert title("Quick Look: D-document.pdf — Canopa Files")["id"] == preview["id"]
     pdf_green("reload-03-pdf-preserved.png")
-    assert title("D-document.pdf — Quick Look")["is_focused"]
+    assert title("Quick Look: D-document.pdf — Canopa Files")["is_focused"]
     checks += ["atomic appearance reload repaints existing windows", "Quick Look keeps its window, focus, source and PDF page"]
     keys("Escape")
 
@@ -108,11 +115,12 @@ def verify(session, config, fixture, scheme, scale):
     # Returning to a parent deliberately selects the child folder just left.
     wait_title("Downloads — Canopa Files"); keys("c")
     checks.append("effective Files changes preserve in-progress location input and focus")
-    keys("F7"); wait_title("Operations — Canopa Files")
+    # Running an action reports through notifications; Operations stays closed.
+    keys("F7")
     session.wait_for(result.exists, "automatically installed custom action")
     assert json.loads(result.read_text()) == [str(fixture / "C-photo.png")]
-    keys("Escape"); focus(browser); keys("space")
-    wait_title("C-photo.png — Quick Look"); keys("Escape")
+    focus(browser); keys("space")
+    wait_title("Quick Look: C-photo.png — Canopa Files"); keys("Escape")
     session.capture("reload-05-list-selection.png")
     checks.append("Files view, shortcuts and custom actions install together while preserving selection")
     ctrl("n")
@@ -120,20 +128,20 @@ def verify(session, config, fixture, scheme, scale):
     focus(other)
     replace(config, live.replace('"F6"', '"F8"')); settled()
     keys("F8"); session.run(["wtype", "B-notes"]); settled(); keys("Down", "space")
-    wait_title("B-notes.txt — Quick Look"); keys("Escape", "Escape")
+    wait_title("Quick Look: B-notes.txt — Canopa Files"); keys("Escape", "Escape")
     ctrl("w"); session.wait_for(lambda: all(w["id"] != other["id"] for w in windows()), "second reload browser closed")
     focus(browser)
     keys("F8"); session.run(["wtype", "C-photo"]); settled(); keys("Down", "space")
-    wait_title("C-photo.png — Quick Look"); keys("Escape", "Escape")
+    wait_title("Quick Look: C-photo.png — Canopa Files"); keys("Escape", "Escape")
     replace(config, live); settled()
     checks.append("external shortcut changes reach both existing browser windows")
 
     replace(config, f'schema-version 1\nappearance {{ color-scheme "{scheme}"; }}\nfiles {{ shortcut "copy" "Up"; }}\n')
     settled(); surface("reload-06-invalid-candidate.png", expected)
-    result.unlink(); keys("F7"); wait_title("Operations — Canopa Files")
+    result.unlink(); keys("F7")
     session.wait_for(result.exists, "last good action survives rejected candidate")
     assert json.loads(result.read_text()) == [str(fixture / "C-photo.png")]
-    keys("Escape"); focus(browser)
+    focus(browser)
     checks.append("invalid Files settings retain the complete appearance and action candidate")
 
     theme = config.with_name("live-theme.kdl")
@@ -149,8 +157,9 @@ def verify(session, config, fixture, scheme, scale):
     surface("reload-11-theme-repaired.png", (48, 64, 80))
     checks.append("missing theme creation, atomic dependency edits, rejection and repair repaint automatically")
 
-    ctrl("comma"); wait_title("Files Preferences")
-    chord(["alt"], "c"); ctrl("a"); session.run(["wtype", "400"])
+    ctrl("comma"); wait_title("Preferences — Canopa Files")
+    # Views: four pages, three views, four sort keys, two switches, narrower, width.
+    keys(*(["Tab"] * 15)); ctrl("a"); session.run(["wtype", "400"])
     changed = themed.replace('column-width=320', 'column-width=360')
     replace(config, changed); settled()
     session.capture("reload-12-preferences-draft.png")
@@ -160,13 +169,18 @@ def verify(session, config, fixture, scheme, scale):
     ctrl("r"); settled(); session.capture("reload-14-preferences-discard.png")
     keys("Tab", "Return"); settled()
     session.capture("reload-15-preferences-reloaded.png")
-    ctrl("s"); session.wait_for(lambda: config.read_text() != changed, "explicitly reloaded preferences can save")
+    # ADR0169: an unchanged reloaded draft has nothing to save; a submitted
+    # edit made after explicit Reload saves over the reloaded source.
     assert "column-width=360" in config.read_text()
-    keys("Escape"); session.wait_for(lambda: title("Files Preferences") is None, "preferences closed after reload")
+    chord(["alt"], "1"); settled()
+    keys(*(["Tab"] * 15)); ctrl("a"); session.run(["wtype", "380"])
+    ctrl("s"); session.wait_for(lambda: "column-width=380" in config.read_text(), "explicitly reloaded preferences can save")
+    keys("Escape"); session.wait_for(lambda: title("Preferences — Canopa Files") is None, "preferences closed after reload")
     checks.append("external reload preserves uncommitted preference fields and stale Save refuses; explicit Reload accepts the source")
 
     focus(browser); chord(["ctrl", "shift"], "a"); wait_title("Custom Actions — Canopa Files"); settled()
-    chord(["alt"], "n"); ctrl("a"); session.run(["wtype", "Unsaved action draft"])
+    keys("Tab", "Tab", "Tab", "Tab")  # action chooser, Add, Delete, Name
+    ctrl("a"); session.run(["wtype", "Unsaved action draft"])
     changed = themed.replace('Reload action', 'External action')
     replace(config, changed); settled()
     session.capture("reload-16-action-draft.png")

@@ -1362,7 +1362,7 @@ fn place_path(place: &Place) -> Option<PathBuf> {
         Place::Builtin(kind) => match kind {
             PlaceKind::Home => home(),
             PlaceKind::Filesystem => PathBuf::from("/"),
-            PlaceKind::Trash | PlaceKind::Recovery => return None,
+            PlaceKind::Recent | PlaceKind::Trash | PlaceKind::Recovery => return None,
             PlaceKind::Desktop => special(glib::UserDirectory::Desktop, "Desktop"),
             PlaceKind::Documents => special(glib::UserDirectory::Documents, "Documents"),
             PlaceKind::Downloads => special(glib::UserDirectory::Downloads, "Downloads"),

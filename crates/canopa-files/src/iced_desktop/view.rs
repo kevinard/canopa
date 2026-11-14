@@ -183,7 +183,9 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
     };
     body = body.push(container(persistence_notice));
     if let Some(session) = &tab.search {
-        // The field is in the toolbar and the options beside the results.
+        // The field is in the toolbar and the options beside the results;
+        // the filters get their own band, which narrow tiles can wrap.
+        body = body.push(search_filters(desktop, id, tab, session));
         if let Some(problems) = search_parts(desktop, id, tab, session).problems {
             body = body.push(problems);
         }
@@ -1345,15 +1347,19 @@ pub(super) fn search_parts<'a>(
     if let Some(browser) = &tab.browser {
         input_node = input_node.controls(a11y::list_key(browser.path()));
     }
-    let placeholder = fl!(
-        "files-search-in",
-        folder = tab
-            .path()
-            .file_name()
-            .unwrap_or(tab.path().as_os_str())
-            .to_string_lossy()
-            .into_owned()
-    );
+    let placeholder = if session.recent {
+        fl!("files-search-recent")
+    } else {
+        fl!(
+            "files-search-in",
+            folder = tab
+                .path()
+                .file_name()
+                .unwrap_or(tab.path().as_os_str())
+                .to_string_lossy()
+                .into_owned()
+        )
+    };
     let input = text_input(&placeholder, &session.query)
         .id(search_id(id, tab.id))
         .on_input(move |query| Message::Search(Event::Query(target, query)))
@@ -1414,6 +1420,12 @@ pub(super) fn search_parts<'a>(
     let height = ((label_size * 1.3).ceil() + padding.top + padding.bottom)
         .max(body_size * 1.3)
         .max(16.0);
+    // Recent files have no folder whose subfolders could be included.
+    let scope: Element<'a, Message> = if session.recent {
+        space().width(0).into()
+    } else {
+        scope
+    };
     let mut options = row![scope]
         .spacing(6)
         .align_y(Alignment::Center)
@@ -1547,6 +1559,240 @@ pub(super) fn search_parts<'a>(
     }
 }
 
+/// One labelled choice of a search filter list.
+#[derive(Clone, PartialEq)]
+struct Choice<T> {
+    value: T,
+    label: String,
+}
+
+impl<T> std::fmt::Display for Choice<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+pub(super) fn kind_label(kind: crate::search::KindFilter) -> String {
+    use crate::search::KindFilter;
+    match kind {
+        KindFilter::Any => fl!("files-search-kind-any"),
+        KindFilter::Folders => fl!("files-search-kind-folders"),
+        KindFilter::Documents => fl!("files-search-kind-documents"),
+        KindFilter::Images => fl!("files-search-kind-images"),
+        KindFilter::Audio => fl!("files-search-kind-audio"),
+        KindFilter::Video => fl!("files-search-kind-video"),
+        KindFilter::Archives => fl!("files-search-kind-archives"),
+    }
+}
+
+pub(super) fn date_label(date: crate::search::DateFilter) -> String {
+    use crate::search::DateFilter;
+    match date {
+        DateFilter::Any => fl!("files-search-date-any"),
+        DateFilter::Today => fl!("files-search-date-today"),
+        DateFilter::Week => fl!("files-search-date-week"),
+        DateFilter::Month => fl!("files-search-date-month"),
+        DateFilter::Year => fl!("files-search-date-year"),
+    }
+}
+
+pub(super) fn size_label(size: crate::search::SizeFilter) -> String {
+    use crate::search::SizeFilter;
+    match size {
+        SizeFilter::Any => fl!("files-search-size-any"),
+        SizeFilter::Small => fl!("files-search-size-small"),
+        SizeFilter::Medium => fl!("files-search-size-medium"),
+        SizeFilter::Large => fl!("files-search-size-large"),
+    }
+}
+
+/// The type, date and size lists and the contents option of a search.
+fn search_filters<'a>(
+    desktop: &'a Desktop,
+    id: window::Id,
+    tab: &'a Tab,
+    session: &'a search_ui::SearchSession,
+) -> Element<'a, Message> {
+    use crate::search::{DateFilter, KindFilter, SearchFilters, SizeFilter};
+    use search_ui::Event;
+    let appearance = &desktop.configuration.appearance;
+    let font = canopa_ui::font(appearance);
+    let body_size = appearance.typography().body_size.px();
+    let target = search_ui::Target {
+        window: id,
+        tab: tab.id,
+        instance: session.instance,
+    };
+    let filters = session.filters;
+    fn list<'a, T: Clone + PartialEq + 'a>(
+        desktop: &'a Desktop,
+        key: &'static str,
+        name: String,
+        choices: Vec<Choice<T>>,
+        current: T,
+        update: impl Fn(T) -> SearchFilters + 'a,
+        target: search_ui::Target,
+    ) -> Element<'a, Message> {
+        let appearance = &desktop.configuration.appearance;
+        let selected = choices
+            .iter()
+            .find(|choice| choice.value == current)
+            .cloned();
+        let value = selected
+            .as_ref()
+            .map(|choice| choice.label.clone())
+            .unwrap_or_default();
+        let list = iced::widget::pick_list(choices, selected, move |choice: Choice<T>| {
+            Message::Search(search_ui::Event::Filters(target, update(choice.value)))
+        })
+        .font(canopa_ui::font(appearance))
+        .text_size(appearance.typography().label_size.px())
+        .padding(iced::Padding {
+            top: 4.0,
+            bottom: 4.0,
+            left: 10.0,
+            right: 26.0,
+        })
+        .handle(iced::widget::pick_list::Handle::None)
+        .style(move |theme, status| {
+            let mut style = iced::widget::pick_list::default(theme, status);
+            style.background = chrome::ink(appearance, ColorRole::Raised).into();
+            style.border.radius = 8.0.into();
+            style.border.color = match status {
+                iced::widget::pick_list::Status::Active => {
+                    chrome::ink(appearance, ColorRole::Border).scale_alpha(0.6)
+                }
+                _ => chrome::ink(appearance, ColorRole::Accent),
+            };
+            style
+        })
+        .menu_style(move |theme| {
+            let mut style = iced::widget::overlay::menu::default(theme);
+            style.border.radius = 8.0.into();
+            style.background = chrome::ink(appearance, ColorRole::Raised).into();
+            style.selected_background = chrome::ink(appearance, ColorRole::AccentSurface).into();
+            style.selected_text_color = chrome::ink(appearance, ColorRole::Text);
+            style
+        });
+        let list = iced::widget::stack![
+            list,
+            container(desktop.icons.chrome(Icon::Down, 12.0, 0.75))
+                .height(Length::Fill)
+                .align_right(Length::Fill)
+                .center_y(Length::Fill)
+                .padding(iced::Padding {
+                    right: 9.0,
+                    ..Default::default()
+                }),
+        ];
+        semantic(Node::combo_box(name, value).key(key), list)
+    }
+    let kinds = [
+        KindFilter::Any,
+        KindFilter::Folders,
+        KindFilter::Documents,
+        KindFilter::Images,
+        KindFilter::Audio,
+        KindFilter::Video,
+        KindFilter::Archives,
+    ]
+    .map(|value| Choice {
+        value,
+        label: kind_label(value),
+    })
+    .to_vec();
+    let dates = [
+        DateFilter::Any,
+        DateFilter::Today,
+        DateFilter::Week,
+        DateFilter::Month,
+        DateFilter::Year,
+    ]
+    .map(|value| Choice {
+        value,
+        label: date_label(value),
+    })
+    .to_vec();
+    let sizes = [
+        SizeFilter::Any,
+        SizeFilter::Small,
+        SizeFilter::Medium,
+        SizeFilter::Large,
+    ]
+    .map(|value| Choice {
+        value,
+        label: size_label(value),
+    })
+    .to_vec();
+    let contents = {
+        let toggled = SearchFilters {
+            contents: !filters.contents,
+            ..filters
+        };
+        a11y::check_box(
+            "files-search-contents",
+            filters.contents,
+            Some(Message::Search(Event::Filters(target, toggled))),
+            checkbox(filters.contents)
+                .label(fl!("files-search-contents"))
+                .text_size(body_size)
+                .font(font)
+                .on_toggle(move |contents| {
+                    Message::Search(Event::Filters(
+                        target,
+                        SearchFilters {
+                            contents,
+                            ..filters
+                        },
+                    ))
+                }),
+        )
+    };
+    let lists = iced::widget::Row::from_vec(vec![
+        list(
+            desktop,
+            "files-search-kind",
+            fl!("files-search-kind"),
+            kinds,
+            filters.kind,
+            move |kind| SearchFilters { kind, ..filters },
+            target,
+        ),
+        list(
+            desktop,
+            "files-search-date",
+            fl!("files-search-date"),
+            dates,
+            filters.modified,
+            move |modified| SearchFilters {
+                modified,
+                ..filters
+            },
+            target,
+        ),
+        list(
+            desktop,
+            "files-search-size",
+            fl!("files-search-size"),
+            sizes,
+            filters.size,
+            move |size| SearchFilters { size, ..filters },
+            target,
+        ),
+        contents,
+    ])
+    .spacing(8)
+    .align_y(Alignment::Center)
+    .wrap()
+    .vertical_spacing(6);
+    semantic(
+        Node::new(Role::Group)
+            .label(fl!("files-search-filters"))
+            .key("files-search-filters"),
+        container(lists).padding([6, 12]).width(Length::Fill),
+    )
+}
+
 pub(super) fn view_icon(mode: crate::preferences::ViewMode) -> Icon {
     match mode {
         crate::preferences::ViewMode::Columns => Icon::Columns,
@@ -1605,6 +1851,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             Place::Builtin(PlaceKind::Templates) => Icon::Templates,
             Place::Builtin(PlaceKind::Public) => Icon::Public,
             Place::Builtin(PlaceKind::Filesystem) => Icon::Disk,
+            Place::Builtin(PlaceKind::Recent) => Icon::Recent,
             Place::Builtin(PlaceKind::Trash) => Icon::Trash,
             Place::Builtin(PlaceKind::Recovery) => Icon::Recovery,
             Place::Bookmark { .. } => Icon::Folder,
@@ -1612,6 +1859,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         let path = desktop.place_path(place);
         let active = active_index == Some(index);
         let message = match place {
+            Place::Builtin(PlaceKind::Recent) => Message::Command(id, Command::ShowRecent),
             Place::Builtin(PlaceKind::Trash) => Message::Command(id, Command::ShowTrash),
             Place::Builtin(PlaceKind::Recovery) => Message::Command(id, Command::Recovery),
             _ => {

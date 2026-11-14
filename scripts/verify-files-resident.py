@@ -191,7 +191,9 @@ def verify(binary, session, headless):
     browser, result["first_open_seconds"] = opened(os.fsdecode(raw))
     key("F2")
     session.wait_for(lambda: title("Rename"), "selected raw-file Rename")
-    session.run(["wtype", "Renamed.txt"])
+    # Rename selects the name without its extension (ADR 0171), so typing
+    # replaces only the stem and keeps ".txt".
+    session.run(["wtype", "Renamed"])
     key("Return")
     session.wait_for(lambda: (root / "Renamed.txt").is_file() and not os.path.exists(raw), "actual raw-file Rename")
     notice("Renamed.txt")

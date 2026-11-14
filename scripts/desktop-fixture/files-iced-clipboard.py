@@ -73,6 +73,9 @@ def verify(session, fixture, browser, scheme, scale, process):
     def focus(window):
         session.run(["niri", "msg", "action", "focus-window", "--id", str(window["id"])])
         session.wait_for(lambda: any(w["id"] == window["id"] and w["is_focused"] for w in windows()), "clipboard Browser focus")
+        # Niri reports focus before the client handles keyboard enter; a key
+        # sent at once can still reach the previously focused window.
+        time.sleep(.3)
 
     def question():
         return next((w for w in windows() if w.get("title") == "File conflict — Canopa Files"), None)
@@ -222,8 +225,10 @@ def verify(session, fixture, browser, scheme, scale, process):
     chord("Escape")
     chord("F10", "shift")
     session.capture("clipboard-context-menu.png")
-    chord("Down")
-    chord("Down")
+    # Open, Open with, Quick Look, Copy: keyboard focus starts on Open.
+    chord("Home")
+    for _ in range(3):
+        chord("Down")
     chord("Return")
     session.wait_for(lambda: clipboard() == expected, "Copy through the real context menu")
     checks.append("text fields retain their text clipboard and the context-menu Copy publishes the selected file")
@@ -259,7 +264,13 @@ def verify(session, fixture, browser, scheme, scale, process):
             chord("Escape")
             session.wait_for(lambda: question() is None, "background conflict Cancel")
             session.wait_for(lambda: len(notices("Copy")) > completed_before, "background conflict completion")
+    # Retiring the question returns focus to its source Browser asynchronously;
+    # let that settle so it cannot take focus back from the window to close.
+    session.wait_for(lambda: any(w["id"] == browser["id"] and w["is_focused"] for w in windows()),
+                     "question retirement returns focus to its source")
+    time.sleep(.8)
     focus(other)
+    assert any(w["id"] == other["id"] and w["is_focused"] for w in windows())
     chord("w", "ctrl")
     session.wait_for(lambda: not any(w["id"] == other["id"] for w in windows()), "close independent Browser")
     focus(browser)

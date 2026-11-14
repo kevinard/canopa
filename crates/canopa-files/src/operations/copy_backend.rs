@@ -3,7 +3,10 @@
 //! outlive this call. Cancellation callbacks return Interrupted; changed
 //! selection/placement checks return WouldBlock. Native I/O errors propagate. The caller
 //! owns hashing, sync, cleanup, publication, and durable completion.
-use std::{fs, io, os::unix::fs::PermissionsExt};
+use std::{
+    fs, io,
+    os::unix::fs::{MetadataExt, PermissionsExt},
+};
 
 pub(super) fn copy_regular(
     input: &mut fs::File,
@@ -40,6 +43,117 @@ impl WriteBehind {
         if self.pending >= super::durability::MAX_BYTES {
             self.pending = 0;
             rustix::fs::fdatasync(&self.file)?;
+        }
+        Ok(())
+    }
+}
+
+/// Holes of a sparse source, punched in the copy as it is written (ADR0174).
+///
+/// uutils copies every byte; the holes read as zeros. Each range the source
+/// reports as a hole is punched once the copy has passed it, before the
+/// write-behind sync, so those zeros are dropped from the page cache instead of
+/// reaching the device. The copy keeps the source's logical size and contents
+/// and allocates only its data. Holes are found with `SEEK_HOLE`, so a file
+/// whose zeros are allocated stays allocated. A destination that cannot punch
+/// holes keeps a full copy; that costs space, not data.
+///
+/// A source written during the copy is refused by the caller's snapshot check,
+/// so a hole that gained data is never punched into a published copy.
+pub(super) struct Holes {
+    ranges: Vec<(u64, u64)>,
+    next: usize,
+    position: u64,
+    punched: u64,
+    output: Option<fs::File>,
+}
+
+impl Holes {
+    /// Find the holes from the input's current offset, then return to it.
+    pub(super) fn find(input: &fs::File, output: &fs::File) -> io::Result<Self> {
+        use rustix::fs::{SeekFrom, seek};
+        let metadata = input.metadata()?;
+        let start = seek(input, SeekFrom::Current(0))?;
+        let mut holes = Self {
+            ranges: Vec::new(),
+            next: 0,
+            position: start,
+            punched: start,
+            output: None,
+        };
+        // A file with every block allocated has no holes to look for.
+        if metadata.blocks().saturating_mul(512) >= metadata.len() {
+            return Ok(holes);
+        }
+        let end = metadata.len();
+        let mut offset = start;
+        while offset < end {
+            let data = match seek(input, SeekFrom::Data(offset)) {
+                Ok(data) => data.min(end),
+                // No data after offset: the rest is one hole.
+                Err(rustix::io::Errno::NXIO) => end,
+                // A filesystem without hole reporting: copy it in full.
+                Err(_) => {
+                    holes.ranges.clear();
+                    break;
+                }
+            };
+            if data > offset {
+                holes.ranges.push((offset, data));
+            }
+            if data >= end {
+                break;
+            }
+            offset = match seek(input, SeekFrom::Hole(data)) {
+                Ok(hole) => hole,
+                Err(_) => {
+                    holes.ranges.clear();
+                    break;
+                }
+            };
+        }
+        seek(input, SeekFrom::Start(start))?;
+        if !holes.ranges.is_empty() {
+            holes.output = Some(output.try_clone()?);
+        }
+        Ok(holes)
+    }
+
+    /// Punch every hole the copy has now passed.
+    pub(super) fn written(&mut self, count: u64) -> io::Result<()> {
+        use rustix::fs::{FallocateFlags, fallocate};
+        self.position = self.position.saturating_add(count);
+        let Some(output) = &self.output else {
+            return Ok(());
+        };
+        while let Some(&(start, end)) = self.ranges.get(self.next) {
+            let from = start.max(self.punched);
+            let to = end.min(self.position);
+            if from >= to {
+                if end <= self.position {
+                    self.next += 1;
+                    continue;
+                }
+                break;
+            }
+            match fallocate(
+                output,
+                FallocateFlags::PUNCH_HOLE | FallocateFlags::KEEP_SIZE,
+                from,
+                to - from,
+            ) {
+                Ok(()) => {}
+                Err(rustix::io::Errno::OPNOTSUPP | rustix::io::Errno::NOSYS) => {
+                    self.output = None;
+                    return Ok(());
+                }
+                Err(error) => return Err(error.into()),
+            }
+            self.punched = to;
+            if to < end {
+                break;
+            }
+            self.next += 1;
         }
         Ok(())
     }

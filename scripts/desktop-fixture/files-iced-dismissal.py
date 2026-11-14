@@ -60,6 +60,8 @@ def verify(session, fixture, browser, scheme, scale, process):
         key("F2")
         draft = session.wait_for(lambda: title("Rename"), "native Rename draft")
         focus(draft)
+        # ADR0171 preselects only the stem; replace the complete name.
+        key("a", "ctrl")
         session.run(["wtype", name])
         key("Return")
         session.wait_for(lambda: title("Rename") is None, "Rename durably admitted")

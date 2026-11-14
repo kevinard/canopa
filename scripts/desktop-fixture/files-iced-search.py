@@ -105,8 +105,9 @@ def verify(session, fixture, browser, launched, scheme, scale):
         expect_open(original)
         before = session.capture("search-01-original-scroll.png")
 
-        # Start with the actual visible Search button, not an internal message.
-        click(311, 105)
+        # Start with the actual visible Search button, not an internal message:
+        # the magnifier at the end of the location field.
+        click(208, 64)
         session.run(["wtype", "needle"])
         wait_title(search_title("needle", root))
         current = session.capture("search-02-current-folder.png")
@@ -145,6 +146,21 @@ def verify(session, fixture, browser, launched, scheme, scale):
 
         expect_empty("content-body-token", root)
         session.capture("search-04-filename-only.png")
+        # Search contents (ADR0175) finds the same query inside the text file.
+        # The filter band wraps under the field in a 360px tile.
+        click(161, 181)
+        time.sleep(.6)
+        chord("ctrl", "f")
+        keys("Down")
+        expect_open(root / "plain-content.txt")
+        session.capture("search-04b-contents.png")
+        click(161, 181)
+        time.sleep(.6)
+        chord("ctrl", "f")
+        launched.unlink(missing_ok=True)
+        keys("Down", "Return")
+        time.sleep(.3)
+        assert not launched.exists(), "turning Search contents off left a content match actionable"
         search("NEEDLE", root)
         keys("Down")
         expect_open(root / "needle-root.txt")
@@ -242,8 +258,21 @@ def verify(session, fixture, browser, launched, scheme, scale):
         session.capture("search-09-budget-limit.png")
         # Submit More and Stop in one ordered virtual-keyboard batch. The old
         # 50,000 results must survive cancellation during the new metadata scan.
-        session.run(["wtype", "-M", "alt", "-k", "m", "-k", "x", "-m", "alt"])
-        wait_title(search_title("budget", budget, "Stopped search"))
+        # Under load the larger scan can finish before Stop is read; that run
+        # proves nothing, so start the 50,000-result search again and retry.
+        stopped = search_title("budget", budget, "Stopped search")
+        for attempt in range(3):
+            session.run(["wtype", "-M", "alt", "-k", "m", "-k", "x", "-m", "alt"])
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and not any(item["title"] == stopped for item in windows()):
+                time.sleep(.2)
+            if any(item["title"] == stopped for item in windows()):
+                break
+            assert attempt < 2, "Stop never interrupted the larger scan"
+            keys("Escape")
+            folder(budget.name)
+            search("budget", budget)
+        wait_title(stopped)
         expect_open(budget / "budget-49999.txt")
         session.capture("search-10-stopped-more-keeps-results.png")
         chord("alt", "m")
@@ -264,6 +293,7 @@ def verify(session, fixture, browser, launched, scheme, scale):
             "Down moves input focus into actual results and Return launches the correct file",
             "Escape restores the original selected file and painted scroll position",
             "content-only matches never become actionable filename results",
+            "Search contents in the filter band finds and opens the content match, and turning it off removes it",
             "recursive scope finds equal filenames at distinct containing paths",
             "Show in containing folder selects the exact recursive result",
             "Right enters a recursively matched folder at narrow width",

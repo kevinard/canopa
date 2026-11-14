@@ -44,6 +44,7 @@ commands! {
     Trash => ("trash", "files-command-trash", "user-trash-symbolic", ["Delete"]),
     DeletePermanently => ("delete-permanently", "files-command-delete-permanently", "edit-delete-symbolic", ["<Shift>Delete"]),
     ShowTrash => ("show-trash", "files-command-show-trash", "user-trash-symbolic", []),
+    ShowRecent => ("show-recent", "files-command-show-recent", "document-open-recent-symbolic", []),
     ConnectToServer => ("connect-to-server", "files-command-connect-to-server", "network-server-symbolic", []),
     Undo => ("undo", "files-command-undo", "edit-undo-symbolic", ["<Control>z"]),
     Copy => ("copy", "files-command-copy", "edit-copy-symbolic", ["<Control>c"]),
@@ -184,6 +185,7 @@ impl PaneWidths {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaceKind {
+    Recent,
     Home,
     Desktop,
     Documents,
@@ -200,6 +202,7 @@ pub enum PlaceKind {
 impl PlaceKind {
     /// Every built-in place, in the order Preferences offers them.
     pub const ALL: &'static [Self] = &[
+        Self::Recent,
         Self::Home,
         Self::Desktop,
         Self::Documents,
@@ -216,6 +219,7 @@ impl PlaceKind {
     /// The sidebar of a new configuration: Templates and Public are offered
     /// in Preferences but not listed until added.
     pub const DEFAULT: &'static [Self] = &[
+        Self::Recent,
         Self::Home,
         Self::Desktop,
         Self::Documents,
@@ -229,6 +233,7 @@ impl PlaceKind {
     ];
     pub fn id(self) -> &'static str {
         match self {
+            Self::Recent => "recent",
             Self::Home => "home",
             Self::Desktop => "desktop",
             Self::Documents => "documents",
@@ -245,6 +250,7 @@ impl PlaceKind {
     }
     pub fn label(self) -> String {
         match self {
+            Self::Recent => fl!("files-place-recent"),
             Self::Home => fl!("files-place-home"),
             Self::Desktop => fl!("files-place-desktop"),
             Self::Documents => fl!("files-place-documents"),

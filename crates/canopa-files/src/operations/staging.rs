@@ -324,8 +324,7 @@ impl Opened {
     pub(super) fn require_current(&self) -> io::Result<()> {
         if !fs::metadata(&self.parent_path).is_ok_and(|metadata| {
             metadata.is_dir() && Identity::from_metadata(&metadata) == self.parent_identity
-        }) || Identity::from_metadata(&named(&self.parent, &self.name)?.metadata()?)
-            != self.identity
+        }) || named_identity(&self.parent, &self.name)? != self.identity
         {
             return Err(changed());
         }
@@ -432,9 +431,7 @@ impl Prepared {
             .map(|(parent, entry)| Published { parent, entry })
     }
     pub(super) fn discard_owned(&self) -> io::Result<()> {
-        if Identity::from_metadata(&named(&self.opened.directory, c"folder")?.metadata()?)
-            != self.identity
-        {
+        if named_identity(&self.opened.directory, c"folder")? != self.identity {
             return Err(changed());
         }
         rustix::fs::unlinkat(&self.opened.directory, c"folder", AtFlags::empty())?;
@@ -455,8 +452,7 @@ impl Prepared {
         let name = destination
             .file_name()
             .ok_or_else(|| invalid("A copied item needs its name."))?;
-        if Identity::from_metadata(&named(&self.opened.parent, name)?.metadata()?) != self.identity
-        {
+        if named_identity(&self.opened.parent, name)? != self.identity {
             return Err(changed());
         }
         rustix::fs::renameat_with(
@@ -476,14 +472,11 @@ impl Prepared {
         {
             return Err(changed());
         }
-        if Identity::from_metadata(
-            &named(
-                &self.opened.parent,
-                path.file_name()
-                    .ok_or_else(|| invalid("A published copy needs its name."))?,
-            )?
-            .metadata()?,
-        ) != self.identity
+        if named_identity(
+            &self.opened.parent,
+            path.file_name()
+                .ok_or_else(|| invalid("A published copy needs its name."))?,
+        )? != self.identity
         {
             return Err(changed());
         }
@@ -519,9 +512,7 @@ impl Prepared {
         self.opened
             .require_current()
             .and_then(|()| {
-                if Identity::from_metadata(&named(&self.opened.directory, c"folder")?.metadata()?)
-                    == self.identity
-                {
+                if named_identity(&self.opened.directory, c"folder")? == self.identity {
                     Ok(())
                 } else {
                     Err(changed())
@@ -556,9 +547,8 @@ impl Prepared {
                     .ok_or_else(|| invalid("A copied item needs its name."))?,
                 RenameFlags::NOREPLACE,
             )?;
-            if Identity::from_metadata(
-                &named(&self.opened.parent, destination.file_name().unwrap())?.metadata()?,
-            ) != self.identity
+            if named_identity(&self.opened.parent, destination.file_name().unwrap())?
+                != self.identity
             {
                 return Err(changed());
             }
@@ -661,6 +651,15 @@ fn named(parent: &fs::File, name: impl rustix::path::Arg) -> io::Result<fs::File
         OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
     )?))
+}
+/// The identity of `name` in `parent` without following a final symlink: one
+/// `fstatat` instead of opening, statting and closing an `O_PATH` descriptor.
+fn named_identity(parent: &fs::File, name: impl rustix::path::Arg) -> io::Result<Identity> {
+    let stat = rustix::fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
+    Ok(Identity {
+        device: stat.st_dev,
+        inode: stat.st_ino,
+    })
 }
 fn changed() -> io::Error {
     io::Error::new(

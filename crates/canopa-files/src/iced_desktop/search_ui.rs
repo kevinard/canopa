@@ -1,6 +1,6 @@
 //! Tab-owned, cancellable filename queries and presentation-independent delivery.
 use super::*;
-use crate::search::{SearchRequest, SearchResults, SearchScope};
+use crate::search::{SearchFilters, SearchRequest, SearchResults, SearchScope};
 use iced::futures::{SinkExt, channel::mpsc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +21,7 @@ pub(super) struct Ticket {
 pub(super) enum Event {
     Query(Target, String),
     Recursive(Target, bool),
+    Filters(Target, SearchFilters),
     Stop(Target),
     More(Target),
     FocusResults(Target),
@@ -37,6 +38,9 @@ pub(super) struct SearchSession {
     pub instance: u64,
     pub query: String,
     pub recursive: bool,
+    /// Searching the recently used files instead of the folder (ADR0176).
+    pub recent: bool,
+    pub filters: SearchFilters,
     pub maximum_results: usize,
     pub running: bool,
     pub stopping: bool,
@@ -55,6 +59,8 @@ impl SearchSession {
             instance,
             query: String::new(),
             recursive: false,
+            recent: false,
+            filters: SearchFilters::default(),
             maximum_results: 50_000,
             running: false,
             stopping: false,
@@ -63,6 +69,24 @@ impl SearchSession {
             cancellation: Cancellation::default(),
             focus_when_ready: false,
             results_focused: false,
+        }
+    }
+}
+
+impl SearchSession {
+    /// Whether the session has something to search for: a query, or a filter
+    /// that narrows results on its own.
+    pub(super) fn searches(&self) -> bool {
+        self.recent || !self.query.is_empty() || self.filters.narrows()
+    }
+
+    pub(super) fn scope(&self) -> SearchScope {
+        if self.recent {
+            SearchScope::Recent
+        } else if self.recursive {
+            SearchScope::Recursive
+        } else {
+            SearchScope::CurrentFolder
         }
     }
 }
@@ -228,6 +252,22 @@ impl Desktop {
         Task::batch([focus, self.restore_scroll(id)])
     }
 
+    /// Recent files show as a search of the recently used list, which the
+    /// query and filters then narrow. Opening it again keeps the query.
+    pub(super) fn open_recent(&mut self, id: window::Id) -> Task<Message> {
+        let open = self.open_search(id);
+        let Some(session) = self.active_mut(id).and_then(|tab| tab.search.as_mut()) else {
+            return open;
+        };
+        if !session.recent {
+            session.recent = true;
+            session.query.clear();
+            session.maximum_results = 50_000;
+            session.results_focused = false;
+        }
+        Task::batch([open, self.restart_search(id)])
+    }
+
     pub(super) fn close_search(&mut self, id: window::Id) -> Task<Message> {
         if let Some(tab) = self.active_mut(id) {
             tab.dismiss_search();
@@ -259,6 +299,8 @@ impl Desktop {
     }
 
     pub(super) fn restart_search(&mut self, id: window::Id) -> Task<Message> {
+        // Without a list (in tests), Recent is empty rather than the default.
+        let recent_list = self.recent_list.clone().unwrap_or_default();
         let Some(tab) = self.active_mut(id).filter(|tab| !tab.loading) else {
             return Task::none();
         };
@@ -274,29 +316,30 @@ impl Desktop {
         tab.search_serial += 1;
         tab.error = None;
         tab.prefix.clear();
-        if session.query.is_empty() {
+        if !session.searches() {
             session.running = false;
             session.focus_when_ready = false;
             browser.close_search();
             tab.list_epoch += 1;
             return Task::batch([self.restore_scroll(id), self.load_columns(id)]);
         }
-        let scope = if session.recursive {
-            SearchScope::Recursive
-        } else {
-            SearchScope::CurrentFolder
-        };
+        let scope = session.scope();
         let mut request = SearchRequest::new(browser.path(), session.query.clone(), scope);
         request.maximum_results = session.maximum_results;
         request.show_hidden = browser.show_hidden();
-        let same = browser
-            .search()
-            .is_some_and(|results| results.query == request.query && results.scope == scope);
+        request.filters = session.filters;
+        request.recent = Some(recent_list);
+        let same = browser.search().is_some_and(|results| {
+            results.query == request.query
+                && results.scope == scope
+                && results.filters == request.filters
+        });
         if !same {
             browser.show_search(SearchResults {
                 root: request.root.clone(),
                 query: request.query.clone(),
                 scope,
+                filters: request.filters,
                 entries: Vec::new(),
                 failures: Vec::new(),
                 cancelled: false,
@@ -378,6 +421,17 @@ impl Desktop {
                     .and_then(|tab| tab.search.as_mut())
                 {
                     session.recursive = recursive;
+                    session.maximum_results = 50_000;
+                    return self.restart_search(target.window);
+                }
+            }
+            Event::Filters(target, filters) if self.target_is_active(target) => {
+                if let Some(session) = self
+                    .active_mut(target.window)
+                    .and_then(|tab| tab.search.as_mut())
+                    .filter(|session| session.filters != filters)
+                {
+                    session.filters = filters;
                     session.maximum_results = 50_000;
                     return self.restart_search(target.window);
                 }
@@ -508,14 +562,11 @@ impl Desktop {
         let Some(browser) = tab.browser.as_mut() else {
             return Task::none();
         };
-        let scope = if session.recursive {
-            SearchScope::Recursive
-        } else {
-            SearchScope::CurrentFolder
-        };
+        let scope = session.scope();
         if results.root != browser.path()
             || results.query != session.query
             || results.scope != scope
+            || results.filters != session.filters
         {
             return Task::none();
         }

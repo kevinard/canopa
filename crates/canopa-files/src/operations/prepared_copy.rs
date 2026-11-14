@@ -14,6 +14,8 @@ pub(super) struct PreparedCopy {
     /// The output digest with the selected source metadata. This is the content
     /// the source must still match before removal; Copy does not reread it.
     pub source_fingerprint: Fingerprint,
+    /// Whether the source's extended attributes and ACLs all reached the copy.
+    pub attributes: attributes::Kept,
 }
 
 pub(super) fn prepare_copy(
@@ -129,7 +131,7 @@ fn prepare_using(
     temporary.disable_cleanup(true);
     checkpoint()?;
     source.require_current()?;
-    let (payload, digest) = if before.is_symlink() {
+    let (payload, digest, kept) = if before.is_symlink() {
         let target = source.link()?;
         let file = opened.link(&target)?;
         let payload = opened.payload(file, &mut stage)?;
@@ -137,9 +139,11 @@ fn prepare_using(
         #[cfg(test)]
         super::transfer::stage_boundary::preparing("payload", source.path(), &stage);
         payload.require_current()?;
+        // Linux keeps no user attributes or ACLs on symbolic links.
         (
             payload,
             fingerprint::content_digest(target.as_os_str().as_encoded_bytes()),
+            attributes::Kept::All,
         )
     } else {
         let mut input = source.regular()?;
@@ -155,6 +159,7 @@ fn prepare_using(
         // its namespace without borrowing the writer. No user path is reopened.
         let mut output = payload.file().try_clone()?;
         let mut behind = copy_backend::WriteBehind::new(&output)?;
+        let mut holes = copy_backend::Holes::find(&input, &output)?;
         copy_backend::copy_regular(&mut input, &mut output, |count| {
             check_cancel(cancellation)?;
             checkpoint()?;
@@ -172,6 +177,8 @@ fn prepare_using(
                     cancellation,
                 );
                 progress(count);
+                // Punch passed holes before the window sync writes them.
+                holes.written(count)?;
                 behind.written(count)?;
                 check_cancel(cancellation)?;
                 source.require_current()?;
@@ -207,6 +214,8 @@ fn prepare_using(
         }
         source.require_current()?;
         payload.require_current()?;
+        // ACLs precede the permission restore, which then keeps their mask.
+        let kept = attributes::Attributes::of_file(&input).apply(&output);
         copy_backend::restore_metadata(&output, before)?;
         if times == Times::Now {
             let now = std::time::SystemTime::now();
@@ -217,7 +226,7 @@ fn prepare_using(
         durability::sync(&output)?;
         #[cfg(test)]
         super::transfer::stage_boundary::preparing("completed", source.path(), &stage);
-        (payload, digest)
+        (payload, digest, kept)
     };
     source.require_current()?;
     check_cancel(cancellation)?;
@@ -236,5 +245,6 @@ fn prepare_using(
         source_identity: Identity::from_metadata(before),
         source_fingerprint: Fingerprint::from_metadata(before, digest),
         source,
+        attributes: kept,
     })
 }

@@ -73,8 +73,23 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     def replace(value):
         chord("a", "ctrl")
         type_text(value)
+    def settle():
+        # A lagging renderer can batch a page switch with the following Tabs,
+        # routing them to the previous page. Wait for a stable painted frame.
+        # A busy renderer also paints nothing, so also allow queued input time
+        # to drain before requiring two identical frames well apart.
+        time.sleep(1)
+        previous = None
+        def stable():
+            nonlocal previous
+            time.sleep(.4)
+            frame = session.capture("preferences-settling.png").tobytes()
+            same, previous = frame == previous, frame
+            return same
+        session.wait_for(stable, "settled Preferences frame")
     def page(n):
         chord(str(n), "alt")
+        settle()
     def width(value):
         session.run(["niri", "msg", "action", "set-window-width", str(value)])
         session.wait_for(lambda: next(w for w in windows() if w["is_focused"])["layout"]["window_size"][0] == value, "native tile width")
@@ -100,13 +115,18 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
         type_text("file://" + quote_from_bytes(os.fsencode(path), safe="/"))
         key("Return")
         wait_title(os.path.basename(os.fsencode(path)).decode(errors="replace"))
-    def shortcut(value):
+    def shortcut(value, customized=False):
+        # Four pages, the command filter, then the filtered Search row: its
+        # label, Record, Reset (only once customized) and its shortcut field.
         page(4)
         key("Tab", 5)
-        type_text("Search filenames")
+        type_text("filenames")  # Only Search filenames matches.
+        settle()
         key("Tab")
         key("Return")
-        key("Tab", 7)
+        settle()
+        # Selecting the command renews focus identities: traverse afresh.
+        key("Tab", 9 if customized else 8)
         replace(value)
 
     if case == "locations":
@@ -155,7 +175,8 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     session.capture("preferences-01-views-wide.png")
     width(360)
     page(1)
-    key("Tab", 13)
+    # Four pages, three views, four sort keys, two switches, narrower, width.
+    key("Tab", 15)
     replace("12x")
     before = config.read_text()
     chord("s", "ctrl")
@@ -170,12 +191,23 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     saved(lambda s: any("mode=list" in n or 'mode="list"' in n for n in s.splitlines()) and 'column-width=420' in s)
     checks.append("360px Views form saves its actual uncommitted width and default List; invalid width leaves disk unchanged")
 
+    # ADR0169: toolbar choices save as they change. Four pages, then the
+    # default six items' enabled Earlier/Later/Remove controls (15), then Add.
     page(2)
-    key("Tab", 12)
+    key("Tab", 20)
+    settle()
+    session.capture("preferences-02a-toolbar-add-focus.png")
+    key("Return")  # Add opens the command picker and its filter.
+    settle()
+    session.capture("preferences-02b-toolbar-picker.png")
+    # Opening the picker renews the form's focus identities: traverse afresh to
+    # its filter, which follows Add.
+    key("Tab", 21)
     type_text("Refresh")
+    settle()
+    session.capture("preferences-02c-toolbar-filtered.png")
     key("Tab")
     key("Return")
-    chord("s", "ctrl")
     saved(lambda s: "refresh" in toolbar())
     assert toolbar()[-1] == "refresh", toolbar()
     if case != "full":
@@ -184,20 +216,20 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
                 "checks": checks + ["actual Refresh addition through filtered keyboard traversal"],
                 "scope": "reduced reproduction; not full preference acceptance"}
     page(2)
-    key("Tab", 10)
-    key("Return")  # Select final Refresh item.
-    key("Tab", 11)
-    key("Return")  # Move it earlier.
-    chord("s", "ctrl")
-    saved(lambda s: toolbar()[-2:] == ["refresh", "search"])
+    key("Tab", 21)  # Seven rows' controls end with final Refresh's Earlier.
+    key("Return")
+    saved(lambda s: toolbar()[-2:] == ["refresh", "view"])
     checks.append("toolbar command search adds Refresh and Earlier changes its actual saved order")
 
     page(2)
-    key("Tab", 13)
+    key("Tab", 23)  # Seven rows (18 controls), then Add.
+    key("Return")
+    settle()
+    key("Tab", 24)  # A fresh traversal to the picker's filter after Add.
     type_text("Marker")
+    settle()
     key("Tab")
     key("Return")
-    chord("s", "ctrl")
     saved(lambda s: "action:marker" in toolbar() and 'toolbar=#true' in s)
     session.capture("preferences-03-toolbar-action.png")
     checks.append("explicit custom-action toolbar placement enables the existing action and preserves its command")
@@ -208,13 +240,15 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     time.sleep(.3)
     assert config.read_text() == before
     session.capture("preferences-04-shortcut-conflict.png")
-    key("Tab")
-    key("Return")  # Record shortcut.
+    settle()
+    chord("Tab", "shift")  # Reset, enabled by the customized draft.
+    chord("Tab", "shift")  # Record shortcut.
+    key("Return")
+    settle()
     key("F8")
-    chord("s", "ctrl")
     saved(lambda s: has_shortcut("F8"))
     checks.append("shortcut conflicts leave disk unchanged; actual keyboard recorder saves F8")
-    shortcut("<Alt>f")
+    shortcut("<Alt>f", customized=True)
     chord("s", "ctrl")
     saved(lambda s: has_shortcut("<Alt>f"))
     session.capture("preferences-05-shortcuts.png")
@@ -232,7 +266,7 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     chord("d", "ctrl")
     wait_title("Preferences")
     width(360)
-    key("Tab", 19)  # Four pages, three sidebar choices, nine places, two order controls, name.
+    key("Tab", 43)  # Four pages, three sidebar choices, eleven places' controls (32), the bookmark's Earlier/Remove/label, name.
     replace("draft part")
     chord("a", "ctrl")
     chord("c", "ctrl")
@@ -272,7 +306,7 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     focus_browser()
     chord("d", "ctrl")
     wait_title("Preferences")
-    key("Tab", 19)  # Four pages, three sidebar choices, nine places, two order controls, name.
+    key("Tab", 43)  # Four pages, three sidebar choices, eleven places' controls (32), the bookmark's Earlier/Remove/label, name.
     replace("Raw bookmark")
     chord("s", "ctrl")
     saved(lambda s: any(n[1] == "Raw bookmark" and "path-bytes=" + raw.hex() in n for n in nodes("bookmark")))
@@ -282,17 +316,28 @@ def verify(session, fixture, browser, config, scheme, scale, case="full", launch
     session.wait_for(lambda: title("Preferences") is None, "saved bookmark close")
     focus_browser()
     navigate(fixture)
-    key("Menu")
+    # Locations is in the toolbar's application menu (ADR0171); the Menu key
+    # opens the selection's own menu. Press the narrow window's More button.
+    pointer = session.build_pointer()
+    outputs = json.loads(session.run(["niri", "msg", "--json", "outputs"]))
+    logical = next(item["logical"] for item in outputs.values() if item.get("logical"))
+    current = next(w for w in windows() if w["id"] == browser["id"])
+    session.run([str(pointer), str(round((current["layout"]["window_size"][0] - 25) / logical["width"] * 1600)),
+                 str(round(64 / logical["height"] * 1000))])
+    settle()
     key("End")
-    key("Up")
+    key("Up", 6)  # Preferences, Custom Actions, Operations, Trash, hidden files, View options.
     key("Return")  # Locations in the same popup.
+    settle()
     session.capture("preferences-10-locations-menu.png")
     key("Return")  # Back to original popup.
+    settle()
     key("End")
-    key("Up")
+    key("Up", 6)
     key("Return")
+    settle()
     key("Home")
-    key("Down", 9)  # Back, eight built-in places, then the bookmark.
+    key("Down", 12)  # Back, eleven built-in places, then the bookmark.
     key("Return")
     wait_title(os.path.basename(raw).decode(errors="replace"))
     type_text("note")

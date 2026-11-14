@@ -992,11 +992,10 @@ impl Desktop {
         window: window::Id,
         selected: Option<PathBuf>,
     ) -> Task<Message> {
-        if self.active(window).is_some_and(|tab| {
-            tab.search
-                .as_ref()
-                .is_some_and(|search| !search.query.is_empty())
-        }) {
+        if self
+            .active(window)
+            .is_some_and(|tab| tab.search.as_ref().is_some_and(|search| search.searches()))
+        {
             return self.restart_search(window);
         }
         let home = self.home.clone();

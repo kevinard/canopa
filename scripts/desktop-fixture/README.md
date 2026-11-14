@@ -129,9 +129,8 @@ wide/narrow toolbar layouts, draft focus through external-source notices, stale
 save refusal, and prepared raster/SVG action icons in toolbar/context menus.
 It also verifies shared symbolic foregrounds on reload and executable text
 fallback when an icon is missing. Run each in dark100/light125; snapshots and
-summaries identify their scope. The broader scenarios below retain the full
-acceptance requirements and earlier GTK reference evidence; the scoped Iced
-checks do not establish that the complete matrix has passed the replacement.
+summaries identify their scope. The scoped Iced checks do not establish that
+the complete product matrix has passed.
 
 The maintained `files-iced-continuation-dark/light` cases exercise application
 Retry and Continue through actual Operations controls, with opposite execution
@@ -237,66 +236,41 @@ remain private.
 
 Files scenarios include browsing, previews, transfers, Undo, Recovery, interrupted
 operations, drag and drop, editors and automatic shared-configuration reload.
-`--transfers-only --transfer-case lifetime` uses `files-job-lifetime.py` to close
-every browser during an actual copy, allow the batch to finish with one failed
-child, and reopen Operations after natural process exit. Native Retry must copy
-only the repaired child while preserving the completed output's bytes and inode.
-The external clipboard avoids a Files clipboard lifetime hold. All source,
-destination and process state belong to the private fixture. Scenario flags are
-mutually exclusive; conflicting `--*-only` choices are rejected before launch.
-`verify-files.py --undo-only` covers destination conflicts, changed copies and
-changed saved previous destinations. A normal writable descriptor remains open
-while native Replace displaces its file; writes through that descriptor then
-trigger the saved-version review. Actual keyboard input checks Skip as its safe
-default, cancellation, explicit restoration, preview and a subsequent destination
-conflict. Recovery is refreshed and the changed saved file previewed while the
-Undo review remains unanswered. File bytes and notifications establish the outcomes without history
-database inspection. Both themes, including light at fractional scale, are in
-the maintained acceptance inventory.
+Scenario flags are mutually exclusive; conflicting `--*-only` choices are
+rejected before launch. Without a scenario flag, `verify-files.py` runs the
+default browsing walkthrough (`files-dark/light`): keyboard navigation, floating
+Quick Look, image/PDF pixels, tabs, views, search, live updates, default-app
+launching, name prompts with shared Undo, then native clipboard Copy/Move across
+windows and the shared Operations window.
 
-`verify-files.py --undo-moves-only` delegates to `files-undo-moves.py`. It moves
-real files with replacement, moves the incoming objects elsewhere externally,
-then substitutes new objects at their recorded paths. Native keys check the
-current-item review, safe Skip, cancellation, explicit Return, protected Keep,
-Recovery preview/copy-out and a separate conflict at the original location.
-Actual bytes verify both versions and the externally moved originals. Both
-appearances are maintained separately from the broader Undo workflow.
-The slice also copies a file, moves it externally, and replaces an independent
-destination with it. After both normal and saved-only move Undo, older Copy Undo
-must show its changed-item review; Skip preserves all three physical versions.
+The GTK reference workflows (`--undo-*`, `--recovery-*`, `--interrupted-only`,
+`--devices-only`, `--media-only`, `--media-formats-only`, `--preferences-only`,
+`--drops-only`, `--actions-only` and `--transfers-only --transfer-case
+lifetime`) were removed on 2026-11-14. They drove the former GTK frontend's
+contracts: GApplication actions, Alt mnemonics, GTK dialog titles, the
+Locations popover, notification actions and wording, and an AT-SPI media
+observer. None ran against the Iced frontend (ADR0018). The `files-iced-*`
+cases cover those areas natively; see
+`.scratch/artifacts/files-acceptance-repair/A-report.md` for the behaviour each
+removed case covered that still lacks an Iced native case.
 
-The same slice checks unavailable moved items: safe Skip, cancellation, restoring
-only the saved destination, explicit Finish with protected preview/copy-out,
-separate unreturned-item counts, and normal Undo after an item reappears.
-
-`verify-files.py --media-only` uses `files-media.py` for actual audio/video
-playback, control focus, volume, seeking and preview navigation. It generates
-WAV and VP8/Vorbis WebM media and records PCM from private PipeWire/Pulse services
-with a null sink and policy-only WirePlumber. No hardware monitor is loaded;
-ALSA fallback is null and SDL is restricted to the private Pulse server. A private
-accessibility bus observes visible controls, while actual Tab/Space/arrow input,
-captured audio and rendered video pixels prove behavior. The runner preflight
-checks the media generator and audio-service/capture tools. It never targets
-the user's audio session. Both appearances, including light/1.25×, are maintained.
-
-`--media-formats-only` additionally generates MP3, FLAC, Opus, AAC/M4A and
+`--iced-media-formats-only` additionally generates MP3, FLAC, Opus, AAC/M4A and
 H.264/AAC MP4. Audio files change tone partway through; actual seeking and rewind
 must decode the expected tone on either side. MP4 acceptance checks its distinct
-AAC track, advancing H.264 pixels and paused rewind. The same isolated audio and
-accessibility services are used. These reference workflows require GTK's GStreamer media
-backend plus the distribution's decoder plugins, not only its GTK development
-package; see `docs/files.md`. Fixture generation also needs FFmpeg's libmp3lame,
-FLAC, libopus, AAC and libx264 encoders.
+AAC track, advancing H.264 pixels and paused rewind. Playback needs GStreamer
+and the distribution's decoder plugins; see `docs/files.md`. Fixture generation
+also needs FFmpeg's libmp3lame, FLAC, libopus, AAC and libx264 encoders.
 The maintained cases also pass `--desktop-entry` to register the actual launcher
 and choose it as the folder handler inside the fixture's private XDG directories.
 GIO cold-launches a folder containing spaces and Unicode before media acceptance.
 With an extracted archive's binary and desktop entry, this exercises the packaged
 application. It never installs a launcher or changes a MIME default in the user's
-session. A helper retains ownership of the launch process group for cleanup.
+session. A child-subreaper helper adopts the launched process, so its own exit
+status is the application's and cleanup owns the launch process group.
 
 `--iced-media-only` and `--iced-media-formats-only` use the direct GStreamer
-backend and Iced controls. They reuse the private audio setup without starting
-the GTK accessibility observer. Native input, the visible Play focus outline,
+backend and Iced controls with the private audio setup from `files-media.py`.
+Native input, the visible Play focus outline,
 actual PCM frequencies/levels and decoded pixels are the observation seam.
 The four dark/light cases cover no-autoplay, rapid relative controls, seeks and
 rewind, narrow floating previews, independent Browser selection, source changes,
@@ -334,57 +308,13 @@ its existing catalog/Mount/Unmount behavior. All files and devices are simulated
 in the private runtime; no block device or actual mount is accessed.
 
 `verify-files-device-ui.py --removal stop|eject` exercises each capability
-through the Iced sidebar and narrow Locations menu. It delays the actual native
+through the Iced sidebar and a narrow window's toolbar Places menu, whose button
+it invokes through Files' own accessibility tree on a private AT-SPI bus. It delays the actual native
 request, closes every window, then releases it and checks notification delivery,
 same-owner reopening, inspectable Operations results and explicit Quit. The
 maintained inventory runs both capabilities in dark100/light125. These extend
 the existing device/password/question scenarios; physical-drive behavior still
 requires separate acceptance.
-
-`verify-files.py --devices-only` delegates to `files-devices.py`. It compiles
-`files-volume-monitor.c` into a temporary GIO extension module loaded only by the
-private session's process environment. The provider exposes a local volume with
-real fixture files, hotplug signals, asynchronous failures and deliberately held
-requests. It never calls mount/unmount on an actual filesystem or accesses block
-devices. Device discovery, narrow Locations, keyboard/preview behavior, active-job
-guards and delayed-request lifetime are exercised through the normal Files UI.
-
-`--devices-only --device-case safety` uses `files-device-safety.py` to queue work
-through an alias during removal, change that alias, substitute another device
-identity at the same root, explicitly retry on the original device and restart
-with it unmounted. Assertions inspect real files and native outcomes, without
-reading private storage or history databases. This proves request-preparation
-behavior; in-flight mutation and physical unplug safety need separate cases.
-
-`--devices-only --device-case identityless` repeats the replacement-media check
-with no backend UUID. Retry cannot identify media across mount sessions and
-therefore refuses it; a fresh request after reviewing the mounted location
-succeeds. The fixture records native outcomes and verifies the actual file bytes.
-
-`--devices-only --device-case clipboard` uses `files-device-clipboard.py` to
-replace source media after native Cut or Copy, retain the old selection through
-Retry, return the original media, and undo the successful transfer. Copy also
-uses a browsing alias, then tests its independent retargeting. A local source
-can still be copied to a destination deliberately reviewed after media changes.
-Device UUIDs, exact clipboard payload, real bytes on two actual filesystems and
-rendered Operations at 360 pixels establish the result. The secondary temporary
-directory is removed after session shutdown. All media and directories remain private.
-
-`--devices-only --device-case recovery` terminates the private Files process
-during actual Undo, restarts with the fixture volume offline and verifies that
-startup leaves interrupted data untouched. Remounting and explicitly retrying
-from Recovery reconciles the journal; the resulting copy remains undoable.
-The retained bytes, source bytes and completed native outcomes are checked.
-
-`--devices-only --device-case inflight` copies actual files, disconnects the
-private provider after observing real staged bytes, and verifies safe pause,
-preserved completed/source files, exact continuation after remount and separate
-Undo of the resumed portion and completed prefix. `--device-case sources` keeps
-one source device offline while an independent local file completes, then
-reconnects and retries only the failed source. Both use `files-device-transfers.py`;
-their clipboard URIs, file contents and native outcomes are checked. The optional
-provider `disconnect-unmount` marker models a volume that must explicitly mount
-again after reconnect. It never unmounts an actual filesystem.
 
 List cases with `python3 scripts/run-desktop-acceptance.py --list`. Run all cases
 with `--output /tmp/canopa-desktop-artifacts`, or repeat `--case drawer-modes
@@ -400,54 +330,6 @@ compiles the shared input fixtures; `capture` obtains a synchronous Grim frame a
 `screenshot` waits for a fresh Niri image. Scenario files retain their own compositor
 configuration and assertions. Drawer, motion, placement and measurement fixtures
 use this startup boundary and close the Session in `finally`.
-
-`verify-files.py --undo-saved-only` delegates to `files-undo-saved.py`. It removes
-saved previous versions in the private fixture and verifies Skip/Cancel, Finish
-with protected Recovery preview/copy-out, source-only return of a moved item,
-retryable retained-only restoration and approval after the saved file reappears.
-It checks actual files and truthful completion counts in both maintained themes.
-
-`verify-files.py --undo-cross-only` delegates to `files-undo-cross.py`. It verifies
-Skip/Cancel, Keep both, Replace, protected Recovery preview/copy-out and stale
-original-location review using two actual filesystem device IDs. Its secondary
-private directory is removed after the isolated desktop shuts down. The fixture
-requires a writable filesystem different from its temporary HOME; it uses the
-workspace or `/dev/shm` and never changes a mount or actual user folder.
-
-`verify-files.py --undo-cross-only --undo-cross-case current` delegates to
-`files-undo-cross-current.py`. It checks changed-version Return/Keep, the Skip
-default, cancellation, stale review, missing-version saved-only restoration,
-Finish outcome counts, and protected Recovery preview/copy-out. Maintained dark
-and light variants use the same two-filesystem isolation and cleanup contract.
-
-`verify-files.py --undo-cross-only --undo-cross-case directories` delegates to
-`files-undo-cross-directories.py`. Native Copy and a same-filesystem folder move
-first create the relevant Undo entries. Replacing only the private, empty
-original-parent location with an alias into the second filesystem then makes
-the explicit Undo Merge return its children across actual device IDs. It checks
-nested/empty folders, Skip/retry, folder Keep both, stable newer destinations,
-older Copy ownership and Quick Look. This exercises Merge child returns; normal
-cross-device directory-move Undo ancestry remains a separate requirement. Both
-maintained themes use private temporary files and never change a real mount.
-
-`verify-files.py --undo-cross-only --undo-cross-case moves` uses the same fixture
-with native Cut/Paste moving directories across the two actual filesystems.
-It checks recorded directory returns, root Merge and Keep both, nested and empty
-folders, partial retry, Quick Look, and older file and directory Copy ownership.
-The directory Copy case must remove the entire returned owned tree while
-preserving the newer original folder. Both dark and light variants are maintained.
-
-`verify-files.py --undo-cross-only --undo-cross-case retry` uses
-`files-directory-retry.py`. A private FIFO fails during native directory Cut/Paste;
-repairing it and invoking Retry must finish the original empty source hierarchy.
-The fixture checks both Undo entries, source-container unavailability, stable
-cut selection across partial updates, newer Copy/Cut and foreign clipboard
-ownership, and floating Quick Look from a 360-pixel browser. Each failed request
-also resizes Operations to 360 pixels and invokes its actual Retry with Alt+R.
-Actual temporary
-files span two device IDs; the private provider never changes a real mount.
-Both maintained themes retain screenshots and public filesystem/clipboard
-checkpoints.
 
 `run-desktop-acceptance.py --case files-clipboard-protocol` builds the lean
 Iced file-clipboard service test before starting its private HOME, bus and Niri.
@@ -499,20 +381,6 @@ The pasted copy, current source/destination and foreign clipboard stay intact.
 Both dark100 and light125 are maintained. The test reads no private history
 tables and does not prove consuming-source or restart execution authority.
 
-`verify-files.py --undo-cross-only --undo-cross-case context` uses
-`files-recovery-context.py`. It protects edited copied work, moves its containing
-folder across actual filesystems, then moves and undoes an unrelated same-name
-file between the old parents. Captures verify that Recovery keeps the archive's
-location and filename. A stopped-app fixture prepares authentic v15 path maps;
-restart upgrades them to qualified recorded-location hints. Keep both, Quick
-Look and a real Recovery copy verify continued access without consuming saved
-data or replacing the recreated source. Both themes retain location, preview and
-copy-chooser screenshots. SQL is used only to prepare legacy input, never to
-assert implementation output. The legacy input also adds an unprotected archive
-sharing the protected record's identified saved container. Startup expiry must
-retire that redundant ownership while the protected record remains previewable
-and copyable before and after the containing folder returns.
-
 `verify-files.py --hidden-navigation-only` delegates to
 `files-hidden-navigation.py`. It opens an explicit hidden hierarchy, exercises
 parent/child navigation at wide and 360-pixel tile widths, excludes hidden
@@ -524,68 +392,6 @@ The existing `click` Wayland fixture also accepts `x y move` to position the
 pointer without clicking. Hidden-navigation captures use it to keep toolbar
 hover tooltips away from selected rows during window resizing; normal left and
 right click behavior is unchanged.
-
-`verify-files.py --undo-folders-only` delegates to `files-undo-folders.py`.
-It creates folders through the normal dialog and checks nonempty-folder
-Skip/Cancel/Keep, previewable new work, retry once empty, stale Keep refusal,
-and nested copy-created ancestor preservation with truthful outcome counts.
-Maintained dark/light variants use private temporary files and a private desktop.
-
-`verify-files.py --undo-folders-only --undo-folders-case locations` delegates to
-`files-undo-folder-locations.py`. It checks changed-folder Keep/Skip/Cancel and
-preview, missing retry/Finish, unreadable-folder Finish, stale choices and nested
-ancestor continuation. Notifications distinguish folders not removed from moved
-items not returned. The original nonempty-folder case remains the default.
-
-`verify-files.py --undo-directories-only` delegates to `files-undo-directories.py`.
-It returns a renamed folder with Keep both while a newer destination folder
-contains a protected Recovery version. Both maintained themes verify that the
-newer data stays available for Quick Look and copying out, and that both folder
-versions remain intact. It also chooses directory Merge, skips a colliding child
-after a disjoint sibling returns, retries that child with Keep both, checks the
-unchanged destination root identity and previews the returned child. These
-fixtures use ordinary native operations on private temporary files. Broader
-native Merge interruption and cross-filesystem acceptance remain separate work.
-The workflow also adds new source work during a child decision, reviews the
-remaining folder, exercises the Skip default and Cancel, rejects stale Keep,
-then keeps and previews the remaining work with truthful completion counts.
-An additional workflow explicitly merges newly arrived contents, refuses a stale
-answer, skips and retries a reused child filename, preserves earlier returns and
-previews the additional file under its new name.
-It also reviews a replaced Merge destination and a missing incoming folder,
-checks Skip/Cancel and stale Finish decisions, finishes one blocked branch with
-truthful counts, and retries the other after its original folder reappears.
-Saved-version workflows remove the private retained file before Merge and
-during its last child decision. They verify the safe Skip default, Cancel,
-stale Continue refusal, owned empty-folder cleanup, one pending restoration,
-later restoration without repeated child returns, and Quick Look of both
-returned contents and the restored saved version.
-
-`verify-files.py --recovery-directories-only` uses
-`files-recovery-directories.py` to copy a protected saved directory, observe a
-new child arriving at the output, cancel at its conflict and Continue the exact
-remaining work through Operations. It exercises safe Keep both, nested bytes,
-floating Quick Look with a 360-pixel browser and separate Undo entries that
-preserve the new output. The dark/light inventory entries use actual private
-files and do not mutate real user folders. The saved root and nested folder are
-read-only (0555); actual modes must remain read-only after cancellation, Continue
-and both Undo entries. The independent arriving-file writer waits for output
-access without changing its permissions.
-
-`--recovery-directories-case expiry` extends that workflow with105 real native
-folder creations and an identified containing-folder Rename before Continue.
-It checks that unfinished Operations rows survive completed-row pruning and
-that source selection follows archived ownership before storage preflight.
-The old prefix's Undo expires normally; new remaining work is still separately
-undoable. Basic and expiry cases both check restoring the original output after
-a refused continuation, preserving unrelated replacement-folder bytes.
-
-`--recovery-directories-case tiling` uses an unbroken long filename and resizes
-Operations 360→640→360 while Continue and Undo are both available. It checks the
-actual window width and focus, wraps the action controls without hiding them,
-and uses Alt+V to reopen a deferred conflict. Exact on-disk names, Keep both,
-copy contents, floating preview and separate Undo remain part of the same
-workflow. Maintained dark and light 1.25 variants retain the rendered states.
 
 `--iced-operations-case focus` isolates the three-window return from transfer
 inspection to its Operations parent. `focus-expired` scopes a compiled
@@ -694,14 +500,15 @@ performance or safe execution continuation after a runtime crash.
 maintained themes. It kills only its private Files process after a real Undo
 quarantine, creates a newer occupant and restarts the same history. Startup
 Recovery must appear once; dismissing it and attempting ordinary Undo must not
-reopen it. Space previews the actual retained 16 MiB text file, and clipboard
-inspection verifies its bytes. Recover a copy must preserve the primary pending
-journal identity, quarantine and newer occupant. A second process restart and
+reopen it. Per ADR0142 Recovery lists the interrupted Undo's whole work folder
+(`Working files`); Space previews it, and its Recover a copy must contain the
+exact retained 16 MiB bytes while preserving the primary pending journal
+identity, quarantine and newer occupant. A second process restart and
 actual 340-pixel Recovery layout precede explicit reconciliation: refuse the
 occupied name, then restore after it is cleared. Independent Undo reverses
 salvage and the original Copy while preserving newer work and source bytes.
-The SQLite observer reads only the private journal body's digest, never its
-execution payload. This is scoped interrupted-Undo coverage, with general
+The SQLite observer compares the private journal body's digest; on a mismatch
+it saves both bodies to `journal-mismatch.json` as failure evidence. This is scoped interrupted-Undo coverage, with general
 restart execution authority and startup reliability still separate gates.
 
 `verify-files-startup.py` repeats fresh private application sessions without

@@ -26,7 +26,10 @@ def verify(session, fixture, browser, scheme, scale, process):
     source = root / "Source/report.txt"
     target = root / "Target"
     original = target / "report.txt"
-    rescued = root / "Rescued report.txt"
+    rescued = root / "Rescued work"
+
+    def rescued_bytes():
+        return [digest(path) for path in sorted(rescued.rglob("*")) if path.is_file()]
     newer = b"Newer occupant after interruption.\n"
     binary = Path(process.args[0])
     notifications = session.output / "notifications.json"
@@ -74,6 +77,15 @@ def verify(session, fixture, browser, scheme, scale, process):
     def notice(before, predicate):
         return session.wait_for(lambda: next((e for e in events()[before:] if e["app"] == "Canopa Files" and predicate(e)), None), "this interrupted-work result", timeout=40)
 
+    observed = {}
+
+    def same_journal(expected, step):
+        current = pending()
+        if current != expected:
+            (session.output / "journal-mismatch.json").write_text(json.dumps(
+                {"step": step, "expected": observed.get(expected), "current": observed.get(current)}, indent=2) + "\n")
+        return current == expected
+
     def pending():
         # Observe the private journal's identity without interpreting or writing
         # its execution payload. Copy-out must leave this primary intent intact.
@@ -81,7 +93,11 @@ def verify(session, fixture, browser, scheme, scale, process):
         connection = sqlite3.connect(history.as_uri() + "?mode=ro", uri=True)
         try:
             row = connection.execute("SELECT body FROM pending WHERE singleton=1").fetchone()
-            return None if row is None else hashlib.sha256(row[0].encode()).hexdigest()
+            if row is None:
+                return None
+            identity = hashlib.sha256(row[0].encode()).hexdigest()
+            observed.setdefault(identity, row[0])  # Failure evidence only.
+            return identity
         finally:
             connection.close()
 
@@ -95,7 +111,7 @@ def verify(session, fixture, browser, scheme, scale, process):
     def reconcile(recovery):
         focus(recovery)
         key("Home")  # selects the payload and clears widget focus
-        # Recover, Quick Look, Refresh, Reconcile; the one-page More is disabled.
+        # Recover, Keep in Recovery, Refresh, Reconcile; the one-page More is disabled.
         for _ in range(4):
             key("Tab")
         session.capture("interrupted-before-reconcile.png")
@@ -149,31 +165,13 @@ def verify(session, fixture, browser, scheme, scale, process):
     checks.append("dismissing startup attention is respected while ordinary mutations stay blocked by the unresolved journal")
 
     focus(recovery)
+    session.capture("interrupted-recovery-catalog.png")
+    # ADR0142: Recovery exposes the interrupted Undo's whole work folder, which
+    # holds the quarantined report, rather than the bare file.
     key("Home")
     key("space")
-    preview = session.wait_for(lambda: title("Quick Look: report.txt"), "original-name preview of quarantined bytes")
+    preview = session.wait_for(lambda: title("Quick Look: Working files"), "work-folder preview of quarantined bytes")
     assert preview["is_floating"]
-    outputs = json.loads(session.run(["niri", "msg", "--json", "outputs"]))
-    logical = next(o["logical"] for o in outputs.values() if o.get("logical"))
-    width = min(760, logical["width"] - 350)
-    focus(preview)
-    session.run(["niri", "msg", "action", "set-window-width", str(width)])
-    session.wait_for(lambda: next(w for w in windows() if w["id"] == preview["id"])["layout"]["window_size"][0] == width, "actual preview width")
-    session.run(["niri", "msg", "action", "move-floating-window", "--id", str(preview["id"]), "-x", "350", "-y", "0"])
-    pointer = session.build_pointer()
-
-    def preview_bytes():
-        focus(preview)
-        session.run([str(pointer), str(round(410 / logical["width"] * 1600)), str(round(110 / logical["height"] * 1000))])
-        chord("a")
-        chord("c")
-        try:
-            copied = session.run(["wl-paste", "--no-newline"])
-            return copied.startswith("Preserved from interrupted Undo.\n") and "Source data preserved for Recovery." in copied
-        except subprocess.CalledProcessError:
-            return False
-
-    session.wait_for(preview_bytes, "actual quarantined text in Quick Look")
     session.capture("interrupted-quarantine-preview.png")
     key("Escape")
     session.wait_for(lambda: all(w["id"] != preview["id"] for w in windows()), "native preview retires")
@@ -186,11 +184,11 @@ def verify(session, fixture, browser, scheme, scale, process):
     type_path(rescued)
     before = len(events())
     key("Return")
-    notice(before, lambda e: e["title"] == "Recover report.txt" and "1 completed" in e["body"])
+    notice(before, lambda e: e["title"].startswith("Recover ") and "0 failed" in e["body"])
     session.wait_for(lambda: all(w["id"] != draft["id"] for w in windows()), "accepted copy draft retires")
-    assert digest(rescued) == expected and digest(quarantine) == expected
+    assert rescued_bytes() == [expected] and digest(quarantine) == expected
     assert original.read_bytes() == newer and pending() == journal
-    checks.append("Quick Look reads quarantined bytes; non-consuming copy-out is separately journaled and leaves the original interruption intact")
+    checks.append("Recovery previews the interrupted work folder; its non-consuming copy-out holds the exact quarantined bytes, is separately journaled and leaves the original interruption intact")
 
     session.processes.remove(process)
     try:
@@ -204,7 +202,7 @@ def verify(session, fixture, browser, scheme, scale, process):
     assert process.returncode == 0
     process, browser, recovery = restart("files-interrupted-second-restart.log")
     assert pending() == journal and digest(quarantine) == expected
-    assert digest(rescued) == expected and original.read_bytes() == newer
+    assert rescued_bytes() == [expected] and original.read_bytes() == newer
     focus(recovery)
     session.run(["niri", "msg", "action", "set-window-width", "340"])
     session.wait_for(lambda: title("Recovery")["layout"]["window_size"][0] == 340, "actual narrow interrupted Recovery")
@@ -212,25 +210,29 @@ def verify(session, fixture, browser, scheme, scale, process):
     refusal = reconcile(recovery)
     assert "rechecked" not in refusal["body"].lower(), refusal
     assert original.read_bytes() == newer and digest(quarantine) == expected
-    assert pending() == journal
-    checks.append("copy-out and a second restart preserve the original journal; explicit reconciliation refuses the occupied original name")
+    # ADR0147: the copy already left its name, so retrying records the Undo and
+    # keeps the taken copy as preserved work for Recovery. It never moves the
+    # copy back over, or next to, the newer occupant.
+    assert pending() is not None, "refused reconciliation retired the interrupted work"
+    assert "errno" not in refusal["body"].lower() and "os error" not in refusal["body"].lower(), refusal
+    checks.append("copy-out and a second restart preserve the original journal; explicit reconciliation leaves the occupied original name and the preserved copy untouched")
 
-    held = root / "Held newer report.txt"
-    original.rename(held)
-    result = reconcile(recovery)
-    assert "journals rechecked" in result["body"], result
-    session.wait_for(lambda: not quarantine.exists() and pending() is None, "explicit reconciliation releases the original quarantine")
-    assert digest(original) == expected and held.read_bytes() == newer
-    session.capture("interrupted-reconciled.png")
+    focus(recovery)
+    key("Home")
+    # Recover a copy, then Keep in Recovery: the second live control.
+    for _ in range(2):
+        key("Tab")
+    session.capture("interrupted-before-keep.png")
+    key("Return")
+    session.wait_for(lambda: pending() is None, "Keep in Recovery retires the interrupted work")
+    assert original.read_bytes() == newer and digest(quarantine) == expected
+    session.capture("interrupted-kept.png")
     focus(browser)
     before = len(events())
     chord("z")
     notice(before, lambda e: "reversed" in e["body"])
-    assert not rescued.exists() and digest(original) == expected
-    before = len(events())
-    chord("z")
-    notice(before, lambda e: "reversed" in e["body"])
-    assert not original.exists() and held.read_bytes() == newer and digest(source) == expected
-    checks.append("explicit reconciliation restores only after the name is cleared; salvage and original Copy retain independent Undo")
+    assert not rescued.exists() and original.read_bytes() == newer
+    assert digest(quarantine) == expected and digest(source) == expected
+    checks.append("Keep in Recovery retires the work without moving the preserved copy; the salvage keeps its own Undo")
     return {"status": "passed", "scheme": scheme, "scale": scale, "checks": checks,
             "scope": "Iced interrupted Undo inspection, original-name preview, non-consuming salvage, two restarts and explicit reconciliation; general restart execution and full product acceptance remain open"}

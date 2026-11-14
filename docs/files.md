@@ -34,7 +34,14 @@ and use `--quit` before starting the newly installed executable.
 The development executable now uses the workspace's Iced stack with `canopa-ui`,
 per [ADR 0018](adr/0018-files-iced-and-shared-controls.md). The first adapter
 implements browsing, keyboard navigation, editable locations, tabs, windows,
-cancellable filename search and source-bound floating text/source/image/PDF previews.
+cancellable search and source-bound floating text/source/image/PDF previews.
+Search matches names, and optionally the contents of text files, and filters by
+type, modification date and size
+([ADR0175](files/adr/0175-search-filters-and-contents.md)). The Recent place lists
+the desktop's recently used files from `recently-used.xbel`, newest first, and the
+same query and filters narrow it ([ADR0176](files/adr/0176-recent-files.md)).
+Documents opened with an application from a browser tab are added to that list
+([ADR0178](files/adr/0178-recording-recent-files.md)).
 Space opens Quick Look; its default keyboard focus continues source navigation.
 Images support Fit, zoom and 100%; PDFs support Page Up/Down. PDF preparation
 requires Poppler's `pdfinfo` and `pdftoppm`. The preview uses the shared Iced
@@ -51,9 +58,13 @@ Home/End. Other preview keys continue navigating the source browser.
 
 Copies retain regular-file permission bits and access/modification times; new
 files belong to the copying user. Symbolic links remain links, including dangling
-links. Hard links become separate files, sparse files allocate their full logical
-size, and ACLs and extended attributes are currently omitted. The shared copy
-preparation and its verification are documented in
+links. Copies keep `user.*` extended attributes and POSIX ACLs (folders also keep
+their default ACL), and sparse files stay sparse. When a destination such as a FAT
+drive cannot hold the attributes, the copy still completes and the result counts
+the copies missing them. `security.*` and `trusted.*` attributes follow the
+destination, and hard links become separate files
+([ADR0174](files/adr/0174-copy-attributes-acls-and-sparse-files.md)). The shared
+copy preparation and its verification are documented in
 [ADR0153](files/adr/0153-uutils-prepared-copy.md).
 
 The Iced executable uses GIO/GLib 2.58 or newer for live local-volume observation

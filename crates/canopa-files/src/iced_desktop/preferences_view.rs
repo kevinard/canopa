@@ -195,7 +195,20 @@ impl<'a> Form<'a> {
             style.border.radius = 7.0.into();
             style
         });
-        let control = focus::control(id.clone(), message.clone(), self.appearance, button);
+        // Keyboard activation of a Record button must not record its own key.
+        let keyboard = message.clone().map(|message| match message {
+            Message::Preferences(Event::Change(target, Change::RecordFor(command, false))) => {
+                Message::Preferences(Event::Change(target, Change::RecordFor(command, true)))
+            }
+            other => other,
+        });
+        let control = focus::control_with_keyboard(
+            id.clone(),
+            message.clone(),
+            keyboard,
+            self.appearance,
+            button,
+        );
         let control = super::accessibility_ui::named_button(
             super::accessibility_ui::focus_key(&id),
             label.clone(),
@@ -1196,6 +1209,7 @@ fn place_icon(kind: PlaceKind) -> chrome::Icon {
         PlaceKind::Templates => chrome::Icon::Templates,
         PlaceKind::Public => chrome::Icon::Public,
         PlaceKind::Filesystem => chrome::Icon::Drive,
+        PlaceKind::Recent => chrome::Icon::Recent,
         PlaceKind::Trash => chrome::Icon::Trash,
         PlaceKind::Recovery => chrome::Icon::Recovery,
     }
@@ -1242,7 +1256,7 @@ fn shortcuts<'a>(form: &mut Form<'a>) -> Element<'a, Message> {
             chrome::Icon::Edit,
             fl!("files-preferences-record-for", command = command.label()),
             &format!("record-{}", command.id()),
-            Change::RecordFor(*command),
+            Change::RecordFor(*command, false),
             true,
         );
         let reset = form.icon_change(

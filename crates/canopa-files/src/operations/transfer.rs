@@ -190,6 +190,9 @@ pub struct TransferOutcome<C = TransferContinuation> {
     pub cancelled: bool,
     pub needs_attention: bool,
     pub attention: Option<String>,
+    /// Copies that could not keep every extended attribute or ACL of their
+    /// source, such as copies onto a FAT drive (ADR0174).
+    pub attributes_omitted: Vec<PathBuf>,
 }
 
 /// A fatal engine/finalization error can follow committed filesystem changes.
@@ -229,6 +232,7 @@ impl<C> Default for TransferOutcome<C> {
             cancelled: false,
             needs_attention: false,
             attention: None,
+            attributes_omitted: Vec::new(),
         }
     }
 }
@@ -248,6 +252,7 @@ impl<C> TransferOutcome<C> {
             cancelled: self.cancelled,
             needs_attention: self.needs_attention,
             attention: self.attention,
+            attributes_omitted: self.attributes_omitted,
         }
     }
 }
@@ -1500,6 +1505,10 @@ fn run_transfer_inner(
                 let finish = if !merge {
                     let (created, stage, temporary) =
                         directory::Created::prepare(&destination, metadata.mode())?;
+                    let attributes = super::attributes::keep_on_directory(
+                        opened_source.entry(),
+                        created.file(),
+                    )?;
                     let identity = created.identity;
                     let original = created.original();
                     let change = Change::CreatedFolder {
@@ -1562,6 +1571,9 @@ fn run_transfer_inner(
                     deferred_item = Some(0);
                     #[cfg(test)]
                     directory_boundary::boundary("appended", &source, &destination);
+                    if attributes == super::attributes::Kept::Partly {
+                        result.attributes_omitted.push(destination.clone());
+                    }
                     result.completed += 1;
                     result.id = Some(id);
                     if destination.parent() == Some(request.destination.as_path()) {
@@ -1621,6 +1633,7 @@ fn run_transfer_inner(
                     fingerprint,
                     source_identity,
                     source_fingerprint,
+                    attributes,
                 } = state.deferred(plain, |state| {
                     prepared_copy::prepare_copy(
                         &source,
@@ -1699,6 +1712,9 @@ fn run_transfer_inner(
                         })
                     })?;
                     deferred_item = Some(result.bytes - bytes_before);
+                }
+                if attributes == super::attributes::Kept::Partly {
+                    result.attributes_omitted.push(destination.clone());
                 }
                 #[cfg(test)]
                 copy_boundary::after_copy(&source, &destination);
@@ -2008,6 +2024,16 @@ fn checkpoint(
     directories: &BTreeMap<PathBuf, (PathBuf, DirectoryFinish)>,
     completion: bool,
 ) -> io::Result<()> {
+    // A checkpoint only reads: its checks share one observation of each path.
+    super::proofs::scope(|| checked(check, source, destination, directories, completion))
+}
+fn checked(
+    check: &mut impl FnMut(&Path, TransferAccess) -> io::Result<()>,
+    source: &Path,
+    destination: &Path,
+    directories: &BTreeMap<PathBuf, (PathBuf, DirectoryFinish)>,
+    completion: bool,
+) -> io::Result<()> {
     check_location(
         check,
         destination.parent().unwrap(),
@@ -2022,18 +2048,16 @@ fn checkpoint(
                 original.require(ancestor, target, completed)?;
             }
             if !completed {
-                let metadata = fs::symlink_metadata(ancestor)?;
-                if !metadata.is_dir() || Identity::from_metadata(&metadata) != finish.identity {
+                let (identity, directory) = super::proofs::status(ancestor)?;
+                if !directory || identity != finish.identity {
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
                         "the original source folder changed; its current contents are preserved",
                     ));
                 }
             }
-            let metadata = fs::symlink_metadata(target)?;
-            if !metadata.is_dir()
-                || Identity::from_metadata(&metadata) != finish.destination_identity
-            {
+            let (identity, directory) = super::proofs::status(target)?;
+            if !directory || identity != finish.destination_identity {
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "the original destination folder changed; source data is preserved",

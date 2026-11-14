@@ -495,7 +495,17 @@ fn clean(stage: &Stage) -> io::Result<()> {
     };
     if let Some(directory) = directory {
         ownership.require_directory(&directory)?;
-        unlinkat(&parent, name, AtFlags::REMOVEDIR)?;
+        match unlinkat(&parent, name, AtFlags::REMOVEDIR) {
+            // Preserved work is still inside: it belongs to Recovery, which
+            // can keep the folder. Say so rather than report the raw errno.
+            Err(rustix::io::Errno::NOTEMPTY | rustix::io::Errno::EXIST) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "The completed Undo's work folder still holds preserved work. Copy it or keep its work folder in Recovery.",
+                ));
+            }
+            result => result?,
+        }
     }
     fs::File::from(openat(
         &parent,

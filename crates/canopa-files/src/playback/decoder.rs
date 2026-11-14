@@ -255,15 +255,24 @@ fn play(
         }
         if prepared && last_query.elapsed() >= Duration::from_millis(100) {
             last_query = Instant::now();
-            let duration = pipeline
-                .query_duration::<gst::ClockTime>()
-                .map(|t| Duration::from_nanos(t.nseconds()));
+            // Queries fail while a flushing seek is in flight. A failure is
+            // no new answer: keep the last duration and seekability, so the
+            // seek control (and its keyboard focus) survives a slow seek.
+            let duration = answered(
+                pipeline
+                    .query_duration::<gst::ClockTime>()
+                    .map(|t| Some(Duration::from_nanos(t.nseconds()))),
+                state.duration,
+            );
             let position = pipeline
                 .query_position::<gst::ClockTime>()
                 .map(|t| Duration::from_nanos(t.nseconds()))
                 .unwrap_or(state.position);
             let mut query = gst::query::Seeking::new(gst::Format::Time);
-            let seekable = pipeline.query(&mut query) && query.result().0;
+            let seekable = answered(
+                pipeline.query(&mut query).then(|| query.result().0),
+                state.seekable,
+            );
             // An AsyncDone from an earlier transition must not discard a newer
             // seek intent. Compose relative commands until actual decoder time
             // reaches the accepted target; playing time can already be beyond it.
@@ -305,6 +314,11 @@ fn play(
     }
 }
 
+/// A pipeline query's answer, or the previous one when the query failed.
+fn answered<T>(answer: Option<T>, previous: T) -> T {
+    answer.unwrap_or(previous)
+}
+
 fn frame(sample: &gst::Sample, serial: u64) -> Result<Frame, String> {
     let info = video::VideoInfo::from_caps(sample.caps().ok_or("Missing video format.")?)
         .map_err(|e| e.to_string())?;
@@ -344,4 +358,20 @@ fn frame(sample: &gst::Sample, serial: u64) -> Result<Frame, String> {
         },
         timestamp: buffer.pts().map(|t| Duration::from_nanos(t.nseconds())),
     })
+}
+
+#[cfg(test)]
+mod answer_tests {
+    use super::*;
+
+    #[test]
+    fn failed_queries_during_a_seek_keep_the_previous_answers() {
+        let known = Some(Duration::from_secs(30));
+        assert_eq!(answered(None, known), known);
+        let seeked = Some(Duration::from_secs(12));
+        assert_eq!(answered(Some(seeked), known), seeked);
+        assert_eq!(answered(None, None::<Duration>), None);
+        assert!(answered(None, true));
+        assert!(!answered(Some(false), true));
+    }
 }

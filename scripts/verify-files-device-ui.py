@@ -17,6 +17,8 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("desktop", ROOT / "scripts/validate-desktop.py")
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
+sys.path.insert(0, str(ROOT / "scripts"))
+import native_accessibility  # noqa: E402
 
 
 def verify(binary, session, scheme, scale, removal):
@@ -51,6 +53,8 @@ def verify(binary, session, scheme, scale, removal):
                        'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; border { off; };'
                        ' focus-ring { off; }; default-column-width { proportion 1.0; }; }\n',
                        width=round(1280 * scale), height=round(800 * scale), scale=scale)
+    # Toolbar controls are found through Files' own AT-SPI tree, not by position.
+    native_accessibility.start(session)
     session.start(["wtype", "-s", "600000"], "keyboard.log")
     notices = session.output / "notifications.json"
     session.start([sys.executable, str(ROOT / "scripts/desktop-fixture/files-notifications.py"), str(notices)], "notifications.log")
@@ -111,10 +115,11 @@ def verify(binary, session, scheme, scale, removal):
         return len(json.loads(notices.read_text())) if notices.exists() else 0
 
     def locations(*, mounted, remove=False, capture=None):
-        key("Menu")
-        key("End")
-        key("Up")  # Locations is immediately before View options.
-        key("Return")
+        # A window without the sidebar offers its places from the toolbar's
+        # Places button: configured places, then each device's Open/Mount and
+        # removal rows.
+        native_accessibility.request(session, "--window", "canopa-files", "--name", "Places", "--click")
+        time.sleep(.3)
         key("End")
         if mounted and not remove:
             key("Up")  # Open precedes the current removal capability.
@@ -128,6 +133,11 @@ def verify(binary, session, scheme, scale, removal):
         locations(mounted=True, remove=True)
         notified("Device unmounted.", before)
         assert (payload / "notes.txt").read_bytes() == original
+
+    def narrow(window):
+        session.run(["niri", "msg", "action", "set-window-width", "340"])
+        session.wait_for(lambda: next(w for w in windows() if w["id"] == window["id"])["layout"]["window_size"][0] == 340, "narrow browser")
+        time.sleep(.2)
 
     def close_native(window):
         session.run(["niri", "msg", "action", "close-window", "--id", str(window["id"])])
@@ -155,8 +165,7 @@ def verify(binary, session, scheme, scale, removal):
     checks.append("wide sidebar opens the prepared device root")
     key("Left")
     wait_title("volumes")
-    session.run(["niri", "msg", "action", "set-window-width", "340"])
-    session.wait_for(lambda: next(w for w in windows() if w["id"] == browser["id"])["layout"]["window_size"][0] == 340, "narrow browser")
+    narrow(browser)
     locations(mounted=True)
     wait_title("Fixture USB")
     key("Left")
@@ -269,6 +278,7 @@ def verify(binary, session, scheme, scale, removal):
     assert activated.returncode == 0, activated.stderr
     browser = wait_title("Elsewhere")
     focus(browser)
+    narrow(browser)
     chord("o", "alt")
     operations = wait_title("Operations")
     focus(operations)

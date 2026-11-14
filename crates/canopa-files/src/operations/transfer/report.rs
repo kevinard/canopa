@@ -57,6 +57,13 @@ pub struct TransferReport {
     pub failed_resolution: TransferResolution,
     #[serde(default)]
     pub remaining_resolution: TransferResolution,
+    /// Copies missing some of their source's extended attributes or ACLs.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        with = "crate::path_serde::sequence"
+    )]
+    pub attributes_omitted: Vec<PathBuf>,
 }
 
 impl TransferReport {
@@ -89,6 +96,7 @@ impl TransferReport {
             attention: outcome.attention.clone(),
             failed_resolution: TransferResolution::Available,
             remaining_resolution: TransferResolution::Available,
+            attributes_omitted: outcome.attributes_omitted.clone(),
         }
     }
 
@@ -107,6 +115,7 @@ impl TransferReport {
                 .chain(&self.remaining)
                 .chain(&self.source_remainders)
                 .chain(&self.destinations)
+                .chain(&self.attributes_omitted)
                 .all(|path| path.is_absolute())
     }
 
@@ -129,6 +138,12 @@ impl TransferReport {
             parts.push(fl!(
                 "files-report-source-folders",
                 count = self.source_remainders.len()
+            ));
+        }
+        if !self.attributes_omitted.is_empty() {
+            parts.push(fl!(
+                "files-report-attributes-omitted",
+                count = self.attributes_omitted.len()
             ));
         }
         match self.failed_resolution {

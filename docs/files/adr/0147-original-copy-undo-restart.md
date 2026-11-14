@@ -74,3 +74,10 @@ recorded under `.scratch/file-manager/copy-undo-source-*`; exact next work is in
 [COPY-UNDO-NEXT.md](../../../.scratch/file-manager/COPY-UNDO-NEXT.md). This does not finish Copy Undo with a saved
 previous destination, changed-copy preservation, legacy/generic Undo and cleanup,
 Trash/Restore, or any of the broader five-area requirements.
+
+2026-11-14: when completed cleanup finds preserved work still inside the work
+folder, it reports "The completed Undo's work folder still holds preserved
+work. Copy it or keep its work folder in Recovery." instead of the raw
+`ENOTEMPTY` error. The native `files-iced-interrupted` case now follows this
+ADR's refused-reconciliation and Keep flow. It no longer expects the old
+automatic return.

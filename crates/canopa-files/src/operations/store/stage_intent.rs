@@ -50,7 +50,7 @@ fn operation(pending: &Pending) -> io::Result<u64> {
 }
 fn next(connection: &Connection, id: u64) -> io::Result<u64> {
     let exists: bool = connection
-        .query_row(
+        .query_row_cached(
             "SELECT EXISTS(SELECT 1 FROM operations WHERE id=?1)",
             [id],
             |r| r.get(0),
@@ -62,7 +62,7 @@ fn next(connection: &Connection, id: u64) -> io::Result<u64> {
         ));
     }
     connection
-        .query_row(
+        .query_row_cached(
             "SELECT coalesce(max(ordinal)+1,0) FROM changes WHERE operation=?1",
             [id],
             |r| r.get(0),
@@ -71,7 +71,7 @@ fn next(connection: &Connection, id: u64) -> io::Result<u64> {
 }
 fn pending_body(connection: &Connection, lane: IntentLane) -> io::Result<Option<String>> {
     connection
-        .query_row(
+        .query_row_cached(
             match lane {
                 IntentLane::Primary => "SELECT body FROM pending WHERE singleton=1",
                 IntentLane::RecoveryCopy => "SELECT body FROM recovery_pending WHERE singleton=1",
@@ -84,7 +84,7 @@ fn pending_body(connection: &Connection, lane: IntentLane) -> io::Result<Option<
 }
 fn read(connection: &Connection, lane: IntentLane) -> io::Result<Option<Binding>> {
     let body: Option<String> = connection
-        .query_row(
+        .query_row_cached(
             "SELECT body FROM stage_intents WHERE lane=?1",
             [lane.index()],
             |r| r.get(0),
@@ -101,12 +101,12 @@ fn install(
     mut binding: Binding,
 ) -> io::Result<()> {
     binding.digest = digest(history, lane, pending, &binding)?;
-    connection.execute("INSERT INTO stage_intents(lane,body) VALUES(?1,?2) ON CONFLICT(lane) DO UPDATE SET body=excluded.body", params![lane.index(),encode(&binding)?]).map_err(db_error)?;
+    connection.execute_cached("INSERT INTO stage_intents(lane,body) VALUES(?1,?2) ON CONFLICT(lane) DO UPDATE SET body=excluded.body", params![lane.index(),encode(&binding)?]).map_err(db_error)?;
     Ok(())
 }
 pub(super) fn clear(connection: &Connection, lane: IntentLane) -> io::Result<()> {
     connection
-        .execute("DELETE FROM stage_intents WHERE lane=?1", [lane.index()])
+        .execute_cached("DELETE FROM stage_intents WHERE lane=?1", [lane.index()])
         .map_err(db_error)?;
     Ok(())
 }
@@ -179,7 +179,7 @@ pub(super) fn require(
         }
         Pending::Cleanup { ordinal, .. } => {
             let body: String = connection
-                .query_row(
+                .query_row_cached(
                     "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
                     params![id, ordinal],
                     |r| r.get(0),

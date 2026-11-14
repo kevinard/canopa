@@ -269,13 +269,14 @@ impl Opened {
         }) {
             return Err(changed());
         }
-        let named = fs::File::from(openat(
+        // The name in the held parent, without opening it: the same fields
+        // `same_snapshot` compares, from one `fstatat`.
+        let named = rustix::fs::statat(
             &self.parent,
             self.path.file_name().unwrap(),
-            OFlags::PATH | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::empty(),
-        )?);
-        if !same_snapshot(&self.metadata, &named.metadata()?)
+            rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+        )?;
+        if !super::same_stat(&self.metadata, &named)
             || !same_snapshot(&self.metadata, &self.entry.metadata()?)
         {
             return Err(changed());

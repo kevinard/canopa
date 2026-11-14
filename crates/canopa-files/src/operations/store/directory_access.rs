@@ -142,7 +142,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO directory_access(lane,path,body) VALUES(?1,?2,?3)",
                 params![self.lane.index(), paths::key(path), encode(&access)?],
             )
@@ -205,7 +205,7 @@ impl Store {
             // A different observed mode is an external edit; keep that edit.
             if self.pending()?.is_none() {
                 self.connection
-                    .execute("DELETE FROM directory_access WHERE id=?1", [id])
+                    .execute_cached("DELETE FROM directory_access WHERE id=?1", [id])
                     .map_err(db_error)?;
                 self.opened_directories.remove(&id);
             }

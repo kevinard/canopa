@@ -27,6 +27,16 @@ impl FolderOriginal {
         self.entry.require(&folder.file)?;
         self.parent.require(&folder.parent)
     }
+    /// [`Self::require`] for the folder at `path`, opened as `Opened::open`
+    /// opens it.
+    fn require_path(&self, path: &Path) -> io::Result<()> {
+        if let Some(observed) = crate::operations::proofs::shared(path) {
+            return observed.require_folder(&self.parent, &self.entry);
+        }
+        let (file, parent) = Opened::pins(path)?;
+        self.entry.require(&file)?;
+        self.parent.require(&parent)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,10 +58,12 @@ impl DirectoryOriginal {
         destination: &Path,
         absent: bool,
     ) -> io::Result<()> {
+        // Only the handles are compared here, so the folders are opened
+        // without the identity reads `Opened::open` also makes.
         if !absent {
-            self.source.require(&Opened::open(source)?)?;
+            self.source.require_path(source)?;
         }
-        self.destination.require(&Opened::open(destination)?)
+        self.destination.require_path(destination)
     }
     pub(in crate::operations) fn require_opened(
         &self,
@@ -86,6 +98,17 @@ impl Opened {
         &self.path
     }
     pub(in crate::operations) fn open(path: &Path) -> io::Result<Self> {
+        let (file, parent) = Self::pins(path)?;
+        Ok(Self {
+            identity: Identity::from_metadata(&file.metadata()?),
+            parent_identity: Identity::from_metadata(&parent.metadata()?),
+            file,
+            parent,
+            path: path.to_owned(),
+        })
+    }
+    /// The folder at `path` and its parent, as `O_PATH` descriptors.
+    fn pins(path: &Path) -> io::Result<(fs::File, fs::File)> {
         let parent = directory(
             path.parent()
                 .ok_or_else(|| invalid("A transfer folder needs a parent."))?,
@@ -97,13 +120,7 @@ impl Opened {
             OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Mode::empty(),
         )?);
-        Ok(Self {
-            identity: Identity::from_metadata(&file.metadata()?),
-            parent_identity: Identity::from_metadata(&parent.metadata()?),
-            file,
-            parent,
-            path: path.to_owned(),
-        })
+        Ok((file, parent))
     }
     pub(in crate::operations) fn metadata(&self) -> io::Result<fs::Metadata> {
         self.file.metadata()

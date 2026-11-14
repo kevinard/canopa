@@ -735,60 +735,85 @@ fn interrupted_undo_salvage(legacy: bool) {
             }
         }
     }
-    let root = Fixture(Some(
-        tempfile::Builder::new()
-            .prefix("canopa-files-recovery-interrupted-")
-            .tempdir_in("/tmp")
-            .unwrap(),
-    ));
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "cases::operation_recovery::recovery_interrupted_undo_child",
-            "--nocapture",
-        ])
-        .env("CANOPA_FILES_RECOVERY_INTERRUPTED_ROOT", root.path())
-        .env(
-            "CANOPA_FILES_RECOVERY_INTERRUPTED_LEGACY",
-            if legacy { "1" } else { "0" },
-        )
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let end = Instant::now() + Duration::from_secs(20);
-    let quarantine = loop {
-        let found = fs::read_dir(root.path().join("destination"))
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .as_encoded_bytes()
-                    .starts_with(b".canopa-files-stage-")
-            })
-            .map(|entry| entry.path().join("folder"))
-            .find(|path| path.is_file());
-        if root.path().join("undo-ready").exists()
-            && let Some(found) = found
-        {
-            child.kill().unwrap();
-            child.wait().unwrap();
-            break found;
+    // The child is killed when its quarantine appears, but it may already have
+    // saved the next (Detached) phase by then, which reconciles differently.
+    // Only a kill in the Taking phase exercises this case; repeat until one does.
+    let mut attempts = 0;
+    let (root, quarantine) = loop {
+        attempts += 1;
+        assert!(
+            attempts <= 20,
+            "the child never stopped in the Taking phase"
+        );
+        let root = Fixture(Some(
+            tempfile::Builder::new()
+                .prefix("canopa-files-recovery-interrupted-")
+                .tempdir_in("/tmp")
+                .unwrap(),
+        ));
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "cases::operation_recovery::recovery_interrupted_undo_child",
+                "--nocapture",
+            ])
+            .env("CANOPA_FILES_RECOVERY_INTERRUPTED_ROOT", root.path())
+            .env(
+                "CANOPA_FILES_RECOVERY_INTERRUPTED_LEGACY",
+                if legacy { "1" } else { "0" },
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let end = Instant::now() + Duration::from_secs(20);
+        let quarantine = loop {
+            let found = fs::read_dir(root.path().join("destination"))
+                .ok()
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .as_encoded_bytes()
+                        .starts_with(b".canopa-files-stage-")
+                })
+                .map(|entry| entry.path().join("folder"))
+                .find(|path| path.is_file());
+            if root.path().join("undo-ready").exists()
+                && let Some(found) = found
+            {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                break found;
+            }
+            if child.try_wait().unwrap().is_some() || Instant::now() >= end {
+                let _ = child.kill();
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "did not interrupt a real Undo quarantine: stdout={} stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            std::thread::sleep(Duration::from_micros(50));
+        };
+        let phase = {
+            let history = rusqlite::Connection::open(root.path().join("history")).unwrap();
+            let body: String = history
+                .query_row("SELECT body FROM pending WHERE singleton=1", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(&body).unwrap()["removal"]["phase"]
+                .as_str()
+                .map(str::to_owned)
+        };
+        if phase.as_deref() == Some("taking") {
+            break (root, quarantine);
         }
-        if child.try_wait().unwrap().is_some() || Instant::now() >= end {
-            let _ = child.kill();
-            let output = child.wait_with_output().unwrap();
-            panic!(
-                "did not interrupt a real Undo quarantine: stdout={} stderr={}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        std::thread::sleep(Duration::from_micros(50));
     };
     let original = root.path().join("destination/report.txt");
     fs::write(&original, b"newer occupant stays\n").unwrap();

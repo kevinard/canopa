@@ -157,14 +157,16 @@ impl DestinationObservation {
             OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
             Mode::empty(),
         )?);
-        if Identity::from_metadata(&current.metadata()?) != opened.identity {
+        // One statx gives both the identity and the proof compared below.
+        let (identity, proof) = crate::operations::original::Original::identify(&current)?;
+        if identity != opened.identity {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "The destination folder has changed. Restore the original folder before continuing.",
             ));
         }
         if let super::restart::Evidence::Available(original) = &opened.restart {
-            original.require(&current)?;
+            original.require_equal(&proof?)?;
         }
         Ok(())
     }
@@ -589,7 +591,7 @@ impl ObservedTransfer {
             let entry = observation
                 .as_ref()
                 .map_err(|error| io::Error::new(error.kind(), error.to_string()))?;
-            match Identity::read(ancestor) {
+            match crate::operations::proofs::status(ancestor).map(|(identity, _)| identity) {
                 Ok(identity) if identity == entry.identity => {
                     entry.restart.require_name(ancestor)?;
                     verified.insert(ancestor.to_owned());

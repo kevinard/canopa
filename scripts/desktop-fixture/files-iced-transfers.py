@@ -50,11 +50,21 @@ def verify(session, fixture, browser, scheme, scale, process, *, focus_only=Fals
         time.sleep(.2)
 
     def navigate(path):
-        chord("l", "ctrl")
         uri = "file://" + quote_from_bytes(os.fsencode(path), safe="/")
-        session.run(["wtype", "-d", "5", uri])
-        chord("Return")
-        session.wait_for(lambda: title(path.name), "transfer folder navigation")
+        # A renderer busy with a large transfer can lose the tail of injected
+        # virtual-keyboard input. Re-enter the whole location (bounded); the
+        # destination window title still proves the actual navigation.
+        for attempt in range(3):
+            chord("l", "ctrl")
+            chord("a", "ctrl")
+            session.run(["wtype", "-d", "5", uri, "-k", "Return"])
+            try:
+                session.wait_for(lambda: title(path.name), "transfer folder navigation",
+                                 timeout=8 if attempt < 2 else 10)
+                break
+            except RuntimeError:
+                if attempt == 2:
+                    raise
         time.sleep(.3)
 
     def compact_inspector(inspector):

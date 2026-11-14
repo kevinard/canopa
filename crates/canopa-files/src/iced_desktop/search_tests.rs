@@ -528,6 +528,7 @@ fn large_result_snapshots_build_bounded_widgets_and_reconcile_back_to_the_folder
             root: root.path().to_owned(),
             query: "file".into(),
             scope: SearchScope::CurrentFolder,
+            filters: Default::default(),
             entries,
             failures: vec![crate::browse::ReadFailure {
                 path: root.path().join("unreadable"),
@@ -564,4 +565,84 @@ fn large_result_snapshots_build_bounded_widgets_and_reconcile_back_to_the_folder
     let element = desktop.view(window);
     tree.diff(element.as_widget());
     shape(&tree, &Tree::new(element.as_widget()));
+}
+
+#[test]
+fn a_narrowing_filter_searches_without_a_query_and_stale_filter_results_are_refused() {
+    use crate::search::{KindFilter, SearchFilters};
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("album")).unwrap();
+    fs::write(root.path().join("notes.txt"), b"fixture").unwrap();
+    let (mut desktop, window) = ready_desktop(root.path());
+    let _task = desktop.command(window, Command::Search);
+    let target = target(&desktop, window);
+    let folders = SearchFilters {
+        kind: KindFilter::Folders,
+        ..Default::default()
+    };
+    let _task = desktop.search_event(Event::Filters(target, folders));
+    let session = desktop.active(window).unwrap().search.as_ref().unwrap();
+    assert!(session.running && session.searches());
+    let ticket = ticket(&desktop, window);
+    // Results computed for the previous, unfiltered session are refused.
+    let stale = SearchRequest::new(root.path(), "", SearchScope::CurrentFolder)
+        .run(&Cancellation::default());
+    deliver(&mut desktop, ticket, stale, true);
+    assert!(
+        desktop
+            .active(window)
+            .unwrap()
+            .search
+            .as_ref()
+            .unwrap()
+            .running
+    );
+    let mut request = SearchRequest::new(root.path(), "", SearchScope::CurrentFolder);
+    request.filters = folders;
+    let results = request.run(&Cancellation::default());
+    assert_eq!(results.entries.len(), 1);
+    assert_eq!(results.entries[0].name(), "album");
+    deliver(&mut desktop, ticket, results, true);
+    let tab = desktop.active(window).unwrap();
+    assert!(!tab.search.as_ref().unwrap().running);
+    let shown = tab.browser.as_ref().unwrap().search().unwrap();
+    assert_eq!(shown.entries.len(), 1);
+    // Clearing the filter with an empty query closes the results.
+    let _task = desktop.search_event(Event::Filters(target, SearchFilters::default()));
+    let tab = desktop.active(window).unwrap();
+    assert!(tab.browser.as_ref().unwrap().search().is_none());
+}
+
+#[test]
+fn recent_files_open_as_a_query_free_search_without_the_subfolder_scope() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("notes.txt"), b"fixture").unwrap();
+    let (mut desktop, window) = ready_desktop(root.path());
+    let _task = desktop.command(window, Command::ShowRecent);
+    let tab = desktop.active(window).unwrap();
+    let session = tab.search.as_ref().unwrap();
+    assert!(session.recent && session.running && session.query.is_empty());
+    assert_eq!(session.scope(), SearchScope::Recent);
+    let shown = tab.browser.as_ref().unwrap().search().unwrap();
+    assert_eq!(shown.scope, SearchScope::Recent);
+    // Folder results cannot land in the Recent view.
+    let ticket = ticket(&desktop, window);
+    let folder = SearchRequest::new(root.path(), "", SearchScope::CurrentFolder)
+        .run(&Cancellation::default());
+    deliver(&mut desktop, ticket, folder, true);
+    assert!(
+        desktop
+            .active(window)
+            .unwrap()
+            .search
+            .as_ref()
+            .unwrap()
+            .running
+    );
+    // Typing narrows the recent files instead of searching the folder.
+    let target = target(&desktop, window);
+    let _task = desktop.search_event(Event::Query(target, "notes".into()));
+    let session = desktop.active(window).unwrap().search.as_ref().unwrap();
+    assert_eq!(session.scope(), SearchScope::Recent);
+    assert!(desktop.title(window).contains(&fl!("files-place-recent")));
 }

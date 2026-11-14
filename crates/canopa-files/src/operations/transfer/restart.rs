@@ -75,6 +75,9 @@ impl CapturedEntry {
         let Evidence::Available(originals) = &self.original else {
             return Ok(());
         };
+        if let Some(observed) = crate::operations::proofs::shared(path) {
+            return observed.require_name(&originals.parent, &originals.entry);
+        }
         use rustix::fs::{Mode, OFlags, open, openat};
         let parent = fs::File::from(open(
             path.parent()

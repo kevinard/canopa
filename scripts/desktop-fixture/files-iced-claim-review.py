@@ -104,9 +104,10 @@ def verify(session, fixture, browser, scheme, scale, process):
         session.run(["niri", "msg", "action", "set-window-width", "360"])
         session.wait_for(lambda: title("Recovery")["layout"]["window_size"][0] == 360, "actual narrow claim review")
         key("Home")
-        # Recover a copy, Quick Look, Keep in Recovery. Disabled controls are
-        # omitted from the actual focus order; activate the third live control.
-        for _ in range(3):
+        # Recover a copy, then Keep in Recovery (Space previews the row; there
+        # is no Quick Look button). Disabled controls are omitted from the
+        # actual focus order; activate the second live control.
+        for _ in range(2):
             key("Tab")
         session.capture(f"claim-{name}-before-keep-narrow.png")
         key("Return")

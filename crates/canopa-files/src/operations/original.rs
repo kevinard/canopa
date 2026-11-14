@@ -77,14 +77,35 @@ unsafe extern "C" {
 
 impl Original {
     pub(in crate::operations) fn capture(file: &fs::File) -> io::Result<Self> {
+        Self::capture_from(file, &Self::status(file, rustix::fs::StatxFlags::empty())?)
+    }
+
+    /// The object's identity, and its proof when the filesystem has one, from
+    /// one `statx`: [`Identity::from_metadata`] of `file` and [`Self::capture`].
+    pub(in crate::operations) fn identify(
+        file: &fs::File,
+    ) -> io::Result<(Identity, io::Result<Self>)> {
+        let status = Self::status(file, rustix::fs::StatxFlags::INO)?;
+        let identity = Identity {
+            device: rustix::fs::makedev(status.stx_dev_major, status.stx_dev_minor),
+            inode: status.stx_ino,
+        };
+        Ok((identity, Self::capture_from(file, &status)))
+    }
+
+    fn status(file: &fs::File, also: rustix::fs::StatxFlags) -> io::Result<rustix::fs::Statx> {
         use rustix::fs::{AtFlags, StatxFlags, statx};
-        let boot = boot()?;
-        let status = statx(
+        Ok(statx(
             file,
             c"",
             AtFlags::EMPTY_PATH | AtFlags::SYMLINK_NOFOLLOW,
-            StatxFlags::from_bits_retain(MNT_ID_UNIQUE),
-        )?;
+            StatxFlags::from_bits_retain(MNT_ID_UNIQUE) | also,
+        )?)
+    }
+
+    fn capture_from(file: &fs::File, status: &rustix::fs::Statx) -> io::Result<Self> {
+        use rustix::fs::AtFlags;
+        let boot = boot()?;
         if status.stx_mask & MNT_ID_UNIQUE == 0 || status.stx_mnt_id == 0 {
             return Err(unsupported("This filesystem has no unique mount identity."));
         }
@@ -129,7 +150,12 @@ impl Original {
     }
 
     pub(in crate::operations) fn require(&self, file: &fs::File) -> io::Result<()> {
-        if Self::capture(file)? == *self {
+        self.require_equal(&Self::capture(file)?)
+    }
+
+    /// [`Self::require`] against a proof already captured.
+    pub(in crate::operations) fn require_equal(&self, current: &Self) -> io::Result<()> {
+        if current == self {
             Ok(())
         } else {
             Err(io::Error::new(

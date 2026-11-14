@@ -65,13 +65,22 @@ def verify(session, fixture, browser, scheme, scale, process):
 
     def create(index):
         name = f"History {index:03}"
-        chord("n", "ctrl", "shift")
-        prompt = session.wait_for(lambda: title("New folder"), "history-expiry folder prompt")
+        # A virtual-keyboard chord is occasionally lost while the compositor
+        # switches keymaps. Only resend it while no prompt and no folder exist.
+        prompt = None
+        for _ in range(3):
+            chord("n", "ctrl", "shift")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and (prompt := title("New folder")) is None:
+                time.sleep(.1)
+            if prompt is not None or (root / "History" / name).exists():
+                break
+        prompt = prompt or session.wait_for(lambda: title("New folder"), "history-expiry folder prompt")
         session.wait_for(lambda: any(w["id"] == prompt["id"] and w["is_focused"] for w in windows()), "history-expiry name focus")
         session.run(["wtype", name])
         chord("Return")
         session.wait_for(lambda: (root / "History" / name).is_dir() and title("New folder") is None, "actual history-expiry folder creation")
-        session.wait_for(lambda: any(e["title"] == f"create folder {name}" for e in notifications()), "history-expiry completion notification")
+        session.wait_for(lambda: any(e["title"].lower() == f"create folder {name}".lower() for e in notifications()), "history-expiry completion notification")
         time.sleep(.1)
 
     focus()
@@ -99,6 +108,7 @@ def verify(session, fixture, browser, scheme, scale, process):
     chord("F2")
     rename = session.wait_for(lambda: title("Rename"), "Rename of reserved retained bytes")
     session.wait_for(lambda: any(w["id"] == rename["id"] and w["is_focused"] for w in windows()), "reserved Rename name focus")
+    chord("a", "ctrl")  # ADR0171 preselects only the stem; replace the complete name.
     session.run(["wtype", "Attempted reserved rename"])
     chord("Return")
     session.wait_for(lambda: title("Rename") is None, "reserved Rename admission")
@@ -107,6 +117,38 @@ def verify(session, fixture, browser, scheme, scale, process):
     assert saved.read_bytes() == old and not (saved.parent / "Attempted reserved rename").exists()
     assert clipboard() == expected
     checks.append("Rename reports refusal while a clipboard lease needs the retained version and preserves its bytes and selection")
+    # ADR0105: the failed Rename keeps its own reservation until it is
+    # dismissed. Dismiss it now, so only the clipboard lease protects the bytes.
+    import sqlite3
+    history = session.runtime / "state/canopa-files/operations.sqlite3"
+
+    def read(query, values=()):
+        database = sqlite3.connect(history.as_uri() + "?mode=ro", uri=True)
+        try:
+            return database.execute(query, values).fetchall()
+        finally:
+            database.close()
+
+    failed = session.wait_for(lambda: next((row[0] for row in read(
+        "SELECT id FROM requests WHERE phase=2 ORDER BY id DESC")), None), "failed reserved Rename")
+    focus()
+    chord("j", "ctrl")  # the default Operations shortcut
+    review = session.wait_for(lambda: title("Operations"), "Operations review of the refused Rename")
+    session.run(["niri", "msg", "action", "focus-window", "--id", str(review["id"])])
+    session.wait_for(lambda: any(w["id"] == review["id"] and w["is_focused"] for w in windows()), "Operations focus")
+    time.sleep(.3)
+    # New Browser, the shared Undo of the replacement, Recovery, then the newest
+    # row's Dismiss request.
+    for _ in range(4):
+        chord("Tab")
+    session.capture("source-lease-dismiss-rename.png")
+    chord("Return")
+    session.wait_for(lambda: read("SELECT phase FROM requests WHERE id=?", (failed,)) == [(5,)],
+                     "refused Rename dismissed")
+    chord("w", "ctrl")
+    session.wait_for(lambda: title("Operations") is None, "Operations review closes")
+    assert saved.read_bytes() == old and clipboard() == expected
+    checks.append("dismissing the refused Rename releases only its reservation; the clipboard lease still protects the retained version")
     navigate(root / "History")
     for index in range(100):
         create(index)
@@ -133,6 +175,17 @@ def verify(session, fixture, browser, scheme, scale, process):
             create(index)
             if not saved.exists():
                 break
+        if saved.exists():
+            # Failure evidence only: which rows still protect the bytes.
+            db = sqlite3.connect(history.as_uri() + "?mode=ro", uri=True)
+            try:
+                state = {table: db.execute(f"SELECT * FROM {table}").fetchall()
+                         for table in ("source_leases", "request_sources")}
+                state["requests"] = db.execute("SELECT id, phase FROM requests").fetchall()
+                state["garbage"] = db.execute("SELECT id, length(body) FROM garbage").fetchall()
+            finally:
+                db.close()
+            (session.output / "lease-state.json").write_text(json.dumps(state, indent=2, default=str))
         assert not saved.exists(), "released expired retained bytes were not cleaned up"
         assert copied.read_bytes() == old
         assert (root / "Destination/note.txt").read_bytes() == current

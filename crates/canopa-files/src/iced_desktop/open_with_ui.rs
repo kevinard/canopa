@@ -211,6 +211,34 @@ fn display_name(path: &Path) -> String {
         .into_owned()
 }
 
+/// Record documents opened with an application in the recently used list,
+/// as GTK applications do (ADR0178). Folders, programs and desktop entries are
+/// not documents. A list that cannot be updated is left as it was; the launch
+/// has already succeeded.
+fn record_recent(list: &Path, launch: &Launch) {
+    let Launch::Application { app, files, .. } = launch else {
+        return;
+    };
+    let database = MimeDatabase::system();
+    let exec = format!(
+        "'{} %u'",
+        app.exec_program.as_deref().unwrap_or(app.id.as_str())
+    );
+    let uses: Vec<crate::recent::Use> = files
+        .iter()
+        .filter(|path| std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()))
+        .map(|path| crate::recent::Use {
+            path: path.clone(),
+            mime: chain(&database, path).0,
+            application: app.name.clone(),
+            exec: exec.clone(),
+        })
+        .collect();
+    if let Err(error) = crate::recent::add(list, &uses, std::time::SystemTime::now()) {
+        eprintln!("canopa-files: recently used list not updated: {error}");
+    }
+}
+
 /// Start a confirmed launch. Runs on a worker; never through a shell.
 fn execute(launch: &Launch, token: Option<&str>) -> Result<(), String> {
     let search = canopa_apps::process_search_path();
@@ -529,20 +557,31 @@ impl Desktop {
                 Err(error) => self.report(id, tab, error.clone()),
                 Ok(resolved) => self.resolved(id, tab, resolved),
             },
-            Event::Token(id, tab, launch, token) => Task::perform(
-                async move {
-                    let (send, receive) = iced::futures::channel::oneshot::channel();
-                    let _ = std::thread::Builder::new()
-                        .name("files-launch".into())
-                        .spawn(move || {
-                            let _ = send.send(execute(&launch, token.as_deref()));
-                        });
-                    receive
-                        .await
-                        .unwrap_or_else(|_| Err(fl!("files-open-interrupted")))
-                },
-                move |result| Message::OpenWith(Event::Launched(id, tab, result)),
-            ),
+            Event::Token(id, tab, launch, token) => {
+                // Only documents opened from browser tabs are recent: Trash and
+                // Recovery show stored copies.
+                let recent = tab.and(self.recent_list.clone());
+                Task::perform(
+                    async move {
+                        let (send, receive) = iced::futures::channel::oneshot::channel();
+                        let _ = std::thread::Builder::new()
+                            .name("files-launch".into())
+                            .spawn(move || {
+                                let result = execute(&launch, token.as_deref());
+                                if result.is_ok()
+                                    && let Some(list) = recent
+                                {
+                                    record_recent(&list, &launch);
+                                }
+                                let _ = send.send(result);
+                            });
+                        receive
+                            .await
+                            .unwrap_or_else(|_| Err(fl!("files-open-interrupted")))
+                    },
+                    move |result| Message::OpenWith(Event::Launched(id, tab, result)),
+                )
+            }
             Event::Launched(id, tab, result) => match result {
                 Err(error) => self.report(id, tab, error),
                 Ok(()) => Task::none(),

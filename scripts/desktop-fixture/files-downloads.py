@@ -199,7 +199,10 @@ def workflow(session, fixture, browser, config, scheme, scale):
     source_width = next(w["layout"]["window_size"][0] for w in tiled if w["id"] == source["id"])
     target_width = next(w["layout"]["window_size"][0] for w in tiled if w["id"] == target["id"])
     frame = session.capture("downloads-05a-drag-selection.png")
-    x = round((left(source) + source_width - 40) * scale)
+    # The narrow column view leaves empty space and a scrollbar at the tile's
+    # right edge. Probe and press inside the selected row, beyond its label.
+    source_x = left(source) + min(220, source_width - 40)
+    x = round(source_x * scale)
     background = frame.getpixel((x, round(500 * scale)))
     runs, start = [], None
     for y in range(round(130 * scale), round(430 * scale) + 1):
@@ -212,7 +215,7 @@ def workflow(session, fixture, browser, config, scheme, scale):
             start = None
     assert len(runs) == 1, f"expected one actual painted image selection: {runs}"
     source_y = sum(runs[0]) / (2 * scale)
-    first = (str(round((left(source) + source_width - 40) * 1600 / logical["width"])), str(round(source_y * 1000 / logical["height"])))
+    first = (str(round(source_x * 1600 / logical["width"])), str(round(source_y * 1000 / logical["height"])))
     last = (str(round((left(target) + target_width - 80) * 1600 / logical["width"])), str(round(350 * 1000 / logical["height"])))
     (session.output / "downloads-drag-geometry.json").write_text(json.dumps(
         {"windows": tiled, "output": logical, "source": first, "target": last, "selection_band": runs[0]}, indent=2) + "\n")
@@ -319,8 +322,10 @@ def workflow(session, fixture, browser, config, scheme, scale):
     assert all(p.read_bytes() == originals[p.name] for p in selected)
     check("the configured shortcut runs a real image resize with the exact selected path and working directory, producing a 32x24 thumbnail without changing originals")
     width(operations, 360)
-    # The only command is last: reverse traversal reaches Open folder then Output
-    # independently of the preceding completed file-operation controls.
+    # The only command is last: reverse traversal from the window's Close
+    # reaches its Open folder, then Show output, independently of the
+    # preceding completed file-operation controls.
+    chord(["shift"], "Tab")
     chord(["shift"], "Tab")
     chord(["shift"], "Tab")
     before_output = session.capture("downloads-07a-output-closed.png")

@@ -635,6 +635,7 @@ pub(in crate::operations) fn recover(record: Recorded) -> io::Result<Recovered> 
             ),
             failed_resolution: TransferResolution::Available,
             remaining_resolution: TransferResolution::Available,
+            attributes_omitted: Vec::new(),
         },
         retry,
         remaining,

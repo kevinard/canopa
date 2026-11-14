@@ -63,7 +63,11 @@ def verify(session, fixture, browser, config, scheme, scale):
 
     def replace(value):
         chord("a", "ctrl")
-        session.run(["wtype", value])
+        # Long commands (an interpreter path plus script) use bounded chunks so
+        # a loaded nested session cannot drop the tail of one long injection.
+        for start in range(0, len(value), 32):
+            session.run(["wtype", value[start:start + 32]])
+            time.sleep(.1)
 
     pointer = session.build_pointer()
     def click(x, y, button=None):
@@ -191,7 +195,7 @@ def verify(session, fixture, browser, config, scheme, scale):
     expected, actual = before_menu.getpixel(position), menu_frame.getpixel(position)
     assert max(abs(a-b) for a,b in zip(expected, actual)) <= 3, (expected, actual)
     result_path.unlink()
-    key("Down", 4)  # Open, Quick Look, Copy, Cut, configured action.
+    key("Down", 3)  # Open, Open with, Quick Look, configured action.
     session.capture("actions-07b-configured-action-focus.png")
     key("Return")
     expect_run(raw)
@@ -200,8 +204,24 @@ def verify(session, fixture, browser, config, scheme, scale):
     editor = wait_title("Custom Actions")
     key("Tab", 4)
     replace("Unsaved draft")
+
+    def settled(name):
+        # A lagging nested session can deliver typing, Ctrl+R and Return in
+        # one renderer batch, before the question exists. Wait for stable,
+        # actually painted frames around opening it.
+        previous = None
+        def stable():
+            nonlocal previous
+            frame = session.capture(name).tobytes()
+            same, previous = frame == previous, frame
+            return same
+        session.wait_for(stable, f"settled frame {name}")
+        return previous
+
+    draft = settled("actions-08-draft.png")
     chord("r", "ctrl")
-    session.capture("actions-08-discard-default.png")
+    session.wait_for(lambda: session.capture("actions-08-discard-default.png").tobytes() != draft, "painted dirty Reload question")
+    settled("actions-08-discard-default.png")
     key("Return")  # Keep editing is the default.
     assert 'Unsaved draft' not in config.read_text()
     chord("s", "ctrl")

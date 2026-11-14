@@ -9,6 +9,12 @@ import time
 from urllib.parse import quote_from_bytes
 
 
+# Logical sidebar geometry in the 60% destination tile: the Places and Devices
+# headings precede the device row, whose removal control is inline at its end.
+DEVICE_ROW_Y = 277
+REMOVAL_X = 177
+
+
 def setup(session, fixture, config):
     root = fixture / "Device drops"
     assert root.is_relative_to(session.runtime / "home")
@@ -122,7 +128,7 @@ def verify(session, fixture, browser, scheme, scale, process):
         session.run(["niri", "msg", "action", "center-visible-columns"])
         time.sleep(.2)
 
-    def begin(name, action="2", target_x=75, target_y=228):
+    def begin(name, action="2", target_x=75, target_y=DEVICE_ROW_Y):
         align()
         # Move/Undo can restore a file into a refreshed, unselected source view.
         # Select it through ordinary browsing input before each new gesture.
@@ -153,6 +159,9 @@ def verify(session, fixture, browser, scheme, scale, process):
                 if y - start >= round(20 * scale):
                     runs.append((start, y))
                 start = None
+        # A wrapped narrow toolbar can extend below the scan start; a band
+        # already present at its first row is chrome, not the selected row.
+        runs = [run for run in runs if run[0] > round(100 * scale)]
         assert len(runs) == 1, f"expected one painted source selection: {runs}"
         source_y = sum(runs[0]) / (2 * scale)
         first, last = point(browser, 260, source_y), point(target, target_x, target_y)
@@ -195,7 +204,7 @@ def verify(session, fixture, browser, scheme, scale, process):
         session.wait_for(settled, "device gesture ends and admitted work is terminal")
         time.sleep(.3)
 
-    def successful(name, *, copy=False, target_x=75, target_y=228):
+    def successful(name, *, copy=False, target_x=75, target_y=DEVICE_ROW_Y):
         held = begin(name, target_x=target_x, target_y=target_y)
         modifier = None
         if copy:
@@ -225,16 +234,22 @@ def verify(session, fixture, browser, scheme, scale, process):
         assert receipts() == held["rows"], "refused device drop admitted an operation"
         assert len(notices()) == held["notices"], "refused device drop generated attention"
 
+    clicker = session.build_pointer()
+
     def device_command(*, mounted, remove=False):
-        focus(target)
-        chord("Menu")
-        chord("End")
-        chord("Up")
-        chord("Return")
-        chord("End")
-        if mounted and not remove:
-            chord("Up")
-        chord("Return")
+        # The destination's sidebar device row opens (mounting first when
+        # needed) and its inline control removes, as explicit native input.
+        align()
+        actual = sorted(windows(), key=lambda w: w["layout"]["pos_in_scrolling_layout"])
+        output = next(o["logical"] for o in json.loads(session.run(["niri", "msg", "--json", "outputs"])).values() if o.get("logical"))
+        total = sum(w["layout"]["tile_size"][0] for w in actual)
+        index = next(i for i, w in enumerate(actual) if w["id"] == target["id"])
+        left = (output["width"] - total) / 2 + sum(w["layout"]["tile_size"][0] for w in actual[:index])
+        x = left + actual[index]["layout"]["window_offset_in_tile"][0] + (REMOVAL_X if remove else 75)
+        y = actual[index]["layout"]["window_offset_in_tile"][1] + DEVICE_ROW_Y
+        session.run([str(clicker), str(round(x * 1600 / output["width"])), str(round(y * 1000 / output["height"]))])
+        time.sleep(.3)
+        session.run([str(clicker), "1590", "990", "move"])
 
     try:
         assert source.stat().st_dev == payload.stat().st_dev
@@ -246,7 +261,7 @@ def verify(session, fixture, browser, scheme, scale, process):
         check("Ctrl selects Copy onto the mounted device, preserves the source and reverses through shared Undo")
 
         provider_before = events()
-        held = begin("device-drop-03-removal-control", action="0", target_y=266)
+        held = begin("device-drop-03-removal-control", action="0", target_x=REMOVAL_X, target_y=DEVICE_ROW_Y)
         refused(held)
         assert events() == provider_before, "dropping on the removal control dispatched a device request"
         check("the separate removal control rejects a drop without unmounting, changing files or admitting work")

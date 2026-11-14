@@ -188,19 +188,24 @@ def verify(session, fixture, browser, launched, scheme, scale):
     keys("space")
     floating = preview("B-notes.txt")
     assert floating["is_floating"]
-    position(floating)
+    stage = position(floating)
     focus(floating)
     keys("Down")
     assert preview("C-photo.png")["id"] == floating["id"]
     pixels("preview-02-image-follow.png", (24, 160, 120))
-    # A point near the fitted image's right edge must leave the image when
-    # Zoom out activates, then return when Fit activates. Check rendered extent.
+    # ADR0171: Fit never enlarges this small picture past its own pixels, so
+    # compare the painted picture's area below the header (whose thumbnail
+    # shares its color): Zoom out must shrink it, and Fit must restore it.
+    def painted_area(frame):
+        left, top, width, height = stage
+        area = frame.convert("RGB").crop(tuple(round(v * scale) for v in (left, top + 110, left + width, top + height - 60)))
+        return sum(all(abs(a - b) <= 12 for a, b in zip(pixel, (24, 160, 120))) for pixel in area.getdata())
+    fitted = painted_area(session.capture("preview-02a-image-fit.png"))
+    assert fitted > 0, "the fitted picture is not painted in the stage"
     def image_edge(name, inside):
         def rendered():
-            frame = session.capture(name)
-            color = frame.getpixel((round((logical["width"] / 2 + 245) * scale), frame.height // 2))
-            matches = all(abs(a-b) <= 12 for a,b in zip(color, (24, 160, 120)))
-            return matches == inside
+            painted = painted_area(session.capture(name))
+            return abs(painted - fitted) <= fitted * .05 if inside else 0 < painted < fitted * .8
         session.wait_for(rendered, f"actual image extent {name}")
     # Focus order: Open, Fit, 1:1, Zoom out, Zoom in, then back to Open.
     keys("Tab", "Tab", "Tab", "Tab", "space")

@@ -1060,6 +1060,7 @@ pub(super) enum Icon {
     Drive,
     Trash,
     Recovery,
+    Recent,
     Eject,
     Columns,
     List,
@@ -1109,7 +1110,7 @@ pub(super) enum Icon {
 }
 
 impl Icon {
-    pub(super) const ALL: [Self; 69] = [
+    pub(super) const ALL: [Self; 70] = [
         Self::Back,
         Self::Forward,
         Self::ActiveForward,
@@ -1135,6 +1136,7 @@ impl Icon {
         Self::Drive,
         Self::Trash,
         Self::Recovery,
+        Self::Recent,
         Self::Eject,
         Self::Columns,
         Self::List,
@@ -1267,6 +1269,7 @@ impl Icon {
             Self::Fit => "M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5",
             Self::Image => "M4 5h16v14H4Zm0 11 4.5-4.5 3.5 3.5 2.5-2.5L20 17M15.5 9h.01",
             Self::Recovery => "M3 10a9 9 0 1 1 1 7m-1-13v6h6m3-4v6l3 2",
+            Self::Recent => "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18m0 4v5l3.5 2",
             Self::Eject => "m6 14 6-8 6 8Zm0 4h12",
             Self::Columns | Self::ActiveColumns => {
                 "M3 5h4.5v14H3Zm6.75 0h4.5v14h-4.5ZM16.5 5H21v14h-4.5Z"

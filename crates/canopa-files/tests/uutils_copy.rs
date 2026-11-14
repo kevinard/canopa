@@ -39,6 +39,16 @@ fn shared_copy_retains_the_documented_metadata_and_link_policy() {
         rustix::fs::XattrFlags::empty(),
     );
     assert!(xattrs.is_ok() || matches!(xattrs, Err(rustix::io::Errno::NOTSUP)));
+    // A partly sparse file: data in the middle, holes on both sides.
+    let sparse = fs::File::create(source.join("sparse")).unwrap();
+    sparse.set_len(8 * 1024 * 1024).unwrap();
+    std::os::unix::fs::FileExt::write_all_at(&sparse, &[7; 64 * 1024], 4 * 1024 * 1024).unwrap();
+    let folder_xattrs = rustix::fs::setxattr(
+        &source,
+        c"user.canopa-folder",
+        b"folder metadata",
+        rustix::fs::XattrFlags::empty(),
+    );
     fs::write(source.join("linked"), b"hard-link group").unwrap();
     fs::hard_link(source.join("linked"), source.join("alias")).unwrap();
     fs::write(source.join("empty"), b"").unwrap();
@@ -57,28 +67,52 @@ fn shared_copy_retains_the_documented_metadata_and_link_policy() {
         )
         .unwrap();
     assert!(result.failures.is_empty());
+    assert!(result.attributes_omitted.is_empty());
     let copied = output.join("source");
     let metadata = fs::metadata(copied.join(&raw)).unwrap();
     assert_eq!(metadata.mode() & 0o7777, 0o640);
     assert_eq!(metadata.modified().unwrap(), modified);
     assert_eq!(metadata.accessed().unwrap(), accessed);
     assert_eq!(fs::read(copied.join(&raw)).unwrap(), vec![0; 1024 * 1024]);
-    // These limitations are deliberate baseline behavior, not cp -a claims.
-    assert!(metadata.blocks() > file.metadata().unwrap().blocks());
+    // Holes stay holes (ADR0174).
+    assert!(metadata.blocks() <= file.metadata().unwrap().blocks() + 8);
+    let sparse_copy = fs::read(copied.join("sparse")).unwrap();
+    assert_eq!(sparse_copy.len(), 8 * 1024 * 1024);
+    assert!(sparse_copy[..4 * 1024 * 1024].iter().all(|byte| *byte == 0));
+    assert!(
+        sparse_copy[4 * 1024 * 1024..][..64 * 1024]
+            .iter()
+            .all(|byte| *byte == 7)
+    );
+    assert!(
+        sparse_copy[4 * 1024 * 1024 + 64 * 1024..]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
+    let allocated = fs::metadata(copied.join("sparse")).unwrap().blocks() * 512;
+    assert!(
+        allocated < 1024 * 1024,
+        "the sparse copy allocated {allocated} bytes"
+    );
+    // Hard links become independent files, as in GIO-based file managers.
     assert_ne!(
         fs::metadata(copied.join("linked")).unwrap().ino(),
         fs::metadata(copied.join("alias")).unwrap().ino()
     );
     if xattrs.is_ok() {
-        assert_eq!(
-            rustix::fs::fgetxattr(
-                fs::File::open(copied.join(&raw)).unwrap(),
-                c"user.canopa-proof",
-                &mut [0u8; 64]
-            )
-            .unwrap_err(),
-            rustix::io::Errno::NODATA
-        );
+        let mut value = [0u8; 64];
+        let count = rustix::fs::fgetxattr(
+            fs::File::open(copied.join(&raw)).unwrap(),
+            c"user.canopa-proof",
+            &mut value,
+        )
+        .unwrap();
+        assert_eq!(&value[..count], b"private metadata");
+    }
+    if folder_xattrs.is_ok() {
+        let mut value = [0u8; 64];
+        let count = rustix::fs::getxattr(&copied, c"user.canopa-folder", &mut value).unwrap();
+        assert_eq!(&value[..count], b"folder metadata");
     }
     assert!(fs::read(copied.join("empty")).unwrap().is_empty());
     assert_eq!(

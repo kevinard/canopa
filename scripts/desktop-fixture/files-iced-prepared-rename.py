@@ -46,6 +46,9 @@ def verify(session, fixture, browser, scheme, scale, process):
     key("F2")
     draft = session.wait_for(lambda: title("Rename"), "prepared Rename draft")
     session.run(["niri", "msg", "action", "focus-window", "--id", str(draft["id"])])
+    session.wait_for(lambda: any(w["id"] == draft["id"] and w["is_focused"] for w in json.loads(session.run(["niri", "msg", "--json", "windows"]))), "Rename draft focus")
+    # ADR0171 preselects only the stem; replace the complete name.
+    key("a", "ctrl")
     session.run(["wtype", target.name])
     identity = (source.stat().st_dev, source.stat().st_ino)
     source.rename(parked)
@@ -115,6 +118,9 @@ def verify(session, fixture, browser, scheme, scale, process):
         key("F2")
         draft = session.wait_for(lambda: title("Rename"), "prepared device Rename draft")
         session.run(["niri", "msg", "action", "focus-window", "--id", str(draft["id"])])
+        session.wait_for(lambda: any(w["id"] == draft["id"] and w["is_focused"] for w in json.loads(session.run(["niri", "msg", "--json", "windows"]))), "Rename draft focus")
+        # ADR0171 preselects only the stem; replace the complete name.
+        key("a", "ctrl")
         session.run(["wtype", device_target.name])
 
     def terminal_phase():

@@ -45,6 +45,7 @@ pub mod preferences;
 pub mod presentation;
 pub mod preview;
 mod process;
+pub mod recent;
 #[cfg(feature = "local-runtime")]
 pub mod recovery_catalog;
 pub mod search;

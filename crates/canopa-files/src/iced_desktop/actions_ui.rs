@@ -900,6 +900,7 @@ impl Desktop {
         }
         for place in &self.configuration.settings.places {
             let item = match place {
+                Place::Builtin(PlaceKind::Recent) => Some(Item::Command(Command::ShowRecent)),
                 Place::Builtin(PlaceKind::Trash) => Some(Item::Command(Command::ShowTrash)),
                 Place::Builtin(PlaceKind::Recovery) => Some(Item::Command(Command::Recovery)),
                 _ => self.place_path(place).map(Item::Place),
@@ -1358,7 +1359,7 @@ fn item_group(item: &Item) -> u8 {
             Command::Rename | Command::Trash | Command::DeletePermanently => 5,
             Command::BookmarkFolder | Command::ShowHidden => 6,
             Command::OpenTerminal => 17,
-            Command::ShowTrash | Command::Operations | Command::Recovery => 7,
+            Command::ShowRecent | Command::ShowTrash | Command::Operations | Command::Recovery => 7,
             Command::CustomActions | Command::Preferences => 8,
             Command::Properties => 9,
             _ => 10,

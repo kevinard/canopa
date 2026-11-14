@@ -44,7 +44,7 @@ def verify(session, fixture, browser, scheme, scale):
     (deep / "notes.txt").write_text("Selection survives hidden-folder parent navigation.\n")
     navigate(deep); session.run(["wtype", "notes.txt"]); time.sleep(.8)
     session.capture("hidden-01-wide-ancestors.png")
-    keys("space"); wait_title("notes.txt — Quick Look"); keys("Escape")
+    keys("space"); wait_title("Quick Look: notes.txt — Canopa Files"); keys("Escape")
     focus(browser); session.run(["niri", "msg", "action", "set-window-width", "360"]); time.sleep(.8)
     assert title("deep — Canopa Files")["layout"]["window_size"][0] == 360
     keys("Left"); wait_title(".active — Canopa Files")
@@ -54,7 +54,7 @@ def verify(session, fixture, browser, scheme, scale):
     # child just left selected, so Right returns to .active rather than .other.
     session.run(["wtype", ".other"]); keys("Right"); wait_title(".active — Canopa Files")
     keys("Right"); wait_title("deep — Canopa Files")
-    keys("space"); wait_title("notes.txt — Quick Look"); keys("Escape")
+    keys("space"); wait_title("Quick Look: notes.txt — Canopa Files"); keys("Escape")
     focus(browser); session.run(["niri", "msg", "action", "set-window-width", "1280"]); time.sleep(.8)
     session.capture("hidden-03-wide-restored.png")
     keys("Left"); wait_title(".active — Canopa Files")

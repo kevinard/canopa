@@ -230,7 +230,10 @@ def verify(binary, session, scheme, scale):
         opened = session.wait_for(lambda: next((w for w in windows() if w["id"] not in before and w["title"] == f"{first.name} — Canopa Files"), None), "requested folder contents")
         focus(opened); key("l", "ctrl"); key("c", "ctrl")
         session.wait_for(lambda: clipboard() == [str(first)], "first folder location")
-        key("Escape"); key("Tab", "ctrl"); key("l", "ctrl"); key("c", "ctrl")
+        key("Escape"); key("Tab", "ctrl")
+        session.wait_for(lambda: any(w["id"] == opened["id"] and w["title"] == f"{second.name} — Canopa Files" for w in windows()),
+                         "second requested folder Tab")
+        key("l", "ctrl"); key("c", "ctrl")
         session.wait_for(lambda: clipboard() == [str(second)], "second folder location")
         key("Escape")
         checks.append("ShowFolders opens the requested contents in distinct Tabs without selecting the folders in their parents")
@@ -248,16 +251,20 @@ def verify(binary, session, scheme, scale):
             if window["id"] != inspector["id"]: close_window(window)
         assert len(windows()) == 1
         focus(inspector)
-        narrow(inspector)
+        # Properties is a fixed-size inspector, so compositors float it
+        # instead of tiling it; a narrow tile no longer applies to it.
+        session.wait_for(lambda: any(w["id"] == inspector["id"] and w["is_floating"]
+                                     and w["layout"]["window_size"] == [620, 520] for w in windows()),
+                         "floating fixed-size Properties inspector")
         key("Home")
-        before_frame = settled_capture("properties-narrow-start.png")
+        before_frame = settled_capture("properties-start.png")
         key("End")
-        session.wait_for(lambda: ImageChops.difference(before_frame, session.capture("properties-narrow-end.png")).convert("L").point(lambda p: 255 if p > 12 else 0).histogram()[255] > 2000,
+        session.wait_for(lambda: ImageChops.difference(before_frame, session.capture("properties-end.png")).convert("L").point(lambda p: 255 if p > 12 else 0).histogram()[255] > 2000,
                          "End scrolls the prepared Properties list")
-        settled_capture("properties-narrow-end.png")
+        settled_capture("properties-end.png")
         key("c", "ctrl")
         session.wait_for(lambda: clipboard() == [uri(p) for p in many], "Properties keeps its captured locations after Browsers close")
-        checks.append("Properties survives all Browsers closing, wraps a 340px tile, scrolls by End and retains its captured URI list")
+        checks.append("Properties survives all Browsers closing, floats at its fixed size, scrolls by End and retains its captured URI list")
         key("w", "ctrl")
         session.wait_for(lambda: not windows(), "Properties Ctrl+W")
         quit_owner()

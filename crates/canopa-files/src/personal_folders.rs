@@ -101,7 +101,11 @@ impl PersonalFolders {
             PlaceKind::Videos => 5,
             PlaceKind::Templates => 6,
             PlaceKind::Public => 7,
-            PlaceKind::Home | PlaceKind::Filesystem | PlaceKind::Trash | PlaceKind::Recovery => {
+            PlaceKind::Recent
+            | PlaceKind::Home
+            | PlaceKind::Filesystem
+            | PlaceKind::Trash
+            | PlaceKind::Recovery => {
                 return None;
             }
         };

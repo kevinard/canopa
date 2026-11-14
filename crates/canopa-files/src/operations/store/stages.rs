@@ -51,14 +51,14 @@ pub(super) fn index_change(
     change: &Change,
 ) -> io::Result<()> {
     connection
-        .execute(
+        .execute_cached(
             "DELETE FROM saved_stage_changes WHERE operation=?1 AND ordinal=?2",
             params![operation, ordinal],
         )
         .map_err(db_error)?;
     if let Some(retained) = change.retained() {
         connection
-            .execute(
+            .execute_cached(
                 "INSERT INTO saved_stage_changes VALUES(?1,?2,?3)",
                 params![encode(&retained.stage.identity)?, operation, ordinal],
             )
@@ -73,10 +73,10 @@ pub(super) fn index_record(
     record: &recovery::Record,
 ) -> io::Result<()> {
     connection
-        .execute("DELETE FROM saved_stage_records WHERE entry=?1", [entry])
+        .execute_cached("DELETE FROM saved_stage_records WHERE entry=?1", [entry])
         .map_err(db_error)?;
     connection
-        .execute(
+        .execute_cached(
             "INSERT INTO saved_stage_records VALUES(?1,?2)",
             params![encode(&record.retained.stage.identity)?, entry],
         )
@@ -218,7 +218,7 @@ impl Store {
         }
         let body: Option<String> = self
             .connection
-            .query_row(
+            .query_row_cached(
                 "SELECT body FROM changes WHERE operation=?1 AND ordinal=?2",
                 params![receipt.id, receipt.ordinal],
                 |row| row.get(0),
@@ -337,7 +337,7 @@ impl Store {
                         .ok_or_else(|| invalid("saved-stage owner has no retained version"))?;
                     rebind(retained, migration, version);
                     transaction
-                        .execute(
+                        .execute_cached(
                             "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                             params![operation, ordinal, encode(&change)?],
                         )
@@ -347,14 +347,14 @@ impl Store {
                 }
                 recovery::Key::Archived(entry) => {
                     let body: String = transaction
-                        .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |row| {
+                        .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |row| {
                             row.get(0)
                         })
                         .map_err(db_error)?;
                     let mut record = recovery::Record::decode(&body)?;
                     rebind(&mut record.retained, migration, version);
                     transaction
-                        .execute(
+                        .execute_cached(
                             "UPDATE garbage SET body=?2 WHERE id=?1",
                             params![entry, encode(&record)?],
                         )
@@ -397,7 +397,7 @@ impl Store {
             context::install_saved_phase(&transaction, self.identity, self.lane, &pending)?;
         }
         transaction
-            .execute(
+            .execute_cached(
                 "INSERT INTO pending(singleton,body) VALUES(1,?1)",
                 [encode(&Pending::StageMigration {
                     migration: Box::new(pending),
@@ -433,7 +433,7 @@ impl Store {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let body: String = transaction
-            .query_row("SELECT body FROM pending WHERE singleton=1", [], |r| {
+            .query_row_cached("SELECT body FROM pending WHERE singleton=1", [], |r| {
                 r.get(0)
             })
             .map_err(db_error)?;
@@ -464,7 +464,7 @@ impl Store {
         }
         context::install_saved_phase(&transaction, self.identity, self.lane, after)?;
         transaction
-            .execute(
+            .execute_cached(
                 "UPDATE pending SET body=?1 WHERE singleton=1",
                 [encode(&Pending::StageMigration {
                     migration: Box::new(after.clone()),
@@ -625,7 +625,7 @@ pub(super) fn move_parent(
                     retained.stage.ownership = Some(Box::new(ownership.clone()));
                 }
                 connection
-                    .execute(
+                    .execute_cached(
                         "UPDATE changes SET body=?3 WHERE operation=?1 AND ordinal=?2",
                         params![operation, ordinal, encode(&change)?],
                     )
@@ -633,7 +633,7 @@ pub(super) fn move_parent(
             }
             recovery::Key::Archived(entry) => {
                 let body: String = connection
-                    .query_row("SELECT body FROM garbage WHERE id=?1", [entry], |row| {
+                    .query_row_cached("SELECT body FROM garbage WHERE id=?1", [entry], |row| {
                         row.get(0)
                     })
                     .map_err(db_error)?;
@@ -647,7 +647,7 @@ pub(super) fn move_parent(
                     record.retained.stage.ownership = Some(Box::new(ownership.clone()));
                 }
                 connection
-                    .execute(
+                    .execute_cached(
                         "UPDATE garbage SET body=?2 WHERE id=?1",
                         params![entry, encode(&record)?],
                     )

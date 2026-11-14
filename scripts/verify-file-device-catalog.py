@@ -59,7 +59,9 @@ class Observations:
                 if events and predicate(frame):
                     return frame
                 continue
-            assert frame["version"] == 2, "old helper has no device catalog"
+            # Version 3 adds each device's kind, URI and remote-only flag.
+            assert frame["version"] == 3, f"unexpected device catalog version: {frame['version']}"
+            assert all(device["kind"] == "local" and not device["remote_only"] for device in frame["devices"]), frame
             assert frame["generation"] > self.generation
             assert len(frame["mounts"]) <= 1024 and len(frame["devices"]) <= 1024
             self.generation = frame["generation"]

@@ -97,10 +97,10 @@ def main():
                 assert report["delivery_hold_refused_shutdown"]
                 assert len(delivered) == 4, delivered
                 assert all(event["app"] == "Canopa Files" for event in delivered)
-                assert delivered[0]["title"] == "create folder Headless operation" and delivered[0]["body"] == "Completed."
+                assert delivered[0]["title"] == "Create folder Headless operation" and delivered[0]["body"] == "Completed."
                 assert delivered[1]["title"] == "Operation needs a decision" and delivered[1]["body"] == "Undo · Open Operations to review."
-                assert delivered[2]["title"] == "create folder Headless operation" and "remaining" in delivered[2]["body"]
-                assert delivered[3]["title"] == "create folder Queued without a browser" and delivered[3]["body"] == "Completed."
+                assert delivered[2]["title"] == "Create folder Headless operation" and "remaining" in delivered[2]["body"]
+                assert delivered[3]["title"] == "Create folder Queued without a browser" and delivered[3]["body"] == "Completed."
                 assert (runtime / "Headless operation/later.txt").read_bytes() == b"Headless later work survives\n"
                 assert (runtime / "Queued without a browser").is_dir()
             else:

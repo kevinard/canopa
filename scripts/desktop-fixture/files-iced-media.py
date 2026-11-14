@@ -14,7 +14,7 @@ spec.loader.exec_module(media_input)
 def setup(session, fixture, formats_only=False):
     # The shared fixture starts only private PipeWire/Pulse policy and a null
     # output. Iced observations use real input, focus borders, pixels and PCM.
-    media_input.setup(session, fixture, formats_only=formats_only, accessibility=False)
+    media_input.setup(session, fixture, formats_only=formats_only)
     # Open must target only our private argv recorder, including corrupt media
     # whose extension still determines the normal application MIME association.
     application = session.runtime / "data/applications/canopa-files-fixture.desktop"

@@ -81,6 +81,7 @@ tempfile.workspace = true
 futures-channel.workspace = true
 futures-util = { workspace = true, optional = true }
 url.workspace = true
+roxmltree.workspace = true
 unicode-segmentation.workspace = true
 gio = { workspace = true, optional = true, features = ["v2_58"] }
 glib = { workspace = true, optional = true }

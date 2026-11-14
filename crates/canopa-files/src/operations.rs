@@ -10,6 +10,7 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
+mod attributes;
 mod copy_backend;
 pub(crate) mod execution;
 mod fingerprint;
@@ -46,6 +47,7 @@ mod entry_move;
 #[cfg(test)]
 mod entry_move_boundary;
 mod original;
+mod proofs;
 mod serialized;
 mod source_removal;
 #[cfg(test)]

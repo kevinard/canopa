@@ -23,6 +23,7 @@ files-command-open-terminal = Open in terminal
 files-command-rename = Rename
 files-command-trash = Move to Trash
 files-command-delete-permanently = Delete permanently
+files-command-show-recent = Recent Files
 files-command-show-trash = Open Trash
 files-command-connect-to-server = Connect to Server…
 files-command-undo = Undo
@@ -48,6 +49,7 @@ files-command-bookmark-folder = Bookmark this folder
 
 ## Built-in places in the sidebar
 
+files-place-recent = Recent
 files-place-home = Home
 files-place-desktop = Desktop
 files-place-documents = Documents
@@ -99,8 +101,8 @@ files-configuration-not-applied = Configuration was not applied: { $error }
 files-view-preferences-not-saved = View preferences were not saved: { $error }
 files-retry = Retry
 files-close = Close
-files-searching-filenames = Searching filenames…
-files-no-matching-filenames = No matching filenames
+files-searching-filenames = Searching…
+files-no-matching-filenames = No matching items
 files-empty-folder = Empty folder
 files-loading-folder = Loading folder…
 files-folder-unavailable = Folder unavailable
@@ -163,6 +165,29 @@ files-announce-results-stopped-selected = { $count ->
 ## Search bar
 
 files-search-include-subfolders = Include subfolders
+files-search-filters = Search filters
+files-search-kind = Type
+files-search-kind-any = Any type
+files-search-kind-folders = Folders
+files-search-kind-documents = Documents
+files-search-kind-images = Images
+files-search-kind-audio = Audio
+files-search-kind-video = Video
+files-search-kind-archives = Archives
+files-search-date = Modified
+files-search-date-any = Any time
+files-search-date-today = Today
+files-search-date-week = Past week
+files-search-date-month = Past month
+files-search-date-year = Past year
+files-search-size = Size
+files-search-size-any = Any size
+files-search-size-small = Under 1 MiB
+files-search-size-medium = 1 to 100 MiB
+files-search-size-large = Over 100 MiB
+# Also match the query inside text files.
+files-search-contents = Search contents
+files-search-recent = Search recent files
 files-search-stop = Stop
 files-search-in = Search in { $folder }
 files-search-close = Close search
@@ -1532,6 +1557,10 @@ files-report-needs-attention = needs attention
 files-report-source-folders = { $count ->
     [one] { $count } source folder to review
    *[other] { $count } source folders to review
+}
+files-report-attributes-omitted = { $count ->
+    [one] { $count } copy missing extended attributes
+   *[other] { $count } copies missing extended attributes
 }
 files-report-failed-handed-off = failed work handed off
 files-report-failed-abandoned = failed work abandoned

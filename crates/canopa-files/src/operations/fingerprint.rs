@@ -295,6 +295,20 @@ pub(super) fn same_snapshot(a: &fs::Metadata, b: &fs::Metadata) -> bool {
         && a.ctime() == b.ctime()
         && a.ctime_nsec() == b.ctime_nsec()
 }
+/// [`same_snapshot`] against a raw `stat` of the same object.
+pub(super) fn same_stat(a: &fs::Metadata, b: &rustix::fs::Stat) -> bool {
+    Identity::from_metadata(a)
+        == Identity {
+            device: b.st_dev,
+            inode: b.st_ino,
+        }
+        && i64::try_from(a.len()).is_ok_and(|len| len == b.st_size)
+        && a.mode() == b.st_mode
+        && a.mtime() == b.st_mtime
+        && a.mtime_nsec() == b.st_mtime_nsec as i64
+        && a.ctime() == b.st_ctime
+        && a.ctime_nsec() == b.st_ctime_nsec as i64
+}
 fn read_retry(file: &mut fs::File, buffer: &mut [u8]) -> io::Result<usize> {
     loop {
         match file.read(buffer) {

@@ -988,6 +988,7 @@ dependencies = [
  "kdl 6.7.1",
  "lzma-rust2",
  "resvg",
+ "roxmltree",
  "rusqlite",
  "rustix 1.1.4",
  "serde",

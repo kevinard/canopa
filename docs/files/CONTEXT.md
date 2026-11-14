@@ -72,6 +72,13 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Batched Copy journal (proposed)](adr/0180-batched-copy-journal.md).
+- [Exact Copy speed-ups: fewer system calls for the same checks](adr/0179-exact-checkpoint-costs.md).
+- [Recording recent files](adr/0178-recording-recent-files.md).
+- [Small-file Copy costs: cached journal statements and a profile](adr/0177-small-file-copy-costs.md).
+- [Recent files](adr/0176-recent-files.md).
+- [Search filters and content search](adr/0175-search-filters-and-contents.md).
+- [Copies keep extended attributes, ACLs and holes](adr/0174-copy-attributes-acls-and-sparse-files.md).
 - [Open in terminal, new documents and bulk Rename](adr/0173-terminal-new-documents-and-bulk-rename.md).
 - [Compressed archives: create and extract](adr/0172-compressed-archives.md).
 - [Menus, tabs, views and secondary windows](adr/0171-menus-tabs-views-and-secondary-windows.md).

@@ -217,6 +217,9 @@ struct Desktop {
     configuration: ConfigurationSnapshot,
     preferences: PreferenceStore,
     home: PathBuf,
+    /// The desktop's recently used list (ADR0176, ADR0178); none in tests,
+    /// which never read or write the person's list.
+    recent_list: Option<PathBuf>,
     personal_folders: PersonalFolders,
     theme: Theme,
     next_tab: u64,
@@ -539,6 +542,11 @@ impl Desktop {
             configuration,
             preferences,
             home,
+            recent_list: if cfg!(test) {
+                None
+            } else {
+                crate::recent::default_path()
+            },
             personal_folders,
             theme,
             next_tab: 0,
@@ -1853,6 +1861,7 @@ impl Desktop {
         match command {
             Command::Recovery => return self.show_recovery(),
             Command::ShowTrash => return self.show_trash(),
+            Command::ShowRecent => return self.open_recent(id),
             Command::ConnectToServer => return self.show_network(id, None, None),
             Command::Trash => return self.trash_selection(id),
             Command::DeletePermanently => return self.confirm_delete_selection(id),
@@ -1955,11 +1964,7 @@ impl Desktop {
                 }
             }
             Command::Refresh => {
-                if tab
-                    .search
-                    .as_ref()
-                    .is_some_and(|search| !search.query.is_empty())
-                {
+                if tab.search.as_ref().is_some_and(|search| search.searches()) {
                     return self.restart_search(id);
                 }
                 return self.navigate(id, tab.path().to_owned(), Navigation::Refresh, None);
@@ -2516,6 +2521,16 @@ impl Desktop {
                     .to_string_lossy()
             })
             .unwrap_or_default();
+        // Recent files are titled as the place they are, not the folder.
+        let recent = self
+            .active(id)
+            .and_then(|tab| tab.search.as_ref())
+            .is_some_and(|search| search.recent);
+        let name: std::borrow::Cow<'_, str> = if recent {
+            crate::interface::PlaceKind::Recent.label().into()
+        } else {
+            name
+        };
         if let Some(tab) = self.active(id)
             && let Some(search) = tab
                 .search
