@@ -26,13 +26,53 @@ pub(super) fn prepare_copy(
 ) -> io::Result<PreparedCopy> {
     prepare_using(
         || source::Opened::open(source),
-        parent,
-        None,
+        Output {
+            parent,
+            pinned: None,
+            times: Times::Source,
+        },
         cancellation,
         register,
         progress,
         checkpoint,
     )
+}
+
+/// A new document from a template: the template's contents and permissions,
+/// dated now, since it is a new file rather than a copy of an old one.
+pub(super) fn prepare_new(
+    source: &Path,
+    parent: &Path,
+    cancellation: &Cancellation,
+    register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
+) -> io::Result<PreparedCopy> {
+    prepare_using(
+        || source::Opened::open(source),
+        Output {
+            parent,
+            pinned: None,
+            times: Times::Now,
+        },
+        cancellation,
+        register,
+        |_| {},
+        || Ok(()),
+    )
+}
+
+/// The times the prepared output keeps.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Times {
+    Source,
+    Now,
+}
+
+/// Where the output is prepared, and what it keeps of its source.
+struct Output<'a> {
+    parent: &'a Path,
+    /// The destination folder already retained by the transfer selection.
+    pinned: Option<&'a fs::File>,
+    times: Times,
 }
 
 /// Prepare through the source folder and destination parent already retained
@@ -48,8 +88,11 @@ pub(super) fn prepare_pinned(
 ) -> io::Result<PreparedCopy> {
     prepare_using(
         || Ok(source),
-        parent,
-        Some(pinned),
+        Output {
+            parent,
+            pinned: Some(pinned),
+            times: Times::Source,
+        },
         cancellation,
         register,
         progress,
@@ -59,8 +102,11 @@ pub(super) fn prepare_pinned(
 
 fn prepare_using(
     source: impl FnOnce() -> io::Result<source::Opened>,
-    parent: &Path,
-    pinned: Option<&fs::File>,
+    Output {
+        parent,
+        pinned,
+        times,
+    }: Output<'_>,
     cancellation: &Cancellation,
     mut register: impl FnMut(&staging::Registration<'_>) -> io::Result<()>,
     mut progress: impl FnMut(u64),
@@ -162,6 +208,10 @@ fn prepare_using(
         source.require_current()?;
         payload.require_current()?;
         copy_backend::restore_metadata(&output, before)?;
+        if times == Times::Now {
+            let now = std::time::SystemTime::now();
+            output.set_times(fs::FileTimes::new().set_modified(now).set_accessed(now))?;
+        }
         // Sync is a host durability boundary, after backend content/metadata.
         // A batched Copy span defers it to the batch barrier (ADR0165).
         durability::sync(&output)?;

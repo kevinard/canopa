@@ -20,6 +20,7 @@ files-command-refresh = Actualiser
 files-command-show-hidden = Afficher les fichiers cachés
 files-command-select-all = Tout sélectionner
 files-command-new-folder = Nouveau dossier
+files-command-open-terminal = Ouvrir dans un terminal
 files-command-rename = Renommer
 files-command-trash = Mettre à la corbeille
 files-command-delete-permanently = Supprimer définitivement
@@ -71,6 +72,7 @@ files-preferences-icon-pixels = { $pixels } px
 ## Toolbar and location bar
 
 files-toolbar-search = Rechercher
+files-toolbar-terminal = Terminal
 files-toolbar-actions = Actions
 files-toolbar-places = Emplacements
 files-location = Emplacement
@@ -305,6 +307,9 @@ files-menu-duplicate-tab = Dupliquer l’onglet
 files-menu-close-other-tabs = Fermer les autres onglets
 files-menu-new-folder = Nouveau dossier…
 files-menu-new-folder-short = Nouveau dossier
+files-menu-new-document = Nouveau document
+files-menu-new-document-empty = Document vide
+files-menu-templates-folder = Ouvrir le dossier Modèles
 files-menu-rename = Renommer…
 files-menu-delete-permanently = Supprimer définitivement…
 files-menu-compress = Compresser…
@@ -374,6 +379,11 @@ files-new-folder-name = Nouveau dossier
 files-create = Créer
 files-name-full-name = Nom complet
 files-name-folder-name = Nom du dossier
+files-new-document-title = Nouveau document
+files-new-document-name = Nouveau document
+files-name-document-name = Nom du document
+files-name-taken = Un élément porte déjà ce nom dans ce dossier.
+files-open-terminal-failed = Impossible d’ouvrir un terminal : { $error }
 files-name-invalid = Saisissez un seul nom, sans barre oblique. Les noms . et .. sont réservés.
 files-name-dialog-failed = Impossible d’ouvrir la boîte de dialogue du nom.
 files-rename-worker-stopped = Le service des opérations s’est arrêté avant de préparer le renommage.
@@ -503,6 +513,13 @@ files-jobs-drag-cancelled-removal = Préparation du glisser annulée pendant l�
 files-jobs-close-worker-busy = Terminez ou annulez le travail en cours, reprenez ou abandonnez les transferts arrêtés et enregistrez chaque résultat avant de fermer le service des opérations.
 files-jobs-needs-reconciliation = Une opération doit être réconciliée avant d’autres modifications.
 files-jobs-kept-in-recovery = Élément conservé dans Récupération. Le travail interrompu est préservé ; récupérez une copie si nécessaire.
+files-jobs-rename-batch-done = { $count ->
+    [one] { $count } élément renommé.
+   *[other] { $count } éléments renommés.
+}
+files-jobs-rename-batch-partial = { $renamed } éléments sur { $total } renommés. { $failed } ont gardé leur nom ; { $name } : { $error }
+files-jobs-rename-batch-stopped = { $renamed } éléments sur { $total } renommés avant l’arrêt.
+files-jobs-rename-batch-failed = Impossible de renommer { $name } : { $error }
 files-jobs-retry-interrupted = Réessayer l’opération interrompue
 files-jobs-journals-rechecked = Journaux des opérations interrompues revérifiés.
 files-jobs-worker-stopped = Le service des opérations s’est arrêté de manière inattendue
@@ -524,6 +541,11 @@ files-job-keep-in-recovery = Conserver { $name } dans Récupération
 files-job-recover = Récupérer { $name }
 files-job-create-folder = Créer le dossier { $name }
 files-job-rename = Renommer { $source } en { $destination }
+files-job-create-file = Créer le document { $name }
+files-job-rename-batch = { $count ->
+    [one] Renommer { $count } élément
+   *[other] Renommer { $count } éléments
+}
 files-job-restore = Restaurer { $name }
 files-job-trash = { $count ->
     [one] Mettre { $count } élément à la corbeille
@@ -587,6 +609,39 @@ files-extract-archives = { $count ->
    *[other] { $count } archives
 }
 files-extract-folder-invalid = Saisissez un dossier où extraire.
+files-rename-batch-title = { $count ->
+    [one] Renommer { $count } élément
+   *[other] Renommer { $count } éléments
+}
+files-rename-batch-mode-replace = Remplacer du texte
+files-rename-batch-mode-add = Ajouter du texte
+files-rename-batch-mode-number = Numéroter
+files-rename-batch-find = Rechercher
+files-rename-batch-replace-with = Remplacer par
+files-rename-batch-prefix = Avant le nom
+files-rename-batch-suffix = Après le nom
+files-rename-batch-base = Nom
+files-rename-batch-start = Commencer à
+files-rename-batch-start-invalid = Saisissez un nombre entier de départ.
+files-rename-batch-hint = Les extensions sont conservées. Les éléments sont numérotés dans l’ordre affiché.
+files-rename-batch-preview = Aperçu
+files-rename-batch-invalid = Nom non valide
+files-rename-batch-duplicate = Même nom qu’un autre élément
+files-rename-batch-exists = Nom déjà utilisé dans ce dossier
+files-rename-batch-swap = Les noms s’échangent ; renommez en deux fois
+files-rename-batch-summary = { $changes ->
+    [one] { $changes } élément renommé
+   *[other] { $changes } éléments renommés
+}
+files-rename-batch-problems = { $problems ->
+    [one] { $problems } nom à corriger
+   *[other] { $problems } noms à corriger
+}
+files-rename-batch-nothing = Aucun nom modifié pour l’instant
+files-rename-batch-more = { $count ->
+    [one] et { $count } autre élément
+   *[other] et { $count } autres éléments
+}
 files-job-copy = { $count ->
     [one] Copier { $count } élément vers { $destination }
    *[other] Copier { $count } éléments vers { $destination }
@@ -610,6 +665,11 @@ files-history-restore-permissions = Restaurer les permissions du dossier
 files-history-kept-undo-folder = Dossier de travail d’annulation interrompue conservé
 files-history-create-folder = création du dossier { $name }
 files-history-rename = renommage de { $source } en { $destination }
+files-history-create-file = création du fichier { $name }
+files-history-rename-batch = { $count ->
+    [one] renommage de { $count } élément
+   *[other] renommage de { $count } éléments
+}
 files-history-copy = copie vers { $destination }
 files-history-move = déplacement vers { $destination }
 files-history-trash = { $count ->
@@ -647,6 +707,7 @@ files-history-empty-description = Les modifications de fichiers effectuées dans
 files-history-moved-to-trash = Mis à la corbeille
 files-history-renamed = Renommé
 files-history-created-folder = Dossier créé
+files-history-created-document = Document créé
 files-details = Détails
 files-retry-save = Réessayer l’enregistrement
 files-retry-failed-items = Réessayer les éléments en échec

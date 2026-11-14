@@ -582,6 +582,73 @@ struct PreparedTransfer {
     destination_observation: Option<drag_drop::DestinationProof>,
 }
 
+/// A batch that renamed anything finished: its completed steps are one Undo
+/// entry. Items left with their name are listed in its detail.
+fn batch_rename_completion(
+    renames: &[crate::operations::rename_batch::BatchRename],
+    outcome: crate::operations::rename_batch::BatchRenameOutcome,
+) -> io::Result<Completion> {
+    if let Some(error) = outcome.interrupted {
+        return Err(io::Error::new(io::ErrorKind::WouldBlock, error));
+    }
+    let Some(id) = outcome.id else {
+        return Err(match outcome.failures.into_iter().next() {
+            Some((source, error)) => io::Error::other(fl!(
+                "files-jobs-rename-batch-failed",
+                name = source
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+                error = error
+            )),
+            None => io::Error::new(io::ErrorKind::Interrupted, "operation cancelled"),
+        });
+    };
+    let total = renames.len();
+    let renamed = outcome.renamed.len();
+    let detail = if let Some((source, error)) = outcome.failures.first() {
+        fl!(
+            "files-jobs-rename-batch-partial",
+            renamed = renamed,
+            total = total,
+            failed = outcome.failures.len(),
+            name = source
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            error = error.clone()
+        )
+    } else if outcome.cancelled {
+        fl!(
+            "files-jobs-rename-batch-stopped",
+            renamed = renamed,
+            total = total
+        )
+    } else {
+        fl!("files-jobs-rename-batch-done", count = renamed)
+    };
+    Ok(Completion {
+        // History rows keep the stored English label and translate it.
+        summary: OperationSummary {
+            id,
+            label: format!(
+                "rename {total} {}",
+                if total == 1 { "item" } else { "items" }
+            ),
+            paths: outcome.renamed,
+        },
+        detail: Some(detail),
+        transfer: None,
+        trash: None,
+        restore: None,
+        delete: None,
+        recovery: None,
+        mutation_confirmation: None,
+    })
+}
+
 fn check_startup(stopped: &AtomicBool) -> io::Result<()> {
     if stopped.load(Ordering::Acquire) {
         Err(io::Error::new(
@@ -1574,6 +1641,14 @@ impl Worker {
                 Some(ready) => ready.observed.clone(),
                 None => crate::transfers::ObservedSources::capture_rename(source, destination)?,
             }),
+            Request::Mutation(OperationRequest::RenameBatch { renames }) => {
+                Some(crate::transfers::ObservedSources::capture_rename_batch(
+                    &renames
+                        .iter()
+                        .map(|step| step.source.clone())
+                        .collect::<Vec<_>>(),
+                )?)
+            }
             Request::Trash { sources, .. } => {
                 Some(crate::transfers::ObservedSources::capture(sources)?)
             }
@@ -1607,6 +1682,10 @@ impl Worker {
             let retained = self
                 .engine
                 .capture_retained_sources(std::slice::from_ref(source))?;
+            self.engine.queue_request_with_sources(&saved, &retained)?
+        } else if let Request::Mutation(OperationRequest::RenameBatch { renames }) = &request {
+            let sources: Vec<_> = renames.iter().map(|step| step.source.clone()).collect();
+            let retained = self.engine.capture_retained_sources(&sources)?;
             self.engine.queue_request_with_sources(&saved, &retained)?
         } else {
             self.engine.queue_request(&saved)?
@@ -1768,7 +1847,12 @@ impl Worker {
                                 observed.require(&source)?;
                                 execution.rename(source, destination, observed, &cancellation)
                             }
-                            request @ OperationRequest::CreateFolder { .. } => execution.mutate(request, &cancellation),
+                            OperationRequest::RenameBatch { renames } => {
+                                let observed = observed_sources.as_ref().ok_or_else(|| io::Error::other("Rename needs its original selected entries before execution."))?;
+                                let outcome = execution.rename_batch(&renames, observed, &cancellation)?;
+                                return batch_rename_completion(&renames, outcome);
+                            }
+                            request @ (OperationRequest::CreateFolder { .. } | OperationRequest::CreateFile { .. }) => execution.mutate(request, &cancellation),
                         };
                         result
                             .map(|outcome| Completion { summary: outcome.summary, detail: None, transfer: None, trash: None, restore: None, delete: None, recovery: None, mutation_confirmation: outcome.confirmation })
@@ -2415,6 +2499,15 @@ impl Request {
                 }
                 Self::Undo { expected } => *expected != 0,
                 Self::Archive(request) => request.valid(),
+                Self::Mutation(OperationRequest::CreateFile { path, template }) => {
+                    path.file_name().is_some()
+                        && template.as_ref().is_none_or(|template| {
+                            template.is_absolute() && template.file_name().is_some()
+                        })
+                }
+                Self::Mutation(OperationRequest::RenameBatch { renames }) => {
+                    crate::operations::rename_batch::order(renames).is_ok()
+                }
                 _ => true,
             }
     }
@@ -2438,6 +2531,12 @@ impl Request {
             ),
             Self::Mutation(OperationRequest::CreateFolder { path }) => {
                 fl!("files-job-create-folder", name = name(path))
+            }
+            Self::Mutation(OperationRequest::CreateFile { path, .. }) => {
+                fl!("files-job-create-file", name = name(path))
+            }
+            Self::Mutation(OperationRequest::RenameBatch { renames }) => {
+                fl!("files-job-rename-batch", count = renames.len())
             }
             Self::Mutation(OperationRequest::Rename {
                 source,
@@ -2500,7 +2599,13 @@ impl Request {
                 .map(|entry| entry.path.clone())
                 .chain(std::iter::once(destination.clone()))
                 .collect(),
-            Self::Mutation(OperationRequest::CreateFolder { path }) => vec![path.clone()],
+            Self::Mutation(
+                OperationRequest::CreateFolder { path } | OperationRequest::CreateFile { path, .. },
+            ) => vec![path.clone()],
+            Self::Mutation(OperationRequest::RenameBatch { renames }) => renames
+                .iter()
+                .flat_map(|step| [step.source.clone(), step.destination.clone()])
+                .collect(),
             Self::Mutation(OperationRequest::Rename {
                 source,
                 destination,

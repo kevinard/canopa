@@ -23,6 +23,10 @@ Shell and Notify retain their established ownership and lifetimes.
 - A Permanent Deletion is a confirmed, non-undoable Operation that removes a
   selection or Trash items through the same queue. Empty Trash is one over the
   listed Trash items.
+- A New Document is a copy of a Templates file, or an empty file, under a new
+  name. It is journalled as a copied item, so Undo removes it only unchanged.
+- A Bulk Rename renames several items of one folder by one rule, as one
+  Operation whose steps are ordinary Rename claims and whose Undo is one entry.
 - An Archive Job compresses a selection or extracts an archive through the same
   queue. It publishes one new item under a free name and is neither undone nor
   resumed; an interrupted one only has its own partial result removed.
@@ -68,6 +72,7 @@ See [the product brief](../../.scratch/file-manager/PRD.md),
 
 ## Decision index
 
+- [Open in terminal, new documents and bulk Rename](adr/0173-terminal-new-documents-and-bulk-rename.md).
 - [Compressed archives: create and extract](adr/0172-compressed-archives.md).
 - [Menus, tabs, views and secondary windows](adr/0171-menus-tabs-views-and-secondary-windows.md).
 - [Network locations, phones and cameras through GVFS](adr/0168-network-locations-through-gvfs.md).

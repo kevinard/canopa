@@ -34,6 +34,8 @@ pub(super) enum Launch {
     Url(String),
     Program(PathBuf),
     Terminal(PathBuf),
+    /// The user's terminal, opened in this folder.
+    TerminalAt(PathBuf),
     /// GIO's own choice, for files opened outside browser windows.
     Default(PathBuf),
 }
@@ -283,6 +285,12 @@ fn execute(launch: &Launch, token: Option<&str>) -> Result<(), String> {
                     error = error.to_string()
                 )
             })
+        }
+        Launch::TerminalAt(folder) => {
+            let command = opening::open_terminal(folder, token)
+                .ok_or_else(|| fl!("files-open-terminal-missing"))?;
+            opening::spawn(command, false)
+                .map_err(|error| fl!("files-open-terminal-failed", error = error.to_string()))
         }
         Launch::Default(path) => {
             let mut command = std::process::Command::new("gio");

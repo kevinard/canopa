@@ -362,6 +362,15 @@ impl ObservedSources {
         Self::capture_entries(&[source.to_owned()], 0, &parents)
     }
 
+    /// Bulk Rename observes every selected entry and their shared folder.
+    pub(crate) fn capture_rename_batch(sources: &[PathBuf]) -> io::Result<Self> {
+        let parent = sources
+            .first()
+            .and_then(|source| source.parent())
+            .ok_or_else(|| invalid("Rename needs its selected items' folder"))?;
+        Self::capture_entries(sources, 0, &[parent])
+    }
+
     /// The previous opaque selection stays alive throughout preparation. Credit
     /// is limited to its actual reservation; clones cannot multiply that credit.
     pub(crate) fn capture_replacing(paths: &[PathBuf], previous: &Self) -> io::Result<Self> {

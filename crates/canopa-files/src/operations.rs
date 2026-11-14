@@ -16,9 +16,11 @@ mod fingerprint;
 mod history_lock;
 mod prepared_copy;
 pub use execution::RequestEffects;
+mod created_file;
 mod interrupted;
 mod recovery;
 mod rename;
+pub mod rename_batch;
 #[cfg(test)]
 mod rename_boundary;
 mod replacement;
@@ -71,6 +73,17 @@ pub enum OperationRequest {
         source: PathBuf,
         #[serde(with = "crate::path_serde")]
         destination: PathBuf,
+    },
+    /// A new document: a copy of `template`, or an empty file without one.
+    CreateFile {
+        #[serde(with = "crate::path_serde")]
+        path: PathBuf,
+        #[serde(default, with = "crate::path_serde::optional")]
+        template: Option<PathBuf>,
+    },
+    /// Rename several items of one folder as one undoable operation.
+    RenameBatch {
+        renames: Vec<rename_batch::BatchRename>,
     },
 }
 #[derive(Clone, Debug)]
@@ -723,6 +736,39 @@ impl OperationEngine {
         execution: Option<&requests::RequestRecord>,
         observed: Option<&transfer::ObservedSources>,
     ) -> io::Result<execution::MutationOutcome> {
+        let request = match request {
+            OperationRequest::CreateFile { path, template } => {
+                return self.create_file(&path, template.as_deref(), cancellation);
+            }
+            OperationRequest::RenameBatch { renames } => {
+                let outcome = self.rename_batch_observed(&renames, cancellation, observed)?;
+                if let Some(error) = outcome.interrupted {
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, error));
+                }
+                if outcome.cancelled && outcome.renamed.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "operation cancelled",
+                    ));
+                }
+                if let (None, Some((_, error))) = (outcome.id, outcome.failures.first()) {
+                    return Err(io::Error::other(error.clone()));
+                }
+                return Ok(execution::MutationOutcome {
+                    summary: OperationSummary {
+                        id: outcome.id.unwrap_or(0),
+                        label: format!(
+                            "rename {} {}",
+                            renames.len(),
+                            if renames.len() == 1 { "item" } else { "items" }
+                        ),
+                        paths: outcome.renamed,
+                    },
+                    confirmation: None,
+                });
+            }
+            request => request,
+        };
         check_cancel(cancellation)?;
         let mut state = self
             .state
@@ -792,6 +838,9 @@ impl OperationEngine {
                     reviewed: None,
                 };
                 (label, change, None)
+            }
+            OperationRequest::CreateFile { .. } | OperationRequest::RenameBatch { .. } => {
+                unreachable!("handled before the history lock")
             }
         };
         validate_change(&change)?;

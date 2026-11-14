@@ -8,6 +8,7 @@ pub mod activation;
 pub mod application;
 pub mod archives;
 pub mod browse;
+pub mod bulk_rename;
 pub mod configuration;
 #[cfg(feature = "desktop")]
 #[path = "iced_desktop/mod.rs"]
@@ -50,6 +51,7 @@ pub mod search;
 mod state_io;
 pub mod storage;
 mod syntax;
+pub mod templates;
 #[cfg(feature = "desktop")]
 pub mod thumbnails;
 mod time_serde;

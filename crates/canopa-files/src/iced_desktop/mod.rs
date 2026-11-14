@@ -8,6 +8,7 @@ mod actions_ui;
 mod activation_ui;
 #[cfg(test)]
 mod archive_tests;
+mod bulk_rename_ui;
 mod catalog_notices;
 mod chrome;
 mod clipboard_ui;
@@ -36,6 +37,8 @@ mod listing_ui;
 mod loading;
 mod media_ui;
 mod name_dialog;
+#[cfg(test)]
+mod naming_tests;
 #[cfg(test)]
 mod network_tests;
 mod network_ui;
@@ -1858,6 +1861,12 @@ impl Desktop {
             Command::NewFolder => return self.show_name_dialog(id, false),
             Command::Properties => return self.properties_command(id),
             Command::Rename => return self.show_name_dialog(id, true),
+            Command::OpenTerminal => {
+                let Some(folder) = self.active(id).map(|tab| tab.path().to_owned()) else {
+                    return Task::none();
+                };
+                return self.launch(id, open_with_ui::Launch::TerminalAt(folder));
+            }
             Command::Undo => {
                 if !self.file_operations.ready() || self.file_operations.has_active() {
                     return self.show_operations();

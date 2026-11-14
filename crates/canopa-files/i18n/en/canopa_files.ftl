@@ -19,6 +19,7 @@ files-command-refresh = Refresh
 files-command-show-hidden = Show hidden files
 files-command-select-all = Select all
 files-command-new-folder = New folder
+files-command-open-terminal = Open in terminal
 files-command-rename = Rename
 files-command-trash = Move to Trash
 files-command-delete-permanently = Delete permanently
@@ -71,6 +72,8 @@ files-preferences-icon-pixels = { $pixels } px
 
 # Caption beside the toolbar's search icon.
 files-toolbar-search = Search
+# The toolbar caption of Open in terminal.
+files-toolbar-terminal = Terminal
 # The toolbar's overflow menu button.
 files-toolbar-actions = Actions
 # Narrow windows: the button that opens the sidebar's places as a menu.
@@ -310,6 +313,10 @@ files-menu-duplicate-tab = Duplicate tab
 files-menu-close-other-tabs = Close other tabs
 files-menu-new-folder = New folder…
 files-menu-new-folder-short = New folder
+files-menu-new-document = New document
+# The New document menu's first item, and the name it proposes.
+files-menu-new-document-empty = Empty document
+files-menu-templates-folder = Open Templates folder
 files-menu-rename = Rename…
 files-menu-delete-permanently = Delete permanently…
 files-menu-compress = Compress…
@@ -382,6 +389,12 @@ files-new-folder-name = New folder
 files-create = Create
 files-name-full-name = Full name
 files-name-folder-name = Folder name
+files-new-document-title = New document
+# The name an empty document starts with.
+files-new-document-name = New document
+files-name-document-name = Document name
+files-name-taken = An item with this name is already in this folder.
+files-open-terminal-failed = Could not open a terminal: { $error }
 files-name-invalid = Enter one name, without a slash. The names . and .. are reserved.
 files-name-dialog-failed = Could not open the name dialog.
 files-rename-worker-stopped = The operation worker stopped before preparing Rename.
@@ -517,6 +530,15 @@ files-jobs-drag-cancelled-removal = Drag preparation cancelled while waiting for
 files-jobs-close-worker-busy = Finish or cancel active work, resume or abandon stopped transfers, and save every result before closing the operation worker.
 files-jobs-needs-reconciliation = An operation needs reconciliation before more changes.
 files-jobs-kept-in-recovery = Entry kept in Recovery. The interrupted work is preserved; recover a copy when needed.
+# A finished bulk rename. $renamed of $total items got their new name; $failed
+# kept theirs, the first being $name, for the reason $error.
+files-jobs-rename-batch-done = { $count ->
+    [one] Renamed { $count } item.
+   *[other] Renamed { $count } items.
+}
+files-jobs-rename-batch-partial = Renamed { $renamed } of { $total } items. { $failed } kept their name; { $name }: { $error }
+files-jobs-rename-batch-stopped = Renamed { $renamed } of { $total } items before stopping.
+files-jobs-rename-batch-failed = { $name } could not be renamed: { $error }
 files-jobs-retry-interrupted = Retry interrupted operation
 files-jobs-journals-rechecked = Interrupted operation journals rechecked.
 files-jobs-worker-stopped = The operation worker stopped unexpectedly
@@ -540,6 +562,11 @@ files-job-keep-in-recovery = Keep { $name } in Recovery
 files-job-recover = Recover { $name }
 files-job-create-folder = Create folder { $name }
 files-job-rename = Rename { $source } to { $destination }
+files-job-create-file = Create document { $name }
+files-job-rename-batch = { $count ->
+    [one] Rename { $count } item
+   *[other] Rename { $count } items
+}
 files-job-restore = Restore { $name }
 files-job-trash = { $count ->
     [one] Move { $count } item to Trash
@@ -608,6 +635,44 @@ files-extract-archives = { $count ->
    *[other] { $count } archives
 }
 files-extract-folder-invalid = Enter a folder to extract to.
+# The Rename dialog for several items. $count is the number of items.
+files-rename-batch-title = { $count ->
+    [one] Rename { $count } item
+   *[other] Rename { $count } items
+}
+files-rename-batch-mode-replace = Replace text
+files-rename-batch-mode-add = Add text
+files-rename-batch-mode-number = Number
+files-rename-batch-find = Find
+files-rename-batch-replace-with = Replace with
+files-rename-batch-prefix = Before the name
+files-rename-batch-suffix = After the name
+# Numbered names are this text followed by a number.
+files-rename-batch-base = Name
+files-rename-batch-start = Start at
+files-rename-batch-start-invalid = Enter a whole number to start at.
+files-rename-batch-hint = Extensions are kept. Items are numbered in the order shown.
+files-rename-batch-preview = Preview
+# Shown beside a new name that cannot be used.
+files-rename-batch-invalid = Not a valid name
+files-rename-batch-duplicate = Same name as another item
+files-rename-batch-exists = Name already used in this folder
+files-rename-batch-swap = Names swap; rename in two steps
+# $changes items get a new name, $problems cannot.
+files-rename-batch-summary = { $changes ->
+    [one] { $changes } item renamed
+   *[other] { $changes } items renamed
+}
+files-rename-batch-problems = { $problems ->
+    [one] { $problems } name to fix
+   *[other] { $problems } names to fix
+}
+files-rename-batch-nothing = No name changes yet
+# Below the preview when it lists only some items.
+files-rename-batch-more = { $count ->
+    [one] and { $count } more item
+   *[other] and { $count } more items
+}
 files-job-copy = { $count ->
     [one] Copy { $count } item to { $destination }
    *[other] Copy { $count } items to { $destination }
@@ -631,6 +696,11 @@ files-history-restore-permissions = Restore folder permissions
 files-history-kept-undo-folder = Kept interrupted Undo work folder
 files-history-create-folder = create folder { $name }
 files-history-rename = rename { $source } to { $destination }
+files-history-create-file = create file { $name }
+files-history-rename-batch = { $count ->
+    [one] rename { $count } item
+   *[other] rename { $count } items
+}
 files-history-copy = copy to { $destination }
 files-history-move = move to { $destination }
 files-history-trash = { $count ->
@@ -670,6 +740,7 @@ files-history-empty-description = File changes made in Files will appear here.
 files-history-moved-to-trash = Moved to Trash
 files-history-renamed = Renamed
 files-history-created-folder = Created folder
+files-history-created-document = Created document
 files-details = Details
 files-retry-save = Retry Save
 files-retry-failed-items = Retry failed items

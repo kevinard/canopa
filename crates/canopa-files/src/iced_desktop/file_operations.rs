@@ -98,6 +98,8 @@ pub(super) enum Event {
     NameCancel(window::Id),
     NameFormat(window::Id, crate::archives::Format),
     NameBrowse(window::Id, super::destination_browser::Event),
+    BatchMode(window::Id, super::bulk_rename_ui::Mode),
+    BatchField(window::Id, super::bulk_rename_ui::Field, String),
     Undo(window::Id, u64),
     Cancel(u64),
     RetrySave(u64),
@@ -624,6 +626,8 @@ impl Desktop {
             Event::NameCancel(id) => return self.close_name_dialog(id, false),
             Event::NameFormat(id, format) => self.name_format(id, format),
             Event::NameBrowse(id, event) => return self.name_browse(id, event),
+            Event::BatchMode(id, mode) => return self.batch_mode(id, mode),
+            Event::BatchField(id, field, value) => self.batch_field(id, field, value),
             Event::Undo(owner, expected) => {
                 if self.file_operations.ready() {
                     return self.submit_file_operation(

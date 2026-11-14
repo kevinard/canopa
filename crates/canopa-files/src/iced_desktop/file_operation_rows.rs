@@ -171,10 +171,17 @@ pub(super) fn rows(
     let mut history = column![].spacing(0);
     let today = chrono::Local::now().date_naive();
     for (index, job) in page.into_iter().enumerate() {
-        let renamed = job.title.strip_prefix("rename ");
+        // A single rename always names both items; "rename 12 items" is a batch.
+        let renamed = job
+            .title
+            .strip_prefix("rename ")
+            .filter(|names| names.contains(" to "));
         let created = job.title.strip_prefix("create folder ");
-        let icon = if renamed.is_some() {
+        let document = job.title.strip_prefix("create file ");
+        let icon = if renamed.is_some() || job.title.starts_with("rename ") {
             chrome::Icon::Edit
+        } else if document.is_some() {
+            chrome::Icon::Plus
         } else if created.is_some() {
             chrome::Icon::Folder
         } else if job.trash.is_some() || job.delete.is_some() {
@@ -224,6 +231,9 @@ pub(super) fn rows(
         } else if let Some(name) = created {
             title = fl!("files-history-created-folder");
             subtitle = Some(name.to_owned());
+        } else if let Some(name) = document {
+            title = fl!("files-history-created-document");
+            subtitle = Some(name.to_owned());
         }
         let mut description = vec![phase_label(job)];
         description.extend(subtitle.clone());
@@ -234,7 +244,13 @@ pub(super) fn rows(
             .description(description.join(", "))
             .position(index + 1, count);
         let location = folder
-            .filter(|_| renamed.is_some() || created.is_some() || moved_to_trash)
+            .filter(|_| {
+                renamed.is_some()
+                    || created.is_some()
+                    || document.is_some()
+                    || job.title.starts_with("rename ")
+                    || moved_to_trash
+            })
             .map(|path| super::question_dialog::display_location(&desktop.home, path));
         let muted = Some(chrome::ink(appearance, ColorRole::Muted));
         let mut labels =

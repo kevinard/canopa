@@ -73,6 +73,17 @@ impl Execution<'_> {
         )
     }
 
+    /// Each step requires its originally observed entry and folder.
+    pub(crate) fn rename_batch(
+        &self,
+        renames: &[super::rename_batch::BatchRename],
+        observed: &transfer::ObservedSources,
+        cancellation: &Cancellation,
+    ) -> io::Result<super::rename_batch::BatchRenameOutcome> {
+        self.engine
+            .rename_batch_observed(renames, cancellation, Some(observed))
+    }
+
     pub(crate) fn transfer(
         &self,
         observed: &transfer::ObservedTransfer,

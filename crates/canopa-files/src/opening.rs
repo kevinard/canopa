@@ -203,6 +203,23 @@ pub fn run_in_terminal(path: &Path, token: Option<&str>) -> Option<Command> {
     Some(detached(command, token))
 }
 
+/// `xdg-terminal-exec --dir=FOLDER`: the user's terminal, opened in `folder`.
+/// The working directory is set too, for terminals whose entry lacks `--dir`.
+/// `None` without the launcher.
+pub fn open_terminal(folder: &Path, token: Option<&str>) -> Option<Command> {
+    let terminal =
+        canopa_apps::find_program("xdg-terminal-exec", &canopa_apps::process_search_path())?;
+    Some(terminal_in(terminal, folder, token))
+}
+
+fn terminal_in(terminal: PathBuf, folder: &Path, token: Option<&str>) -> Command {
+    let mut command = Command::new(terminal);
+    let mut dir = OsString::from("--dir=");
+    dir.push(folder);
+    command.arg(dir).current_dir(folder);
+    detached(command, token)
+}
+
 /// Start a command built here. Short-lived launchers (`gio`) are awaited and a
 /// failure reports their first diagnostic line; anything else is reaped on a
 /// thread so it outlives this call without becoming a zombie.
@@ -253,6 +270,22 @@ mod tests {
         unix_permissions: true,
         noexec: false,
     };
+
+    #[test]
+    fn a_terminal_opens_in_the_folder_with_its_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let folder = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9"));
+        let command = terminal_in("/usr/bin/xdg-terminal-exec".into(), folder, Some("token"));
+        let arguments: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            arguments,
+            [std::ffi::OsStr::from_bytes(b"--dir=/tmp/caf\xe9")]
+        );
+        assert_eq!(command.get_current_dir(), Some(folder));
+        assert!(command.get_envs().any(|(name, value)| {
+            name == "XDG_ACTIVATION_TOKEN" && value == Some(std::ffi::OsStr::new("token"))
+        }));
+    }
 
     fn file(path: &Path, body: &[u8], mode: u32) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

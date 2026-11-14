@@ -58,6 +58,7 @@ pub(super) fn command_icon(command: Command) -> Option<(Icon, String)> {
         Command::Parent => (Icon::Up, String::new()),
         Command::Search => (Icon::Search, fl!("files-toolbar-search")),
         Command::NewFolder => (Icon::NewFolder, fl!("files-menu-new-folder-short")),
+        Command::OpenTerminal => (Icon::Terminal, fl!("files-toolbar-terminal")),
         Command::Columns => (Icon::Columns, String::new()),
         Command::List => (Icon::List, String::new()),
         Command::Icons => (Icon::Grid, String::new()),
@@ -149,7 +150,14 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
         }
         Command::Paste => desktop.file_operations.ready() && desktop.file_clipboard.can_paste(),
         Command::Recovery => desktop.file_operations.service.is_some(),
-        Command::Rename => desktop.file_operations.ready() && browser.selected().len() == 1,
+        Command::Rename => {
+            desktop.file_operations.ready()
+                && (browser.selected().len() == 1
+                    || super::name_dialog::batch_folder(
+                        &browser.selected().iter().cloned().collect::<Vec<_>>(),
+                    )
+                    .is_some())
+        }
         Command::Undo => {
             desktop.file_operations.ready()
                 && !desktop.file_operations.has_active()
@@ -178,6 +186,7 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
         | Command::ShowHidden
         | Command::SelectAll
         | Command::NewWindow
+        | Command::OpenTerminal
         | Command::NewTab
         | Command::CustomActions
         | Command::Preferences

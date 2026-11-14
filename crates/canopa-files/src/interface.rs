@@ -39,6 +39,7 @@ commands! {
     ShowHidden => ("show-hidden", "files-command-show-hidden", "view-reveal-symbolic", ["<Control>h"]),
     SelectAll => ("select-all", "files-command-select-all", "edit-select-all-symbolic", ["<Control>a"]),
     NewFolder => ("new-folder", "files-command-new-folder", "folder-new-symbolic", ["<Control><Shift>n"]),
+    OpenTerminal => ("open-terminal", "files-command-open-terminal", "utilities-terminal-symbolic", []),
     Rename => ("rename", "files-command-rename", "document-edit-symbolic", ["F2"]),
     Trash => ("trash", "files-command-trash", "user-trash-symbolic", ["Delete"]),
     DeletePermanently => ("delete-permanently", "files-command-delete-permanently", "edit-delete-symbolic", ["<Shift>Delete"]),

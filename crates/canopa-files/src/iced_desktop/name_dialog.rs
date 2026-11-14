@@ -23,6 +23,10 @@ pub(super) struct Dialog {
     /// Set for Compress, whose value is the archive's name without its suffix,
     /// and for Extract to, whose value is the destination folder.
     pub archive: Option<Archive>,
+    /// Set for New document: the template it copies, none for an empty one.
+    pub document: Option<Option<PathBuf>>,
+    /// Set for Rename of several items, which has its own fields and preview.
+    pub batch: Option<Box<super::bulk_rename_ui::Batch>>,
 }
 
 pub(super) enum Archive {
@@ -38,6 +42,12 @@ pub(super) enum Archive {
 
 impl Dialog {
     pub fn title(&self) -> String {
+        if let Some(batch) = &self.batch {
+            return fl!("files-rename-batch-title", count = batch.len());
+        }
+        if self.document.is_some() {
+            return fl!("files-new-document-title");
+        }
         match &self.archive {
             Some(Archive::Compress { .. }) => fl!("files-compress-title"),
             Some(Archive::Extract { browser, .. }) if browser.open() => {
@@ -50,7 +60,7 @@ impl Dialog {
     }
 }
 
-fn control(window: window::Id, name: &'static str) -> iced::widget::Id {
+pub(super) fn control(window: window::Id, name: &'static str) -> iced::widget::Id {
     iced::widget::Id::from(format!("files-name-{window:?}-{name}"))
 }
 
@@ -69,6 +79,9 @@ impl Desktop {
             return Task::none();
         }
         if rename {
+            if origin.selected.len() > 1 {
+                return self.open_batch_dialog(origin);
+            }
             if origin.selected.len() != 1 {
                 return Task::none();
             }
@@ -97,6 +110,95 @@ impl Desktop {
             return Task::none();
         }
         self.open_name_dialog(origin, None)
+    }
+
+    /// A new document in the shown folder: a copy of `template`, or empty.
+    /// The name proposed is the template's, numbered when it is taken.
+    pub(super) fn show_document_dialog(
+        &mut self,
+        owner: window::Id,
+        template: Option<crate::templates::Template>,
+    ) -> Task<Message> {
+        if let Some(dialog) = &self.file_operations.name {
+            return window::gain_focus(dialog.window);
+        }
+        if !self.file_operations.ready() {
+            return self.show_operations();
+        }
+        let Some(origin) = Origin::capture(self, owner) else {
+            return Task::none();
+        };
+        let taken = self.listed_names(owner, &origin.directory);
+        let name = template.as_ref().map_or_else(
+            || std::ffi::OsString::from(fl!("files-new-document-name")),
+            |template| template.name.clone(),
+        );
+        let value = crate::templates::free_name(&name, &taken)
+            .to_string_lossy()
+            .into_owned();
+        self.open_dialog(origin, value, (440.0, 226.0), |dialog| {
+            dialog.document = Some(template.map(|template| template.path))
+        })
+    }
+
+    /// The names in `folder` as `owner`'s browser last listed them.
+    pub(super) fn listed_names(
+        &self,
+        owner: window::Id,
+        folder: &Path,
+    ) -> std::collections::BTreeSet<std::ffi::OsString> {
+        let Some(browser) = self.active(owner).and_then(|tab| tab.browser.as_ref()) else {
+            return Default::default();
+        };
+        let directory = browser.directory();
+        let listed = (directory.path == folder || directory.resolved_path == folder)
+            .then_some(directory.entries.iter())
+            .into_iter()
+            .flatten()
+            .chain(browser.visible_entries())
+            .filter(|entry| entry.path.parent() == Some(folder));
+        listed
+            .filter_map(|entry| entry.path.file_name().map(ToOwned::to_owned))
+            .collect()
+    }
+
+    /// Open a dialog window owned by `origin`'s browser, starting with `value`.
+    pub(super) fn open_dialog(
+        &mut self,
+        origin: Arc<Origin>,
+        value: String,
+        (width, height): (f32, f32),
+        configure: impl FnOnce(&mut Dialog),
+    ) -> Task<Message> {
+        let (window, opened) = window::open_transient(
+            origin.window,
+            window::Settings {
+                size: Size::new(width, height),
+                min_size: Some(Size::new(width.min(340.0), height.min(220.0))),
+                exit_on_close_request: false,
+                platform_specific: window::settings::PlatformSpecific {
+                    application_id: "org.canopa.Files".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let mut dialog = Dialog {
+            window,
+            origin,
+            initial: value.clone(),
+            value,
+            original: None,
+            prepared: None,
+            busy: false,
+            error: None,
+            archive: None,
+            document: None,
+            batch: None,
+        };
+        configure(&mut dialog);
+        self.file_operations.name = Some(dialog);
+        opened.map(move |opened| Message::FileOperation(Event::NameOpened(window, opened)))
     }
 
     /// Compress the selection beside it, after choosing a name and format.
@@ -214,31 +316,9 @@ impl Desktop {
             Archive::Compress { .. } => 284.0,
             Archive::Extract { .. } => 236.0,
         };
-        let (window, opened) = window::open_transient(
-            origin.window,
-            window::Settings {
-                size: Size::new(460.0, height),
-                min_size: Some(Size::new(340.0, height)),
-                exit_on_close_request: false,
-                platform_specific: window::settings::PlatformSpecific {
-                    application_id: "org.canopa.Files".into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        );
-        self.file_operations.name = Some(Dialog {
-            window,
-            origin,
-            initial: value.clone(),
-            value,
-            original: None,
-            prepared: None,
-            busy: false,
-            error: None,
-            archive: Some(archive),
-        });
-        opened.map(move |opened| Message::FileOperation(Event::NameOpened(window, opened)))
+        self.open_dialog(origin, value, (460.0, height), |dialog| {
+            dialog.archive = Some(archive)
+        })
     }
 
     pub(super) fn name_format(&mut self, id: window::Id, chosen: Format) {
@@ -342,6 +422,8 @@ impl Desktop {
             busy: false,
             error: None,
             archive: None,
+            document: None,
+            batch: None,
         });
         opened.map(move |opened| Message::FileOperation(Event::NameOpened(window, opened)))
     }
@@ -364,10 +446,25 @@ impl Desktop {
             self.file_operations.error = Some(fl!("files-name-dialog-failed"));
             return Task::none();
         }
+        if let Some(field) = self
+            .file_operations
+            .name
+            .as_ref()
+            .and_then(|dialog| dialog.batch.as_ref())
+            .map(|batch| batch.first_field())
+        {
+            let field = super::bulk_rename_ui::field_id(id, field);
+            return iced::widget::operation::focus(field.clone())
+                .chain(iced::widget::operation::select_all(field))
+                .chain(window::gain_focus(id));
+        }
         // Renaming a file selects its name without the extension, so typing
         // replaces only the part people usually change; folders and new
-        // names select everything.
+        // names select everything. A new document is a file too.
         let stem = self.file_operations.name.as_ref().and_then(|dialog| {
+            if dialog.document.is_some() {
+                return stem_length(&dialog.value);
+            }
             let original = dialog.original.as_ref()?;
             let listed_file = self
                 .active(dialog.origin.window)
@@ -403,6 +500,9 @@ impl Desktop {
         if let Some(choice) = dialog.archive.as_ref().map(archive_choice) {
             return self.submit_archive_dialog(id, choice);
         }
+        if dialog.batch.is_some() {
+            return self.submit_batch_dialog(id);
+        }
         if dialog.original.is_some() && dialog.value == dialog.initial {
             return self.finish_name_dialog(id);
         }
@@ -413,6 +513,20 @@ impl Desktop {
             dialog.error = Some(fl!("files-name-invalid"));
             return Task::none();
         }
+        // A new document never replaces anything; say so before submitting.
+        if dialog.document.is_some() {
+            let (owner, folder) = (dialog.origin.window, dialog.origin.directory.clone());
+            let name = std::ffi::OsString::from(&dialog.value);
+            if self.listed_names(owner, &folder).contains(&name) {
+                if let Some(dialog) = self.file_operations.name.as_mut() {
+                    dialog.error = Some(fl!("files-name-taken"));
+                }
+                return Task::none();
+            }
+        }
+        let Some(dialog) = self.file_operations.name.as_mut() else {
+            return Task::none();
+        };
         let directory = dialog
             .original
             .as_deref()
@@ -443,6 +557,14 @@ impl Desktop {
                     service.submit_rename(prepared.clone(), dialog.value.clone().into())
                 });
             self.await_file_admission(result, submission)
+        } else if let Some(template) = dialog.document.clone() {
+            self.submit_file_operation(
+                Request::Mutation(OperationRequest::CreateFile {
+                    path: destination,
+                    template,
+                }),
+                submission,
+            )
         } else {
             self.submit_file_operation(
                 Request::Mutation(OperationRequest::CreateFolder { path: destination }),
@@ -571,6 +693,9 @@ fn archive_choice(archive: &Archive) -> Choice {
 }
 
 pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message> {
+    if let Some(batch) = &dialog.batch {
+        return super::bulk_rename_ui::view(desktop, dialog, batch);
+    }
     if let Some(Archive::Extract { browser, .. }) = &dialog.archive {
         let id = dialog.window;
         if let Some(view) = browser.view(desktop, id, move |event| {
@@ -679,6 +804,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                 Some(Archive::Compress { .. }) => chrome::Icon::Compress,
                 Some(Archive::Extract { .. }) => chrome::Icon::Extract,
                 None if dialog.original.is_some() => chrome::Icon::Edit,
+                None if dialog.document.is_some() => chrome::Icon::Plus,
                 None => chrome::Icon::Folder,
             },
             chrome::Tone::Accent,
@@ -705,6 +831,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
                         Some(Archive::Compress { .. }) => fl!("files-compress-name"),
                         Some(Archive::Extract { .. }) => fl!("files-destination-folder"),
                         None if dialog.original.is_some() => fl!("files-name-full-name"),
+                        None if dialog.document.is_some() => fl!("files-name-document-name"),
                         None => fl!("files-name-folder-name"),
                     },
                 )
@@ -847,6 +974,13 @@ fn formats<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
     ]
     .spacing(6)
     .into()
+}
+
+/// The folder of a selection that can be renamed together: at least two
+/// items, all in one folder.
+pub(super) fn batch_folder(paths: &[PathBuf]) -> Option<&Path> {
+    let folder = paths.first()?.parent()?;
+    (paths.len() > 1 && paths.iter().all(|path| path.parent() == Some(folder))).then_some(folder)
 }
 
 /// The length in graphemes of `name` before its extension, counting a

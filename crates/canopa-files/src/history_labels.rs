@@ -75,6 +75,9 @@ fn phrase(label: &str) -> Option<String> {
     if let Some(name) = label.strip_prefix("create folder ") {
         return Some(fl!("files-history-create-folder", name = name.to_owned()));
     }
+    if let Some(name) = label.strip_prefix("create file ") {
+        return Some(fl!("files-history-create-file", name = name.to_owned()));
+    }
     if let Some(names) = label.strip_prefix("rename ")
         && let Some((source, destination)) = names.split_once(" to ")
     {
@@ -83,6 +86,17 @@ fn phrase(label: &str) -> Option<String> {
             source = source.to_owned(),
             destination = destination.to_owned()
         ));
+    }
+    // A batch: "rename 12 items". A single rename always has " to ".
+    if let Some(count) = label
+        .strip_prefix("rename ")
+        .and_then(|rest| {
+            rest.strip_suffix(" items")
+                .or_else(|| rest.strip_suffix(" item"))
+        })
+        .and_then(|count| count.parse::<u64>().ok())
+    {
+        return Some(fl!("files-history-rename-batch", count = count));
     }
     if let Some(destination) = label.strip_prefix("copy to ") {
         return Some(fl!(
@@ -133,6 +147,8 @@ mod tests {
         assert_eq!(title("create folder Notes"), "Create folder Notes");
         assert_eq!(display("move 1 item to Trash"), "move 1 item to Trash");
         assert_eq!(display("something new"), "something new");
+        assert_eq!(display("rename 3 items"), "rename 3 items");
+        assert_eq!(title("create file Notes.txt"), "Create file Notes.txt");
     }
 
     #[test]
@@ -154,6 +170,11 @@ mod tests {
         assert_eq!(
             display("Interrupted rename a to b"),
             "Interrompu\u{a0}: renommage de a en b"
+        );
+        assert_eq!(display("rename 3 items"), "renommage de 3 éléments");
+        assert_eq!(
+            display("create file Notes.txt"),
+            "création du fichier Notes.txt"
         );
     }
 }
