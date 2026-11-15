@@ -97,6 +97,27 @@ directory that must not exist yet.
 describes the fixtures, compositor selection and requirements in detail, and
 `python3 scripts/check-desktop-runner.py` checks that a machine has the tools.
 
+Session rendering changes need native runs with the default backend and with
+`ICED_BACKEND=tiny-skia`. Use `verify-greeter.py`, `verify-polkit.py`,
+`verify-pinentry.py`, `verify-session-tools.py` and `verify-wallpaper-followups.py`
+for login, authorization, PIN, lock and picker coverage, each with a fresh output
+directory. The wallpaper followups also authenticate while one monitor stays
+powered off through clock updates, then retire and restore the first lock output;
+run those checks with both renderers. `ICED_BACKEND=wgpu` requests GPU initialization;
+recovery may select software after a setup or presentation failure. Check client
+logs as well as test exit status for `session renderer: wgpu` or
+`session renderer: tiny-skia`; the same line reports the graphics backend and
+adapter. A wgpu run on llvmpipe exercises GPU presentation through a software GPU,
+so it does not establish physical GPU/driver acceptance. The static wallpaper
+daemon must not initialize an Iced renderer.
+
+For the shared presentation development loop, use
+`bash scripts/cargo.sh test --locked -p canopa-session-ui --lib`. Its tests cover
+graphics-constructor panic containment, retry wakeups after an earlier deadline,
+per-output frame gating, retained image/tree identities, text bounds, fingerprint
+typography, RTL clock order and warning placement. These checks complement the
+native authentication and output-lifetime fixtures above.
+
 Private runs share one read-only copy of each Niri executable, stored by SHA-256
 under `target/native-test-snapshots/compositor-by-sha256/`; do not copy
 compositor binaries into every output directory.

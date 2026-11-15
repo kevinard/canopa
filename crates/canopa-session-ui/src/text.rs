@@ -11,22 +11,15 @@ pub(crate) enum Style {
     Centered(Weight),
     /// Starts at the position (its left edge).
     Leading(Weight),
-    /// Ends at the position (its right edge), for right-to-left layouts.
     Trailing(Weight),
-    Code,
-    /// Monospace, ending at the position.
-    CodeTrailing,
 }
 
 impl Style {
-    /// The same style anchored at the opposite edge, for mirrored layouts.
     pub(crate) fn mirrored(self) -> Self {
         match self {
-            Self::Centered(weight) => Self::Centered(weight),
-            Self::Leading(weight) => Self::Trailing(weight),
-            Self::Trailing(weight) => Self::Leading(weight),
-            Self::Code => Self::CodeTrailing,
-            Self::CodeTrailing => Self::Code,
+            Self::Centered(w) => Self::Centered(w),
+            Self::Leading(w) => Self::Trailing(w),
+            Self::Trailing(w) => Self::Leading(w),
         }
     }
 }
@@ -84,6 +77,36 @@ impl Text {
             .map(|r| r.line_w)
             .fold(0., f32::max)
     }
+    pub(crate) fn styled_width(
+        &mut self,
+        text: &str,
+        size: f32,
+        weight: Weight,
+        monospace: bool,
+    ) -> f32 {
+        self.styled_buffer(text, size, weight, monospace)
+            .layout_runs()
+            .map(|run| run.line_w)
+            .fold(0., f32::max)
+    }
+    pub(crate) fn carets(&mut self, text: &str, size: f32, max_width: f32) -> Vec<(usize, f32)> {
+        use unicode_segmentation::UnicodeSegmentation;
+        let width = self.width(text, size);
+        let size = size * (max_width.max(1.) / width.max(1.)).min(1.);
+        let buffer = self.buffer(text, size);
+        text.grapheme_indices(true)
+            .map(|(i, _)| i)
+            .chain(std::iter::once(text.len()))
+            .map(|i| {
+                let x = buffer
+                    .layout_runs()
+                    .next()
+                    .and_then(|run| run.highlight(Cursor::new(0, i), Cursor::new(0, i)))
+                    .map_or(0., |(x, _)| x);
+                (i, x)
+            })
+            .collect()
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -123,8 +146,6 @@ impl Text {
             Style::Centered(weight) => (weight, Anchor::Center, false),
             Style::Leading(weight) => (weight, Anchor::Start, false),
             Style::Trailing(weight) => (weight, Anchor::End, false),
-            Style::Code => (Weight::MEDIUM, Anchor::Start, true),
-            Style::CodeTrailing => (Weight::MEDIUM, Anchor::End, true),
         };
         let mut buffer = self.styled_buffer(text, size, weight, monospace);
         let width = buffer.layout_runs().map(|r| r.line_w).fold(0., f32::max);

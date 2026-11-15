@@ -1,9 +1,9 @@
 //! Software drawing for the shared authentication panel and default session backdrop.
-use crate::{background, layout::Rect};
+use crate::background;
 use canopa_theme::{Appearance, ColorRole, ColorScheme, Rgb};
 use image::RgbImage;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Emblem {
     Canopa,
     Lock,
@@ -30,89 +30,6 @@ pub enum Emblem {
     Eye,
     /// Mask the typed secret again.
     EyeOff,
-}
-
-impl Rect {
-    fn inset(self, amount: f32) -> Self {
-        Self {
-            x: self.x + amount,
-            y: self.y + amount,
-            width: self.width - 2. * amount,
-            height: self.height - 2. * amount,
-        }
-    }
-}
-
-pub(super) fn framed(
-    image: &mut RgbImage,
-    bounds: Rect,
-    radius: f32,
-    stroke: f32,
-    fill: Rgb,
-    border: Rgb,
-) {
-    rounded(image, bounds, radius, border, 1.);
-    rounded(image, bounds.inset(stroke), radius - stroke, fill, 1.);
-}
-
-pub(super) fn rounded(image: &mut RgbImage, r: Rect, radius: f32, color: Rgb, opacity: f32) {
-    paint_distance(image, r, radius, 1., color, |distance| {
-        (0.5 - distance).clamp(0., 1.) * opacity
-    });
-}
-
-/// An anti-aliased disc shaded from `top` to `bottom`.
-pub(super) fn gradient_disc(image: &mut RgbImage, r: Rect, top: Rgb, bottom: Rgb) {
-    let radius = r.width / 2.;
-    let (cx, cy) = (r.x + radius, r.y + r.height / 2.);
-    let y_end = (r.y + r.height).ceil().min(image.height() as f32) as u32;
-    let x_end = (r.x + r.width).ceil().min(image.width() as f32) as u32;
-    for y in r.y.floor().max(0.) as u32..y_end {
-        let t = ((y as f32 + 0.5 - r.y) / r.height).clamp(0., 1.);
-        let color = mix(top, bottom, t);
-        for x in r.x.floor().max(0.) as u32..x_end {
-            let distance = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy) - radius;
-            blend(
-                image.get_pixel_mut(x, y),
-                color,
-                (0.5 - distance).clamp(0., 1.),
-            );
-        }
-    }
-}
-
-pub(super) fn shadow(image: &mut RgbImage, mut r: Rect, radius: f32, scale: f32, strength: f32) {
-    r.y += 4. * scale;
-    let spread = 29. * scale;
-    paint_distance(image, r, radius, spread, Rgb(0, 0, 0), |distance| {
-        (1. - (distance / spread).clamp(0., 1.)).powi(3) * strength
-    });
-}
-
-fn paint_distance(
-    image: &mut RgbImage,
-    r: Rect,
-    radius: f32,
-    spread: f32,
-    color: Rgb,
-    opacity: impl Fn(f32) -> f32,
-) {
-    let radius = radius.clamp(0., (r.width.min(r.height) / 2.).max(0.));
-    let area = r.inset(-spread);
-    let x_end = (area.x + area.width).ceil().min(image.width() as f32) as u32;
-    let y_end = (area.y + area.height).ceil().min(image.height() as f32) as u32;
-    for y in area.y.floor().max(0.) as u32..y_end {
-        for x in area.x.floor().max(0.) as u32..x_end {
-            let dx = (x as f32 + 0.5 - r.x - r.width / 2.).abs() - (r.width / 2. - radius);
-            let dy = (y as f32 + 0.5 - r.y - r.height / 2.).abs() - (r.height / 2. - radius);
-            let distance = if dx > 0. && dy > 0. {
-                dx.hypot(dy)
-            } else {
-                dx.max(dy)
-            } - radius;
-            blend(image.get_pixel_mut(x, y), color, opacity(distance));
-        }
-    }
 }
 
 pub(super) fn blend(target: &mut image::Rgb<u8>, color: Rgb, alpha: f32) {

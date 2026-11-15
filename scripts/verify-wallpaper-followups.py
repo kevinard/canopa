@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Private two-output wallpaper persistence, source events and optional slideshow."""
+"""Private two-output wallpaper/picker and lock sleep, hotplug and authentication checks."""
 import argparse
 import importlib.util
 import json
 import os
+import select
 from pathlib import Path
 import subprocess
 import sys
@@ -133,13 +134,63 @@ def verify(binary,session):
     def ticks():return sum(map(int,Path(f'/proc/{daemon.pid}/stat').read_text().split(') ',1)[1].split()[11:13]))
     before=ticks();time.sleep(2);idle_ticks=ticks()-before;assert idle_ticks<=1,idle_ticks
     stop()
+    verify_lock_outputs(binary,session,keyboard)
     result={'status':'passed','idle_ticks_2s':idle_ticks,'scope':'private Sway outputs, no physical connector/DRM claim',
         'checks':['per-output persistence across restart','private atomic state file','temporary choices stay temporary after another save',
         'atomic image replacement is watched','invalid changed image preserves displayed pixels','image recovery is watched',
         'configuration updates preserve manual overlay','invalid configuration preserves pixels','explicit reload restores configured assignments',
         'output retirement and reappearance','assignment while output absent','optional slideshow starts and advances','invalid slide rollback',
-        'bad slide is skipped on subsequent advance','timer advances slideshow','stop removes timer and retains image across restart','no idle polling CPU ticks','visual all-monitor previews','preview/cancel leaves assignments intact','monitor selector and fit controls','picker applies only to selected monitor','invalid picker image cannot apply','native accessible picker controls']}
+        'bad slide is skipped on subsequent advance','timer advances slideshow','stop removes timer and retains image across restart','no idle polling CPU ticks','visual all-monitor previews','preview/cancel leaves assignments intact','monitor selector and fit controls','picker applies only to selected monitor','invalid picker image cannot apply','native accessible picker controls','PAM and authenticated unlock while another monitor sleeps','second-resolution clock does not stall the active output','lock output retirement and reappearance']}
     (session.output/'summary.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))
+
+def verify_lock_outputs(binary,session,keyboard):
+    root=session.runtime
+    # A sleeping output must not stall input/PAM on the other lock surface.
+    # Reuse the private compositor and mount-isolated PAM fixture; never touch
+    # host authentication policy.
+    locker=binary.with_name('canopa-lock')
+    pam=root/'lock-pam';pam.mkdir()
+    module=root/'lock-pam.so'
+    subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra',str(ROOT/'scripts/desktop-fixture/lock-pam.c'),'-lpam','-o',str(module)],check=True)
+    (pam/'canopa-lock').write_text(f'auth required {module}\naccount required {module}\n')
+    lock_config=root/'lock.kdl'
+    lock_config.write_text('schema-version 1\nlockscreen { widgets; clock-format "%H:%M:%S"; }\n')
+    prefix=['bwrap','--ro-bind','/','/','--dev','/dev','--ro-bind',str(pam),'/etc/pam.d','--die-with-parent']
+    session.run(['swaymsg','focus','output','HEADLESS-1'])
+    def start_lock(label):
+        read_fd,write_fd=os.pipe()
+        with (session.output/(label+'.log')).open('w') as stream:
+            process=subprocess.Popen([*prefix,str(locker),'--canopa-config',str(lock_config),'--ready-fd',str(write_fd)],env=session.env,stdout=stream,stderr=stream,pass_fds=(write_fd,),start_new_session=True)
+        session.processes.append(process);os.close(write_fd)
+        try:
+            assert select.select([read_fd],[],[],12)[0], 'two-output lock readiness timeout'
+            assert os.read(read_fd,1)==b'1', (session.output/(label+'.log')).read_text()
+        finally:os.close(read_fd)
+        a11y.request(session,'--window','Canopa Lock','--name','Fixture password:')
+        return process
+    def unlock(process):
+        a11y.request(session,'--window','Canopa Lock','--name','Fixture password:')
+        session.run([str(keyboard),'text','canopa-fixture-password'])
+        assert process.wait(timeout=10)==0
+        session.processes.remove(process)
+    locked=start_lock('lock-output-asleep')
+    session.run(['swaymsg','output','HEADLESS-2','power','off'])
+    time.sleep(2.5)  # Several second-resolution clock updates while off.
+    session.run([str(keyboard),'text','wrong-password'])
+    session.wait_for(lambda:'fixture auth accepted=0' in (session.output/'lock-output-asleep.log').read_text(),'PAM handles input while the other output sleeps')
+    assert locked.poll() is None
+    time.sleep(2.1)
+    session.run([str(keyboard),'key','Return'])
+    unlock(locked)  # Must finish while HEADLESS-2 is still off.
+    session.run(['swaymsg','output','HEADLESS-2','power','on'])
+    session.run(['swaymsg','focus','output','HEADLESS-2'])
+    locked=start_lock('lock-output-retired')
+    session.run(['swaymsg','output','HEADLESS-1','disable'])
+    time.sleep(.5)
+    assert locked.poll() is None
+    session.run(['swaymsg','output','HEADLESS-1','enable'])
+    time.sleep(.75)
+    unlock(locked)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,default=ROOT/'target/debug/canopa-wallpaper');parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)

@@ -153,6 +153,7 @@ impl Controller {
                 && self.phase != Phase::Cancelling =>
             {
                 self.serial = serial;
+                self.ui.mask_response();
                 self.ui.secret.clear();
                 self.prompt = Some(Prompt {
                     id: serial,
@@ -393,6 +394,11 @@ impl Controller {
     }
     pub fn backspace(&mut self) {
         self.edit(canopa_session_ui::secret::Edit::Backspace);
+    }
+    pub fn select_input(&mut self, anchor: usize, cursor: usize) {
+        if self.phase == Phase::Prompt && self.details.is_none() {
+            self.ui.secret.set_selection(anchor, cursor);
+        }
     }
     pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
         if self.phase == Phase::Prompt && self.details.is_none() {

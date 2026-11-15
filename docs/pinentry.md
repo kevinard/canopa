@@ -63,6 +63,10 @@ Opening details clears both passphrase fields. Holding a key does not repeat it.
 
 Inquiries to the agent time out after two seconds.
 
+The dialog uses the shared Iced session controls, with hover feedback,
+release-to-activate buttons, icon tooltips and pointer text selection. See
+[shared authentication input](session-tools.md#shared-authentication-input).
+
 ## Configuration
 
 Optional, in `~/.config/canopa/config.kdl`, read each time gpg-agent starts the

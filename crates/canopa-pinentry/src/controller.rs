@@ -239,6 +239,11 @@ impl Controller {
                 ));
             }
         }
+        for control in &mut self.ui.controls {
+            if control.id == 2 || control.id == 7 || control.id == 8 {
+                control.enabled = !self.checking;
+            }
+        }
         if let Some(quality) = self.quality
             && !self.ui.failed
             && !self.checking
@@ -495,12 +500,22 @@ impl Controller {
         if self.checking {
             return;
         }
+        self.ui.mask_response();
         self.changed();
         self.forget_generation();
         self.ui.secret.clear();
     }
     pub fn backspace(&mut self) {
         self.edit(canopa_session_ui::secret::Edit::Backspace);
+    }
+    pub fn select_input(&mut self, anchor: usize, cursor: usize) {
+        if self.request.kind == Kind::Pin
+            && self.details.is_none()
+            && self.response.is_none()
+            && !self.checking
+        {
+            self.ui.secret.set_selection(anchor, cursor);
+        }
     }
     pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
         if self.request.kind == Kind::Pin

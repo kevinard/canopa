@@ -19,11 +19,34 @@ the git history at commit cb300936 under docs/adr/.
 | `canopa-greeter` | `canopa-greeter` | fullscreen xdg toplevel `org.canopa.Greeter` in Cage or Weston | started by greetd |
 | `canopa-polkit` | `canopa-polkit` | xdg toplevel `org.canopa.Polkit` per request | user service `canopa-polkit.service` |
 | `canopa-pinentry` | `canopa-pinentry` | xdg toplevel `org.canopa.Pinentry` / `org.canopa.Keyring` | started by gpg-agent or the keyring prompter |
-| `canopa-session-ui` | (library) | software presentation for all of the above | — |
+| `canopa-session-ui` | (library) | Iced presentation for the interactive surfaces above | — |
 
-All of them render on the CPU into shared-memory buffers. None uses Iced or creates a
-GPU device, and none has an animation or idle redraw timer. `canopa-session` re-exports
-the presentation modules of `canopa-session-ui` under its old paths.
+The interactive surfaces use Iced widget trees and its standard wgpu compositor,
+with tiny-skia software fallback when GPU initialization is unavailable. Frames
+present directly to their native Wayland surfaces, without CPU readback. Prepared
+backgrounds consume their RGB source and retain one shared RGBA allocation across
+the host and widget tree. Each surface retains its widget tree and bounded
+prepared-image caches; pointer motion schedules drawing only when Iced reports a
+visual change, and native cursor requests occur on enter or a shape change.
+Hosts advance a scene revision after model changes. Renderer wakeups (widget
+redraw requests, timed redraws and failure retries) only repaint the retained
+widget trees; a renderer relayout request rebuilds them once. Clock and weather observations
+invalidate scenes only when their displayed values change; presentation does no
+weather file access or model serialization. Wayland frame callbacks throttle each
+surface independently with renderer vsync waits disabled. Sleeping outputs keep
+pending updates without blocking keyboard/PAM processing on visible outputs.
+Graphics setup and presentation failures retry on a coalesced timer in every
+session client. The pinned renderer's panicking surface constructors are contained
+at the graphics boundary; failed outputs select software independently. A deferred
+output re-arms its retry after an earlier wakeup. Presentation failures leave
+authentication conversations and the compositor's lock intact. The shared compositor retains
+only a display connection, so retired windows and outputs release their roles.
+The wallpaper daemon submits static images directly without initializing Iced
+graphics. Rendering, clock and passive-data updates remain event driven; there is
+no animation frame timer. Public labels strip controls, cap length, fit their
+available width and clip to their bounds. Fingerprints retain monospace hex groups
+and their key-identity caption, and 12-hour clocks mirror part order in RTL.
+`canopa-session` re-exports the presentation modules of `canopa-session-ui` under its old paths.
 
 Source: [`crates/canopa-session/src/`](../../crates/canopa-session/src/),
 [`crates/canopa-session-ui/src/`](../../crates/canopa-session-ui/src/),
@@ -255,14 +278,26 @@ D-Bus activation file.
 `canopa-session-ui` holds everything visual and nothing that authenticates:
 
 - **Rendering**: backgrounds with fit modes and admission limits (`background.rs`),
-  text with cosmic-text shaping, bidirectional layout, font fallback and Swash
-  rasterization (`text.rs`).
+  Iced widgets and the standard compositor in `presentation.rs` and `view/iced.rs`. Each output
+  owns its widget cache and pointer state. Prompt, generation, control or enabled
+  changes invalidate pending presses; output and dialog retirement drop renderer
+  caches, and retiring the last surface releases the compositors and GPU device
+  until the next presentation. Native hosts deliver pointer motion, press, release and scrolling, then
+  dispatch the resulting control IDs to their own controllers.
+- **Secret entry**: a dedicated Iced widget owns only response pixels and
+  grapheme-boundary caret positions. Keyboard editing stays with the controller
+  and protected `Secret` storage. Revealed/echoed responses are shaped in a
+  transient cosmic-text buffer, avoiding ordinary Iced string values, clipboard
+  operations and text-event queues. Pointer selection returns positions for the
+  controller to validate.
 - **Views** (`view/`): three arrangements. *Form* (sign-in and unlock): identity,
   pill field with an inline submit button and an eye control, status lines.
   *Sheet* (choosers, power, password change): a card with a heading. *Dialog*
   (polkit, pinentry): heading, request card and footer actions; dialogs report their
   natural height and the client grows the window when a later step needs room.
   System controls sit as chips in the bottom corners unless a layout region uses them.
+  Buttons use `canopa-ui` treatments, icon controls have tooltips and oversized
+  chooser/sheet content scrolls inside its output instead of shrinking every row.
 - **Layout** (`layout.rs`): the nine-anchor planner, also used by the Settings
   Widgets diagram.
 - **Input** (`input.rs`, `secret.rs`): bounded UTF-8 editing by grapheme with
@@ -295,8 +330,8 @@ wallpaper daemon watches it, polkit reads it at startup.
 ## Design decisions
 
 **Separate small processes for wallpaper and lock.** The wallpaper daemon and the
-locker are independent binaries with software rendering instead of parts of the Shell.
-This keeps memory and wakeups low (no GPU device, no frame timer) and keeps the lock
+locker are independent binaries. Interactive surfaces use Iced’s standard GPU
+renderer with software fallback and redraw on demand. This keeps the lock
 screen's security-relevant code out of the Shell's process. Consequence: shared data
 (battery, media, weather) lives in `canopa-widgets` as toolkit-free models, and the
 lock screen imports no Shell actions.
@@ -383,6 +418,12 @@ inhibition; Stasis's Rune file is the policy source, and `canopa-idle` only supp
 commands and checks that locking is coordinated. The lock listener, not Stasis, owns
 the sleep inhibitor, so restarting Stasis cannot open a window where suspend skips
 the lock.
+
+**Iced widgets inside native session hosts.** The existing SCTK/calloop loops keep
+xdg, layer and ext-session-lock roles. Iced owns layout and widget interaction,
+without replacing lock confirmation, readiness descriptors, logind coordination
+or authentication worker lifetimes. Ordinary window-close operations never become
+unlock actions. See [ADR 0150](../adr/0150-iced-session-presentation.md).
 
 **Shared presentation, separate state machines.** `canopa-session-ui` owns rendering,
 input editing, secure buffers and accessibility for all four authentication surfaces;

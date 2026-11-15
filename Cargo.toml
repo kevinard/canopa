@@ -89,6 +89,9 @@ iced = { version = "0.14", default-features = false, features = [
 ] }
 iced_layershell = { version = "0.19.1", default-features = false }
 iced_runtime = "0.14"
+iced_renderer = { version = "0.14", default-features = false }
+iced_tiny_skia = { version = "0.14", default-features = false, features = ["image", "wayland"] }
+tiny-skia = "0.11"
 image = { version = "0.25.10", default-features = false, features = [
   "png",
   "jpeg",

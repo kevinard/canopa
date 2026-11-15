@@ -5,6 +5,8 @@ use xkbcommon::xkb::{self, Keysym};
 pub const LAYOUT_CONTROL: usize = usize::MAX - 1;
 /// Shows or masks the current secret response (`SessionView::toggle_reveal`).
 pub const REVEAL_CONTROL: usize = usize::MAX - 5;
+/// The response field's presentation bounds; activation stays with its widget.
+pub const INPUT_CONTROL: usize = usize::MAX - 6;
 #[derive(Default)]
 pub struct Keyboard {
     state: Option<xkb::State>,

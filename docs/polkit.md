@@ -66,6 +66,10 @@ One request is handled at a time; overlapping requests are refused. Cancelling,
 timing out or logging out cancels the request. If the native library hangs while
 cancelling, a watchdog ends the agent and systemd restarts it.
 
+The dialog uses the shared Iced session controls, with hover feedback,
+release-to-activate buttons, icon tooltips and pointer text selection. See
+[shared authentication input](session-tools.md#shared-authentication-input).
+
 ## Configuration
 
 The agent reads the shared `appearance` and a `polkit` block from

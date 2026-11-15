@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import native_accessibility as a11y
 from PIL import Image
 
 sys.dont_write_bytecode = True
@@ -26,6 +27,7 @@ spec.loader.exec_module(desktop)
 def verify(binary, session):
     name = session.start_niri('prefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\n'
                               'hotkey-overlay { skip-at-startup; }\nlayout { gaps 0; }\n')
+    a11y.start(session)
     wallpaper = binary / 'canopa-wallpaper'
     locker = binary / 'canopa-lock'
     red, blue = session.runtime / 'red.png', session.runtime / 'blue.png'
@@ -112,6 +114,9 @@ def verify(binary, session):
         return process
 
     def type_password(password):
+        # A retry starts PAM asynchronously. Wait for its actual input field;
+        # a fixed delay can type before the prompt exists on software renderers.
+        a11y.request(session, '--window', 'Canopa Lock', '--name', 'Fixture password:')
         session.run(['wtype','-d','15',password,'-k','Return'])
 
     def retry():
@@ -121,6 +126,13 @@ def verify(binary, session):
     config.write_text(f'schema-version 1\nwallpaper {{ image "{blue}"; }}\n'
                       f'lockscreen {{ image "{session.runtime / "missing-lock.png"}"; widgets; }}\n')
     locked=start_lock('lock.log')
+    # Reconfigure an active lock surface, then authenticate through the resized
+    # presentation. This covers native graphics surface reconfiguration as well
+    # as wallpaper scaling before locking.
+    for scale in ['1.25', '1']:
+        session.run(['niri','msg','output',name,'scale',scale])
+        time.sleep(.75)
+        assert locked.poll() is None, (session.output/'lock.log').read_text()
     config.write_text(f'schema-version 1\nwallpaper {{ image "{blue}"; }}\nlockscreen {{ widgets; }}\n')
     # A second lock is refused; the original remains responsible for authentication.
     second=subprocess.run([*prefix,str(locker),'--defaults'],env=session.env,capture_output=True,text=True,timeout=10)
@@ -154,7 +166,7 @@ def verify(binary, session):
     # Tear down only this private desktop; no recovery on the live session is needed.
     summary={'status':'passed','wallpaper_pid':daemon.pid,'wallpaper_idle_ticks_2s':idle_ticks,
              'wallpaper_rss':rss,'checks':['live selected/all image replacement','invalid images/reload retain state',
-             'duplicate-daemon exclusion','fractional scale','idle resource use','protocol readiness',
+             'duplicate-daemon exclusion','fractional scale','lock surface scale changes','idle resource use','protocol readiness',
              'duplicate-lock refusal','missing lock wallpaper still locks','wrong password stays locked','Escape stays locked','account rejection stays locked',
              'PAM success unlocks','locker death hides the desktop','replacement locker still requires PAM authentication']}
     (session.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')

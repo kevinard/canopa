@@ -248,6 +248,7 @@ impl Controller {
     }
     pub fn refresh(&mut self, config: &Config) {
         use crate::power::{Action, Menu};
+        self.ui.interaction_epoch = (self.generation, 0);
         self.ui.hide_input = self.power_menu != Menu::Closed || self.chooser.is_some();
         self.ui.primary_control = (!self.ui.hide_input && !self.ui.busy).then_some(3);
         let panel = self
@@ -417,6 +418,11 @@ impl Controller {
                 },
             ),
         ];
+        for control in &mut self.ui.controls {
+            if control.id == 3 {
+                control.enabled = matches!(self.phase, Phase::User | Phase::Prompt | Phase::Failed);
+            }
+        }
         if self.phase == Phase::User && self.accounts.is_empty() {
             self.ui.controls.retain(|control| control.id != 1);
         }
@@ -828,6 +834,18 @@ impl Controller {
     pub fn backspace(&mut self) {
         self.edit(canopa_session_ui::secret::Edit::Backspace);
     }
+    pub fn select_input(&mut self, anchor: usize, cursor: usize) {
+        if matches!(self.phase, Phase::User | Phase::Prompt)
+            && !self.ui.hide_input
+            && self.ui.secret.set_selection(anchor, cursor)
+        {
+            self.automatic = false;
+            if self.phase == Phase::User {
+                self.user_edited = true;
+                self.typing = true;
+            }
+        }
+    }
     pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
         self.automatic = false;
         if matches!(self.phase, Phase::User | Phase::Prompt) {
@@ -853,6 +871,7 @@ impl Controller {
         let starting = std::mem::take(&mut self.starting);
         match event.kind {
             Kind::Prompt { text, echo } if self.phase == Phase::Waiting => {
+                self.ui.mask_response();
                 self.ui.secret.clear();
                 self.ui.prompt = Some(Prompt {
                     id: event.generation,
@@ -1402,6 +1421,20 @@ mod tests {
             &config,
         );
         c.input("secret");
+        assert!(c.ui.toggle_reveal());
+        assert!(c.ui.revealed());
+        c.submit();
+        c.event(
+            Event {
+                generation: first,
+                kind: Kind::Prompt {
+                    text: "Password".into(),
+                    echo: false,
+                },
+            },
+            &config,
+        );
+        assert!(!c.ui.revealed(), "a reused prompt ID must start masked");
         c.submit();
         c.event(
             Event {

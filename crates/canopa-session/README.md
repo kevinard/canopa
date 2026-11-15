@@ -9,7 +9,9 @@ Three programs that run alongside the Canopa desktop:
 - `canopa-idle`: supervisor for the external Stasis idle daemon, coordinated with the
   lock listener before sleep.
 
-They render in software, without Iced or a GPU device. The `canopa wallpaper`,
+The lock screen and picker use Iced’s standard wgpu compositor with a tiny-skia
+software fallback. Rendering remains event driven.
+The wallpaper daemon submits prepared images directly. The `canopa wallpaper`,
 `canopa lock` and `canopa idle` commands forward to them. Presentation is shared with
 the login screen, polkit agent and pinentry through `canopa-session-ui`.
 

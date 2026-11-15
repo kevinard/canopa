@@ -39,6 +39,7 @@ pub struct Controller {
     pub ready: bool,
     inputs: Vec<PathBuf>,
     preview: Option<Preview>,
+    presentation_background: Option<canopa_session_ui::presentation::Background>,
 }
 impl Controller {
     pub fn new(
@@ -115,6 +116,7 @@ impl Controller {
             ready: false,
             inputs,
             preview: None,
+            presentation_background: None,
         };
         value.refresh();
         Ok(value)
@@ -164,6 +166,7 @@ impl Controller {
             ),
         ];
         for control in &mut self.ui.controls {
+            control.enabled = control.id != 0 || (self.ready && !self.applying);
             if control.id == self.focused {
                 control.selected = true;
             }
@@ -246,6 +249,7 @@ impl Controller {
     }
     pub fn request_preview(&mut self) -> Spec {
         self.preview = None;
+        self.presentation_background = None;
         self.generation = self.generation.wrapping_add(1);
         self.ready = false;
         self.ui.failed = false;
@@ -270,6 +274,7 @@ impl Controller {
         if generation != self.generation {
             return;
         }
+        self.presentation_background = None;
         self.ready = preview.is_ok();
         self.ui.failed = !self.ready;
         match preview {
@@ -279,6 +284,7 @@ impl Controller {
             }
             Err(_) => {
                 self.preview = None;
+                self.presentation_background = None;
                 self.ui.message = fl!("wallpaper-preview-failed");
             }
         }
@@ -298,12 +304,20 @@ impl Controller {
         let scale = (width as f32 / 800.)
             .min(height as f32 / 800.)
             .clamp(0.2, 4.);
-        let color = self.settings.color;
-        let (mut image, hits) = self.ui.render_at_scale(
+        self.ui.render_at_scale(
             &self.settings,
-            RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2])),
+            self.preview_background(width, height)?,
             scale,
-        )?;
+        )
+    }
+    fn preview_background(&self, width: u32, height: u32) -> Result<RgbImage> {
+        background::dimensions(width, height)?;
+        let scale = (width as f32 / 800.)
+            .min(height as f32 / 800.)
+            .clamp(0.2, 4.);
+        let color = self.settings.color;
+        let mut image =
+            RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2]));
         if let Some(preview) = &self.preview {
             let rendered = image::imageops::resize(
                 &preview.image,
@@ -325,7 +339,24 @@ impl Controller {
                 );
             }
         }
-        Ok((image, hits))
+        Ok(image)
+    }
+    pub fn presentation_background(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<canopa_session_ui::presentation::Background> {
+        if self
+            .presentation_background
+            .as_ref()
+            .is_none_or(|image| image.dimensions() != (width, height))
+        {
+            self.presentation_background =
+                Some(canopa_session_ui::presentation::Background::from_rgb(
+                    self.preview_background(width, height)?,
+                ));
+        }
+        Ok(self.presentation_background.as_ref().unwrap().clone())
     }
 }
 const PREVIEW_HEIGHT: u16 = 500;

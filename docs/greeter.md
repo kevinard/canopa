@@ -113,6 +113,13 @@ in a side-by-side comparison of the same greeter.
 `canopa-greeter` (no subcommand) connects to an existing compositor; it needs
 `GREETD_SOCK` and refuses to run as root.
 
+The login screen uses the shared Iced session controls: hover feedback,
+release-to-activate buttons, scrollable choosers and pointer selection in text
+fields. Its wgpu renderer falls back to tiny-skia when GPU initialization is
+unavailable. The `--renderer` launcher option selects the kiosk compositor's
+renderer; `ICED_BACKEND` selects the interface renderer. See
+[shared authentication input](session-tools.md#shared-authentication-input).
+
 ## Configuration
 
 The greeter reads `/etc/canopa/greeter.kdl`, never a user's `~/.config`. When the file
@@ -316,7 +323,8 @@ that entry changes or disappears meanwhile, the attempt is cancelled.
   `canopa greeter check-config` as root to check `/etc/canopa/greeter.kdl`; an
   invalid file, or one owned by a non-root user, stops the greeter.
 - **Black screen or GPU errors.** Add `--renderer software` to the greetd command.
-  Use `--print-command` to see what is run.
+  Set `ICED_BACKEND=tiny-skia` in that command's environment to force software
+  rendering for the login interface too. Use `--print-command` to see what is run.
 - **No sessions listed.** Run `canopa greeter list-sessions`. Check that the
   session directories and entries are root-owned and not group- or world-writable,
   and that `TryExec` exists.

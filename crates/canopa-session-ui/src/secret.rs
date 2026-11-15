@@ -92,6 +92,7 @@ pub enum Edit {
 pub struct Secret {
     bytes: Storage,
     len: usize,
+    revision: u64,
     cursor: usize,
     anchor: usize,
 }
@@ -107,9 +108,13 @@ impl Secret {
         Self {
             bytes: Storage::new(capacity),
             len: 0,
+            revision: 0,
             cursor: 0,
             anchor: 0,
         }
+    }
+    pub(crate) fn revision(&self) -> (usize, u64) {
+        (self.bytes.pointer.as_ptr() as usize, self.revision)
     }
     pub fn memory_locked(&self) -> bool {
         self.bytes.locked
@@ -139,6 +144,7 @@ impl Secret {
         if text.is_empty() || text.chars().any(char::is_control) || length >= self.bytes.len() {
             return;
         }
+        self.revision = self.revision.wrapping_add(1);
         self.bytes
             .copy_within(range.end..self.len, range.start + text.len());
         self.bytes[range.start..range.start + text.len()].copy_from_slice(text.as_bytes());
@@ -158,6 +164,7 @@ impl Secret {
         self.anchor = self.cursor;
     }
     fn remove(&mut self, range: std::ops::Range<usize>) {
+        self.revision = self.revision.wrapping_add(1);
         let length = self.len - range.len();
         self.bytes.copy_within(range.end..self.len, range.start);
         self.bytes[length..self.len].zeroize();
@@ -235,6 +242,7 @@ impl Secret {
         }
     }
     pub fn clear(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
         self.bytes.deref_mut().zeroize();
         self.len = 0;
         self.cursor = 0;
@@ -272,12 +280,11 @@ impl Secret {
     pub fn grapheme_count(&self) -> usize {
         self.text().graphemes(true).count()
     }
-    /// Bounded display around the cursor. Hidden input exposes only bullets.
-    pub fn presentation(
-        &self,
-        echo: bool,
-        maximum: usize,
-    ) -> (zeroize::Zeroizing<String>, std::ops::Range<usize>, usize) {
+    /// The grapheme boundaries (byte offsets, never text) and the visible
+    /// `start..=end` boundary indices of the viewport of at most `maximum`
+    /// graphemes around the cursor. Rendering and pointer hit-testing share it,
+    /// so a click always maps to the offset that was drawn there.
+    fn window(&self, maximum: usize) -> (Vec<usize>, usize, usize) {
         let boundaries: Vec<_> = self
             .text()
             .grapheme_indices(true)
@@ -289,6 +296,32 @@ impl Secret {
             .saturating_sub(maximum / 2)
             .min(boundaries.len().saturating_sub(1 + maximum));
         let end = (start + maximum).min(boundaries.len() - 1);
+        (boundaries, start, end)
+    }
+    /// Display-to-storage boundaries for pointer editing of the bounded viewport.
+    /// Positions contain no response text and always end on complete graphemes.
+    pub(crate) fn display_indices(&self, echo: bool, maximum: usize) -> Vec<(usize, usize)> {
+        let (boundaries, start, end) = self.window(maximum);
+        (start..=end)
+            .map(|i| {
+                (
+                    if echo {
+                        boundaries[i] - boundaries[start]
+                    } else {
+                        (i - start) * '•'.len_utf8()
+                    },
+                    boundaries[i],
+                )
+            })
+            .collect()
+    }
+    /// Bounded display around the cursor. Hidden input exposes only bullets.
+    pub fn presentation(
+        &self,
+        echo: bool,
+        maximum: usize,
+    ) -> (zeroize::Zeroizing<String>, std::ops::Range<usize>, usize) {
+        let (boundaries, start, end) = self.window(maximum);
         let range = boundaries[start]..boundaries[end];
         let map = |position: usize| {
             if echo {

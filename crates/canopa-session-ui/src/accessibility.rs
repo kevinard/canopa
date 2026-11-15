@@ -32,7 +32,7 @@ struct Meaning {
     prompt: Option<(u64, String, bool)>,
     hidden: bool,
     busy: bool,
-    controls: Vec<(usize, String, bool)>,
+    controls: Vec<(usize, String, bool, bool)>,
     layout: Option<String>,
 }
 struct Published {
@@ -101,9 +101,13 @@ impl ActionHandler for Handler {
                 6 => Operation::Submit,
                 7 => Operation::Cancel,
                 n if n >= 10 => {
-                    let Some((id, _, _)) = state.meaning.controls.get((n - 10) as usize) else {
+                    let Some((id, _, _, enabled)) = state.meaning.controls.get((n - 10) as usize)
+                    else {
                         return;
                     };
+                    if !enabled {
+                        return;
+                    }
                     Operation::Control(*id)
                 }
                 _ => return,
@@ -178,7 +182,7 @@ impl Accessibility {
             controls: view
                 .controls
                 .iter()
-                .map(|c| (c.id, c.label.clone(), c.selected))
+                .map(|c| (c.id, c.label.clone(), c.selected, c.enabled))
                 .collect(),
             layout: None,
         };
@@ -191,6 +195,7 @@ impl Accessibility {
                     fl!("session-show-response")
                 },
                 false,
+                true,
             ));
         }
         if view.can_select_layout {
@@ -198,6 +203,7 @@ impl Accessibility {
                 crate::input::LAYOUT_CONTROL,
                 fl!("session-keyboard-layout", layout = view.layout.as_str()),
                 false,
+                true,
             ));
             meaning.layout = Some(view.layout.clone());
         }
@@ -297,7 +303,7 @@ impl Accessibility {
             children.push(NodeId(id));
             nodes.push((NodeId(id), node));
         }
-        for (i, (control, label, selected)) in meaning.controls.iter().enumerate() {
+        for (i, (control, label, selected, enabled)) in meaning.controls.iter().enumerate() {
             let id = NodeId(10 + i as u64);
             let mut node = Node::new(Role::Button);
             node.set_label(label.clone());
@@ -318,7 +324,11 @@ impl Accessibility {
                     (false, None) => {}
                 }
             }
-            node.add_action(Action::Click);
+            if *enabled {
+                node.add_action(Action::Click);
+            } else {
+                node.set_disabled();
+            }
             children.push(id);
             nodes.push((id, node));
         }
@@ -389,6 +399,55 @@ pub fn select(secret: &mut Secret, anchor: usize, focus: usize, echo: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disabled_controls_are_published_without_an_action_and_reject_direct_clicks() {
+        let settings = crate::settings::Settings::load(
+            &canopa_config::Request::Defaults,
+            canopa_config::Component::Lockscreen,
+        )
+        .unwrap()
+        .0;
+        let mut view = SessionView::preview(&settings, "Alice".into()).unwrap();
+        let mut control = crate::view::Control::new(42, "Apply");
+        control.enabled = false;
+        view.controls.push(control);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut a = Accessibility::new("Test", |_| {});
+        a.update("Test", &view, &settings, true);
+        let mut handler = Handler {
+            published: a.published.clone(),
+            send: Arc::new(move |request| {
+                sender.send(request).unwrap();
+            }),
+        };
+        let click = || ActionRequest {
+            action: Action::Click,
+            target_tree: TreeId::ROOT,
+            target_node: NodeId(10),
+            data: None,
+        };
+        handler.do_action(click());
+        assert!(receiver.try_recv().is_err());
+        {
+            let state = a.published.lock().unwrap();
+            let node = &state
+                .tree
+                .nodes
+                .iter()
+                .find(|(id, _)| *id == NodeId(10))
+                .unwrap()
+                .1;
+            assert!(node.is_disabled());
+            assert!(!node.supports_action(Action::Click));
+        }
+        view.controls[0].enabled = true;
+        a.update("Test", &view, &settings, true);
+        handler.do_action(click());
+        assert!(matches!(
+            receiver.try_recv().unwrap().operation,
+            Operation::Control(42)
+        ));
+    }
     #[test]
     fn protected_tree_contains_no_response_and_old_actions_expire() {
         let settings = crate::settings::Settings::load(

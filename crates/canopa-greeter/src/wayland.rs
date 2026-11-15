@@ -12,7 +12,7 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
-use canopa_session_ui::{background, layout::Rect, widgets};
+use canopa_session_ui::{background, widgets};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     output::{OutputHandler, OutputState},
@@ -21,9 +21,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
-        pointer::{
-            CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
-        },
+        pointer::{PointerEvent, PointerHandler, ThemeSpec, ThemedPointer},
     },
     shell::{
         WaylandSurface,
@@ -32,13 +30,13 @@ use smithay_client_toolkit::{
             window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
         },
     },
-    shm::{Shm, ShmHandler, slot::SlotPool},
+    shm::{Shm, ShmHandler},
 };
 use std::{path::PathBuf, time::Duration};
 use wayland_client::{
     Connection, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface},
 };
 enum Update {
     Power(crate::power::Update),
@@ -59,9 +57,8 @@ struct App {
     seats: SeatState,
     outputs: OutputState,
     shm: Shm,
-    pool: SlotPool,
+    graphics: canopa_session_ui::presentation::Graphics,
     window: Window,
-    qh: QueueHandle<Self>,
     controller: Controller,
     config: Config,
     worker: protocol::Worker,
@@ -74,6 +71,7 @@ struct App {
     avatar_generation: u64,
     keyboards: Vec<(wl_seat::WlSeat, wl_keyboard::WlKeyboard)>,
     pointers: Vec<(wl_seat::WlSeat, ThemedPointer)>,
+    cursor_cache: canopa_session_ui::presentation::CursorCache,
     width: u32,
     height: u32,
     scale: i32,
@@ -82,10 +80,8 @@ struct App {
     exit: bool,
     error: bool,
     output_name: String,
-    background: Option<image::RgbImage>,
-    hits: Vec<(usize, Rect)>,
+    background: Option<canopa_session_ui::presentation::Background>,
     ready_socket: Option<PathBuf>,
-    frame_requested: bool,
 }
 pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Result<()> {
     let conn = Connection::connect_to_env()?;
@@ -157,7 +153,12 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         }
     }
     let shm = Shm::bind(&globals, &qh)?;
-    let pool = SlotPool::new(4096, &shm)?;
+    let graphics = canopa_session_ui::presentation::Graphics::new(
+        &conn,
+        &qh,
+        &event_loop.handle(),
+        |app: &mut App| app.repaint(),
+    )?;
     let mut app = App {
         accessibility: None,
         preference_path,
@@ -169,9 +170,8 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         seats: SeatState::new(&globals, &qh),
         outputs: OutputState::new(&globals, &qh),
         shm,
-        pool,
+        graphics,
         window,
-        qh: qh.clone(),
         controller,
         config,
         worker,
@@ -184,6 +184,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         avatar_generation: 0,
         keyboards: Vec::new(),
         pointers: Vec::new(),
+        cursor_cache: Default::default(),
         width: 1280,
         height: 800,
         scale: 1,
@@ -193,9 +194,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         error: false,
         output_name: String::new(),
         background: None,
-        hits: Vec::new(),
         ready_socket,
-        frame_requested: false,
     };
     // A remembered user opens straight onto their password; the worker sends
     // this after resetting greetd, so it follows the startup cancellation.
@@ -283,14 +282,16 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
                         }
                     }
                 }
-                app.dirty = true;
+                app.redraw();
             }
         })
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     event_loop
         .handle()
         .insert_source(Timer::from_duration(Duration::from_secs(1)), |_, _, app| {
-            app.dirty = true;
+            if app.controller.ui.tick(&app.config.view) {
+                app.dirty = true;
+            }
             TimeoutAction::ToDuration(Duration::from_secs(
                 if app.config.view.minute_resolution() {
                     60 - chrono::Local::now().timestamp().rem_euclid(60) as u64
@@ -316,6 +317,16 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
     Ok(())
 }
 impl App {
+    /// Renderer wakeups (animations, timed redraws, retries) repaint the
+    /// retained widgets without invalidating the presentation model.
+    fn repaint(&mut self) {
+        self.dirty = true;
+    }
+    fn redraw(&mut self) {
+        self.controller.ui.changed();
+        self.dirty = true;
+    }
+
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         if let Some(a) = &mut self.accessibility {
             a.update(
@@ -365,7 +376,7 @@ impl App {
                 }
             }
         }
-        self.dirty = true;
+        self.redraw();
     }
 
     fn send(&mut self, command: Option<Command>) {
@@ -379,12 +390,12 @@ impl App {
     fn action(&mut self, id: usize) {
         if id == canopa_session_ui::input::REVEAL_CONTROL {
             self.controller.ui.toggle_reveal();
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if self.controller.choosing() && id != canopa_session_ui::input::LAYOUT_CONTROL {
             self.controller.chooser_action(id);
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if id == 20
@@ -393,7 +404,7 @@ impl App {
         {
             let command = self.controller.power_from_prompt();
             self.send(command);
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if (20..=24).contains(&id) && self.config.power_controls {
@@ -405,13 +416,13 @@ impl App {
             {
                 self.controller.power_finished(false);
             }
-            self.dirty = true;
+            self.redraw();
             return;
         }
 
         if id == canopa_session_ui::input::LAYOUT_CONTROL {
             self.input.cycle();
-            self.dirty = true;
+            self.redraw();
             return;
         }
         let command = match id {
@@ -441,7 +452,7 @@ impl App {
             _ => None,
         };
         self.send(command);
-        self.dirty = true;
+        self.redraw();
     }
     fn repeated_key(&mut self, event: KeyEvent) {
         if event.keysym == Keysym::BackSpace
@@ -467,12 +478,12 @@ impl App {
                 Keysym::F6 => self.action(canopa_session_ui::input::LAYOUT_CONTROL),
                 _ => {}
             }
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if text.as_str() == "\u{15}" {
             self.controller.clear_input();
-            self.dirty = true;
+            self.redraw();
             return;
         }
         use crate::power::{Action, Menu};
@@ -499,7 +510,7 @@ impl App {
                 }
                 _ => {}
             }
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if event.keysym == Keysym::F10 {
@@ -519,7 +530,7 @@ impl App {
         }
         if let Some(edit) = self.input.edit(event.keysym) {
             self.controller.edit(edit);
-            self.dirty = true;
+            self.redraw();
             return;
         }
         let command = match event.keysym {
@@ -544,7 +555,7 @@ impl App {
             }
         };
         self.send(command);
-        self.dirty = true;
+        self.redraw();
     }
     fn paint(&mut self) -> Result<()> {
         if !self.dirty || !self.configured {
@@ -581,7 +592,7 @@ impl App {
             .as_ref()
             .is_none_or(|b| b.dimensions() != (width, height))
         {
-            self.background = Some(
+            self.background = Some(canopa_session_ui::presentation::Background::from_rgb(
                 canopa_session_ui::view::SessionView::prepare_background(
                     &self.config.view,
                     &self.output_name,
@@ -599,36 +610,29 @@ impl App {
                         ]),
                     )
                 }),
-            );
-        }
-        let (image, hits) = self
-            .controller
-            .ui
-            .render_with_hits(&self.config.view, self.background.as_ref().unwrap().clone())?;
-        self.hits = hits;
-        let (buffer, canvas) = self.pool.create_buffer(
-            width as i32,
-            height as i32,
-            width as i32 * 4,
-            wl_shm::Format::Xrgb8888,
-        )?;
-        for (source, target) in image.pixels().zip(canvas.chunks_exact_mut(4)) {
-            let pixel = 0xff000000u32
-                | u32::from(source[0]) << 16
-                | u32::from(source[1]) << 8
-                | u32::from(source[2]);
-            target.copy_from_slice(&pixel.to_ne_bytes());
+            ));
         }
         let surface = self.window.wl_surface();
         surface.set_buffer_scale(self.scale);
-        buffer.attach_to(surface)?;
-        surface.damage_buffer(0, 0, width as i32, height as i32);
-        if self.ready_socket.is_some() && !self.frame_requested {
-            surface.frame(&self.qh, surface.clone());
-            self.frame_requested = true;
+        if let Err(error) = self.controller.ui.present(
+            &self.config.view,
+            &self.graphics,
+            self.graphics.window(&self.window),
+            canopa_session_ui::presentation::Frame {
+                key: "",
+                output: "",
+                width,
+                height,
+                scale: (width as f32 / 1280.)
+                    .min(height as f32 / 800.)
+                    .clamp(0.2, 3.),
+                background: self.background.clone(),
+            },
+        ) {
+            eprintln!("session presentation deferred: {error}");
+            self.graphics.retry();
+            self.dirty = true;
         }
-        surface.commit();
-        // SlotPool retains active storage/objects until wl_buffer.release.
         Ok(())
     }
 }
@@ -647,7 +651,7 @@ impl WindowHandler for App {
         self.width = c.new_size.0.map(|v| v.get()).unwrap_or(self.width);
         self.height = c.new_size.1.map(|v| v.get()).unwrap_or(self.height);
         self.configured = true;
-        self.dirty = true;
+        self.redraw();
     }
 }
 impl CompositorHandler for App {
@@ -659,7 +663,7 @@ impl CompositorHandler for App {
         factor: i32,
     ) {
         self.scale = factor.max(1);
-        self.dirty = true;
+        self.redraw();
     }
     fn transform_changed(
         &mut self,
@@ -670,6 +674,7 @@ impl CompositorHandler for App {
     ) {
     }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
+        self.dirty |= self.controller.ui.frame_ready("");
         if let Some(path) = self.ready_socket.take() {
             // Explicit test-only destination. No authentication data is included.
             let result = (|| -> std::io::Result<()> {
@@ -694,7 +699,7 @@ impl CompositorHandler for App {
         if let Some(info) = self.outputs.info(output) {
             self.output_name = info.name.unwrap_or_default();
             self.background = None;
-            self.dirty = true;
+            self.redraw();
         }
     }
     fn surface_leave(
@@ -713,11 +718,11 @@ impl OutputHandler for App {
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
         self.background = None;
-        self.dirty = true;
+        self.redraw();
     }
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
         self.background = None;
-        self.dirty = true;
+        self.redraw();
     }
 }
 impl SeatHandler for App {
@@ -775,6 +780,8 @@ impl SeatHandler for App {
             });
         }
         if capability == Capability::Pointer {
+            self.redraw();
+            self.controller.ui.cancel_interactions();
             self.pointers.retain(|(s, p)| {
                 if s == &seat {
                     p.pointer().release();
@@ -865,7 +872,7 @@ impl KeyboardHandler for App {
                 let number = u64::from(layout) + 1;
                 fl!("greeter-layout-number", number = number)
             });
-        self.dirty = true;
+        self.redraw();
     }
     fn update_keymap(
         &mut self,
@@ -897,26 +904,23 @@ impl PointerHandler for App {
         pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
+        use canopa_session_ui::presentation::native_pointer;
         for event in events {
-            if matches!(event.kind, PointerEventKind::Enter { .. })
-                && let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer)
-            {
-                let _ = p.set_cursor(conn, CursorIcon::Default);
+            if !(&event.surface == self.window.wl_surface()) {
+                continue;
             }
-            if &event.surface == self.window.wl_surface()
-                && matches!(event.kind, PointerEventKind::Press { button: 272, .. })
-            {
-                let (x, y) = (
-                    event.position.0 as f32 * self.scale as f32,
-                    event.position.1 as f32 * self.scale as f32,
-                );
-                if let Some((id, _)) = self
-                    .hits
-                    .iter()
-                    .find(|(_, r)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
-                {
-                    self.action(*id);
+            for input in native_pointer(event, self.scale as f32) {
+                let interaction = self.controller.ui.pointer(&self.config.view, "", input);
+                if let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer) {
+                    self.cursor_cache.set(conn, p, event, interaction.cursor);
                 }
+                if let Some((anchor, cursor)) = interaction.selection {
+                    self.controller.select_input(anchor, cursor);
+                }
+                for id in interaction.controls {
+                    self.action(id);
+                }
+                self.dirty |= interaction.redraw || interaction.selection.is_some();
             }
         }
     }

@@ -1,8 +1,9 @@
 use crate::{background, secret::Secret, settings::Settings};
 use anyhow::Result;
-use canopa_theme::{ColorRole, Rgb};
+use canopa_theme::Rgb;
 use image::RgbImage;
 
+mod iced;
 mod panel;
 mod raster;
 pub use panel::{
@@ -13,6 +14,7 @@ pub use raster::Emblem;
 
 pub const REQUEST_PAGE_LINES: usize = 6;
 
+#[derive(Debug)]
 pub struct Prompt {
     pub id: u64,
     pub text: String,
@@ -44,7 +46,7 @@ pub enum ControlKind {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Control {
     pub id: usize,
     /// The accessible name, and the visible text unless `kind` draws its own.
@@ -52,6 +54,7 @@ pub struct Control {
     pub kind: ControlKind,
     /// Keyboard selection (focus ring) in surfaces without pointer focus.
     pub selected: bool,
+    pub enabled: bool,
 }
 
 impl Control {
@@ -61,6 +64,7 @@ impl Control {
             label: label.into(),
             kind: ControlKind::Action,
             selected: false,
+            enabled: true,
         }
     }
 
@@ -70,8 +74,39 @@ impl Control {
     }
 }
 
+pub(crate) type VisualRevision = (u64, (usize, u64), usize, usize, bool);
+#[derive(PartialEq)]
+struct Observed {
+    clock: String,
+    date: String,
+    weather: Option<String>,
+}
+impl Observed {
+    fn read(settings: &Settings) -> Self {
+        let now = chrono::Local::now();
+        Self {
+            clock: settings.clock_text(&now),
+            date: settings.date_text(&now),
+            weather: settings
+                .weather_file
+                .as_deref()
+                .and_then(|path| {
+                    canopa_widgets::weather::Weather::read(
+                        path,
+                        chrono::Utc::now().timestamp().max(0) as u64,
+                    )
+                })
+                .map(|w| w.label()),
+        }
+    }
+}
+
 pub struct SessionView {
-    text_renderer: std::cell::RefCell<crate::text::Text>,
+    scene_revision: std::cell::Cell<u64>,
+    observed: std::cell::RefCell<Observed>,
+    text_renderer: std::rc::Rc<std::cell::RefCell<crate::text::Text>>,
+    assets: std::rc::Rc<std::cell::RefCell<iced::Assets>>,
+    pub(crate) presentation: std::cell::RefCell<crate::presentation::Host>,
     avatar: Option<image::RgbaImage>,
     user_avatar: Option<std::sync::Arc<image::RgbaImage>>,
     avatar_initials: Option<String>,
@@ -104,8 +139,18 @@ pub struct SessionView {
 }
 impl SessionView {
     pub fn new(settings: &Settings, username: String) -> Result<Self> {
+        let text_renderer = std::rc::Rc::new(std::cell::RefCell::new(crate::text::Text::new(
+            settings.font.clone(),
+        )?));
+        let assets = std::rc::Rc::new(std::cell::RefCell::new(iced::Assets::with_text(
+            text_renderer.clone(),
+        )));
         Ok(Self {
-            text_renderer: std::cell::RefCell::new(crate::text::Text::new(settings.font.clone())?),
+            scene_revision: std::cell::Cell::new(1),
+            observed: std::cell::RefCell::new(Observed::read(settings)),
+            presentation: Default::default(),
+            assets,
+            text_renderer,
             avatar: settings
                 .avatar
                 .as_deref()
@@ -159,12 +204,32 @@ impl SessionView {
     pub fn can_reveal(&self) -> bool {
         self.prompt.as_ref().is_some_and(|p| !p.echo) && !self.hide_input
     }
+    /// A fresh backend challenge always starts masked, even if it reuses an ID.
+    pub fn mask_response(&mut self) {
+        self.reveal = None;
+        self.assets.borrow_mut().clear_fields();
+        self.cancel_interactions();
+    }
     /// The consumer owns asynchronous loading, selection and stale-result policy.
     pub fn set_user_avatar(&mut self, image: Option<std::sync::Arc<image::RgbaImage>>) {
+        let unchanged = match (&self.user_avatar, &image) {
+            (Some(old), Some(new)) => std::sync::Arc::ptr_eq(old, new),
+            (None, None) => true,
+            _ => false,
+        };
+        if unchanged {
+            return;
+        }
+        self.assets.borrow_mut().clear_avatar();
         self.user_avatar = image;
+        self.changed();
     }
     pub fn set_avatar_initials(&mut self, initials: Option<String>) {
-        self.avatar_initials = initials.map(|s| s.chars().take(2).collect());
+        let initials = initials.map(|s| s.chars().take(2).collect());
+        if self.avatar_initials != initials {
+            self.avatar_initials = initials;
+            self.changed();
+        }
     }
     /// Draw a passive label in consumer-owned content, using shared shaping/fallback.
     pub fn draw_label(
@@ -251,11 +316,23 @@ impl SessionView {
         output: &str,
         image: RgbImage,
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
+        self.render_on_surface(settings, output, output, image)
+    }
+
+    /// Native hosts identify widget state by the surface, independently of the
+    /// optional output name used for configuration and per-output visibility.
+    pub fn render_on_surface(
+        &self,
+        settings: &Settings,
+        surface: &str,
+        output: &str,
+        image: RgbImage,
+    ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
         let (width, height) = image.dimensions();
         let scale = (width as f32 / 1280.)
             .min(height as f32 / 800.)
             .clamp(0.2, 3.);
-        self.render_filtered(settings, image, scale, settings.hidden_on(output))
+        self.render_filtered(settings, surface, image, scale, settings.hidden_on(output))
     }
 
     /// Ordinary windows choose their logical scale; fullscreen consumers derive it above.
@@ -265,7 +342,7 @@ impl SessionView {
         image: RgbImage,
         scale: f32,
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
-        self.render_filtered(settings, image, scale, &[])
+        self.render_filtered(settings, "", image, scale, &[])
     }
 
     pub fn render_dialog(
@@ -287,24 +364,32 @@ impl SessionView {
     fn render_filtered(
         &self,
         settings: &Settings,
-        mut image: RgbImage,
+        output: &str,
+        image: RgbImage,
         scale: f32,
         hidden: &[String],
     ) -> Result<(RgbImage, Vec<(usize, crate::layout::Rect)>)> {
-        anyhow::ensure!(
-            scale.is_finite() && (0.2..=4.).contains(&scale),
-            "invalid presentation scale"
-        );
-        let mut hits = Vec::new();
+        self.presentation
+            .borrow_mut()
+            .render(self, settings, output, image, scale, hidden)
+    }
+
+    pub(crate) fn scene(
+        &self,
+        settings: &Settings,
+        size: ::iced::Size,
+        scale: f32,
+        hidden: &[String],
+    ) -> iced::Scene {
         use crate::layout::Item;
-        let (width, height) = image.dimensions();
+        let (width, height) = (size.width, size.height);
         let palette = settings.appearance.palette();
-        let now = chrono::Local::now();
+        let observed = self.observed.borrow();
         let mut content = std::collections::BTreeMap::new();
         content.insert(
             "clock".to_owned(),
             Content::Text {
-                lines: vec![settings.clock_text(&now)],
+                lines: vec![observed.clock.clone()],
                 size: settings.clock_size as f32,
                 color: palette.text,
                 weight: cosmic_text::Weight::LIGHT,
@@ -314,7 +399,7 @@ impl SessionView {
         content.insert(
             "date".to_owned(),
             Content::Text {
-                lines: vec![settings.date_text(&now)],
+                lines: vec![observed.date.clone()],
                 size: settings.text_size as f32,
                 color: raster::mix(palette.muted, palette.text, 0.3),
                 weight: cosmic_text::Weight::MEDIUM,
@@ -360,16 +445,7 @@ impl SessionView {
                 }),
                 "media" => self.media.clone(),
                 "notifications" => self.notifications.clone(),
-                "weather" => settings
-                    .weather_file
-                    .as_deref()
-                    .and_then(|p| {
-                        canopa_widgets::weather::Weather::read(
-                            p,
-                            chrono::Utc::now().timestamp().max(0) as u64,
-                        )
-                    })
-                    .map(|w| w.label()),
+                "weather" => observed.weather.clone(),
                 "avatar" => {
                     if self.avatar.is_some()
                         || self.user_avatar.is_some()
@@ -420,7 +496,6 @@ impl SessionView {
         let label_height = label.as_ref().map_or(0., |lines| 21. * lines.len() as f32);
         let hints = self.authentication_hints();
         let layout_control = self.layout_control();
-        let rtl = canopa_i18n::direction().is_rtl();
         let input_offset = if self.hide_input { 52. } else { 0. };
         let columns = if self.pair_controls { 2 } else { 1 };
         let control_rows =
@@ -480,7 +555,7 @@ impl SessionView {
                 avatar,
                 pin_origin,
                 corners_free,
-                height as f32 / scale,
+                height / scale,
             )
         });
         // A battery level at the bottom centre joins the corner controls.
@@ -516,9 +591,11 @@ impl SessionView {
                         (size + 7.) * lines.len() as f32,
                     ),
                     Content::Avatar => (64., 64.),
-                    Content::Authentication => panel
-                        .as_ref()
-                        .map_or((400., auth_height), |panel| panel.size()),
+                    Content::Authentication => {
+                        panel.as_ref().map_or((400., auth_height), |panel| {
+                            panel.size((height / scale - 2. * settings.layout.margin).max(1.))
+                        })
+                    }
                 };
                 Item {
                     name: name.clone(),
@@ -527,13 +604,11 @@ impl SessionView {
                 }
             })
             .collect();
-        let placements = settings
-            .layout
-            .plan(width as f32, height as f32, scale, &items);
+        let placements = settings.layout.plan(width, height, scale, &items);
+        let mut scene = iced::Scene::new(self.assets.clone());
         for placement in placements {
             let bounds = placement.bounds;
             let scale = scale * placement.scale;
-            let center = bounds.x + bounds.width / 2.;
             match &content[&placement.name] {
                 Content::Text {
                     lines,
@@ -542,294 +617,187 @@ impl SessionView {
                     weight,
                     icon,
                 } => {
-                    let center = if let Some(icon) = icon {
+                    let mut text_bounds = bounds;
+                    if let Some(icon) = icon {
                         let side = size * 1.2 * scale;
-                        let rtl = canopa_i18n::direction().is_rtl();
-                        let x = if rtl {
-                            bounds.x + bounds.width - side
-                        } else {
-                            bounds.x
-                        };
-                        raster::emblem_at(
-                            &mut image,
-                            (x, bounds.y + (size * 0.85) * scale - side * 0.78),
-                            side / 24.,
+                        scene.icon(
                             *icon,
+                            crate::layout::Rect {
+                                x: if canopa_i18n::direction().is_rtl() {
+                                    bounds.x + bounds.width - side
+                                } else {
+                                    bounds.x
+                                },
+                                y: bounds.y,
+                                width: side,
+                                height: side,
+                            },
                             *color,
                         );
-                        center + if rtl { -1. } else { 1. } * size * 0.8 * scale
-                    } else {
-                        center
-                    };
-                    if placement.name == "clock" && lines.len() == 1 {
-                        self.draw_clock(
-                            &mut image,
-                            &lines[0],
-                            (center, bounds.y + size * 0.85 * scale),
-                            *size * scale,
-                            bounds.width,
-                            *color,
-                            *weight,
-                        );
-                        continue;
-                    }
-                    for (index, line) in lines.iter().enumerate() {
-                        let text = zeroize::Zeroizing::new(
-                            line.chars()
-                                .filter(|c| !c.is_control())
-                                .take(256)
-                                .collect::<String>(),
-                        );
-                        self.text_renderer.borrow_mut().draw_styled(
-                            &mut image,
-                            &text,
-                            (
-                                center,
-                                bounds.y + (size * 0.85 + index as f32 * (size + 7.)) * scale,
-                            ),
-                            *size * scale,
-                            bounds.width,
-                            *color,
-                            None,
-                            crate::text::Style::Centered(*weight),
-                        );
-                    }
-                }
-                Content::Avatar => {
-                    if let Some(avatar) = self.user_avatar.as_deref().or(self.avatar.as_ref()) {
-                        let side = (64. * scale).round().max(1.) as u32;
-                        let avatar = image::imageops::resize(
-                            avatar,
-                            side,
-                            side,
-                            image::imageops::FilterType::Triangle,
-                        );
-                        let left = bounds.x.max(0.) as u32;
-                        let top = bounds.y.max(0.) as u32;
-                        for (x, y, pixel) in avatar.enumerate_pixels() {
-                            let dx = x as f32 - side as f32 / 2.;
-                            let dy = y as f32 - side as f32 / 2.;
-                            if dx * dx + dy * dy <= (side as f32 / 2.).powi(2)
-                                && left + x < width
-                                && top + y < height
-                            {
-                                let target = image.get_pixel_mut(left + x, top + y);
-                                let alpha = u32::from(pixel[3]);
-                                for i in 0..3 {
-                                    target[i] = ((u32::from(pixel[i]) * alpha
-                                        + u32::from(target[i]) * (255 - alpha))
-                                        / 255)
-                                        as u8;
-                                }
-                            }
+                        if !canopa_i18n::direction().is_rtl() {
+                            text_bounds.x += side + 6. * scale;
                         }
-                    } else if let Some(initials) = &self.avatar_initials {
-                        rounded_rect(
-                            &mut image,
-                            bounds.x,
-                            bounds.y,
-                            bounds.width,
-                            bounds.height,
-                            bounds.width / 2.,
-                            palette.surface,
-                        );
-                        self.text(
-                            &mut image,
-                            initials,
-                            (center, bounds.y + 40. * scale),
-                            25. * scale,
-                            bounds.width - 8. * scale,
-                            palette.text,
+                        text_bounds.width = (text_bounds.width - side - 6. * scale).max(1.);
+                    }
+                    // The layout control is already reachable from the panel's
+                    // system chips or the fallback control rows; this widget
+                    // only reports the active layout.
+                    if placement.name == "clock" && lines.len() == 1 {
+                        scene.clock(self, &lines[0], text_bounds, size * scale, *color);
+                    } else {
+                        scene.lines(
+                            lines,
+                            text_bounds,
+                            size * scale,
+                            (size + 7.) * scale,
+                            *color,
+                            true,
+                            if *weight == cosmic_text::Weight::LIGHT {
+                                ::iced::font::Weight::Light
+                            } else if *weight == cosmic_text::Weight::MEDIUM {
+                                ::iced::font::Weight::Medium
+                            } else {
+                                ::iced::font::Weight::Normal
+                            },
                         );
                     }
                 }
+                Content::Avatar => scene.avatar(self, bounds, settings),
                 Content::Authentication => {
                     if let Some(panel) = &panel {
-                        hits.extend(panel.draw(self, settings, &mut image, bounds, scale));
-                        continue;
-                    }
-                    if let Some(lines) = &label {
-                        let size = 14. * scale;
-                        for (index, line) in lines.iter().enumerate() {
-                            let available = (bounds.width - 12. * scale).max(0.);
-                            let half = self.text_width(line, size).min(available) / 2.;
-                            self.text(
-                                &mut image,
-                                line,
-                                (
-                                    if rtl {
-                                        bounds.x + bounds.width - 6. * scale - half
-                                    } else {
-                                        bounds.x + 6. * scale + half
-                                    },
-                                    bounds.y + (14. + index as f32 * 21.) * scale,
-                                ),
-                                size,
-                                available,
+                        panel.populate(self, settings, &mut scene, bounds, scale, size);
+                    } else {
+                        let mut y = bounds.y;
+                        if let Some(lines) = &label {
+                            scene.lines(
+                                lines,
+                                crate::layout::Rect {
+                                    y,
+                                    height: label_height * scale,
+                                    ..bounds
+                                },
+                                14. * scale,
+                                21. * scale,
                                 palette.text,
+                                false,
+                                ::iced::font::Weight::Normal,
+                            );
+                            y += label_height * scale;
+                        }
+                        if !self.hide_input {
+                            scene.field(
+                                self,
+                                settings,
+                                crate::layout::Rect {
+                                    y,
+                                    height: 52. * scale,
+                                    ..bounds
+                                },
+                                scale,
+                                &self.field_placeholder(),
+                            );
+                            y += 62. * scale;
+                        }
+                        for (index, hint) in hints.iter().enumerate() {
+                            scene.label(
+                                hint,
+                                crate::layout::Rect {
+                                    y: y + 20. * index as f32 * scale,
+                                    height: 20. * scale,
+                                    ..bounds
+                                },
+                                14. * scale,
+                                if self.caps && index + 1 == hints.len() {
+                                    palette.warning
+                                } else if self.failed {
+                                    palette.danger
+                                } else {
+                                    palette.muted
+                                },
+                                true,
+                                ::iced::font::Weight::Normal,
                             );
                         }
-                    }
-                    if !self.hide_input {
-                        let field_y = bounds.y + label_height * scale;
-                        let outline = if prompt.is_some() {
-                            settings.appearance.role(ColorRole::Focus)
-                        } else {
-                            palette.border
-                        };
-                        rounded_rect(
-                            &mut image,
-                            bounds.x,
-                            field_y,
-                            bounds.width,
-                            52. * scale,
-                            12. * scale,
-                            outline,
-                        );
-                        rounded_rect(
-                            &mut image,
-                            bounds.x + scale,
-                            field_y + scale,
-                            bounds.width - 2. * scale,
-                            50. * scale,
-                            11. * scale,
-                            palette.surface,
-                        );
-                        let (input, selection, cursor) = self
-                            .secret
-                            .presentation(self.prompt.as_ref().is_some_and(|p| p.echo), 48);
-                        let prompt = zeroize::Zeroizing::new(if let Some(prompt) = &self.prompt {
-                            if self.secret.is_empty() {
-                                if prompt.echo {
-                                    fl!("session-placeholder-type-response")
-                                } else {
-                                    fl!("session-placeholder-enter-response")
-                                }
-                            } else {
-                                input.to_string()
-                            }
-                        } else if self.busy {
-                            fl!("session-waiting-for-authentication")
-                        } else {
-                            fl!("session-placeholder-authenticate")
-                        });
-                        self.text_renderer.borrow_mut().draw(
-                            &mut image,
-                            &prompt,
-                            (center, field_y + 32. * scale),
-                            16. * scale,
-                            bounds.width - 20. * scale,
-                            if self.secret.is_empty() {
-                                palette.muted
-                            } else {
-                                palette.text
-                            },
-                            self.prompt
-                                .as_ref()
-                                .filter(|_| !self.secret.is_empty())
-                                .map(|_| (selection, cursor, palette.accent)),
-                        );
-                    }
-                    for (index, control) in self
-                        .controls
-                        .iter()
-                        .chain(layout_control.iter())
-                        .enumerate()
-                    {
-                        let y = bounds.y
-                            + (88. - input_offset
-                                + label_height
-                                + 20. * hints.len().saturating_sub(1) as f32
-                                + (index / columns) as f32 * 42.)
-                                * scale;
-                        let gap = 8. * scale;
+                        y += 20. * hints.len().max(1) as f32 * scale + 8. * scale;
+                        let controls: Vec<_> = self
+                            .controls
+                            .iter()
+                            .cloned()
+                            .chain(layout_control.iter().cloned())
+                            .collect();
+                        let gap = 10. * scale;
                         let width = (bounds.width - gap * (columns - 1) as f32) / columns as f32;
-                        let column = if rtl {
-                            columns - 1 - index % columns
-                        } else {
-                            index % columns
-                        };
-                        let x = bounds.x + (width + gap) * column as f32;
-                        let primary = self.primary_control == Some(control.id) && !self.busy;
-                        let (label, selected) = (control.label.as_str(), control.selected);
-                        let (fill, ink) = if primary {
-                            (
-                                palette.accent,
-                                settings.appearance.role(ColorRole::OnAccent),
-                            )
-                        } else if selected {
-                            (
-                                settings.appearance.role(ColorRole::AccentSurface),
-                                palette.text,
-                            )
-                        } else {
-                            (palette.surface, palette.text)
-                        };
-                        rounded_rect(
-                            &mut image,
-                            x,
-                            y,
-                            width,
-                            34. * scale,
-                            9. * scale,
-                            if selected {
-                                settings.appearance.role(ColorRole::Focus)
-                            } else {
-                                palette.border
-                            },
-                        );
-                        rounded_rect(
-                            &mut image,
-                            x + scale,
-                            y + scale,
-                            width - 2. * scale,
-                            32. * scale,
-                            8. * scale,
-                            fill,
-                        );
-                        self.text(
-                            &mut image,
-                            label,
-                            (x + width / 2., y + 22. * scale),
-                            16. * scale,
-                            width - 16. * scale,
-                            ink,
-                        );
-                        hits.push((
-                            control.id,
-                            crate::layout::Rect {
-                                x,
-                                y,
-                                width,
-                                height: 34. * scale,
-                            },
-                        ));
-                    }
-                    for (index, hint) in hints.iter().enumerate() {
-                        self.text(
-                            &mut image,
-                            hint,
-                            (
-                                center,
-                                bounds.y
-                                    + (75. - input_offset + label_height + index as f32 * 20.)
-                                        * scale,
-                            ),
-                            14. * scale,
-                            bounds.width,
-                            if self.failed {
-                                palette.danger
-                            } else if self.caps {
-                                palette.warning
-                            } else {
-                                palette.muted
-                            },
-                        );
+                        for row in controls.chunks(columns) {
+                            for (index, control) in row.iter().enumerate() {
+                                let column = if canopa_i18n::direction().is_rtl() {
+                                    row.len() - 1 - index
+                                } else {
+                                    index
+                                };
+                                scene.button(
+                                    self,
+                                    settings,
+                                    control,
+                                    crate::layout::Rect {
+                                        x: bounds.x + (width + gap) * column as f32,
+                                        y,
+                                        width,
+                                        height: 34. * scale,
+                                    },
+                                    scale,
+                                    false,
+                                );
+                            }
+                            y += 42. * scale;
+                        }
                     }
                 }
             }
         }
-        Ok((image, hits))
+        scene
+    }
+    pub(crate) fn clear_response_images(&self) {
+        self.assets.borrow_mut().clear_fields();
+    }
+    fn field_placeholder(&self) -> String {
+        if let Some(prompt) = &self.prompt {
+            if prompt.echo {
+                fl!("session-placeholder-type-response")
+            } else {
+                fl!("session-placeholder-enter-response")
+            }
+        } else if self.busy {
+            fl!("session-waiting-for-authentication")
+        } else {
+            fl!("session-placeholder-authenticate")
+        }
+    }
+    /// Native hosts call this after changing presentation state. Widget-only
+    /// hover/press redraws keep their tree and image handles.
+    pub fn changed(&self) {
+        self.scene_revision
+            .set(self.scene_revision.get().wrapping_add(1));
+    }
+    /// Observe passive data only from the host's clock/watch event, never from
+    /// present(). An unchanged weather document does not invalidate the scene.
+    pub fn tick(&self, settings: &Settings) -> bool {
+        let next = Observed::read(settings);
+        let mut previous = self.observed.borrow_mut();
+        if *previous == next {
+            return false;
+        }
+        *previous = next;
+        self.changed();
+        true
+    }
+    pub(crate) fn visual_revision(&self) -> VisualRevision {
+        (
+            self.scene_revision.get(),
+            self.secret.revision(),
+            self.secret.anchor(),
+            self.secret.cursor(),
+            self.revealed(),
+        )
     }
     fn layout_control(&self) -> Option<Control> {
         self.can_select_layout.then(|| {
@@ -916,47 +884,6 @@ impl SessionView {
             + gap * parts.len().saturating_sub(1) as f32
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn draw_clock(
-        &self,
-        image: &mut RgbImage,
-        text: &str,
-        (center, baseline): (f32, f32),
-        size: f32,
-        max_width: f32,
-        color: Rgb,
-        weight: cosmic_text::Weight,
-    ) {
-        let parts = Self::clock_parts(text);
-        let width = self.clock_width(text, size, true).min(max_width);
-        let rtl = canopa_i18n::direction().is_rtl();
-        let ordered: Vec<_> = if rtl {
-            parts.iter().rev().collect()
-        } else {
-            parts.iter().collect()
-        };
-        let gap = size * 0.1;
-        let mut x = center - width / 2.;
-        for (part, period) in ordered {
-            let (size, weight) = if *period {
-                (size * 0.34, cosmic_text::Weight::LIGHT)
-            } else {
-                (size, weight)
-            };
-            self.text_renderer.borrow_mut().draw_styled(
-                image,
-                part,
-                (x, baseline),
-                size,
-                max_width,
-                color,
-                None,
-                crate::text::Style::Leading(weight),
-            );
-            x += self.text_width(part, size) + gap;
-        }
-    }
-
     fn text_width(&self, text: &str, size: f32) -> f32 {
         self.text_renderer.borrow_mut().width(text, size)
     }
@@ -978,18 +905,6 @@ impl SessionView {
         self.text_renderer
             .borrow_mut()
             .draw(image, &text, position, size, max_width, color, None);
-    }
-}
-fn rounded_rect(image: &mut RgbImage, x: f32, y: f32, w: f32, h: f32, r: f32, color: Rgb) {
-    let r = r.min(w / 2.).min(h / 2.).max(0.);
-    for py in y.max(0.) as u32..((y + h) as u32).min(image.height()) {
-        for px in x.max(0.) as u32..((x + w) as u32).min(image.width()) {
-            let dx = (px as f32 - (px as f32).clamp(x + r, x + w - r)).abs();
-            let dy = (py as f32 - (py as f32).clamp(y + r, y + h - r)).abs();
-            if dx * dx + dy * dy <= r * r {
-                image.put_pixel(px, py, image::Rgb([color.0, color.1, color.2]));
-            }
-        }
     }
 }
 
@@ -1068,6 +983,65 @@ pub fn request_summary(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unchanged_identity_refreshes_preserve_the_scene_revision() {
+        let settings = Settings::load(
+            &canopa_config::Request::Defaults,
+            canopa_config::Component::Lockscreen,
+        )
+        .unwrap()
+        .0;
+        let mut view = SessionView::new(&settings, "Alice".into()).unwrap();
+        view.set_avatar_initials(Some("Alice".into()));
+        let revision = view.visual_revision();
+        view.set_avatar_initials(Some("Al".into()));
+        view.set_user_avatar(None);
+        assert_eq!(view.visual_revision(), revision);
+        let avatar =
+            std::sync::Arc::new(image::RgbaImage::from_pixel(64, 64, image::Rgba([255; 4])));
+        view.set_user_avatar(Some(avatar.clone()));
+        let revision = view.visual_revision();
+        view.set_user_avatar(Some(avatar));
+        assert_eq!(view.visual_revision(), revision);
+        view.set_user_avatar(None);
+        assert_ne!(view.visual_revision(), revision);
+    }
+
+    #[test]
+    fn response_placeholder_tracks_prompt_and_authentication_state() {
+        let _english = crate::i18n::english();
+        let settings = Settings::load(
+            &canopa_config::Request::Defaults,
+            canopa_config::Component::Lockscreen,
+        )
+        .unwrap()
+        .0;
+        let mut view = SessionView::new(&settings, "Alice".into()).unwrap();
+        assert_eq!(
+            view.field_placeholder(),
+            fl!("session-placeholder-authenticate")
+        );
+        view.busy = true;
+        assert_eq!(
+            view.field_placeholder(),
+            fl!("session-waiting-for-authentication")
+        );
+        view.prompt = Some(Prompt {
+            id: 1,
+            text: "Password".into(),
+            echo: false,
+        });
+        assert_eq!(
+            view.field_placeholder(),
+            fl!("session-placeholder-enter-response")
+        );
+        view.prompt.as_mut().unwrap().echo = true;
+        assert_eq!(
+            view.field_placeholder(),
+            fl!("session-placeholder-type-response")
+        );
+    }
 
     #[test]
     fn monitor_visibility_hides_passive_content_and_keeps_authentication() {
@@ -1209,7 +1183,11 @@ output "DP-1" { hide-widgets "username"; }
             image::Rgba([255, 0, 0, 128]),
         ))));
         let avatar = render(&view);
-        assert!(avatar.pixels().filter(|p| p.0 == [128, 0, 127]).count() > 3000);
+        assert!(
+            avatar.pixels().filter(|p| p.0 == [128, 0, 127]).count() > 3000,
+            "center: {:?}",
+            avatar.get_pixel(640, 400)
+        );
         assert_eq!(avatar.get_pixel(608, 368).0, [0, 0, 255]);
         view.set_user_avatar(None);
         assert_eq!(render(&view), initials);

@@ -52,7 +52,7 @@ greeter {{
         return [e for e in json.loads((root/'logind-state.json').read_text())['events'] if 'power' in e]
     def key(value):session.run([str(keyboard),'key',value])
     def node(name,*args):return a11y.request(session,'--window','Canopa Login','--name',name,*args)
-    def start(name,refused=False):
+    def start(name,refused=False,manual=False):
         (root/'greetd-control.json').write_text(json.dumps({'mode':'password','start-refused':refused}))
         before=len(events())
         process=session.start([str(binary),'--canopa-config',str(config)],name+'.log')
@@ -60,7 +60,14 @@ greeter {{
         session.wait_for(lambda:json.loads(session.run(['niri','msg','--json','windows'])),'greeter window')
         window=max(json.loads(session.run(['niri','msg','--json','windows'])),key=lambda w:w['id'])
         session.run(['niri','msg','action','focus-window','--id',str(window['id'])]);time.sleep(.5)
-        node('Username:')
+        if state.exists():
+            prompt(before)
+            node('Password:')
+            if manual:
+                key('Escape')
+                node('Username:')
+        else:
+            node('Username:')
         return process,before
     def prompt(before):
         session.wait_for(lambda:any(e['event']=='prompt' and e['text']=='Password:' for e in events()[before:]),'fresh password prompt')
@@ -78,15 +85,16 @@ greeter {{
     saved=json.loads(state.read_text());assert saved=={'last_user':'bob','sessions':{'bob':'other'}},saved
     assert state.stat().st_mode&0o777==0o600
     app,before=start('remembered')
-    assert json.loads(node('Username:'))['text']=='bob'
+    assert any(e['event']=='begin' and e['user']=='bob' for e in events()[before:])
     node('Desktop: Other')
+    key('Escape');node('Username:')
     key('Up');node('Desktop: Canopa')
     key('Return');prompt(before);authenticate();completed(app)
     saved=json.loads(state.read_text());assert saved['sessions']=={'alice':'canopa','bob':'other'}
-    app,before=start('live')
+    app,before=start('live',manual=True)
     # AccountsService changes refresh labels without replacing typed canonical input.
     (root/'accounts-control.json').write_text(json.dumps({'revision':1,'real_names':{'alice':'Alice Updated'},'extra_user':True}))
-    node('Choose account · Alice Updated (alice)')
+    node('Sign in as Alice Updated (alice)')
     node('Username:','--value','carol');time.sleep(.2);node('Choose account · Carol Example (carol)')
     node('Username:','--value','bob');time.sleep(.2)
     def avatar(color,name):
@@ -110,7 +118,7 @@ greeter {{
     # Frontend confirmation and a fresh backend CanPowerOff check both precede a call.
     control=root/'logind-control.json'
     control.write_text(json.dumps({'power':'yes','power-revision':1}))
-    node('Power   · F10','--click');node('› Shut down','--click');node('Confirm shut down')
+    node('Power   · F10','--click');node('Shut down','--click');node('Confirm shut down')
     assert not power_events()
     control.write_text(json.dumps({'power':'no','power-revision':1}))
     node('Confirm shut down','--click');time.sleep(.3)
@@ -122,7 +130,7 @@ greeter {{
     session.retire(app)
     assert json.loads(state.read_text())==saved
     # A refused session launch cannot overwrite the previous successful selection.
-    app,before=start('refused',True)
+    app,before=start('refused',True,manual=True)
     key('Down');key('Tab');key('Return');prompt(before);authenticate()
     session.wait_for(lambda:any(e['event']=='start-refused' for e in events()[before:]),'refused handoff')
     assert json.loads(state.read_text())==saved;session.retire(app)

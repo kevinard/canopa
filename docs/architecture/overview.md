@@ -1,9 +1,8 @@
 # Architecture overview
 
 Canopa is a Wayland desktop environment built around a patched Niri compositor.
-It is written in Rust, draws its windows with Iced (or with a small software
-renderer for session surfaces), and talks to the usual freedesktop system
-services instead of running its own daemons in front of them. Each part is an
+It is written in Rust, draws its interfaces with Iced, and talks to the usual
+freedesktop system services instead of running its own daemons in front of them. Each part is an
 independent process: the shell, the notification daemon, the file manager, the
 portal backend, the session tools and the authentication dialogs start, crash and
 restart separately.
@@ -68,7 +67,7 @@ Every member of the root `Cargo.toml` workspace:
 | [`canopa-notify-client`](../../crates/canopa-notify-client/) | library | Bounded clients for Notify's control socket: summary, lock-screen feed, preferences |
 | [`canopa-widgets`](../../crates/canopa-widgets/) | library | Passive widget data (battery, media, idle, script, weather) |
 | [`canopa-launcher`](../../crates/canopa-launcher/) | library | Launcher preferences and extension discovery shared by Shell and Settings |
-| [`canopa-session-ui`](../../crates/canopa-session-ui/) | library | Software-rendered session presentation for lock, greeter, polkit, pinentry and the wallpaper picker |
+| [`canopa-session-ui`](../../crates/canopa-session-ui/) | library | Iced session presentation for lock, greeter, polkit, pinentry and the wallpaper picker |
 
 ### Binaries
 

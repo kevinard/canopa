@@ -12,7 +12,6 @@ use calloop::{
 };
 use calloop_wayland_source::WaylandSource;
 use canopa_session_ui::{
-    layout::Rect,
     settings::Settings,
     view::{DIALOG_MAX_HEIGHT, DIALOG_MIN_HEIGHT, DIALOG_SIZE},
 };
@@ -24,9 +23,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
-        pointer::{
-            CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
-        },
+        pointer::{PointerEvent, PointerHandler, ThemeSpec, ThemedPointer},
     },
     shell::{
         WaylandSurface,
@@ -35,13 +32,13 @@ use smithay_client_toolkit::{
             window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
         },
     },
-    shm::{Shm, ShmHandler, slot::SlotPool},
+    shm::{Shm, ShmHandler},
 };
 use std::{os::fd::AsFd, time::Duration};
 use wayland_client::{
     Connection, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface},
 };
 
 struct App {
@@ -52,12 +49,13 @@ struct App {
     seats: SeatState,
     compositor: CompositorState,
     shm: Shm,
-    pool: SlotPool,
+    graphics: canopa_session_ui::presentation::Graphics,
     window: Option<Window>,
     configured: bool,
     focused: bool,
     keyboards: Vec<(wl_seat::WlSeat, wl_keyboard::WlKeyboard)>,
     pointers: Vec<(wl_seat::WlSeat, ThemedPointer)>,
+    cursor_cache: canopa_session_ui::presentation::CursorCache,
     controller: Option<Controller>,
     settings: Settings,
     width: u32,
@@ -67,7 +65,6 @@ struct App {
     scale: i32,
     dirty: bool,
     exit: bool,
-    hits: Vec<(usize, Rect)>,
 }
 pub fn run_agent(
     settings: &Settings,
@@ -115,7 +112,12 @@ fn run_inner(
     let compositor = CompositorState::bind(&globals, &qh)?;
     let shell = XdgShell::bind(&globals, &qh)?;
     let shm = Shm::bind(&globals, &qh)?;
-    let pool = SlotPool::new(4096, &shm)?;
+    let graphics = canopa_session_ui::presentation::Graphics::new(
+        &connection,
+        &qh,
+        &loop_.handle(),
+        |app: &mut App| app.repaint(),
+    )?;
     let (app_id, name) = if keyring {
         ("org.canopa.Keyring", fl!("pinentry-keyring-title"))
     } else {
@@ -165,12 +167,13 @@ fn run_inner(
         seats: SeatState::new(&globals, &qh),
         compositor,
         shm,
-        pool,
+        graphics,
         window: Some(window),
         configured: false,
         focused: false,
         keyboards: Vec::new(),
         pointers: Vec::new(),
+        cursor_cache: Default::default(),
         controller: Some(controller),
         settings: settings.clone(),
         width: DIALOG_SIZE.0,
@@ -179,7 +182,6 @@ fn run_inner(
         scale: 1,
         dirty: true,
         exit: false,
-        hits: Vec::new(),
     };
     let (a11y_sender, a11y_receiver) = channel::channel();
     app.accessibility = Some(canopa_session_ui::accessibility::Accessibility::new(
@@ -205,7 +207,7 @@ fn run_inner(
             {
                 c.inquiry_result(revision, answer);
                 app.exit = c.response.is_some();
-                app.dirty = true;
+                app.redraw();
             }
         })
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -308,6 +310,18 @@ fn run_inner(
     Ok(response)
 }
 impl App {
+    /// Renderer wakeups (animations, timed redraws, retries) repaint the
+    /// retained widgets without invalidating the presentation model.
+    fn repaint(&mut self) {
+        self.dirty = true;
+    }
+    fn redraw(&mut self) {
+        if let Some(c) = &self.controller {
+            c.ui.changed();
+        }
+        self.dirty = true;
+    }
+
     fn accessible(&mut self, request: canopa_session_ui::accessibility::Request) {
         if let (Some(a), Some(c)) = (&mut self.accessibility, &self.controller) {
             a.update(&fl!("pinentry-title"), &c.ui, &self.settings, self.focused);
@@ -347,20 +361,20 @@ impl App {
                 }
             }
         }
-        self.dirty = true;
+        self.redraw();
     }
 
     fn action(&mut self, id: usize) {
         if id == canopa_session_ui::input::LAYOUT_CONTROL {
             self.input.cycle();
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if id == canopa_session_ui::input::REVEAL_CONTROL {
             if let Some(c) = &mut self.controller {
                 c.ui.toggle_reveal();
             }
-            self.dirty = true;
+            self.redraw();
             return;
         }
         let c = self.controller.as_mut().unwrap();
@@ -372,7 +386,7 @@ impl App {
             c.action(id);
         }
         self.exit = c.response.is_some();
-        self.dirty = true;
+        self.redraw();
     }
     fn key(&mut self, mut event: KeyEvent) {
         let (symbol, text) = self
@@ -386,7 +400,7 @@ impl App {
             if let Some(c) = &mut self.controller {
                 c.clear_input();
             }
-            self.dirty = true;
+            self.redraw();
             return;
         }
         if event.keysym == Keysym::F6 {
@@ -399,7 +413,7 @@ impl App {
             && c.ui.prompt.is_some()
         {
             c.edit(edit);
-            self.dirty = true;
+            self.redraw();
             return;
         }
         match event.keysym {
@@ -419,7 +433,7 @@ impl App {
                 }
             }
         }
-        self.dirty = true;
+        self.redraw();
     }
     fn paint(&mut self) -> Result<()> {
         if !self.dirty || !self.configured || self.window.is_none() {
@@ -452,27 +466,25 @@ impl App {
         }
         let width = self.width.saturating_mul(self.scale as u32);
         let height = self.height.saturating_mul(self.scale as u32);
-        let (image, hits) =
-            c.ui.render_dialog(&self.settings, width, height, self.scale as f32)?;
-        self.hits = hits;
-        let (buffer, canvas) = self.pool.create_buffer(
-            width as i32,
-            height as i32,
-            width as i32 * 4,
-            wl_shm::Format::Xrgb8888,
-        )?;
-        for (source, target) in image.pixels().zip(canvas.chunks_exact_mut(4)) {
-            let value = 0xff000000u32
-                | u32::from(source[0]) << 16
-                | u32::from(source[1]) << 8
-                | u32::from(source[2]);
-            target.copy_from_slice(&value.to_ne_bytes());
+        let window = self.window.as_ref().unwrap();
+        window.wl_surface().set_buffer_scale(self.scale);
+        if let Err(error) = c.ui.present(
+            &self.settings,
+            &self.graphics,
+            self.graphics.window(window),
+            canopa_session_ui::presentation::Frame {
+                key: "",
+                output: "",
+                width,
+                height,
+                scale: self.scale as f32,
+                background: None,
+            },
+        ) {
+            eprintln!("session presentation deferred: {error}");
+            self.graphics.retry();
+            self.dirty = true;
         }
-        let surface = self.window.as_ref().unwrap().wl_surface();
-        surface.set_buffer_scale(self.scale);
-        buffer.attach_to(surface)?;
-        surface.damage_buffer(0, 0, width as i32, height as i32);
-        surface.commit();
         Ok(())
     }
 }
@@ -509,7 +521,7 @@ impl WindowHandler for App {
             .map_or(self.requested, |v| v.get())
             .max(self.requested);
         self.configured = true;
-        self.dirty = true;
+        self.redraw();
     }
 }
 impl CompositorHandler for App {
@@ -526,7 +538,7 @@ impl CompositorHandler for App {
             .is_some_and(|w| w.wl_surface() == surface)
         {
             self.scale = factor.clamp(1, 4);
-            self.dirty = true;
+            self.redraw();
         }
     }
     fn transform_changed(
@@ -537,7 +549,11 @@ impl CompositorHandler for App {
         _: wl_output::Transform,
     ) {
     }
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
+        if let Some(c) = &self.controller {
+            self.dirty |= c.ui.frame_ready("");
+        }
+    }
     fn surface_enter(
         &mut self,
         _: &Connection,
@@ -613,6 +629,10 @@ impl SeatHandler for App {
             });
         }
         if capability == Capability::Pointer {
+            self.redraw();
+            if let Some(c) = &self.controller {
+                c.ui.cancel_interactions();
+            }
             self.pointers.retain(|(s, p)| {
                 if s == &seat {
                     p.pointer().release();
@@ -704,7 +724,7 @@ impl KeyboardHandler for App {
         if let Some(c) = &mut self.controller {
             c.ui.caps = modifiers.caps_lock;
         }
-        self.dirty = true;
+        self.redraw();
     }
     fn update_keymap(
         &mut self,
@@ -714,7 +734,7 @@ impl KeyboardHandler for App {
         keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
     ) {
         self.input.keymap(keymap.as_string());
-        self.dirty = true;
+        self.redraw();
     }
 }
 impl PointerHandler for App {
@@ -725,29 +745,34 @@ impl PointerHandler for App {
         pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
+        use canopa_session_ui::presentation::native_pointer;
         for event in events {
-            if matches!(event.kind, PointerEventKind::Enter { .. })
-                && let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer)
-            {
-                let _ = p.set_cursor(conn, CursorIcon::Default);
-            }
-            if self
+            if !(self
                 .window
                 .as_ref()
-                .is_some_and(|w| &event.surface == w.wl_surface())
-                && matches!(event.kind, PointerEventKind::Press { button: 272, .. })
+                .is_some_and(|w| &event.surface == w.wl_surface()))
             {
-                let (x, y) = (
-                    event.position.0 as f32 * self.scale as f32,
-                    event.position.1 as f32 * self.scale as f32,
-                );
-                if let Some((id, _)) = self
-                    .hits
-                    .iter()
-                    .find(|(_, r)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
-                {
-                    self.action(*id);
+                continue;
+            }
+            for input in native_pointer(event, self.scale as f32) {
+                let interaction = {
+                    let Some(c) = &mut self.controller else {
+                        break;
+                    };
+                    c.ui.pointer(&self.settings, "", input)
+                };
+                if let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer) {
+                    self.cursor_cache.set(conn, p, event, interaction.cursor);
                 }
+                if let Some((anchor, cursor)) = interaction.selection
+                    && let Some(c) = &mut self.controller
+                {
+                    c.select_input(anchor, cursor);
+                }
+                for id in interaction.controls {
+                    self.action(id);
+                }
+                self.dirty |= interaction.redraw || interaction.selection.is_some();
             }
         }
     }

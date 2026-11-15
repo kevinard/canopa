@@ -9,8 +9,9 @@ Three programs from the `canopa-session` crate run alongside the Shell:
 | `canopa-idle` | Supervisor for the external Stasis idle daemon | `canopa idle ...` |
 
 `canopa SUBCOMMAND ...` runs the sibling binary installed next to `canopa`, passing
-every argument through (including `--help`). The wallpaper daemon and the locker use
-software rendering only: no Iced and no GPU device. The wallpaper needs a compositor
+every argument through (including `--help`). The lock screen and picker use Iced’s
+standard wgpu compositor with tiny-skia software fallback. The wallpaper daemon
+submits static images without a GPU device. The wallpaper needs a compositor
 with wlr-layer-shell, the locker one with ext-session-lock-v1. Niri has both.
 
 The login screen, polkit agent and pinentry share the lock screen's presentation;
@@ -393,6 +394,12 @@ The lock screen, login screen, polkit agent and pinentry share one input field.
 | Ctrl+A | Select all |
 | Ctrl+U | Clear |
 | F6 | Cycle the keyboard layouts the compositor provides |
+
+Buttons show hover and pressed feedback and activate on release. Moving away
+before releasing cancels the activation. Long choosers scroll with the mouse
+wheel or touchpad, and icon controls show a tooltip on hover. Click in a response
+field to place the caret, or drag to select complete characters. Unavailable
+actions are disabled.
 
 Secret fields have an eye button (also an accessibility action) that shows the typed
 text; each new prompt starts masked. The layout selector only changes how this field

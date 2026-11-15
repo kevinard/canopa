@@ -19,9 +19,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
-        pointer::{
-            CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
-        },
+        pointer::{PointerEvent, PointerHandler, ThemeSpec, ThemedPointer},
     },
     session_lock::{
         SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface,
@@ -42,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 use wayland_client::{
-    Connection, QueueHandle,
+    Connection, Proxy, QueueHandle,
     globals::registry_queue_init,
     protocol::{wl_buffer, wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
 };
@@ -95,14 +93,22 @@ impl Role {
     }
 }
 struct DisplaySurface {
-    hits: Vec<(usize, canopa_session_ui::layout::Rect)>,
+    presentation_key: String,
     output: wl_output::WlOutput,
     role: Role,
     width: u32,
     height: u32,
     scale: i32,
     dirty: bool,
+    /// Wallpaper mode: the prepared image for the next submission.
     background: Option<image::RgbImage>,
+    /// Lock mode: the physical size the wallpaper was last prepared for, and
+    /// the result. A failure is kept too, so an unreadable wallpaper is not
+    /// decoded again on every repaint; it is retried when the size changes.
+    lock_background: Option<(
+        (u32, u32),
+        Option<canopa_session_ui::presentation::Background>,
+    )>,
 }
 struct Wallpaper {
     base: Settings,
@@ -125,6 +131,7 @@ enum Update {
     Custom { name: String, text: Option<String> },
 }
 struct App {
+    graphics: canopa_session_ui::presentation::Graphics,
     wallpaper: Option<Wallpaper>,
     accessibility: Option<canopa_session_ui::accessibility::Accessibility>,
     input: canopa_session_ui::input::Keyboard,
@@ -141,6 +148,7 @@ struct App {
     surfaces: Vec<DisplaySurface>,
     keyboards: Vec<(wl_seat::WlSeat, wl_keyboard::WlKeyboard)>,
     pointers: Vec<(wl_seat::WlSeat, ThemedPointer)>,
+    cursor_cache: canopa_session_ui::presentation::CursorCache,
     layouts: Vec<(wl_keyboard::WlKeyboard, Vec<String>)>,
     settings: Settings,
     request: Request,
@@ -246,7 +254,14 @@ fn initialize(
             let _ = sender.send(Update::Accessibility(request));
         })
     });
+    let graphics = canopa_session_ui::presentation::Graphics::new(
+        &conn,
+        &qh,
+        &event_loop.handle(),
+        App::repaint,
+    )?;
     let mut app = App {
+        graphics,
         wallpaper: None,
         accessibility,
         input: Default::default(),
@@ -263,6 +278,7 @@ fn initialize(
         surfaces: vec![],
         keyboards: vec![],
         pointers: vec![],
+        cursor_cache: Default::default(),
         layouts: vec![],
         settings,
         request,
@@ -415,7 +431,11 @@ pub fn lock(
     app.logind = Some(crate::logind::Tracker::start(logind_session));
     app.handle
         .insert_source(Timer::immediate(), move |_, _, app: &mut App| {
-            app.redraw();
+            if app.ui.as_ref().is_some_and(|ui| ui.tick(&app.settings)) {
+                for surface in &mut app.surfaces {
+                    surface.dirty = true;
+                }
+            }
             TimeoutAction::ToDuration(Duration::from_secs(if app.settings.minute_resolution() {
                 60 - chrono::Timelike::second(&chrono::Local::now()) as u64
             } else {
@@ -428,7 +448,12 @@ pub fn lock(
 fn run(app: &mut App, event_loop: &mut EventLoop<'static, App>) -> Result<()> {
     while !app.exit {
         event_loop.dispatch(None, app)?;
-        app.paint();
+        // An authenticated unlock retires the lock surfaces immediately. GPU
+        // presentation can wait for a frame that the compositor will never send
+        // once unlocked, so never submit another frame after a terminal event.
+        if !app.exit {
+            app.paint();
+        }
         app.conn.flush()?;
     }
     if let Some(error) = app.error.take() {
@@ -491,9 +516,18 @@ impl App {
         self.redraw();
     }
 
+    /// Renderer wakeups (animations, timed redraws, retries) repaint the
+    /// retained widgets without invalidating the presentation model. Outputs
+    /// whose retry is not yet due defer themselves in `present()`.
+    fn repaint(&mut self) {
+        for surface in &mut self.surfaces {
+            surface.dirty = true;
+        }
+    }
     fn redraw(&mut self) {
         if let Some(ui) = &mut self.ui {
             crate::lock_ui::update_actions(ui, self.confirmed && self.authentication.is_none());
+            ui.changed();
         }
         for surface in &mut self.surfaces {
             surface.dirty = true;
@@ -527,7 +561,7 @@ impl App {
             Role::Wallpaper(layer)
         };
         self.surfaces.push(DisplaySurface {
-            hits: Vec::new(),
+            presentation_key: format!("session-surface-{}", role.surface().id().protocol_id()),
             output,
             role,
             width: 0,
@@ -535,6 +569,7 @@ impl App {
             scale: 1,
             dirty: true,
             background: None,
+            lock_background: None,
         });
     }
     fn paint(&mut self) {
@@ -556,26 +591,66 @@ impl App {
                 .unwrap_or_default();
             let width = record.width.saturating_mul(record.scale as u32);
             let height = record.height.saturating_mul(record.scale as u32);
-            let render = if let Some(ui) = &self.ui {
+            if let Some(ui) = &self.ui {
                 if record
-                    .background
+                    .lock_background
                     .as_ref()
-                    .is_none_or(|image| image.dimensions() != (width, height))
+                    .is_none_or(|(size, _)| *size != (width, height))
                 {
-                    record.background =
-                        LockUi::prepare_background(&self.settings, &name, width, height).ok();
+                    // Unavailable wallpaper must not prevent an opaque lock view.
+                    let image =
+                        match LockUi::prepare_background(&self.settings, &name, width, height) {
+                            Ok(image) => {
+                                Some(canopa_session_ui::presentation::Background::from_rgb(image))
+                            }
+                            Err(error) => {
+                                eprintln!("lock background unavailable: {error}");
+                                None
+                            }
+                        };
+                    record.lock_background = Some(((width, height), image));
                 }
-                match &record.background {
-                    Some(image) => ui.render_on_output(&self.settings, &name, image.clone()),
-                    None => LockUi::prepare_background(&self.settings, &name, width, height)
-                        .and_then(|image| ui.render_on_output(&self.settings, &name, image)),
+                let Role::Lock(role) = &record.role else {
+                    continue;
+                };
+                let surface = role.wl_surface();
+                surface.set_buffer_scale(record.scale);
+                let result = ui.present(
+                    &self.settings,
+                    &self.graphics,
+                    self.graphics
+                        .lock_surface(role, self.session.as_ref().unwrap()),
+                    canopa_session_ui::presentation::Frame {
+                        key: &record.presentation_key,
+                        output: &name,
+                        width,
+                        height,
+                        scale: (width as f32 / 1280.)
+                            .min(height as f32 / 800.)
+                            .clamp(0.2, 3.),
+                        background: record
+                            .lock_background
+                            .as_ref()
+                            .and_then(|(_, image)| image.clone()),
+                    },
+                );
+                if let Err(error) = result {
+                    eprintln!("lock presentation failed: {error}");
+                    self.graphics.retry();
+                    // A failed output must never take away every unlock prompt.
+                    // Keep the compositor lock and retry on the next model/frame
+                    // update; the presentation host downgrades persistent GPU
+                    // failures independently for this surface.
+                    record.dirty = true;
                 }
-            } else if let Some(image) = record
+                continue;
+            }
+            let image = if let Some(image) = record
                 .background
                 .take()
                 .filter(|image| image.dimensions() == (width, height))
             {
-                Ok((image, Vec::new()))
+                Ok(image)
             } else {
                 let bg = self.settings.for_output(&name);
                 background::render(
@@ -585,30 +660,14 @@ impl App {
                     width,
                     height,
                 )
-                .map(|image| (image, Vec::new()))
             };
-            // Unavailable wallpaper must never prevent the locker from presenting
-            // an opaque, usable authentication view after the compositor locks.
-            let (image, hits) = match render {
+            let image = match image {
                 Ok(image) => image,
                 Err(error) => {
                     eprintln!("session surface preparation failed: {error}");
-                    if let Some(ui) = &self.ui {
-                        let mut fallback = self.settings.clone();
-                        fallback.background.image = None;
-                        fallback.outputs.clear();
-                        match LockUi::prepare_background(&fallback, &name, width, height)
-                            .and_then(|image| ui.render_on_output(&fallback, &name, image))
-                        {
-                            Ok(image) => image,
-                            Err(_) => continue,
-                        }
-                    } else {
-                        continue;
-                    }
+                    continue;
                 }
             };
-            record.hits = hits;
             let result = (|| -> Result<()> {
                 let mut pool = RawPool::new(background::dimensions(width, height)?, &self.shm)?;
                 for (src, dst) in image.pixels().zip(pool.mmap().chunks_exact_mut(4)) {
@@ -1105,6 +1164,7 @@ impl App {
         match event {
             auth::Event::Prompt { id, text, echo } => {
                 if let Some(ui) = &mut self.ui {
+                    ui.mask_response();
                     ui.secret.clear();
                     ui.hide_input = false;
                     ui.controls.clear();
@@ -1284,7 +1344,22 @@ impl CompositorHandler for App {
         _: wl_output::Transform,
     ) {
     }
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    fn frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+        if let Some(record) = self
+            .surfaces
+            .iter_mut()
+            .find(|record| record.role.surface() == surface)
+            && let Some(ui) = &self.ui
+        {
+            record.dirty |= ui.frame_ready(&record.presentation_key);
+        }
+    }
     fn surface_enter(
         &mut self,
         _: &Connection,
@@ -1325,6 +1400,11 @@ impl OutputHandler for App {
         _: &QueueHandle<Self>,
         output: wl_output::WlOutput,
     ) {
+        if let Some(ui) = &self.ui {
+            for record in self.surfaces.iter().filter(|s| s.output == output) {
+                ui.retire_presentation(&record.presentation_key);
+            }
+        }
         self.surfaces.retain(|s| s.output != output);
     }
 }
@@ -1448,10 +1528,18 @@ impl SeatHandler for App {
             self.remove_keyboard(&seat);
         }
         if capability == Capability::Pointer {
+            self.redraw();
+            if let Some(ui) = &self.ui {
+                ui.cancel_interactions();
+            }
             self.remove_pointer(&seat);
         }
     }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        if let Some(ui) = &self.ui {
+            ui.cancel_interactions();
+        }
+        self.redraw();
         self.remove_keyboard(&seat);
         self.remove_pointer(&seat);
     }
@@ -1597,31 +1685,53 @@ impl PointerHandler for App {
         pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
+        use canopa_session_ui::presentation::native_pointer;
         for event in events {
-            if matches!(event.kind, PointerEventKind::Enter { .. })
-                && let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer)
-            {
-                let _ = p.set_cursor(conn, CursorIcon::Default);
-            }
-            if !self.confirmed || !matches!(event.kind, PointerEventKind::Press { button: 272, .. })
-            {
+            if !self.confirmed {
+                if let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer) {
+                    self.cursor_cache.set(
+                        conn,
+                        p,
+                        event,
+                        canopa_session_ui::presentation::Cursor::Default,
+                    );
+                }
                 continue;
             }
-            if let Some(record) = self
+            let Some(record) = self
                 .surfaces
                 .iter()
                 .find(|s| s.role.surface() == &event.surface)
-            {
-                let (x, y) = (
-                    event.position.0 as f32 * record.scale as f32,
-                    event.position.1 as f32 * record.scale as f32,
-                );
-                if let Some((id, _)) = record
-                    .hits
-                    .iter()
-                    .find(|(_, r)| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+            else {
+                continue;
+            };
+            let presentation_key = record.presentation_key.clone();
+            let scale = record.scale as f32;
+            for input in native_pointer(event, scale) {
+                let Some(ui) = &mut self.ui else {
+                    break;
+                };
+                let interaction = ui.pointer(&self.settings, &presentation_key, input);
+                if let Some((_, p)) = self.pointers.iter().find(|(_, p)| p.pointer() == pointer) {
+                    self.cursor_cache.set(conn, p, event, interaction.cursor);
+                }
+                if let Some((anchor, cursor)) = interaction.selection
+                    && let Some(ui) = &mut self.ui
                 {
-                    self.control(*id);
+                    ui.secret.set_selection(anchor, cursor);
+                }
+                for id in interaction.controls {
+                    self.control(id);
+                }
+                if interaction.selection.is_some() {
+                    self.redraw();
+                } else if interaction.redraw
+                    && let Some(record) = self
+                        .surfaces
+                        .iter_mut()
+                        .find(|r| r.presentation_key == presentation_key)
+                {
+                    record.dirty = true;
                 }
             }
         }

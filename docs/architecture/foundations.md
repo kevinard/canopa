@@ -184,8 +184,9 @@ focus, identity and validation; nothing in the crate knows a domain.
 
 The Shell's surfaces and Notify's banners are layer surfaces (`iced_layershell`).
 Files, Settings and the portal dialogs are ordinary Iced (winit) windows. The
-session surfaces (lock, greeter, polkit, pinentry, wallpaper) do not use Iced;
-they draw with the software renderer in `canopa-session-ui`.
+session interfaces use Iced widget trees and its standard wgpu compositor with
+tiny-skia fallback in `canopa-session-ui`, hosted by their existing Wayland loops. The wallpaper
+daemon only submits prepared background images.
 
 ## Window conventions
 
@@ -422,7 +423,7 @@ the lock screen and control.
   extension discovery shared by the Shell and Settings, through a bounded,
   private, locked store.
 - [`canopa-session-ui`](../../crates/canopa-session-ui/README.md): the
-  software-rendered presentation of the lock screen, greeter, polkit agent,
+  Iced presentation of the lock screen, greeter, polkit agent,
   pinentry and wallpaper picker, with erased secret input and its own AT-SPI
   tree. See [session.md](session.md).
 - [`canopa-panel-protocol`](../../crates/canopa-panel-protocol/README.md): see

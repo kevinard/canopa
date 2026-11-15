@@ -548,6 +548,15 @@ sign. See [Files](files.md) for command IDs and default shortcuts.
 
 ## lockscreen
 
+The lock screen and other session interfaces use Iced’s standard wgpu compositor
+with tiny-skia software fallback. Existing appearance, font, layout and per-output
+keys apply; no renderer setting is required. For diagnostics, `ICED_BACKEND=tiny-skia`
+forces software rendering, while `ICED_BACKEND=wgpu,tiny-skia` explicitly requests
+the default preference order. A single `ICED_BACKEND=wgpu` requests GPU
+initialization first; setup and presentation failures still retry per output with
+software fallback so authentication remains available.
+Startup diagnostics report the selected backend and adapter.
+
 | Key | Value | Default |
 | --- | --- | --- |
 | `image`, `fit`, `color` | as in `wallpaper` | none, `"fill"`, palette background |
