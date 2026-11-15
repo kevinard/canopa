@@ -1,4 +1,0 @@
-[D-BUS Service]
-Name=org.freedesktop.impl.portal.desktop.canopa.notify
-Exec=/usr/bin/env canopa-notify daemon --service
-SystemdService=canopa-notify.service

@@ -3,7 +3,7 @@
 //! System services own state and policy; this crate only reads, observes and
 //! asks them. It has no Iced, Wayland or panel-protocol dependency, so the Shell,
 //! its headless providers and Settings share one client per service
-//! (see `docs/adr/0137-shared-system-service-clients.md`).
+//! (see `docs/architecture/foundations.md`).
 //!
 //! | Module | Service | Snapshot | Changes | Commands |
 //! | --- | --- | --- | --- | --- |

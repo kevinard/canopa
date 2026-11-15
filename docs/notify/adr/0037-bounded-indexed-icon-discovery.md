@@ -1,6 +1,6 @@
 # Bounded indexed icon discovery
 
-The shared workspace [asset decision](../../adr/0005-shared-assets.md)
+The shared workspace asset decision (shared ADR 0005)
 moves this lookup mechanism into `canopa-assets`, preserving the banner format,
 theme, scale and per-frame limits. The shell supplies its own format policy.
 

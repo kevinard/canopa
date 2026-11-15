@@ -1,4 +1,0 @@
-[D-BUS Service]
-Name=org.freedesktop.impl.portal.desktop.canopa
-Exec=/usr/bin/env xdg-desktop-portal-canopa
-SystemdService=xdg-desktop-portal-canopa.service

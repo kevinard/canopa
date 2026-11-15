@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-The shared workspace [asset decision](../../adr/0005-shared-assets.md)
+The shared workspace asset decision (shared ADR 0005)
 moves local raster decoding into `canopa-assets`, preserving this adapter's size,
 format, thumbnail and worker-admission policies.
 

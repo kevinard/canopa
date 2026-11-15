@@ -14,4 +14,4 @@ The control reply confirms admission of the selected link request. Portal comple
 
 Generic panel links carry a labeled action with an opaque provider value plus the validated URI as accessibility metadata. The host exposes the real URI through AT-SPI Hyperlink so Orca can describe the destination; it never opens that URI independently. Runtime activation still resolves the current revision and ignores presentation metadata as a command target. Real Orca verification exposed that a Link role without a Hyperlink target causes its link-description command to fail. This requires protocol version 4 and a matching host. Advertise `body-hyperlinks` only after parser, storage, opener, banner, host, and accessibility acceptance pass.
 
-Sources and API details: [hyperlink opening research](../hyperlink-opening-research.md).
+Sources and API details: the hyperlink opening research note (docs/notify/hyperlink-opening-research.md in the git history at commit cb300936).

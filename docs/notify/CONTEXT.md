@@ -460,7 +460,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - First-version **Notification Banner** visual rendering does not require full freedesktop icon-theme lookup.
 - First-version **Notification Banner** file-backed visual rendering supports common static raster image formats before vector or animated image formats.
 - First-version **Body-Embedded Notification Image** rendering supports common static raster image formats before vector or animated image formats.
-- Local raster preparation and indexed icon lookup use shared `canopa-assets` mechanisms; Notify owns its PNG/JPEG policy, per-frame budgets, worker admission, cancellation and display acknowledgment. See [shared asset ownership](../adr/0005-shared-assets.md).
+- Local raster preparation and indexed icon lookup use shared `canopa-assets` mechanisms; Notify owns its PNG/JPEG policy, per-frame budgets, worker admission, cancellation and display acknowledgment. See [shared asset ownership](../architecture/foundations.md).
 - Notify shows at most three **Notification Banners** at once by default.
 - **Notification Banner** visibility prefers critical **Active Notifications**, then newest eligible **Active Notifications**.
 - Hidden **Active Notifications** are not later promoted to **Notification Banners** solely because a banner slot opens.
@@ -580,7 +580,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - The streamed **Notification Center** reading view orders notifications by creation date descending, with internal ID as a stable tie-breaker, across applications and attention states. Its Settings view groups delivery controls by **App Identity** and identifies each app with its icon.
 - The **Notification Center** includes an app-wide **App Permission Control** for each nonempty claimed sender identity and category-specific controls for valid categories on the page. Unnamed senders display as “Unknown application” without a persistent permission control.
 - The streamed **Notification Center** opens in a reading view. A session-local Settings view exposes the current page's delivery controls and **Delete Notification History**, preserving pagination position. A small indicator conveys **Requires Attention**, with “Unread” available through its tooltip and native accessibility. Cards omit retention, delivery outcome, and lifecycle status text; they do not change lifecycle semantics ([ADR 0052](adr/0052-center-reading-and-settings-views.md)).
-- Center cards identify their source with the **Notification App Icon**, or an initial badge, and a muted app name. They share banner icon candidates and theme/scale settings, retain origin information after restart, and keep source icons separate from body images. Canonical **App Identity** remains the key for Settings grouping and policy; display names are presentation only ([shared ADR 0010](../adr/0010-rich-item-source-attribution.md)).
+- Center cards identify their source with the **Notification App Icon**, or an initial badge, and a muted app name. They share banner icon candidates and theme/scale settings, retain origin information after restart, and keep source icons separate from body images. Canonical **App Identity** remains the key for Settings grouping and policy; display names are presentation only ([panel protocol](../architecture/panel-protocol.md)).
 - A category-specific control shows its explicit category rule when present and otherwise the app-wide fallback. Historical records keep their original **Delivery Outcome**.
 - **Notification Center** requirements must not define core **Notification Daemon** state or lifecycle rules.
 - **Notification Center Projection** is Notify-owned state and is mapped to shared panel protocol types by **Panel Provider Mode**.
@@ -588,7 +588,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - **Notification Center** item activation invokes the **Default Notification Action** when present and otherwise dismisses the notification.
 - Active **Notification Center** items expose an explicit activation control, distinct from sender-named actions, identifying whether it opens or dismisses the notification. Inactive history exposes no activation control.
 - **Notification Center** adapter-owned controls must not collide with sender-provided **Notification Action** keys.
-- The shared panel protocol contains generic panel wire contracts, not Notify-specific notification logic. Notify uses its v4 contract for legacy clients and an explicitly selected v5 provider bridge for the built-in shell; the private daemon stream and notification revision guards remain unchanged. All provider contracts live in the shared crate ([Canopa ADR 0006](../adr/0006-shared-provider-contracts.md)).
+- The shared panel protocol contains generic panel wire contracts, not Notify-specific notification logic. Notify uses its v4 contract for legacy clients and an explicitly selected v5 provider bridge for the built-in shell; the private daemon stream and notification revision guards remain unchanged. All provider contracts live in the shared crate ([panel protocol](../architecture/panel-protocol.md)).
 - Shared panel protocol styled text is generic inline presentation data, not raw freedesktop notification markup.
 - Shared panel protocol shape changes for generic styled text should advance the panel protocol version.
 - The first Canopa Shell-hosted **Notification Center** does not require progress rendering.
@@ -625,7 +625,7 @@ _Avoid_: Notification configuration when referring to UI-managed policy
 - Inline replies are outside the first version scope.
 
 
-## Notification portal adapter (in progress)
+## Notification portal adapter
 
 A **Portal Notification ID** is an application-scoped string owned by the portal
 transport. It is independent from both the Internal Notification ID and the
@@ -642,8 +642,8 @@ Its retained body-content representation preserves that interpretation across
 restart. Descriptor-backed portal media becomes bounded owned pixels/sound bytes
 before receipt; presentation workers do not reopen sender descriptor paths.
 Portal callbacks do not expire automatically when a banner has been shown.
-See [ADR0031](../adr/0031-notify-owned-portal-adapter.md) for current verification
-and the remaining advertisement boundary.
+See [Notify architecture](../architecture/notify.md) for how the adapter is
+advertised and routed.
 
 The optional Canopa request-timeout capability explicitly requests withdrawal
 after a bounded interval from transport admission. Notify owns one bounded expiry
@@ -651,4 +651,4 @@ schedule, marks these questions transient, and validates their binding before
 withdrawal so a queued expiry cannot close a replacement. It works without banner
 display or a surviving sender and is separate from Notification Timeout semantics.
 Ordinary portal notifications retain the existing no-expiry/sender-exit contract.
-See [ADR0034](../adr/0034-background-observation-and-decisions.md).
+See [portals architecture](../architecture/portals.md).

@@ -14,9 +14,9 @@ FILES = {
     "LICENSES.md": "share/canopa/LICENSES.md",
     "config/canopa.kdl": "share/canopa/canopa.kdl",
     **{f"docs/{name}.md": f"share/canopa/{name}.md" for name in (
-        "building", "installation", "settings", "settings-portal", "file-chooser-portal", "app-chooser-portal", "access-portal", "notification-portal", "account-portal", "background-portal", "dynamic-launcher-portal", "lockdown-portal", "wallpaper-portal", "screenshot-portal", "screencast-portal", "desktop-sharing", "print-portal", "print-runtime", "shell-rename", "audio", "media", "files",
-        "notifications", "configuration", "theme-customization", "input-capture-portal", "global-shortcuts-portal", "usb-portal",
-        "session-tools", "idle", "greeter", "greeter-performance", "polkit", "pinentry",
+        "building", "installation", "configuration", "theme-customization", "shell", "launcher",
+        "notifications", "settings", "files", "session-tools", "greeter", "polkit", "pinentry",
+        "portals", "desktop-sharing", "printing",
     )},
     **{f"examples/{name}": f"share/canopa/examples/{name}" for name in (
         "canopa-desktop.kdl", "custom-theme.kdl", "themes/nord.kdl",
@@ -38,7 +38,6 @@ FILES = {
     "crates/canopa-shell/config/default.kdl": "share/canopa-shell/default.kdl",
     "crates/canopa-shell/data/characters/LICENSE-UNICODE": "share/canopa-shell/characters/LICENSE-UNICODE",
     "crates/canopa-shell/data/characters/README.md": "share/canopa-shell/characters/README.md",
-    "docs/shell/launcher.md": "share/canopa-shell/launcher.md",
     "crates/canopa-shell/examples/launcher-projects.py": "share/canopa-shell/examples/launcher-projects.py",
     "crates/canopa-notify/examples/config.kdl": "share/canopa-notify/config.kdl",
 }

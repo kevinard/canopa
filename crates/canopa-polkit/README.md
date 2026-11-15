@@ -1,9 +1,10 @@
 # Canopa polkit agent
 
-An unprivileged, event-driven Wayland authorization agent for the user's graphical
-logind session. Reuses Canopa session presentation and erased input; native polkit
-owns credentials, its helper/PAM stack and authorization receipts. No window is
-mapped while idle. Supports authority-selected identities, interactive prompts,
-device factors, cancellation, request details and session-scoped systemd readiness.
+`canopa-polkit` is the polkit authentication agent for the user's graphical logind
+session. It shows a dialog only while a request is active and uses polkit's native
+agent library (`polkit-agent-1`) to check credentials, so polkit keeps action policy,
+identities and authorization receipts. It starts with the Canopa session as
+`canopa-polkit.service`.
 
-See [setup, interaction and validation](../../docs/polkit.md).
+- [Polkit agent guide](../../docs/polkit.md)
+- [Session architecture](../../docs/architecture/session.md)

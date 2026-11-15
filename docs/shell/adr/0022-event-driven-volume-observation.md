@@ -9,5 +9,5 @@ its existing bounded deadline. Audio panel device observation remains separately
 owned under ADR 0016.
 
 This avoids idle audio polling while retaining volume recovery and prompt
-cancellation. See
-[the performance report](../../performance.md) for measurements and native checks.
+cancellation. The performance report (docs/performance.md in the git history at commit
+cb300936) has measurements and native checks.

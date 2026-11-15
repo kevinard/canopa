@@ -20,6 +20,9 @@ fork's `canopa/main` branch; `Cargo.lock` records the exact commits.
 | [kevinard/coreutils](https://github.com/kevinard/coreutils) | uutils/coreutils | uucore, uucore_procs | uucore 0.12.0 (`dc1efd89`) |
 | [kevinard/niri](https://github.com/kevinard/niri) | niri-wm/niri | niri-ipc | Niri `b22eb842`; the `rev` is always the compositor pin in `packaging/forks.json`, so the Shell and Settings speak the IPC of the compositor they ship with (`scripts/test-fork-sources.py` checks it) |
 
+The layer-shell crates also pull crates.io `dpi` 0.1.2 through `winit-core`
+0.31; that copy is unpatched and its types never meet winit 0.30's.
+
 Every fork uses the same branches:
 - `canopa/base` is the exact upstream commit.
 - `canopa/<topic>` holds one change, from the base or stacked on the topic it
@@ -41,33 +44,57 @@ To change a fork:
 
 To upgrade upstream, rebase the topics onto the new upstream commit as a new
 `canopa/base`. Drop topics that upstream now provides, and close their PRs with
-a link to the upstream change. Then rebuild `canopa/main`. Contribution
-conventions are in `.scratch/forks/GITHUB-FORKS.md`, and the reasons for each
-change are in `.scratch/forks/INVENTORY.md`.
+a link to the upstream change. Then rebuild `canopa/main`. The reason for each change and its upstream
+status are in the [fork inventory](fork-inventory.md).
+
+### Conventions
+
+- Local clones live outside this repository (for example
+  `~/projects/forks/<repo>`). Clone over HTTPS; large repositories with
+  `git clone --filter=blob:none`. Add the original project as remote `upstream`.
+- Open tracking PRs inside the fork: `gh pr create --repo kevinard/<repo>`.
+  Always pass `--repo`; without it `gh` targets the upstream parent. The PR base
+  is `canopa/base` for an independent topic and the parent topic for a stacked
+  one, so each diff shows exactly one change. Do not merge the PRs on GitHub.
+- Never push to the fork's default branch or to branches outside `canopa/`, and
+  never open PRs or issues on the upstream repositories without a deliberate
+  decision to upstream.
+- Commit subjects follow the upstream project's style (`area: imperative
+  summary`), with a body explaining what and why. A PR body states that it is a
+  Canopa tracking PR, its base, and that it is merged into `canopa/main`, then
+  **What**, **Why**, **Verification** and **Upstream** (related upstream issues
+  or PRs, and whether the change still applies to upstream main).
+- Each topic must build, and pass the tests it touches, on its own at its base.
+- If `push.followTags` is set globally, push fork branches with `--no-follow-tags`.
+- Vendored crates carry crates.io-normalized manifests; translate any manifest
+  change to the repository's real `Cargo.toml`. A fork that needs another fork
+  (iced needing winit, Niri needing Smithay) points at the other fork's
+  `canopa/main` commit (or the matching topic commit) with a `[patch]` or git
+  `rev` entry.
 
 ## Retained behavior
 
 Each row is one or more tracking PRs in the fork named in the table above.
 
-| Patch | Why it remains | Verification |
-| --- | --- | --- |
-| Exported Wayland dialog parents and modal hints | The FileChooser portal needs out-of-process ownership before initial configure. Optional xdg-foreign-v2/xdg-dialog-v1 objects remain owned by the child. | ADR0026 and the portal implementation ledger record focused, native and shared verification. |
-| Focus-scoped keyboard shortcut inhibition | A shortcut editor must receive input without freeing existing registrations. The ordinary-window adapter tracks actual permission/focus per seat and retires retained guards with the native owner; layer surfaces decline it. | ADR0068; Portal 213 library/55 integration, 22 final editor groups, three retained-handle/window rounds and six shared desktop suites pass. The original workspace retains the same ten Files failures; other Rust/post stages pass. |
-| Source-owned shortcut recording | Capture base symbols and actual post-press native modifiers before widgets, with generation-checked cancellation and consumed-cycle cleanup. The Iced result stream remains bounded and explicit Apply retains permission ownership. | ADR0069; ten policy and three standalone runtime tests plus strict whole-workspace Clippy pass. The actual normal app passes36 public native groups across both appearances; three probes confirm12 key/modifier serial pairs. The current shared gate, native retained-handle and further layout acceptance remain pending. |
-| Descriptor copy progress with a per-call pipe | Files needs cooperative cancellation and byte reporting without reopening selected paths or sharing residual pipe data after failures. | The private runnable uutils proof, prepared-copy boundary tests, and linked release Copy/Move/cancel/reopen check; Files ADR0153 records scope and limitations. |
-| Named Wayland output snapshots | The shell plans Bar Surfaces from output names even before a window exists; upstream does not expose this snapshot to application messages. | Shell eligible-output/surface reconciliation tests and compositor output checks. |
-| Activation token context | Banner actions need the originating surface and recent input serial on the existing connection. | Notification activation tests and isolated desktop action checks. |
-| Surface-owned idle inhibition | The shell's manual idle-inhibitor module needs optional protocol support, idempotent requests and cleanup when bar surfaces retire. | Shell lifecycle tests, retired-window adapter regression and `scripts/verify-idle-inhibitor.py` with a private compositor and idle daemon. |
-| Retired-window cleanup | Compositor output loss may remove a backend unit before Closed is delivered; completed closes must not stay in the adapter retry queue. | The retained vendor adapter regression plus notification surface lifecycle tests. |
-| Renderer redraw and relayout notifications | Asynchronous image completion must refresh idle surfaces; otherwise focused-window titles update while application icons remain blank until an unrelated event. | `scripts/verify-focused-window-icons.py` checks fresh PNG/SVG icons and cached switches on rotated and horizontal bars with a controlled, otherwise idle IPC stream. |
-| Transient ordinary Iced windows | Files Quick Look needs a native parent before initial configuration to preserve its requested size. The shared runtime/Winit operation returns an explicit failure when unsupported; layer surfaces decline it. | Workspace all-target compilation, four fork library tests, published-archive provenance and 30 private Niri/Files native checks pass in dark/100% and light/125%, with 22 inspected captures. Full shared-stack regressions remain required (ADR 0019). |
-| Portal application activation handoff | AppChooser must consume incoming activation and produce a fresh token from recent input on its own focused window. | ADR0028; strict Wayland input capture, serial-correlated bounded replies and seven private OpenURI/native checks per theme pass; full shared gate remains required. |
-| User-input-bound ordinary-window focus | Iced GainFocus reached an empty Wayland function; returning from an inspector could focus another Browser. | Native minimized red, wire diagnosis and overdue-reply red; normal return and expiry rejection pass four dark/100% and light/125% cases. The original transfer workflow passes both themes. Full shared regressions remain required (ADR 0021). |
-| Retired-window configure and close | The input-bound activation keeps a closed source window's role alive until the compositor answers, so a configure or close can arrive for a window winit already retired; upstream aborts with "got configure for dead window." (winit#9). | The fork's library tests, and the Files clipboard and question-focus native cases that crashed intermittently: six cases and four clipboard repeats pass with no panic (2026-11-14). |
-| Optional ordinary-window Wayland drag transport | Files needs exact native input grabs, negotiated Copy/Move, retained offers and asynchronous completion after origin closure. Layer surfaces decline it. An optional drag icon (RGBA on a `wl_shm` surface) follows the pointer (winit#8, iced#9; Files ADR 0170). | Scoped transport and Files checks cover retained offers, transfers/Undo, scrolling, narrow tiles, selected clipboard coexistence and logical-Escape ordering. Strict peer cancellation now passes on the pinned Niri companion below; the installed compositor still reproduces the failure. Distribution selection, broader coexistence and shared-stack regressions remain open (ADR0023/0024, Files ADR0095). |
-| Wheel-scrolled text inputs | A long value (a path, a file name) can be read by scrolling the field sideways with a horizontal wheel, touchpad or Shift+wheel, without moving the caret; upstream `text_input` ignores wheel events (iced#10; Files ADR 0171). | Eleven `iced_widget` unit tests cover overflow, clamping, Shift, capture and reset; Canopa Files builds against the pin. Native checks in Files remain pending. |
-| Queued input across widget transitions | The ordinary-window adapter preserves the pending input tail until an outdated interface's messages apply and its tree rebuilds. Files form groups use the existing invalidation signal. | Three std-only queue regressions pass after two verified red failures; native/shared verification remains in progress (ADR 0020). |
-| Finite EIS server reads | RemoteDesktop needs to observe revocation between bounded reads and bound pending bytes/received FDs. The worker still needs its own frame budget. | ADR0046; original8192-byte read red, four staged socket regressions and real libei interoperability pass. Workspace adoption checks are recorded in the portal ledger; native input/session acceptance remains open. |
+| Patch | Why it remains |
+| --- | --- |
+| Exported Wayland dialog parents and modal hints | The FileChooser portal needs out-of-process ownership before initial configure. Optional xdg-foreign-v2/xdg-dialog-v1 objects remain owned by the child. |
+| Focus-scoped keyboard shortcut inhibition | A shortcut editor must receive input without freeing existing registrations. The ordinary-window adapter tracks actual permission/focus per seat and retires retained guards with the native owner; layer surfaces decline it. |
+| Source-owned shortcut recording | Capture base symbols and actual post-press native modifiers before widgets, with generation-checked cancellation and consumed-cycle cleanup. The Iced result stream remains bounded and explicit Apply retains permission ownership. |
+| Descriptor copy progress with a per-call pipe | Files needs cooperative cancellation and byte reporting without reopening selected paths or sharing residual pipe data after failures. |
+| Named Wayland output snapshots | The shell plans Bar Surfaces from output names even before a window exists; upstream does not expose this snapshot to application messages. |
+| Activation token context | Banner actions need the originating surface and recent input serial on the existing connection. |
+| Surface-owned idle inhibition | The shell's manual idle-inhibitor module needs optional protocol support, idempotent requests and cleanup when bar surfaces retire. |
+| Retired-window cleanup | Compositor output loss may remove a backend unit before Closed is delivered; completed closes must not stay in the adapter retry queue. |
+| Renderer redraw and relayout notifications | Asynchronous image completion must refresh idle surfaces; otherwise focused-window titles update while application icons remain blank until an unrelated event. |
+| Transient ordinary Iced windows | Files Quick Look needs a native parent before initial configuration to preserve its requested size. The shared runtime/Winit operation returns an explicit failure when unsupported; layer surfaces decline it. |
+| Portal application activation handoff | AppChooser must consume incoming activation and produce a fresh token from recent input on its own focused window. |
+| User-input-bound ordinary-window focus | Iced GainFocus reached an empty Wayland function; returning from an inspector could focus another Browser. |
+| Retired-window configure and close | The input-bound activation keeps a closed source window's role alive until the compositor answers, so a configure or close can arrive for a window winit already retired; upstream aborts with "got configure for dead window." (winit#9). |
+| Optional ordinary-window Wayland drag transport | Files needs exact native input grabs, negotiated Copy/Move, retained offers and asynchronous completion after origin closure. Layer surfaces decline it. An optional drag icon (RGBA on a `wl_shm` surface) follows the pointer (winit#8, iced#9). |
+| Wheel-scrolled text inputs | A long value (a path, a file name) can be read by scrolling the field sideways with a horizontal wheel, touchpad or Shift+wheel, without moving the caret; upstream `text_input` ignores wheel events (iced#10). |
+| Queued input across widget transitions | The ordinary-window adapter preserves the pending input tail until an outdated interface's messages apply and its tree rebuilds. Files form groups use the existing invalidation signal. |
+| Finite EIS server reads | RemoteDesktop needs to observe revocation between bounded reads and bound pending bytes/received FDs. The worker still needs its own frame budget. |
 
 Removed local patches:
 
@@ -157,26 +184,18 @@ Arch package also collects every other dependency notice with
 `--ref REF` builds another fork branch, tag or commit instead of the pin. The ref
 is resolved with `git ls-remote`, its archive is downloaded and its checksum
 recorded, and the receipt is marked unpinned, so packaging refuses it. Use it for
-native comparisons with the earlier companions. Topic branches stack on
-`canopa/fixes` (the base with every bug fix), so each is the closest equivalent
-of a former recipe rather than an identical tree:
+native comparisons.
 
-| Former recipe | Fork ref | ADR |
-| --- | --- | --- |
-| `niri-screencast-resume` | `canopa/screencast-resume` | [0043](adr/0043-screencast-frame-resume.md) |
-| `niri-source-cancellation`, `niri-desktop-compat` | `canopa/dnd-source-lifetime` (Smithay `canopa/dnd-source-lifetime`), `canopa/fixes` | [0024](adr/0024-niri-drag-source-lifetime.md), [0045](adr/0045-combined-niri-desktop-companion.md) |
-| `niri-remote-input` | `canopa/remote-input-keyboard` | [0046](adr/0046-session-owned-remote-input.md) |
-| `niri-desktop-pointer` | `canopa/remote-input-pointer` | [0056](adr/0056-capture-creator-lifetime.md) |
-| `niri-input-capture` | `canopa/input-capture` | [0059](adr/0059-compositor-owned-input-capture.md), [0065](adr/0065-keyboard-source-release-suppression.md) |
-| `niri-global-shortcuts` | `canopa/global-shortcuts` | [0066](adr/0066-compositor-owned-shortcut-leases.md) |
-| `niri-input-capture-keyboard` | `canopa/input-capture-keyboard` | [0111](adr/0111-input-capture-keyboard-ownership.md) |
-| `niri-remote-touch` (packaged) | `canopa/main` (the pin) | [0117](adr/0117-remote-touch-ownership-and-transport.md) |
-
-Topics added after the recipes, each a tracking PR in the fork and part of the
-pin (`.scratch/niri-scrolling/PRD.md`):
+The topics that make up the pin, each a tracking PR in the fork:
 
 | Fork ref | Base | Canopa use |
 | --- | --- | --- |
+| `canopa/fixes` | `canopa/base` | The general bug fixes; the feature topics below stack on it |
+| `canopa/screencast-resume` | `canopa/fixes` | Static ScreenCast frames after a consumer pauses and resumes |
+| `canopa/dnd-source-lifetime` (with Smithay `canopa/dnd-source-lifetime`) | `canopa/fixes` | Drag cancellation when the source is destroyed (Files drag and drop) |
+| `canopa/remote-input-keyboard`, `canopa/remote-input-pointer`, `canopa/remote-input-touch` | `canopa/fixes` | Session-owned RemoteDesktop keyboard, pointer and touch input |
+| `canopa/input-capture`, `canopa/input-capture-keyboard` | `canopa/fixes` | Compositor-owned InputCapture pointer and keyboard leases |
+| `canopa/global-shortcuts` | `canopa/fixes` | Compositor-owned GlobalShortcuts leases |
 | `canopa/viewport-ipc` (#14) | `canopa/base` | Minimap visible-area frame |
 | `canopa/window-parent-ipc` (#15) | `canopa/base` | Taskbar dialog grouping; the Shell's `niri-ipc` comes from the fork pin |
 | `canopa/spawn-placement` (#16) | `canopa/base` | Window session restore and workspace templates |
@@ -213,10 +232,7 @@ and records the compilers; `--native-file FILE` names explicit build-tool
 overrides. Arch packaging installs the result at
 `/usr/lib/canopa/xdg-desktop-portal`; the `canopa-portal-frontend` wrapper selects
 it only inside the dedicated Canopa session. Its LGPL `COPYING` text comes from
-the fork source. Scope and acceptance of the four changes are in ADR
-[0047](adr/0047-ordered-portal-input-forwarding.md),
-[0055](adr/0055-frontend-session-owner-lifetime.md),
-[0063](adr/0063-input-capture-frontend-phase.md) and the USB portal ledger.
+the fork source. The four frontend changes are listed in the [fork inventory](fork-inventory.md).
 
 ### CUPS client, IPP backend and receiver
 
@@ -245,18 +261,14 @@ base and the compare link. Protocol and packaging checks:
 `scripts/test-cups-authentication.py` (its `--self-test` runs in the workspace
 gate), `scripts/test-print-early-replies.py`, `scripts/test-print-ipp-receiver.py`,
 `scripts/test-print-ipp-backend.py`, `scripts/test-print-runtime-package.py` and
-`scripts/test-print-backend-package.py`. See [the Print runtime guide](print-runtime.md)
-and ADRs [0101](adr/0101-process-private-print-authentication-runtime.md),
-[0108](adr/0108-maintained-ipp-receiver.md) and
-[0110](adr/0110-matching-ipp-backend-resolution.md).
+`scripts/test-print-backend-package.py`. See [printing](printing.md) for how the runtime is selected and packaged.
 
 ## Verification after a pin change
 
 After changing a fork pin, run `bash scripts/check.sh --workspace` and
 `bash scripts/check.sh --core`, followed by the isolated desktop fixtures. Compilation alone does not establish popup grabs,
 activation, output removal, fractional scaling, physical input regions, or native
-screen-reader behavior. The experimental rotation prototype's own renderer copy
-remains outside the supported workspace.
+screen-reader behavior.
 
 After building root debug binaries, run these fixtures sequentially:
 

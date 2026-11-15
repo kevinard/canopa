@@ -259,7 +259,7 @@ lockscreen {{
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bin-dir',type=Path,default=ROOT/'target/debug')
-    parser.add_argument('--output',type=Path,default=ROOT/'.scratch/lockscreen-integration/evidence')
+    parser.add_argument('--output',type=Path,default=ROOT/'target/native-runs/verify-lockscreen-integration')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='canopa-lock-integration-') as temporary:
         root=Path(temporary);root.chmod(0o700);session=desktop.Session(root,args.output.resolve())

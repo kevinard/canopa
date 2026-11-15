@@ -1,140 +1,282 @@
 # Maintaining Canopa Notify
 
-Run these commands from the Canopa workspace root.
+Run these commands from the Canopa workspace root. Use `bash scripts/cargo.sh`
+rather than plain `cargo` for anything that compiles (see
+[building.md](../building.md)). The code layout and runtime design are described
+in [architecture/notify.md](../architecture/notify.md).
 
-## Build profiles and ownership
+## Build profiles
 
-The default Cargo features are `gui` and `audio`. `gui` includes Iced, Wayland,
-image preparation and native AT-SPI accessibility. `audio` includes Rodio and its
-device/decoder dependencies. The public daemon, lifecycle, storage, body parser,
-control and D-Bus interfaces compile without either adapter:
+The default features are `gui` and `audio`. `gui` adds Iced, Wayland, image
+preparation, AccessKit and Niri IPC; `audio` adds Rodio. The daemon core, storage,
+body parser, control socket and D-Bus interfaces build without either:
 
 ```sh
-cargo check -p canopa-notify --all-targets --no-default-features --locked
+bash scripts/cargo.sh check -p canopa-notify --all-targets --no-default-features --locked
 bash scripts/test-notify.sh --no-default-features
-cargo build -p canopa-notify --no-default-features --features gui --locked
+bash scripts/cargo.sh build -p canopa-notify --no-default-features --features gui --locked
 ```
 
-A core build runs `daemon --headless` and the control/provider commands. It rejects
+A core build runs `daemon --headless`, `ctl` and `panel-provider` and rejects
 `--service` with a feature-specific error. A GUI build without audio renders
-normally and does not advertise sound. Test presenters remain available in core
-builds, so lifecycle and delivery-policy tests do not require a display or device.
+banners and does not advertise `sound`. Test presenters exist in core builds, so
+lifecycle and policy tests need no display or audio device.
 
-| Owner | Responsibility and verification boundary |
-| --- | --- |
-| `lib.rs`, `runtime.rs` | Small `Daemon` entry point, ordered mutations, revision guards, committed effects and adapter coordination. Public daemon/control tests. |
-| `lifecycle.rs`, `domain.rs` | Sender lifecycle, retained attention, residency, transience and action meaning. Lifecycle/history tests. |
-| `sqlite_persisted_state.rs`, `migrations/` | Forward migrations, atomic writes, keyset reads and admission/retention. Real temporary SQLite fixtures. |
-| `intake.rs`, `notification_link.rs`, `input_limits.rs` | Bounded markup, safe typed targets and input validation. Receipt and malformed-input tests. |
-| `notification_server.rs`, `notification_server/` | Exact freedesktop wire interface, live sender-ID registry and ordered publication. Private-bus executable tests. |
-| `startup.rs` | Private paths, ownership, legacy import and failure before recovery. Competing-process and migration tests. |
-| `control.rs`, `control_adapters/` | Typed controls, bounded sockets, CLI, independent provider pagination and opaque interactions. Real socket/provider tests. |
-| `presentation.rs` | Desktop-independent banner projection and presenter contract. Public presenter fixtures. |
-| `presentation/renderer.rs` and children | Actual Iced widgets, revision-owned input, surface/display lifetimes, bounded assets and AT-SPI. Widget, native bus and compositor evidence. |
-| `sound/playback.rs`, `sound/playback/theme.rs` | Bounded playback and sound-theme resolution. Real offline mixer fixtures. |
-| `link_opening/portal.rs`, `activation/wayland.rs` | Desktop opening and best-effort activation context. Private portal mocks and graphical acceptance. |
-| `canopa-panel-protocol` | Generic versioned presentation contract; no notification-domain interpretation in the host. Protocol validation and Canopa Shell round trips. |
+The panel protocol is the single workspace crate `crates/canopa-panel-protocol`,
+shared with Canopa Shell. `bash scripts/check-panel-protocol.sh` verifies that
+relationship. Dependency forks are maintained as described in
+[vendor-maintenance.md](../vendor-maintenance.md).
 
-Keep slow file/device/portal work outside the mutation coordinator. Preserve the
-distinction between ordered sender events and replaceable UI projections. A test
-at a model boundary does not establish rendering, native accessibility or physical
-input behavior; link those separate fixtures in the compliance matrix.
+## Tests
 
-## Vendored source
+`scripts/test-notify.sh` runs `cargo test -p canopa-notify -p canopa-panel-protocol
+--locked` inside `dbus-run-session`, so tests never touch the desktop's
+notification service. Extra arguments are passed to Cargo.
 
-The root Canopa workspace owns all dependency forks. See
-[shared fork maintenance](../vendor-maintenance.md) for current versions,
-provenance, retained patches and upgrade checks. The panel protocol is the single
-root `crates/canopa-panel-protocol` source used by both applications.
+Notify has one integration test target, `integration`; each file in
+`crates/canopa-notify/tests/` is a module of it. Select modules with a filter:
 
-Run the root `bash scripts/check.sh --workspace` and `bash scripts/check.sh --core`
-entry points for broad validation; select Notify tests during development.
-For Notify-only Cargo commands select `-p canopa-notify`; `--workspace` now also
-selects the shell. Root `target/` contains the normal build outputs.
+```sh
+bash scripts/test-notify.sh --test integration dbus_contract::
+bash scripts/test-notify.sh --test integration -- storage_failures:: legacy_import::
+bash scripts/test-notify.sh --lib
+```
 
-## Evidence discipline
+- **D-Bus contract** (`dbus_contract::`) needs `dbus-run-session` and `dbus-send`
+  from the `dbus` package. It checks introspection, method replies, malformed
+  calls and lifecycle signal order against headless executables; `dbus-send`
+  independently checks the server-information reply shape.
+- **Storage interruption** (`storage_failures::`, `legacy_import::`) exercises
+  SQLite busy errors, SIGKILL during an uncommitted migration and SIGXFSZ during a
+  legacy snapshot write. The last case needs `prlimit` from util-linux. These cover
+  process interruption, not power loss.
+- **Malformed markup.** `intake::tests::fuzz_smoke` runs deterministic mutation
+  and round-trip checks in both core and full builds. It is bounded smoke
+  coverage, not exhaustive fuzzing.
 
-Use `Cargo.lock`, a private session bus, and temporary XDG paths. Run graphical
-acceptance in a disposable compositor; never replace a developer's notification
-service as a test fixture. Record versions, build revision, workload, machine,
-failures and cleanup. The [compliance matrix](freedesktop-notification-compliance.md)
-and [completion tracker](../../.scratch/notify/freedesktop-completion-review/IMPLEMENTATION.md)
-are the release record. An unavailable graphical job is an unmet gate, not a
-passing test. Keep native Notification portal v2 separate from the classic bridge.
+Broad validation uses the root `bash scripts/check.sh --workspace` and
+`bash scripts/check.sh --core`; see [testing.md](../testing.md).
 
-## Lint and parser checks
+### Configuration load stress
 
-CI denies warnings in owned workspace targets with
-`cargo clippy --workspace --all-targets --locked -- -D warnings`. Intentional
-exceptions have narrow attributes with reasons: public owned lifecycle effects,
-private adapter/row construction, and shared integration-test helpers. Do not add
-blanket production allowances to hide a new warning. Vendored libraries retain
-upstream policy and their documented local patch inventory.
+Build the integration executable, then pass the path Cargo prints:
 
-`intake::tests::fuzz_smoke` runs deterministic malformed-markup mutations and
-nesting/segment/typed-URI round trips as part of both core and full suites. It is
-bounded smoke coverage, not a claim of exhaustive fuzzing or a substitute for
-regressions for reported inputs.
+```sh
+bash scripts/test-notify.sh --test integration --no-run
+python3 scripts/stress-configuration.py --test-binary /path/to/integration-HASH \
+  --artifacts /tmp/configuration-load --runs 5 --cpu-workers 4
+```
 
-## Repeatable desktop check
+Each run uses a private session bus and records its test log and Linux CPU, memory
+and I/O pressure. SIGTERM and Ctrl-C stop its own workers and keep partial results.
+Run it after other builds finish; a concurrent build is a separate stress scenario.
 
-`scripts/test-desktop.py` requires a compatible Canopa Shell binary, Niri, Sway, grim,
-software Mesa, Python GI with Gio/AT-SPI, the AT-SPI launcher/registry, a C compiler,
-`pkg-config` and `wayland-scanner`. It builds its small private pointer helper,
-starts a nonactivating private bus and fresh XDG directories, then exercises both
-actual adapters and sender callbacks. It records screenshots, logs, compositor
-versions and results, and terminates only its own process groups.
+## Lint policy
+
+CI denies warnings with `bash scripts/cargo.sh clippy --workspace --all-targets
+--locked -- -D warnings`. Intentional exceptions use narrow attributes with a
+reason. Do not add blanket allowances to hide a new warning.
+
+## Running the daemon during development
+
+The service unit runs:
+
+```sh
+canopa-notify daemon --service --socket "$XDG_RUNTIME_DIR/canopa-notify/control.sock"
+```
+
+Service mode owns `org.freedesktop.Notifications`, so it fails if another
+notification server is running. For development, run a headless daemon on its own
+socket and bus name instead:
+
+```sh
+canopa-notify daemon --headless --socket /tmp/canopa-notify.sock \
+  --database /tmp/canopa-notify.db --dev-bus-name org.canopa.NotifyTest
+canopa-notify ctl --socket /tmp/canopa-notify.sock status --json
+```
+
+Headless mode has no renderer, sound, link opener or portal, and its
+notifications never expire on their own because no banner displays them.
+
+Control commands never start the daemon. Useful diagnostics:
+
+- `ctl status --json` reports availability, DND, the configuration source, format,
+  fingerprint, generation and last error, `presentation_error`,
+  `sender_publication_error`, `link_opening` (available, pending, sanitized last
+  error) and the timeout counters `timeout_records`, `timeout_retrying` and
+  `timeout_failed`.
+- `ctl active --json` lists retained active notifications; the Center also shows
+  live transient ones.
+- If the renderer stops after startup, status reports `banner renderer stopped;
+  restart the daemon to restore banners`. Receipt and the Center keep working. The
+  process keeps running, so `Restart=on-failure` does not recover it; restart the
+  unit explicitly.
+- A `ctl` exchange has one 30 s deadline and is never retried. If it fails, check
+  state before repeating a state-changing command such as `dnd toggle` or `clear`.
+
+### Graphical smoke check
+
+Inside a Wayland session that has no other notification server:
+
+```sh
+scripts/manual/run-service-daemon.sh            # foreground service daemon
+scripts/manual/notify-send-scenarios.sh smoke   # also: actions, replace, progress, sound, burst, all
+scripts/manual/watch-notification-signals.sh    # in a second terminal
+```
+
+`run-service-daemon.sh` uses `CANOPA_NOTIFY_BIN` (default: `cargo run`),
+`CANOPA_NOTIFY_SOCKET` and `CANOPA_NOTIFY_DATABASE` (a test database under
+`$XDG_RUNTIME_DIR`). With the `actions` scenario, the signal watcher should show
+`ActivationToken` before `ActionInvoked` when the compositor provides a token.
+
+### Legacy history import
+
+When the default database (`$XDG_STATE_HOME/canopa-notify/history.db`) does not
+exist and no `--database` is given, startup imports a socket-adjacent
+`<socket>.db`:
+
+- It takes the source's ownership lock until the copy is published, so stop any
+  daemon still using the source, even on another socket.
+- It copies with SQLite `VACUUM INTO` (committed WAL data included), verifies the
+  copy and publishes it without overwriting. The source is kept.
+- An existing destination is always reused without reading the source.
+- A failure before publication leaves both files intact and exits without serving.
+  Fix the source or permissions and retry; do not delete the source to silence the
+  error.
+- After an abrupt interruption, the next default-path startup removes reserved
+  `.history-import-*` snapshots and their SQLite sidecars under the destination
+  lock. Symlinks and unrelated files are left alone.
+
+## Notification portal check
+
+`scripts/test-notification-portal.py` runs the Notify backend with the public
+`xdg-desktop-portal` frontend on a private desktop and exercises default and named
+actions, typed targets, withdrawal and application exit:
+
+```sh
+python3 scripts/test-notification-portal.py --binary target/debug/canopa-notify \
+  --output /tmp/notification-portal --scheme dark --scale 1.0 \
+  --shell-binary target/debug/canopa-shell
+```
+
+`--shell-binary` adds native Notification Center input; `--scheme light` and
+`--scale 1.25` cover the second appearance.
+
+## Desktop acceptance
+
+`scripts/test-desktop.py` requires a Canopa Shell binary, Niri, Sway, grim,
+software Mesa, Python GI with Gio and AT-SPI, the AT-SPI launcher and registry, a
+C compiler, `pkg-config` and `wayland-scanner`. It builds a small pointer helper,
+starts a private bus and fresh XDG directories, exercises banners and the Center
+with sender callbacks, records screenshots, logs and compositor versions, and
+stops only its own process groups:
 
 ```sh
 python3 scripts/test-desktop.py --notify target/debug/canopa-notify \
-  --shell target/debug/canopa-shell --artifacts /tmp/notify-desktop-new
+  --shell target/debug/canopa-shell --artifacts /tmp/notify-desktop \
+  [--color-scheme dark|light] [--scale 1.0|1.25|1.5|2.0]
 ```
 
-The manually dispatched `Desktop acceptance` workflow runs this check, the shared
-fork popup/output fixture, and Niri panel placement at fractional scale on a
-runner labeled `canopa-desktop`, building both applications from this workspace. A runner
-must be provisioned before this job can run; the local passing fixture is recorded
-separately from hosted CI. This smoke test does not run Orca; follow the separate
-[screen-reader procedure](orca-isolated-fixture-research.md) for that acceptance.
+The manually dispatched **Desktop acceptance** workflow
+(`.github/workflows/desktop.yml`) runs the maintained matrix on a self-hosted
+runner labelled `canopa-desktop`. Check a runner without touching the live desktop
+with `dbus-run-session -- python3 scripts/check-desktop-runner.py`. Runner setup is
+in [ci.md](../ci.md). An unavailable graphical job is an unmet gate, not a pass.
 
-Use the [hosted CI setup guide](hosted-ci.md) to provision and register the runner.
-`dbus-run-session -- python3 scripts/check-desktop-runner.py` checks prerequisites
-without touching the live desktop. Runner registration and hosted results must be recorded separately from local results.
+## Screen-reader procedure
 
-## Storage interruption and configuration load checks
+The desktop check does not run Orca. Test screen-reader behaviour by hand in an
+isolated graphical session; never replace the developer's own notification service
+or screen reader.
 
-`bash scripts/test-notify.sh --test integration -- storage_failures:: legacy_import::` exercises real
-SQLite busy errors, SIGKILL during an uncommitted migration, and SIGXFSZ during a
-legacy snapshot write. The last fixture needs `prlimit` from util-linux. These
-tests establish process-interruption recovery, not filesystem or power-loss
-certification. Reserved `.history-import-*` snapshots and sidecars are reclaimed
-under the destination ownership lock on the next default-path startup.
+Requirements: `orca`, `speech-dispatcher`, `espeak-ng` and `at-spi2-core`. Paths
+below are Arch paths.
 
-Build the configuration suite with `bash scripts/test-notify.sh --test integration
---no-run`, then pass the executable path printed by Cargo to:
+1. Create a private session with fresh XDG directories:
+
+   ```sh
+   fixture=$(mktemp -d /tmp/canopa-orca.XXXXXX)
+   mkdir -p "$fixture"/{runtime,config,data,state,cache}
+   chmod 700 "$fixture/runtime"
+   env -u AT_SPI_BUS_ADDRESS -u DISPLAY -u WAYLAND_DISPLAY -u SWAYSOCK \
+     XDG_RUNTIME_DIR="$fixture/runtime" XDG_CONFIG_HOME="$fixture/config" \
+     XDG_DATA_HOME="$fixture/data" XDG_STATE_HOME="$fixture/state" \
+     XDG_CACHE_HOME="$fixture/cache" \
+     dbus-run-session -- bash --noprofile --norc
+   ```
+
+2. Inside it, start a nested compositor (for example Niri inside Sway), set
+   `WAYLAND_DISPLAY` to its socket, then start the Canopa Shell and
+   `canopa-notify daemon --service`.
+3. Start accessibility services if the private bus has no activation manager:
+   run `/usr/lib/at-spi-bus-launcher --launch-immediately --a11y=1` when
+   `org.a11y.Bus` is not owned, export the `AT_SPI_BUS_ADDRESS` it reports, and
+   start `/usr/lib/at-spi2-registryd`.
+4. Start Speech Dispatcher with explicit configuration, socket and PID-file paths
+   in the fixture. To capture speech without a sound device, point ALSA at its
+   `file` plugin with a `null` slave; set `SPEECHD_PLUGIN_DIR` if the audio plugins
+   are relocated. Then start `orca`. Speech Dispatcher's protocol log shows each
+   SSML submission.
+5. Exercise the product and compare the spoken text:
+   - A new banner is announced once, politely, and does not take focus; geometry
+     updates and Center refreshes do not repeat it.
+   - In the Center, Tab moves through named buttons, radio choices (with their
+     selection state) and links (with the link role and destination).
+   - Flat review reads a body in order, including the alternative text of images.
+
+Orca's default desktop layout, with NumLock off:
+
+| Interaction | Key |
+| --- | --- |
+| Read focused name, role and context | Keypad Enter (twice for detail) |
+| Toggle flat review | Keypad minus |
+| Read the whole window in flat review | Keypad plus twice |
+| Current / previous / next line | Keypad 8 / 7 / 9 |
+| Current / previous / next item | Keypad 5 / 4 / 6 |
+
+Niri does not run compositor bindings for `zwp_virtual_keyboard_v1` input, so
+`wtype` cannot trigger Orca commands bound in the nested Niri. Two alternatives:
+
+- Call Orca's remote controller directly:
+
+  ```sh
+  gdbus call --session --dest org.gnome.Orca.Service \
+    --object-path /org/gnome/Orca/Service/FlatReviewPresenter \
+    --method org.gnome.Orca.Module.ExecuteCommand SayAll true
+  gdbus call --session --dest org.gnome.Orca.Service \
+    --object-path /org/gnome/Orca/Service/WhereAmIPresenter \
+    --method org.gnome.Orca.Module.ExecuteCommand WhereAmIBasic true
+  ```
+
+  `ListCommands` on the same interface lists the available commands.
+- Bind those `gdbus` calls in the outer Sway configuration with
+  `bindsym --no-repeat F6 exec ...` (Sway evaluates bindings for virtual keyboards),
+  using the fixture's `DBUS_SESSION_BUS_ADDRESS`, then send
+  `env WAYLAND_DISPLAY="$OUTER_WAYLAND_DISPLAY" wtype -k F6` to the outer socket.
+
+Both run Orca's real presenters but do not test physical key delivery or Orca's
+own keypad grabs. Stop only the processes you started (by PID); do not use
+`pkill` or `orca --replace`.
+
+## Release measurement
+
+After builds finish, measure a release binary:
 
 ```sh
-python3 scripts/stress-configuration.py --test-binary /path/to/integration-HASH \
-  --artifacts /tmp/configuration-load-new --runs 5 --cpu-workers 4
+python3 scripts/measure-runtime.py /path/to/release/canopa-notify [--count 1000]
 ```
 
-Each repetition creates a private session bus and records its test log and Linux
-CPU/memory/I/O pressure. SIGTERM and Ctrl-C terminate its worker/test processes
-and retain partial results. Do not count a fixture setup failure as a test failure
-or success. Complete ordinary validation after compilation finishes; a concurrent
-build is an explicit stress scenario, not the release test baseline.
+It runs the headless daemon on its own bus and state, warms up with 32 receipts,
+then measures serial transient and retained Notify/Close round trips with 4 KiB
+bodies. The JSON output includes
+receipt percentiles, memory, CPU, platform, binary hash and clean shutdown. Compare
+equivalent machines and workloads; this is not a burst or rendering benchmark.
 
-## Release measurements
+## Dependency attributions
 
-Run `python3 scripts/measure-runtime.py /path/to/release/canopa-notify` after builds
-finish. It uses its own bus and state, warms up 32 transient receipts, then measures
-1,000 transient and 1,000 retained serial Notify/Close pairs with 4 KiB bodies.
-JSON includes receipt percentiles, RSS/high-water memory, CPU/platform, binary hash
-and clean shutdown. Compare equivalent machines and workloads against the
-[recorded release baseline](notification-release-verification.md). This workload
-is not a burst or graphical-latency benchmark.
+[dependency-attributions.md](../dependency-attributions.md) records the resolved
+Linux dependency graph. Regenerate it when the lockfile or features change:
 
-[Dependency attributions](../dependency-attributions.md) record the resolved Linux
-normal/build graph. Regenerate this inventory when the lockfile or features change with
-`python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md`.
-The root release packager includes original dependency notices.
+```sh
+python3 scripts/dependency-attributions.py --output docs/dependency-attributions.md
+```

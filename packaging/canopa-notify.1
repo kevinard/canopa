@@ -1,106 +1,172 @@
-.TH CANOPA-NOTIFY 1 "September 2026" "Canopa Notify" "User Commands"
+.TH CANOPA-NOTIFY 1 "November 2026" "Canopa Notify" "User Commands"
 .SH NAME
 canopa-notify \- Wayland desktop notifications and local notification history
 .SH SYNOPSIS
-.B canopa-notify daemon --service --socket
-.I PATH
+.B canopa-notify daemon --service
+.RB [ --socket " PATH"]
 .RB [ --database " PATH"]
 .RB [ --config " PATH" | --canopa-config " PATH"]
 .br
-.B canopa-notify daemon --headless --socket
-.I PATH
+.B canopa-notify daemon --headless
+.RB [ --socket " PATH"]
 .RB [ --database " PATH"]
+.RB [ --config " PATH" | --canopa-config " PATH"]
 .RB [ --dev-bus-name " NAME"]
 .br
-.B canopa-notify ctl --socket
-.I PATH COMMAND
+.B canopa-notify ctl
+.RB [ --socket " PATH"]
+.I COMMAND
 .br
-.B canopa-notify panel-provider --socket
-.I PATH
+.B canopa-notify panel-provider
+.RB [ --socket " PATH"]
 .RB [ --protocol " canopa-v4|canopa-v5"]
-.SH DESCRIPTION
-Canopa Notify owns org.freedesktop.Notifications on the session bus in service
-mode. It displays banners without taking keyboard focus and provides a
-Notification Center through a compatible Canopa Shell host. Service mode requires
-Wayland and the wlr layer-shell protocol. Headless mode is intended for tests and
-development; a development bus name must be requested explicitly.
-.PP
-Startup refuses competing ownership before recovering the database. Existing
-sender IDs and actions become invalid after restart. Retained notifications keep
-their attention state; transient notifications do not survive restart.
-.SH CONFIGURATION CHECKING
+.br
 .B canopa-notify check-config
-validates the notification namespace without starting a service. Options include
---config PATH (legacy), --canopa-config PATH (shared), --defaults, and --show-source
-(local diagnostic detail). The canopa config check command checks both components.
+.RB [ --config " PATH" | --canopa-config " PATH" | --defaults ]
+.RB [ --show-source ]
+.SH DESCRIPTION
+Canopa Notify implements the freedesktop Desktop Notifications service. In service
+mode it owns org.freedesktop.Notifications and
+org.freedesktop.impl.portal.desktop.canopa.notify (the Notification portal backend,
+version 2) on the session bus, shows banners that never take keyboard focus, and
+serves the Notification Center hosted by Canopa Shell. Service mode requires a
+Wayland session with the wlr layer-shell protocol.
 .PP
-Panel provider mode defaults to canopa-v4 for existing hosts. The built-in Canopa
-shell explicitly selects canopa-v5 for revision-scoped interactions and close.
+Headless mode shows nothing and is meant for tests and development. It does not
+own the freedesktop name; it joins the session bus only under a name requested
+with
+.BR --dev-bus-name .
+.PP
+Startup fails if another process already owns the notification service name or
+the control socket. Restart invalidates existing sender IDs and actions. Retained
+notifications keep their unread state; transient notifications do not survive a
+restart.
+.SH MODES
+.TP
+.B daemon
+Run the notification service. Exactly one of
+.B --service
+or
+.B --headless
+is required.
+.B --config
+selects a legacy-format file and
+.B --canopa-config
+a shared Canopa file; without either, the configuration is discovered.
+.TP
+.B ctl
+Send one command to the running daemon. It never starts the daemon.
+.TP
+.B panel-provider
+Serve the Notification Center to a panel host over stdin and stdout. The default
+protocol is canopa-v4; Canopa Shell's built-in Center uses canopa-v5.
+.TP
+.B check-config
+Validate the notifications namespace without starting a service and print one JSON
+line. --show-source prints local diagnostic detail on stderr. The
+.B canopa config check
+command checks every Canopa component together.
 .SH CONTROL COMMANDS
 .TP
 .B status [--json]
 Report daemon, configuration, rendering, sender-publication and link-opening health.
 .TP
 .B active [--json]
-List current sender lifecycles. Expired retained attention is available in the Center.
+Count, or list, active retained notifications.
 .TP
-.B dnd [status|on|off|toggle]
-Read or persist Do Not Disturb. Changes affect subsequent notification requests.
+.B dnd [status|on|off|toggle|tomorrow]
+Read or change Do Not Disturb. The default is status. tomorrow turns it on until
+08:00 the next morning.
 .TP
-.B reload [PATH]
-Validate and install a configuration candidate. Failure retains the last good
-configuration. PATH selects legacy flat syntax. Without PATH, repeat the last
-committed selection, including discovery when started without an explicit file.
+.B dnd on --for MINUTES
+.TQ
+.B dnd on --until HH:MM
+Turn Do Not Disturb on until a time: up to seven days from now, or the next
+occurrence of HH:MM in local time.
 .TP
-.B reload-canopa PATH
-Select and install the notifications namespace of an explicit shared Canopa file.
+.B dnd-schedule FROM TO [--days DAYS] [--alarms] [--calls]
+Set the daily Do Not Disturb schedule from FROM to TO (HH:MM). DAYS is a quoted
+list such as "mon tue wed"; the default is every day. --alarms lets alarm.*
+notifications and --calls lets call.incoming notifications break through.
+.TP
+.B dnd-schedule --clear
+Remove the schedule and break-through set through the control interface, returning
+to the configuration file's values.
+.TP
+.B preferences
+Print Do Not Disturb and per-application preferences as JSON.
+.TP
+.B app APP_ID [--delivery allow|silence|drop] [--sound true|false] [--lock-screen hidden|name-only|content]
+Set one application's delivery (show banners, save quietly, or block), sound and
+lock-screen visibility. Omitted options are cleared.
+.TP
+.B read-all
+Mark every notification read.
+.TP
+.B clear-all
+Dismiss, mark read and hide every notification from the Center. Prints an undo
+token.
+.TP
+.B undo-clear TOKEN
+Undo the latest clear-all within 30 seconds.
 .TP
 .B clear
-Dismiss active notifications, including runtime-only transient items.
+Dismiss active notifications, including transient ones.
 .TP
 .B delete-history
-Explicitly remove inactive retained history, including unacknowledged items.
+Remove inactive retained history, including unread items.
+.TP
+.B reload [PATH]
+Validate and install a configuration. Without PATH, repeat the current selection,
+discovering the configuration again when the daemon started without an explicit
+file. PATH selects a legacy-format file. A failed reload keeps the previous
+configuration.
+.TP
+.B reload-canopa PATH
+Install the notifications namespace of an explicit shared Canopa file.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/canopa/config.kdl
-Shared KDL envelope with schema-version 1 and optional shell/notifications blocks.
-The fallback directory is ~/.config. Missing namespaces use embedded defaults.
+Shared Canopa configuration; Notify reads its notifications block. The fallback
+directory is ~/.config. A missing block uses the embedded defaults.
 .TP
 .I $XDG_CONFIG_HOME/canopa-notify/config.kdl
-Legacy flat rules, sound settings and icon theme/scale; used only when the shared file is absent. The fallback is
-~/.config/canopa-notify/config.kdl. See the distributed examples/config.kdl.
+Legacy configuration, used only when the shared file is absent.
 .TP
 .I $XDG_STATE_HOME/canopa-notify/history.db
-Durable history, attention, DND and user rules. The fallback is
-~/.local/state/canopa-notify/history.db. Back up while the daemon is stopped.
+History, unread state, Do Not Disturb state, timers and schedule, and
+per-application preferences. The fallback is ~/.local/state/canopa-notify/history.db.
+Back it up while the daemon is stopped.
 .TP
 .I $XDG_RUNTIME_DIR/canopa-notify/control.sock
-Private control socket used by the supplied systemd user unit. CLI invocations
-always specify the socket explicitly. The runtime directory is not durable storage.
+Default control socket for daemon, ctl and panel-provider when --socket is omitted.
+XDG_RUNTIME_DIR must be an absolute path.
+.TP
+.I /usr/lib/systemd/user/canopa-notify.service
+User unit installed by the Arch package; it runs /usr/bin/canopa-notify and is
+started by canopa-session.target in the Canopa session. Local installations use
+the same unit in ~/.config/systemd/user with ~/.local/bin/canopa-notify.
 .SH OPERATION
-The supplied user unit installs the binary at ~/.local/bin/canopa-notify and is
-bound to graphical-session.target. Import WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP
-into the systemd user manager before starting the unit. Stop another notification
-daemon first. Consult journalctl --user -u canopa-notify.service for diagnostics.
+Stop any other notification daemon before starting the service. The daemon does
+not watch its configuration file: run
+.B canopa-notify ctl reload
+after editing it. Consult
+.B journalctl --user -u canopa-notify.service
+for diagnostics.
 .PP
-Database migrations are forward only. Restore a pre-upgrade backup before running
-an older binary that cannot read the new schema. An unavailable renderer is
-reported in status; restart the daemon to restore banners.
+Database migrations are forward only. Restore a backup taken before the upgrade
+before running an older binary. If status reports that the banner renderer
+stopped, notifications are still received and the Center still works; restart the
+service to restore banners.
 .PP
 Body links accept HTTP and HTTPS and open through the desktop OpenURI portal.
-Unsupported targets remain visible text. Opening a link does not invoke the
-sender's default action or dismiss the notification.
+Opening a link does not invoke the sender's default action or dismiss the
+notification.
 .SH EXIT STATUS
 Zero indicates success. Nonzero indicates invalid arguments, startup failure,
 rejected control input or an unsuccessful exchange. A failed exchange after
-transmission can have an unknown command outcome; inspect state before retrying.
+transmission can have an unknown outcome; inspect the state before retrying.
 .SH SEE ALSO
 .BR notify-send (1),
 .BR systemctl (1),
 .BR journalctl (1)
-
-.SH CANOPA INTEGRATION
-The daemon, ctl and panel-provider commands use
-$XDG_RUNTIME_DIR/canopa-notify/control.sock when --socket is omitted.
-The runtime directory must be absolute. Canopa Shell's built-in notifications module
-uses this endpoint for its attention count, DND commands and Notification Center.

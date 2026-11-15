@@ -39,7 +39,7 @@ Cards also follow the banner layout with a 34-pixel source icon beside the messa
 muted app name below the body, and actions below the content. Missing icons use an
 initial badge. Duplicate app headings are omitted in the reading view. Source
 identity is carried by the compatible generic attribution extension in
-[shared ADR 0010](../../adr/0010-rich-item-source-attribution.md); it is distinct
+shared ADR 0010 ([panel protocol](../../architecture/panel-protocol.md)); it is distinct
 from body images and does not expose notification keys to the host.
 
 The host's `notifications` provider surface prefers 480 logical pixels of width

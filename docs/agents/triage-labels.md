@@ -1,15 +1,19 @@
-# Triage Labels
+# Triage labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+GitHub labels used on `kevinard/canopa` issues.
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+| Label | Meaning |
+| --- | --- |
+| `bug` | Existing behaviour is wrong |
+| `enhancement` | New capability or improvement |
+| `accessibility` | Barrier for people using assistive technology or the keyboard |
+| `documentation` | Documentation is missing or wrong |
+| `verification` | Implemented behaviour that still needs a hands-on check on real hardware or a real session |
+| `area: shell`, `area: launcher`, `area: notify`, `area: files`, `area: portals`, `area: print`, `area: settings`, `area: session`, `area: compositor`, `area: ci`, `area: packaging`, `area: i18n`, `area: forks` | The component the issue belongs to |
+| `question` | Needs a decision or more information before work can start |
+| `duplicate`, `invalid`, `wontfix` | Closed without a change |
 
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
-
-Edit the right-hand column to match whatever vocabulary you actually use.
+When a skill or workflow refers to triage roles, map them as follows:
+`needs-triage` → an issue without an `area:` label; `needs-info` → `question`;
+`ready-for-agent` / `ready-for-human` → an open issue with acceptance criteria;
+`wontfix` → `wontfix`.

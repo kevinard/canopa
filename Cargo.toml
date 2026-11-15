@@ -132,7 +132,7 @@ unic-langid = "0.9"
 # the upstream base plus one tracked topic per change (open PRs in each fork).
 # Crates from one repository must come from the same commit, or Cargo builds
 # two incompatible copies of their shared types. See
-# .scratch/forks/GITHUB-FORKS.md and docs/vendor-maintenance.md.
+# docs/vendor-maintenance.md and docs/fork-inventory.md.
 winit = { git = "https://github.com/kevinard/winit", rev = "35125e8b470afafcb2b6d1b0033f154af5e310ca" }
 iced = { git = "https://github.com/kevinard/iced", rev = "6590c03941200731d06f32ed64c71fb63f344f0f" }
 iced_core = { git = "https://github.com/kevinard/iced", rev = "6590c03941200731d06f32ed64c71fb63f344f0f" }

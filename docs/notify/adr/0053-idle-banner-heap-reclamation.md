@@ -22,4 +22,4 @@ The size of the saving depends on the allocator, driver, build, and workload.
 
 The surface regression checks grace-period waiting, cancellation when content
 returns, and duplicate/stale close handling. Release measurements and graphical
-acceptance evidence are recorded in [the performance report](../../performance.md).
+acceptance evidence are recorded in the performance report (docs/performance.md in the git history at commit cb300936).

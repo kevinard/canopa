@@ -25,7 +25,7 @@ restarts. A missing service is an ordinary result: the command exits 1 and
 prints nothing, so held keys never fill the compositor's log.
 
 The actions live in the Shell library (`device_keys`), which depends only on
-`canopa-services` ([ADR 0137](../../adr/0137-shared-system-service-clients.md)):
+`canopa-services` (shared ADR 0137):
 
 - **Volume** changes the default output or input through the Pulse-protocol
   client, not `wpctl`. Raise adds the step to the loudest channel, keeps channel
@@ -104,7 +104,7 @@ xkbcommon has no `XF86KbdBrightnessToggle`) and `XF86AudioPlay`, `Pause`,
 `Stop`, `Next`, `Prev`. Volume, brightness and media keys carry
 `allow-when-locked=true`; mute, toggle and media keys carry `repeat=false`.
 Because Settings stores shortcut changes over the shipped defaults
-([ADR 0135](../../adr/0135-shortcut-changes-over-shipped-defaults.md)), every
+(shared ADR 0135), every
 user receives the new bindings at their next login. Saved changes that still
 name one of the four retired `wpctl` actions follow it to its Shell command, so
 a moved key stays moved and a turned-off key stays off; unchanged copies of the

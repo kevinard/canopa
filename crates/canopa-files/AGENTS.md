@@ -1,15 +1,14 @@
 # Canopa Files
 
-Follow [root instructions](../../AGENTS.md) and read
-[the Files context](../../docs/files/CONTEXT.md) before feature work. Product
-requirements and the implementation ledger live in `.scratch/file-manager/`.
-Record product and implementation decisions in `docs/files/adr/`; shared
-integration changes also need a root ADR.
+Follow [root instructions](../../AGENTS.md). Before feature work, read
+[the Files context](../../docs/files/CONTEXT.md) and the
+[Files architecture](../../docs/architecture/files.md). Track work in
+[GitHub issues](../../docs/agents/issue-tracker.md) labelled `area: files`.
+Record significant decisions in [`docs/adr/`](../../docs/adr/README.md) and update
+the architecture page in the same change.
 
-The GUI direction is the workspace's Iced stack and `canopa-ui`, per
-[ADR 0018](../../docs/adr/0018-files-iced-and-shared-controls.md). The current GTK
-adapter is migration reference code, not the intended final architecture.
-Preserve the complete product brief while replacing it; keep filesystem and
+The interface is built with the workspace's Iced stack and `canopa-ui`
+(`src/iced_desktop/`, compiled as the `desktop` module). Keep filesystem and
 application models independent of the renderer.
 
 Run commands from the workspace root. `bash scripts/check.sh` defaults to the

@@ -1,6 +1,0 @@
-{
-  "command": "bash scripts/test.sh -j1 --offline --no-default-features",
-  "passed": 336,
-  "failed": 0,
-  "ignored": 0
-}

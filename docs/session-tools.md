@@ -1,285 +1,281 @@
-# Wallpaper and lockscreen
+# Wallpaper, lock screen and idle
 
-Build from the workspace root with Wayland, libxkbcommon and Linux-PAM development
-libraries installed:
+Three programs from the `canopa-session` crate run alongside the Shell:
+
+| Program | Role | Forwarding command |
+| --- | --- | --- |
+| `canopa-wallpaper` | Wallpaper daemon, picker and slideshow | `canopa wallpaper ...` |
+| `canopa-lock` | Lock screen and the logind lock listener | `canopa lock ...` |
+| `canopa-idle` | Supervisor for the external Stasis idle daemon | `canopa idle ...` |
+
+`canopa SUBCOMMAND ...` runs the sibling binary installed next to `canopa`, passing
+every argument through (including `--help`). The wallpaper daemon and the locker use
+software rendering only: no Iced and no GPU device. The wallpaper needs a compositor
+with wlr-layer-shell, the locker one with ext-session-lock-v1. Niri has both.
+
+The login screen, polkit agent and pinentry share the lock screen's presentation;
+see [the login screen](greeter.md), [polkit](polkit.md) and [pinentry](pinentry.md).
+
+## Starting the tools
+
+**Arch package.** The binaries are in `/usr/bin` and the user units in
+`/usr/lib/systemd/user`. The units have no `[Install]` section: the Canopa session
+(`canopa-session.target`) starts `canopa-wallpaper`, `canopa-lock` and `canopa-idle`
+with the Shell, Notify and the polkit agent. There is nothing to enable. The package
+installs the PAM service `/etc/pam.d/canopa-lock`.
+
+**Local layout** (`~/.local/bin`, installed by `scripts/update.sh`). Copy
+`packaging/systemd/*.service` and `packaging/systemd/canopa-session.target` into
+`~/.config/systemd/user/`, install the PAM service (see [Lock screen](#lock-screen)),
+then:
 
 ```sh
-cargo build --locked -p canopa-session -p canopa-cli
+systemctl --user daemon-reload
+systemctl --user enable canopa-session.target
 ```
 
-Install `canopa-wallpaper`, `canopa-lock` and `canopa-idle` beside `canopa` (normally
-`~/.local/bin`). The repository updater builds and installs both. Neither tool
-uses Iced or creates a GPU device. They target compositors with wlr-layer-shell
-(wallpaper) and ext-session-lock-v1 (locker), including Niri.
+The target is wanted by `graphical-session.target` and wants the Shell, Notify,
+wallpaper, lock, polkit and idle units. The lock and idle units stay inactive until
+`/etc/pam.d/canopa-lock` exists.
 
 ## Wallpaper
 
 ```sh
-canopa wallpaper daemon
-canopa wallpaper status
 canopa wallpaper set ~/Pictures/mountains.jpg --output DP-1
-canopa wallpaper set ~/Pictures/forest.png --all --fit fill
-canopa wallpaper reload
-canopa wallpaper stop
-```
-
-The same commands work through `canopa-wallpaper`. `status` returns JSON output
-names, logical dimensions and active image/fit assignments. Output names are exact
-Wayland connector names. An assignment to an absent output is retained for when it
-appears. `--all` replaces the default and clears per-output overrides, so newly
-connected monitors receive that image too. Changes do not restart the daemon.
-Changes are saved as private assignment overlays in
-`$XDG_STATE_HOME/canopa/wallpaper.json` (or `~/.local/state/canopa/wallpaper.json`)
-and restored across daemon restarts/logins. `set --temporary` affects only the
-running daemon, including when another monitor's choice is saved later. State
-contains local image paths and fit modes, is bounded, mode 0600 and atomically
-replaced. Concurrent graphical sessions for the same account share these saved
-preferences; their IPC endpoints and running assignments remain display-specific.
-
-Image/configuration changes are watched with inotify, including atomic file
-replacement and missing-parent creation. Valid configuration updates preserve
-manual overlays. Explicit `reload` clears overlays and stops any slideshow,
-restoring the selected configuration. Invalid candidates preserve the displayed
-wallpaper and saved assignments. Filesystem events are coalesced while admission
-is in progress; no periodic filesystem scan is used.
-
-`fill` crops centrally to fill the monitor; `fit` preserves the whole image with
-solid-color letterboxing; `stretch` fills without preserving proportions; `center`
-uses original pixel dimensions and crops oversized images. PNG/JPEG are supported.
-Alpha composites onto the configured background. EXIF orientation is applied.
-
-By default the daemon has no animation, periodic image polling or redraw timer.
-It sleeps until IPC, source-file or Wayland output events. Images are decoded/resized only when needed;
-after submission the compositor retains the shared-memory backing and the daemon
-drops its decoded pixels and mapping. Admission is bounded to 64 MiB encoded,
-32 megapixels and a 256 MiB decoder allocation budget per image; output buffers
-also have a 32-megapixel limit, with a 256 MiB combined output-surface admission
-budget for a candidate. A distinct image is decoded once for all its candidate
-outputs. These are admission limits, not an RSS guarantee.
-
-To start with the graphical session, install
-`packaging/systemd/canopa-wallpaper.service` under `~/.config/systemd/user/`, then
-run `systemctl --user daemon-reload` and
-`systemctl --user enable --now canopa-wallpaper.service`. `canopa-session.target`
-now includes it. The unit waits for Niri readiness, matching the other companions.
-
-## Wallpaper picker and slideshow
-
-```sh
+canopa wallpaper set ~/Pictures/forest.png --all --fit fit
+canopa wallpaper set ~/Pictures/test.png --all --temporary
+canopa wallpaper status
 canopa wallpaper pick
-canopa wallpaper pick ~/Pictures/Wallpapers
-canopa wallpaper pick ~/Pictures/one.jpg ~/Pictures/two.png
-canopa wallpaper slideshow ~/Pictures/Wallpapers --all --interval 300
-canopa wallpaper next
-canopa wallpaper stop-slideshow
 ```
 
-The CPU-rendered picker previews selected/all monitors at their actual aspect
-ratios and buffer scale, using the daemon's background color. Choose the image,
-monitor and fit, then Apply. Previewing and closing the picker do not change the
-wallpaper. Left/Right chooses images, Up/Down cycles monitor selection, F cycles
-fit, Tab selects a control, Enter activates it and Escape closes. F5 refreshes
-files/outputs. Pointer and native accessibility actions use the same controls.
-Invalid/unready previews cannot be applied. Default discovery includes active
-wallpapers and `~/Pictures/Wallpapers` (or `~/Pictures`); explicit files/folders
-replace that input list. Folder discovery is bounded to 2,048 entries and 256
-image candidates. All-monitor previews show up to eight outputs at once.
+| Command | Effect |
+| --- | --- |
+| `daemon [--canopa-config FILE \| --defaults]` | Run the daemon in the foreground (what the unit runs). |
+| `set IMAGE (--output NAME \| --all) [--fit MODE] [--temporary]` | Show an image. `--fit` defaults to `fill`. Stops a running slideshow. |
+| `pick [IMAGES...]` | Open the graphical picker. |
+| `slideshow DIR (--output NAME \| --all) [--interval S] [--fit MODE]` | Cycle through a folder. |
+| `next` | Advance the slideshow now. |
+| `stop-slideshow` | Stop the slideshow and keep (and save) the current image. |
+| `status` | Print outputs, their size, scale and image/fit, the slideshow and the background color as JSON. |
+| `reload` | Return to the configured wallpaper. **This erases saved choices** (see below). |
+| `stop` | Stop the daemon. |
+| `check-config [--canopa-config FILE \| --defaults] [--show-source]` | Validate the `wallpaper` namespace without connecting to Wayland. |
 
-The optional slideshow scans at most 2,048 directory entries and selects up to
-256 PNG/JPEG paths in sorted order. Intervals are 10..86,400 seconds (default 300).
-It can target one `--output NAME` or `--all`. The timer exists only while the
-slideshow is active. Invalid slides retain the last valid frame, and the next
-advance continues to another candidate. Slideshow policy is saved at startup;
-frame changes do not write state on each timer tick. `stop-slideshow` saves its
-current wallpaper, and a manual `set` stops the running slideshow. Source files
-and output hotplug continue to use events. No transitions or GPU device are used.
+Output names are the compositor's connector names (`DP-1`, `eDP-1`); `status` lists
+them. A choice for a disconnected output is kept and applied when it reappears.
+`--all` replaces the default image and clears every per-output choice, so monitors
+connected later get it too.
 
-## Lock
+Fit modes: `fill` crops centrally to cover the monitor, `fit` shows the whole image
+with letterboxing in the background color, `stretch` ignores proportions, `center`
+uses the original pixel size and crops if larger. PNG and JPEG are supported, EXIF
+orientation is applied, and transparency is composited onto the background color.
 
-Install the PAM service **before** using Canopa's Lock button. Copy the appropriate
-example as root to `/etc/pam.d/canopa-lock`: `packaging/pam/canopa-lock.arch` for
-Arch's `system-auth`, or `packaging/pam/canopa-lock.debian` for Debian/Ubuntu's
-`common-auth` and `common-account`. Release archives ship these examples under `share/canopa/pam/`.
-Other distributions must use their standard screen-unlock PAM stack. There is no setuid binary or hard-coded password.
+### Saved choices and reload
+
+`set`, the picker and `stop-slideshow` save their result in
+`$XDG_STATE_HOME/canopa/wallpaper.json` (else `~/.local/state/canopa/wallpaper.json`),
+and the daemon restores it at the next start. The saved choices sit on top of the
+`wallpaper` block in `config.kdl`. `set --temporary` changes only the running daemon.
+
+The daemon watches `config.kdl`, its theme file, the images in use and the slideshow
+folder. A valid change applies at once and keeps your saved choices. An invalid
+configuration or image keeps the current wallpaper.
+
+`canopa wallpaper reload` is different: it re-reads the configuration, **discards
+every per-output and `--all` choice, stops the slideshow and overwrites
+`wallpaper.json` with an empty state**. Use it only to return to what `config.kdl`
+says.
+
+Limits per image: 64 MiB encoded, 16384 pixels per side, 32 megapixels, 256 MiB of
+decoder memory. All prepared monitor surfaces together are limited to 256 MiB.
+
+### Picker
+
+`canopa wallpaper pick` (or **Choose wallpaper…** on the Settings Personalization
+page) opens a window that previews the selected monitor, or all of them, at their real
+proportions. Previewing and closing do not change anything; **Apply** sets and saves
+the choice through the daemon.
+
+| Key | Action |
+| --- | --- |
+| Left / Right (Page Up / Page Down) | Previous / next image |
+| Up / Down | Cycle the monitor selection (one monitor or all) |
+| F | Cycle the fit mode |
+| Tab | Move between controls |
+| Enter | Activate the control |
+| F5 | Rescan images and monitors |
+| Escape | Close |
+
+Without arguments the picker offers the active wallpapers plus `~/Pictures/Wallpapers`,
+or `~/Pictures` when that folder does not exist. Arguments (files or folders, up to
+256) replace that list. Folder scans stop after 2048 entries and 256 images.
+
+### Slideshow
+
+`slideshow DIR` shows the PNG and JPEG files of a folder in name order (at most 256
+from the first 2048 entries), changing every `--interval` seconds (10–86400, default
+300). The slideshow itself is saved, not each image. An unreadable image keeps the
+previous one on screen and is skipped next time.
+
+## Lock screen
+
+### PAM service
+
+Canopa Lock authenticates with the PAM service `canopa-lock`. The Arch package
+installs `/etc/pam.d/canopa-lock` (it includes `system-auth` for `auth`, `account`
+and `password`). For other layouts, copy the matching example as root:
+
+| Distribution | Example | Release archive path |
+| --- | --- | --- |
+| Arch | `packaging/pam/canopa-lock.arch` | `share/canopa/pam/canopa-lock.arch` |
+| Debian, Ubuntu | `packaging/pam/canopa-lock.debian` | `share/canopa/pam/canopa-lock.debian` |
+
+Other distributions should use their standard screen-unlock stack. There is no setuid
+helper. The lock and idle units do not start while the file is missing.
+
+### How locking starts
+
+| Trigger | What runs |
+| --- | --- |
+| Quick settings **Lock** button | `canopa-lock` |
+| Mod+L (packaged Niri bindings) | `canopa-lock` |
+| Launcher session action **Lock** | `canopa-lock`, or `loginctl lock-session` when `canopa-lock` is not installed |
+| `loginctl lock-session`, logind `Lock` (other programs, the Settings lid choice **Lock the screen**) | the listener `canopa-lock daemon` starts the locker |
+| System suspend or hibernate | the listener locks before sleep |
+| Idle timeout (Stasis) | `canopa-lock` |
+| `canopa-shell lock` | **swaylock**, not Canopa Lock, with the Shell's wallpaper image when available |
+
+Plain `canopa-lock` first attaches to the listener's locker, so every path above
+except `canopa-shell lock` shares one lock screen. Without a listener it locks
+directly. The command returns after you unlock.
 
 ```sh
-canopa lock
-canopa lock --canopa-config ~/.config/canopa/config.kdl
-canopa lock preview /tmp/canopa-lock.png --width 1920 --height 1080
-canopa lock --defaults check-config
+canopa lock                       # lock now
+canopa lock ensure                # lock and wait until the compositor confirms it
+canopa lock status                # listener state as JSON
+canopa lock preview /tmp/lock.png --width 1920 --height 1080 --monitor DP-1
+canopa lock check-config --show-source
 ```
 
-`canopa-lock` is the direct executable. It starts on demand and remains in the
-foreground until authenticated unlock. Enter submits the current PAM prompt;
-Backspace edits the response. Escape clears nonempty input, or cancels the current PAM
-transaction when input is empty. After cancellation/failure, Enter starts a fresh
-transaction. Authentication and account checks must both succeed; locked/expired
-accounts cannot unlock. Only one PAM transaction runs at a time, in a cancellable
-child process. Retry is delayed until at least two seconds after the previous
-attempt started, in addition to PAM's own policy. `auth-timeout` bounds each entire
-transaction (default 120 seconds, configurable 5..600).
+| Option or command | Meaning |
+| --- | --- |
+| `--canopa-config FILE`, `--defaults` | Select the configuration (bypasses the listener). |
+| `--session ID` | logind session to lock and report to. |
+| `--ready-fd FD` | Write one byte to an inherited descriptor once the compositor confirms the lock. |
+| `daemon` | Run the logind listener (what `canopa-lock.service` runs). |
+| `ensure [--timeout-ms 100..30000]` | Request a lock and wait for confirmation (default 5000 ms). |
+| `status` | JSON with the session, readiness, locker PID and sleep coordination. |
+| `preview OUTPUT.png [--width] [--height] [--monitor NAME]` | Render without locking or starting PAM. |
+| `check-config [--show-source]` | Validate the `lockscreen` namespace. |
 
-The conversation supports successive hidden password/PIN/OTP prompts, visible
-prompts and module-provided information/error messages. Responses are fresh for
-each prompt; a password is never reused as an OTP or PIN. Authentication starts
-when the compositor confirms locking, so PAM can accept a fingerprint or security
-key without typing. Device waits show the module's cue. Cancellation, timeout and
-worker death retain the lock and discard the transaction.
+An invalid `lockscreen` block never prevents locking: the locker prints the error and
+uses the defaults. The configuration is read each time the screen locks.
 
-Hardware support comes from the installed PAM modules and enrollment, rather than
-Canopa-specific device drivers. Use the distribution's existing unlock stack when
-it already implements your policy. See [Yubico's pam-u2f documentation](https://developers.yubico.com/pam-u2f/Manuals/pam_u2f.8.html)
-and [fprint's device/PAM support](https://fprint.freedesktop.org/).
-For example, on an Arch system requiring **both** its system authentication and
-an enrolled FIDO token, a local policy can use:
+### Unlocking
+
+Type the response and press Enter. Escape clears the field; on an empty field it
+cancels the PAM attempt, and Enter starts a new one. Both PAM authentication and the
+account check must succeed. After a failure, the next attempt waits until two seconds
+after the previous one started, on top of PAM's own delays. `auth-timeout` (default
+120 s) bounds each whole attempt.
+
+PAM can ask several questions in turn (password, PIN, one-time code); each gets a
+fresh field. Authentication starts as soon as the lock is confirmed, so a fingerprint
+or security key works without typing; the module's message appears while it waits.
+Cancellation, timeout or a crashed worker keep the screen locked. If PAM reports an
+expired password, the lock screen asks before running the PAM password stack; the
+change and a fresh account check must both succeed to unlock. Cancel keeps the
+session locked.
+
+Hardware factors come from the installed PAM modules. For example, an Arch policy that
+requires both the system password and an enrolled FIDO key
+([pam-u2f](https://developers.yubico.com/pam-u2f/Manuals/pam_u2f.8.html)):
 
 ```pam
-auth substack system-auth
-auth required pam_u2f.so cue
-account include system-auth
+auth     substack system-auth
+auth     required pam_u2f.so cue
+account  include  system-auth
+password include  system-auth
 ```
 
-`substack` keeps an inner `sufficient` success from skipping the required token.
-Enrollment and module options must match the machine's policy. For fingerprint,
-use the distribution's configured `pam_fprintd` stack; sufficient/required controls
-determine whether fingerprint replaces or supplements a password. PAM runs modules
-serially; this implementation does not race a password stack against a separate
-fingerprint stack. When PAM reports an expired password after authentication, the
-locker asks for explicit consent before running the configured PAM password stack.
-Cancel leaves the session locked. Current/new/repeated passwords use fresh protected
-prompts; both the change and a fresh account check must succeed to unlock. Install
-the matching `password` include from the supplied PAM example to enable this recovery
-path.
+`substack` stops a `sufficient` success inside `system-auth` from skipping the key.
+For fingerprints use the distribution's `pam_fprintd` stack. PAM runs modules one
+after another; the lock screen does not race a password against a fingerprint.
 
-## Logind and systemd
+### The logind listener
 
-Install `packaging/systemd/canopa-lock.service` with the other user units, then:
+`canopa-lock daemon` (unit `canopa-lock.service`) serves one logind session. It
+selects `--session ID`, else `XDG_SESSION_ID`, else the caller's session, else the
+only graphical Wayland session of the user. It then:
 
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now canopa-lock.service
-loginctl lock-session
-```
+- starts the locker on logind's `Lock` signal (`loginctl lock-session`,
+  `loginctl lock-sessions`); an `Unlock` signal never unlocks;
+- holds a logind sleep delay inhibitor, locks on `PrepareForSleep` and releases the
+  inhibitor once the compositor confirms the lock, then takes a new one after resume;
+- sets logind's `LockedHint` after the compositor confirms and clears it after unlock;
+- restarts a locker that crashed while locked (after 750 ms, up to five times a
+  minute), so the screen does not stay locked with no prompt;
+- reconnects when logind restarts.
 
-The unit runs `canopa-lock daemon`, a small event-driven listener. It becomes ready
-after subscribing to the selected session's `Lock` signal, opening its private
-control endpoint and acquiring logind's sleep delay inhibitor. With it running,
-`loginctl lock-session SESSION_ID` and `loginctl lock-sessions` start the locker;
-calling `canopa-lock` directly attaches to the same foreground locker. Concurrent
-requests share one locker. `canopa-lock ensure` waits for compositor readiness;
-`canopa-lock status` reports the selected session and readiness as JSON.
-The session target includes this listener.
-Restarting/stopping the listener preserves an already active locker.
-The unit stays inactive if the required PAM service file has not been installed.
+Stopping or restarting the listener leaves an active lock screen in place. If the
+locker is killed, the compositor keeps the session locked.
 
-Session selection uses `--session ID`, then `XDG_SESSION_ID`, then the calling PID's
-session. A user service without a PID-attached session falls back to the only owned
-graphical Wayland session. Multiple candidates require explicit selection. Foreign
-user sessions are refused. Each session permits only one listener.
+### Background and widgets
 
-Direct and listener-started lockers set logind's `LockedHint` after the compositor
-confirms locking, and clear it after authenticated compositor unlock. A crash does
-not clear it. Live lockers reconnect after logind restarts; an unavailable logind never
-prevents direct secure locking. A logind `Unlock` signal cannot bypass PAM.
-See the [logind interface contract](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html).
-`LockedHint` is advisory; the compositor's session lock is the security boundary.
+With `use-wallpaper` on (the default), outputs without their own lock image show the
+wallpaper daemon's current image. Explicit lock images work without the daemon.
+Missing or invalid images fall back to the theme background. `dim` blends the image
+toward the background color.
 
-The compositor supplies keyboard layout and Caps Lock state. Clock/date, password
-feedback and selected widgets appear on every monitor, including hotplugged outputs.
-By default the locker inherits the wallpaper daemon's current per-output images
-unless its own configuration supplies a background. It caches prepared backgrounds
-while locked. Explicit lock images work without a wallpaper daemon. Missing or invalid lock
-images fall back to the theme background and do not prevent session locking.
+Passive widgets, each optional:
 
-`--ready-fd FD` writes `1` and closes a duplicate of that inherited descriptor only
-after the compositor's `locked` event. It is suitable for an external idle/suspend
-coordinator; starting the process alone is not proof of lock readiness. This feature
-is also used by the listener's sleep coordinator. See [Stasis integration](idle.md)
-for optional automatic idle, monitor power and suspend policy. The listener delays
-external sleep until compositor readiness within logind's bounded delay window;
-it acquires a fresh inhibitor after resume.
+| Widget | Shows |
+| --- | --- |
+| `username` | Your name |
+| `avatar` | The `avatar` image, else initials |
+| `keyboard` | The active keyboard layout; F6 or a click cycles layouts when there are several |
+| `battery` | UPower battery state |
+| `media` | The Shell's selected player's title, without controls |
+| `weather` | A local JSON snapshot (below) |
+| `notifications` | Canopa Notify's lock-screen feed |
 
-A denied lock request exits unsuccessfully. Rendering/authentication failures,
-Escape and process termination never request unlock. Under ext-session-lock,
-killing the locker leaves the session locked; recovery is compositor policy.
-Preview writes a PNG without acquiring a lock or starting PAM. See the shared
-authentication input controls below for accessibility and text support.
+`clock`, `date` and `authentication` are placed by `layout`. By default the center
+column shows avatar, clock, date, username, the password field and keyboard, and a
+column at the bottom center shows notifications, battery, media and weather. The enabled
+widgets are `battery`, `media`, `keyboard`, `username` and `notifications`.
 
-## Shared configuration and themes
+The notifications widget shows only what Notify allows on the lock screen: critical
+notifications, plus alarms and calls that break through Do Not Disturb, as "App — New
+notification" unless the app's rule allows its summary (see
+[Notifications](notifications.md)). Up to four lines are shown; with more than four
+entries, three lines and "+N more".
 
-Both applications use `~/.config/canopa/config.kdl`, standard XDG discovery and
-`--canopa-config`/`--defaults`. They have independent schema owners, included in
-`canopa config check`. Missing namespaces use defaults. Paths are relative to the
-configuration file. Unknown/duplicate settings are rejected. Wallpaper `reload`
-prepares a complete candidate and preserves current assignments on failure.
-Lock configuration and appearance are read at each invocation.
-
-```kdl
-schema-version 1
-appearance {
-    color-scheme "dark"
-    // Existing theme files and palette/typography overrides also apply.
-    accent "#b0dec3"
-}
-wallpaper {
-    image "wallpapers/forest.jpg"
-    fit "fill"
-    color "#10191d"
-    output "DP-1" { image "wallpapers/mountains.png"; fit "fit"; }
-}
-lockscreen {
-    use-wallpaper #true
-    // image "wallpapers/lock.jpg"  // explicit default overrides daemon inheritance
-    // output "DP-1" { image "wallpapers/lock-wide.jpg"; }
-    dim 65                        // blend wallpaper toward the theme background, 0..100
-    font "Inter"                  // defaults to the shared theme's first font family
-    clock-format "%H:%M"          // Chrono pattern; unset follows the language's time format
-    date-format "%A, %B %-d"      // unset shows the language's long weekday and date
-    clock-size 72                 // 8..160; scales with the available viewport
-    text-size 19                  // 8..160
-    auth-timeout 120               // total PAM transaction timeout, seconds
-    widgets "username" "keyboard" "battery" "media" "weather" "avatar" "notifications"
-    avatar "avatar.png"
-    weather-file "weather.json"
-}
-```
-
-Without `clock-format` and `date-format` (or with an empty pattern) the clock
-and date follow the language's formats (`LC_TIME`): for example `2:30 PM` and
-`Wednesday, November 11` in American English, `14:30` and `mercredi 11 novembre`
-in French. An explicit Chrono pattern is kept as written; Settings' 12/24-hour
-switch writes one ([ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md)).
-The greeter, which runs before login, uses the system locale.
-
-Widgets are passive and independently selectable; `widgets;` hides them all.
-Media displays the shell's selected/pinned player's label, without playback controls.
-Notifications (on by default for the lockscreen) shows Canopa Notify's read-only
-lock-screen feed: only critical notifications, and alarms or incoming calls when
-they break through Do Not Disturb, as "App — New notification" unless the app's
-rule allows its summary (`canopa-notify ctl app ID --lock-screen content`), at most
-three lines plus "+N more". It has no actions; Notify applies the policy before any
-text reaches the locker (Notify ADR 0055).
-Battery uses UPower changes. Unavailable data is hidden. Avatar is a local raster.
-Weather reads a local UTF-8 JSON snapshot on redraw (normally once per minute):
+The weather widget reads `weather-file` when it redraws:
 
 ```json
 {"temperature_celsius": 18.5, "description": "Clear", "updated_unix": 1793491200}
 ```
 
-A provider must write the current Unix timestamp, preferably via atomic replacement.
-Files above 16 KiB, invalid temperatures, timestamps more than five minutes in the
-future, and snapshots older than two hours are ignored. No location/network request
-is made by the lockscreen. Disable `media`, `weather`, `avatar`, `notifications` or `username` if those
-fields should not be visible while locked.
+Files over 16 KiB, invalid temperatures and snapshots more than five minutes in the
+future or more than two hours old are ignored. The lock screen makes no network or
+location request; something else must write the file.
 
-## Layout and custom widgets
+The clock redraws at each minute, or every second when `clock-format` or `date-format`
+contains seconds, fractions or a timestamp. Without a format (or with an empty one)
+the clock and date follow your language's formats, for example `2:30 PM` in American
+English and `14:30` in French. The Settings Date & time page writes an explicit 12- or
+24-hour pattern when you choose one.
 
-`layout` replaces the default placement. Region arguments list widgets in drawing
-order. Regions are `top-left`, `top-center`, `top-right`, `center-left`, `center`,
-`center-right`, `bottom-left`, `bottom-center`, and `bottom-right`. They align to the
-corresponding viewport edge/center. Each region flows as a column by default, or
-`flow="row"`. `x`/`y` offsets are logical pixels (-4096..4096); `margin`/`gap` are
-0..256. Geometry scales with the output and stays inside its bounds.
+### Layout and custom widgets
+
+`layout` replaces the default placement. Each region lists widgets in drawing order:
+`top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`,
+`bottom-left`, `bottom-center`, `bottom-right`. Regions flow as a column unless
+`flow="row"`. `x`/`y` offsets are logical pixels (-4096..4096). `authentication` must
+appear exactly once. Every enabled widget needs exactly one place; `clock` and `date`
+appear when placed. On small screens other widgets overlapping the password field are
+hidden. Without `layout`, enabled custom widgets join the last region.
 
 ```kdl
 lockscreen {
@@ -301,133 +297,172 @@ lockscreen {
         color "muted"
         preview "Example status"
     }
-}
-```
-
-`authentication` must appear exactly once. `clock` and `date` appear when placed;
-the six optional built-ins and custom widgets also need enabling in `widgets`.
-Each enabled widget needs one placement; duplicates and unknown names are rejected.
-At small sizes, regions shrink to fit and other widgets overlapping authentication
-are hidden. Without `layout`, the existing central clock/authentication and bottom
-widget stack remain; enabled custom widgets join the bottom stack.
-
-Use the [Widgets editor](settings.md#widgets) to arrange the layout. To hide
-passive widgets on a particular screen, add a list to that output's override.
-Existing image and fit fields can share the same block.
-
-```kdl
-lockscreen {
     output "DP-1" { hide-widgets "username" "media"; }
 }
 ```
 
-`hide-widgets` also accepts `clock`, `date` and configured custom widget names.
-Authentication and its keyboard layout switcher stay available. The single
-lockscreen accessibility tree omits passive widget labels hidden on any output.
+Custom (`script`) widgets run their command after the screen is locked, as you, with
+the configuration file's folder as working directory and no input. `command "uptime
+-p"` is split into words without a shell; use `sh -c` explicitly for shell syntax.
+Each run must finish within `timeout` seconds and print at most 16 KiB of UTF-8;
+the widget shows at most 1024 characters on four lines, and hides on failure. Runs
+repeat `interval` seconds after the previous one ends. Previews and `check-config`
+never run commands. Only show data you want visible on a locked screen.
 
-Custom widgets share a bounded command reader from `canopa-widgets`. `command`
-also accepts a shell-word string (for example `command "uptime -p"`); it is parsed
-as argv without shell expansion. Use explicit `sh -c` only when shell syntax is
-intended. Commands run with the user's ordinary privileges and configuration-file
-directory as cwd, receive no stdin or authentication channel, and begin only after
-compositor-confirmed locking. They are trusted local configuration, not a sandbox.
-Only enable data you want visible on the locked screen.
+`hide-widgets` in an `output` block hides passive, clock, date or custom widgets on
+that monitor. The password field stays on every monitor. The Settings
+[Widgets page](settings.md#widgets) edits this layout with a diagram.
 
-Commands run sequentially per widget: `interval` seconds after completion
-(1..86400, default 30), with `timeout` seconds per run (1..60, default 5).
-Output must be successful UTF-8 and at most 16 KiB; display text is limited to 1024
-characters and four wrapped lines. Failures hide the widget. Unchanged output does
-not trigger a redraw. Timeout and normal lockscreen exit terminate the command
-process group; the command leader also dies if the locker is killed. Programs
-that intentionally detach children must manage those children themselves.
-`format` substitutes `{output}`. `size` is 8..160; `color` accepts `text`, `muted`,
-`accent`, `warning`, `danger`, `success`, or `#rrggbb`.
-`preview` supplies placeholder text only in preview; previews and configuration
-checks never execute commands or start PAM.
+## Idle (Stasis)
 
-The default clock redraws at minute boundaries; custom clock/date formats update
-once per second. Widget changes and typing also redraw. Appearance uses the shared
-Canopa dark/light palettes and theme colors, with local font, size, clock and dim
-settings. The preview command can select a configured output with `--monitor DP-1`.
+Canopa uses the external [Stasis](https://github.com/saltnpepper97/stasis) daemon
+(version 1.7) for idle timeouts. `canopa-idle` starts and supervises it and gives it
+Canopa's commands. Stasis is optional: on Arch it is an optional dependency, and the
+idle unit only starts when `/usr/bin/stasis` exists.
 
-## Validation
+The policy file is `~/.config/canopa/stasis.rune` (under `$XDG_CONFIG_HOME`). The
+Canopa session creates it at login (`canopa-settings init-session`). In the local
+layout, create it with `canopa idle init` (mode 0600, never overwrites). The idle
+delays can be edited on the Settings Power page, or directly in Rune.
+
+Default policy (steps are sequential):
+
+| Plan | Lock | Displays off after the lock | Suspend after displays off |
+| --- | --- | --- | --- |
+| Desktop and on AC | 300 s | 60 s | 600 s |
+| On battery | 120 s | 30 s | 300 s |
+
+logind and D-Bus inhibitors are honored; game, gamepad and media detectors are off.
+Stasis warns before each action and debounces input for 5 s.
 
 ```sh
-cargo test --locked -p canopa-session --lib --test integration
-python3 scripts/verify-session-tools.py
-python3 scripts/verify-lockscreen-integration.py
-bash scripts/check.sh --workspace
+canopa idle info --json
+canopa idle pause 1h
+canopa idle resume
+canopa idle toggle        # Stasis's manual inhibit
+canopa idle profile work
+canopa idle reload
+canopa idle watch
 ```
 
-The native script starts a private Weston/Niri session and uses bubblewrap to mount
-an acceptance-only PAM service and C module. It never edits the host's `/etc/pam.d`
-or locks the user's compositor. Its fixture accepts only its known test password;
-never install the fixture module as a real PAM service. Results and screenshots
-are retained under `.scratch/wallpaper-lockscreen/evidence/`.
-The second script uses a private logind-compatible D-Bus service and real
-`loginctl` transport, plus deterministic multi-step/device PAM fixtures. Its results
-live under `.scratch/lockscreen-integration/evidence/`. These fixtures verify the
-conversation and lifecycle, not a physical token/fingerprint reader or a live
-distribution's PAM policy.
+| Command | Meaning |
+| --- | --- |
+| `run [--config FILE]` | Run Stasis under supervision (what `canopa-idle.service` runs). Requires the session's lock listener. |
+| `init [--output FILE]` | Write the default Rune file. |
+| `suspend` | Lock, wait for the compositor's confirmation (5 s), then ask logind to suspend. Refuses if locking fails. |
+| `info [--json]`, `watch`, `pause [DURATION]`, `resume`, `toggle`, `reload`, `profile NAME` | Passed to Stasis. |
+
+Global options: `--stasis PATH` (default `stasis` from `PATH`) and `--session ID`.
+`canopa-idle run` gives Stasis `CANOPA_LOCK`, `CANOPA_IDLE` and `CANOPA_NIRI`
+(absolute paths used by the Rune commands) and `XDG_SESSION_ID`. `canopa-lock` must
+be installed next to `canopa-idle`. Run one Stasis per user and do not also start
+Stasis's own service. Stopping `canopa-idle.service` stops Stasis; an active lock
+screen stays.
+
+Suspend from any other source (lid, menu, `systemctl suspend`) is covered by the lock
+listener's delay inhibitor. logind limits how long a delay inhibitor can hold sleep.
+
+The Shell's Keep awake tile (`idle-inhibitor` module) uses a Wayland idle inhibitor by
+default (`backend "wayland"`). A module with `backend "stasis"` shows Stasis's state
+and toggles its manual inhibit instead:
+
+```kdl
+shell {
+    modules {
+        module "awake" {
+            type "idle-inhibitor"
+            backend "stasis"
+        }
+    }
+    bar "top" { modules { start "awake"; }; }
+}
+```
+
+The Shell watches Stasis only while such a module exists.
+Closing the Shell does not release a manual inhibit.
 
 ## Shared authentication input
 
-Lock, Greeter, Polkit and Pinentry use the same bounded UTF-8 input. Secret fields
-have an eye button (also an accessible action) that shows the typed response; any
-new prompt is masked again. Left/Right
-moves by grapheme, Shift extends a selection, Home/End moves to an edge, and
-Backspace/Delete removes the selected or adjacent grapheme. Ctrl+A selects all;
-Ctrl+U clears. Insertion replaces the selection, with rejected oversized input
-leaving it intact. Deleted bytes and the unused buffer tail are erased.
+The lock screen, login screen, polkit agent and pinentry share one input field.
 
-When the compositor supplies several XKB layout groups, **F6** or the Keyboard
-control cycles the local selection. Compositor-side group changes take priority.
-The selector uses the supplied keymap, modifiers and compose table. It does not
-change the session's keyboard configuration. Configure multiple layouts in the
-compositor to offer them here.
+| Key | Action |
+| --- | --- |
+| Left / Right | Move by character (grapheme); with Shift, extend the selection |
+| Home / End | Move to the start or end |
+| Backspace / Delete | Delete the selection or the adjacent character |
+| Ctrl+A | Select all |
+| Ctrl+U | Clear |
+| F6 | Cycle the keyboard layouts the compositor provides |
 
-Software text uses advanced shaping, bidirectional layout and installed-font
-fallback. Install fonts covering the desired scripts. Native AT-SPI exposes prompt,
-status, visible request context and control actions. Hidden fields have the password
-role and expose only bullets, including through the text interface. Accessible
-editing, selection and submission follow the same consumer state/policy checks as
-keyboard input; stale prompt actions are rejected. A screen reader and accessibility
-bus must be available in the relevant session, including the dedicated greeter
-session when accessibility is needed before login.
+Secret fields have an eye button (also an accessibility action) that shows the typed
+text; each new prompt starts masked. The layout selector only changes how this field
+interprets keys; configure the layouts themselves in the compositor (Settings,
+Keyboard & pointer). Text uses complex-script shaping, bidirectional layout and font
+fallback; install fonts for the scripts you need.
 
-Owned secret buffers use fixed private memory mappings, best-effort `mlock` and
-`MADV_DONTDUMP`, in addition to process core-dump protection and explicit erasure.
-Memory-lock limits can prevent `mlock`; authentication remains usable. These
-protections apply to Canopa's owned storage, not to copies maintained by PAM,
-D-Bus, GnuPG, compositor/input libraries or the operating system.
+Each surface publishes an AT-SPI tree for screen readers: prompt, status, request
+context and actions. Secret fields expose only bullets. Typed secrets live in locked,
+non-dumpable memory and are erased after use; copies made by PAM, D-Bus, GnuPG or the
+compositor are outside Canopa's control.
 
-### Physical seat and device acceptance
+## Configuration
 
-The maintained native scenarios use private compositors, buses and PAM mounts.
-They verify multi-output/hotplug behavior and the sleep coordination protocol,
-including real delay-inhibitor descriptors. They do not establish a real machine's
-DRM/VT handoff, kernel suspend/resume or distribution authentication policy.
-Before replacing a login manager on a test installation, validate its greetd PAM
-stack, selected Cage/Weston DRM backend, login/logout/failed handoff, VT switching,
-lock/unlock on every physical output and hotplug while locked. Then check external
-`loginctl lock-session`, lid/power-triggered sleep, resume and authentication with
-the intended distribution password/fingerprint/FIDO policy. Keep an independent
-recovery login available while testing that installation.
+Both tools read `~/.config/canopa/config.kdl` (see [Configuration](configuration.md))
+and the shared `appearance` block. `canopa config check` validates their namespaces
+with the other components. Relative paths are relative to the configuration file.
+Unknown or repeated keys are errors.
 
-An opt-in `scripts/test-lockscreen-device.py` can test a real FIDO key without
-installing a PAM policy. Select `--enroll /path/to/pamu2fcfg` or
-`--u2f-enrollment` (a test-only touch credential for U2F-capable keys), and provide
-`--module /path/to/pam_u2f.so`, `--device /dev/hidrawN` and `--output DIRECTORY`.
-Run it with the native fixture's Python dependencies. It uses a private compositor
-and PAM mount, requests two touches and deletes its temporary mapping afterward.
-The first touch creates a non-resident credential for `pam://canopa-device-test`;
-the second authenticates through Canopa's actual PAM prompt and unlock path. It
-does not read SSH credentials, reset the key, create a resident account, install
-packages or change host login configuration. The U2F mode requires libfido2/OpenSSL
-development headers and a C compiler. It creates a non-resident, presence-required credential without changing PIN policy.
-The pam-u2f global configuration is hidden inside the test mount: the module
-requires root ownership for configuration files, so the helper uses its defaults.
-A FIDO2-only key that requires PIN entry during enrollment needs an interactive
-enrollment setup; never send that PIN through chat.
-This test covers the actual device/module conversation on a private graphical seat,
-not its enrollment in the host's login policy.
+```kdl
+schema-version 1
+wallpaper {
+    image "wallpapers/forest.jpg"
+    fit "fill"
+    output "DP-1" { image "wallpapers/mountains.png"; fit "fit"; }
+}
+lockscreen {
+    dim 65
+    clock-format "%H:%M"
+    date-format "%A, %B %-d"
+    widgets "username" "keyboard" "battery" "notifications" "avatar"
+    avatar "avatar.png"
+}
+```
+
+### `wallpaper`
+
+| Key | Value | Default |
+| --- | --- | --- |
+| `image` | path | none (solid color) |
+| `fit` | `fill`, `fit`, `stretch`, `center` | `fill` |
+| `color` | `#rrggbb` | the theme background |
+| `output "NAME" { image; fit; }` | per-monitor override, once per name | — |
+
+### `lockscreen`
+
+| Key | Value | Default |
+| --- | --- | --- |
+| `image`, `fit`, `color` | as for `wallpaper` | none, `fill`, theme background |
+| `output "NAME" { image; fit; hide-widgets ...; }` | per-monitor override | — |
+| `use-wallpaper` | boolean | `#true` |
+| `dim` | 0–100 | 65 |
+| `font` | family name | the first `appearance` typography family |
+| `clock-format`, `date-format` | strftime pattern; empty follows the language | empty |
+| `clock-size`, `text-size` | 8–160 | 72, 19 |
+| `auth-timeout` | 5–600 seconds | 120 |
+| `avatar`, `weather-file` | path | none |
+| `widgets` | widget names; `widgets;` hides all | `battery media keyboard username notifications` |
+| `layout { margin; gap; REGION ... }` | see [Layout](#layout-and-custom-widgets); margin and gap 0–256 | default placement uses margin 42, gap 18; an explicit `layout` defaults to 32 and 12 |
+| `widget "NAME" { ... }` | custom widget, at most 32 | — |
+
+Custom widget fields: `type "script"`, `command` (a string or `command { argv ...; }`,
+at most 64 arguments), `format` (with `{output}`), `interval` (1–86400, default 30),
+`timeout` (1–60, default 5), `size` (8–160, default 15), `color` (`text`, `muted`,
+`accent`, `warning`, `danger`, `success` or `#rrggbb`) and `preview`. Names cannot
+reuse built-in widget names.
+
+## Known limitations
+
+- `canopa wallpaper reload` erases all saved wallpaper choices; its help text does not say so.
+- `canopa-shell lock` runs swaylock, not Canopa Lock.
+- `canopa-idle.service` checks `~/.config/canopa/stasis.rune` literally, while `canopa-idle` uses `$XDG_CONFIG_HOME`.
+- The weather widget only reads a local file; Canopa ships no weather provider.

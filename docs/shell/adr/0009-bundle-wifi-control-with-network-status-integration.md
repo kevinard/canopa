@@ -8,7 +8,7 @@ ADR-0010 moves rich Wi-Fi interaction into an **External Panel Provider**. This 
 ## Live ownership and provider boundaries (2026-10-01)
 
 The headless network bundle (`canopa_services::network::bundle` since
-[ADR 0137](../../adr/0137-shared-system-service-clients.md)) is the authority for bundle selection
+shared ADR 0137) is the authority for bundle selection
 in both Shell status and the shipped Wi-Fi provider. A unique NetworkManager
 owner supplies both status and control. Otherwise networkd may supply status
 and iwd may supply control. A standalone iwd installation still supports direct

@@ -38,8 +38,8 @@ target/key/value still exists in the same provider session. Generation-scoped ac
 IDs are always renewed, so preserving focus never makes an old event valid.
 
 The slider follow-up replaces volume buttons with an absolute control using the
-shared optional rich-item slider ([Canopa ADR 0012](../../adr/0012-rich-panel-sliders.md)).
+shared optional rich-item slider (Canopa ADR 0012; see [the panel protocol](../../architecture/panel-protocol.md)).
 The initial button choice above records the first milestone, not the current UI.
 
 The shared libpulse connection code now lives in `canopa_services::audio`
-([ADR 0137](../../adr/0137-shared-system-service-clients.md)); the behaviour above is unchanged.
+(shared ADR 0137); the behaviour above is unchanged.

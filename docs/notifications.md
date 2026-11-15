@@ -1,100 +1,208 @@
-# Notifications in Canopa
+# Notifications
 
-The default shell includes a notification indicator. Its count means **Requires
-Attention**, including retained notifications whose banners have expired. Reading
-the count or opening the Center does not acknowledge notifications.
+Canopa Notify is the desktop's notification service. It implements the
+freedesktop Desktop Notifications interface (`org.freedesktop.Notifications`) and
+the Notification portal for sandboxed applications, shows banners, keeps a local
+history, and provides the Notification Center that opens from the Shell's bell.
 
-- Click (or keyboard primary activation) opens the Notification Center.
-- Right-click (or keyboard secondary activation) toggles Do Not Disturb in Notify.
-- `DND` means banners and sound are silenced according to notification policy.
-- `?` and an unavailable tooltip mean Notify cannot be reached; the shell retries.
+In the Canopa session, `canopa-notify.service` starts automatically. Its settings
+are in the `notifications` block of `~/.config/canopa/config.kdl` (see the
+[configuration reference](configuration.md#notifications)) and on the Settings
+**Notifications** page.
 
-The Center opens on a single list of messages, newest first by notification date.
-Cards use the banner layout:
-an app icon on the left, message content beside it, a quiet app name, and actions
-below. Missing icons use the app's initial. A small dot beside a message
-means it still requires attention; hovering it or using a screen reader identifies
-it as **Unread**. Acknowledged and transient notifications have no status label.
-Opening the Center does not acknowledge notifications.
-Use **Settings** for delivery rules for the apps and categories on the current
-page. Each app is identified by its icon and name. Choose **Show banners**, **Save quietly**, or **Block** future notifications.
-**Back to notifications** returns to the same page. **Clear active notifications**
-dismisses live notifications; **Delete notification history**, in Settings,
-removes inactive history. With a large history, page navigation is available in
-both views.
+## Banners
 
-The Center defaults to 480 logical pixels wide and fills the usable screen height,
-with space reserved beside scrolling cards for the scrollbar. Reading and Settings
-keep the same size. Explicit `panel` width/height values and maximums still apply;
-omit those values to use automatic sizing.
+Banners appear in the bottom-start corner, next to the bell on the default left
+bar. Choose another corner with `banners { position "top-end"; }`: `top-start`,
+`top-end`, `bottom-start` or `bottom-end` (start and end follow the reading
+direction). Banners never take keyboard focus.
 
-Custom shell layouts can place `"notifications"` in a bar or panel zone. An optional
-`module "notifications"` declaration accepts `format`, `expanded-format`,
-`horizontal-format`, `tooltip`, and ordinary `actions`. Format values are `{icon}`,
-`{value}` (the count, or `?`), `{state}` (`available`, `dnd`, `unavailable`), and
-`{label}` (status and interaction help). Explicit actions override their matching
-built-in trigger. `open-provider "notifications"` also works from other modules or
-menus without a provider declaration. An explicit provider of that name overrides
-the built-in Center; it does not change the notification summary's source.
+- Low and normal urgency banners close after 5 seconds unless the application asks
+  for another timeout. Critical banners stay until dismissed.
+- A banner shows the application icon, summary, body (with basic markup and
+  images) and the application's action buttons. Clicking it runs the default action.
+- Applications that support replies get an inline reply field.
+- HTTP and HTTPS links in the body open in your browser through the OpenURI portal.
+  Opening a link does not dismiss the notification.
+- Icons follow the desktop icon theme. `icons theme="…" scale=N` pins a theme and
+  icon scale.
 
-## Start the desktop companions
+## The bell and the Notification Center
 
-Install the release archive's `bin/` executables in `~/.local/bin`, its
-`share/systemd/user/` units in `~/.config/systemd/user`, and optionally copy
-`share/canopa/canopa.kdl` to `~/.config/canopa/config.kdl`. Shared and legacy files
-remain supported. If an old custom button is named `notifications`, replace it
-with `module "notifications"` (keeping desired action overrides), or rename that
-button and its placements to `notification-launcher`: `notifications` is now a
-reserved built-in module name. Explicit provider declarations remain supported.
-The user units assume `~/.local/bin`; for another
-prefix, adjust the services' `ExecStart` values.
-The optional Settings portal has separate activation and backend-selection steps;
-see [the portal guide](settings-portal.md).
+The Shell's notifications module shows the number of notifications that still need
+attention, including those whose banners have closed. Opening the Center does not
+mark anything as read.
 
-Run these commands **inside the Niri session**. If the session launcher has not
-already imported its environment, first publish the current compositor endpoints
-to the D-Bus activation environment and user service manager:
+| On the bell | Effect |
+| --- | --- |
+| Click | Open the Notification Center |
+| Right-click | Toggle Do Not Disturb |
+| `DND` state | Do Not Disturb is on |
+| `?` | Notify cannot be reached; the Shell retries |
 
-```sh
-dbus-update-activation-environment --systemd WAYLAND_DISPLAY NIRI_SOCKET XDG_CURRENT_DESKTOP
+The Center is 480 pixels wide and fills the screen height. It lists notifications
+newest first; **Group by app** groups them by application, each group collapsed to
+its newest item with a count, and **Show timeline** returns to the single list.
+A dot marks notifications that are still unread.
+
+Each notification offers **Open notification**, **Dismiss**, **Mark as read**,
+**Reply…** when supported, its own actions, and **Remove** for finished items. For
+the whole list:
+
+- **Mark all read**.
+- **Clear all** dismisses and hides everything; **Undo clear** brings it back for
+  30 seconds.
+- **Clear active notifications** dismisses the live notifications only.
+
+**Settings** in the Center sets the delivery of each application and notification
+category shown on the current page (**Show banners**, **Save quietly** or
+**Block**) and has **Delete notification history**. Long histories are split into
+pages. The Center's title shows when Do Not Disturb or automatic suppression is
+active, with quick choices **For 1 hour** and **Until tomorrow**.
+
+To place the bell on another bar, add `"notifications"` to a zone. Any module or
+menu can open the Center with `open-provider "notifications"`.
+
+## Do Not Disturb
+
+While Do Not Disturb is on, new notifications are saved to the Center without
+banners or sound. Critical notifications still show.
+
+- Turn it on or off from the bell, the Center, Quick settings or Settings, or with
+  `canopa-notify ctl dnd`.
+- Timed: **For 1 hour**, **Until tomorrow** (08:00), `ctl dnd on --for MINUTES`
+  (up to 7 days) or `ctl dnd on --until HH:MM`.
+- Daily schedule, optionally on chosen weekdays.
+- Break-through: alarms (`alarm.*` categories) and incoming calls (`call.incoming`)
+  can be allowed to show.
+
+Notify also suppresses banners automatically, without turning Do Not Disturb on:
+
+- While a window is fullscreen on the focused output, banners are saved quietly.
+- While the screen is shared or recorded, banners are saved quietly and their
+  content is hidden.
+
+Both are on by default (`suppress fullscreen=#false screen-sharing=#false` turns
+them off). Do Not Disturb state, timers and the schedule survive restarts.
+
+## Per-application preferences
+
+| Preference | Values |
+| --- | --- |
+| Delivery | **Show banners** (`allow`), **Save quietly** (`silence`: Center only), **Block** (`drop`) |
+| Sound | on or off |
+| Lock screen | `hidden`, `name-only` (default), `content` |
+
+Set them in Settings, in the Center, with `canopa-notify ctl app`, or as `app` and
+`rule` nodes in the configuration file. Choices made in the user interface are
+stored in Notify's database and kept separately from the file. Configuration rules
+can also match a category or urgency; the first matching rule decides. Up to 1024
+applications can have preferences.
+
+## Sounds
+
+Notifications play a sound from the freedesktop sound theme, `message-new-instant`
+by default, unless the application asks for another sound or for silence:
+
+```kdl
+notifications {
+    sound enabled=#true theme="freedesktop" default="message-new-instant"
+}
 ```
 
-`WAYLAND_DISPLAY` selects Niri's display; `NIRI_SOCKET` lets the shell subscribe to
-its windows and workspaces. Repeat the import for a new compositor session, before
-starting the companions. The session launcher must activate
-`graphical-session.target` for automatic startup and stop it when the session ends.
-The units are ordered after `graphical-session-pre.target` and before
-`graphical-session.target`. When Niri runs as `niri.service`, the companions also
-wait for its readiness notification, so they inherit the compositor endpoints
-before starting. This ordering does not start Niri itself; other session launchers
-must import their environment before starting the companions. Then run:
+The Settings **Sound** page has a "Play notification sounds" switch that writes
+`enabled`. Silenced, blocked and Do Not Disturb notifications make no sound.
+
+## History
+
+History, unread state, Do Not Disturb, timers and per-app preferences are stored in
+`$XDG_STATE_HOME/canopa-notify/history.db` (default
+`~/.local/state/canopa-notify/history.db`). Notifications an application marks as
+transient are kept only while Notify runs. Remove finished items from the Center,
+or erase all inactive history with **Delete notification history** or
+`canopa-notify ctl delete-history`.
+
+## Lock screen
+
+The lock screen's `notifications` widget shows critical notifications that arrive
+while the screen is locked: up to four lines in the form "App — New notification",
+or the summary when the application's lock-screen preference is `content`. With
+`hidden`, the application never appears. The lock screen cannot open, dismiss or
+act on notifications.
+
+## Command line
+
+`canopa-notify ctl` talks to the running service. It never starts it.
+
+| Command | Effect |
+| --- | --- |
+| `ctl status [--json]` | Service, configuration, rendering and link-opening health |
+| `ctl active [--json]` | Number of active retained notifications, or the list |
+| `ctl dnd [status\|on\|off\|toggle\|tomorrow]` | Read or change Do Not Disturb (default `status`) |
+| `ctl dnd on --for MINUTES` / `--until HH:MM` | Do Not Disturb with an end time |
+| `ctl dnd-schedule FROM TO [--days "mon tue"] [--alarms] [--calls]` | Set the daily schedule and break-through (times `HH:MM`) |
+| `ctl dnd-schedule --clear` | Return to the configuration file's Do Not Disturb settings |
+| `ctl preferences` | Print Do Not Disturb and per-app preferences as JSON |
+| `ctl app APP_ID [--delivery allow\|silence\|drop] [--sound true\|false] [--lock-screen hidden\|name-only\|content]` | Set one application's preferences; omitted options are cleared |
+| `ctl read-all` | Mark every notification read |
+| `ctl clear-all` | Clear the Center and print an undo token |
+| `ctl undo-clear TOKEN` | Undo the last `clear-all` within 30 seconds |
+| `ctl clear` | Dismiss the active notifications |
+| `ctl delete-history` | Remove inactive history |
+| `ctl reload` | Reload the configuration (repeats discovery) |
+| `ctl reload-canopa PATH` | Load the `notifications` block of an explicit shared file |
+| `ctl reload PATH` | Load a legacy-format file |
+
+`ctl` uses `$XDG_RUNTIME_DIR/canopa-notify/control.sock`; `--socket PATH` (before the
+command) selects another. If a command fails after it was sent, its outcome is
+unknown: check the state before repeating `dnd toggle` or `clear`. See
+`man canopa-notify` for the other modes (`daemon`, `panel-provider`,
+`check-config`).
 
 ```sh
-systemctl --user daemon-reload
-systemctl --user enable --now canopa-session.target
+canopa-notify ctl status
+canopa-notify ctl dnd on --for 90
+canopa-notify ctl app org.example.Chat --delivery silence --sound false
+notify-send "Hello" "Canopa Notify is running"
 ```
 
-Use one notification daemon in that session; disable any previously configured
-notification daemon before starting Notify. The target starts Canopa Shell, Notify and Wallpaper;
-they remain independently restartable. Before using the Lock button, install the
-PAM service described in [session tools](session-tools.md). No application writes or installs service
-files automatically. Direct development launch also works without provider wiring:
+## Running the service
 
-```sh
-target/debug/canopa-notify daemon --service
-target/debug/canopa-shell
-```
+In the Arch package, `canopa-session.target` starts `canopa-notify.service`
+(`/usr/bin/canopa-notify daemon --service --socket %t/canopa-notify/control.sock`).
+In a local installation, the same unit runs `~/.local/bin/canopa-notify`; see
+[installation](installation.md#release-archive).
 
-The companions discover `$XDG_RUNTIME_DIR/canopa-notify/control.sock`. `--socket`
-still selects an explicit endpoint for standalone Notify commands and fixtures.
-The built-in shell module uses the standard session endpoint.
+- Only one notification daemon can run per session. Notify refuses to start when
+  `org.freedesktop.Notifications` is already owned; stop the other daemon first.
+- Service mode needs a Wayland session with the layer-shell protocol.
+- The Notification portal (`org.freedesktop.impl.portal.Notification`, version 2) is
+  served by the same process and is selected in the packaged portal routing. See
+  [portals](portals.md).
+- Logs: `journalctl --user -u canopa-notify.service -b`.
 
-## Restart behavior
+`canopa-notify check-config` validates the `notifications` block without starting
+anything; `canopa config check` checks every application.
 
-Restart Canopa Shell to apply shell configuration changes. Notify keeps receiving and
-presenting notifications; the new shell receives a complete summary immediately.
-Restart Notify independently to see the indicator become unavailable, then recover
-within a retry interval once the daemon accepts connections. DND and retained
-history survive; runtime-only transient notifications do not. An already open
-Center ends on daemon loss: close and reopen it after recovery. Old item actions
-cannot target notification revisions from the restarted daemon.
+## Reloading and restarts
+
+Notify does not watch the configuration file. After editing it, run
+`canopa-notify ctl reload`; Settings does this after saving. A failed reload keeps
+the previous configuration and is reported by `ctl status`. New settings apply to
+later notifications; appearance changes repaint open banners.
+
+When Notify restarts, the bell shows `?` until it reconnects. History, unread state
+and Do Not Disturb survive; transient notifications and pending application actions
+do not. Close and reopen the Center after a restart. If `ctl status` reports that
+the banner renderer stopped, notifications are still received and the Center works,
+but banners need a restart: `systemctl --user restart canopa-notify.service`.
+
+Database upgrades are one-way. Before going back to an older version, restore a
+backup of `~/.local/state/canopa-notify` taken while Notify was stopped
+(`./scripts/update.sh` makes one).
+
+## Known limitations
+
+- The configuration file is not watched; reload with `canopa-notify ctl reload`.
+- The lock screen shows only critical notifications.
+- A stopped banner renderer needs a service restart.

@@ -1,6 +1,6 @@
 # Bounded banner image preparation
 
-The shared workspace [asset decision](../../adr/0005-shared-assets.md)
+The shared workspace asset decision (shared ADR 0005)
 moves file decoding/accounting into `canopa-assets`, preserving this adapter's
 budgets, worker lifetime, cancellation and acknowledgment contract.
 

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--greetd', type=Path, required=True)
-    parser.add_argument('--output', type=Path, default=ROOT / '.scratch/greeter/transport')
+    parser.add_argument('--output', type=Path, default=ROOT/'target/native-runs/test-greetd-transport')
     args = parser.parse_args()
     if os.geteuid() == 0:
         parser.error('run as an unprivileged user; namespace root is sufficient')

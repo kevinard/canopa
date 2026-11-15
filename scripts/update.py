@@ -148,7 +148,7 @@ def update(jobs, rebuild=False):
                 continue  # New optional companion; existing installations can add its unit later.
             raise RuntimeError(
                 f"{service} is not loaded; install the companion user services first "
-                "(existing Niribar installations: see docs/shell-rename.md)")
+                "(existing Niribar installations: see \"Upgrading from Niribar\" in docs/installation.md)")
         state = property_value(service, "ActiveState")
         if state not in ("active", "inactive", "failed"):
             raise RuntimeError(f"{service} is {state}; retry when it has settled")

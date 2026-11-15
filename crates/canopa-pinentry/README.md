@@ -1,7 +1,9 @@
 # Canopa Pinentry
 
-On-demand native Wayland PIN/passphrase, confirmation and message dialogs for
-GnuPG, using shared Canopa session presentation and a bounded Assuan pipe server.
+`canopa-pinentry` is a GnuPG pinentry: on-demand Wayland PIN, passphrase,
+confirmation and message dialogs over the Assuan protocol, with quality, constraint
+and generation support. Its `keyring-dialog` mode draws the keyring prompts of the
+optional oo7 setup.
 
-See [setup and protocol support](../../docs/pinentry.md) and
-[the design decision](../../docs/adr/0123-pinentry-protocol-and-shared-dialogs.md).
+- [Pinentry guide](../../docs/pinentry.md)
+- [Session architecture](../../docs/architecture/session.md)

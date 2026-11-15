@@ -64,7 +64,7 @@ copied values can survive panel dismissal. Successful action completion closes
 the same session/query only; failures keep it open. Clipboard task completion
 does not provide a compositor delivery acknowledgement.
 
-The [launcher guide](../launcher.md) defines coverage, refresh behavior, limits,
+The [launcher guide](../../launcher.md) defines coverage, refresh behavior, limits,
 configuration, and the extension protocol. Validate the core state machine,
 provider processes and cleanup, existing shell consumers, and actual input/opening/
 clipboard behavior in a private compositor fixture.
@@ -88,11 +88,11 @@ still owns evaluation and percentage semantics; trigonometry is in radians.
 Open with is a child mode of the same Panel Menu. GIO supplies file-capable installed choices with MIME recommendations first and existing desktop-entry launching delivers the original URI,
 including D-Bus Application.Open where applicable. No association is changed.
 Reveal uses FileManager1; Quick Look uses the additive Files activation described
-in [shared ADR 0130](../../adr/0130-launcher-file-actions-and-settings-pages.md).
+in shared ADR 0130 ([Shell architecture](../../architecture/shell.md#design-decisions)).
 The existing panel remains the only launcher placement and lifetime owner.
 
 Bundled web/date providers, searchable action child modes, pins/aliases and
-Settings preference/discovery exchange follow [shared ADR 0131](../../adr/0131-launcher-preferences-and-bundled-extensions.md).
+Settings preference/discovery exchange follow shared ADR 0131 ([Shell architecture](../../architecture/shell.md#design-decisions)).
 
 Clipboard history and saved text snippets use reserved `clip` and `snip` scopes
 inside the existing Panel Menu. The scoped query, observations and image
@@ -100,7 +100,7 @@ thumbnails stay with Shell. The history list is opt-in, deduplicated and bounded
 in memory. Owned wl-paste watchers accept bounded text and optional raster image
 frames and ignore offers marked sensitive. Image selection copies the original
 bytes and MIME type. Snippet naming is a child mode. Clipboard preference editing
-and shared persistence follow [shared ADR 0132](../../adr/0132-launcher-clipboard-settings.md).
+and shared persistence follow shared ADR 0132 ([Shell architecture](../../architecture/shell.md#design-decisions)).
 
 Emoji and symbols are native search scopes in the same Panel Menu. Shell matches
 bundled Unicode sequences and English search terms locally, caps the visible

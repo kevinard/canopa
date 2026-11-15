@@ -91,7 +91,7 @@ from **Bar Surfaces**. It covers the output without reserving workarea.
 The private Wallpaper Owner prepares bounded PNG descriptors off the UI thread,
 persists selections and installs background pixels in App. `canopa-shell lock`
 pins the selected lock image and executes Swaylock through the session-owned
-launch path. See [ADR0037](../adr/0037-shell-wallpaper-owner.md). The public
+launch path. See [Shell architecture](../architecture/shell.md). The public
 Wallpaper portal is not advertised while native acceptance and review are pending.
 
 ### Modules
@@ -154,7 +154,7 @@ _Avoid_: Window icon, module icon
 
 Local icon lookup and Center raster preparation use shared `canopa-assets`
 mechanisms. Canopa Shell owns SVG rendering, process-lifetime icon caches, Center image
-limits and worker admission; see [shared asset ownership](../adr/0005-shared-assets.md).
+limits and worker admission; see [shared asset ownership](../architecture/foundations.md).
 
 ### Idle inhibition
 
@@ -817,8 +817,8 @@ Configured names and child identities are structurally distinct. A child identit
 - **External Panel Content** may use **Selectable Search** to search **Wi-Fi Networks** without modeling those networks as **Panel Menu** entries.
 - An **External Panel Provider** may be launched on demand when Canopa Shell opens the **Panel** that will host its **External Panel Content**.
 - An **External Panel Session** ends when its hosting **Panel** closes unless a later provider lifecycle explicitly keeps the provider alive.
-- A launched **External Panel Provider** communicates over standard input and standard output using its explicitly configured protocol. The default `niribar-v1` uses framed JSON; `canopa-v4` uses bounded JSON lines. Both wire models and codecs live in `canopa-panel-protocol`; prepared images, focus and list search text remain host state ([Canopa ADR 0006](../adr/0006-shared-provider-contracts.md)) ([ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md)).
-- Built-in Wi-Fi, Sound and Notification Center providers use `canopa-v5`: provider-first JSON lines, complete form or rich content, interaction revisions and explicit close. Compatible input echoes preserve the form revision; new operations retire it ([Canopa ADR 0007](../adr/0007-unified-panel-protocol.md)). User-declared providers retain explicit version selection and the v1 default.
+- A launched **External Panel Provider** communicates over standard input and standard output using its explicitly configured protocol. The default `niribar-v1` uses framed JSON; `canopa-v4` uses bounded JSON lines. Both wire models and codecs live in `canopa-panel-protocol`; prepared images, focus and list search text remain host state ([panel protocol](../architecture/panel-protocol.md)) ([ADR 0011](adr/0011-explicit-canopa-panel-protocol-adapter.md)).
+- Built-in Wi-Fi, Sound and Notification Center providers use `canopa-v5`: provider-first JSON lines, complete form or rich content, interaction revisions and explicit close. Compatible input echoes preserve the form revision; new operations retire it ([panel protocol](../architecture/panel-protocol.md)). User-declared providers retain explicit version selection and the v1 default.
 - A framed-v1 **External Panel Session** starts with a host-first protocol-version handshake. A Canopa-v4 session starts with a provider-first, versioned complete content replacement.
 - An **External Panel Provider** updates **External Panel Content** by sending a complete replacement content model, not incremental patches.
 - Replacing **External Panel Content** redraws the existing **Panel** window. Updates and local text/search edits preserve that window's focus and scroll state; a control with a different identity starts with fresh input state.
@@ -831,8 +831,8 @@ Configured names and child identities are structurally distinct. A child identit
 - **External Panel Content** cannot ask Canopa Shell to run arbitrary **Configured Commands**.
 - User interactions with **External Panel Content** are sent to the **External Panel Provider** as typed events addressed by **External Panel Element IDs**.
 - Canopa Shell does not interpret **External Panel Element IDs** as domain meaning.
-- Rich **External Panel Content** may attribute an item to a source label and local/theme icon, and decorate section titles with the same icon type. The host prepares bounded icon assets off the UI thread, renders a decorative icon or initial badge, and exposes the label to native accessibility. Duplicate section headings may be omitted when all items already name that source ([Canopa ADR 0010](../adr/0010-rich-item-source-attribution.md)).
-- Rich **External Panel Content** may include an **External Slider**. Replacements cancel unfinished gestures; committed values must match the published range/grid and current generation/revision ([Canopa ADR 0012](../adr/0012-rich-panel-sliders.md)).
+- Rich **External Panel Content** may attribute an item to a source label and local/theme icon, and decorate section titles with the same icon type. The host prepares bounded icon assets off the UI thread, renders a decorative icon or initial badge, and exposes the label to native accessibility. Duplicate section headings may be omitted when all items already name that source ([panel protocol](../architecture/panel-protocol.md)).
+- Rich **External Panel Content** may include an **External Slider**. Replacements cancel unfinished gestures; committed values must match the published range/grid and current generation/revision ([panel protocol](../architecture/panel-protocol.md)).
 - **External Panel Content** may include **External Selectable Lists**.
 - Canopa Shell owns **Selectable Search** state and matching for **External Selectable Lists** unless a later provider-filtered list mode is introduced.
 - The first **External Panel Content** model supports only a small set of primitives needed for list selection, text entry, status, and simple actions.
@@ -873,12 +873,12 @@ Configured names and child identities are structurally distinct. A child identit
   and explicitly configured
   executable providers, including bundled web/date tools. Searchable actions, pins
   and aliases remain child modes/preferences of this same Panel Menu. See
-  [shared ADR 0131](../adr/0131-launcher-preferences-and-bundled-extensions.md).
+  [Shell architecture](../architecture/shell.md).
   It uses existing **Panel** placement and **Foreground** lifetime. Its bounded
   asynchronous groups retain selection by result identity and reject stale
   query/results/action revisions. Existing **Selectable Search** contracts for
   other sources keep their meaning. See [ADR 0023](adr/0023-unified-launcher-providers.md)
-  and the [launcher guide](launcher.md) for provider ownership and configuration.
+  and the [launcher guide](../launcher.md) for provider ownership and configuration.
 
 - **Panel Actions** are typed operations, not shell commands by default.
 - A **Panel Action** trigger may be a pointer trigger such as `click` or `right-click`, or a focused keybind such as `Ctrl+E`.

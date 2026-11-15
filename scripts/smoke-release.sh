@@ -76,7 +76,7 @@ test -x "$bundle/bin/canopa-notify"
 "$bundle/bin/xdg-desktop-portal-canopa" --help > /dev/null
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
 rg '^Interfaces=.*org\.freedesktop\.impl\.portal\.Account;' "$bundle/share/xdg-desktop-portal/portals/canopa.portal"
-test -s "$bundle/share/canopa/account-portal.md"
+test -s "$bundle/share/canopa/portals.md"
 test -s "$bundle/share/xdg-desktop-portal/portals/canopa-notify.portal"
 test -x "$bundle/bin/canopa-portal-config"
 cat > "$stage/portal-base.conf" <<'EOF'
@@ -143,8 +143,8 @@ test -s "$bundle/share/canopa-shell/default.kdl"
 test -s "$bundle/share/systemd/user/canopa-shell.service"
 test -s "$bundle/share/systemd/user/canopa-session.target"
 test -s "$bundle/share/canopa/notifications.md"
-test -s "$bundle/share/canopa/audio.md"
-test -s "$bundle/share/canopa/shell-rename.md"
+test -s "$bundle/share/canopa/shell.md"
+test -s "$bundle/share/canopa/launcher.md"
 PATH="$bundle/bin" canopa-shell --version
 python3 - "$bundle/bin/canopa-wifi-provider" "$bundle/bin/canopa-audio-provider" "$bundle/bin/canopa-media-provider" "$bundle/bin/canopa" <<'PY'
 import json

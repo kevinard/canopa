@@ -1,189 +1,564 @@
-# Canopa Files runtime and installation
+# Canopa Files
 
-Canopa Files is an independent native application for local files and removable
-drives. Run `canopa-files /path/to/folder`; multiple local paths become tabs in a
-new window. Local `file://` URIs also work. The included Files README describes
-keyboard navigation, Quick Look, operations, Undo, custom actions and preferences.
-Implementation of the full product brief is still in progress.
+Canopa Files is the desktop's file manager. It browses local folders, removable
+drives, network shares, phones and cameras, and it is built for tiled windows:
+column browsing adapts to narrow tiles, Quick Look floats beside the window that
+opened it, and every command works from the keyboard. Copies, moves, renames and
+Trash share one Undo that survives restarts.
 
-Later launches activate the runtime already owning the same state directory.
-`canopa-files --daemon` starts that backend without a browser and keeps it resident
-while idle; run it from the graphical session to open windows later. The command
-stays in the foreground, so a terminal can use `canopa-files --daemon &`.
-Iced initializes on the first window request. `canopa-files --quit` releases
-residency and exits after windows, accepted work, pending decisions, clipboard
-ownership and unsaved results finish. It does not cancel work or answer questions.
-A start without display variables remains headless and refuses browser requests.
-Quit it before starting in the graphical session if windows are needed.
+Developers: see the [Files architecture](architecture/files.md).
 
-The owning backend also implements the standard session-bus FileManager1
-interface. Other applications can open folders, reveal selected items in their
-parents or show read-only Properties. Multiple folders become tabs; revealing
-items groups them by parent and makes explicitly requested hidden files visible
-without showing their hidden siblings. Properties is an independent, tilable
-window with captured metadata, per-item errors and Copy locations. Escape or
-Ctrl+W closes it. Its metadata preparation and URI handling use the shared core.
-The resident host and Iced currently share a process; closing windows preserves
-accepted work, while frontend crash isolation remains future work.
+## Starting Files
 
-Ordinary launches inherit the owner's configuration. An explicit selection must
-match the owner's original selection. Compatible launches after an
-update continue to use the running implementation; finish work, close its windows
-and use `--quit` before starting the newly installed executable.
+- Open **Canopa Files** from the launcher, or press Super+E with Canopa's default
+  Niri bindings.
+- From a terminal: `canopa-files ~/Downloads`. Several folders open as tabs in one
+  window. Local `file://` URIs work too.
+- `canopa-files --quick-look FILE` opens a browser on the file's folder with the
+  file selected and shows it in Quick Look. The launcher's Quick Look uses this.
 
-The development executable now uses the workspace's Iced stack with `canopa-ui`,
-per [ADR 0018](adr/0018-files-iced-and-shared-controls.md). The first adapter
-implements browsing, keyboard navigation, editable locations, tabs, windows,
-cancellable search and source-bound floating text/source/image/PDF previews.
-Search matches names, and optionally the contents of text files, and filters by
-type, modification date and size
-([ADR0175](files/adr/0175-search-filters-and-contents.md)). The Recent place lists
-the desktop's recently used files from `recently-used.xbel`, newest first, and the
-same query and filters narrow it ([ADR0176](files/adr/0176-recent-files.md)).
-Documents opened with an application from a browser tab are added to that list
-([ADR0178](files/adr/0178-recording-recent-files.md)).
-Space opens Quick Look; its default keyboard focus continues source navigation.
-Images support Fit, zoom and 100%; PDFs support Page Up/Down. PDF preparation
-requires Poppler's `pdfinfo` and `pdftoppm`. The preview uses the shared Iced
-transient-window operation on Wayland; no application-specific Niri rule is needed.
-New Folder and Rename use floating Iced dialogs; Ctrl+Z and Operations share
-the core filesystem worker and Undo history across windows. Interactive Undo
-questions retain their independent operation when a Browser closes. Transfers,
-Trash/Recovery, media playback and device controls are connected and undergoing
-acceptance. This development slice is not a release of the full
-product brief. Source previews include prepared syntax colors. Audio/video use a
-renderer-independent GStreamer worker and open paused. Tab enters Play/Pause,
-Seek, Mute and Volume after Open; focused seek/volume controls own arrows and
-Home/End. Other preview keys continue navigating the source browser.
+Only one Files process runs per account. Later launches, and other applications'
+"Show in folder" requests (when Files is the FileManager1 provider), open windows in
+that process, so all windows share operations, Undo and the clipboard. Files exits
+when its last window closes and its work is finished, unless it is resident (see
+[Command line](#command-line)).
 
-Copies retain regular-file permission bits and access/modification times; new
-files belong to the copying user. Symbolic links remain links, including dangling
-links. Copies keep `user.*` extended attributes and POSIX ACLs (folders also keep
-their default ACL), and sparse files stay sparse. When a destination such as a FAT
-drive cannot hold the attributes, the copy still completes and the result counts
-the copies missing them. `security.*` and `trusted.*` attributes follow the
-destination, and hard links become separate files
-([ADR0174](files/adr/0174-copy-attributes-acls-and-sparse-files.md)). The shared
-copy preparation and its verification are documented in
-[ADR0153](files/adr/0153-uutils-prepared-copy.md). Eight or more consecutive small new
-files of one folder are copied in batches of up to 64 under one journal intent,
-with the same proofs, Undo steps and crash recovery as single copies; batched
-files appear in the destination together
-([ADR0180](files/adr/0180-batched-copy-journal.md)).
+## Browsing
 
-The Iced executable uses GIO/GLib 2.58 or newer for live local-volume observation
-through a private helper process. These are platform libraries, with no GTK widgets. The
-helper is the same executable in an internal mode and requires no separate
-installation. If observation stops, Operations reports the failure and refuses
-further filesystem changes until Files restarts. Building this feature requires
-the distribution's GIO/GLib development libraries.
+### Windows, tabs and views
 
-Local devices appear in the sidebar and in the folder menu's Locations submenu,
-including narrow tiles. Open a mounted device directly or select an unmounted
-device to mount it. Its removal action follows the platform's Power off, Eject
-or Unmount capability. Operations shows progress, cancellation, results and
-questions. Password questions float independently of the browser's tile; Files
-does not save the credentials. Closing the originating browser dismisses that
-dialog while the backend keeps the request. Open Operations and Review to return
-to it. Explicit Cancel, Escape or closing the question itself cancels the request.
-Successful mounts preserve newer navigation and never reopen a closed origin.
-Mount/Unmount and Power off/Eject have private-provider acceptance in both
-appearances, including delayed drive removal with every window closed and
-same-owner reopening. These checks exercise actual GIO callbacks on simulated
-devices; physical-drive acceptance remains pending.
+- **Views**: Columns (default, Ctrl+1), List (Ctrl+2) and Icons (Ctrl+3). The
+  toolbar's view button switches the current tab. List view has sortable, resizable
+  column headings (click a heading to sort) and can show folders as an expandable
+  tree (Preferences > Views, or `tree=#true`). In List view, folders show their
+  item count, up to 10,000+.
+- **Columns**: Left goes to the parent and Right enters the selected folder at
+  every window width. Going up selects the folder you just left.
+- **Tabs**: Ctrl+T opens a tab, Ctrl+W closes it, Ctrl+Tab and Ctrl+Shift+Tab
+  switch, and Ctrl+Shift+Page Up/Page Down move it. Drag a tab to reorder it, onto
+  another window to move it there, or anywhere else to give it its own window. The
+  tab's menu also offers Duplicate tab, Close other tabs and moving it to a new window.
+- **Windows**: Ctrl+N opens another browser window. Each window has its own tabs and
+  its own Quick Look.
+- **Type to select**: typing a name's first letters selects the first match.
+- **Hidden files**: Ctrl+H shows or hides them. A hidden folder you open explicitly
+  stays visible in its hierarchy without revealing its hidden siblings.
+- Folders refresh by themselves when other programs change them. F5 refreshes on
+  demand (network folders refresh every 10 seconds).
 
-The Iced custom-action editor and command Operations interface are now implemented
-and undergoing acceptance. They reuse the shared Canopa controls and configuration,
-with configured toolbar order, narrow command strips, keyboard traversal, captured
-command arguments, bounded output and cancellation. Optional action icons use shared XDG assets. The complete
-configuration/condition/focus matrix and durable restart integration remain unfinished.
+### Location bar
 
-Global Preferences opens with Ctrl+comma and edits Views, Toolbar, Locations and
-Shortcuts with explicit Save. Default view shortcuts are Ctrl+1 for columns,
-Ctrl+2 for list and Ctrl+3 for icons. Folder choices remain separate from global
-defaults; Use defaults clears a folder's overrides.
+The location bar shows the path as breadcrumbs. Ctrl+L edits it: type a path, a
+`file://` URI or a server address such as `sftp://host/` to connect. Escape gives up
+the edit.
 
-Desktop, Documents, Downloads and Pictures follow the user's XDG directory
-definitions. Both sidebar and narrow Locations use the same paths, including
-localized names and paths outside Home. Definitions are read at launch; restart
-Files after changing them. Missing or invalid definitions use conventional Home
-subfolders. See [the personal-folder decision](files/adr/0064-xdg-personal-folder-locations.md).
+### Sidebar and places
 
-The Iced executable links GStreamer core, app and video libraries directly and
-uses the distribution's decoder, conversion and audio-output plugins. It does
-not require GTK's media widget backend. PDF previews use Poppler's
-`pdfinfo` and `pdftoppm`. Images and bounded text/code previews are prepared by
-Files itself. Preview playback starts only when requested.
+The sidebar lists places, bookmarks, devices and network locations. When the window
+is too narrow for it, the toolbar's Places button opens the same list.
 
-On Ubuntu 24.04, install the runtime dependencies with:
+Built-in places: Recent, Home, Desktop, Documents, Downloads, Music, Pictures,
+Videos, Templates, Public, Filesystem, Trash and Recovery. Templates and Public are
+not shown until you add them in Preferences > Sidebar. Personal folders follow your
+XDG user directories (`~/.config/user-dirs.dirs`), including localized names and
+folders outside Home; Files reads them at launch.
 
-```sh
-sudo apt-get install libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad gstreamer1.0-libav poppler-utils gvfs \
-  desktop-file-utils
+Ctrl+D bookmarks the current folder. Edit, reorder or remove places and bookmarks in
+Preferences > Sidebar.
+
+### Folder view options
+
+The folder menu's **View options…** changes the view, sort order and columns of the
+current folder only. Files remembers only the settings you change there; **Use
+defaults** clears them. The global defaults are in Preferences > Views.
+
+## Quick Look
+
+Space opens Quick Look for the selection and closes it again; Escape or Ctrl+W also
+closes it. It follows the window's active tab and selection, including search
+results, while the keyboard keeps navigating the browser. Tab moves into the
+preview's own controls; Space or Return activates the focused control.
+
+| Content | Preview |
+|---|---|
+| Images | Fit, zoom and 100% |
+| PDF | One page at a time; Page Up and Page Down turn pages |
+| Text and source code | Selectable text with syntax colors; large files are truncated |
+| Audio and video | Opens paused; Play/Pause, Seek, Mute and Volume. Focused Seek and Volume use the arrows, Home and End. |
+| Folders | Item count |
+| Other files | A short explanation, with Open in the default application |
+
+PDF previews need Poppler (`pdfinfo`, `pdftoppm`). Audio and video use the
+installed GStreamer plugins.
+
+## Search and Recent
+
+Ctrl+F searches the current folder by name. Turn on **Include subfolders** to search
+everything below it. Results show their folder; **Show in folder** reveals one, and
+closing the search (Escape) returns to the folder with its selection and scroll.
+**Stop** keeps the results found so far; **More results** continues past the first
+50,000.
+
+Search filters:
+
+| Filter | Choices |
+|---|---|
+| Type | Any type, Folders, Documents, Images, Audio, Video, Archives |
+| Modified | Any time, Today, Past week, Past month, Past year |
+| Size | Any size, Under 1 MiB, 1 to 100 MiB, Over 100 MiB |
+| Search contents | Also match text inside text files (up to 16 MiB) |
+
+A filter works with an empty query, so Type: Images alone lists every image.
+
+**Recent** (first in the sidebar) lists the files recently used on the desktop,
+newest first, from the shared `recently-used.xbel` list. It behaves like a search,
+so the query and filters narrow it. Files adds the documents it opens with an
+application to that list.
+
+## Opening files
+
+Return (or double-click) opens the selection:
+
+- Folders open in the browser.
+- Documents open with their default application. If there is none, the Open With
+  dialog asks; it can also **Set as default** for that file type.
+- Programs and scripts always ask first: Run, Run in Terminal, Open (for scripts) or
+  Cancel. Files treats a file as a program only when it is executable, on a local
+  disk (not removable, network or `noexec`), and starts like a program.
+- Application launchers (`.desktop` files) outside an applications folder that are
+  not marked executable ask: Launch, Open as Text or Cancel.
+
+The context menu's **Open with** lists the default application, other suitable
+applications and **Other application…**. **Open in Terminal** opens your terminal in
+the folder through `xdg-terminal-exec`.
+
+## Working with files
+
+### Menus
+
+Right-click, Shift+F10 or the Menu key opens the context menu.
+
+- On a selection: Open, Open in new tab and Open in Terminal (one folder), Open with,
+  Quick Look, your custom actions, Copy, Cut, Extract here and Extract to… (archives
+  only), Compress…, Rename…, Move to Trash, Delete permanently… and Properties.
+- On the folder background: New folder…, New document, Paste, Undo, Select all, Open
+  in Terminal, Bookmark this folder…, View options… and Properties.
+- The window menu also has New window, New tab, Places, Show hidden, Trash,
+  Operations, Connect to Server…, Edit custom actions… and Preferences….
+
+### Copy, move and paste
+
+Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste files. The file clipboard works with
+GTK and KDE file managers. Pasting into the same folder creates "Name (2)".
+
+Drag files onto a folder or another window. A drop moves within the same drive and
+copies between drives; hold Ctrl to copy or Shift to move. The drop hint shows the
+action before you release. Escape cancels the drag.
+
+Copies keep permissions, modification and access times, `user.*` extended
+attributes, ACLs and sparse files. If the destination cannot store some attributes
+(a FAT drive, for example), the copy still completes and the result says how many
+copies are missing them. Hard links are copied as separate files. A Move between
+drives removes the originals only after the copies are complete and verified.
+
+### Name conflicts
+
+When a name is already taken, Files asks:
+
+- **Replace** (files): the existing file is kept as a saved version, so Undo can
+  bring it back.
+- **Merge** (folders): combine the folders, asking again for each colliding item.
+- **Keep both**: give the incoming item a numbered name, such as `report (2).txt`.
+- **Skip**: leave both untouched.
+
+Check **Apply to remaining file conflicts** or **Apply to remaining folder
+conflicts** to reuse the answer. Cancel has the initial focus in every question.
+
+### Operations window
+
+Ctrl+J opens Operations, shared by all windows. It shows progress, remaining time,
+questions waiting for an answer and results. Use it to cancel, Retry failed items,
+Continue remaining work or review a decision you postponed. Alt+D opens the details
+of the running transfer. Work continues when you close browser windows, and Files
+stays running until it finishes. Finished operations also send a desktop
+notification.
+
+If a drive disappears during a transfer, the transfer pauses. Reconnect the same
+drive and choose Retry; completed work stays recorded.
+
+### New folders and documents
+
+Ctrl+Shift+N creates a folder. **New document** creates an empty document or a copy
+of a file from your Templates folder (`XDG_TEMPLATES_DIR`, one level of subfolders);
+**Open Templates folder** opens it. Both can be undone.
+
+### Rename and bulk Rename
+
+F2 renames the selection. With several items of one folder selected, Rename opens
+bulk Rename:
+
+- **Replace text**: replace Find with Replace with.
+- **Add text**: add text before or after the name.
+- **Number**: a base name and a counter from Start at, in the order shown.
+
+Extensions are kept; folders are renamed whole. The preview flags invalid names,
+duplicates, names already used in the folder and swaps (rename those in two steps).
+The whole bulk Rename is one Undo step.
+
+### Archives
+
+**Compress…** creates a zip (default), tar.gz, tar.xz or tar.zst archive.
+**Extract here** and **Extract to…** read zip, tar, tar.gz, tar.xz, tar.zst and
+tar.bz2 archives. An archive with one top-level item extracts to that item; otherwise
+it extracts to a folder named after the archive. Results never replace an existing
+item: they get the next free name. Extraction skips entries that would land outside
+the destination and never restores set-id bits. Archive jobs run in Operations and
+can be cancelled, but they are not undoable.
+
+## Undo
+
+Ctrl+Z undoes the latest file operation, from any window, even after Files restarts.
+It covers copy, move, rename, bulk Rename, new folders and documents, Trash and
+Recovery copies. Files keeps the latest 100 operations. There is no Redo.
+
+Undo never destroys newer work. When something changed since the operation, it asks
+first, for example:
+
+- The original name is taken: **Keep both** restores under a new name; **Replace**
+  restores it and keeps the newer item in Recovery.
+- A copied file was edited: **Keep item** leaves it; **Move changed item to
+  Recovery** keeps the edited version safe before undoing the copy.
+- A created folder now contains other files: **Keep item** leaves the folder and its
+  contents.
+- An item cannot be inspected (for example, its drive is disconnected): **Skip**
+  keeps the step for later; **Finish step** gives it up and keeps any saved version
+  in Recovery.
+
+**Skip** always leaves the step available for a later Undo, and Escape cancels the
+rest. Permanent deletion, Empty Trash, archives, custom actions, permission changes
+in Properties, and mounting or unmounting are not undoable.
+
+## Trash
+
+Delete moves the selection to Trash. Open the Trash place to see it:
+
+- **Restore** (Ctrl+R) puts items back; **Restore to…** (Ctrl+Shift+R) chooses
+  another folder. Restore never overwrites.
+- **Copy** (Ctrl+C) puts the items on the clipboard so you can paste copies elsewhere.
+- **Delete permanently…** (Delete or Shift+Delete) and **Empty Trash…** remove items
+  for good after a confirmation.
+- Ctrl+0 shows every drive's Trash, Ctrl+1 only the main Trash. Space previews.
+
+Shift+Delete in a browser deletes the selection permanently after confirmation. When
+a drive has no usable Trash, Files offers to delete the items permanently instead,
+again after confirmation. Network locations have no Trash.
+
+## Recovery
+
+Recovery keeps versions that Replace and Undo set aside, and the files of
+operations interrupted by a crash or power loss. Open it from the sidebar or from
+Operations.
+
+- Space previews a version. Enter or Ctrl+R recovers a copy under a name and folder
+  you choose; the saved version stays in Recovery. Recovery copies are undoable.
+- Versions still needed by Undo are marked as such. Protected versions stay until
+  you recover them; other saved versions are discarded when their operation leaves
+  the 100-operation history.
+- After an interruption, Recovery opens at the next start and explains what
+  happened. Ordinary file changes wait until you choose **Reconcile interrupted
+  work** (after reconnecting a drive or clearing an occupied name, for example) or
+  **Keep in Recovery**. Browsing and recovering copies keep working meanwhile.
+
+Saved versions live in hidden `.canopa-files-stage-*` folders beside the original
+items. Do not delete those folders by hand; use Recovery.
+
+## Properties
+
+Alt+Return shows the selection's properties: size, dates, type, the application it
+opens with (**Change…**), image dimensions, link target, owner, group and access
+levels. You can rename from the name field (Enter), change access levels and toggle
+**Allow executing as a program**; access changes apply immediately and are not
+undoable. **Copy locations** (Ctrl+C) copies the items' `file://` URIs.
+
+Properties opens in its own window by default. Choose **In a side panel** in
+Preferences > Views (or `properties "panel"`) to show it beside the listing,
+following the selection.
+
+## Devices
+
+Drives and partitions appear in the sidebar. Select an unmounted device to mount
+and open it. The eject button powers off, ejects or unmounts, whichever the device
+supports. Files waits for its own operations and custom actions before removing a
+device; new work waits until the removal finishes. Password questions for encrypted
+devices appear in their own window and are never saved. Mounting and unmounting are
+not undoable.
+
+## Network locations
+
+Choose **Connect to Server…** or **Other Locations…** in the sidebar, or type an
+address in the location bar. Supported addresses: `smb://`, `sftp://` (`ssh://`),
+`ftp://`, `ftps://`, `dav://`, `davs://`, `nfs://` and `\\server\share`. Files asks
+for a password when the server needs one; never put a password in the address.
+**Add to bookmarks** saves the server in the GTK bookmarks file, shared with GTK
+applications. Servers discovered on the local network are listed under **On this
+network**. Phones (MTP) and cameras (PTP) appear like devices.
+
+Network locations come from GVFS. When a backend is missing, Files names the package
+to install (see [Optional runtime tools](#optional-runtime-tools)). Network folders
+have no Trash, refresh every 10 seconds and show no thumbnails unless thumbnails are
+set to `always`.
+
+## Custom actions
+
+Ctrl+Shift+A opens the custom action editor. Give an action a name and a command,
+optionally an icon, file patterns, a selection size, whether it applies to files
+and folders, a shortcut and a toolbar button, then save. Applicable actions appear
+in the selection's context menu.
+
+| Placeholder | Expands to |
+|---|---|
+| `%f` / `%F` | The first / all selected paths |
+| `%n` / `%N` | The first / all selected file names |
+| `%d` | The current folder |
+| `%%` | A literal `%` |
+
+`%F` and `%N` must be a whole argument. Commands are split like a shell would split
+them, but never run through a shell; call `sh -c '...'` explicitly when you need shell
+syntax. Commands run only when you invoke them. Operations shows their output and can
+cancel them. Their effects are not undoable, and queued actions do not survive
+quitting Files.
+
+## Preferences
+
+Ctrl+comma opens Preferences:
+
+- **Views**: default view, sort order, columns, column width, folders first, List
+  tree, thumbnails and where Properties appears.
+- **Toolbar**: add, remove and reorder toolbar buttons, including custom actions.
+- **Sidebar**: places and bookmarks.
+- **Shortcuts**: record shortcuts for every command.
+
+Choices save immediately; typed fields save on Enter or Ctrl+S. Preferences and the
+action editor change only the `files` section of `config.kdl`. Edits you make to the
+file yourself, and theme changes, apply to open windows automatically.
+
+## Keyboard shortcuts
+
+Browser shortcuts are configurable (see [Configuration](#configuration)). Defaults:
+
+| Command ID | Action | Keys |
+|---|---|---|
+| `back` / `forward` | Back / Forward | Alt+Left / Alt+Right |
+| `parent` | Parent folder | Left, BackSpace, Alt+Up |
+| `enter-folder` | Enter folder | Right |
+| `open` | Open | Return |
+| `quick-look` | Quick Look | Space |
+| `search` | Search | Ctrl+F |
+| `location-focus` | Edit location | Ctrl+L |
+| `refresh` | Refresh | F5 |
+| `show-hidden` | Show hidden files | Ctrl+H |
+| `select-all` | Select all | Ctrl+A |
+| `new-folder` | New folder | Ctrl+Shift+N |
+| `rename` | Rename | F2 |
+| `trash` | Move to Trash | Delete |
+| `delete-permanently` | Delete permanently | Shift+Delete |
+| `undo` | Undo | Ctrl+Z |
+| `copy` / `cut` / `paste` | Copy / Cut / Paste | Ctrl+C / Ctrl+X / Ctrl+V |
+| `columns` / `list` / `icons` | View | Ctrl+1 / Ctrl+2 / Ctrl+3 |
+| `new-tab` / `close-tab` | New tab / Close tab | Ctrl+T / Ctrl+W |
+| `next-tab` / `previous-tab` | Switch tab | Ctrl+Tab / Ctrl+Shift+Tab |
+| `move-tab-left` / `move-tab-right` | Move tab | Ctrl+Shift+Page Up / Ctrl+Shift+Page Down |
+| `new-window` | New window | Ctrl+N |
+| `operations` | Operations | Ctrl+J |
+| `custom-actions` | Edit custom actions | Ctrl+Shift+A |
+| `preferences` | Preferences | Ctrl+comma |
+| `properties` | Properties | Alt+Return |
+| `bookmark-folder` | Bookmark this folder | Ctrl+D |
+
+These commands have no default key: `search-subfolders`, `stop-search`,
+`more-search-results`, `reveal-search-result`, `search-problems`, `open-terminal`,
+`show-trash`, `show-recent`, `connect-to-server`, `move-tab-to-window` and `recovery`.
+
+Fixed keys: Shift+F10 or Menu opens the context menu; arrows, Home, End, Page Up and
+Page Down move the selection (with Shift to extend it); in a List tree, Left and Right
+collapse and expand folders; Escape closes search, menus and dialogs. In the Trash,
+Recovery, Operations, Properties and Quick Look windows, Escape or Ctrl+W closes the
+window. In Trash and Recovery, Ctrl+J opens Operations and Ctrl+Z undoes. In
+Operations, Ctrl+N opens a browser window.
+
+## Command line
+
+```text
+canopa-files [OPTIONS] [PATHS]...
 ```
 
-The [GStreamer libav package](https://packages.ubuntu.com/noble/gstreamer1.0-libav)
-supplies FFmpeg decoders. Equivalent packages are required on other distributions;
-they retain their distribution license notices. The archive does not bundle
-GStreamer, Poppler or a private codec copy. Building from source requires
-`pkg-config`, GIO/GLib development libraries and the GStreamer
-[core development package](https://packages.ubuntu.com/noble/libgstreamer1.0-dev)
-and [base development package](https://packages.ubuntu.com/noble/libgstreamer-plugins-base1.0-dev).
-Audio needs the session's working audio service. GIO/GVfs supplies local volume
-discovery and mount requests.
+| Option | Effect |
+|---|---|
+| `PATHS` | Local folders or `file://` URIs; several open as tabs in one window. |
+| `--quick-look PATH` | Open a local file (or `file://` URI) in Quick Look, in a new browser window on its folder. |
+| `--daemon` | Stay resident without opening a window; later launches open windows instantly in this process. Runs in the foreground. |
+| `--quit` | Release resident mode. Files exits once its windows, accepted work and pending questions are finished; nothing is cancelled. |
+| `--config PATH` | Use this `config.kdl` (alias `--canopa-config`). |
+| `--defaults` | Use only built-in defaults; no file is read or watched. |
+| `--check-config` | Validate the `files` section and appearance without opening a window. Prints `{"component":"files","source":...}` or `{"component":"files","error":...}` and sets the exit status. |
+| `--show-source` | With `--check-config`, also print the error to standard error. |
+| `--version`, `--help` | Version and help. |
 
-The optional `media-playback` Cargo feature is part of the default desktop build.
-`local-runtime` can still build the headless application without Iced or media.
-Media initialization and decoder/plugin discovery wait for an actual preview;
-ordinary browsing and `--daemon` startup create no playback pipeline. Native
-codec/control acceptance and release packaging remain in progress.
+A launch without `--config` or `--defaults` uses the running process's
+configuration. An explicit selection that differs from it is refused.
 
-The archive contains the executable, Files README/licenses, this guide,
-`share/applications/org.canopa.Files.desktop` and optional FileManager1
-activation metadata. For a per-user installation from
-the extracted archive directory:
+Resident mode:
 
 ```sh
-install -Dm755 bin/canopa-files "$HOME/.local/bin/canopa-files"
-install -Dm644 share/applications/org.canopa.Files.desktop \
-  "$HOME/.local/share/applications/org.canopa.Files.desktop"
-export PATH="$HOME/.local/bin:$PATH"
-update-desktop-database "$HOME/.local/share/applications"
+canopa-files --daemon &     # start from the graphical session
+canopa-files ~/Downloads    # opens a window in the resident process
+canopa-files --quit         # release residency
 ```
 
-The application entry makes Files available in launchers and folder application
-choices. Registration preserves the existing default file manager. To choose
-Files as the default folder handler explicitly:
+Start `--daemon` from the graphical session: a process started without a Wayland or
+X11 display stays headless and refuses windows until you quit it.
+
+## Configuration
+
+Files reads the `files` section of the shared `~/.config/canopa/config.kdl`; see
+[configuration](configuration.md) for the file, `canopa config check` and the other
+sections. The section is strict: unknown nodes or properties, duplicates and type
+annotations are errors. Each node may appear once, except `shortcut` and `action`.
+Edits apply automatically; an invalid edit keeps the last valid settings and shows a
+banner in Files windows.
+
+```kdl
+files {
+    view mode="columns" sort="name" descending=#false column-width=240 folders-first=#true {
+        details "size" "modified"
+    }
+    toolbar "back" "forward" "parent" "location" "new-folder" "view" "action:inspect-images"
+    sidebar "auto"
+    properties "window"
+    thumbnails show="local" size=96
+    places {
+        place "recent"
+        place "home"
+        place "downloads"
+        bookmark "Work" path="/home/me/Work"
+        place "trash"
+        place "recovery"
+    }
+    // Omit a command to keep its defaults; a shortcut with no keys disables it.
+    shortcut "search" "<Control>f" "F6"
+    action "inspect-images" name="Inspect images" command="my-script %F" toolbar=#true {
+        selection min=1 files=#true directories=#false
+        patterns "*.png" "*.jpg" "*.jpeg"
+    }
+}
+```
+
+| Node | Values | Default |
+|---|---|---|
+| `view mode=` | `columns`, `list`, `icons` | `columns` |
+| `view sort=` | `name`, `size`, `modified`, `kind` | `name` |
+| `view descending=` | boolean | `#false` |
+| `view column-width=` | 160 to 640 | 240 |
+| `view tree=` | boolean; List view opens folders in place | `#false` |
+| `view folders-first=` | boolean | `#true` |
+| `view { details ... }` | any of `size`, `modified`, `kind` | `size` `modified` |
+| `toolbar` | command IDs, `location` (exactly once), `view`, `action:<id>`; at most 64 | `back forward parent location new-folder view` |
+| `sidebar` | `auto` (shown in wide windows), `always` (whenever there is room), `never` | `auto` |
+| `properties` | `window`, `panel` | `window` |
+| `thumbnails show=` | `local` (skip network and removable media), `always`, `never` | `local` |
+| `thumbnails size=` | pixels, 48 to 256 | 96 |
+| `list-columns` | `name=` 160 to 1200; `size=`, `modified=`, `kind=` 48 to 480 | follow the window |
+| `panes` | `sidebar=` 160 to 420; `properties=` 260 to 640 | built-in widths |
+| `places { place "<id>" }` | `recent`, `home`, `desktop`, `documents`, `downloads`, `music`, `pictures`, `videos`, `templates`, `public`, `filesystem`, `trash`, `recovery` | all except `templates` and `public` |
+| `places { bookmark "Name" path="/abs" }` | name of 1 to 128 characters; absolute `path=`, or `path-bytes=` (hex) for non-UTF-8 paths; at most 256 entries | none |
+| `shortcut "<command-id>" "<keys>"...` | GTK-style keys such as `<Control>f`, `<Shift>Delete`, `F6`; at most 8 | see [Keyboard shortcuts](#keyboard-shortcuts) |
+| `action "<id>"` | `name=`, `command=`, `icon=`, `shortcut=`, `toolbar=`; children `selection min= max= files= directories=` and `patterns` | `selection min=1 files=#true directories=#false` |
+
+Notes:
+
+- `quick-look` and `search` are never toolbar buttons and are dropped if listed. A
+  toolbar without `new-folder` is saved as `toolbar ... new-folder=#false`.
+- `tree` and `folders-first` apply to every folder. The other `view` settings are
+  defaults that a folder's View options can override.
+- Shortcuts may not take keys that typing or selection need, and custom-action
+  shortcuts need a modifier such as Ctrl.
+- `thumbnails size` takes a number; words such as `"medium"` are rejected.
+
+Validate without opening a window:
+
+```sh
+canopa-files --check-config --show-source
+```
+
+## Default file manager
+
+Installing Canopa adds `org.canopa.Files.desktop`, which makes Files available as a
+folder handler without changing your default. To make it the default for folders:
 
 ```sh
 xdg-mime default org.canopa.Files.desktop inode/directory
 ```
 
-To select Files as an on-demand FileManager1 provider, separately install its
-session-bus activation file:
+Other applications' "Show in folder" requests use the separate
+`org.freedesktop.FileManager1` D-Bus service. Canopa ships its activation file without
+enabling it, so it never takes over from another file manager. The
+[installation guide](installation.md) shows how to enable it for your account. Once
+enabled, the first request starts `canopa-files --daemon`, which stays resident until
+`canopa-files --quit`. Files does not take the name while another file manager owns it.
 
-```sh
-install -Dm644 share/dbus-1/services/org.freedesktop.FileManager1.service \
-  "$HOME/.local/share/dbus-1/services/org.freedesktop.FileManager1.service"
-```
+## Optional runtime tools
 
-This selects the standard desktop presentation provider independently of the
-folder MIME default. It starts `canopa-files --daemon` on the first bus request,
-using the session PATH and graphical environment. Files leaves another manager's
-already owned bus name untouched. Finish and quit an older Files owner before
-using newly installed activation support. FileManager1 activation does not set
-the desktop entry's distinct `DBusActivatable` contract.
+The Arch `canopa` package installs what Files needs: GStreamer with the base, good and
+libav plugins, Bubblewrap, `xdg-terminal-exec`, GLib (`gio`) and GVFS. Optional:
 
-Ordinary CLI launches run on demand. The activation file opts into residency;
-`--quit` releases it. Packaging starts no service and installs no autostart or
-resident systemd unit; Shell and Notify retain their existing services.
-Configuration is shared through `canopa/config.kdl`; `canopa-files --check-config`
-validates its Files and appearance settings without opening a window.
+| Package | Enables |
+|---|---|
+| `poppler` | PDF previews and PDF thumbnails |
+| `gvfs-smb` | Windows and Samba shares |
+| `gvfs-nfs` | NFS shares |
+| `gvfs-mtp` | Phones |
+| `gvfs-gphoto2` | Cameras |
+| `gvfs-afc` | Apple devices |
+| `gvfs-dnssd`, `gvfs-wsdd` | Discovering servers on the local network |
+| other GStreamer plugin packages | More audio and video formats |
 
-A preview that cannot decode a file displays a short explanation and keeps Open
-in default application available. Detailed media diagnostics use the
-`[canopa-files media]` log prefix. Codec availability is a runtime property;
-a successful configuration check or `--help` does not verify decoding. The native
-acceptance workflows exercise real decoded frames and isolated recorded audio.
+Other thumbnail types use the thumbnailers installed on the system; they run only
+when `/usr/bin/bwrap` is available.
+
+## Troubleshooting
+
+- **No window appears.** A Files process may be running without a display, for
+  example `--daemon` started outside the graphical session. Run `canopa-files --quit`,
+  wait for it to exit, and start Files again from the session.
+- **"Files is already running with a different configuration selection."** The
+  running process uses another `--config`/`--defaults` selection. Launch without the
+  option, or quit the running process first.
+- **Still the old version after an update.** The running process keeps the old
+  executable. Finish your work, close the windows and run `canopa-files --quit`.
+- **A banner says the configuration is invalid.** Run
+  `canopa-files --check-config --show-source` to see the error. Files keeps using the
+  last valid settings until you fix it.
+- **File changes are refused after a crash.** An interrupted operation needs review.
+  Open Recovery, follow its explanation, then choose Reconcile interrupted work or
+  Keep in Recovery.
+- **A PDF does not preview.** Install `poppler`.
+- **Audio or video does not play.** Install the GStreamer plugins for the format.
+  Run Files from a terminal to see `[canopa-files media]` messages.
+- **No thumbnails.** Check Preferences > Views; the default `local` policy skips
+  network and removable media. Thumbnails other than common images need `bwrap`.
+- **A network address does not open.** Install the GVFS package the message names.
+- **Run in Terminal or Open in Terminal does nothing.** Install `xdg-terminal-exec`
+  and set your preferred terminal.
+- **"Show in folder" opens another file manager.** Enable the FileManager1 activation
+  file as described in the [installation guide](installation.md), then quit the other
+  file manager's service or log in again.
+
+## Known limitations
+
+- There is no Redo, and Undo keeps the latest 100 operations.
+- Queued custom actions and their results are lost when Files quits or crashes.
+- A crash of the Files window process also stops running transfers; they are reviewed in Recovery at the next start.
+- Network folders have no Trash, refresh by polling and need GVFS FUSE to browse.
+- Recent items cannot be removed or cleared from Files.
+- Changes to XDG user directories apply after restarting Files.
+- Hard links are copied as separate files.

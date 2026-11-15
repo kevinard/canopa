@@ -10,7 +10,7 @@
 //! `SaveSecrets` and `DeleteSecrets` succeed without keeping anything:
 //! NetworkManager keeps system-owned secrets itself. Only calls from
 //! NetworkManager's current unique name are answered. See
-//! `docs/adr/0139-network-secrets-through-a-settings-agent.md`.
+//! `docs/architecture/settings.md`.
 //!
 //! ```no_run
 //! use canopa_services::network::secret_agent;

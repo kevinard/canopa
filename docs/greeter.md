@@ -1,54 +1,86 @@
-# Canopa login screen
+# Login screen
 
-`canopa-greeter` is a graphical frontend for **greetd**. It shares software rendering,
-themes, layout, secret input and widget observation with Canopa Lock. Greetd owns
-PAM authentication, credentials, logind session setup and desktop lifetime. The
-frontend creates an ordinary fullscreen Wayland window and needs a compositor;
-the launcher supports Cage and Weston's kiosk shell. Cage uses its
-last-connected-monitor mode; Weston uses its kiosk output policy.
+`canopa-greeter` is a graphical login screen for [greetd](https://sr.ht/~kennylevinsen/greetd/).
+It shares its look, layout, widgets and password field with the Canopa lock screen.
+greetd owns PAM authentication, account policy, the switch to the user's account and
+the desktop session's lifetime. The greeter runs as an unprivileged account inside a
+small kiosk compositor (Cage by default, or Weston) and shows one fullscreen window.
 
-## Build and preview
+This guide is for administrators. The user-facing input keys are in
+[shared authentication input](session-tools.md#shared-authentication-input).
 
-```sh
-cargo build --locked -p canopa-greeter -p canopa-session -p canopa-cli
-canopa greeter --defaults check-config
-canopa greeter --canopa-config packaging/greetd/greeter.kdl preview /tmp/login.png
+## Install on Arch
+
+The optional `canopa-login` package depends on `canopa`, `greetd` and `cage`, and
+installs:
+
+| Path | Purpose |
+| --- | --- |
+| `/usr/bin/canopa-greeter` | The greeter (shipped in the `canopa` package) |
+| `/usr/lib/sysusers.d/canopa-login.conf` | System account `canopa-greeter`, home `/var/lib/canopa-greeter` |
+| `/usr/lib/tmpfiles.d/canopa-login.conf` | Creates `/var/lib/canopa-greeter` with mode 0700 |
+| `/etc/canopa/greeter.kdl` | Login screen settings (kept on upgrade) |
+| `/usr/share/canopa/greetd/canopa.toml` | greetd configuration to merge |
+
+The `canopa` package installs the session entry
+`/usr/share/wayland-sessions/canopa.desktop`, which runs `/usr/bin/canopa-session`
+with the bundled compositor `/usr/lib/canopa/niri`. The greeter lists it with the
+other installed sessions.
+
+`/usr/share/canopa/greetd/canopa.toml` contains:
+
+```toml
+[terminal]
+vt = 1
+
+[default_session]
+command = "dbus-run-session /usr/bin/canopa-greeter session --compositor cage"
+user = "canopa-greeter"
 ```
 
-`canopa-greeter` is the direct executable. Normal startup requires `GREETD_SOCK`
-from greetd and an unprivileged account; running it as root is refused. Preview and
-configuration checks need neither a compositor, greetd nor PAM, and execute no
-custom widget commands.
+The package does not change `/etc/greetd/config.toml`, does not enable greetd and does
+not replace the running display manager. To switch:
 
-The default configuration is `/etc/canopa/greeter.kdl`; it never discovers the
-logged-in user's `~/.config/canopa/config.kdl`. A missing system file uses embedded
-defaults. A present unreadable/invalid file fails. Normal system configuration and
-its parent directories must be root-owned and not group/world writable. Explicit
-`--canopa-config PATH` selects a development/admin-provided file. `--defaults`
-selects embedded defaults. Shared-schema validation also recognizes the `greeter`
-namespace; `canopa config check --file FILE` validates it with the other owners.
-Use `canopa greeter check-config` to check the actual default system greeter file.
+1. Check the settings and look at the result:
 
-## Installation
+   ```sh
+   canopa greeter check-config --show-source
+   canopa greeter preview /tmp/login.png --width 1920 --height 1080
+   canopa greeter list-sessions
+   ```
 
-Install greetd, either Cage or Weston 15+, Niri (including `niri-session`), fonts and the usual Wayland
-runtime libraries through the distribution. The application itself has no GPU
-renderer, GTK or PAM execution dependency. The selected compositor owns the
-compositor/seat/VT side. Weston must provide `kiosk-shell.so` and support
-`weston -- PROGRAM` terminating with its child.
+2. Merge `canopa.toml` into `/etc/greetd/config.toml` (as root). The VT must not be
+   used by another display manager or getty.
+3. Make sure you can still log in another way (another TTY, or SSH) before rebooting.
+4. Disable the current display manager and enable `greetd.service`, following the
+   distribution's procedure.
 
-Install `canopa-greeter` as a root-owned executable accessible to the greeter
-account, normally `/usr/local/bin/canopa-greeter`. Create/use the distribution's
-unprivileged `greeter` account with a private writable runtime/home directory.
-Install root-owned `packaging/greetd/greeter.kdl` as `/etc/canopa/greeter.kdl`.
-Install `packaging/wayland-sessions/canopa.desktop` in
-`/usr/local/share/wayland-sessions/` to offer Canopa alongside the distribution's
-installed sessions. Session desktop entries are system files, independent of the
-greeter account's application menu and home directory.
-Use publicly readable system assets such as `/usr/local/share/canopa/login.jpg`;
-a user's encrypted/private home is not available for login presentation.
+greetd's PAM stack is `/etc/pam.d/greetd`. It must contain the normal
+authentication, account and session policy, including `pam_systemd`.
+`/etc/pam.d/canopa-lock` belongs to the lock screen and is not a login stack. For
+unlocking the keyring at login, see the `canopa-oo7` package in
+[installation](installation.md).
 
-Merge the following example into `/etc/greetd/config.toml`:
+## Install manually
+
+For other distributions or the release archive:
+
+1. Install greetd, Cage (or Weston 15 or later with `kiosk-shell.so`), fonts and the
+   Wayland runtime libraries.
+2. Install `canopa-greeter` as a root-owned executable, for example
+   `/usr/local/bin/canopa-greeter`.
+3. Create an unprivileged system account for the greeter with a private writable
+   home, or use the one your greetd package provides (often `greeter`).
+4. Install `packaging/greetd/greeter.kdl` (release archive:
+   `share/canopa/greetd/greeter.kdl`) as root-owned `/etc/canopa/greeter.kdl`.
+5. Install a Canopa session entry in `/usr/local/share/wayland-sessions/` or
+   `/usr/share/wayland-sessions/`. Outside the Arch package, use
+   `packaging/wayland-sessions/canopa.desktop` (release archive:
+   `share/wayland-sessions/canopa.desktop`), which starts Canopa through
+   `niri-session`.
+6. Merge one of the examples into `/etc/greetd/config.toml`, adjusting the path and
+   account: `packaging/greetd/config.toml` (Cage) or `config-weston.toml` (Weston),
+   shipped in the release archive under `share/canopa/greetd/`.
 
 ```toml
 [terminal]
@@ -59,67 +91,54 @@ command = "dbus-run-session /usr/local/bin/canopa-greeter session --compositor c
 user = "greeter"
 ```
 
-Select Weston by changing `--compositor cage` to `--compositor weston`.
-The release includes both `config.toml` and `config-weston.toml` examples.
-Selection is a launcher argument in greetd's command, before the Wayland client
-starts; it is independent of the user's desktop session choice. The launcher
-replaces itself with the chosen compositor, preserving signals and process lifetime.
-It forwards `--canopa-config`/`--defaults` to the frontend without shell expansion.
-The direct `canopa-greeter` command still connects to an existing compositor.
-Weston can return zero when its child fails; authentication success is determined
-by greetd's authenticated handoff, independently of the compositor's exit code.
+Images shown before login (backgrounds, avatars) must be readable by the greeter
+account, for example under `/usr/local/share/canopa/`. Users' home folders are not
+available.
 
-`--renderer auto` (default) leaves renderer selection to the compositor;
-`--renderer software` requests Pixman for either choice. The software greeter
-renderer is independent of this compositor setting. `--compositor-bin PATH`
-selects a nonstandard executable, and repeated `--compositor-arg=ARG` passes
-literal additional arguments. Weston ignores discovered `weston.ini` by default.
-For example, nested development can pass `--compositor-arg=--backend=wayland`.
-Use `session --compositor weston --print-command` to inspect argv without starting
-anything or connecting to greetd.
+## Compositor
 
-See [compositor measurements and reproduction](greeter-performance.md) for startup,
-idle CPU and memory comparisons, including the nested-renderer scope.
-The measured lower combined RSS keeps Cage as the packaged default. Weston
-remains available through the explicit launcher choice.
+`canopa-greeter session` replaces itself with the compositor, which runs the greeter
+and exits with it. Cage is the default because it used clearly less memory than Weston
+in a side-by-side comparison of the same greeter.
 
-The distribution's greetd PAM stack must include its normal authentication,
-account and session policy (`pam_systemd` where appropriate). The locker's
-`/etc/pam.d/canopa-lock` service is separate and is not a login PAM template.
-Configure token/fingerprint enrollment and modules through that greetd stack.
-For an Arch installation, the optional oo7 package supplies
-[keyring unlock and Secret portal integration](installation.md#optional-oo7-keyring).
+| Option | Meaning |
+| --- | --- |
+| `--compositor cage\|weston` | Required. Cage runs as `cage -s -m last` (last connected monitor). Weston runs with `--shell=kiosk-shell.so --no-config --idle-time=0`. |
+| `--renderer auto\|software` | `software` asks for Pixman (`WLR_RENDERER=pixman` for Cage, `--renderer=pixman` for Weston). Default `auto`. |
+| `--compositor-bin PATH` | Use another compositor executable. |
+| `--compositor-arg ARG` | Extra compositor argument, repeatable, passed literally. |
+| `--print-command` | Print the command and exit without starting anything. |
 
-After checking the configuration, select greetd as the system's display manager
-using the distribution's procedure. Its VT must not be used by another display
-manager/getty. Repository scripts do not install/enable greetd, edit host PAM or
-replace the running login manager. The updater installs the greeter alongside the
-user tools for preview/development; the system greeter binary is administered
-separately. Release archives include examples under `share/canopa/greetd/` and a
-Canopa desktop entry under `share/wayland-sessions/` for other session choosers.
+`--canopa-config` and `--defaults` are forwarded to the greeter. Plain
+`canopa-greeter` (no subcommand) connects to an existing compositor; it needs
+`GREETD_SOCK` and refuses to run as root.
 
-Greetd starts the chosen desktop after the greeter session exits. Both compositor
-launch modes exit with their greeter child, completing that handoff. On logout, greetd starts the
-login screen again. Canopa's configured session uses `niri-session`, which performs
-Niri's systemd environment/session lifecycle. Enable the existing Canopa user
-companion units for the authenticated account as described in
-[session tools](session-tools.md). The greeter compositor has its own lifetime.
+## Configuration
 
-## Users, sessions and appearance
+The greeter reads `/etc/canopa/greeter.kdl`, never a user's `~/.config`. When the file
+is missing it uses built-in defaults; when it is present it must be valid, and the
+file and its parent directories must be owned by root and not writable by group or
+others. `--canopa-config FILE` selects another file (also accepted from non-root
+owners, for development); `--defaults` uses the built-in defaults.
+
+The file uses the shared format: `schema-version 1`, an optional `appearance` block
+(see [Configuration](configuration.md) and [Theme customization](theme-customization.md))
+and a `greeter` block. `canopa config check` checks your own `config.kdl`; use
+`canopa greeter check-config` for the system file.
 
 ```kdl
 schema-version 1
 appearance { color-scheme "dark"; }
 greeter {
-    discover-users #true             // default; manual entry always works
-    user-source "auto"              // AccountsService, then NSS on failure
-    users "alice" "bob"             // optional manual names, listed first
-    default-user "alice"            // optional
-    discover-sessions #true          // default; no manual session list required
+    discover-users #true
+    user-source "auto"
+    users "alice" "bob"
+    default-user "alice"
+    discover-sessions #true
     view {
         widgets "avatar" "keyboard" "battery"
-        auth-timeout 120
         image "/usr/local/share/canopa/login.jpg"
+        auth-timeout 120
         layout {
             top-left "clock" "date"
             center "avatar" "authentication"
@@ -129,34 +148,83 @@ greeter {
 }
 ```
 
-At each frontend startup, installed `.desktop` session entries populate the selector
-from `/usr/local/share/wayland-sessions`, then `/usr/share/wayland-sessions`.
-`session-dirs "PATH" ...` replaces those directories with an ordered list of
-absolute paths. User `XDG_DATA_HOME`, `XDG_DATA_DIRS` and home directories are not
-searched. Normal system discovery requires root-owned source files and ancestor
-directories without group/world write access; explicit `--canopa-config` development
-mode permits fixture/admin-provided sources, matching its configuration policy.
+| Key | Value | Default |
+| --- | --- | --- |
+| `discover-users` | boolean | `#true` |
+| `user-source` | `auto`, `accountsservice`, `nss` | `auto` |
+| `nss-uid-min`, `nss-uid-max` | integer | `UID_MIN`/`UID_MAX` from `/etc/login.defs`, else 1000–60000 |
+| `nss-include-nologin` | boolean | `#false` |
+| `users` | usernames, at most 64, listed first | — |
+| `default-user` | username, preselected | — |
+| `remember-selection` | boolean | `#true` |
+| `user-avatars` | boolean | `#true` |
+| `avatar-dir` | path | `/var/lib/AccountsService/icons` |
+| `user-avatar "USER" "PATH"` | repeatable, at most 64 | — |
+| `power-controls` | boolean | `#true` |
+| `discover-sessions` | boolean | `#true` |
+| `session-dirs` | up to 8 absolute paths | `/usr/local/share/wayland-sessions`, `/usr/share/wayland-sessions` |
+| `xsession-dirs` | up to 8 absolute paths | `/usr/local/share/xsessions`, `/usr/share/xsessions` |
+| `x11-wrapper { argv ...; }` | enables X11 sessions | — |
+| `session "ID" { label; command; env ...; }` | manual session, at most 32 | — |
+| `view { ... }` | presentation | see below |
 
-Names and optional `Comment` descriptions follow the greeter's
-`LC_ALL`/`LC_MESSAGES`/`LANG` locale. The desktop chooser displays valid
-descriptions below each session name. Entries marked
-`Hidden`, `NoDisplay`, `Terminal` or `DBusActivatable` are skipped. `TryExec` and
-the executable must be available; pathless executables are resolved using absolute
-components of the greeter's PATH. Earlier directory entries mask later files with
-the same filename, including hidden/invalid entries. Discovered sessions are
-sorted by display name and ID. Session IDs are filenames without `.desktop`.
+`view` takes the lock screen's presentation keys (`image`, `fit`, `color`, `output`,
+`dim`, `font`, `clock-format`, `date-format`, `clock-size`, `text-size`,
+`auth-timeout`, `avatar`, `weather-file`, `widgets`, `layout`, `widget`); see the
+[`lockscreen` reference](session-tools.md#lockscreen). Differences from the lock
+screen:
 
-`Exec` uses desktop-entry quoting and field codes, then receives shell-safe quoting
-for greetd's launch path. `%c`, `%k` and `%i` are expanded as argument data; file/URL
-codes have no selections and are removed, `%%` is literal, and unknown/ambiguous
-codes are rejected. There is no shell expansion or execution during discovery,
-including for `TryExec`. `Path` is honored using GNU `env --chdir`. The resulting
-argv/environment remains bounded to 8 KiB. DesktopNames becomes the colon-separated
-`XDG_CURRENT_DESKTOP`; the filename supplies `XDG_SESSION_DESKTOP`, and
-`XDG_SESSION_TYPE` is `wayland`. These values reach greetd before PAM session setup.
+- Default widgets are `avatar`, `keyboard` and `battery`; the default layout centers
+  clock, date, username, avatar, the password field and keyboard, with battery (and
+  weather, when enabled) in a row at the bottom.
+- `media` is refused and `use-wallpaper #true` is refused; set an explicit `image`.
+- Custom script widgets run as the greeter account, without greetd's socket or
+  authentication descriptors. Treat them as administrator configuration.
+- `clock-format` and `date-format` default to the system language's formats.
 
-Manual definitions remain useful for custom launchers or overriding an installed
-entry with the same ID. They appear first in configuration order:
+## Users
+
+A username can always be typed. In addition, the chooser lists accounts:
+
+- `users` come first, in the given order.
+- With `discover-users #true`, discovered accounts follow, sorted by display name.
+  `user-source "auto"` asks AccountsService and falls back to NSS when it is missing,
+  denied or fails. A successful but empty AccountsService answer stays empty.
+  `accountsservice` or `nss` use only that source.
+- AccountsService omits system accounts and root. NSS (libc `getpwent`, so
+  `/etc/nsswitch.conf` applies) keeps UIDs between `nss-uid-min` and `nss-uid-max`,
+  omits root, and omits `nologin`/`false` shells unless `nss-include-nologin #true`.
+  Directory services that disable enumeration list nobody; typing still works.
+
+These are display filters only. greetd and PAM decide who may log in.
+
+Each source has a two-second deadline (up to four seconds in `auto` with fallback),
+and the screen does not wait for it. At most 128 accounts are listed. The greeter
+follows AccountsService signals and changes to `/etc/passwd`, `/etc/nsswitch.conf` and
+`/etc/login.defs`. Press **F5** to refresh, for example for remote NSS sources.
+
+```sh
+canopa greeter list-users
+canopa greeter list-users --source nss
+```
+
+## Sessions
+
+With `discover-sessions #true`, the session chooser lists the `.desktop` entries in
+`session-dirs`, sorted by name. Earlier directories hide entries with the same file
+name in later ones. Entries with `Hidden`, `NoDisplay`, `Terminal` or
+`DBusActivatable` set are skipped, as are entries whose `TryExec` or executable is
+missing. Names and `Comment` follow the system language. Outside `--canopa-config`
+development mode, entries and their directories must be root-owned and not writable
+by group or others.
+
+`Exec` follows the desktop-entry rules without running a shell. `DesktopNames`
+becomes `XDG_CURRENT_DESKTOP`, the file name `XDG_SESSION_DESKTOP`, and
+`XDG_SESSION_TYPE` is `wayland`. The list updates when entries are installed or
+removed. Discovery reads at most 256 files of 64 KiB and lists at most 128 sessions.
+
+Manual sessions appear first and override a discovered entry with the same ID (the
+file name without `.desktop`):
 
 ```kdl
 greeter {
@@ -168,277 +236,100 @@ greeter {
 }
 ```
 
-Set `discover-sessions #false` for a completely curated manual list. An empty
-catalog displays an explanatory message and does not start authentication; there
-is no assumed `niri-session` fallback. Scanning is bounded to eight directories
-per kind, 256 examined files, 64 KiB per file and 128 total catalog entries. The
-frontend keeps one snapshot until restart, with no background polling. Schema
-checking remains independent of installed sessions. Preview and this diagnostic
-resolve the catalog without connecting to greetd or executing commands:
+`command` also accepts a single string, split into words without a shell. Set `discover-sessions
+#false` for a fixed list. With no session at all, the screen explains it and does not
+start authentication.
+
+X11 sessions are listed only with an `x11-wrapper`, a program that starts the X server
+and runs the session command it receives as arguments:
+`x11-wrapper { argv "/usr/local/libexec/my-xsession"; }`. X11 entries get IDs prefixed
+`x11:`, "(X11)" labels and `XDG_SESSION_TYPE=x11`.
 
 ```sh
-canopa greeter list-sessions
+canopa greeter list-sessions    # resolved sessions as JSON
 ```
 
-X11 entries are enabled only with an explicit X-server/session wrapper accepting
-the desktop command as argv. For example, `x11-wrapper { argv
-"/usr/local/libexec/my-xsession"; }` enables `/usr/local/share/xsessions` and
-`/usr/share/xsessions`; `xsession-dirs` replaces those paths. The administrator's
-wrapper must perform the distribution's X-server setup and execute its supplied
-arguments. X11 IDs are prefixed `x11:`, labels include `(X11)` and the PAM
-environment uses `XDG_SESSION_TYPE=x11`. Canopa does not launch a raw X11 desktop
-command without that wrapper. Wrapper command construction is tested; physical
-X-server/seat behavior requires target-machine acceptance.
+## Avatars
 
-Manual environment entries are explicit `NAME=value` assignments; the greeter's
-process environment is not copied into the desktop request.
-Usernames can always be typed. User discovery runs asynchronously once at frontend
-startup. `user-source "auto"` (default) first tries AccountsService and falls back
-to NSS if the service is missing, denied, fails or times out. A successful empty
-AccountsService list stays empty, respecting its visibility policy. Choose
-`user-source "accountsservice"` or `user-source "nss"` to use only that source.
-
-AccountsService's `org.freedesktop.Accounts.ListCachedUsers` is queried over the
-system bus. The distribution's optional `accountsservice` package provides this
-API. Only `Uid`, `UserName`, `SystemAccount`, `RealName` and (when avatars are enabled)
-`IconFile` are read. Root/system accounts and invalid usernames are omitted; non-local cached accounts remain
-eligible without a UID threshold. Password hints and home-directory metadata are
-not read, and no account mutations are made.
-
-NSS uses libc's `setpwent`/`getpwent_r` interface, so `/etc/nsswitch.conf` and the
-installed NSS providers determine the roster. It works without AccountsService.
-Some directory services disable enumeration; manual login still works for users
-that are absent from the roster. Only canonical username, UID, login-shell
-eligibility and the first comma-separated GECOS component are used. Other GECOS
-fields, home paths and password fields are not copied into the account list;
-there is no shadow lookup. NSS record buffers are erased after use.
-
-NSS chooser filtering uses `UID_MIN`/`UID_MAX` from `/etc/login.defs`, falling back
-to 1000..60000. Override these for directory-service or distribution-specific UID
-ranges. UID 0 is always omitted, and shells ending in `nologin` or `false` are
-omitted by default. An empty shell remains eligible. For example:
+With `user-avatars #true` and the `avatar` widget placed, the selected user's picture
+is the first readable image from: `user-avatar`, AccountsService's `IconFile`,
+`avatar-dir/USERNAME`. Otherwise the view's `avatar` image or the user's initials are
+shown. Files may lack an extension; each must be a raster image of at most 2 MiB,
+2048 pixels per side and 4 megapixels. Images are read with the greeter account's
+permissions and decoded in a separate helper; home folders are never searched.
+Relative paths are relative to the configuration file. `user-avatar` entries do not
+add users to the chooser.
 
 ```kdl
 greeter {
-    user-source "nss"
-    nss-uid-min 1000
-    nss-uid-max 300000
-    nss-include-nologin #false
-}
-```
-
-These are chooser filters. Explicit/manual usernames remain available, and greetd/PAM
-controls account locks, expiry, authentication and permission to log in.
-
-The chooser displays a name with its canonical username; only the username goes
-to greetd. Configured users keep their order and receive display-name metadata
-when available; other accounts follow in display-name order. `default-user`
-retains its prefilling behavior. Metadata arriving after typing/clearing a
-username or during authentication never changes that input, account or transaction.
-If the initial chooser is untouched and empty, it selects the first returned user
-without starting authentication.
-
-The UI does not wait for discovery. AccountsService has a two-second overall
-deadline, at most 128 cached account paths and eight concurrent user reads. NSS
-runs in a fresh single-threaded helper process with its own two-second deadline;
-automatic fallback can therefore take up to four seconds. NSS examines at most
-4096 records, retains at most 128 users and bounds each record and the total
-helper response to 64 KiB. Timeout, cancellation or failure terminates and reaps
-the helper process group. The helper receives no greetd/notification endpoints,
-protects its process against dumps and is killed if its parent disappears.
-Connections and workers retire after discovery, with no account polling.
-
-Set `discover-users #false` for a curated-only chooser and to disable both
-AccountsService and NSS. Schema validation and previews perform neither query.
-Explicit inspection is available without a compositor or greetd:
-
-```sh
-canopa greeter list-users
-canopa greeter list-users --source nss
-```
-
-This prints the merged username/display-name list and optional UID; unavailable
-discovery falls back to configured users. Account changes appear at the next
-frontend startup or explicit inspection.
-
-User avatars are enabled by default through the `avatar` widget. The selected
-user's image follows this order: explicit `user-avatar`, AccountsService `IconFile`,
-then `avatar-dir/USERNAME` (default `/var/lib/AccountsService/icons`). The directory
-also works for NSS/manual users without AccountsService. Files can be extensionless;
-content must be a supported raster image. Missing, unreadable, invalid or oversized
-images fall through to the next source, then to a static `view { avatar "..."; }`
-image or the user's initials. Empty username input shows a generic `?` placeholder.
-No home directories are searched or remote images downloaded. An explicit
-AccountsService/configured path is read with the greeter account's permissions.
-
-```kdl
-greeter {
-    user-avatars #true
     avatar-dir "/usr/local/share/canopa/faces"
     user-avatar "alice" "/usr/local/share/canopa/alice.png"
-    view {
-        widgets "avatar" "keyboard" "battery"
-        layout { center "avatar" "authentication"; }
-    }
 }
 ```
 
-`user-avatar` is repeatable for distinct usernames (at most 64), and relative
-configured paths resolve beside the greeter configuration. These entries provide
-images, without adding users to the chooser or granting login access. Set
-`user-avatars #false` to disable avatars, image loading and IconFile queries.
-The roster switch `discover-users` is independent of avatar presentation for manual users.
-For an explicit widget/layout list, include `avatar` in both to enable it.
+Users set their own picture on the Settings Users page, which stores it through
+AccountsService.
 
-Only the selected user's image is decoded, asynchronously in an isolated helper
-with a two-second deadline. A newer selection cancels older work and late results
-cannot overwrite the current avatar or alter authentication. Each candidate is
-limited to 2 MiB, 2048 pixels per dimension and 4 megapixels; the codec's best-effort
-allocation limit is 32 MiB. Each request tries at most three files, 6 MiB encoded
-and 48 MiB admitted source RGBA in total. Output is a center-cropped 128×128 RGBA
-thumbnail. The cache retains at most eight thumbnails (512 KiB), including misses,
-for this frontend lifetime; it is not polled or written to disk. Images appear in
-a circular mask using the shared presentation widget. Preview loads only an
-explicitly configured avatar for its selected user, without account discovery.
-`list-users` can include optional `icon_file` metadata but never decodes images.
+## Using the login screen
 
-When accounts are known, the sign-in screen lists up to four of them; the selected
-row is Enter's target and clicking any row signs in as that account, keeping a
-desktop chosen on this screen. Typing replaces the list with a username field, as
-does **Not listed?**; Change account opens the full chooser. Without known accounts
-the screen shows the username field directly. The desktop chooser sits in the
-bottom-left corner and keyboard layout, battery and power in the bottom-right; when
-a layout region occupies those corners, they move into the sign-in column instead.
+| Key | Action |
+| --- | --- |
+| Enter | Continue or submit |
+| Escape | Clear the field, then cancel the attempt and return to the account list |
+| Up / Down | Move in the account list or chooser |
+| Tab | Next desktop session |
+| F5 | Refresh users, sessions and avatars |
+| F6 | Next keyboard layout |
+| F10 | Power menu (shut down, restart) |
 
-Enter continues/submits; Escape clears nonempty input, then cancels the transaction;
-Up/Down selects a configured user while entering a username; Tab cycles sessions.
-Clickable account rows and Session/Continue controls provide the same actions. During a session
-start, selection is frozen until greetd acknowledges or refuses the handoff.
-Input supports keyboard, pointer and protected AT-SPI actions, with complex-script
-shaping and layout selection; see [shared input](session-tools.md#shared-authentication-input).
+With known accounts, the screen lists up to four of them; clicking one or pressing
+Enter on it starts signing in. Typing or **Not listed?** shows a username field;
+**Change account** opens the full list. The desktop chooser is in the bottom-left
+corner; keyboard layout, battery and power are in the bottom-right. When a layout
+region uses those corners, they move into the sign-in column.
 
-`view` uses the lockscreen's presentation schema: wallpaper fit/dimming, clock/date,
-font sizes, nine-region layout and named passive script widgets. Authentication
-must be placed exactly once. Greeter defaults show avatar/keyboard/battery and omit
-personal media. Media is refused. Weather/custom widgets require explicit
-system assets/configuration. Commands run as the greeter account with no stdin,
-`GREETD_SOCK`, notification endpoint or authentication descriptors. They are trusted
-administrator configuration. See [layout and script settings](session-tools.md).
-The fullscreen window follows the kiosk compositor's active output/size/scale;
-it does not acquire a session lock or set the user's logind LockedHint.
+With `remember-selection #true` the greeter saves the last user who logged in and
+each user's last session, only after greetd confirms the session started. At the next
+start it opens directly on that user's password prompt with their session selected.
+`default-user` takes priority but is only preselected. The file is
+`$XDG_STATE_HOME/canopa/greeter.json` of the greeter account
+(`/var/lib/canopa-greeter/.local/state/canopa/greeter.json` for the Arch account). It
+holds no credentials or commands.
 
-## Authentication and failure behavior
+The power menu appears when logind answers `yes` to `CanPowerOff` or `CanReboot` for
+the greeter account. Each action asks for confirmation. `power-controls #false` hides
+it.
 
-The client supports any sequence of greetd secret/visible/info/error messages.
-Information/error notices are displayed and acknowledged; secret/PIN/OTP responses
-are fresh per prompt. Passwordless device authentication can complete without
-entering a password. Actual factors and account/session policy are controlled by
-PAM through greetd. Device modules run serially under greetd's PAM transaction.
+## Authentication
 
-A PAM success alone does not launch a session: the current UI generation must
-explicitly authorize the selected command. Cancellation invalidates that generation.
-An in-flight request is drained after acknowledged cancellation before retry, so a
-late reply cannot authorize a desktop or cancel a later attempt. The whole attempt
-has a configurable 5..600-second UI deadline (default 120), and failed attempts
-have a minimum two-second retry interval from their start.
-After an authentication error, greetd can report that its PAM worker already
-exited during cleanup. Canopa requires a further successful reset before offering
-a fresh attempt; it does not treat that cleanup error as authentication success.
+The greeter passes greetd's questions through in order: passwords, PINs, one-time
+codes, visible questions and messages. Each prompt gets a fresh field. A fingerprint
+or security key can complete without typing. `auth-timeout` (5–600 s, default 120)
+limits each attempt; after a failure the next attempt waits two seconds from the start
+of the previous one. A desktop starts only for the attempt currently on screen, and
+the session command chosen at the start of the attempt is the one greetd receives; if
+that entry changes or disappears meanwhile, the attempt is cancelled.
 
-Transport messages are bounded to 64 KiB, control RPCs have a three-second
-timeout and secret request buffers are erased. A disconnected/malformed service
-before handoff or unacknowledged cancellation exits unsuccessfully without
-session authorization. Once an authenticated start request has been sent, greetd
-may accept it even if its acknowledgement is lost; that session decision belongs
-to greetd.
-Greetd remains responsible for terminating its PAM worker/session. Some greetd
-versions serialize cancellation behind an outstanding PAM/device operation; their
-module timeout determines when backend cleanup completes. Configure finite device
-module timeouts. Canopa does not bypass a blocked conversation or start a competing
-PAM stack. Expired-password changes are handled only if greetd/PAM supplies the
-required conversation; there is no separate Canopa password-changing policy.
+## Troubleshooting and recovery
 
-## Validation
+- **The screen does not appear.** Check `journalctl -b -u greetd.service`. Run
+  `canopa greeter check-config` as root to check `/etc/canopa/greeter.kdl`; an
+  invalid file, or one owned by a non-root user, stops the greeter.
+- **Black screen or GPU errors.** Add `--renderer software` to the greetd command.
+  Use `--print-command` to see what is run.
+- **No sessions listed.** Run `canopa greeter list-sessions`. Check that the
+  session directories and entries are root-owned and not group- or world-writable,
+  and that `TryExec` exists.
+- **No users listed.** Run `canopa greeter list-users`. Typing a username always
+  works.
+- **Back to the previous login manager.** From another TTY (Ctrl+Alt+F2) or SSH,
+  disable `greetd.service` and re-enable the previous display manager, or restore the
+  previous `/etc/greetd/config.toml`.
+- **Forget remembered choices.** Delete the greeter account's `greeter.json`.
 
-```sh
-cargo test --locked -p canopa-greeter -p canopa-session-ui --lib --test integration
-python3 scripts/test-nss-discovery.py
-python3 scripts/verify-greeter.py
-python3 scripts/verify-greeter.py --cage /usr/bin/cage --output /tmp/canopa-greeter-cage
-python3 scripts/verify-greeter.py --compositor weston --output /tmp/canopa-greeter-weston
-python3 scripts/test-greetd-transport.py --greetd /usr/bin/greetd
-python3 scripts/verify-lockscreen-integration.py
-bash scripts/check.sh --workspace
-```
+## Known limitations
 
-The native fixture runs a private Weston/Niri desktop and a test-owned greetd
-protocol peer. `--compositor cage|weston` tests the corresponding nested kiosk
-through the product launcher (`--cage PATH` remains a compatibility alias).
-The peer checks authentication
-ordering and records command/environment handoff but never authenticates host
-accounts or executes the configured desktop. Physical VT/DRM access, the installed
-machine's greetd/PAM policy and physical authentication devices require acceptance
-on that machine. Evidence is retained under `.scratch/greeter/`.
-
-The real-greetd transport test runs only as an unprivileged user, with private
-user/PID namespaces, `/run`, account records and test-only PAM files. It verifies
-wrong-password retry and actual post-greeter session execution, including literal
-argument/environment boundaries. A fixture shim bypasses supplementary-group
-setup, which single-ID namespaces cannot perform. This does not validate host
-privilege switching, logind/seat setup or the distribution's PAM policy.
-
-The NSS tests use a synthetic libc provider to exercise filtering, budgets,
-fallback, cancellation and helper cleanup. `test-nss-discovery.py` additionally
-uses Bubblewrap user/mount/PID namespaces with private passwd, nsswitch and
-login.defs files to test real libc enumeration and nameservice routing. These
-checks do not change host accounts or validate a particular remote directory.
-
-Protocol and deployment references: [greetd manual](https://manpages.debian.org/unstable/greetd/greetd.1.en.html),
-[greetd IPC](https://manpages.debian.org/unstable/greetd/greetd-ipc.7.en.html),
-[Cage manual](https://github.com/cage-kiosk/cage/blob/master/cage.1.scd).
-[Weston kiosk shell](https://wayland.pages.freedesktop.org/weston/toc/kiosk-shell.html).
-[Desktop-entry commands](https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html)
-and [session environment keys](https://specifications.freedesktop.org/desktop-entry/latest/recognized-keys.html).
-[AccountsService interfaces](https://gitlab.freedesktop.org/accountsservice/accountsservice/-/tree/main/data).
-
-[NSS enumeration](https://man7.org/linux/man-pages/man3/getpwent_r.3.html) and
-[UID defaults](https://man7.org/linux/man-pages/man5/login.defs.5.html).
-[AccountsService IconFile contract](https://sources.debian.org/src/accountsservice/0.6.37-3/data/org.freedesktop.Accounts.User.xml/).
-
-## Remembered choices, refresh and power
-
-The greeter remembers the last successfully started user and that user's desktop
-session ID. It writes only after greetd acknowledges session startup; failed or
-cancelled authentication and refused session launches do not update preferences.
-At startup the greeter begins signing in as the remembered user, so the screen
-opens on their password with their desktop selected. If that untouched attempt
-reaches `auth-timeout`, it starts again quietly instead of showing a timeout.
-Escape or **Change account** cancels it and shows the account list; nothing then
-starts by itself. The desktop chooser and power remain available: a desktop
-chosen during the password step applies to that attempt, and power cancels the
-attempt before opening its menu. Tab still cycles desktops by cancelling.
-An explicit `default-user` takes priority over the remembered user and is only
-preselected, never started automatically. Switching users
-recalls each user's last successful desktop when it is still installed. State is
-bounded, mode 0600, and atomically replaced in the greeter account's
-`$XDG_STATE_HOME/canopa/greeter.json` (or `~/.local/state/canopa/greeter.json`).
-No credentials or desktop commands are stored. Invalid/unreadable state uses the
-configured defaults. Set `remember-selection #false` to disable loading/saving and the automatic start.
-Preview and configuration checks do not read or write this file.
-
-AccountsService signals refresh account names and avatar sources. Local NSS file
-changes, installed session entries and selected avatar files use inotify, including
-atomic replacement. A changed or removed desktop command cancels an in-flight
-login attempt; source updates cannot redirect it to a different command. Session
-handoff already accepted by greetd is not changed. Press **F5** to refresh catalogs
-explicitly, including remote NSS sources, which have no universal change signal.
-Typed usernames and current authentication responses survive unrelated updates.
-
-The Power button (**F10**) appears when logind permits shutdown or restart for the
-greeter account. Choosing an action opens a separate confirmation. Logind policy
-is queried again after confirmation, and the final request also undergoes logind's
-normal authorization. `challenge`, `no`, unavailable services and errors do not
-authorize an action. The unauthenticated greeter does not supply an administrator
-identity. Up/Down selects an action, Enter continues/confirms, and Escape returns.
-Power controls are available before authentication. Set `power-controls #false`
-to hide them. These preferences configure UI behavior, not system authorization.
+- The `canopa-login` package does not edit `/etc/greetd/config.toml` or enable greetd.
+- Expired-password changes at login work only if greetd's PAM conversation offers them.
+- Some greetd versions wait for a blocked PAM module before cancelling; give device modules finite timeouts.
+- `packaging/greetd/config.toml` and `config-weston.toml` use `/usr/local/bin` and the `greeter` account, not the Arch layout.

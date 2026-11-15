@@ -89,16 +89,6 @@ impl LegacyInput {
         }
         self.lease.closed()
     }
-    #[cfg(test)]
-    pub(super) fn worker_pid(&self) -> u32 {
-        self.stream
-            .peer_cred()
-            .unwrap()
-            .pid()
-            .unwrap()
-            .try_into()
-            .unwrap()
-    }
     pub async fn send(&mut self, input: KeyboardInput) -> anyhow::Result<Status> {
         anyhow::ensure!(
             !self.failed && !*self.lease.closed().borrow(),

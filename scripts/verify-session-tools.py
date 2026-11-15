@@ -164,7 +164,7 @@ def verify(binary, session):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bin-dir',type=Path,default=ROOT/'target/debug')
-    parser.add_argument('--output',type=Path,default=ROOT/'.scratch/wallpaper-lockscreen/evidence')
+    parser.add_argument('--output',type=Path,default=ROOT/'target/native-runs/verify-session-tools')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='canopa-session-') as temporary:
         runtime=Path(temporary);runtime.chmod(0o700)

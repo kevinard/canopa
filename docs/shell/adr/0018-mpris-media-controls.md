@@ -38,7 +38,7 @@ only when the player advertises the relevant MPRIS capability.
 
 The first version omits artwork, seeking, queue management, shuffle/repeat and
 per-player volume. These can be added when needed without making the shell a
-media player. See [the user guide](../../media.md) and the
+media player. See [the user guide](../../shell.md) and the
 [MPRIS player interface](https://specifications.freedesktop.org/mpris/latest/Player_Interface.html).
 
 

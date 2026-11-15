@@ -2,7 +2,7 @@
 schema-version 1
 
 appearance {
-    color-scheme "dark" // dark or light; Catppuccin-based presets
+    color-scheme "dark" // "dark" or "light" built-in theme
     // accent "#89b4fa" // omit to use the selected preset's accent
 }
 

@@ -5,9 +5,6 @@ mod access;
 mod account;
 mod app_chooser;
 mod background;
-mod background_observer;
-#[cfg(feature = "desktop")]
-mod capture;
 mod dynamic_launcher;
 #[cfg(feature = "desktop")]
 mod eis_reader;

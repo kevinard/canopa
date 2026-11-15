@@ -1,108 +1,188 @@
-# Theme and UI customization
+# Theme customization
 
-Shell and Notify share the `appearance` block in the schema-1 Canopa configuration.
-The built-in Canopa dark and light themes follow the [desktop visual direction](adr/0014-canopa-visual-direction.md).
-Try [the native desktop example](../examples/canopa-desktop.kdl), which selects the
-bundled spine layout. Change its `color-scheme` to `"light"` for the companion theme.
-Start with [the complete example](../examples/custom-theme.kdl) and its
-[Nord theme](../examples/themes/nord.kdl). Validate with
-`canopa config check --file examples/custom-theme.kdl` before installing.
+The `appearance` block of `~/.config/canopa/config.kdl` sets colors, fonts, text
+size, contrast, motion and element styling for the whole desktop. Every Canopa
+application reads it: Shell (bars, panels, launcher, on-screen display), Notify
+(banners), Files, Settings, Wallpaper, the lock screen, the login screen, the Polkit
+and Pinentry dialogs, and the Settings portal, which passes the color scheme,
+accent, contrast and reduced-motion preference to other applications.
+
+Canopa Settings edits the common options on its **Personalization** and
+**Accessibility** pages. Everything below can also be written by hand.
+
+## Built-in themes
+
+`color-scheme` selects one of two built-in palettes:
+
+| Role | `"dark"` (default) | `"light"` |
+| --- | --- | --- |
+| `background` | `#10191d` | `#e3eae6` |
+| `surface` | `#202d31` | `#fbfcf8` |
+| `raised` | `#2b3b3f` | `#e7ede7` |
+| `text` | `#edf4f0` | `#20342c` |
+| `muted` | `#b5c7c3` | `#52675e` |
+| `disabled` | `#778c88` | `#788980` |
+| `border` | `#647d76` | `#889b90` |
+| `accent` | `#b0dec3` (mint) | `#256948` (forest green) |
+| `danger` | `#f38ba8` | `#b01843` |
+| `warning` | `#f9e2af` | `#855900` |
+| `success` | `#a6e3a1` | `#326a1f` |
+
+The other roles (`spine`, `accent-surface`, `brand`, `on-accent`, `on-danger` and
+`focus`) are derived from these. `focus` defaults to the accent, and text on accent
+or danger fills picks a readable color automatically. The built-in palettes meet
+WCAG contrast for text; custom colors are not corrected.
 
 ```kdl
 appearance {
-    theme "themes/nord.kdl"
-    palette { accent "#a3be8c"; }
-    typography {
-        family "Inter" "Noto Sans" "sans-serif"
-        body-size 14
-        label-size 12
-        title-size 18
-    }
-    ui {
-        surface { border width=1 color="border"; radius 10; }
-        control { radius 6; }
-        bar { padding 4 8; gap 6; }
-        panel { padding 18; gap 10; }
-        button { state "hover" { background "raised"; }; }
-    }
+    color-scheme "light"
+    accent "#3b6ea5"
 }
 ```
 
-A theme file contains the **contents** of `appearance`, without that wrapper or an
-application namespace. Theme files cannot include other themes. Relative paths are
-resolved from the main configuration's directory; absolute paths are supported.
-Both files must be regular UTF-8 files, with a combined limit of 1 MiB. Missing or
-invalid selected themes reject the candidate instead of silently switching presets.
+To try the native look, run a Shell with the bundled layout and your appearance:
+`canopa-shell --canopa-config examples/canopa-desktop.kdl` from a source checkout
+(the examples are installed in `/usr/share/canopa/examples/`).
 
-Each property resolves independently: built-in preset, theme file, inline appearance,
-then the element's local `ui` block. In each appearance layer, `surface` and `control`
-defaults apply before specific kinds, regardless of source order. Omitting a property
-inherits it; zero explicitly removes spacing, radius or border width. There is no
-reset keyword, selector language, or arbitrary CSS.
+## The appearance block
 
-## Colors and fonts
+| Key | Value | Default | Theme file |
+| --- | --- | --- | --- |
+| `theme "PATH"` | theme file, relative to `config.kdl` or absolute | none | no |
+| `color-scheme` | `"dark"` or `"light"` | `"dark"` | yes |
+| `accent "#rrggbb"` | accent color | scheme accent | yes |
+| `palette { ROLE "#rrggbb"; }` | any color role | scheme colors | yes |
+| `typography { … }` | fonts and sizes | see below | yes |
+| `text-scale N` | integer percentage, 100 to 150 | 100 | no |
+| `high-contrast` | `#true` / `#false` | `#false` | no |
+| `reduced-motion` | `#true` / `#false` | `#false` | no |
+| `ui { … }` | element styling | built-in | yes |
 
-`color-scheme "dark"` (default) or `"light"` supplies omitted colors. `palette`
-accepts six-digit `#rrggbb` values for `background`, `surface`, `raised`, `text`,
-`muted`, `disabled`, `border`, `accent`, `danger`, `warning`, `success`, `on-accent`,
-`on-danger`, `focus`, `spine`, `accent-surface`, and `brand`. `surface` is the panel
-color, `spine` the navigation frame, and `accent-surface` a quiet selected fill.
-`brand` is secondary identity color, not status. Filled accent/danger text chooses a contrasting default;
-focus defaults to accent. Custom palettes are not automatically contrast-corrected.
+Each key may appear once. Colors in `palette` and `accent` are opaque six-digit
+`#rrggbb` values.
 
-The legacy `accent "#rrggbb"` setting remains an alias. It cannot be combined with
-`palette { accent ...; }` in the same file layer. Existing shell color token aliases
-(`base`, `surface0`, `surface1`, `subtext`, `overlay0`, `critical`) remain accepted.
-UI colors accept role names, `#rrggbb`, `#rrggbbaa`, or `"transparent"`.
+### Palette roles
 
-`family` is an ordered list of up to eight installed font family names, followed by
-an optional generic family (`sans-serif`, `serif`, `monospace`, `cursive`, `fantasy`).
-The first available family is selected; otherwise the system default is used. This
-list chooses a family; the text engine still owns per-glyph fallback. Font files are
-not loaded from configuration. Symbol icons retain their dedicated symbol family.
-`body-size`, `label-size`, and `title-size` are positive logical pixels, at most 256.
-Existing explicit module/segment text sizes, weights and colors remain supported.
+`background`, `surface` (panels), `raised` (controls), `text`, `muted`, `disabled`,
+`border`, `accent`, `danger`, `warning`, `success`, `on-accent`, `on-danger`,
+`focus`, `spine` (the bar frame), `accent-surface` (a quiet selected fill) and
+`brand` (a secondary identity color, not a status color).
 
-In the main configuration's `appearance` block, `text-scale 125` applies a
-125% multiplier to the resolved typography sizes. The supported range is 100
-to 150, with a default of 100. `reduced-motion #true` disables Shell panel
-transitions. `high-contrast #true` replaces the palette with black and white
-surfaces, full-strength text and borders, and status colors of at least 7:1; it
-applies over theme-file and inline colors. Canopa Settings exposes these options
-on the Personalization and Accessibility pages.
+These aliases are also accepted: `base` (background), `surface0` (surface),
+`surface1` (raised), `subtext` (muted), `overlay0` (disabled), `critical` (danger).
 
-## UI properties
+`accent "#rrggbb"` is shorthand for `palette { accent "#rrggbb"; }`. A layer cannot
+use both. An inline `accent` replaces a theme file's palette accent.
 
-All dimensions are logical pixels, with up to three decimal places of precision;
-Iced applies output scaling. Sizes are finite and nonnegative. Spacing and radius
-are capped at 4096, and border width at 64.
+### Typography
 
-| Property | Values |
-| --- | --- |
-| `background`, `foreground` | One color or role name |
-| `border` | `width=N`, `color="role-or-color"`, or both |
-| `radius` | One value, or top-left / top-right / bottom-right / bottom-left |
-| `padding` | One value, vertical/horizontal, or top/right/bottom/left |
-| `margin` | Same forms as padding; adjacent margins add together |
-| `gap` | One value between immediate children owned by the layout |
+```kdl
+typography {
+    family "Inter" "Noto Sans" "sans-serif"
+    body-size 14
+    label-size 12
+    title-size 20
+}
+```
 
-The kinds are `bar`, `panel`, `menu`, `tooltip`, `notification`, `card`, `module`,
-`button`, `input`, and `menu-row`. `surface` covers the first six; `control` covers
-the last four. Groups support colors, border, radius and padding. Kind-specific
-gap is supported on bar, panel, menu, notification and card. Margin is supported
-on panel, menu, tooltip, notification, card, module and menu-row. Bar placement
-margins belong on the bar itself. Buttons and text inputs use their parent's gap
-and padding instead of an individual margin setting. Inapplicable settings fail
-validation.
+`family` lists up to eight installed font families, in order of preference, and may
+end with a generic family (`sans-serif`, `serif`, `monospace`, `cursive`,
+`fantasy`). The first available family is used, and the system default otherwise.
+Fonts are not loaded from files. Sizes are logical pixels, greater than 0 and at
+most 256. The defaults are `"Inter" "sans-serif"`, 14, 12 and 20.
 
-A frame's border is drawn inside its bounds. Explicit borders reserve content
-space. Popover/tooltip margins are transparent space included in surface measurement;
-banner margins participate in the banner stack. Notify's screen offset remains
-Notify-owned. Radius is limited by available frame dimensions. Existing attached
-bar separators and square drawers remain unless a border/radius is configured;
-the bundled spine explicitly selects rounded, borderless bar and panel frames.
+`text-scale 125` multiplies all three sizes by 125%.
 
-Supported color-only states are:
+### Contrast and motion
+
+`high-contrast #true` replaces the palette with black and white surfaces,
+full-strength text and borders, and keeps the accent and status colors only when
+they reach 7:1 against the background (otherwise it substitutes high-contrast
+colors). It applies over theme-file and inline colors.
+
+`reduced-motion #true` turns off panel transitions and the on-screen display fade,
+and is published to other applications through the Settings portal. The compositor's
+animations are separate: Settings turns them off in the Niri configuration.
+
+## Theme files
+
+A theme file holds the contents of an `appearance` block, without the
+`appearance { }` wrapper:
+
+```kdl
+// themes/nord.kdl
+color-scheme "dark"
+palette {
+    background "#2e3440"
+    surface "#3b4252"
+    text "#eceff4"
+    accent "#88c0d0"
+}
+typography { family "Inter" "Noto Sans" "sans-serif"; }
+```
+
+```kdl
+// config.kdl
+schema-version 1
+appearance {
+    theme "themes/nord.kdl"
+    palette { accent "#a3be8c"; }
+}
+```
+
+- A theme file cannot set `theme`, `text-scale`, `high-contrast` or
+  `reduced-motion`, and cannot include another theme.
+- The path is relative to the directory of `config.kdl`; absolute paths work.
+- A missing or invalid theme file is an error (reported with source `theme`), and
+  applications keep their previous appearance. There is no silent fallback.
+- The main file and theme file together are limited to 1 MiB.
+
+Each property resolves in order: built-in palette, theme file, inline `appearance`,
+then an element's own `ui` block. Omitted properties are inherited; `0` explicitly
+removes spacing, radius or border width.
+
+Samples: [Nord theme](../examples/themes/nord.kdl) and
+[a complete configuration using it](../examples/custom-theme.kdl) (installed under
+`/usr/share/canopa/examples/`). Validate a candidate before installing it:
+
+```sh
+canopa config check --file examples/custom-theme.kdl
+```
+
+## UI styling
+
+`ui` styles element kinds:
+
+```kdl
+ui {
+    surface { border width=1 color="border"; radius 10; }
+    control { radius 6; }
+    bar { padding 4 8; gap 6; }
+    panel { padding 18; gap 10; }
+    button { state "hover" { background "raised"; }; }
+}
+```
+
+Kinds: `bar`, `panel`, `menu`, `tooltip`, `notification`, `card` (the surface
+group) and `module`, `button`, `input`, `menu-row` (the control group). `surface`
+and `control` set defaults for their group and apply before the specific kinds,
+whatever their order in the file.
+
+| Property | Value | Applies to |
+| --- | --- | --- |
+| `background`, `foreground` | role name, `#rrggbb`, `#rrggbbaa` or `"transparent"` | all |
+| `border` | `width=N` (up to 64), `color="…"`, or both | all |
+| `radius` | one value, or top-left top-right bottom-right bottom-left | all |
+| `padding` | 1, 2 (vertical horizontal) or 4 (top right bottom left) values | all |
+| `margin` | same forms as padding | `panel`, `menu`, `tooltip`, `notification`, `card`, `module`, `menu-row` |
+| `gap` | one value between children | `bar`, `panel`, `menu`, `notification`, `card` |
+| `state "NAME" { background; foreground; border-color; }` | state colors | control kinds |
+
+Groups accept colors, border, radius and padding only. Dimensions are logical
+pixels with up to three decimals, at most 4096. Settings that do not apply to a kind
+fail validation.
+
+States per control kind:
 
 | Kind | States |
 | --- | --- |
@@ -111,17 +191,39 @@ Supported color-only states are:
 | `input` | `hover`, `disabled`, `focus` |
 | `menu-row` | `selected`, `hover`, `disabled`, `focus` |
 
-Use `state "hover" { background "raised"; foreground "text"; border-color "accent"; }`.
-Applicable states compose in selected, hover, pressed, disabled, focus order. Focus
-applies only to enabled controls. Layout cannot change with state. Semantic status
-colors and explicit formatted segments keep their role rather than being recolored
-as ordinary labels. Theme configuration never changes action identity or focus ownership.
+States change colors only, never layout. They combine in the order selected, hover,
+pressed, disabled, focus; focus applies only to enabled controls.
 
-## Local overrides and bar placement
+Built-in defaults:
 
-Local `ui` blocks are accepted on `shell.bar`, a bar's `panel`, named
-`shell.modules.module`, named `shell.menus.menu`, and `notifications.banners`.
-For example:
+| Kind | Padding | Radius | Border | Background | Gap |
+| --- | --- | --- | --- | --- | --- |
+| `bar` | 4 | 0 | 0 | `background` | 4 |
+| `panel` | 24 | 24 | 1 | `surface` | 8 |
+| `menu` | 8 | 16 | 1 | `surface` | 4 |
+| `tooltip` | 8 12 | 12 | 1 | `raised` | |
+| `notification` | 16 | 24 | 1 | `surface` | 8 |
+| `card` | 16 | 16 | 1 | `raised` | 8 |
+| `module` | 2 | 12 | 0 | transparent | |
+| `button` | 8 12 | 12 | 1 | `raised` | |
+| `input` | 10 12 | 12 | 1 | `raised` | |
+| `menu-row` | 10 12 | 12 | 0 | transparent | |
+
+Borders are drawn inside an element's bounds. Margins on popovers and tooltips are
+transparent space around them; banner margins space the banner stack.
+
+## Local overrides
+
+A `ui` block can also be placed on a single element. It applies after the shared
+`appearance`:
+
+| Where | Kind |
+| --- | --- |
+| `shell { bar "NAME" { ui { … } } }` | `bar` |
+| `shell { bar "NAME" { panel { ui { … } } } }` | `panel` |
+| `shell { modules { module "NAME" { ui { … } } } }` | `module` |
+| `shell { menus { menu "NAME" { ui { … } } } }` | `menu` |
+| `notifications { banners { ui { … } } }` | `notification` |
 
 ```kdl
 shell {
@@ -129,9 +231,7 @@ shell {
         edge "top"
         thickness 44
         length "85%"
-        align "center"
         margin 10 16 6 16
-        reserve-space #true
         ui { radius 12; border width=1 color="accent"; padding 4 10; }
         panel { ui { padding 20; }; }
         modules { center "clock"; }
@@ -141,49 +241,54 @@ shell {
 notifications { banners { ui { margin 4 0; }; }; }
 ```
 
-A bar's `panel { title "System controls"; }` names only its default Bar Panel.
-Omitting `title` retains the Overview title. Menus and module details keep their
-content-specific titles. Titles must be nonempty strings.
+## Bar placement
 
-Use `open-bar-panel` or `toggle-bar-panel` in a module's action to open its current
-bar's configured panel, retaining the module as the anchor and focus return target.
-The existing `open-panel` and `toggle-panel` actions continue to open that module's
-own details. Bar background actions already target the Bar Panel.
+Bar geometry is part of the `shell` block (see the [configuration
+reference](configuration.md#bar)):
 
-`thickness` is the entire visible bar frame, including padding and border. Its legacy
-alias `collapsed-width` remains supported; specifying both is an error. Thickness
-is an integer from 2 to 32768 and must leave content space after explicit border and
-padding. `length` is `"fill"` (default), a positive integer up to 32768, or a quoted
-percentage from `"0.01%"` to `"100%"`. Percentages use the available edge span after
-margins. `align` is `"start"` (default), `"center"`, or `"end"`; start is left on
-horizontal edges and top on vertical edges.
+- `thickness` is the whole visible frame, including padding and border, from 2 to
+  32768 logical pixels. It must leave room for content after padding and border.
+- `length` is `"fill"` (default), a pixel count, or a percentage from `"0.01%"` to
+  `"100%"` of the edge span left after margins.
+- `align` is `"start"`, `"center"` (default) or `"end"`. Start is left on horizontal
+  bars and top on vertical bars.
+- `margin` uses screen directions. On a top bar, the top margin separates the bar
+  from the screen edge, left and right shorten the span, and bottom separates it from
+  windows. Bar margins round up to whole pixels.
+- `reserve-space #true` (default) keeps windows clear of margin, thickness and inner
+  margin, even for a short bar. With `#false`, windows can extend beneath the bar.
 
-Bar placement margins round upward to whole logical pixels for native geometry.
-Other UI spacing retains fractional logical precision. Margins use screen directions.
-On a top bar, top separates the visible frame from the usable edge, left/right reduce
-the available span, and bottom separates it from
-application content. `reserve-space #true` (default) reserves near margin + thickness
-+ inner margin across the edge, including for a short bar. With `#false`, application
-windows may extend beneath it; panels and tooltips still open beyond the frame.
-Other reserved surfaces may move the usable edge inward.
+Areas of the bar's edge outside the visible frame, and rounded corners, let clicks
+through. Large fonts do not grow the bar; content is clipped to its zone.
 
-The native host spans the edge with a transparent background. Painting and the
-compositor input region use one visible-frame geometry; unused host areas and
-rounded corners pass clicks through. Fixed lengths clamp to the available span.
-If edge margins consume that span, start margin is fitted first, then end margin,
-leaving at least one logical pixel. Content zones clip to their available space;
-large configured fonts do not increase the configured bar thickness.
+## Reload
 
-## Reload and provenance
+| Consumer | When appearance changes apply |
+| --- | --- |
+| Shell, Files, Wallpaper | Automatically after a save, including edits to the theme file. |
+| Notify | After `canopa-notify ctl reload`; open banners repaint. |
+| Settings portal | After `systemctl --user reload xdg-desktop-portal-canopa.service`. |
+| Lock screen, Pinentry | The next time they open. |
+| Polkit agent, login screen | When they start. |
 
-Shell watches the main file and selected theme's metadata, including creation,
-deletion, symlink target changes and atomic replacement. A valid candidate installs
-palette, typography, layout and geometry together. Invalid edits retain the previous
-complete appearance. Notify and the Settings portal retain their own explicit reload
-lifetimes; changing a file does not synchronize all processes automatically.
+When Canopa Settings saves appearance, it also reloads Notify and the Settings
+portal. An invalid change keeps the previous complete appearance.
 
-`source.fingerprint` still identifies the main file's bytes. `source.dependencies`
-records the selected theme path and fingerprint, and `source.combined_fingerprint`
-identifies both inputs. The combined validator captures both files once for its
-consumer validations, so concurrent edits cannot give the consumers different theme
-contents. Errors identify theme provenance without echoing configuration values.
+`canopa config check` reports the theme file in each component's
+`source.dependencies` with its own fingerprint, and `source.combined_fingerprint`
+covers both files.
+
+## Icons
+
+The icon theme is not part of `appearance`. Canopa follows `gtk-icon-theme-name` in
+the `[Settings]` group of GTK's `settings.ini` (`gtk-4.0` before `gtk-3.0`, in
+`$XDG_CONFIG_HOME` and then `$XDG_CONFIG_DIRS`), falling back to hicolor. Notify can
+pin a theme with `notifications { icons theme="…"; }`.
+
+## Not supported
+
+Themes deliberately do not offer arbitrary CSS or selectors, expressions,
+recursive inheritance, remote fonts or themes, a graphical editor, content-sized
+bars, gradients, blur, shadow customization or animations, and they do not theme
+other applications or Niri's window decorations. Per-placement module style
+overrides are not available yet.

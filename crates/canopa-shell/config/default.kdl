@@ -1,10 +1,5 @@
-// To start canopa-shell automatically with your Wayland session:
-//
-//   # Copy the service file (if not installed by your package manager)
-//   cp packaging/systemd/canopa-shell.service ~/.config/systemd/user/
-//
-//   # Enable and start the service
-//   systemctl --user enable --now canopa-shell.service
+// The Canopa session starts canopa-shell.service through canopa-session.target.
+// For a release-archive (companion) install, see docs/installation.md.
 //
 // To enable diagnostics for a systemd-run instance, set environment variables
 // in a user drop-in, for example:
@@ -132,7 +127,7 @@ bar "main" {
         start "launcher" "overview" "workspaces"
         // Center zone: centered on the bar surface midpoint.
         // Add "media" to a zone for MPRIS now-playing and playback controls.
-        // See docs/media.md; the module hides when no player is open.
+        // See docs/shell.md; the module hides when no player is open.
         // The taskbar shows pinned applications, then the other open ones.
         center "taskbar"
         // End zone: stacks from the trailing edge of the bar.
@@ -291,7 +286,8 @@ modules {
     // activates an item, right click opens its menu. The Shell owns the
     // org.kde.StatusNotifierWatcher name while a tray module is placed.
     // Click focuses an application or launches it; clicking the focused one
-    // cycles its windows; right- or middle-click opens another instance.
+    // cycles its windows; middle-click opens another instance and right-click
+    // opens the application menu.
     // Pinned applications that are not installed are skipped.
     module "taskbar" {
         pinned "org.canopa.Files.desktop" "firefox.desktop" "org.canopa.Settings.desktop"

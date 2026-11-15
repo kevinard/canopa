@@ -303,7 +303,7 @@ def verify(binary, session):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=ROOT/'target/debug/canopa-pinentry')
-    parser.add_argument('--output', type=Path, default=ROOT/'.scratch/pinentry/desktop')
+    parser.add_argument('--output', type=Path, default=ROOT/'target/native-runs/verify-pinentry')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='canopa-pinentry-') as temporary:

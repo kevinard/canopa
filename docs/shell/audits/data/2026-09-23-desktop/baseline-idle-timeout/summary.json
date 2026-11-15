@@ -1,4 +1,0 @@
-{
-  "status": "failed",
-  "error": "Command '['niri', 'msg', '--json', 'layers']' timed out after 10 seconds"
-}

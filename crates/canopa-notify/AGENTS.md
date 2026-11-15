@@ -3,12 +3,12 @@
 This package belongs to the Canopa workspace. Run commands from the repository
 root and follow [root AGENTS.md](../../AGENTS.md).
 
-Read [the context map](../../CONTEXT-MAP.md),
-[domain language](../../docs/notify/CONTEXT.md), and relevant
-[application ADRs](../../docs/notify/adr/) before feature work. Shared decisions
-live in [root ADRs](../../docs/adr/).
+Before feature work, read [the context map](../../CONTEXT-MAP.md), the
+[domain language](../../docs/notify/CONTEXT.md), the
+[Notify architecture](../../docs/architecture/notify.md), the relevant
+[Notify decision records](../../docs/notify/adr/) and the
+[maintenance guide](../../docs/notify/maintaining.md).
 
-Use the root [issue tracker](../../docs/agents/issue-tracker.md),
-[triage labels](../../docs/agents/triage-labels.md), and
-[domain documentation guide](../../docs/agents/domain.md). Historical tickets for
-this application live under `.scratch/notify/` at the repository root.
+Track work in [GitHub issues](../../docs/agents/issue-tracker.md) labelled
+`area: notify`, using the [triage labels](../../docs/agents/triage-labels.md)
+and the [domain documentation guide](../../docs/agents/domain.md).

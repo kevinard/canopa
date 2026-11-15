@@ -225,7 +225,7 @@ def main():
     parser.add_argument('--bin-dir', type=Path, default=ROOT/'target/debug')
     parser.add_argument('--stasis', type=Path, default=ROOT/'target/debug/stasis')
     parser.add_argument('--shell', type=Path, default=ROOT/'target/debug/canopa-shell')
-    parser.add_argument('--output', type=Path, default=ROOT/'.scratch/session-followups/stasis-native')
+    parser.add_argument('--output', type=Path, default=ROOT/'target/native-runs/verify-stasis')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='canopa-stasis-') as temporary:

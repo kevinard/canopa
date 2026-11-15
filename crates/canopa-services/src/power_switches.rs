@@ -6,7 +6,7 @@
 //! the switch to the session, and asks logind for the chosen action. When the
 //! session ends, or the choice is [`LidAction::System`], the inhibitor is
 //! released and logind's policy applies again. See
-//! `docs/adr/0140-lid-and-power-button-choices.md`.
+//! `docs/architecture/settings.md`.
 //!
 //! While docked (logind's `Docked`: an external display or a dock), closing
 //! the lid does nothing, like logind's default `HandleLidSwitchDocked=ignore`.

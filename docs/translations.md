@@ -4,7 +4,7 @@ Canopa's user-visible text is in [Project Fluent](https://projectfluent.org/)
 files, one per crate and language, embedded in the binaries at build time.
 Dates, times, numbers and sizes are formatted with ICU4X for the person's
 formats locale. The decision record is
-[ADR 0145](adr/0145-fluent-translations-and-icu-formatting.md).
+[foundations](architecture/foundations.md).
 
 English is the source language and the fallback for every message. French is
 the first translation; it is machine-assisted and needs review (see
@@ -80,7 +80,7 @@ Rules:
 - Message IDs, accessibility keys and focus IDs are separate. Keys and IDs
   (`settings-page-display`, `files-toolbar-back`) never come from translated
   text, so focus and screen-reader identity survive a language change
-  ([ADR 0144](adr/0144-shared-accesskit-layer.md)). Accessible names are the
+  ([foundations](architecture/foundations.md)). Accessible names are the
   translated labels.
 - Code must not inspect translated text (`label.starts_with("Account: ")`);
   carry the meaning in data and translate only for display.
@@ -93,7 +93,7 @@ Rules:
 - Clocks keep a person's explicit Chrono pattern. Without one they use the
   locale's time and date styles; Settings' 24- and 12-hour choices write a
   pattern and its Automatic choice removes the patterns it recognizes
-  ([ADR 0142](adr/0142-clock-hour-cycle-in-format-strings.md)).
+  ([foundations](architecture/foundations.md)).
 - Layouts use `canopa_ui::direction` for rows with leading and trailing
   content, alignment, padding, chevrons, back arrows and directional icons.
 

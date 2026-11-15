@@ -1,192 +1,30 @@
 # Canopa contexts
 
-Canopa is a desktop environment based on Niri. Canopa Shell is its shell; Canopa Notify
-owns notification receipt, policy, persistence, sound, and banners. The shell hosts
-the Notification Center through generic declarative panel content. Canopa Files
-owns local file browsing, operations, Undo, previews and file-manager preferences.
-Canopa Wallpaper owns background surfaces and output image assignments; Canopa Lock
-owns secure session locking, authentication and lock presentation. Canopa Greeter
-owns login presentation while greetd owns login authentication and session lifetime.
-Canopa Pinentry presents GnuPG PIN/passphrase and confirmation dialogs.
-Canopa Polkit presents action authorization while native polkit owns policy and credentials. `canopa-widgets`
-shares passive data without transferring shell actions or application lifetimes.
-Canopa Settings presents desktop preferences while their existing owners retain
-policy and lifetime. `canopa-services` holds the Iced-free clients for
-NetworkManager, BlueZ, audio, UPower, power profiles, logind and MPRIS that the
-Shell, its providers and Settings share; the services keep state and policy.
-The supported system installation has a dedicated session.
+Canopa is a desktop environment based on Niri. Each context below owns its
+domain language, state and lifetime; shared crates share code, not ownership.
 
-- [Supported session and Settings ownership](docs/adr/0129-supported-session-and-settings.md)
-- [Arch system installation](docs/installation.md)
-- [Settings application](docs/settings.md)
-- [Settings pages, page patterns and activation](docs/adr/0136-settings-pages-patterns-and-activation.md)
-- [The 12/24-hour clock in the clock format strings](docs/adr/0142-clock-hour-cycle-in-format-strings.md)
-- [Password changes without handling hashes](docs/adr/0143-password-changes-without-hashes.md)
+| Context | Owns | Glossary | Architecture | Decisions |
+| --- | --- | --- | --- | --- |
+| Shell (`canopa-shell`, providers, `canopa-launcher`) | Bar, launcher, taskbar, Quick settings, panels, on-screen display; hosts the Notification Center through generic panel content | [shell/CONTEXT.md](docs/shell/CONTEXT.md) | [shell](docs/architecture/shell.md) | [shell/adr](docs/shell/adr/) |
+| Notify (`canopa-notify`, `canopa-notify-client`) | Notification receipt, policy, persistence, sound, banners, Do Not Disturb, the Notification portal | [notify/CONTEXT.md](docs/notify/CONTEXT.md) | [notify](docs/architecture/notify.md) | [notify/adr](docs/notify/adr/) |
+| Files (`canopa-files`, `canopa-file`) | Local file browsing, operations, Undo, recovery, previews, file-manager preferences | [files/CONTEXT.md](docs/files/CONTEXT.md) | [files](docs/architecture/files.md) | [adr](docs/adr/README.md) |
+| Portals (`canopa-portal`) | Portal dialogs and sessions; the forked frontend owns permissions and routing | — | [portals](docs/architecture/portals.md), [desktop sharing](docs/architecture/desktop-sharing.md), [printing](docs/architecture/printing.md) | [adr](docs/adr/README.md) |
+| Session (`canopa-session`, `canopa-session-ui`, `canopa-greeter`, `canopa-polkit`, `canopa-pinentry`) | Wallpaper surfaces, lock presentation and authentication input, login presentation, authorization and PIN dialogs, idle coordination | — | [session](docs/architecture/session.md) | [adr](docs/adr/README.md) |
+| Settings (`canopa-settings`) | Presenting preferences; each existing owner keeps its policy and lifetime | — | [settings](docs/architecture/settings.md) | [adr](docs/adr/README.md) |
+| Shared foundations (`canopa-config`, `canopa-theme`, `canopa-ui`, `canopa-assets`, `canopa-apps`, `canopa-i18n`, `canopa-services`, `canopa-widgets`, `canopa-cli`) | Configuration discovery and reload, appearance, shared controls, icons and MIME, translations, system-service clients, passive widget data | — | [foundations](docs/architecture/foundations.md) | [adr](docs/adr/README.md) |
+| Panel protocol (`canopa-panel-protocol`) | The Shell ↔ provider protocol | — | [panel protocol](docs/architecture/panel-protocol.md), [provider reference](docs/shell/external-panel-providers.md) | [adr](docs/adr/README.md) |
 
-- [Wallpaper, lockscreen and shared widget data](docs/adr/0119-session-tools-and-widget-data.md)
-- [Logind, interactive PAM and lock composition](docs/adr/0120-logind-authentication-and-lock-composition.md)
-- [Greetd greeter and shared session presentation](docs/adr/0121-greetd-greeter-and-shared-session-presentation.md)
-- [Polkit agent and native authorization](docs/adr/0122-polkit-agent-and-native-authorization.md)
-- [Pinentry protocol and shared dialogs](docs/adr/0123-pinentry-protocol-and-shared-dialogs.md)
-- [PIN/passphrase dialog setup](docs/pinentry.md)
-- [Polkit agent setup](docs/polkit.md)
-- [Login screen setup](docs/greeter.md)
-- [Session tools setup and configuration](docs/session-tools.md)
-- [Stasis idle policy and sleep coordination](docs/idle.md)
-- [Shared authentication input and accessibility](docs/adr/0125-shared-authentication-input-and-accessibility.md)
-- [Authentication recovery and agent inquiries](docs/adr/0128-authentication-recovery-and-agent-inquiries.md)
-- [Wallpaper state and picker](docs/adr/0127-wallpaper-state-picker-and-source-events.md)
-- [Greeter preferences and live catalogs](docs/adr/0126-greeter-preferences-and-live-catalogs.md)
-- [MPRIS media controls](docs/shell/adr/0018-mpris-media-controls.md)
-- [Shell language and ownership](docs/shell/CONTEXT.md)
-- [Notification language and ownership](docs/notify/CONTEXT.md)
-- [Notification everyday controls, lock-screen feed and portal v2 presentation](docs/notify/adr/0055-everyday-controls-lock-screen-and-portal-v2-presentation.md); [preferences control API](docs/notify/settings-control-api.md)
-- [File manager language and ownership](docs/files/CONTEXT.md)
-- [File manager Iced and shared controls](docs/adr/0018-files-iced-and-shared-controls.md)
-- [Iced transient toplevel windows](docs/adr/0019-iced-transient-toplevels.md)
-- [Iced input transition boundaries](docs/adr/0020-iced-input-transition-boundaries.md)
-- [Wayland ordinary-window focus, in progress](docs/adr/0021-wayland-window-focus.md)
-- [File manager configuration ownership](docs/adr/0016-files-configuration.md)
-- [File manager distribution and runtime](docs/adr/0017-files-distribution-and-runtime.md)
-- [Ordinary Iced Wayland drag transport, in progress](docs/adr/0023-wayland-drag-transport.md)
-- [Niri drag-source lifetime compatibility and pinned Arch package selection](docs/adr/0024-niri-drag-source-lifetime.md)
-- [File manager resident host and activation](docs/adr/0022-files-resident-host-and-activation.md)
-- [File manager standard desktop presentation, scoped core/native verification](docs/adr/0025-files-file-manager-interface.md)
-- [File manager live configuration reload](docs/files/adr/0019-live-configuration-reload.md)
-- [Configuration source and reload contract](docs/adr/0002-shared-configuration.md)
-- [Shell live configuration reload](docs/shell/adr/0021-live-configuration-reload.md)
-- [Launcher clipboard history and Settings](docs/adr/0132-launcher-clipboard-settings.md)
-- [Launcher preferences, bundled extensions and action search](docs/adr/0131-launcher-preferences-and-bundled-extensions.md)
-- [Launcher file actions and Settings pages](docs/adr/0130-launcher-file-actions-and-settings-pages.md)
-- [Unified launcher and search providers](docs/shell/adr/0023-unified-launcher-providers.md)
-- [Shell session actions through logind](docs/shell/adr/0024-session-actions-through-logind.md)
-- [Device keys and the on-screen display](docs/shell/adr/0025-device-keys-and-on-screen-display.md)
-- [Taskbar menus, window cycling and saved pins](docs/shell/adr/0026-taskbar-menus-and-saved-pins.md)
-- [Shared system-service clients (`canopa-services`)](docs/adr/0137-shared-system-service-clients.md)
-- [Shared appearance and UI ownership](docs/adr/0003-shared-appearance.md)
-- [Shared AccessKit layer, high contrast and the Accessibility page](docs/adr/0144-shared-accesskit-layer.md)
-- [Fluent translations, ICU4X formatting and right-to-left layouts](docs/adr/0145-fluent-translations-and-icu-formatting.md); [adding strings and languages, reviewing French](docs/translations.md)
-- [Window shape, dialog elevation and inactive browsers](docs/adr/0146-window-shape-and-dialog-elevation.md)
-- [Shared switches, scrollbars and dialog shadow](docs/adr/0147-shared-switches-scrollbars-and-dialog-shadow.md)
-- [Session surface presentation: forms, sheets, fitted dialogs and requester names](docs/adr/0148-session-surface-presentation.md)
-- [Configurable themes and surface geometry](docs/adr/0013-configurable-theme-and-surface-geometry.md)
-- [Theme configuration reference](docs/theme-customization.md)
-- [Canopa visual direction and first shell slice](docs/adr/0014-canopa-visual-direction.md)
-- [Local asset mechanisms and caller policies](docs/adr/0005-shared-assets.md)
-- [Shared icon-theme and MIME lookup](docs/adr/0138-shared-icon-theme-and-mime-lookup.md)
-- [MIME applications and the thumbnail cache](docs/adr/0141-mime-applications-and-thumbnail-cache.md)
-- [Shared provider contracts and host state](docs/adr/0006-shared-provider-contracts.md)
-- [Unified built-in provider protocol](docs/adr/0007-unified-panel-protocol.md)
-- [Rich item sliders](docs/adr/0012-rich-panel-sliders.md)
-- [Rich item source attribution](docs/adr/0010-rich-item-source-attribution.md)
-- [Settings portal and shared-only configuration](docs/adr/0008-settings-portal.md)
-- [Rust/Iced FileChooser portal and request lifetime](docs/adr/0026-file-chooser-portal.md)
-- [Explicit New folder in the Iced FileChooser](docs/adr/0113-file-chooser-new-folder.md)
-- [Per-application FileChooser folder memory](docs/adr/0114-file-chooser-folder-memory.md)
-- [Explicit portal configuration generation](docs/adr/0115-explicit-portal-configuration.md)
-- [Portal none veto and ordinary Qt/GTK file dialogs](docs/adr/0116-portal-none-veto-and-qt-file-dialogs.md)
-- [Shared desktop application metadata](docs/adr/0027-desktop-application-catalog.md)
-- [AppChooser and activation handoff](docs/adr/0028-app-chooser-portal.md)
-- [Access consent surface](docs/adr/0029-access-portal.md)
-- [Notify-owned Notification portal adapter, in progress](docs/adr/0031-notify-owned-portal-adapter.md)
-- [Panel action activation context, in progress](docs/adr/0032-panel-action-activation-context.md)
-- [Account sharing draft and embedded image picker](docs/adr/0033-account-sharing-draft.md)
-- [Background observation and decisions](docs/adr/0034-background-observation-and-decisions.md)
-- [Dynamic launcher review and frontend publication](docs/adr/0035-dynamic-launcher-review.md)
-- [Portal-owned persistent Lockdown policy](docs/adr/0036-lockdown-policy-owner.md)
-- [Shell wallpaper owner](docs/adr/0037-shell-wallpaper-owner.md)
-- [Wallpaper review and source ownership](docs/adr/0038-wallpaper-review-and-source-ownership.md)
-- [Request-owned screenshot capture](docs/adr/0039-request-owned-screenshot-capture.md)
-- [Screenshot review and publication](docs/adr/0040-screenshot-review-and-publication.md)
-- [Window screenshot capture and review, scoped public/native verified](docs/adr/0118-window-screenshot-capture-and-review.md)
-- [Owned ScreenCast recordings, in progress](docs/adr/0041-owned-screencast-recordings.md)
-- [Optional desktop-sharing companions, packaging and selection](docs/desktop-sharing.md)
-- [Sandbox ScreenCast access and frontend-owned PipeWire grants](docs/adr/0112-screencast-pipewire-access.md)
-- [InputCapture pointer approval, activation and active clipboard](docs/input-capture-portal.md)
-- [ScreenCast sessions and Iced consent, unadvertised](docs/adr/0042-screencast-sessions-and-consent.md)
-- [Static ScreenCast frames after consumer resume, candidate verified](docs/adr/0043-screencast-frame-resume.md)
-- [Session-owned screen-sharing controls](docs/adr/0044-session-owned-sharing-controls.md)
-- [Combined Niri capture/drag-lifetime companion, scoped native verified](docs/adr/0045-combined-niri-desktop-companion.md)
-- [Session-owned RemoteDesktop input, scoped consent/media verified; unadvertised](docs/adr/0046-session-owned-remote-input.md)
-- [Remote touch ownership and public Iced/Notify/EI integration, scoped native verified](docs/adr/0117-remote-touch-ownership-and-transport.md)
-- [Receive-ordered portal input forwarding, scoped frontend candidate](docs/adr/0047-ordered-portal-input-forwarding.md)
-- [Live monitor identity through source consent, scoped native verified](docs/adr/0048-live-capture-source-consent.md)
-- [Capture-bound pointer workers, scoped native verified](docs/adr/0049-capture-bound-pointer-workers.md)
-- [Pointer Notify ordering and public stream pairing, protocol foundations](docs/adr/0050-pointer-notify-and-stream-pairing.md)
-- [Atomic input-region physical scale, prepared companion and worker acceptance](docs/adr/0051-atomic-input-region-scale.md)
-- [Session-owned EI pointer devices, scoped private acceptance](docs/adr/0052-session-owned-ei-pointer-devices.md)
-- [Pointer consent and production input, scoped experimental acceptance](docs/adr/0053-pointer-consent-and-production-input.md)
-- [Device availability and mixed-source input](docs/adr/0054-device-availability-and-mixed-source-input.md)
-- [Original-owner frontend session lifetime, canonical companion acceptance](docs/adr/0055-frontend-session-owner-lifetime.md)
-- [Capture creator lifetime and recording retirement](docs/adr/0056-capture-creator-lifetime.md)
-- [Session-owned clipboard transport, scoped verified](docs/adr/0057-session-clipboard-transport.md)
-- [Clipboard session consent and ordered delivery, scoped private acceptance](docs/adr/0058-clipboard-session-consent-and-ordering.md)
-- [Compositor-owned InputCapture pointer lease, scoped private foundation](docs/adr/0059-compositor-owned-input-capture.md)
-- [Isolated InputCapture EI receiver, scoped private transport](docs/adr/0060-input-capture-receiver-worker.md)
-- [InputCapture v2 sessions and Iced consent, experimental pointer implementation](docs/adr/0061-input-capture-sessions-and-consent.md)
-- [InputCapture Clipboard activation authority, scoped experimental acceptance](docs/adr/0062-input-capture-clipboard-activation.md)
-- [InputCapture frontend phase confirmation, scoped native verified; workspace Files failures retained](docs/adr/0063-input-capture-frontend-phase.md)
-- [InputCapture keyboard ownership and public EI/Iced pipeline, scoped verified](docs/adr/0111-input-capture-keyboard-ownership.md)
-- [USB consent and frontend descriptor ownership, experimental](docs/adr/0064-usb-consent-and-frontend-ownership.md)
-- [Keyboard source-release suppression, scoped compositor correction](docs/adr/0065-keyboard-source-release-suppression.md)
-- [Compositor-owned shortcut leases, private integration foundation](docs/adr/0066-compositor-owned-shortcut-leases.md)
-- [GlobalShortcuts v2 sessions and Iced configuration, experimental scoped acceptance](docs/adr/0067-shortcut-sessions-and-configuration.md)
-- [Focus-scoped Iced editor keyboard inhibition, scoped verified; workspace Files failures retained](docs/adr/0068-editor-keyboard-shortcut-inhibition.md)
-- [Source-owned shortcut recording, scoped native verified; broader acceptance pending](docs/adr/0069-source-owned-shortcut-recording.md)
-- [Prepared print authority, in progress](docs/adr/0070-prepared-print-authority.md)
-- [Isolated Print document worker, scoped transport verified; interface/UI pending](docs/adr/0071-isolated-print-document-worker.md)
-- [Printer catalog and Iced Print draft, in progress and unadvertised](docs/adr/0072-printer-catalog-and-iced-print-draft.md)
-- [Retained Print file consent, scoped verified; publication pending](docs/adr/0073-retained-print-file-destinations.md)
-- [Staged Print file publication, scoped private verification; public Print pending](docs/adr/0074-staged-print-file-publication.md)
-- [Print request/token/Lockdown controller and GTK3 prepared-rendering evidence; production adapter pending](docs/adr/0075-print-request-controller.md)
-- [Isolated Print layout and production file adapter, scoped verified; unadvertised](docs/adr/0076-isolated-print-layout.md)
-- [Public Print/Iced/file/private-CUPS acceptance and converter inode/descriptor ownership; unadvertised](docs/adr/0077-public-print-and-converter-identity.md)
-- [Print physical copies and duplex boundaries, scoped native verified; unadvertised](docs/adr/0078-print-physical-copy-boundaries.md)
-- [Print file verification/setup workers and O_PATH staging, scoped native verified](docs/adr/0079-print-file-worker-setup.md)
-- [Print bounded replies/shutdown with retained worker retirement, scoped verified; startup recovery pending](docs/adr/0080-print-pending-worker-retirement.md)
-- [Print startup recovery discovery and completion evidence, scoped verified; Iced recovery export pending](docs/adr/0081-print-startup-recovery-discovery.md)
-- [Iced Print recovery review, verified copies and asynchronous startup, scoped verified; Print unregistered](docs/adr/0082-print-recovery-review-and-export.md)
-- [Print range sequences, actual recovery folder handoff and prepared PS/SVG file delivery, scoped verified; Print unregistered](docs/adr/0083-print-range-sequences-and-recovery-folder-handoff.md)
-- [Opt-in Print in the normal backend, public PS/SVG files and source-snapshot main-death/restart, scoped verified; default advertisement pending](docs/adr/0084-opt-in-print-service-and-public-prepared-formats.md)
-- [Prepared PS/SVG printer normalization, scoped public/private-CUPS acceptance; Print remains opt-in](docs/adr/0085-prepared-printer-format-normalization.md)
-- [CUPS final HTTP acknowledgement and the initial main-death printer-job cleanup failure](docs/adr/0086-cups-final-http-acknowledgement.md)
-- [Durable printer intent, exact-tag restart cleanup and process-pidfd ownership, scoped verified; broader Print gates remain](docs/adr/0087-durable-printer-job-ownership.md)
-- [Checked CUPS cancellation connections and bounded reconnect revalidation, scoped verified; Print remains opt-in](docs/adr/0088-checked-cups-cancellation-connections.md)
-- [Iced printer outcome review, guarded record removal and printer-only startup, scoped verified in both appearances; Print remains opt-in](docs/adr/0089-iced-printer-outcome-review.md)
-- [Automatic Qt Print routing, measured client gap with native and explicit portal controls; integration remains open](docs/adr/0090-automatic-qt-print-routing-gap.md)
-- [Custom printer paper, CUPS authority and saved preferences; stock-filter loopback verified, broader devices open](docs/adr/0091-exact-custom-printer-paper.md)
-- [Printer controls, driver constraints and selected-resolution raster output, scoped verified; Print opt-in](docs/adr/0092-printer-controls-and-driver-constraints.md)
-- [Initial application print preferences, scoped validation complete](docs/adr/0093-initial-print-preferences.md)
-- [Request-owned printer authentication, scoped Iced verified; protected recovery in progress](docs/adr/0094-request-owned-printer-authentication.md)
-- [Cached credentials during printer retirement, scoped verified](docs/adr/0095-cached-credentials-during-printer-retirement.md)
-- [Durable owner before authenticated creation, scoped verified](docs/adr/0096-durable-owner-before-authenticated-creation.md)
-- [Rejected Print document continuation, scoped native verified; compatibility gates remain](docs/adr/0097-rejected-print-document-continuation.md)
-- [Explicit protected printer recovery, scoped verified; full authentication pending](docs/adr/0098-explicit-protected-printer-recovery.md)
-- [Preserve acknowledged printer jobs through receipt failures and checked recovery, scoped verified; held-job sign-in pending](docs/adr/0099-preserve-accepted-printer-jobs-after-bookkeeping-failure.md)
-- [Backend-owned Iced live printer-job sign-in, scoped native verified; full Print gates remain](docs/adr/0100-live-printer-job-authentication.md)
-- [Process-private CUPS authentication runtime, scoped native verified; full Print/deployment gates remain](docs/adr/0101-process-private-print-authentication-runtime.md)
-- [One deadline and caller lifetime for Print authentication approval and private reply, scoped native verified](docs/adr/0102-print-authentication-reply-lifetime.md)
-- [Quoted printer authentication fields, scoped native verified; workspace Files failures retained](docs/adr/0103-quoted-printer-authentication-fields.md)
-- [Packaged private Print runtime and upstream notices, scoped local archive/native verified](docs/adr/0104-packaged-private-print-runtime.md)
-- [Explicit Print staging-stream completion across retained fork copies, scoped native verified](docs/adr/0105-print-staging-stream-completion.md)
-- [Incomplete Print HTTP replies, selected-runtime fix and scoped native verification](docs/adr/0106-print-incomplete-http-replies.md)
-- [Exact paper submission and printable PDF appearances, scoped public/Iced/stock-filter verified](docs/adr/0107-exact-paper-and-print-appearances.md)
-- [Maintained owned IPP receiver, pinned source/configuration/loader and scoped native acceptance](docs/adr/0108-maintained-ipp-receiver.md)
-- [Declared custom-paper bottom margins in the private CUPS client, scoped native verified](docs/adr/0109-custom-media-bottom-margin.md)
-- [Matching optional IPP backend preserves explicit resolution, scoped public/Iced/package verified](docs/adr/0110-matching-ipp-backend-resolution.md)
-- [Print portal development guide](docs/print-portal.md)
-- [Print worker deadlines and retained-parent descriptor checks](docs/print-supervision.md)
-- [Configuration user guide](docs/configuration.md)
-- [Workspace decision](docs/adr/0001-shared-workspace-and-upstream-forks.md)
-- [Runtime CPU and memory measurements](docs/performance.md)
-- [Repository layout and tooling ownership](docs/adr/0009-consolidated-repository-layout.md)
-- [Integration test compilation and selection](docs/adr/0030-consolidated-integration-tests.md)
-- [Canopa Shell naming and compatibility](docs/adr/0011-canopa-shell-name.md)
-- [Integration proposal and remaining phases](docs/canopa-integration-proposal.md)
+External owners keep their authority: Niri owns windows, outputs and lock
+security; greetd owns login authentication and session lifetime; PAM owns
+authentication policy; native polkit owns action policy and credentials; GnuPG
+owns keys and caching; NetworkManager, BlueZ, UPower, logind and the audio server
+own their state.
 
 Use each context's terminology for its domain. Shared panel types contain no
-notification policy. Source sharing does not merge application lifetimes or stores.
+notification policy, and source sharing does not merge application lifetimes or
+stores. The built-in notification module consumes only Notify's bounded summary
+through `canopa-notify-client`; the Notification Center stays a declarative
+provider.
 
-The built-in notification module consumes only Notify’s bounded summary through
-`canopa-notify-client`; Notify owns attention meaning and history. The Center stays
-a declarative provider. See [ADR 0004](docs/adr/0004-integrated-notifications.md).
+Start with the [architecture overview](docs/architecture/overview.md) and the
+[documentation index](docs/README.md).
