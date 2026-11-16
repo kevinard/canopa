@@ -428,10 +428,20 @@ mod tests {
         let (date, time) = now_fields();
         assert_eq!((date.len(), time.len()), (10, 5));
         use canopa_i18n::format::HourCycleChoice;
-        // English and `en` formats in tests: a weekday, then the time.
+        // English and `en` formats in tests: a weekday, then the time. Only the
+        // time may carry AM/PM; "Monday" itself contains an M.
+        let time = |label: &str| label.rsplit_once(", ").map(|(_, time)| time.to_owned());
         let twelve = now_label(HourCycleChoice::H12);
-        assert!(twelve.contains("day, ") && twelve.contains('M'), "{twelve}");
-        assert!(!now_label(HourCycleChoice::H24).contains('M'));
+        assert!(twelve.contains("day, "), "{twelve}");
+        assert!(
+            time(&twelve).is_some_and(|time| time.contains('M')),
+            "{twelve}"
+        );
+        let twenty_four = now_label(HourCycleChoice::H24);
+        assert!(
+            time(&twenty_four).is_some_and(|time| !time.contains('M')),
+            "{twenty_four}"
+        );
     }
 
     #[tokio::test]
