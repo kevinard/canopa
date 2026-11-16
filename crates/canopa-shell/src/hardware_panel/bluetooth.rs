@@ -392,8 +392,17 @@ pub(super) async fn run(
         serial: 0,
         error: None,
     };
-    bluetooth.publish(output).await?;
+    // The first frame waits for the first read (bounded), so a running BlueZ
+    // never flashes "unavailable" while the panel opens.
     let mut connection = None;
+    let _ = timeout(super::FIRST_READ, async {
+        if let Ok(Ok(bus)) = timeout(QUERY_TIMEOUT, Connection::system()).await {
+            bluetooth.refresh(&bus).await;
+            connection = Some(bus);
+        }
+    })
+    .await;
+    bluetooth.publish(output).await?;
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let result = async {

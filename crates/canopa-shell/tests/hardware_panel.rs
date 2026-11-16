@@ -268,9 +268,10 @@ async fn bluetooth_pairs_only_after_confirm_and_reconnects() {
         .await
         .unwrap();
     let mut provider = Provider::launch(&bus, "bluetooth");
-    let radio = provider
-        .read(|content| has_action(content, ADAPTER, "scan"))
-        .await;
+    // The very first frame already shows the running service: no flash of
+    // "Bluetooth is unavailable" while the panel opens.
+    let radio = provider.read(|_| true).await;
+    assert!(has_action(&radio.content, ADAPTER, "scan"));
     assert!(!has_action(&radio.content, DEVICE, "pair"));
     provider.rich(radio.revision, ADAPTER, "scan").await;
     let discovered = provider
@@ -368,9 +369,9 @@ async fn power_lists_available_profiles_and_confirms_service_change() {
         .await
         .unwrap();
     let mut provider = Provider::launch(&bus, "power");
-    let state = provider
-        .read(|content| has_action(content, "profiles", "power-saver"))
-        .await;
+    // The first frame already lists the profiles instead of "unavailable".
+    let state = provider.read(|_| true).await;
+    assert!(has_action(&state.content, "profiles", "power-saver"));
     assert!(!has_action(&state.content, "profiles", "performance"));
     provider
         .rich(state.revision, "profiles", "power-saver")

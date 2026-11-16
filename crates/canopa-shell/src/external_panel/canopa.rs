@@ -145,48 +145,33 @@ pub fn slider_value_action(id: &str, value: u16) -> Option<String> {
     serde_json::to_string(&(generation, event)).ok()
 }
 
-#[derive(Default)]
-struct SessionState {
-    actions: HashSet<String>,
-    generation: u64,
-    sliders: HashMap<(String, String), canopa_panel_protocol::PanelSlider>,
-}
+impl CanopaSnapshot {
+    /// The generation Shell-made content uses; provider sessions start at 1,
+    /// so its action ids never reach a provider.
+    pub const LOCAL_GENERATION: u64 = 0;
 
-#[derive(Clone, Default)]
-pub struct CanopaSession {
-    state: Arc<Mutex<SessionState>>,
-}
-
-impl CanopaSession {
-    pub async fn read_content<R: AsyncBufRead + Unpin>(
-        &self,
-        reader: &mut R,
-    ) -> Result<CanopaSnapshot, ProtocolError> {
-        let content = canopa_panel_protocol::v4::Frame::read_async(reader)
-            .await?
-            .ok_or(ProtocolError::FrameTooShort)?
-            .into_content();
-        self.prepare(content).await
+    /// Content the Shell itself shows in a provider panel (a failure), with the
+    /// same focus, accessibility and action ids as a provider's.
+    pub fn local(content: PanelContent) -> Self {
+        Self::assemble(
+            content,
+            Self::LOCAL_GENERATION,
+            HashMap::new(),
+            HashMap::new(),
+        )
     }
 
-    pub async fn prepare(&self, content: PanelContent) -> Result<CanopaSnapshot, ProtocolError> {
-        content
-            .validate()
-            .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
-        let assets = super::canopa_images::prepare(&content).await;
-        let mut state = self.state.lock().unwrap();
-        // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.
-        static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
-        let generation = NEXT_GENERATION
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                value.checked_add(1)
-            })
-            .map_err(|_| ProtocolError::UnexpectedMessage)?;
+    fn assemble(
+        content: PanelContent,
+        generation: u64,
+        images: HashMap<String, iced::widget::image::Handle>,
+        icons: HashMap<canopa_panel_protocol::PanelIcon, iced::widget::image::Handle>,
+    ) -> Self {
         let mut snapshot = CanopaSnapshot {
             content,
             generation,
-            images: assets.images,
-            icons: assets.icons,
+            images,
+            icons,
             affordances: Vec::new(),
             focused: None,
         };
@@ -253,7 +238,64 @@ impl CanopaSession {
                 }
             }
         }
-        state.actions = affordances.iter().map(|(id, _)| id.clone()).collect();
+        snapshot.affordances = affordances;
+        snapshot
+    }
+
+    /// The action key a [`Self::local`] action id invokes, if it is one.
+    pub fn local_action_key(action_id: &str) -> Option<String> {
+        match serde_json::from_str::<(u64, InteractionEvent)>(action_id).ok()? {
+            (Self::LOCAL_GENERATION, InteractionEvent::Invoke { action_key, .. }) => {
+                Some(action_key)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct SessionState {
+    actions: HashSet<String>,
+    generation: u64,
+    sliders: HashMap<(String, String), canopa_panel_protocol::PanelSlider>,
+}
+
+#[derive(Clone, Default)]
+pub struct CanopaSession {
+    state: Arc<Mutex<SessionState>>,
+}
+
+impl CanopaSession {
+    pub async fn read_content<R: AsyncBufRead + Unpin>(
+        &self,
+        reader: &mut R,
+    ) -> Result<CanopaSnapshot, ProtocolError> {
+        let content = canopa_panel_protocol::v4::Frame::read_async(reader)
+            .await?
+            .ok_or(ProtocolError::FrameTooShort)?
+            .into_content();
+        self.prepare(content).await
+    }
+
+    pub async fn prepare(&self, content: PanelContent) -> Result<CanopaSnapshot, ProtocolError> {
+        content
+            .validate()
+            .map_err(|_| ProtocolError::InvalidContent("invalid Canopa content".into()))?;
+        let assets = super::canopa_images::prepare(&content).await;
+        let mut state = self.state.lock().unwrap();
+        // Unique across sessions as well as replacements: late clicks from a closed panel stay stale.
+        static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+        let generation = NEXT_GENERATION
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .map_err(|_| ProtocolError::UnexpectedMessage)?;
+        let snapshot = CanopaSnapshot::assemble(content, generation, assets.images, assets.icons);
+        state.actions = snapshot
+            .affordances
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
         state.generation = generation;
         state.sliders = snapshot
             .content
@@ -266,7 +308,6 @@ impl CanopaSession {
                     .map(|slider| ((item.id.clone(), slider.key.clone()), slider.clone()))
             })
             .collect();
-        snapshot.affordances = affordances;
         Ok(snapshot)
     }
 

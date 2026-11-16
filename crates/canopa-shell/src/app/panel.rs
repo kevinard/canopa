@@ -158,6 +158,11 @@ impl App {
     }
 
     #[cfg(test)]
+    pub(super) fn pending_external_panel_session_id_for_test(&self) -> Option<&str> {
+        self.external_panel_session.pending_session_id_for_test()
+    }
+
+    #[cfg(test)]
     pub(super) fn active_external_panel_session_id_for_test(&self) -> Option<&str> {
         self.external_panel_session.active_session_id()
     }
@@ -307,6 +312,27 @@ impl App {
                 provider_name,
                 element_id,
             } => {
+                // Retry on a failure panel restarts the provider in place; the
+                // failed session is gone, so nothing is sent to it.
+                if canopa_shell::external_panel::canopa::CanopaSnapshot::local_action_key(
+                    &element_id,
+                )
+                .as_deref()
+                    == Some(crate::surface::panel::ExternalPanelContent::RETRY)
+                    && let Some(panel) = self.active_external_panel_identity()
+                    && panel.provider_name == provider_name
+                {
+                    let anchor = self
+                        .foreground
+                        .active_panel_tree()
+                        .and_then(|tree| tree.anchor);
+                    return self.open_provider_panel(
+                        panel.origin_window,
+                        panel.origin,
+                        provider_name,
+                        anchor,
+                    );
+                }
                 #[cfg(test)]
                 if let Some(content) = self
                     .external_panel_event_responses_for_test
