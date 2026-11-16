@@ -45,6 +45,7 @@ fn provider_side_code_uses_shared_protocol_and_content_model() {
 #[tokio::test]
 async fn shipped_wifi_provider_binary_completes_handshake_with_shared_protocol() {
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_canopa-wifi-provider"))
+        .args(["--protocol", "niribar-v1"])
         .env("CANOPA_WIFI_PROVIDER_BACKEND", "none")
         .env("CANOPA_LANGUAGE", "en")
         .kill_on_drop(true)

@@ -467,6 +467,15 @@ pub(crate) fn build_registry() -> HashMap<&'static str, ModuleConstructor> {
         .collect()
 }
 
+/// Every configurable module type, for parser hints (`battery, clock, …`).
+pub(crate) fn config_module_type_list() -> String {
+    MODULE_DESCRIPTORS
+        .iter()
+        .map(|descriptor| descriptor.config_name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub(crate) fn descriptor_for_kind(kind: ModuleKind) -> Option<&'static ModuleDescriptor> {
     MODULE_DESCRIPTORS
         .iter()

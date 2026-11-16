@@ -183,7 +183,7 @@ handshake = {'type': 'handshake', 'payload': {'protocol_version': 1,
              'session_id': 'release-smoke', 'provider_name': 'wifi',
              'origin': {'bar_name': 'main', 'output_name': 'test', 'origin_kind': 'bar'}}}
 close = {'type': 'event', 'payload': {'type': 'close'}}
-result = subprocess.run([sys.argv[1]], input=frame(handshake) + frame(close),
+result = subprocess.run([sys.argv[1], '--protocol', 'niribar-v1'], input=frame(handshake) + frame(close),
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),
                              'CANOPA_WIFI_PROVIDER_BACKEND': 'none'}, check=True)
@@ -192,7 +192,8 @@ size = struct.unpack('>Q', result.stdout[len(magic):len(magic)+8])[0]
 message = json.loads(result.stdout[len(magic)+8:len(magic)+8+size])
 assert message['type'] == 'handshake' and message['protocol_version'] == 1
 assert message['content']['elements'][0]['title'] == 'Wi-Fi unavailable'
-result = subprocess.run([sys.argv[1], '--protocol', 'canopa-v5'],
+# Without --protocol the provider speaks canopa-v5.
+result = subprocess.run([sys.argv[1]],
                         input=b'{"type":"close","protocol_version":5}\n',
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                         env={'PATH': os.path.dirname(sys.argv[1]),

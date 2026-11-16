@@ -322,7 +322,7 @@ Applications that set a wallpaper through the Wallpaper portal hand it to the Sh
 
 | Command | Effect |
 | --- | --- |
-| `canopa-shell` | Run the Shell (one instance per session). |
+| `canopa-shell` | Run the Shell (one instance per session). A second instance exits with status 1 and draws nothing while another Shell owns `$XDG_RUNTIME_DIR/canopa-shell.sock`. |
 | `canopa-shell --canopa-config PATH`, `--config PATH`, `--defaults` | Run with an explicit shared file, a legacy file, or the embedded defaults. |
 | `canopa-shell --check-config [--show-source]` | Validate the configuration and print one JSON line; exit 0 or 1. |
 | `canopa-shell reload` (or `--reload`) | Reload the running Shell's configuration and wait for the result (up to 10 s). |

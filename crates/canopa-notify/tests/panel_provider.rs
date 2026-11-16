@@ -17,11 +17,31 @@ fn panel_provider_returns_provider_visible_error_when_daemon_is_unavailable() {
 
     crate::support::cargo_bin()
         .unwrap()
-        .args(["panel-provider", "--socket", support::path_arg(&socket)])
+        .args([
+            "panel-provider",
+            "--protocol",
+            "canopa-v4",
+            "--socket",
+            support::path_arg(&socket),
+        ])
         .assert()
         .success()
         .stdout(contains("Canopa Notify daemon unavailable"))
         .stdout(contains("\"protocol_version\":4"));
+}
+
+#[test]
+fn panel_provider_defaults_to_canopa_v5() {
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("missing.sock");
+
+    crate::support::cargo_bin()
+        .unwrap()
+        .args(["panel-provider", "--socket", support::path_arg(&socket)])
+        .assert()
+        .success()
+        .stdout(contains("Canopa Notify daemon unavailable"))
+        .stdout(contains("\"protocol_version\":5"));
 }
 
 #[tokio::test]
@@ -50,7 +70,13 @@ async fn panel_provider_renders_notification_history_from_daemon_snapshot() {
     support::wait_for_status_with_child(&socket, &mut daemon);
 
     let mut provider = support::canopa_notify_command()
-        .args(["panel-provider", "--socket", support::path_arg(&socket)])
+        .args([
+            "panel-provider",
+            "--protocol",
+            "canopa-v4",
+            "--socket",
+            support::path_arg(&socket),
+        ])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
@@ -140,7 +166,13 @@ async fn panel_provider_exports_rich_body_content_from_daemon_snapshot() {
     support::wait_for_status_with_child(&socket, &mut daemon);
 
     let mut provider = support::canopa_notify_command()
-        .args(["panel-provider", "--socket", support::path_arg(&socket)])
+        .args([
+            "panel-provider",
+            "--protocol",
+            "canopa-v4",
+            "--socket",
+            support::path_arg(&socket),
+        ])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();

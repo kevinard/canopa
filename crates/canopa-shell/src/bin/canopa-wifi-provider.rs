@@ -30,8 +30,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        [] | ["--protocol", "niribar-v1"] => Transport::V1,
-        ["--protocol", "canopa-v5"] => Transport::v5(),
+        ["--protocol", "niribar-v1"] => Transport::V1,
+        [] | ["--protocol", "canopa-v5"] => Transport::v5(),
         _ => return Err("usage: canopa-wifi-provider [--protocol niribar-v1|canopa-v5]".into()),
     };
     let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());

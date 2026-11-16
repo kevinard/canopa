@@ -132,7 +132,7 @@ fn main() {
                             config_error.safe_diagnostic()
                         );
                     }
-                    AppError::Other(error) => eprintln!("error: {error}"),
+                    AppError::Other(error) => eprintln!("canopa-shell: {error:#}"),
                 }
                 std::process::exit(1);
             }
@@ -458,6 +458,8 @@ fn startup_configuration(
 }
 
 fn try_main(request: &canopa_config::Request) -> Result<(), AppError> {
+    // One Shell per session: a second instance would draw duplicate bars.
+    ipc::claim_instance().map_err(|error| AppError::Other(error.into()))?;
     // Load config fully before any surface is created (AR7).
     let (config, source, request, startup_error) = startup_configuration(request)?;
     theme::install(config.appearance.clone());

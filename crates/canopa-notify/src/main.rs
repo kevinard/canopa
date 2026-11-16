@@ -163,7 +163,8 @@ enum DndCommand {
 
 #[derive(Parser)]
 struct PanelProviderArgs {
-    #[arg(long, value_enum, default_value = "canopa-v4")]
+    /// `canopa-v5` carries activation tokens; `canopa-v4` stays for existing hosts.
+    #[arg(long, value_enum, default_value = "canopa-v5")]
     protocol: control_adapters::PanelProtocol,
     #[arg(long)]
     socket: Option<PathBuf>,
