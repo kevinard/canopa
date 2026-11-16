@@ -1023,6 +1023,7 @@ dependencies = [
  "canopa-file",
  "canopa-i18n",
  "canopa-session-ui",
+ "canopa-theme",
  "canopa-widgets",
  "chrono",
  "clap",
@@ -1328,6 +1329,7 @@ dependencies = [
  "canopa-apps",
  "canopa-config",
  "canopa-file",
+ "canopa-greeter",
  "canopa-i18n",
  "canopa-launcher",
  "canopa-notify-client",
@@ -4810,7 +4812,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "niri-ipc"
 version = "26.4.0"
-source = "git+https://github.com/kevinard/niri?rev=b4fc5ea74941f68ddf014135a61051888da5b6b8#b4fc5ea74941f68ddf014135a61051888da5b6b8"
+source = "git+https://github.com/kevinard/niri?rev=7b3538af5e67a4ecccf80b6357cc97d09e8ea24c#7b3538af5e67a4ecccf80b6357cc97d09e8ea24c"
 dependencies = [
  "serde",
  "serde_json",

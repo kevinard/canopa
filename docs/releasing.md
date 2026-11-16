@@ -65,7 +65,7 @@ installing anything or fetching dependencies. The recipe produces four packages:
 | --- | --- |
 | `canopa` | every Canopa program in `/usr/bin`, the session launcher `canopa-session`, user units (without `[Install]` sections; `canopa-session.target` starts them), portal descriptor and routing, the forked portal frontend at `/usr/lib/canopa/xdg-desktop-portal`, PAM file for the lockscreen, documentation |
 | `canopa-compositor` | the forked Niri at `/usr/lib/canopa/niri` |
-| `canopa-login` | greetd configuration for Canopa Greeter under Cage, the `canopa-greeter` system user |
+| `canopa-login` | greetd configuration for Canopa Greeter under the bundled Niri (Cage and Weston samples too), the `canopa-greeter` system user, the login display helper and its polkit action |
 | `canopa-oo7` | optional oo7 secret-service integration for the login keyring |
 
 `build()` honours `CARGO_BUILD_JOBS` (default 1), `CANOPA_PACKAGE_TARGET_DIR`

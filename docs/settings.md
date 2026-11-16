@@ -73,6 +73,11 @@ reverts). Only Keep writes `~/.config/canopa/niri-displays.kdl`. A separate help
 process restores the previous layout if the window closes or crashes, the time runs
 out or the change partly fails. **Reload connected displays** discards the draft.
 
+With the `canopa-login` package, **Use on the login screen** copies the applied layout
+(not unsaved changes) to `/etc/canopa/greeter-displays.kdl` after administrator
+authentication, so the login screen uses the same modes, scales and positions. See
+[Login screen](greeter.md#display-layout).
+
 ### Display profiles
 
 Set up the displays, enter a name under **Display profiles** and choose **Save layout

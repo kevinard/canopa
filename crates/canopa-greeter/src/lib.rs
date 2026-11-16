@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod compositor;
 pub mod config;
 pub mod controller;
+pub mod displays;
 mod helper;
 pub mod nss;
 pub mod power;

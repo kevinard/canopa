@@ -1,0 +1,8 @@
+# Alternative to config.toml. Requires Cage.
+# Merge into /etc/greetd/config.toml; do not run alongside another display manager.
+[terminal]
+vt = 1
+
+[default_session]
+command = "dbus-run-session /usr/local/bin/canopa-greeter session --compositor cage"
+user = "greeter"

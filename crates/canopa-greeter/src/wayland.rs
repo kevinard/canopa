@@ -79,6 +79,8 @@ struct App {
     dirty: bool,
     exit: bool,
     error: bool,
+    /// Frame callbacks seen since the session was accepted; see `hand_off`.
+    handoff: Option<u8>,
     output_name: String,
     background: Option<canopa_session_ui::presentation::Background>,
     ready_socket: Option<PathBuf>,
@@ -192,6 +194,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         dirty: true,
         exit: false,
         error: false,
+        handoff: None,
         output_name: String::new(),
         background: None,
         ready_socket,
@@ -255,7 +258,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
                             {
                                 eprintln!("greeter: could not save the successful login selection");
                             }
-                            app.exit = true;
+                            app.hand_off();
                         }
                         if app.controller.phase == Phase::Fatal {
                             app.error = true;
@@ -316,7 +319,34 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
     }
     Ok(())
 }
+/// Upper bound on waiting for the neutral frame before exiting anyway.
+const HANDOFF_TIMEOUT: Duration = Duration::from_millis(500);
 impl App {
+    /// greetd starts the desktop once the greeter exits. First replace the
+    /// login screen with its plain background colour, which the compositor fills
+    /// other outputs with and may leave on screen until the desktop's first
+    /// frame, so no account name or avatar stays visible during the switch.
+    fn hand_off(&mut self) {
+        if self.handoff.is_some() {
+            return;
+        }
+        self.handoff = Some(0);
+        self.controller.ui.blank = true;
+        // `paint` rebuilds it as the plain colour.
+        self.background = None;
+        self.redraw();
+        if !self.configured
+            || self
+                .handle
+                .insert_source(Timer::from_duration(HANDOFF_TIMEOUT), |_, _, app| {
+                    app.exit = true;
+                    TimeoutAction::Drop
+                })
+                .is_err()
+        {
+            self.exit = true;
+        }
+    }
     /// Renderer wakeups (animations, timed redraws, retries) repaint the
     /// retained widgets without invalidating the presentation model.
     fn repaint(&mut self) {
@@ -592,25 +622,22 @@ impl App {
             .as_ref()
             .is_none_or(|b| b.dimensions() != (width, height))
         {
-            self.background = Some(canopa_session_ui::presentation::Background::from_rgb(
+            let color = self.config.view.color;
+            let solid = || {
+                image::RgbImage::from_pixel(width, height, image::Rgb([color.0, color.1, color.2]))
+            };
+            let image = if self.handoff.is_some() {
+                solid()
+            } else {
                 canopa_session_ui::view::SessionView::prepare_background(
                     &self.config.view,
                     &self.output_name,
                     width,
                     height,
                 )
-                .unwrap_or_else(|_| {
-                    image::RgbImage::from_pixel(
-                        width,
-                        height,
-                        image::Rgb([
-                            self.config.view.color.0,
-                            self.config.view.color.1,
-                            self.config.view.color.2,
-                        ]),
-                    )
-                }),
-            ));
+                .unwrap_or_else(|_| solid())
+            };
+            self.background = Some(canopa_session_ui::presentation::Background::from_rgb(image));
         }
         let surface = self.window.wl_surface();
         surface.set_buffer_scale(self.scale);
@@ -675,6 +702,16 @@ impl CompositorHandler for App {
     }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
         self.dirty |= self.controller.ui.frame_ready("");
+        if let Some(seen) = &mut self.handoff {
+            // The second callback follows a frame submitted after the hand-off
+            // began, so the plain frame is on screen.
+            *seen += 1;
+            if *seen >= 2 {
+                self.exit = true;
+            } else {
+                self.dirty = true;
+            }
+        }
         if let Some(path) = self.ready_socket.take() {
             // Explicit test-only destination. No authentication data is included.
             let result = (|| -> std::io::Result<()> {

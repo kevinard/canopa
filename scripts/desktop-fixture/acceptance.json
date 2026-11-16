@@ -1941,6 +1941,14 @@
       ]
     },
     {
+      "id": "greeter-niri",
+      "script": "verify-greeter.py",
+      "args": [
+        "--binary", "{greeter}", "--compositor", "niri",
+        "--output", "{artifacts}"
+      ]
+    },
+    {
       "id": "greeter-weston",
       "script": "verify-greeter.py",
       "args": [

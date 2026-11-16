@@ -53,6 +53,8 @@ test -s "$bundle/share/systemd/user/canopa-polkit.service"
 "$bundle/bin/canopa-greeter" --defaults check-config > /dev/null
 test -s "$bundle/share/canopa/greetd/config.toml"
 test -s "$bundle/share/canopa/greetd/config-weston.toml"
+test -s "$bundle/share/canopa/greetd/config-cage.toml"
+"$bundle/bin/canopa-greeter" --defaults session --compositor niri --print-command > /dev/null
 "$bundle/bin/canopa-greeter" --defaults session --compositor cage --print-command > /dev/null
 "$bundle/bin/canopa-greeter" --defaults session --compositor weston --print-command > /dev/null
 test -s "$bundle/share/canopa/greetd/greeter.kdl"

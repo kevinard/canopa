@@ -709,3 +709,84 @@ fn frame(reader: &mut BufReader<ChildStdout>) -> Result<serde_json::Value> {
     );
     Ok(serde_json::from_str(&line)?)
 }
+
+/// Installed with the login screen package; runs as root through `pkexec`.
+pub const LOGIN_DISPLAYS_HELPER: &str = "/usr/lib/canopa/greeter-displays";
+
+/// Whether the login screen's display layout can be set from here.
+pub fn login_screen_available() -> bool {
+    std::path::Path::new(LOGIN_DISPLAYS_HELPER).is_file()
+}
+
+/// The applied outputs (not the editor's draft) as the helper's request.
+pub fn login_request(outputs: &HashMap<String, Output>) -> serde_json::Value {
+    let mut names: Vec<_> = outputs.keys().collect();
+    names.sort();
+    let outputs: Vec<_> = names
+        .into_iter()
+        .map(|name| {
+            let output = &outputs[name];
+            match (
+                output.current_mode.and_then(|i| output.modes.get(i)),
+                output.logical,
+            ) {
+                (Some(mode), Some(logical)) => serde_json::json!({
+                    "name": output.name,
+                    "mode": {
+                        "width": mode.width,
+                        "height": mode.height,
+                        "refresh": f64::from(mode.refresh_rate) / 1000.,
+                        "custom": output.is_custom_mode,
+                    },
+                    "scale": logical.scale,
+                    "transform": transform_name(logical.transform),
+                    "position": {"x": logical.x, "y": logical.y},
+                }),
+                _ => serde_json::json!({"name": output.name, "off": true}),
+            }
+        })
+        .collect();
+    serde_json::json!({ "outputs": outputs })
+}
+
+/// Ask polkit for administrator authorization and hand the layout to the helper.
+pub fn use_for_login_screen(outputs: &HashMap<String, Output>) -> Result<String> {
+    let request = serde_json::to_vec(&login_request(outputs))?;
+    let mut child = Command::new("pkexec")
+        .arg(LOGIN_DISPLAYS_HELPER)
+        .arg("apply")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| fl!("settings-displays-login-screen-failed", error = "pkexec"))?;
+    // The helper reads at most 64 KiB; a closed pipe surfaces as its error below.
+    let _ = child
+        .stdin
+        .take()
+        .map(|mut stdin| stdin.write_all(&request));
+    let mut diagnostics = Vec::new();
+    if let Some(stderr) = child.stderr.take() {
+        let _ = stderr.take(4096).read_to_end(&mut diagnostics);
+    }
+    let status = child.wait()?;
+    match status.code() {
+        Some(0) => Ok(fl!("settings-displays-login-screen-saved")),
+        // pkexec: the dialog was dismissed, or authorization was refused.
+        Some(126 | 127) => Err(anyhow::anyhow!(
+            "{}",
+            fl!("settings-displays-login-screen-denied")
+        )),
+        _ => {
+            let detail = String::from_utf8_lossy(&diagnostics);
+            let detail = detail
+                .trim()
+                .trim_start_matches("canopa-greeter-displays: ")
+                .to_owned();
+            Err(anyhow::anyhow!(
+                "{}",
+                fl!("settings-displays-login-screen-failed", error = detail)
+            ))
+        }
+    }
+}

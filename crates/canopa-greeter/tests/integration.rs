@@ -2,6 +2,7 @@ mod accounts;
 mod avatars;
 mod compositor;
 mod configuration;
+mod displays;
 mod greetd_transport;
 mod nss;
 #[path = "support/nss.rs"]

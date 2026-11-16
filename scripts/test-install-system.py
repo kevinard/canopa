@@ -160,9 +160,19 @@ class SystemInstallTests(unittest.TestCase):
 
     def test_login_and_compositor_packages_preserve_ownership_and_provenance(self):
         login = self.root / 'login'
+        (self.bin / 'canopa-greeter-displays').write_text('#!/bin/sh\nexit 0\n')
         install.stage(login, self.bin, component='login')
         self.assertFalse((login / 'etc/greetd/config.toml').exists())
         self.assertIn('canopa-greeter', (login / 'usr/lib/sysusers.d/canopa-login.conf').read_text())
+        greetd = login / 'usr/share/canopa/greetd'
+        self.assertIn('--compositor niri"', (greetd / 'canopa.toml').read_text())
+        self.assertIn('--compositor cage"', (greetd / 'canopa-cage.toml').read_text())
+        self.assertIn('--compositor weston"', (greetd / 'canopa-weston.toml').read_text())
+        helper = login / 'usr/lib/canopa/greeter-displays'
+        self.assertTrue(helper.is_file() and helper.stat().st_mode & 0o111)
+        policy = (login / 'usr/share/polkit-1/actions/org.canopa.greeter.policy').read_text()
+        # pkexec runs exactly the installed helper.
+        self.assertIn('<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/canopa/greeter-displays</annotate>', policy)
         compositor = self.root / 'compositor'
         install.stage(compositor, self.bin, self.compositor, component='compositor')
         self.assertTrue((compositor / 'usr/lib/canopa/niri').is_file())

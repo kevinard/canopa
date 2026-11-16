@@ -11,6 +11,7 @@ canopa-i18n.workspace = true
 canopa-session-ui.workspace = true
 canopa-widgets.workspace = true
 canopa-config.workspace = true
+canopa-theme.workspace = true
 canopa-assets.workspace = true
 canopa-file.workspace = true
 anyhow.workspace = true

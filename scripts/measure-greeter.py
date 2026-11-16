@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Alternate Cage/Weston greeter sessions in an isolated, fixed-size software desktop.
+"""Alternate Niri/Cage/Weston greeter sessions in an isolated, fixed-size software desktop.
 
 Measures launcher spawn to first greeter frame callback, then whole process-tree
 CPU and RSS. A frame callback is compositor readiness, not physical scanout. No
@@ -28,6 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('desktop', ROOT / 'scripts/validate-desktop.py')
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
+
+
+COMPOSITORS = ('niri', 'cage', 'weston')
+VERSION_FLAGS = dict(niri='--version', cage='-v', weston='--version')
 
 
 def save(path, value):
@@ -61,9 +65,9 @@ def sample(pid):
                 rss_sum_kib=sum(p['rss_kib'] for p in processes))
 
 
-def summarize(runs):
+def summarize(runs, compositors):
     result = {}
-    for compositor in ('cage', 'weston'):
+    for compositor in compositors:
         group = [r for r in runs if r['compositor'] == compositor]
         startup = [r['startup_ms'] for r in group]
         memory = [r['rss_median_kib'] / 1024 for r in group]
@@ -86,10 +90,13 @@ def trial(args, session, compositor, number, measured):
     endpoint.unlink(missing_ok=True)
     ready = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     ready.bind(str(endpoint))
-    binary = args.cage if compositor == 'cage' else args.weston
+    binary = getattr(args, compositor)
     command = [str(args.binary), '--canopa-config', str(session.runtime / 'greeter.kdl'),
                '--ready-socket', str(endpoint), 'session', '--compositor', compositor,
                '--compositor-bin', str(binary), '--renderer', 'software']
+    if compositor == 'niri':
+        # The nested Niri window has the parent output's size; no host display file.
+        command.extend(['--displays', str(session.runtime / 'no-displays.kdl')])
     if compositor == 'weston':
         command.extend('--compositor-arg=' + v for v in
                        ['--backend=wayland', '--fullscreen', '--width=1280', '--height=800'])
@@ -150,8 +157,10 @@ def trial(args, session, compositor, number, measured):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=ROOT / 'target/release/canopa-greeter')
+    parser.add_argument('--niri', type=Path, default=Path('/usr/lib/canopa/niri'))
     parser.add_argument('--cage', type=Path, default=Path('/usr/bin/cage'))
     parser.add_argument('--weston', type=Path, default=Path('/usr/bin/weston'))
+    parser.add_argument('--compositors', nargs='+', choices=COMPOSITORS, default=list(COMPOSITORS))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--runs', type=int, default=5, help='measured runs per compositor, after one warmup each')
     parser.add_argument('--settle-seconds', type=int, default=5)
@@ -161,7 +170,7 @@ def main():
         parser.error('runs/sample seconds must be positive; settle seconds must be nonnegative')
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
-    for key in ('binary', 'cage', 'weston'):
+    for key in ('binary', *args.compositors):
         setattr(args, key, getattr(args, key).resolve(strict=True))
     (args.output / 'sampler.py').write_bytes(Path(__file__).read_bytes())
     sources = {}
@@ -174,13 +183,15 @@ def main():
                     meminfo=Path('/proc/meminfo').read_text(),
                     python=sys.version, pillow=pillow_version, fixture_sources=sources,
                     executables={key: dict(path=str(getattr(args, key)), sha256=digest(getattr(args, key)))
-                                 for key in ('binary', 'cage', 'weston')},
+                                 for key in ('binary', *args.compositors)},
                     sampler_sha256=digest(__file__),
-                    versions={key: subprocess.check_output([str(getattr(args, key)), flag], text=True).strip()
-                              for key, flag in [('cage', '-v'), ('weston', '--version')]},
+                    versions={key: subprocess.check_output([str(getattr(args, key)), VERSION_FLAGS[key]],
+                                                           text=True, stderr=subprocess.STDOUT).strip()
+                              for key in args.compositors},
                     runs_per_compositor=args.runs, settle_seconds=args.settle_seconds,
                     sample_seconds=args.sample_seconds, clock_ticks_per_second=os.sysconf('SC_CLK_TCK'),
-                    resolution=[1280, 800], renderer='pixman in both candidate compositors',
+                    resolution=[1280, 800],
+                    renderer='pixman for Cage and Weston; Mesa llvmpipe (LIBGL_ALWAYS_SOFTWARE) for Niri',
                     scope='nested Wayland on the same private Weston/Niri; parent/backend/greetd peer excluded',
                     startup='launcher Popen to receipt of first greeter surface frame callback; warm page cache; not scanout',
                     memory='sum of process RSS, including greeter; shared pages may be counted twice; no PSS access to hardened greeter')
@@ -203,13 +214,15 @@ def main():
                             relevant_environment={k:session.env.get(k) for k in
                                 ['LIBGL_ALWAYS_SOFTWARE', 'WLR_RENDERER', 'WLR_BACKENDS', 'LD_LIBRARY_PATH']})
             save(args.output / 'metadata.json', metadata)
-            for compositor in ('cage', 'weston'):
+            for compositor in args.compositors:
                 trial(args, session, compositor, 0, False)
             for index in range(1, args.runs + 1):
-                for compositor in (('cage', 'weston') if index % 2 else ('weston', 'cage')):
+                # Alternate the order so no candidate always runs on a warmer cache.
+                order = args.compositors if index % 2 else list(reversed(args.compositors))
+                for compositor in order:
                     runs.append(trial(args, session, compositor, index, True))
                     save(args.output / 'runs.json', runs)
-            result = dict(status='passed', results=summarize(runs), limitations=metadata['scope'])
+            result = dict(status='passed', results=summarize(runs, args.compositors), limitations=metadata['scope'])
             save(args.output / 'summary.json', result)
             print(json.dumps(result, indent=2))
         finally:

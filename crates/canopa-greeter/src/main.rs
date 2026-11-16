@@ -34,6 +34,11 @@ enum Operation {
         policy: canopa_greeter::nss::Policy,
     },
     #[command(hide = true)]
+    InternalReportDisplay {
+        #[arg(long)]
+        socket: PathBuf,
+    },
+    #[command(hide = true)]
     InternalAvatar {
         #[arg(required = true, num_args = 1..=3)]
         paths: Vec<PathBuf>,
@@ -42,11 +47,16 @@ enum Operation {
     ListSessions,
     /// Run the greeter inside a dedicated compositor. Configure this in greetd's command.
     Session {
-        #[arg(long, value_enum)]
+        /// Niri (default) uses the bundled build when installed, otherwise `niri` from PATH.
+        #[arg(long, value_enum, default_value = "niri")]
         compositor: Compositor,
         /// Override the compositor executable (development or nonstandard installations).
         #[arg(long)]
         compositor_bin: Option<PathBuf>,
+        /// Niri only: display layout to include. Default: /etc/canopa/greeter-displays.kdl,
+        /// used only when root-owned. An explicit file may have any owner.
+        #[arg(long)]
+        displays: Option<PathBuf>,
         #[arg(long, value_enum, default_value = "auto")]
         renderer: Renderer,
         /// Additional compositor arguments, passed literally before its program separator.
@@ -84,6 +94,9 @@ fn run() -> Result<()> {
             std::io::stdout().lock().write_all(image.as_raw())?;
         }
         return Ok(());
+    }
+    if let Some(Operation::InternalReportDisplay { ref socket }) = cli.command {
+        return compositor::report_display(socket);
     }
     if let Some(Operation::InternalNssUsers { ref policy }) = cli.command {
         let accounts = canopa_greeter::nss::helper(policy)?;
@@ -125,12 +138,12 @@ fn run() -> Result<()> {
     if let Some(Operation::Session {
         compositor,
         compositor_bin,
+        displays,
         renderer,
         compositor_arg,
         print_command,
     }) = cli.command
     {
-        use std::os::unix::process::CommandExt;
         let mut arguments = Vec::new();
         if cli.defaults {
             arguments.push("--defaults".into());
@@ -140,12 +153,69 @@ fn run() -> Result<()> {
         if let Some(path) = cli.ready_socket {
             arguments.extend(["--ready-socket".into(), path.into_os_string()]);
         }
+        let greeter = canopa_file::executable::installed()?;
+        if compositor == Compositor::Niri {
+            // The login background colour also fills outputs without the greeter
+            // and the last frame before the desktop starts.
+            let background = loaded.as_ref().map_or_else(
+                |_| canopa_theme::Appearance::default().palette().background,
+                |(config, _)| config.view.color,
+            );
+            let displays = match &displays {
+                Some(path) => compositor::trusted_displays(path, true),
+                None => compositor::trusted_displays(
+                    std::path::Path::new(compositor::LOGIN_DISPLAYS),
+                    false,
+                ),
+            };
+            let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+            let niri = compositor::Niri::new(
+                compositor_bin.as_deref(),
+                renderer,
+                &compositor_arg,
+                &greeter,
+                &arguments,
+                runtime
+                    .as_deref()
+                    .unwrap_or(std::path::Path::new("/run/user/UID")),
+                background,
+                displays.as_deref(),
+            );
+            if print_command {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "program": niri.compositor.get_program().to_string_lossy(),
+                        "argv": arguments_of(&niri.compositor),
+                        "env": environment_of(&niri.compositor),
+                        "client": {
+                            "program": niri.greeter.get_program().to_string_lossy(),
+                            "argv": arguments_of(&niri.greeter),
+                        },
+                        "niri_config": niri.config,
+                    })
+                );
+                return Ok(());
+            }
+            let (_, document) = loaded?;
+            check_launch(explicit, &document)?;
+            ensure!(
+                std::env::var_os("GREETD_SOCK").is_some(),
+                "greetd must provide GREETD_SOCK"
+            );
+            let runtime = runtime.filter(|path| path.is_absolute()).ok_or_else(|| {
+                anyhow::anyhow!("Niri needs XDG_RUNTIME_DIR; enable pam_systemd for greetd")
+            })?;
+            ensure!(runtime.is_dir(), "XDG_RUNTIME_DIR does not exist");
+            return niri.run();
+        }
+        use std::os::unix::process::CommandExt;
         let mut command = compositor::command(
             compositor,
             compositor_bin.as_deref(),
             renderer,
             &compositor_arg,
-            &canopa_file::executable::installed()?,
+            &greeter,
             &arguments,
         );
         if print_command {
@@ -153,8 +223,8 @@ fn run() -> Result<()> {
                 "{}",
                 serde_json::json!({
                     "program": command.get_program().to_string_lossy(),
-                    "argv": command.get_args().map(|a| a.to_string_lossy()).collect::<Vec<_>>(),
-                    "env": command.get_envs().map(|(k,v)| (k.to_string_lossy(),v.map(|v|v.to_string_lossy()))).collect::<Vec<_>>()
+                    "argv": arguments_of(&command),
+                    "env": environment_of(&command),
                 })
             );
             return Ok(());
@@ -216,6 +286,23 @@ fn run() -> Result<()> {
         .map(PathBuf::from)
         .ok_or_else(|| anyhow::anyhow!("greetd must provide GREETD_SOCK"))?;
     canopa_greeter::wayland::run(config, socket, cli.ready_socket)
+}
+fn arguments_of(command: &std::process::Command) -> Vec<String> {
+    command
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+}
+fn environment_of(command: &std::process::Command) -> Vec<(String, Option<String>)> {
+    command
+        .get_envs()
+        .map(|(k, v)| {
+            (
+                k.to_string_lossy().into_owned(),
+                v.map(|v| v.to_string_lossy().into_owned()),
+            )
+        })
+        .collect()
 }
 fn check_launch(explicit: bool, document: &canopa_config::Document) -> Result<()> {
     ensure!(

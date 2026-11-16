@@ -51,9 +51,19 @@ def stage(destination, binaries, compositor=None, component="desktop", frontend=
         install(ROOT / "packaging/system/canopa-login.sysusers", "usr/lib/sysusers.d/canopa-login.conf")
         install(ROOT / "packaging/system/canopa-login.tmpfiles", "usr/lib/tmpfiles.d/canopa-login.conf")
         install(ROOT / "packaging/greetd/greeter.kdl", "etc/canopa/greeter.kdl")
-        target = destination / "usr/share/canopa/greetd/canopa.toml"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text('[terminal]\nvt = 1\n\n[default_session]\ncommand = "dbus-run-session /usr/bin/canopa-greeter session --compositor cage"\nuser = "canopa-greeter"\n')
+        helper = binaries / "canopa-greeter-displays"
+        if not helper.is_file():
+            raise ValueError(f"missing build executable: {helper}")
+        install(helper, "usr/lib/canopa/greeter-displays", True)
+        install(ROOT / "packaging/polkit/org.canopa.greeter.policy",
+                "usr/share/polkit-1/actions/org.canopa.greeter.policy")
+        greetd = destination / "usr/share/canopa/greetd"
+        greetd.mkdir(parents=True, exist_ok=True)
+        for compositor, name in (("niri", "canopa.toml"), ("cage", "canopa-cage.toml"),
+                                 ("weston", "canopa-weston.toml")):
+            (greetd / name).write_text(
+                '[terminal]\nvt = 1\n\n[default_session]\ncommand = "dbus-run-session '
+                f'/usr/bin/canopa-greeter session --compositor {compositor}"\nuser = "canopa-greeter"\n')
         return
     if component == "oo7":
         prompter = binaries / "canopa-keyring-prompter"

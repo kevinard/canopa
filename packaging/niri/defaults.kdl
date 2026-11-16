@@ -1,6 +1,10 @@
 // Canopa compositor defaults. Per-user input/display and custom files follow.
 prefer-no-csd
 layout {
+    // The dark palette background, which is also the login screen's last frame,
+    // so the switch from the login screen to the desktop shows one colour
+    // until the wallpaper appears.
+    background-color "#10191d"
     gaps 12
     center-focused-column "on-overflow"
     default-column-width { proportion 0.5; }

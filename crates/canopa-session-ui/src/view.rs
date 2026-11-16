@@ -120,6 +120,9 @@ pub struct SessionView {
     pub busy: bool,
     /// Confirmation/message dialogs retain controls without a response field.
     pub hide_input: bool,
+    /// Draw only the background: the neutral frame a surface leaves on screen
+    /// when it hands the display to the next program.
+    pub blank: bool,
     pub prompt: Option<Prompt>,
     pub message: String,
     pub failed: bool,
@@ -166,6 +169,7 @@ impl SessionView {
             secret: Secret::default(),
             busy: false,
             hide_input: false,
+            blank: false,
             prompt: None,
             message: String::new(),
             failed: false,
@@ -382,6 +386,9 @@ impl SessionView {
         hidden: &[String],
     ) -> iced::Scene {
         use crate::layout::Item;
+        if self.blank {
+            return iced::Scene::new(self.assets.clone());
+        }
         let (width, height) = (size.width, size.height);
         let palette = settings.appearance.palette();
         let observed = self.observed.borrow();

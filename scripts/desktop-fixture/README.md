@@ -141,7 +141,7 @@ skipped without one. It runs in the workspace gate.
 | `verify-content-rotation.py`, `verify-focused-window-icons.py`, `verify-shell-launcher.py` | Rotated text, focused-window icons, launcher |
 | `verify-idle-inhibitor.py` | Manual idle inhibition (`--compositor sway` or `niri`) |
 | `verify-session-tools.py`, `verify-wallpaper-followups.py`, `verify-lockscreen-integration.py`, `verify-stasis.py` | Wallpaper, lock screen with logind and PAM fixtures, real Stasis |
-| `verify-greeter.py`, `verify-greeter-followups.py` | Greeter against `greetd.py` (`--compositor direct`, `cage` or `weston`) |
+| `verify-greeter.py`, `verify-greeter-followups.py` | Greeter against `greetd.py` (`--compositor direct`, `niri`, `cage` or `weston`) |
 | `verify-polkit.py`, `verify-pinentry.py`, `verify-settings.py` | Polkit agent, pinentry with real GnuPG in a temporary `GNUPGHOME`, Settings |
 
 ## Files cases

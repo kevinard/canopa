@@ -154,6 +154,7 @@ private sockets.
 | Touchscreen 3/4-finger swipes, `gestures { touchscreen-swipe }` | `canopa/touch-gestures`, on remote-input-touch (#18) | Strip and overview by touch (13) | Touchpad-only upstream | **Upstream** after hardware tests |
 | `org.canopa.Niri.WindowPreview1.Capture`, `window-previews { off; }` | `canopa/window-preview`, base (#19) | Taskbar thumbnails (08) | No upstream service | **Keep**, private |
 | Pinned columns: `PinColumn`/`UnpinColumn`/`TogglePinnedColumn`, `open-pinned`, `WindowLayout.pinned` | `canopa/pinned-columns`, base (#20) | Columns that stay on screen (10) | No upstream equivalent | **Discuss upstream** |
+| Smithay `DrmDeviceFd::set_keep_last_frame` (surfaces and device left as they are on drop, framebuffers closed with `CLOSEFB`); Niri `NIRI_KEEP_LAST_FRAME_ON_EXIT` | `canopa/keep-last-frame`, base (#21, Smithay #5) | Login screen to desktop handoff without a blank screen ([ADR 0151](adr/0151-niri-login-compositor.md)) | No CLOSEFB support in Smithay master | **Upstream to Smithay**; Niri may prefer a config option |
 
 Where the shipped patch lives: about 10,100 added lines are new modules
 (`dbus/global_shortcuts*` 3,162, `dbus/remote_input*` 2,525,

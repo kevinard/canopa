@@ -93,6 +93,8 @@ enum Message {
     SearchSubmit,
     Refresh,
     Outputs(std::result::Result<HashMap<String, Output>, String>),
+    /// Copy the applied display layout to the login screen.
+    LoginDisplays,
     DisplayProfiles(profiles::Action),
     WidgetLayouts(widget_layouts::Action),
     OpenLockWidgetEditor,
@@ -617,6 +619,20 @@ impl State {
                 self.refreshing = true;
                 self.display_dirty = false;
                 return task(|| Client::discover()?.outputs(), Message::Outputs);
+            }
+            Message::LoginDisplays
+                if !self.busy
+                    && !self.refreshing
+                    && !self.display_dirty
+                    && self.trial.is_none() =>
+            {
+                self.busy = true;
+                self.notice.clear();
+                let outputs = self.outputs.clone();
+                return task(
+                    move || crate::display::use_for_login_screen(&outputs),
+                    Message::Finished,
+                );
             }
             Message::Outputs(result) => {
                 self.refreshing = false;
@@ -1572,6 +1588,22 @@ impl State {
             )
         ]
         .spacing(14);
+        if crate::display::login_screen_available() {
+            // Copies what is applied, so an unsaved draft must be saved first.
+            body = body.push(
+                self.action(
+                    "settings-button-login-screen-displays",
+                    fl!("settings-displays-login-screen"),
+                    (!self.busy
+                        && !self.refreshing
+                        && !self.display_dirty
+                        && self.trial.is_none()
+                        && !self.outputs.is_empty())
+                    .then_some(Message::LoginDisplays),
+                    false,
+                ),
+            );
+        }
         if self.display_profiles.prominent {
             body = body.push(self.profiles_view());
         }

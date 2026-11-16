@@ -388,6 +388,34 @@ fn output() -> Output {
     }
 }
 #[test]
+fn login_screen_request_carries_the_applied_layout_and_the_helper_accepts_it() {
+    let mut on = output();
+    on.current_mode = Some(1);
+    on.logical.as_mut().unwrap().scale = 1.25;
+    on.logical.as_mut().unwrap().transform = Transform::_90;
+    let mut off = output();
+    off.name = "TEST-2".into();
+    off.current_mode = None;
+    off.logical = None;
+    let outputs = HashMap::from([(on.name.clone(), on), (off.name.clone(), off)]);
+    let request = canopa_settings::display::login_request(&outputs);
+    assert_eq!(
+        request,
+        serde_json::json!({"outputs": [
+            {"name": "TEST-1", "mode": {"width": 1024, "height": 768, "refresh": 60.0, "custom": false},
+             "scale": 1.25, "transform": "90", "position": {"x": 0, "y": 0}},
+            {"name": "TEST-2", "off": true},
+        ]})
+    );
+    let text = canopa_greeter::displays::render(
+        &canopa_greeter::displays::parse(request.to_string().as_bytes()).unwrap(),
+    )
+    .unwrap();
+    assert!(text.contains("output \"TEST-1\" {\n    mode \"1024x768@60.000\"\n    scale 1.25\n"));
+    assert!(text.contains("output \"TEST-2\" {\n    off\n}"));
+}
+
+#[test]
 fn display_saves_preserve_unmanaged_output_options_and_disconnected_outputs() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("displays.kdl");

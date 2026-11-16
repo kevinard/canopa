@@ -16,7 +16,8 @@ the git history at commit cb300936 under docs/adr/.
 | `canopa-session` | `canopa-wallpaper` | wlr-layer-shell background per output; picker is an xdg toplevel `org.canopa.WallpaperPicker` | user service `canopa-wallpaper.service` |
 | `canopa-session` | `canopa-lock` | ext-session-lock-v1 surface per output | on demand; listener `canopa-lock.service` |
 | `canopa-session` | `canopa-idle` | none | user service `canopa-idle.service`, supervises Stasis |
-| `canopa-greeter` | `canopa-greeter` | fullscreen xdg toplevel `org.canopa.Greeter` in Cage or Weston | started by greetd |
+| `canopa-greeter` | `canopa-greeter` | fullscreen xdg toplevel `org.canopa.Greeter` in Niri, Cage or Weston | started by greetd |
+| `canopa-greeter` | `canopa-greeter-displays` | none | run as root through `pkexec` by Settings |
 | `canopa-polkit` | `canopa-polkit` | xdg toplevel `org.canopa.Polkit` per request | user service `canopa-polkit.service` |
 | `canopa-pinentry` | `canopa-pinentry` | xdg toplevel `org.canopa.Pinentry` / `org.canopa.Keyring` | started by gpg-agent or the keyring prompter |
 | `canopa-session-ui` | (library) | Iced presentation for the interactive surfaces above | — |
@@ -210,11 +211,30 @@ Stasis.
 
 ## Login screen
 
-`canopa-greeter session --compositor cage|weston` builds the compositor command
-(`cage -s -m last -- greeter ...`, or `weston --shell=kiosk-shell.so --no-config
---idle-time=0 -- greeter ...`) and execs it. The greeter itself requires `GREETD_SOCK`
-and a non-root account, and speaks greetd's JSON IPC (length-prefixed, 64 KiB bound,
-3 s control timeout).
+`canopa-greeter session` starts the login compositor
+([`compositor.rs`](../../crates/canopa-greeter/src/compositor.rs)). For Cage and
+Weston it builds the command (`cage -s -m last -- greeter ...`, or
+`weston --shell=kiosk-shell.so --no-config --idle-time=0 -- greeter ...`) and execs it;
+they exit with the greeter. For Niri, the default, it stays the parent:
+
+1. It creates `$XDG_RUNTIME_DIR/canopa-greeter-<pid>/` (0700) with a generated
+   `niri.kdl` (0600) and binds a datagram socket there. The configuration binds no
+   keys, starts nothing, disables Xwayland, the hot corner and power-key handling,
+   fills outputs with the greeter's background colour, opens `org.canopa.Greeter`
+   fullscreen, and includes `/etc/canopa/greeter-displays.kdl` only when it passes the
+   same root-ownership check as `greeter.kdl`.
+2. It starts `/usr/lib/canopa/niri` (or `niri` from `PATH`) with `--config`, no
+   `--session`, `NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY=1` and
+   `NIRI_KEEP_LAST_FRAME_ON_EXIT=1`. Niri's startup command is
+   `canopa-greeter internal-report-display`, which sends Niri's `WAYLAND_DISPLAY` to the
+   socket (30 s deadline, aborted if Niri exits).
+3. It runs the greeter as its own child on that display, waits on the two pidfds,
+   stops Niri (SIGTERM, SIGKILL after 5 s) when the greeter exits, removes the
+   directory and exits with the greeter's result. If Niri exits first, the greeter is
+   stopped and the launcher fails. Both children have `PR_SET_PDEATHSIG` set.
+
+The greeter itself requires `GREETD_SOCK` and a non-root account, and speaks greetd's
+JSON IPC (length-prefixed, 64 KiB bound, 3 s control timeout).
 
 Authentication uses a generation number per attempt. greetd success only starts the
 session the current generation selected; cancelling invalidates the generation and
@@ -238,6 +258,24 @@ Catalogs:
 - Refresh: inotify on the session directories, avatar files, `/etc/passwd`,
   `/etc/nsswitch.conf`, `/etc/login.defs`; AccountsService signals and owner changes;
   F5.
+
+After greetd acknowledges the start, the greeter sets the presentation's `blank`
+flag (background only), replaces the background with its solid `view` colour, and
+exits after the second frame callback, which follows a frame submitted after the
+switch (500 ms fallback). The Canopa Niri defaults use the dark palette background
+`#10191d`, the default greeter colour, as the session's background colour.
+
+`canopa-greeter-displays apply` reads at most 64 KiB of JSON
+(`{"outputs":[{"name", "off", "mode":{"width","height","refresh","custom"},
+"scale", "transform", "position":{"x","y"}}]}`), rejects unknown fields,
+connector names outside `[A-Za-z0-9._-]`, duplicates, an all-off layout and
+out-of-range values, generates `output` nodes itself and replaces
+`/etc/canopa/greeter-displays.kdl` atomically (0644) in a root-owned directory;
+`reset` removes it. As root it always writes that path; `--target` is refused as root.
+The polkit action `org.canopa.greeter.set-login-displays` requires administrator
+authentication (`auth_admin_keep` for active sessions). Settings sends the applied
+outputs from Niri IPC, not its draft
+([`display.rs`](../../crates/canopa-settings/src/display.rs)).
 
 Remembered choices are written to the greeter account's
 `$XDG_STATE_HOME/canopa/greeter.json` only after greetd acknowledges the start. Power
@@ -369,11 +407,26 @@ unlocking one. The greeter is an unprivileged greetd client and never runs the d
 itself, never starts its own PAM stack and never sets `LockedHint`. The attempt
 generation guarantees that only the attempt on screen can authorize a session.
 
-**A kiosk compositor, chosen by the launcher.** The greeter is an ordinary xdg window,
-so it runs in Cage or Weston's kiosk shell instead of implementing a compositor. The
-`session` subcommand makes the choice explicit in greetd's command line. Cage is the
-packaged default because it used markedly less memory than Weston for the same
-greeter.
+**The bundled Niri as login compositor, chosen by the launcher.** The greeter is an
+ordinary xdg window, so it runs in an existing compositor instead of implementing
+one. The packaged default is the Niri build the desktop already ships, which removes
+Cage as a dependency and lets both sides of the login share one renderer, one
+background colour and one display layout; Cage and Weston remain choices on greetd's
+command line. Niri does not exit with its client, so the launcher supervises both
+processes rather than exec'ing the compositor. See
+[ADR 0151](../adr/0151-niri-login-compositor.md).
+
+**A neutral last frame.** greetd starts the desktop only after the greeter exits, so
+some gap between the two compositors is unavoidable. The greeter's last frame is its
+plain background colour and the Niri build is asked to keep it on screen
+(`DRM_IOCTL_MODE_CLOSEFB`), so whatever stays visible during the switch shows no
+account data, and the desktop's Niri starts on the same colour.
+
+**The login display layout is generated, never copied.** Settings cannot share the
+user's `niri-displays.kdl` with the greeter account, so a root helper writes a system
+file. A Niri configuration can start programs, so the helper accepts only structured
+values and writes only `output` nodes it generates, and the launcher includes the file
+only when root owns it.
 
 **System-only greeter configuration and catalogs.** The greeter reads root-owned
 system files only (configuration, session entries), never user XDG paths, because it
@@ -448,5 +501,6 @@ starting so they pick up the Canopa environment.
 - `canopa-idle` does not load translations; its errors are English only.
 - `canopa-shell lock` execs swaylock instead of `canopa-lock`.
 - The wallpaper `reload` request erases the saved overlay.
-- Physical DRM/VT handoff, suspend/resume and distribution PAM policy are not covered by the automated tests.
+- Physical DRM/VT handoff, suspend/resume and distribution PAM policy are not covered by the automated tests; the kept last frame in particular has not been checked on hardware.
+- With Niri, the login screen shows on the focused output only, and touchpad workspace swipes can move it out of view.
 - `canopa-session` keeps its own logind client instead of the one in `canopa-services`.
