@@ -8,6 +8,7 @@ pub mod activation;
 pub mod application;
 pub mod archives;
 pub mod browse;
+pub mod btrfs;
 pub mod bulk_rename;
 pub mod configuration;
 #[cfg(feature = "desktop")]

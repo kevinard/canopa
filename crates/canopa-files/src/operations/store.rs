@@ -419,6 +419,17 @@ impl Store {
     pub fn latest(&self) -> io::Result<Option<(u64, String)>> {
         self.connection.query_row_cached("SELECT id,label FROM operations WHERE EXISTS(SELECT 1 FROM changes WHERE operation=operations.id) ORDER BY id DESC LIMIT 1", [], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(db_error)
     }
+    /// Whether an Undo entry still refers to `path` or something below it,
+    /// through the history's ancestor index.
+    pub(super) fn history_refers_to(&self, path: &Path) -> io::Result<bool> {
+        self.connection
+            .query_row_cached(
+                "SELECT EXISTS(SELECT 1 FROM change_paths WHERE path=?1)",
+                [paths::key(path)],
+                |row| row.get(0),
+            )
+            .map_err(db_error)
+    }
     pub fn last_change(&self, id: u64) -> io::Result<Option<(u64, Change)>> {
         self.change_before(id, None)
     }

@@ -160,17 +160,14 @@ impl Prepared {
                 return Err(changed());
             }
             self.opened.require_current()?;
-            if Fingerprint::read_opened(self.source.entry(), cancellation)? != *source_fingerprint {
+            self.require_copy(copy)?;
+            // A clone and its source are read once (ADR 0152).
+            let (source_now, copy_now) =
+                copy.fingerprint_with_source(self.source.entry(), cancellation)?;
+            if source_now != *source_fingerprint || copy_now != *fingerprint {
                 return Err(changed());
             }
-            copy.require_published(&self.destination)?;
-            self.require_parent()?;
-            if let Some(proof) = &self.stage.source_claim.as_ref().unwrap().copy {
-                proof.require(&self.destination)?;
-            }
-            if copy.fingerprint(cancellation)? != *fingerprint {
-                return Err(changed());
-            }
+            self.require_copy(copy)?;
             checkpoint()?;
             check_cancel(cancellation)
         };
@@ -199,18 +196,13 @@ impl Prepared {
         if let Err(error) = (|| -> io::Result<()> {
             self.opened.require_current()?;
             check_cancel(cancellation)?;
-            if Fingerprint::read_opened(self.source.entry(), cancellation)? != *source_fingerprint {
+            self.require_copy(copy)?;
+            let (source_now, copy_now) =
+                copy.fingerprint_with_source(self.source.entry(), cancellation)?;
+            if source_now != *source_fingerprint || copy_now != *fingerprint {
                 return Err(changed());
             }
-            copy.require_published(&self.destination)?;
-            self.require_parent()?;
-            if let Some(proof) = &self.stage.source_claim.as_ref().unwrap().copy {
-                proof.require(&self.destination)?;
-            }
-            if copy.fingerprint(cancellation)? != *fingerprint {
-                return Err(changed());
-            }
-            Ok(())
+            self.require_copy(copy)
         })() {
             return self.return_claim(state, id, ordinal, change, &actual, error);
         }
@@ -224,6 +216,15 @@ impl Prepared {
         append_forward(state, id, ordinal, change, Some(&self.quarantine())).map_err(protect)?;
         #[cfg(test)]
         super::transfer::copy_boundary::boundary("removed", self.source.path());
+        Ok(())
+    }
+    /// The copy is still the published destination in its recorded parent.
+    fn require_copy(&self, copy: &impl staging::VerifiedCopy) -> io::Result<()> {
+        copy.require_published(&self.destination)?;
+        self.require_parent()?;
+        if let Some(proof) = &self.stage.source_claim.as_ref().unwrap().copy {
+            proof.require(&self.destination)?;
+        }
         Ok(())
     }
     fn save(&self, state: &mut Store, id: u64, ordinal: u64, change: &Change) -> io::Result<()> {
@@ -483,9 +484,9 @@ pub(super) fn recover(
             .as_ref()
             .ok_or_else(interrupted)?
             .require(current)?;
-        if Fingerprint::read_opened(&copy, &Cancellation::default())? != *fingerprint
-            || Fingerprint::read_opened(&payload, &Cancellation::default())? != *source_fingerprint
-        {
+        let (payload_now, copy_now) =
+            Fingerprint::read_opened_pair(&payload, &copy, &Cancellation::default())?;
+        if copy_now != *fingerprint || payload_now != *source_fingerprint {
             return Err(changed());
         }
         ownership.require_payload(&named(directory, c"folder")?)?;

@@ -58,6 +58,29 @@ When adding a test file, register it as a module in that crate's
 `tests/integration.rs`. Keep process-global mutations in isolated subprocesses;
 `--exact` filters for subprocesses must include the module prefix.
 
+## btrfs cases
+
+Files uses btrfs clones and extent maps when they are available
+([ADR 0152](adr/0152-files-btrfs-clones-and-subvolume-trash.md)). Those tests need a
+writable folder on btrfs, named by `CANOPA_FILES_TEST_BTRFS`; without it they
+return early and only the generic paths run. A loop-mounted image is enough:
+
+```sh
+truncate -s 4G /var/tmp/canopa-btrfs.img
+mkfs.btrfs /var/tmp/canopa-btrfs.img
+sudo mkdir -p /mnt/canopa-btrfs
+sudo mount -o loop /var/tmp/canopa-btrfs.img /mnt/canopa-btrfs
+sudo chown "$USER:" /mnt/canopa-btrfs
+export CANOPA_FILES_TEST_BTRFS=/mnt/canopa-btrfs
+bash scripts/check.sh --files --lib btrfs
+bash scripts/check.sh --files --lib source_removal_boundary
+bash scripts/check.sh --files --test btrfs
+```
+
+The tests create and remove their own subvolumes in private folders below it;
+an empty subvolume is removed with an ordinary `rmdir`, so no mount option or
+privilege is needed beyond write access.
+
 ## Development practice
 
 - Keep the same features and profile between edits so incremental artifacts in

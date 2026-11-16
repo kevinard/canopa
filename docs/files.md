@@ -161,6 +161,11 @@ attributes, ACLs and sparse files. If the destination cannot store some attribut
 copies are missing them. Hard links are copied as separate files. A Move between
 drives removes the originals only after the copies are complete and verified.
 
+On a btrfs drive, a copy within the drive is a clone: it finishes almost at once
+and uses no extra space until one of the two files is edited. This includes moves
+between subvolumes such as a separate `~/Photos`, which btrfs treats as different
+filesystems. Other filesystems copy the data as usual.
+
 ### Name conflicts
 
 When a name is already taken, Files asks:
@@ -252,6 +257,9 @@ Delete moves the selection to Trash. Open the Trash place to see it:
 Shift+Delete in a browser deletes the selection permanently after confirmation. When
 a drive has no usable Trash, Files offers to delete the items permanently instead,
 again after confirmation. Network locations have no Trash.
+
+Inside a btrfs subvolume, items go to a `.Trash-UID` folder at the top of that
+subvolume and appear in Trash with the rest.
 
 ## Recovery
 

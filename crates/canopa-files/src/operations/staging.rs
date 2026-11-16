@@ -492,6 +492,13 @@ impl Prepared {
     pub(super) fn fingerprint(&self, cancellation: &Cancellation) -> io::Result<Fingerprint> {
         Fingerprint::read_opened(&self.file, cancellation)
     }
+    pub(super) fn fingerprint_with_source(
+        &self,
+        source: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<(Fingerprint, Fingerprint)> {
+        Fingerprint::read_opened_pair(source, &self.file, cancellation)
+    }
     pub(super) fn restore_metadata(&self, fingerprint: &Fingerprint) -> io::Result<()> {
         self.require_current()?;
         #[cfg(test)]
@@ -605,6 +612,12 @@ pub(super) trait VerifiedCopy {
     fn metadata(&self) -> io::Result<fs::Metadata>;
     fn require_published(&self, path: &Path) -> io::Result<()>;
     fn fingerprint(&self, cancellation: &Cancellation) -> io::Result<Fingerprint>;
+    /// The source's and this copy's fingerprints, reading shared contents once.
+    fn fingerprint_with_source(
+        &self,
+        source: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<(Fingerprint, Fingerprint)>;
 }
 impl VerifiedCopy for Prepared {
     fn published(&self, path: &Path) -> io::Result<Option<Published>> {
@@ -618,6 +631,13 @@ impl VerifiedCopy for Prepared {
     }
     fn fingerprint(&self, cancellation: &Cancellation) -> io::Result<Fingerprint> {
         Prepared::fingerprint(self, cancellation)
+    }
+    fn fingerprint_with_source(
+        &self,
+        source: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<(Fingerprint, Fingerprint)> {
+        Prepared::fingerprint_with_source(self, source, cancellation)
     }
 }
 pub(super) struct ReopenedCopy {
@@ -647,6 +667,13 @@ impl VerifiedCopy for ReopenedCopy {
     }
     fn fingerprint(&self, cancellation: &Cancellation) -> io::Result<Fingerprint> {
         Fingerprint::read_opened(&self.file, cancellation)
+    }
+    fn fingerprint_with_source(
+        &self,
+        source: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<(Fingerprint, Fingerprint)> {
+        Fingerprint::read_opened_pair(source, &self.file, cancellation)
     }
 }
 

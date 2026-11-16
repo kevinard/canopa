@@ -391,3 +391,103 @@ fn restarted_claims_refuse_replacement_copy_generations_even_when_raw_ids_match(
         }
     }
 }
+
+/// Overwrite one byte of a file in place, keeping its size and optionally its
+/// modification time, as an editor writing through an open file might.
+fn edit_in_place(path: &Path, keep_time: bool) {
+    use std::io::{Seek, Write};
+    let before = fs::metadata(path).unwrap();
+    let mut file = fs::File::options().write(true).open(path).unwrap();
+    file.seek(io::SeekFrom::Start(8192)).unwrap();
+    file.write_all(b"!").unwrap();
+    if keep_time {
+        file.set_modified(before.modified().unwrap()).unwrap();
+    }
+    file.sync_all().unwrap();
+}
+
+/// On btrfs a move between subvolumes clones its source, and source removal
+/// reads shared contents once (ADR 0152). An edit to the claimed source, before
+/// either verification, must still return it instead of removing it.
+#[test]
+fn edited_cloned_sources_are_returned_instead_of_removed() {
+    for (point, keep_time) in [
+        ("ready", false),
+        ("ready", true),
+        ("claimed", false),
+        ("claimed", true),
+    ] {
+        let Some(root) = crate::btrfs::test_root() else {
+            return;
+        };
+        crate::btrfs::create_subvolume(root.path(), "from").unwrap();
+        crate::btrfs::create_subvolume(root.path(), "to").unwrap();
+        let source = root.path().join("from/item");
+        let contents: Vec<u8> = (0..1024 * 1024).map(|i| (i % 249) as u8).collect();
+        fs::write(&source, &contents).unwrap();
+        let edited = std::rc::Rc::new(RefCell::new(false));
+        let at_gate = edited.clone();
+        AT_PHASE.with(|slot| {
+            *slot.borrow_mut() = Some((
+                point,
+                Box::new(move |_: &Path, payload: &Path| {
+                    edit_in_place(payload, keep_time);
+                    *at_gate.borrow_mut() = true;
+                }),
+            ))
+        });
+        let _reset = Reset;
+        let engine = OperationEngine::open(root.path().join("history")).unwrap();
+        let destination = root.path().join("to");
+        let _ = engine.transfer(
+            &transfer::TransferRequest {
+                kind: transfer::TransferKind::Move,
+                sources: vec![source.clone()],
+                destination: destination.clone(),
+            },
+            &Cancellation::default(),
+            |_| transfer::TransferReply::Continue,
+        );
+        assert!(*edited.borrow(), "{point}: source removal was reached");
+        let mut expected = contents.clone();
+        expected[8192] = b'!';
+        assert_eq!(
+            fs::read(&source).unwrap(),
+            expected,
+            "{point}/{keep_time}: the edited source was not returned"
+        );
+        assert_eq!(fs::read(destination.join("item")).unwrap(), contents);
+    }
+}
+
+/// The unedited case: the clone is verified once and the source removed.
+#[test]
+fn cloned_sources_move_between_subvolumes() {
+    let Some(root) = crate::btrfs::test_root() else {
+        return;
+    };
+    crate::btrfs::create_subvolume(root.path(), "from").unwrap();
+    crate::btrfs::create_subvolume(root.path(), "to").unwrap();
+    let source = root.path().join("from/item");
+    let contents: Vec<u8> = (0..4 * 1024 * 1024).map(|i| (i % 241) as u8).collect();
+    fs::write(&source, &contents).unwrap();
+    let engine = OperationEngine::open(root.path().join("history")).unwrap();
+    let destination = root.path().join("to");
+    let outcome = engine
+        .transfer(
+            &transfer::TransferRequest {
+                kind: transfer::TransferKind::Move,
+                sources: vec![source.clone()],
+                destination: destination.clone(),
+            },
+            &Cancellation::default(),
+            |_| transfer::TransferReply::Continue,
+        )
+        .unwrap();
+    assert!(outcome.failures.is_empty(), "{outcome:?}");
+    assert!(!source.exists());
+    assert_eq!(fs::read(destination.join("item")).unwrap(), contents);
+    engine.undo(&Cancellation::default()).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), contents);
+    assert!(!destination.join("item").exists());
+}

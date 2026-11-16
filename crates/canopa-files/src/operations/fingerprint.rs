@@ -115,6 +115,61 @@ impl Fingerprint {
         }
         Ok(Self::from_metadata(&before, digest))
     }
+    /// Fingerprint two opened entries, such as a moved source and its copy.
+    /// When both are regular files that share every data extent on one btrfs
+    /// filesystem (a clone and its source), their contents are equal and are
+    /// read once (ADR 0152). Otherwise each is read in full, as
+    /// [`Self::read_opened`] does. Each result keeps its own file's metadata.
+    pub(super) fn read_opened_pair(
+        first: &fs::File,
+        second: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<(Self, Self)> {
+        if let Some(pair) = Self::read_shared_pair(first, second, cancellation)? {
+            return Ok(pair);
+        }
+        Ok((
+            Self::read_opened(first, cancellation)?,
+            Self::read_opened(second, cancellation)?,
+        ))
+    }
+
+    fn read_shared_pair(
+        first: &fs::File,
+        second: &fs::File,
+        cancellation: &Cancellation,
+    ) -> io::Result<Option<(Self, Self)>> {
+        use std::os::fd::AsRawFd;
+        check_cancel(cancellation)?;
+        let first_before = first.metadata()?;
+        if !first_before.is_file() || !second.metadata()?.is_file() {
+            return Ok(None);
+        }
+        // Entries may be path-only descriptors; the extent map needs an
+        // opened file. Reopening the descriptor never follows a new path.
+        let reopen =
+            |file: &fs::File| fs::File::open(format!("/proc/self/fd/{}", file.as_raw_fd()));
+        let (first_file, second_file) = (reopen(first)?, reopen(second)?);
+        if !same_snapshot(&first_before, &first_file.metadata()?)
+            || !crate::btrfs::share_all_extents(&first_file, &second_file)?
+        {
+            return Ok(None);
+        }
+        // The second file is hashed with its own snapshot checks. The first
+        // must then be unchanged and still share every extent: any write to
+        // it, including through a mapping, which the map flush writes back,
+        // would have given it a new extent.
+        let second_fingerprint = Self::read_opened(second, cancellation)?;
+        if !same_snapshot(&first_before, &first.metadata()?)
+            || !same_snapshot(&first_before, &first_file.metadata()?)
+            || !crate::btrfs::share_all_extents(&first_file, &second_file)?
+        {
+            return Ok(None);
+        }
+        let first_fingerprint = Self::from_metadata(&first_before, second_fingerprint.xxh3_128);
+        Ok(Some((first_fingerprint, second_fingerprint)))
+    }
+
     pub fn restore_metadata(&self, path: &Path) -> io::Result<()> {
         use rustix::fs::{AtFlags, Timespec, Timestamps, UTIME_OMIT, utimensat};
         if !self.link {

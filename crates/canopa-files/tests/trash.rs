@@ -532,3 +532,23 @@ fn crash_trash_helper() {
         )
         .unwrap();
 }
+
+#[test]
+fn trash_on_the_data_home_filesystem_records_no_other_trash_top() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let source = root.path().join("note.txt");
+    fs::write(&source, b"note").unwrap();
+    let engine = OperationEngine::open(root.path().join("state/operations.sqlite3")).unwrap();
+    let outcome = engine
+        .trash_files(
+            &data,
+            std::slice::from_ref(&source),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    assert_eq!(outcome.completed, 1, "{outcome:?}");
+    assert_eq!(fs::read_dir(data.join("Trash/files")).unwrap().count(), 1);
+    // Only subvolume tops below a mount are recorded (ADR 0152).
+    assert!(!data.join("canopa-files").exists());
+}

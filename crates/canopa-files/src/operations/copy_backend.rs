@@ -11,13 +11,41 @@ use std::{
 pub(super) fn copy_regular(
     input: &mut fs::File,
     output: &mut fs::File,
-    progress: impl FnMut(u64) -> io::Result<()>,
+    mut progress: impl FnMut(u64) -> io::Result<()>,
 ) -> io::Result<()> {
+    if let Some(cloned) = clone_regular(input, output)? {
+        // One progress step runs the same cancellation, placement and
+        // namespace checks as a copied window, after the clone.
+        return progress(cloned);
+    }
     let copied = uucore::buf_copy::copy_with_progress(input, output, progress)?;
     if output.metadata()?.len() != copied {
         return Err(super::fingerprint::changed());
     }
     Ok(())
+}
+
+/// Clone a whole source into a new, empty output on btrfs (ADR 0152). No data
+/// is read or written: the output shares the source's extents, which btrfs
+/// copies on the next write to either file. Only a fresh copy from the start of
+/// its source qualifies; anything else, and every refusal, returns `None` with
+/// an empty output so uutils copies the bytes. The caller's snapshot checks and
+/// output receipt apply to a clone exactly as to a copy.
+fn clone_regular(input: &fs::File, output: &fs::File) -> io::Result<Option<u64>> {
+    use rustix::fs::{SeekFrom, seek};
+    let length = input.metadata()?.len();
+    if length == 0
+        || seek(input, SeekFrom::Current(0))? != 0
+        || seek(output, SeekFrom::Current(0))? != 0
+        || output.metadata()?.len() != 0
+        || !crate::btrfs::clone_file(input, output)?
+    {
+        return Ok(None);
+    }
+    if output.metadata()?.len() != length {
+        return Err(super::fingerprint::changed());
+    }
+    Ok(Some(length))
 }
 
 /// Bounded write-behind for large outputs (ADR0165). Without it a slow device

@@ -19,6 +19,167 @@ pub struct TrashLocation {
     #[serde(with = "crate::path_serde::optional")]
     top: Option<PathBuf>,
     top_identity: Option<Identity>,
+    /// Set when this storage is at the top of a subvolume rather than of a
+    /// mount: the record that lets Trash discovery find it again. Never part
+    /// of a stored location.
+    #[serde(skip)]
+    record: Option<PathBuf>,
+}
+
+/// Trash tops below a mount, recorded so discovery can list them (ADR 0152).
+const TOPS_FILE: &str = "canopa-files/trash-tops.json";
+const TOPS_LIMIT: usize = 256;
+const TOPS_BYTES: usize = 1024 * 1024;
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordedTops {
+    tops: Vec<RecordedTop>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordedTop {
+    /// Where the top was when last recorded.
+    #[serde(with = "crate::path_serde")]
+    path: PathBuf,
+    /// The btrfs subvolume at that top. It is found again after the
+    /// subvolume or one of its ancestors is renamed or its drive is mounted
+    /// elsewhere. A top without one is found only at its path.
+    subvolume: Option<crate::btrfs::Subvolume>,
+}
+
+impl RecordedTops {
+    fn path(data_home: &Path) -> PathBuf {
+        data_home.join(TOPS_FILE)
+    }
+    /// A missing record is empty. An unreadable one is an error: it is never
+    /// replaced, so its tops are not forgotten.
+    fn read(path: &Path) -> io::Result<Self> {
+        match fs::symlink_metadata(path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(error),
+            Ok(_) => crate::state_io::read_json(path, TOPS_BYTES).map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("The Trash record {} is unreadable: {error}", path.display()),
+                )
+            }),
+        }
+    }
+}
+
+/// Where trashed items live, as given and as resolved: a subvolume found
+/// below one of these is a trashed item, not a Trash top.
+struct TrashStorage(Vec<PathBuf>);
+
+impl TrashStorage {
+    fn of(data_home: &Path) -> Self {
+        let main = data_home.join("Trash");
+        let mut paths = vec![main.clone()];
+        // A symlinked data home still names the same storage; subvolume
+        // searches report physical folders.
+        paths.extend(fs::canonicalize(&main).ok());
+        paths.extend(
+            fs::canonicalize(data_home)
+                .ok()
+                .map(|home| home.join("Trash")),
+        );
+        Self(paths)
+    }
+    /// Whether `path` is inside the main Trash or inside the trashed items of
+    /// a volume's per-user storage, `.Trash-$uid/files` or `.Trash/$uid/files`.
+    /// Other folders whose names merely begin with `.Trash` are ordinary.
+    fn contains(&self, path: &Path) -> bool {
+        if self.0.iter().any(|storage| path.starts_with(storage)) {
+            return true;
+        }
+        let uid = rustix::process::geteuid().as_raw().to_string();
+        let private = format!(".Trash-{uid}");
+        let names: Vec<&OsStr> = path
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect();
+        names
+            .windows(2)
+            .any(|pair| pair == [OsStr::new(&private), OsStr::new("files")])
+            || names.windows(3).any(|triple| {
+                triple == [OsStr::new(".Trash"), OsStr::new(&uid), OsStr::new("files")]
+            })
+    }
+}
+
+/// The per-user storage folders a top may hold.
+fn top_storage(top: &Path) -> [PathBuf; 2] {
+    let uid = rustix::process::geteuid().as_raw();
+    [
+        top.join(".Trash").join(uid.to_string()),
+        top.join(format!(".Trash-{uid}")),
+    ]
+}
+
+impl RecordedTop {
+    /// The top's current folder, or `None` while it cannot be found: its
+    /// drive is disconnected, it was removed, or it is out of reach. An
+    /// unfound top stays recorded.
+    fn resolve(&self, storage: &TrashStorage, btrfs_mounts: &[PathBuf]) -> Option<PathBuf> {
+        let at_path = fs::File::open(&self.path).ok().filter(|file| {
+            file.metadata().is_ok_and(|metadata| metadata.is_dir())
+                && self
+                    .subvolume
+                    .is_none_or(|subvolume| crate::btrfs::subvolume_root(file) == Some(subvolume))
+        });
+        if at_path.is_some() {
+            return (!storage.contains(&self.path)).then(|| self.path.clone());
+        }
+        crate::btrfs::find_subvolume(self.subvolume?, btrfs_mounts.iter().cloned(), |path| {
+            !storage.contains(path)
+        })
+    }
+
+    /// Whether this top's record can make room for another: the top is
+    /// present, keeps nothing in Trash, and no Undo entry refers to its
+    /// storage (Undo of a Restore moves an item back there). An unfound top is
+    /// never proven empty.
+    fn reclaimable(
+        &self,
+        storage: &TrashStorage,
+        btrfs_mounts: &[PathBuf],
+        in_history: &dyn Fn(&Path) -> io::Result<bool>,
+    ) -> bool {
+        let Some(top) = self.resolve(storage, btrfs_mounts) else {
+            return false;
+        };
+        let referenced = top_storage(&self.path)
+            .iter()
+            .chain(&top_storage(&top))
+            .any(|folder| in_history(folder).unwrap_or(true));
+        !referenced
+            && top_storage(&top)
+                .iter()
+                .all(|storage| match fs::symlink_metadata(storage) {
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+                    Err(_) => false,
+                    Ok(_) => ["files", "info"].iter().all(|part| {
+                        match fs::read_dir(storage.join(part)) {
+                            Ok(mut entries) => entries.next().is_none(),
+                            Err(error) => error.kind() == io::ErrorKind::NotFound,
+                        }
+                    }),
+                })
+    }
+}
+
+/// Mount points of btrfs filesystems, where moved subvolumes are looked for.
+fn btrfs_mounts(mounts: &[(u64, PathBuf, String)]) -> Vec<PathBuf> {
+    mounts
+        .iter()
+        .filter(|(_, _, kind)| kind == "btrfs")
+        .map(|(_, top, _)| top.clone())
+        .collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -110,6 +271,7 @@ impl TrashLocation {
             directory: data_home.join("Trash"),
             top: None,
             top_identity: None,
+            record: None,
         })
     }
 
@@ -121,17 +283,20 @@ impl TrashLocation {
         validate_target(source)?;
         let parent = fs::canonicalize(source.parent().unwrap())?;
         let source_mount = mount_id(&parent)?;
+        let source_device = fs::metadata(&parent)?.dev();
         let mut existing = data_home;
-        let home_mount = loop {
+        let (home_mount, home_device) = loop {
             match fs::canonicalize(existing) {
-                Ok(path) => break mount_id(&path)?,
+                Ok(path) => break (mount_id(&path)?, fs::metadata(&path)?.dev()),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     existing = existing.parent().ok_or(error)?;
                 }
                 Err(error) => return Err(error),
             }
         };
-        if source_mount == home_mount {
+        // A rename stays on one mount and one device. A btrfs subvolume has its
+        // own device inside its mount, so sharing the mount is not enough.
+        if source_mount == home_mount && source_device == home_device {
             return Self::home(data_home);
         }
         let (top, kind) = mounts()?
@@ -149,7 +314,65 @@ impl TrashLocation {
                 "network locations, phones and cameras have no Trash",
             ));
         }
-        Self::volume(top)
+        // Inside a subvolume, the Trash is at the subvolume's own top: the
+        // highest folder of the mount on the source's device, where GIO also
+        // puts it. Discovery cannot find such a top among the mounts, so it is
+        // recorded beside the main Trash.
+        let device_top = device_top(&parent, &top, source_mount, source_device)?;
+        let nested = device_top != top;
+        let mut location = Self::volume(device_top)?;
+        if nested {
+            location.record = Some(RecordedTops::path(data_home));
+        }
+        Ok(location)
+    }
+
+    /// Record a subvolume Trash top before an item moves there, so the Trash
+    /// window lists it. Mount tops need no record. Tops that cannot be found
+    /// now (a disconnected drive) keep their records. A full record makes
+    /// room only by dropping a top proven present and empty; otherwise this
+    /// item fails before it moves.
+    fn record_top(&self, in_history: &dyn Fn(&Path) -> io::Result<bool>) -> io::Result<()> {
+        let (Some(record), Some(top)) = (&self.record, &self.top) else {
+            return Ok(());
+        };
+        let subvolume = crate::btrfs::subvolume_root(&fs::File::open(top)?);
+        let mut recorded = RecordedTops::read(record)?;
+        let existing = recorded.tops.iter_mut().find(|entry| match subvolume {
+            Some(subvolume) => entry.subvolume == Some(subvolume),
+            None => entry.subvolume.is_none() && entry.path == *top,
+        });
+        if let Some(existing) = existing {
+            if existing.path == *top {
+                return Ok(());
+            }
+            // The same subvolume, renamed since: record where it is now.
+            existing.path = top.clone();
+        } else {
+            if recorded.tops.len() >= TOPS_LIMIT {
+                let data_home = record
+                    .parent()
+                    .and_then(Path::parent)
+                    .ok_or_else(|| invalid("invalid Trash record location"))?;
+                let mounts = btrfs_mounts(&mounts()?);
+                let storage = TrashStorage::of(data_home);
+                let empty = recorded
+                    .tops
+                    .iter()
+                    .position(|entry| entry.reclaimable(&storage, &mounts, in_history))
+                    .ok_or_else(|| {
+                        io::Error::other(format!(
+                            "Trash is already kept in {TOPS_LIMIT} subvolumes. Empty Trash in one of them, then try again."
+                        ))
+                    })?;
+                recorded.tops.remove(empty);
+            }
+            recorded.tops.push(RecordedTop {
+                path: top.clone(),
+                subvolume,
+            });
+        }
+        crate::state_io::write_json(record, &recorded, TOPS_BYTES)
     }
 
     /// Existing Trash roots only: discovery never creates storage on a volume.
@@ -163,10 +386,21 @@ impl TrashLocation {
         let mut creation_parents = Vec::new();
         let uid = rustix::process::geteuid().as_raw();
         let mut seen = std::collections::BTreeSet::new();
-        for (_, top, kind) in mounts()? {
-            if kind == "fuse.gvfsd-fuse" {
-                continue;
-            }
+        let mounts = mounts()?;
+        let btrfs = btrfs_mounts(&mounts);
+        let storage = TrashStorage::of(data_home);
+        // Discovery lists what it can; an unreadable record adds no tops.
+        let recorded = RecordedTops::read(&RecordedTops::path(data_home))
+            .unwrap_or_default()
+            .tops
+            .into_iter()
+            .filter_map(|entry| entry.resolve(&storage, &btrfs));
+        let tops = mounts
+            .into_iter()
+            .filter(|(_, _, kind)| kind != "fuse.gvfsd-fuse")
+            .map(|(_, top, _)| top)
+            .chain(recorded);
+        for top in tops {
             if !seen.insert(top.clone()) {
                 continue;
             }
@@ -204,6 +438,7 @@ impl TrashLocation {
                         directory,
                         top: Some(top.clone()),
                         top_identity: Some(identity),
+                        record: None,
                     });
                 }
             }
@@ -227,6 +462,7 @@ impl TrashLocation {
                 directory: shared.join(uid.to_string()),
                 top: Some(top.clone()),
                 top_identity: Some(identity),
+                record: None,
             };
             if location.ensure().is_ok() {
                 return Ok(location);
@@ -236,6 +472,7 @@ impl TrashLocation {
             directory: top.join(format!(".Trash-{uid}")),
             top: Some(top),
             top_identity: Some(identity),
+            record: None,
         };
         location.ensure()?;
         Ok(location)
@@ -555,6 +792,9 @@ impl OperationEngine {
                     // cannot hold Trash; the source itself is untouched.
                     let location = locate(&source).inspect_err(|_| unavailable = true)?;
                     location.ensure().inspect_err(|_| unavailable = true)?;
+                    // The storage works; failing to record it is an ordinary
+                    // failure that leaves the source in place.
+                    location.record_top(&|path| state.history_refers_to(path))?;
                     let physical = fs::canonicalize(source.parent().unwrap())?
                         .join(source.file_name().unwrap());
                     let storage = fs::canonicalize(&location.directory)?;
@@ -1034,6 +1274,24 @@ fn shared_directory(path: &Path) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// The highest ancestor of the canonical `parent`, within the mount at
+/// `mount_top`, that is still on `device` and `mount`.
+fn device_top(parent: &Path, mount_top: &Path, mount: u64, device: u64) -> io::Result<PathBuf> {
+    let mut top = parent.to_owned();
+    for ancestor in parent.ancestors().skip(1) {
+        if !ancestor.starts_with(mount_top) {
+            break;
+        }
+        match fs::metadata(ancestor) {
+            Ok(metadata) if metadata.dev() == device && mount_id(ancestor)? == mount => {
+                top = ancestor.to_owned();
+            }
+            _ => break,
+        }
+    }
+    Ok(top)
 }
 
 fn mount_id(path: &Path) -> io::Result<u64> {

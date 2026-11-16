@@ -8,6 +8,7 @@ mod cases {
     mod activation;
     mod archives;
     mod browsing;
+    mod btrfs;
     mod clipboard_capacity;
     mod configuration_jobs;
     mod configuration_reload;

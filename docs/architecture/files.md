@@ -69,6 +69,7 @@ Paths are relative to `crates/canopa-files/src/`.
 | `thumbnails.rs` | freedesktop thumbnail cache, in-process image decoding and Bubblewrap-confined external thumbnailers. |
 | `opening.rs`, `mounts.rs` | What activating a file means (browse, open, run, launch) and the mount facts that decide program trust. |
 | `actions.rs`, `process.rs`, `action_jobs.rs`, `local_actions.rs` | Custom-action catalog, argument expansion, process groups, and the bounded action queue. |
+| `btrfs.rs` | Optional btrfs facts and fast paths: detection, whole-file clones, shared-extent proofs (ADR 0152). |
 | `operations.rs`, `operations/` | `OperationEngine`: serialized filesystem mutations, the SQLite journal and history (`operations/store/`), transfers (`operations/transfer/`), Undo (`operations/undo/`), Recovery, Trash, deletion, copy backend, fingerprints. |
 | `operation_jobs.rs`, `operation_jobs/` | `OperationJobs`: the shared operation queue, questions, progress, clipboard and drag preparation, Retry/Continue, archives, attention. |
 | `operation_attention.rs`, `desktop_notifications.rs` | Unread attention and standard desktop notifications for finished work. |
@@ -225,7 +226,9 @@ migration, Undo returns and New Document.
 2. Copy the bytes with `uucore::buf_copy::copy_with_progress` on held descriptors
    (`operations/copy_backend.rs`), checking that the copied count equals the output
    length. Large outputs are synced every 32 MiB (write-behind) so progress follows
-   the device.
+   the device. On btrfs the whole source is first cloned into the empty output
+   (`FICLONE`, `btrfs.rs`): no data is read or written and the copy shares the
+   source's extents. Any refusal truncates the output and uutils copies instead.
 3. Fingerprint the output once: size, mode, mtime, type and an XXH3-128 hash of the
    content or raw symlink target (`operations/fingerprint.rs`).
 4. Apply attributes and metadata: permission bits, access and modification times,
@@ -280,7 +283,10 @@ sources are never at risk and every outcome stays consistent.
   a `..` update that a read-only directory would refuse.
 - Across filesystems: commit and verify the destination copy, rename the source
   into an owned quarantine on its own filesystem, re-read and verify it against the
-  copied snapshot, then remove it. A mismatch restores the source; if its name is
+  copied snapshot, then remove it. Two btrfs subvolumes count as two filesystems
+  (separate devices); there the copy is a clone, and when `FIEMAP` proves the
+  source and copy share every extent their contents are read once instead of twice
+  (`Fingerprint::read_opened_pair`). A mismatch restores the source; if its name is
   taken meanwhile, the work is kept for Recovery. The source is never removed
   before the destination is committed.
 - Rename authority is prepared before the name dialog opens (`PreparedRename`): the
@@ -292,8 +298,16 @@ sources are never at risk and every outcome stays consistent.
 ### Trash and deletion
 
 - Trash follows the freedesktop specification (`operations/trash.rs`): the main
-  store is `$XDG_DATA_HOME/Trash`; other filesystems use a validated sticky
-  `.Trash/$uid` or `.Trash-$uid`. The `.trashinfo` is reserved before the payload
+  store is `$XDG_DATA_HOME/Trash`, used when the source shares both mount and
+  device with it; other filesystems use a validated sticky `.Trash/$uid` or
+  `.Trash-$uid` at their top. Inside a btrfs subvolume the top is the subvolume's
+  own top (the highest folder of the mount on the source's device, as in GIO).
+  Such tops are recorded in `$XDG_DATA_HOME/canopa-files/trash-tops.json` before
+  the item moves, so Trash discovery lists them with the mount tops. A record
+  keeps the btrfs subvolume's identity, so a renamed or remounted subvolume is
+  found again; an unreachable top keeps its record, and when 256 are recorded a
+  new top replaces only an empty one that no Undo entry refers to, or fails
+  before moving anything. The `.trashinfo` is reserved before the payload
   moves, and trashing is an atomic rename on the source filesystem. Trash never
   falls back to deletion; when a volume has no usable Trash, Files offers a new,
   confirmed permanent deletion of exactly those items. GVFS FUSE mounts get no Trash.
@@ -726,6 +740,12 @@ between the copy and source removal, while Files must commit the destination fir
 uucore also keeps exit status in one process-global atomic, which cannot isolate
 concurrent operations.
 
+**btrfs as an optional fast path.** Clones replace copied bytes, shared extents
+prove equal contents, and subvolumes get their own Trash, all detected per
+descriptor with generic fallbacks ([ADR 0152](../adr/0152-files-btrfs-clones-and-subvolume-trash.md)).
+A clone moves no bytes, so it is not a second data mover. btrfs offers no
+multi-file transactions; the journal and its proofs stay.
+
 **Trust the upstream copy, fingerprint once.** The source is not re-read to compare
 a finished Copy; the output is fingerprinted once with XXH3-128. Reason: the check is
 non-adversarial and SHA-256 dominated large-file CPU. Destructive steps
@@ -812,6 +832,9 @@ bash scripts/check.sh --files --test CASE [--test CASE ...] [FILTER]
 
 Ordinary cases (`tests/*.rs`) share the `integration` executable, selected by module.
 Crash-boundary tests kill a child worker at a journal step and reopen the history.
+btrfs cases (`btrfs.rs` unit tests, `cases::btrfs`, and the clone cases in
+`operations::source_removal_boundary`) run when `CANOPA_FILES_TEST_BTRFS` names a
+writable btrfs folder and return early otherwise.
 Filesystem tests use private temporary directories; device tests replace the GIO
 storage provider with a private module. Native window, clipboard and drag acceptance
 runs in the private desktop harness (`scripts/run-desktop-acceptance.py`,
