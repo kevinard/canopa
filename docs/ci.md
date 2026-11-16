@@ -26,8 +26,8 @@ build and test dependencies.
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `niri` | `/usr/bin/niri` | Absolute path of the compositor executable to test with |
-| `niri_sha256` | (required) | SHA-256 of that executable; the run refuses a mismatch |
+| `niri` | empty | Absolute path of a Canopa compositor build to test with; empty builds the pinned fork |
+| `niri_sha256` | empty | SHA-256 of that executable (required with `niri`); the run refuses a mismatch |
 | `stasis` | `/usr/bin/stasis` | Stasis idle daemon used by the idle cases |
 
 Jobs are serialized (concurrency group `canopa-desktop`) and have a 12-hour
@@ -36,11 +36,13 @@ nested Niri, so the runner never touches a user's live desktop. The job uploads
 the `desktop-acceptance` artifact (the `desktop-artifacts` directory): one log per case, `summary.json`, and the
 identity of the exact Niri copy used.
 
-Test with the compositor Canopa ships, not a distribution Niri: stock Niri lacks
-the drag-source cancellation fix that the `files-dnd-cancel-*` cases need. Build
-the pinned fork with `scripts/build-niri.py` (see
-[fork maintenance](vendor-maintenance.md#niri-compositor)) and pass its path and
-SHA-256.
+The workflow tests the compositor Canopa ships, not a distribution Niri: stock
+Niri lacks the drag-source cancellation fix that the `files-dnd-cancel-*` cases
+need. Without `niri`, the first step builds the pinned fork in release mode with
+`scripts/build-niri.py` (see [fork maintenance](vendor-maintenance.md#niri-compositor))
+and passes the receipt's path and SHA-256 on; the artifacts record that checksum.
+To reuse a build, pass its path and SHA-256, for example `/usr/lib/canopa/niri`
+from the installed package.
 
 ### Provisioning the runner
 

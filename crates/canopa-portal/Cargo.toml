@@ -11,7 +11,7 @@ default = ["desktop", "accessibility-testing"]
 # Native AT-SPI acceptance helpers for the lib tests. A dev-dependency would
 # pull Iced into the core (--no-default-features) test profile.
 accessibility-testing = ["desktop", "canopa-ui/accessibility-testing"]
-desktop = ["dep:iced", "dep:canopa-ui", "canopa-ui/accessibility", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:canopa-file", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
+desktop = ["dep:iced", "dep:canopa-ui", "canopa-ui/accessibility", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
 
 [[bin]]
 name = "xdg-desktop-portal-canopa"
@@ -42,7 +42,7 @@ iced = { workspace = true, optional = true, features = ["tiny-skia"] }
 glob = { version = "0.3.4", optional = true }
 canopa-apps = { workspace = true, optional = true }
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
-canopa-file = { workspace = true, optional = true }
+canopa-file.workspace = true
 whoami = { version = "1.6.1", default-features = false, optional = true }
 rustix = { workspace = true, features = ["event", "net", "pipe"] }
 image = { workspace = true, optional = true, features = ["gif", "webp"] }

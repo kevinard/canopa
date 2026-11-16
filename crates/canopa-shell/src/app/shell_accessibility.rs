@@ -480,7 +480,7 @@ pub(super) fn launcher_announcements(
     (polite, error.to_owned())
 }
 
-#[cfg(all(test, debug_assertions))]
+#[cfg(all(test, debug_assertions, feature = "accessibility-testing"))]
 mod native_tests;
 #[cfg(test)]
 mod tests;

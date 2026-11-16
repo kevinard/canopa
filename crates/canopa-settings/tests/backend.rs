@@ -202,8 +202,12 @@ fn migrated_shortcut_changes_and_generated_defaults_validate_with_niri() {
         .join("../../packaging/niri/defaults.kdl")
         .canonicalize()
         .unwrap();
-    // The former first save copied the defaults into niri.kdl; one key changed.
-    let copied = std::fs::read_to_string(&defaults)
+    // The former first save copied the defaults of that release into niri.kdl;
+    // one key changed. Migration recognizes those frozen legacy defaults, not
+    // the current ones, which have since gained sections.
+    let legacy =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shortcuts/legacy-defaults.kdl");
+    let copied = std::fs::read_to_string(legacy)
         .unwrap()
         .replace("    Mod+Space {", "    Mod+Shift+Space {");
     std::fs::write(

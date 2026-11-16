@@ -122,6 +122,13 @@ class CheckScripts(unittest.TestCase):
             ["test", "--locked", "-p", "canopa-files", "--test", "uutils_copy", "copy", "--"],
         ])
 
+    def test_runtime_helper_targets_run_by_name(self):
+        for name in ("device_runtime", "network_runtime"):
+            result, commands = self.invoke("--files", "--test", name)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            cargo = [item["args"] for item in commands if item["tool"] == "cargo" and "test" in item["args"]]
+            self.assertEqual(cargo, [["test", "--locked", "-p", "canopa-files", "--test", name, "--"]])
+
     def test_exact_filters_keep_case_local_names_and_no_filter_keeps_the_case(self):
         result, commands = self.invoke("--files", "--test", "transfers", "can_copy_a_file", "--", "--exact")
         self.assertEqual(result.returncode, 0, result.stderr)

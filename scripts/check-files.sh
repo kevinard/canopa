@@ -75,7 +75,7 @@ whole_suite=false
 standalone=()
 for name in "${cases[@]}"; do
     case "$name" in
-        device_runtime|file_clipboard_wayland|local_actions|local_operation_attention|uutils_copy)
+        device_runtime|file_clipboard_wayland|local_actions|local_operation_attention|network_runtime|uutils_copy)
             if [[ " ${standalone[*]} " != *" $name "* ]]; then standalone+=("$name"); fi
             ;;
         integration) suite_filters+=(""); whole_suite=true ;;

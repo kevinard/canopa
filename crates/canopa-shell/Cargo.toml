@@ -7,7 +7,10 @@ rust-version.workspace = true
 license = "MIT"
 
 [features]
-default = ["desktop"]
+default = ["desktop", "accessibility-testing"]
+# Native AT-SPI acceptance helpers for the bin tests. A dev-dependency would
+# pull Iced into the headless provider (--no-default-features) test profile.
+accessibility-testing = ["desktop", "canopa-ui/accessibility-testing"]
 desktop = [
     "dep:canopa-apps",
     "dep:canopa-launcher",
@@ -85,5 +88,4 @@ tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 canopa-services = { workspace = true, features = ["audio", "test-support"] }
-canopa-ui = { workspace = true, features = ["accessibility-testing"] }
 tempfile.workspace = true
