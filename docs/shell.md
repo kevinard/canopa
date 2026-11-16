@@ -334,6 +334,11 @@ Applications that set a wallpaper through the Wallpaper portal hand it to the Sh
 | `canopa-shell --dmenu [-p PROMPT] [-d DELIM] [--json] [--no-custom]` | Choose from lines on stdin; print the choice. |
 | `canopa-shell lock` | Run Swaylock with the lock image set through the Wallpaper portal. This is not the Canopa lock screen; use `canopa-lock`. |
 | `canopa-shell --version` | Print the version. |
+| `canopa-shell --help` (or `-h`) | Print usage and exit. |
+
+Unknown arguments are a usage error (exit 2) and never start the Shell; only
+`--dmenu` ignores words it does not know, so dmenu-style callers can keep passing
+their launcher's other flags.
 
 Menu names are exact and case-sensitive; quote names with spaces, and use
 `--toggle-menu=NAME` for a name starting with `-`. Menus open on the bar of Niri's

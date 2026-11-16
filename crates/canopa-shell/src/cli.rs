@@ -3,6 +3,8 @@ pub enum Command {
     Run(ConfigOptions),
     CheckConfig(ConfigOptions),
     PrintVersion,
+    /// `--help`/`-h`: print [`USAGE`] and exit 0.
+    PrintHelp,
     ClipboardFrame(crate::launcher::clipboard::Kind),
     LauncherExtension(String, Option<String>),
     /// `--app-scope`: start an application in its own named systemd scope.
@@ -60,6 +62,37 @@ impl Default for DmenuOptions {
     }
 }
 
+/// Printed by `--help`; keep it in step with the command table in `docs/shell.md`.
+pub const USAGE: &str = "\
+Usage: canopa-shell [OPTIONS]
+       canopa-shell COMMAND
+
+Run the Canopa Shell (one instance per session), or send a command to it.
+
+Options for running the Shell:
+  --canopa-config PATH   Use an explicit shared configuration file
+  --config PATH          Use a legacy Shell configuration file
+  --defaults             Use the embedded defaults
+  --check-config         Validate the configuration, print one JSON line and exit
+  --show-source          With --check-config, also print the error and its source
+
+Commands:
+  reload, --reload             Reload the running Shell's configuration
+  --toggle-menu NAME           Open a named menu, or close it if open
+  --open-menu NAME             Open a named menu
+  --open-template NAME         Open a workspace template
+  --toggle-panel               Toggle the bar's panel
+  volume|microphone|brightness|keyboard-backlight|media ACTION [STEP]
+                               Device keys
+  --dmenu [-p PROMPT] [-d DELIM] [--json|--entry-format plain|jsonl] [--no-custom]
+                               Choose from lines on stdin and print the choice
+  lock                         Run Swaylock with the portal lock-screen image
+  -V, --version                Print the version
+  -h, --help                   Print this help
+
+See docs/shell.md for details.
+";
+
 pub fn parse() -> Command {
     let mut args = std::env::args_os().skip(1).peekable();
     // Application arguments need not be UTF-8, so this mode parses them raw.
@@ -97,9 +130,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     let mut custom_delimiter = false;
     let mut dmenu_option = false;
     let mut unknown_argument = None;
+    let mut help = false;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--help" | "-h" => help = true,
             arg if matches!(
                 arg.split('=').next(),
                 Some("--open-menu" | "--toggle-menu" | "--open-template")
@@ -258,6 +293,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             _ => unknown_argument = Some(arg),
         }
     }
+    if help {
+        return Command::PrintHelp;
+    }
     if let Some(command) = special_mode {
         if matches!(
             command,
@@ -287,6 +325,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
     {
         return Command::UsageError("configuration checking options cannot be combined with other modes; --show-source requires --check-config".into());
     }
+    // dmenu mode keeps ignoring words it does not know, as dmenu-style callers
+    // pass flags of other launchers; starting the Shell never does.
+    if let (false, Some(arg)) = (dmenu, unknown_argument) {
+        return Command::UsageError(format!(
+            "unexpected argument {arg:?}; run canopa-shell --help for usage"
+        ));
+    }
     if dmenu {
         if custom_delimiter && matches!(dmenu_options.entry_format, DmenuEntryFormat::JsonLines) {
             return Command::UsageError(
@@ -306,6 +351,45 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_prints_usage_instead_of_starting_the_shell() {
+        for args in [
+            &["--help"][..],
+            &["-h"],
+            &["--defaults", "--help"],
+            &["--dmenu", "-h"],
+        ] {
+            assert!(matches!(
+                parse_args(args.iter().map(|word| word.to_string())),
+                Command::PrintHelp
+            ));
+        }
+        for flag in [
+            "--check-config",
+            "--toggle-menu",
+            "--dmenu",
+            "lock",
+            "--version",
+        ] {
+            assert!(USAGE.contains(flag), "usage omits {flag}");
+        }
+    }
+
+    #[test]
+    fn unknown_arguments_never_start_the_shell() {
+        for args in [
+            &["--bogus"][..],
+            &["--defaults", "stray"],
+            &["--check-config", "--bogus"],
+        ] {
+            assert!(matches!(
+                parse_args(args.iter().map(|word| word.to_string())),
+                Command::UsageError(message) if message.contains("unexpected argument")
+            ));
+        }
+        assert!(matches!(parse_args(Vec::<String>::new()), Command::Run(_)));
+    }
 
     #[test]
     fn lock_is_a_standalone_command_without_configuration_or_dmenu_options() {

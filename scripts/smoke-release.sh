@@ -148,6 +148,11 @@ test -s "$bundle/share/canopa/notifications.md"
 test -s "$bundle/share/canopa/shell.md"
 test -s "$bundle/share/canopa/launcher.md"
 PATH="$bundle/bin" canopa-shell --version
+env -u WAYLAND_DISPLAY PATH="$bundle/bin" canopa-shell --help > /dev/null
+if env -u WAYLAND_DISPLAY PATH="$bundle/bin" canopa-shell --unknown-smoke-argument 2> /dev/null; then
+  echo "canopa-shell accepted an unknown argument" >&2
+  exit 1
+fi
 python3 - "$bundle/bin/canopa-wifi-provider" "$bundle/bin/canopa-audio-provider" "$bundle/bin/canopa-media-provider" "$bundle/bin/canopa" <<'PY'
 import json
 import os
