@@ -317,7 +317,9 @@ and the read-only option. Places lists Home, Documents, Downloads and Pictures
   QT_QPA_PLATFORM=wayland QT_QPA_PLATFORMTHEME=xdgdesktopportal YOUR_QT_APPLICATION
   ```
 
-  The Canopa session does not set `QT_QPA_PLATFORMTHEME`. A `QFileDialog`
+  The packaged Canopa session sets `QT_QPA_PLATFORMTHEME=xdgdesktopportal` unless
+  you already chose a platform theme (ADR 0153); other sessions need it set by
+  hand, and the plugin must be installed (Arch: part of `qt6-base`). A `QFileDialog`
   created before the application's event loop starts uses Qt's own dialog.
   Dialogs opened after startup reach Canopa.
 
@@ -523,10 +525,10 @@ service. Portal notifications follow Notify's Do Not Disturb, sounds and history
 
 Portal dialogs use the Wayland app ID `org.canopa.Portal`. When an application
 passes its window as the parent, the dialog attaches to it (xdg-foreign) and
-Niri opens it floating, like other parented dialogs. Without a parent, or when the parent handle has
-expired, the dialog is an independent window and Niri tiles it. To float every
-Canopa portal dialog, add this rule to your own Niri configuration (for the
-packaged session, `~/.config/canopa/niri-custom.kdl`):
+Niri opens it floating, like other parented dialogs. Without a parent, or when the
+parent handle has expired, the dialog is an independent window. The packaged
+session's Niri defaults float it anyway (ADR 0153). In your own Niri
+configuration, outside the packaged session, add the same rule to float them:
 
 ```kdl
 window-rule {

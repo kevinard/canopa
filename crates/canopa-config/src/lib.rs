@@ -40,17 +40,20 @@ impl Component {
         }
     }
 
-    fn legacy_directory(self) -> &'static str {
+    /// The application directory consulted when no shared file exists. Only the
+    /// Shell and Notify predate the shared file; the other components never had
+    /// their own and use the embedded defaults.
+    fn legacy_directory(self) -> Option<&'static str> {
         match self {
             // Renaming the shell must not hide an existing pre-Canopa configuration.
-            Self::Shell => "niribar",
-            Self::Notifications => "canopa-notify",
-            Self::Files => "canopa-files",
-            Self::Wallpaper => "canopa-wallpaper",
-            Self::Lockscreen => "canopa-lock",
-            Self::Greeter => "canopa-greeter",
-            Self::Polkit => "canopa-polkit",
-            Self::Pinentry => "canopa-pinentry",
+            Self::Shell => Some("niribar"),
+            Self::Notifications => Some("canopa-notify"),
+            Self::Files
+            | Self::Wallpaper
+            | Self::Lockscreen
+            | Self::Greeter
+            | Self::Polkit
+            | Self::Pinentry => None,
         }
     }
 }
@@ -130,21 +133,10 @@ pub fn discover_in(base: &Path, component: Component) -> Result<Request, Diagnos
     if common != Request::Defaults {
         return Ok(common);
     }
-    if matches!(
-        component,
-        Component::Files
-            | Component::Wallpaper
-            | Component::Lockscreen
-            | Component::Greeter
-            | Component::Polkit
-            | Component::Pinentry
-    ) {
+    let Some(directory) = component.legacy_directory() else {
         return Ok(Request::Defaults);
-    }
-    discover_candidates([(
-        base.join(component.legacy_directory()).join("config.kdl"),
-        Format::Legacy,
-    )])
+    };
+    discover_candidates([(base.join(directory).join("config.kdl"), Format::Legacy)])
 }
 
 /// Shared-only consumers have no application legacy source to consult.

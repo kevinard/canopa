@@ -35,16 +35,18 @@ impl ThemeToken {
     }
 
     fn from_name(name: &str) -> Option<Self> {
+        // Appearance role names, as everywhere else, with the older palette
+        // token names kept as aliases.
         Some(match name.to_ascii_lowercase().as_str() {
             "accent" => ThemeToken::Accent,
             "text" => ThemeToken::Text,
-            "subtext" => ThemeToken::Subtext,
-            "base" => ThemeToken::Base,
-            "surface0" => ThemeToken::Surface0,
-            "surface1" => ThemeToken::Surface1,
+            "muted" | "subtext" => ThemeToken::Subtext,
+            "background" | "base" => ThemeToken::Base,
+            "surface" | "surface0" => ThemeToken::Surface0,
+            "raised" | "surface1" => ThemeToken::Surface1,
             "border" => ThemeToken::Border,
-            "overlay0" => ThemeToken::Overlay0,
-            "critical" => ThemeToken::Critical,
+            "disabled" | "overlay0" => ThemeToken::Overlay0,
+            "danger" | "critical" => ThemeToken::Critical,
             "warning" => ThemeToken::Warning,
             "success" => ThemeToken::Success,
             _ => return None,
@@ -199,6 +201,29 @@ mod tests {
             ColorValue::parse("CRITICAL").unwrap(),
             ColorValue::Token(ThemeToken::Critical)
         );
+    }
+
+    #[test]
+    fn appearance_role_names_and_palette_tokens_name_the_same_colors() {
+        for (role, token) in [
+            ("muted", "subtext"),
+            ("background", "base"),
+            ("surface", "surface0"),
+            ("raised", "surface1"),
+            ("disabled", "overlay0"),
+            ("danger", "critical"),
+        ] {
+            assert_eq!(
+                ColorValue::parse(role).unwrap(),
+                ColorValue::parse(token).unwrap(),
+                "{role} and {token}"
+            );
+            // Both spellings mean the same appearance role everywhere else.
+            assert_eq!(
+                canopa_theme::ColorRole::parse(role),
+                canopa_theme::ColorRole::parse(token)
+            );
+        }
     }
 
     #[test]

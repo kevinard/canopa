@@ -57,13 +57,10 @@ def stage(destination, binaries, compositor=None, component="desktop", frontend=
         install(helper, "usr/lib/canopa/greeter-displays", True)
         install(ROOT / "packaging/polkit/org.canopa.greeter.policy",
                 "usr/share/polkit-1/actions/org.canopa.greeter.policy")
-        greetd = destination / "usr/share/canopa/greetd"
-        greetd.mkdir(parents=True, exist_ok=True)
-        for compositor, name in (("niri", "canopa.toml"), ("cage", "canopa-cage.toml"),
-                                 ("weston", "canopa-weston.toml")):
-            (greetd / name).write_text(
-                '[terminal]\nvt = 1\n\n[default_session]\ncommand = "dbus-run-session '
-                f'/usr/bin/canopa-greeter session --compositor {compositor}"\nuser = "canopa-greeter"\n')
+        # The release archive ships the same samples; both use the packaged layout.
+        for sample, name in (("config.toml", "canopa.toml"), ("config-cage.toml", "canopa-cage.toml"),
+                             ("config-weston.toml", "canopa-weston.toml")):
+            install(ROOT / "packaging/greetd" / sample, f"usr/share/canopa/greetd/{name}")
         return
     if component == "oo7":
         prompter = binaries / "canopa-keyring-prompter"

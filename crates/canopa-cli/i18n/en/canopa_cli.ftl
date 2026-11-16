@@ -3,7 +3,7 @@
 ## Help (`canopa --help`); the derive's doc comments in main.rs are the same text.
 
 cli-about = Canopa desktop tools
-cli-settings-about = Open Canopa Settings for displays, input, personalization and idle policy
+cli-settings-about = Open Canopa Settings for devices, appearance, system and desktop preferences
 cli-wallpaper-about = Wallpaper daemon and live image controls
 # "preview" and "--help" are literal arguments.
 cli-lock-about = Secure session lock; pass preview or --help for rendering tools

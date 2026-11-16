@@ -18,7 +18,7 @@ greeter {
     // users "alice" "bob"
     // default-user "alice"
     // Installed /usr/local/share/wayland-sessions and /usr/share/wayland-sessions
-    // entries populate the selector. Install the bundled canopa.desktop there.
+    // entries populate the selector. The canopa package installs canopa.desktop.
     discover-sessions #true
     // For a curated list, set #false and add explicit session blocks instead.
     view {

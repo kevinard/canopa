@@ -1,6 +1,7 @@
 // Omit nodes to use their defaults. Configuration changes apply to future receipts.
 sound enabled=#true theme="freedesktop" default="message-new-instant"
-icons theme="hicolor" scale=1
+// Icons follow the desktop icon theme; icons theme="NAME" pins one instead.
+icons scale=1
 
 // App identities prefer the desktop-entry hint, falling back to the sender's app name.
 // Rules are ordered: the first decisive matching rule wins.

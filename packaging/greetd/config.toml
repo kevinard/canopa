@@ -6,5 +6,5 @@
 vt = 1
 
 [default_session]
-command = "dbus-run-session /usr/local/bin/canopa-greeter session --compositor niri"
-user = "greeter"
+command = "dbus-run-session /usr/bin/canopa-greeter session --compositor niri"
+user = "canopa-greeter"

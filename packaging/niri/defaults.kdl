@@ -32,10 +32,12 @@ window-rule {
     border { on; width 1; active-color "#9aaba78c"; inactive-color "#9aaba759"; }
     shadow { on; softness 20; spread 0; offset x=0 y=6; color "#00000040"; }
 }
-// Authentication and passphrase prompts float over the strip instead of
-// opening a column. Niri already floats Quick Look and other parented dialogs.
+// Authentication and passphrase prompts, and portal dialogs (file chooser,
+// screen sharing, …) even when the application gave no parent window, float
+// over the strip instead of opening a column. Niri already floats Quick Look
+// and other parented dialogs.
 window-rule {
-    match app-id="^org\\.canopa\\.(Pinentry|Keyring|Polkit)$"
+    match app-id="^org\\.canopa\\.(Pinentry|Keyring|Polkit|Portal)$"
     open-floating true
 }
 // The wallpaper stays behind the zoomed-out workspaces in the overview.

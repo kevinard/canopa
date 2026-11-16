@@ -349,7 +349,7 @@ format {
     segment "{icon}" color="accent" size=18
     segment "{value}%" {
         style weight="bold"
-        style state="muted" color="overlay0"
+        style state="muted" color="disabled"
     }
 }
 ```
@@ -358,9 +358,11 @@ A segment takes either inline style properties or `style` children (one without
 `state`, plus one per state), not both.
 
 Segment and bar styles take `color`, `size` and `weight` (`"light"`, `"normal"`,
-`"bold"`). `color` is `#rrggbb`, `#rrggbbaa` or one of the tokens `accent`, `text`,
-`subtext`, `base`, `surface0`, `surface1`, `border`, `overlay0`, `critical`,
-`warning` and `success`, which follow the current palette. A
+`"bold"`). `color` is `#rrggbb`, `#rrggbbaa` or one of the appearance roles
+`accent`, `text`, `muted`, `background`, `surface`, `raised`, `border`,
+`disabled`, `danger`, `warning` and `success`, which follow the current palette.
+The older names `subtext`, `base`, `surface0`, `surface1`, `overlay0` and
+`critical` remain accepted for the same roles. A
 standalone `"{icon}"` segment uses the icon size (20 by default); other segments use
 the text size (12). Every module has `{icon}` and `{value}`.
 
