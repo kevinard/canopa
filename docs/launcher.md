@@ -49,7 +49,8 @@ single application match can show its desktop-entry description.
 Ctrl+Enter performs its second action; Ctrl+1 through Ctrl+5 perform the respective
 named action. Escape clears a nonempty query, then closes on a second press.
 
-Applications match on their name, generic name, comment and keywords, and, with
+Applications match on their name, generic name, comment and keywords (the session
+language's `Keywords[xx]` plus the untranslated `Keywords`), and, with
 the lowest priority, on their desktop-file id and the file name of their `Exec`
 program: `nautilus` finds Files and `org.gnome.Nautilus` does too.
 

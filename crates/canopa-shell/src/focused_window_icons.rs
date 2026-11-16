@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationIcon {
@@ -9,16 +9,14 @@ pub struct ApplicationIcon {
 }
 
 pub(crate) fn resolve_application_icon(app_id: &str) -> Option<ApplicationIcon> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<ApplicationIcon>>>> = OnceLock::new();
-
     if app_id.is_empty() {
         return None;
     }
 
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = icon_cache();
     if let Some(icon) = cache
         .lock()
-        .expect("focused-window icon cache poisoned")
+        .unwrap_or_else(|poison| poison.into_inner())
         .get(app_id)
         .cloned()
     {
@@ -28,21 +26,58 @@ pub(crate) fn resolve_application_icon(app_id: &str) -> Option<ApplicationIcon> 
     let resolved = resolve_application_icon_uncached(app_id);
     cache
         .lock()
-        .expect("focused-window icon cache poisoned")
+        .unwrap_or_else(|poison| poison.into_inner())
         .insert(app_id.to_string(), resolved.clone());
     resolved
 }
 
-/// Installed applications, discovered once per process.
-pub(crate) fn installed_applications() -> &'static [crate::desktop_apps::DesktopApplication] {
-    static APPLICATIONS: OnceLock<Vec<crate::desktop_apps::DesktopApplication>> = OnceLock::new();
+fn icon_cache() -> &'static Mutex<HashMap<String, Option<ApplicationIcon>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<ApplicationIcon>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
-    APPLICATIONS
-        .get_or_init(|| crate::desktop_apps::discover_installed_applications().unwrap_or_default())
+type Catalog = Arc<Vec<crate::desktop_apps::DesktopApplication>>;
+
+fn catalog() -> &'static RwLock<Option<Catalog>> {
+    static APPLICATIONS: RwLock<Option<Catalog>> = RwLock::new(None);
+    &APPLICATIONS
+}
+
+/// Installed applications: discovered on first use, then replaced by each
+/// catalog the launcher reads ([`publish_installed_applications`]).
+pub(crate) fn installed_applications() -> Catalog {
+    if let Some(catalog) = catalog()
+        .read()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+    {
+        return catalog;
+    }
+    let discovered =
+        Arc::new(crate::desktop_apps::discover_installed_applications().unwrap_or_default());
+    catalog()
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .get_or_insert(discovered)
+        .clone()
+}
+
+/// Adopt a freshly discovered catalog, so applications installed or removed
+/// since the last one get (or lose) their window icons without a restart.
+pub(crate) fn publish_installed_applications(
+    applications: Vec<crate::desktop_apps::DesktopApplication>,
+) {
+    *catalog()
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner()) = Some(Arc::new(applications));
+    icon_cache()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clear();
 }
 
 fn resolve_application_icon_uncached(app_id: &str) -> Option<ApplicationIcon> {
-    resolve_application_icon_from_applications(app_id, installed_applications())
+    resolve_application_icon_from_applications(app_id, &installed_applications())
 }
 
 fn resolve_application_icon_from_applications(
@@ -163,6 +198,19 @@ mod tests {
             dbus_activatable: false,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn an_application_installed_later_gets_its_icon_from_the_next_catalog() {
+        let id = "org.example.InstalledLater";
+        super::publish_installed_applications(Vec::new());
+        assert_eq!(super::resolve_application_icon(id), None);
+        // The launcher read a new catalog: the cached miss is forgotten.
+        super::publish_installed_applications(vec![app(&format!("{id}.desktop"), "Later")]);
+        assert_eq!(
+            super::resolve_application_icon(id).map(|icon| icon.name),
+            Some(format!("{id}.desktop-icon"))
+        );
     }
 
     #[test]
