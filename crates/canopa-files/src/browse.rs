@@ -221,9 +221,95 @@ impl Directory {
     }
 }
 
+/// A name ordered the way people count: "file2" before "file10". Runs of
+/// ASCII digits compare by value, other text case-insensitively; at equal
+/// value, fewer leading zeros come first ("7" before "07").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NaturalName(Vec<NameSegment>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum NameSegment {
+    /// Digits without leading zeros, and how many zeros there were.
+    Number {
+        digits: String,
+        zeros: usize,
+    },
+    Text(String),
+}
+
+impl NaturalName {
+    pub fn new(name: &str) -> Self {
+        let mut segments = Vec::new();
+        let mut chars = name.char_indices().peekable();
+        while let Some(&(start, ch)) = chars.peek() {
+            let numeric = ch.is_ascii_digit();
+            let mut end = start;
+            while let Some(&(index, ch)) = chars.peek() {
+                if ch.is_ascii_digit() != numeric {
+                    break;
+                }
+                end = index + ch.len_utf8();
+                chars.next();
+            }
+            let run = &name[start..end];
+            segments.push(if numeric {
+                let digits = run.trim_start_matches('0');
+                NameSegment::Number {
+                    zeros: run.len() - digits.len(),
+                    digits: digits.to_owned(),
+                }
+            } else {
+                NameSegment::Text(run.to_lowercase())
+            });
+        }
+        Self(segments)
+    }
+}
+
+impl Ord for NameSegment {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use NameSegment::{Number, Text};
+        match (self, other) {
+            (
+                Number { digits, zeros },
+                Number {
+                    digits: other_digits,
+                    zeros: other_zeros,
+                },
+            ) => digits
+                .len()
+                .cmp(&other_digits.len())
+                .then_with(|| digits.cmp(other_digits))
+                .then_with(|| zeros.cmp(other_zeros)),
+            // Numbers lead text, as digits lead letters in plain ordering.
+            (Number { .. }, Text(_)) => std::cmp::Ordering::Less,
+            (Text(_), Number { .. }) => std::cmp::Ordering::Greater,
+            (Text(text), Text(other)) => text.cmp(other),
+        }
+    }
+}
+
+impl PartialOrd for NameSegment {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for NaturalName {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for NaturalName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum SortKey {
-    Name(String),
+    Name(NaturalName),
     Size(u64),
     Modified(Option<SystemTime>),
     Kind(String),
@@ -232,7 +318,7 @@ enum SortKey {
 fn sort_entries(entries: &mut [Entry], view: &ViewSettings) {
     let key = |entry: &Entry| {
         let primary = match view.sort {
-            SortField::Name => SortKey::Name(entry.name().to_lowercase()),
+            SortField::Name => SortKey::Name(NaturalName::new(&entry.name())),
             SortField::Size => SortKey::Size(entry.size),
             SortField::Modified => SortKey::Modified(entry.modified),
             SortField::Kind => SortKey::Kind(
@@ -243,7 +329,7 @@ fn sort_entries(entries: &mut [Entry], view: &ViewSettings) {
                     .unwrap_or_default(),
             ),
         };
-        (primary, entry.name().to_lowercase(), entry.path.clone())
+        (primary, NaturalName::new(&entry.name()), entry.path.clone())
     };
     // Folders lead unless the view mixes them with files in one order.
     let group = |entry: &Entry| view.folders_first && !entry.is_directory();
