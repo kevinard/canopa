@@ -389,7 +389,8 @@ itself starts on demand. Stopping or upgrading the listener cannot unlock the sc
 and the sleep delay inhibitor is released only after a confirmed lock, so suspend never
 shows the desktop on resume. The listener also restarts a locker that crashed while
 locked, within a budget, because ext-session-lock otherwise leaves a locked screen
-with no prompt.
+with no prompt. Each restart first reads `LockedHint`: once another locker (a direct
+`canopa-lock` run) has unlocked the session, recovery ends instead of locking it again.
 
 **PAM in an isolated worker.** Each attempt runs in a child process. Blocking PAM
 modules (fingerprint, tokens) cannot freeze the UI, cancellation can kill the whole

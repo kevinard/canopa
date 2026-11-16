@@ -303,6 +303,20 @@ fn spawn_lock(
     drop(child);
     Ok((child_process, tokio::net::UnixStream::from_std(parent)?))
 }
+/// The session's `LockedHint`, or `None` when logind does not answer in time.
+async fn locked_hint(target: &Target) -> Option<bool> {
+    tokio::time::timeout(DEADLINE, async {
+        target
+            .proxy()
+            .await?
+            .get_property::<bool>("LockedHint")
+            .await
+            .map_err(anyhow::Error::from)
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+}
 struct Locker {
     request: canopa_config::Request,
     session: String,
@@ -413,9 +427,21 @@ impl Locker {
         self.recover_at = Some(tokio::time::Instant::now() + RECOVERY_DELAY);
         eprintln!("locker exited while the session was locked; restarting it");
     }
-    fn recover(&mut self) {
+    /// Whether a due recovery should start a locker, given the session's
+    /// current `LockedHint`. Another locker (a direct `canopa-lock` run) may
+    /// have unlocked the session since this one crashed: recovering then would
+    /// lock it again, so a known unlocked session ends the recovery. An unknown
+    /// hint keeps recovering, as the compositor may still hold the lock.
+    fn recovery_due(&mut self, hint: Option<bool>) -> bool {
         self.recover_at = None;
-        if self.child.is_none() {
+        if hint == Some(false) {
+            self.recovering = false;
+            return false;
+        }
+        self.child.is_none()
+    }
+    async fn recover(&mut self, target: &Target) {
+        if self.recovery_due(locked_hint(target).await) {
             self.launch();
         }
     }
@@ -450,18 +476,7 @@ impl Locker {
         // that gap belong to the next generation and must not complete with it.
         let unlocking = self.child.is_some()
             && self.locked == Some(true)
-            && matches!(
-                tokio::time::timeout(DEADLINE, async {
-                    target
-                        .proxy()
-                        .await?
-                        .get_property::<bool>("LockedHint")
-                        .await
-                        .map_err(anyhow::Error::from)
-                })
-                .await,
-                Ok(Ok(false))
-            );
+            && locked_hint(target).await == Some(false);
         let next = self.child.is_none() || unlocking || self.pending;
         if let Some(request) = request {
             self.waiters.add(
@@ -590,7 +605,7 @@ impl Locker {
                         Some(at) => tokio::time::sleep_until(at).await,
                         None => std::future::pending().await,
                     }
-                } => self.recover(),
+                } => self.recover(&target).await,
                 confirmed = async {
                     use tokio::io::AsyncReadExt;
                     match self.ready.as_mut() {
@@ -656,6 +671,29 @@ mod tests {
         locker.locked = None;
         locker.recovering = true;
         assert!(locker.lost(false));
+    }
+
+    #[test]
+    fn recovery_never_relocks_a_session_another_locker_unlocked() {
+        let mut locker = locker();
+        locker.locked = Some(true);
+        assert!(locker.lost(false));
+        // As `finished` does for the crashed child.
+        locker.locked = None;
+        locker.schedule_recovery(std::time::Instant::now());
+        // A direct `canopa-lock` authenticated and cleared the hint first.
+        assert!(!locker.recovery_due(Some(false)));
+        assert!(!locker.recovering && locker.recover_at.is_none());
+        // Its own later failure is then no longer a lost lock.
+        assert!(!locker.lost(false));
+
+        // Still locked, or logind silent: the orphaned lock needs a locker.
+        let mut locker = super::tests::locker();
+        locker.locked = Some(true);
+        locker.schedule_recovery(std::time::Instant::now());
+        assert!(locker.recovery_due(Some(true)));
+        locker.schedule_recovery(std::time::Instant::now());
+        assert!(locker.recovery_due(None));
     }
 
     #[test]
