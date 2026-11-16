@@ -210,6 +210,7 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     let mut order: Vec<_> = (0..choices.len())
         .map(|index| control(dialog.window, index))
         .collect();
+    let default = default_reply(choices.iter().map(|(_, reply, _, _)| reply));
     let mut buttons = Vec::new();
     for (index, (label, choice, kind, danger)) in choices.iter().enumerate() {
         let message = Message::FileOperation(Event::TransferAnswer(
@@ -281,5 +282,48 @@ pub(super) fn view<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, 
     .width(Length::Fill)
     .height(Length::Fill)
     .style(move |_| chrome::window_surface(&appearance, true));
-    super::focus::group(body, order, Vec::new(), Some(control(dialog.window, 0)))
+    super::focus::group(
+        body,
+        order,
+        Vec::new(),
+        Some(control(dialog.window, default)),
+    )
+}
+
+/// Return keeps both items, else skips this one; Cancel only when it is the
+/// only answer.
+fn default_reply<'a>(replies: impl IntoIterator<Item = &'a TransferReply> + Clone) -> usize {
+    let position = |wanted: ConflictChoice| {
+        replies.clone().into_iter().position(
+            |reply| matches!(reply, TransferReply::Resolve { choice, .. } if *choice == wanted),
+        )
+    };
+    position(ConflictChoice::KeepBoth)
+        .or_else(|| position(ConflictChoice::Skip))
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod default_tests {
+    use super::*;
+
+    #[test]
+    fn return_keeps_both_or_skips_instead_of_cancelling() {
+        let resolve = |choice| TransferReply::Resolve {
+            choice,
+            apply_to_remaining: false,
+        };
+        let conflict = [
+            TransferReply::Cancel,
+            resolve(ConflictChoice::Replace),
+            resolve(ConflictChoice::KeepBoth),
+            resolve(ConflictChoice::Skip),
+        ];
+        assert_eq!(default_reply(&conflict), 2);
+        assert_eq!(
+            default_reply(&[TransferReply::Cancel, resolve(ConflictChoice::Skip)]),
+            1
+        );
+        assert_eq!(default_reply(&[TransferReply::Cancel]), 0);
+    }
 }
