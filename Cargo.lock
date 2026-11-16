@@ -1343,6 +1343,7 @@ dependencies = [
  "kdl 6.7.1",
  "libc",
  "niri-ipc",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "tempfile",

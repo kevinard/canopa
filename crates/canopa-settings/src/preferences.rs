@@ -127,18 +127,36 @@ impl crate::file_page::FileModel for Personalization {
     fn write(&self, _: &crate::session::Paths, source: &Snapshot) -> Result<Snapshot> {
         let mut value = self.values.clone();
         value.appearance.accent = parse_accent(&self.accent)?;
-        let saved = value.save(source)?;
-        // The Settings portal owns its own explicit reload contract.
-        let _ = crate::storage::command(
+        let mut saved = value.save(source)?;
+        // The Settings portal owns its own explicit reload contract; a portal
+        // that is not running reads the new file when it starts.
+        let mut failed = Vec::new();
+        if crate::storage::command(
             "systemctl",
             &[
                 "--user".into(),
-                "reload".into(),
+                "try-reload-or-restart".into(),
                 "xdg-desktop-portal-canopa.service".into(),
             ],
-        );
-        let _ =
-            crate::storage::command(companion("canopa-notify"), &["ctl".into(), "reload".into()]);
+        )
+        .is_err()
+        {
+            failed.push("xdg-desktop-portal-canopa");
+        }
+        // Likewise, only a running Notify daemon needs to reload.
+        let notify_running = canopa_notify_client::default_socket().is_ok_and(|path| path.exists());
+        if notify_running
+            && crate::storage::command(companion("canopa-notify"), &["ctl".into(), "reload".into()])
+                .is_err()
+        {
+            failed.push("canopa-notify");
+        }
+        if !failed.is_empty() {
+            saved.reload_problem = Some(fl!(
+                "settings-saved-reload-failed",
+                programs = failed.join(", ")
+            ));
+        }
         Ok(saved)
     }
     /// Widgets writes the rest of `config.kdl`.

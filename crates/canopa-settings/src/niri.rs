@@ -131,34 +131,40 @@ const MOTION_OVERRIDE: &str =
     "\n// Canopa Settings: reduce window and workspace motion.\nanimations { off; }\n";
 
 #[cfg(feature = "desktop")]
-pub(crate) fn reduced_motion(source: &crate::storage::Snapshot) -> Result<bool> {
-    let enabled = source.text.ends_with(MOTION_OVERRIDE);
+const MOTION_MARKER: &str = "// Canopa Settings: reduce window and workspace motion.";
+
+/// The text without Settings' reduced-motion block, and whether it was there.
+/// The block is recognized wherever it sits, so text appended after it does not
+/// lock the control; only a marker without its exact block (or two blocks) is
+/// an outside edit.
+#[cfg(feature = "desktop")]
+fn split_motion(text: &str) -> Result<(String, bool)> {
+    let blocks = text.matches(MOTION_OVERRIDE).count();
     ensure!(
-        enabled
-            || !source
-                .text
-                .contains("// Canopa Settings: reduce window and workspace motion."),
+        blocks <= 1 && text.matches(MOTION_MARKER).count() == blocks,
         "{}",
         fl!("settings-error-motion-edited")
     );
-    Ok(enabled)
+    Ok((text.replacen(MOTION_OVERRIDE, "", 1), blocks == 1))
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn reduced_motion(source: &crate::storage::Snapshot) -> Result<bool> {
+    split_motion(&source.text).map(|(_, enabled)| enabled)
 }
 
 #[cfg(feature = "desktop")]
 pub(crate) fn set_reduced_motion(paths: &crate::session::Paths, enabled: bool) -> Result<()> {
     ensure!(paths.active(), "{}", fl!("settings-error-motion-session"));
     let source = crate::storage::Snapshot::load(paths.niri())?;
-    if reduced_motion(&source)? == enabled {
+    let (without, current) = split_motion(&source.text)?;
+    if current == enabled {
         return Ok(());
     }
     let text = if enabled {
-        format!("{}{}", source.text, MOTION_OVERRIDE)
+        format!("{without}{MOTION_OVERRIDE}")
     } else {
-        source
-            .text
-            .strip_suffix(MOTION_OVERRIDE)
-            .unwrap()
-            .to_owned()
+        without
     };
     save_main(&source, &text, || Ok(()))?;
     Ok(())
@@ -252,19 +258,17 @@ const LAYOUT_MARKER: &str = "\n// Canopa Settings: window layout.";
 /// `niri.kdl` as Settings sees its tail: the person's text, then an optional
 /// window layout block, then the optional reduced-motion block.
 #[cfg(feature = "desktop")]
-fn split_layout(text: &str) -> Result<(&str, Option<WindowLayout>, &str)> {
-    let (rest, motion) = match text.strip_suffix(MOTION_OVERRIDE) {
-        Some(rest) => (rest, MOTION_OVERRIDE),
-        None => (text, ""),
-    };
+fn split_layout(text: &str) -> Result<(String, Option<WindowLayout>, &'static str)> {
+    let (mut rest, enabled) = split_motion(text)?;
+    let motion = if enabled { MOTION_OVERRIDE } else { "" };
     let Some(start) = rest.rfind(LAYOUT_MARKER) else {
         return Ok((rest, None, motion));
     };
-    let block = &rest[start..];
     let layout = WindowLayout::all()
-        .find(|layout| layout.kdl() == block)
+        .find(|layout| layout.kdl() == rest[start..])
         .with_context(|| fl!("settings-error-window-layout-edited"))?;
-    Ok((&rest[..start], Some(layout), motion))
+    rest.truncate(start);
+    Ok((rest, Some(layout), motion))
 }
 
 /// The window layout Settings wrote, or `None` for the shipped defaults.
@@ -380,8 +384,22 @@ mod window_layout_tests {
         let without_motion = with_window_layout(BASE, Some(layout)).unwrap();
         assert_eq!(
             split_layout(&without_motion).unwrap(),
-            (BASE, Some(layout), "")
+            (BASE.to_owned(), Some(layout), "")
         );
+    }
+
+    #[test]
+    fn reduced_motion_is_recognized_with_text_after_it() {
+        let appended = format!("{BASE}{MOTION_OVERRIDE}// a later note\n");
+        let (without, enabled) = split_motion(&appended).unwrap();
+        assert!(enabled);
+        assert_eq!(without, format!("{BASE}// a later note\n"));
+        assert_eq!(split_motion(BASE).unwrap(), (BASE.to_owned(), false));
+        // The marker without its exact block, or the block twice, is an outside edit.
+        let edited = format!("{BASE}{}", MOTION_OVERRIDE.replace("off;", "slowdown 2.0;"));
+        assert!(split_motion(&edited).is_err());
+        let twice = format!("{BASE}{MOTION_OVERRIDE}{MOTION_OVERRIDE}");
+        assert!(split_motion(&twice).is_err());
     }
 
     #[test]

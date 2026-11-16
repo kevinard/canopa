@@ -98,12 +98,14 @@ enum Message {
     DisplayProfiles(profiles::Action),
     WidgetLayouts(widget_layouts::Action),
     OpenLockWidgetEditor,
-    Enabled(usize, bool),
+    /// Emitted by controls with nothing to choose; changes nothing.
+    Noop,
+    Enabled(MonitorSlot, bool),
     /// A display's mode, by its index in the display's mode list.
-    Mode(usize, usize),
-    Scale(usize, f64),
-    Rotation(usize, Transform),
-    Position(usize, bool, String),
+    Mode(MonitorSlot, usize),
+    Scale(MonitorSlot, f64),
+    Rotation(MonitorSlot, Transform),
+    Position(MonitorSlot, bool, String),
     InputText(u8, String),
     InputNumber(u8, f64),
     InputFlag(u8, bool),
@@ -200,6 +202,10 @@ struct State {
     outputs: HashMap<String, Output>,
     monitors: Vec<Monitor>,
     positions: Vec<(String, String)>,
+    /// Advanced whenever `monitors` is replaced, so an edit queued for the
+    /// previous list (a click during hotplug) is dropped instead of applied
+    /// to another display or out of range.
+    display_generation: u64,
     display_dirty: bool,
     display_profiles: profiles::Editor,
     widget_layouts: widget_layouts::View,
@@ -279,8 +285,15 @@ impl State {
         )
     }
 
-    fn boot() -> (Self, Task<Message>) {
-        Self::boot_with(Paths::discover().expect("settings require a configuration home"))
+    /// The monitor `slot` names, unless the list changed since it was drawn.
+    fn monitor_index(&self, slot: MonitorSlot) -> Option<usize> {
+        (slot.generation == self.display_generation && slot.index < self.monitors.len())
+            .then_some(slot.index)
+    }
+
+    fn monitor_mut(&mut self, slot: MonitorSlot) -> Option<&mut Monitor> {
+        self.monitor_index(slot)
+            .map(|index| &mut self.monitors[index])
     }
 
     fn load_motion(paths: &Paths) -> Option<bool> {
@@ -331,6 +344,7 @@ impl State {
             outputs: HashMap::new(),
             monitors: vec![],
             positions: vec![],
+            display_generation: 0,
             display_dirty: false,
             display_profiles: profiles::Editor::default(),
             widget_layouts: widget_layouts::View::default(),
@@ -558,8 +572,10 @@ impl State {
             }
             Message::Page(page) if !self.busy && self.trial.is_none() => {
                 if page != self.page {
-                    // Typed passwords do not outlive the page.
+                    // Typed passwords do not outlive the page, and one page's
+                    // result or error is not shown on another.
                     self.users_forms.clear_secrets();
+                    self.notice.clear();
                 }
                 self.page = page;
                 self.idle_available = false;
@@ -642,6 +658,7 @@ impl State {
                         if !self.display_dirty {
                             let mut names: Vec<_> = self.outputs.keys().cloned().collect();
                             names.sort();
+                            self.display_generation += 1;
                             self.monitors = names
                                 .iter()
                                 .map(|name| Monitor::from_output(&self.outputs[name]))
@@ -658,34 +675,46 @@ impl State {
                     Err(error) => self.notice = error,
                 }
             }
-            Message::Enabled(index, value) => {
-                self.monitors[index].enabled = value;
-                self.display_dirty = true;
+            Message::Enabled(slot, value) => {
+                if let Some(monitor) = self.monitor_mut(slot) {
+                    monitor.enabled = value;
+                    self.display_dirty = true;
+                }
             }
-            Message::Mode(index, mode) => {
-                self.monitors[index].mode =
-                    (mode < self.monitors[index].modes.len()).then_some(mode);
-                self.monitors[index].custom_mode = self
-                    .outputs
-                    .get(&self.monitors[index].name)
-                    .is_some_and(|o| {
-                        o.is_custom_mode && o.current_mode == self.monitors[index].mode
-                    });
-                self.display_dirty = true;
+            Message::Mode(slot, mode) => {
+                let outputs = &self.outputs;
+                if let Some(index) = self.monitor_index(slot) {
+                    let monitor = &mut self.monitors[index];
+                    monitor.mode = (mode < monitor.modes.len()).then_some(mode);
+                    monitor.custom_mode = outputs
+                        .get(&monitor.name)
+                        .is_some_and(|o| o.is_custom_mode && o.current_mode == monitor.mode);
+                    self.display_dirty = true;
+                }
             }
-            Message::Scale(index, scale) => {
-                self.monitors[index].scale = scale;
-                self.display_dirty = true;
+            Message::Scale(slot, scale) => {
+                if let Some(monitor) = self.monitor_mut(slot) {
+                    monitor.scale = scale;
+                    self.display_dirty = true;
+                }
             }
-            Message::Rotation(index, transform) => {
-                self.monitors[index].transform = transform;
-                self.display_dirty = true;
+            Message::Rotation(slot, transform) => {
+                if let Some(monitor) = self.monitor_mut(slot) {
+                    monitor.transform = transform;
+                    self.display_dirty = true;
+                }
             }
-            Message::Position(index, horizontal, value) => {
+            Message::Position(slot, horizontal, value) => {
+                let Some(position) = self
+                    .monitor_index(slot)
+                    .and_then(|index| self.positions.get_mut(index))
+                else {
+                    return Task::none();
+                };
                 if horizontal {
-                    self.positions[index].0 = value;
+                    position.0 = value;
                 } else {
-                    self.positions[index].1 = value;
+                    position.1 = value;
                 }
                 self.display_dirty = true;
             }
@@ -950,7 +979,10 @@ impl State {
                 self.busy = false;
                 match result {
                     Ok((page, saved)) => {
-                        self.notice = fl!("settings-saved");
+                        self.notice = saved
+                            .reload_problem
+                            .clone()
+                            .unwrap_or_else(|| fl!("settings-saved"));
                         self.file_saved(page, saved);
                     }
                     Err(error) => self.notice = error,
@@ -1611,6 +1643,10 @@ impl State {
             body = body.push(text(fl!("settings-displays-none")));
         }
         for (index, monitor) in self.monitors.iter().enumerate() {
+            let slot = MonitorSlot {
+                generation: self.display_generation,
+                index,
+            };
             let modes: Vec<_> = monitor
                 .modes
                 .iter()
@@ -1627,7 +1663,7 @@ impl State {
                     format!("display-enabled-{index}"),
                     fl!("settings-display-enabled"),
                     monitor.enabled,
-                    Message::Enabled(index, !monitor.enabled)
+                    Message::Enabled(slot, !monitor.enabled)
                 ),
                 row![
                     column![
@@ -1636,7 +1672,7 @@ impl State {
                             format!("display-mode-{index}"),
                             modes,
                             monitor.mode,
-                            move |v| { Message::Mode(index, v) }
+                            move |v| { Message::Mode(slot, v) }
                         )
                     ]
                     .spacing(6),
@@ -1649,7 +1685,7 @@ impl State {
                                 .map(|v| (v, transform_label(v)))
                                 .collect(),
                             Some(monitor.transform),
-                            move |v| Message::Rotation(index, v)
+                            move |v| Message::Rotation(slot, v)
                         )
                     ]
                     .spacing(6)
@@ -1664,20 +1700,20 @@ impl State {
                     0.5..=4.,
                     monitor.scale,
                     0.25,
-                    move |v| Message::Scale(index, v)
+                    move |v| Message::Scale(slot, v)
                 ),
                 row![
                     field(
                         format!("display-x-{}", monitor.name),
                         fl!("settings-display-x"),
                         &self.positions[index].0,
-                        move |v| Message::Position(index, true, v)
+                        move |v| Message::Position(slot, true, v)
                     ),
                     field(
                         format!("display-y-{}", monitor.name),
                         fl!("settings-display-y"),
                         &self.positions[index].1,
-                        move |v| Message::Position(index, false, v)
+                        move |v| Message::Position(slot, false, v)
                     )
                 ]
                 .spacing(18),
@@ -2357,14 +2393,44 @@ fn choice<'a>(
         ),
     )
 }
+/// A display in the list drawn at `generation`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MonitorSlot {
+    generation: u64,
+    index: usize,
+}
+
+/// Make equal labels distinct ("60 Hz", "60 Hz (2)") so each option stays
+/// selectable: a pick list reports the chosen label, not its position.
+fn distinct_labels<V>(options: Vec<(V, String)>) -> Vec<(V, String)> {
+    let mut seen = HashMap::<String, usize>::new();
+    options
+        .into_iter()
+        .map(|(value, label)| {
+            let count = seen.entry(label.clone()).or_default();
+            *count += 1;
+            let label = if *count == 1 {
+                label
+            } else {
+                format!("{label} ({count})")
+            };
+            (value, label)
+        })
+        .collect()
+}
+
 /// A pick list of values shown by their labels; messages carry the value,
-/// never the (translated) label. Labels must be distinct.
+/// never the (translated) label. Equal labels are made distinct.
 fn pick<'a, V: Clone + PartialEq + 'a>(
     id: impl Into<String>,
     options: Vec<(V, String)>,
     selected: Option<V>,
     change: impl Fn(V) -> Message + 'a,
 ) -> Element<'a, Message> {
+    let options = distinct_labels(options);
+    let Some(fallback) = options.first().map(|(value, _)| value.clone()) else {
+        return choice(id, Vec::new(), None, |_| Message::Noop);
+    };
     let labels: Vec<String> = options.iter().map(|(_, label)| label.clone()).collect();
     let selected = selected.and_then(|selected| {
         options
@@ -2376,9 +2442,7 @@ fn pick<'a, V: Clone + PartialEq + 'a>(
         let value = options
             .iter()
             .find(|(_, known)| *known == label)
-            .or(options.first())
-            .map(|(value, _)| value.clone())
-            .expect("a pick list chooses one of its options");
+            .map_or_else(|| fallback.clone(), |(value, _)| value.clone());
         change(value)
     })
 }
@@ -2561,11 +2625,14 @@ fn raise() -> Task<Message> {
 
 /// Run the window at `request`; with `instance`, also serve later requests.
 pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
+    // Without a configuration home there is nothing to show or save: report it
+    // before opening a window instead of panicking inside it.
+    let paths = Paths::discover()?;
     let activations =
         instance.map(|instance| Activations(Arc::new(Mutex::new(Some(instance.requests)))));
     iced::application(
         move || {
-            let (mut state, task) = State::boot();
+            let (mut state, task) = State::boot_with(paths.clone());
             state.activations = activations.clone();
             let mut bridge = accessibility::Bridge::new("canopa-settings");
             bridge.open(ACCESSIBILITY_ROOT, &fl!("settings-window-title"), None);
@@ -2625,6 +2692,71 @@ mod tests {
         std::fs::write(paths.common(), "schema-version 1\n// keep this note\n").unwrap();
         let (state, _) = State::boot_with(paths);
         (root, state)
+    }
+
+    #[test]
+    fn a_page_change_clears_the_previous_page_notice() {
+        let (_root, mut state) = fresh();
+        state.notice = "Display test failed".into();
+        let _ = state.update(Message::Page(Page::Input));
+        assert!(state.notice.is_empty());
+    }
+
+    #[test]
+    fn display_edits_queued_before_a_refresh_are_dropped() {
+        let (_root, mut state) = fresh();
+        let monitor = crate::display::Monitor {
+            name: "DP-1".into(),
+            make: String::new(),
+            model: String::new(),
+            serial: None,
+            enabled: true,
+            mode: None,
+            modes: Vec::new(),
+            custom_mode: false,
+            scale: 1.,
+            transform: Transform::Normal,
+            x: 0,
+            y: 0,
+        };
+        state.monitors = vec![monitor];
+        state.positions = vec![("0".into(), "0".into())];
+        let current = MonitorSlot {
+            generation: state.display_generation,
+            index: 0,
+        };
+        let _ = state.update(Message::Scale(current, 2.));
+        assert_eq!(state.monitors[0].scale, 2.);
+        // Hotplug replaced the list: an older click changes nothing and never
+        // indexes past the end.
+        state.display_generation += 1;
+        let _ = state.update(Message::Scale(current, 3.));
+        let _ = state.update(Message::Enabled(current, false));
+        let beyond = MonitorSlot {
+            generation: state.display_generation,
+            index: 7,
+        };
+        let _ = state.update(Message::Position(beyond, true, "10".into()));
+        assert_eq!(state.monitors[0].scale, 2.);
+        assert!(state.monitors[0].enabled);
+    }
+
+    #[test]
+    fn equal_option_labels_stay_distinct() {
+        let options = distinct_labels(vec![
+            (0, "1920 × 1080 @ 60 Hz".to_owned()),
+            (1, "1920 × 1080 @ 60 Hz".to_owned()),
+            (2, "1280 × 720 @ 60 Hz".to_owned()),
+        ]);
+        let labels: Vec<_> = options.iter().map(|(_, label)| label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "1920 × 1080 @ 60 Hz",
+                "1920 × 1080 @ 60 Hz (2)",
+                "1280 × 720 @ 60 Hz"
+            ]
+        );
     }
 
     fn open_widgets(state: &mut State) {
