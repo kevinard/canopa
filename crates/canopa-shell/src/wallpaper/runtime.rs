@@ -42,7 +42,7 @@ struct Interface {
 
 #[zbus::interface(name = "org.canopa.Shell.Wallpaper1")]
 impl Interface {
-    /// Destinations use bit 1 for the desktop and bit 2 for Canopa's Swaylock handoff.
+    /// Destinations use bit 1 for the desktop and bit 2 for the lock screen.
     #[zbus(property)]
     fn destinations(&self) -> u32 {
         if super::locker::available() { 3 } else { 1 }
@@ -57,7 +57,7 @@ impl Interface {
             .map_err(|_| zbus::fdo::Error::InvalidArgs("invalid destinations".into()))?;
         if targets.lockscreen() && !super::locker::available() {
             return Err(zbus::fdo::Error::NotSupported(
-                "Swaylock unavailable".into(),
+                "no lock screen installed".into(),
             ));
         }
         let (response, result) = oneshot::channel();

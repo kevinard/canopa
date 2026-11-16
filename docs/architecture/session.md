@@ -500,7 +500,6 @@ starting so they pick up the Canopa environment.
 
 ## Known limitations
 
-- `canopa-shell lock` execs swaylock instead of `canopa-lock`.
 - Physical DRM/VT handoff, suspend/resume and distribution PAM policy are not covered by the automated tests; the kept last frame in particular has not been checked on hardware.
 - With Niri, the login screen shows on the focused output only, and touchpad workspace swipes can move it out of view.
 - `canopa-session` keeps its own logind client instead of the one in `canopa-services`.

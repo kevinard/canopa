@@ -102,7 +102,7 @@ fn place_announcement(
     Some(parts.join(", "))
 }
 
-fn run_niri_action(action: niri_ipc::Action) {
+pub(super) fn run_niri_action(action: niri_ipc::Action) {
     #[cfg(not(test))]
     tokio::spawn(async move {
         if let Err(error) = crate::command::niri_action(action).await {

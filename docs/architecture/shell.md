@@ -33,7 +33,8 @@ on failure). The same executable is also:
 - an IPC client: `reload`, `--open-menu`, `--toggle-menu`, `--open-template`,
   `--dmenu`, `--toggle-panel` and the device-key commands (`volume`, `microphone`,
   `brightness`, `keyboard-backlight`, `media`) connect to the running instance;
-- `canopa-shell lock`, which execs Swaylock with the Shell's lock image;
+- `canopa-shell lock`, which execs `canopa-lock` (or `loginctl lock-session`), or
+  with `--swaylock` Swaylock with the Shell's lock image;
 - `--check-config [--show-source]`, a validator that prints one JSON line;
 - internal helpers that other processes spawn: `--hardware-panel bluetooth|power`
   (built-in providers), `--launcher-extension web|date-time ...` (bundled launcher
@@ -68,7 +69,7 @@ first, then on `PATH` (`external_panel.rs` `companion_binary`).
 | `src/device_keys.rs`, `src/osd.rs` | Device-key actions (library) and OSD model |
 | `src/session.rs` | Session actions through logind |
 | `src/notice.rs` | The Shell's own notifications (configuration errors, failed session actions) |
-| `src/wallpaper/` | Wallpaper store, D-Bus owner and Swaylock handoff |
+| `src/wallpaper/` | Wallpaper store, D-Bus owner and lock handoff |
 | `src/dbus/` | StatusNotifierWatcher and host, DBusMenu, UPower and NetworkManager status |
 | `src/media.rs`, `src/media_provider.rs` | MPRIS selection and the `org.canopa.Shell.Media` interface |
 | `src/wifi_provider.rs`, `src/audio_provider.rs`, `src/hardware_panel/` | Provider implementations |
@@ -238,7 +239,9 @@ them):
 - `org.canopa.Niri.WindowPreview1` on the session bus: taskbar tooltip
   thumbnails.
 
-Log out runs `niri msg action quit --skip-confirmation` from the default Power menu.
+Log out (`session "log-out"`, `PanelAction::Compositor`) sends `Action::Quit` with
+`skip_confirmation` over the Shell's Niri IPC socket from the default Power menu, as
+`toggle-overview` sends `ToggleOverview`; the Shell never runs a `niri` executable.
 
 ## Taskbar
 
@@ -378,7 +381,7 @@ reported through the notice service.
 | Volume | `volume` module | Pulse protocol, event-driven ([Shell ADR 0022](../shell/adr/0022-event-driven-volume-observation.md)) |
 | Media | `src/media.rs` exports `org.canopa.Shell.Media` at `/org/canopa/Shell/Media` | MPRIS 2 players |
 | Idle inhibitor | `idle-inhibitor` module | `zwp_idle_inhibit_manager_v1` per bar surface, or `canopa-idle toggle` with `backend "stasis"` ([Shell ADR 0017](../shell/adr/0017-manual-idle-inhibitor.md)) |
-| Lock | Quick settings `session-lock` runs `canopa-lock`; `canopa-shell lock` execs Swaylock | See [session.md](session.md) |
+| Lock | Quick settings `session-lock` and `canopa-shell lock` run `canopa-lock`; `canopa-shell lock --swaylock` execs Swaylock | See [session.md](session.md) |
 
 Runtime diagnostics go through `tracing` to stderr (journal); `RUST_LOG` raises
 detail and `CANOPA_SHELL_PERF=1` adds periodic performance summaries. Logs never
@@ -395,8 +398,8 @@ configuration and outputs (see [session.md](session.md)).
 - D-Bus: `org.canopa.Shell.Wallpaper`, interface `org.canopa.Shell.Wallpaper1` at
   `/org/canopa/Shell/Wallpaper` (`src/wallpaper/runtime.rs`). `Apply` takes a PNG
   descriptor and a destination mask (1 desktop, 2 lock image, 3 both); the
-  `Destinations` property offers the lock image only when `swaylock` is
-  available. The portal backend in `crates/canopa-portal` calls it after the user
+  `Destinations` property offers the lock image only when `canopa-lock` or
+  `swaylock` is installed; `canopa-lock` reads it from the store. The portal backend in `crates/canopa-portal` calls it after the user
   accepts a preview.
 - Store: canonical PNGs named by SHA-256 plus an atomic versioned `selection.json`
   in `$XDG_STATE_HOME/canopa/shell/wallpaper/`, all under one file lock. Input is
@@ -405,9 +408,10 @@ configuration and outputs (see [session.md](session.md)).
   output (`canopa-shell-wallpaper`; Niri's `place-within-backdrop` rule keeps it
   behind the overview). When a new wallpaper surface is configured, bars on the
   `background` layer of that output are recreated so they stack above it.
-- `canopa-shell lock` opens the lock image under the state lock and execs
-  `swaylock --image /proc/self/fd/N`. If the selection is unreadable or its lock
-  is busy, it starts Swaylock without an image rather than waiting.
+- `canopa-shell lock` execs `canopa-lock`. With `--swaylock` it opens the lock
+  image under the state lock and execs `swaylock --image /proc/self/fd/N`; if the
+  selection is unreadable or its lock is busy, it starts Swaylock without an image
+  rather than waiting.
 
 ## State files
 
@@ -465,7 +469,6 @@ restarts and must be reopened; queued actions are not replayed.
 - Window previews, overview typing and window session restore need the Niri fork.
 - Window session restore does not restore stacked columns after their first window or dialogs.
 - The minimap does not mark which columns are on screen.
-- `canopa-shell lock` only supports Swaylock.
 - The launcher's file search is a name index refreshed every minute, not a content index.
 - External monitor brightness (DDC/CI) is not controlled by the brightness keys.
 - Log out uses the `niri msg` CLI rather than `niri-ipc`.

@@ -13,7 +13,7 @@ pub use canopa_services::logind::{
 const BLOCKER_LIMIT: usize = 5;
 
 /// The configuration names of `session "ACTION"`, for parse errors.
-pub(crate) const CONFIG_NAMES: &str = "`suspend`, `hibernate`, `reboot` or `power-off`";
+pub(crate) const CONFIG_NAMES: &str = "`log-out`, `suspend`, `hibernate`, `reboot` or `power-off`";
 
 /// The action a `session "ACTION"` configuration names.
 pub(crate) fn from_config_name(name: &str) -> Option<SessionAction> {

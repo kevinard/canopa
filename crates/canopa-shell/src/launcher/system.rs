@@ -111,9 +111,10 @@ fn confirmation(menus: &[MenuConfig], contains: impl Fn(&PanelAction) -> bool) -
         .map(|menu| menu.name.clone())
 }
 
-/// `niri msg action quit`, the configured way to end the Niri session.
+/// `session "log-out"`, or a configuration's own `niri msg action quit`.
 fn quits_session(action: &PanelAction) -> bool {
     let argv: Vec<&str> = match action {
+        PanelAction::Compositor(crate::config::CompositorAction::LogOut) => return true,
         PanelAction::Launch(argv) => argv.iter().map(String::as_str).collect(),
         PanelAction::Command(command) => match command.spec() {
             ConfiguredCommandSpec::Argv { program, args } => std::iter::once(program.as_str())
@@ -442,11 +443,7 @@ mod tests {
         vec![
             menu(
                 "Log out?",
-                PanelAction::Launch(
-                    ["niri", "msg", "action", "quit", "--skip-confirmation"]
-                        .map(String::from)
-                        .to_vec(),
-                ),
+                PanelAction::Compositor(crate::config::CompositorAction::LogOut),
             ),
             menu("Reboot?", PanelAction::Session(SessionAction::Reboot)),
             menu("Power off?", PanelAction::Session(SessionAction::PowerOff)),

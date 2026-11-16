@@ -302,7 +302,8 @@ impl App {
                         && cancel.action == Some(crate::config::PanelAction::OpenBarPanel)
                         && matches!(confirm.action, Some(
                             crate::config::PanelAction::Command(_)
-                            | crate::config::PanelAction::Session(_))))));
+                            | crate::config::PanelAction::Session(_)
+                            | crate::config::PanelAction::Compositor(_))))));
         let compact_at_end = !bar.edge.is_horizontal()
             && matches!(&tree.origin, crate::surface::panel::PanelOrigin::Module(origin)
                 if self.effective_module_layout_for_bar(bar).iter().any(|(zone, id)|

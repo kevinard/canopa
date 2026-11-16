@@ -321,8 +321,8 @@ call is never retried against a replacement owner. Shell's single worker copies
 the image into `$XDG_STATE_HOME/canopa/shell/wallpaper` by SHA-256, publishes
 both destinations atomically and draws background surfaces on every named
 output ([`crates/canopa-shell/src/wallpaper/`](../../crates/canopa-shell/src/wallpaper/)).
-`canopa-shell lock` opens the lock image under the state lock and starts
-Swaylock with the inherited descriptor. See [shell.md](shell.md).
+`canopa-lock` shows the lock image (`canopa-shell lock --swaylock` passes it to
+Swaylock as an inherited descriptor). See [shell.md](shell.md).
 
 ## Screenshot
 

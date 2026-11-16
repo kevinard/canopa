@@ -238,7 +238,7 @@ height of the screen. See [notifications](notifications.md).
 | --- | --- |
 | **Lock** | Runs `canopa-lock`. |
 | **Suspend**, **Hibernate** | Ask logind at once. |
-| **Log out…**, **Reboot…**, **Power off…** | Open a confirmation menu with **Cancel** selected first. Log out runs `niri msg action quit --skip-confirmation`. |
+| **Log out…**, **Reboot…**, **Power off…** | Open a confirmation menu with **Cancel** selected first. Log out sends Niri's quit action over the Shell's compositor socket (`session "log-out"`), so it works without the stock `niri` CLI. |
 
 Suspend, hibernate, reboot and power off use the `session "…"` action, which calls
 systemd-logind directly, so polkit can ask for a password (for example while other
@@ -332,7 +332,7 @@ Applications that set a wallpaper through the Wallpaper portal hand it to the Sh
 | `canopa-shell --toggle-panel` | Toggle the bar's panel. |
 | `canopa-shell volume …`, `microphone …`, `brightness …`, `keyboard-backlight …`, `media …` | Device keys (above). |
 | `canopa-shell --dmenu [-p PROMPT] [-d DELIM] [--json] [--no-custom]` | Choose from lines on stdin; print the choice. |
-| `canopa-shell lock` | Run Swaylock with the lock image set through the Wallpaper portal. This is not the Canopa lock screen; use `canopa-lock`. |
+| `canopa-shell lock [--swaylock]` | Lock through Canopa Lock (`canopa-lock`, or `loginctl lock-session` without it), which shows the lock image set through the Wallpaper portal. `--swaylock` runs Swaylock with that image instead. |
 | `canopa-shell --version` | Print the version. |
 
 Menu names are exact and case-sensitive; quote names with spaces, and use
@@ -392,6 +392,5 @@ unit drop-in (`systemctl --user edit canopa-shell.service`) for more detail.
   may open in Niri's usual place.
 - Window thumbnails, pinned columns, overview typing and window restore need the
   Canopa Niri fork.
-- `canopa-shell lock` supports only Swaylock.
 - The Wi-Fi panel cannot set up new enterprise (802.1X) networks.
 - The media panel has no artwork, seeking or per-player volume.

@@ -1367,7 +1367,7 @@ mod tests {
 
     #[test]
     fn bundled_session_confirmations_default_to_cancel_and_emit_only_explicit_actions() {
-        use crate::config::{ActionTrigger, ConfiguredCommandSpec, PanelAction};
+        use crate::config::{ActionTrigger, PanelAction};
         use crate::session::SessionAction;
         let (config, _) = crate::config::load(&canopa_config::Request::Defaults, false).unwrap();
         let click = |name: &str| {
@@ -1393,13 +1393,8 @@ mod tests {
             click("session-hibernate"),
             Some(PanelAction::Session(SessionAction::Hibernate))
         );
-        let quit = PanelAction::Command(crate::config::ConfiguredCommand::argv(
-            "niri".into(),
-            ["msg", "action", "quit", "--skip-confirmation"]
-                .map(String::from)
-                .to_vec(),
-            &crate::config::CommandPolicy::default(),
-        ));
+        // Log out goes over the Shell's Niri socket, never a `niri` executable.
+        let quit = PanelAction::Compositor(crate::config::CompositorAction::LogOut);
         for (module, menu, confirmed) in [
             ("session-logout", "Log out?", quit),
             (
@@ -1446,12 +1441,6 @@ mod tests {
             else {
                 panic!("explicit confirmation must emit one action and close");
             };
-            if let PanelAction::Command(command) = action {
-                assert!(matches!(
-                    command.spec(),
-                    ConfiguredCommandSpec::Argv { program, .. } if program == "niri"
-                ));
-            }
             assert_eq!(action, &confirmed);
         }
     }

@@ -267,6 +267,8 @@ Triggers are `click`, `right-click` or a key chord such as `Super+Space`.
 | `command "text"` | Run a command through the shell, stopped after the command timeout. |
 | `command { argv "program" "arg"…; }` | Run a command without a shell, with the same timeout. |
 | `session "suspend"` / `"hibernate"` / `"reboot"` / `"power-off"` | Ask logind directly; polkit may ask for a password. |
+| `session "log-out"` | End the session through the compositor's IPC socket, without Niri's own confirmation (put it behind a confirmation menu). |
+| `toggle-overview` | Open or close Niri's overview through the compositor's IPC socket. |
 | `open-panel`, `toggle-panel` | Open the module's own details. |
 | `open-bar-panel`, `toggle-bar-panel` | Open the bar's `panel`. |
 | `close-panel` | Close the open panel. |
