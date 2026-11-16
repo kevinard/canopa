@@ -15,6 +15,21 @@ use tokio::{
     process::{Child, Command},
 };
 
+/// The compositor whose `msg` actions the Stasis rules run: the explicit
+/// `CANOPA_NIRI_BIN`, else the bundled Canopa compositor, else `niri` from `PATH`,
+/// the same choice Canopa Settings makes.
+pub fn compositor() -> PathBuf {
+    std::env::var_os("CANOPA_NIRI_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let bundled = PathBuf::from("/usr/lib/canopa/niri");
+            if bundled.is_file() {
+                bundled
+            } else {
+                PathBuf::from("niri")
+            }
+        })
+}
 pub fn config_path() -> Result<PathBuf> {
     Ok(canopa_config::config_home()?.join("canopa/stasis.rune"))
 }
@@ -44,7 +59,7 @@ pub fn executable(path: &Path) -> Result<PathBuf> {
                 p.metadata()
                     .is_ok_and(|m| m.is_file() && m.mode() & 0o111 != 0)
             })
-            .with_context(|| format!("{} is not installed in PATH", path.display()))?
+            .with_context(|| fl!("idle-not-installed", program = path.display().to_string()))?
     };
     let candidate = candidate.canonicalize()?;
     let metadata = candidate.metadata()?;
@@ -84,7 +99,8 @@ fn supervisor_guard() -> Result<std::fs::File> {
         .open(path)?;
     ensure!(
         unsafe { libc::flock(guard.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-        "Canopa idle supervisor is already running for this display"
+        "{}",
+        fl!("idle-already-running")
     );
     Ok(guard)
 }
@@ -136,13 +152,13 @@ fn backend(program: &Path, session: &str) -> Result<Command> {
     let here = canopa_file::executable::installed()?;
     let directory = here.parent().context("missing executable directory")?;
     let locker = directory.join("canopa-lock");
-    ensure!(locker.is_file(), "install canopa-lock beside canopa-idle");
+    ensure!(locker.is_file(), "{}", fl!("idle-locker-missing"));
     let mut command = stasis_command(program);
     command
         .env("XDG_SESSION_ID", session)
         .env("CANOPA_LOCK", locker)
         .env("CANOPA_IDLE", here)
-        .env("CANOPA_NIRI", executable(Path::new("niri"))?)
+        .env("CANOPA_NIRI", executable(&compositor())?)
         .stdin(Stdio::null())
         .process_group(0);
     Ok(Command::from(command))
@@ -152,7 +168,8 @@ pub async fn suspend(selected: Option<&str>) -> Result<()> {
     let status = crate::control::status().await?;
     ensure!(
         status.session == target.id && status.sleep_coordinator,
-        "the selected session's lock/sleep coordinator is unavailable"
+        "{}",
+        fl!("idle-coordinator-unavailable")
     );
     crate::control::ready(Duration::from_secs(5)).await?;
     // The listener already owns a delay inhibitor and will handle PrepareForSleep.
@@ -163,7 +180,7 @@ pub async fn suspend(selected: Option<&str>) -> Result<()> {
             .call::<_, _, ()>("Suspend", &(true,)),
     )
     .await
-    .context("suspend request timed out")??;
+    .context(fl!("idle-suspend-timeout"))??;
     Ok(())
 }
 pub async fn run(program: &Path, config: &Path, selected: Option<&str>) -> Result<()> {
@@ -172,15 +189,15 @@ pub async fn run(program: &Path, config: &Path, selected: Option<&str>) -> Resul
     let (status, mut coordinator) = crate::control::watch().await?;
     ensure!(
         status.session == target.id && status.sleep_coordinator,
-        "start the selected session's Canopa lock/sleep listener before Stasis"
+        "{}",
+        fl!("idle-coordinator-unavailable")
     );
-    let config = config
-        .canonicalize()
-        .context("initialize a Stasis configuration with canopa idle init")?;
+    let config = config.canonicalize().context(fl!("idle-config-missing"))?;
     let metadata = config.metadata()?;
     ensure!(
         metadata.is_file() && metadata.len() <= 1024 * 1024,
-        "Stasis configuration must be a regular file of at most 1 MiB"
+        "{}",
+        fl!("idle-config-invalid")
     );
     let program = executable(program)?;
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -196,7 +213,7 @@ pub async fn run(program: &Path, config: &Path, selected: Option<&str>) -> Resul
         let startup=async {
             let deadline=tokio::time::Instant::now()+Duration::from_secs(8);
             loop {
-                if let Some(status)=child.try_wait()? {bail!("Stasis exited during startup: {status}");}
+                if let Some(status)=child.try_wait()? {bail!("{}", fl!("idle-stasis-exited", status = status.to_string()));}
                 let mut process=backend(&program,&target.id)?.arg("watch").stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn()?;
                 let mut reader=BufReader::new(process.stdout.take().context("missing Stasis watch output")?);
                 if tokio::time::timeout(Duration::from_millis(500),next_watch(&mut reader)).await.is_ok_and(|r|r.is_ok()) {
@@ -211,7 +228,7 @@ pub async fn run(program: &Path, config: &Path, selected: Option<&str>) -> Resul
             result=startup=>result?,
             _=terminate.recv()=>return Ok(()),
             _=interrupt.recv()=>return Ok(()),
-            _=coordinator.read_u8()=>bail!("Canopa lock coordinator stopped during Stasis startup"),
+            _=coordinator.read_u8()=>bail!("{}", fl!("idle-coordinator-stopped")),
         };
         let watch_group=watch.id();
         let result=async {
@@ -220,8 +237,8 @@ pub async fn run(program: &Path, config: &Path, selected: Option<&str>) -> Resul
                 tokio::select! {
                     _=terminate.recv()=>break Ok(()),
                     _=interrupt.recv()=>break Ok(()),
-                    _=coordinator.read_u8()=>break Err(anyhow::anyhow!("Canopa lock coordinator stopped")),
-                    status=child.wait()=>break Err(anyhow::anyhow!("Stasis stopped: {}",status?)),
+                    _=coordinator.read_u8()=>break Err(anyhow::anyhow!(fl!("idle-coordinator-stopped"))),
+                    status=child.wait()=>break Err(anyhow::anyhow!(fl!("idle-stasis-exited", status = status?.to_string()))),
                     event=next_watch(&mut reader)=>if let Err(error)=event {break Err(error);},
                 }
             }

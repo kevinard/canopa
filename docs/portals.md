@@ -455,9 +455,9 @@ output, so Shell must be running. The selection survives restarts.
   `http`/`https` addresses only.
 - PNG, JPEG, GIF and WebP up to 32 MiB; animated images use a still frame.
 - Downloads verify TLS, follow at most five redirects and stop after 20 s.
-- The lock-screen image is used by `canopa-shell lock`, which runs Swaylock. The
-  session's own lock screen, `canopa-lock`, uses its own settings; see
-  [Session tools](session-tools.md).
+- The lock-screen image appears on `canopa-lock` unless the `lockscreen` block
+  sets its own `image` (see [Session tools](session-tools.md)), and on
+  `canopa-shell lock`.
 - Wallpapers set from Canopa Settings belong to `canopa-wallpaper` and are
   stored separately from portal selections.
 

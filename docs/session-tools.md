@@ -58,7 +58,8 @@ canopa wallpaper pick
 | `next` | Advance the slideshow now. |
 | `stop-slideshow` | Stop the slideshow and keep (and save) the current image. |
 | `status` | Print outputs, their size, scale and image/fit, the slideshow and the background color as JSON. |
-| `reload` | Return to the configured wallpaper. **This erases saved choices** (see below). |
+| `reload` | Re-read the configuration and keep saved choices (see below). |
+| `reset` | Return to the configured wallpaper. **This erases saved choices** (see below). |
 | `stop` | Stop the daemon. |
 | `check-config [--canopa-config FILE \| --defaults] [--show-source]` | Validate the `wallpaper` namespace without connecting to Wayland. |
 
@@ -83,10 +84,11 @@ The daemon watches `config.kdl`, its theme file, the images in use and the slide
 folder. A valid change applies at once and keeps your saved choices. An invalid
 configuration or image keeps the current wallpaper.
 
-`canopa wallpaper reload` is different: it re-reads the configuration, **discards
-every per-output and `--all` choice, stops the slideshow and overwrites
-`wallpaper.json` with an empty state**. Use it only to return to what `config.kdl`
-says.
+`canopa wallpaper reload` does the same on request and reports an invalid
+configuration as an error. `canopa wallpaper reset` is different: it re-reads the
+configuration, **discards every per-output and `--all` choice, stops the slideshow
+and overwrites `wallpaper.json` with an empty state**. Use it to return to what
+`config.kdl` says.
 
 Limits per image: 64 MiB encoded, 16384 pixels per side, 32 megapixels, 256 MiB of
 decoder memory. All prepared monitor surfaces together are limited to 256 MiB.
@@ -224,8 +226,11 @@ locker is killed, the compositor keeps the session locked.
 
 ### Background and widgets
 
-With `use-wallpaper` on (the default), outputs without their own lock image show the
-wallpaper daemon's current image. Explicit lock images work without the daemon.
+The lock background is, per output: the `image` of its `output` block, else the
+`lockscreen` block's `image`, else a lock-screen picture an application set through
+the [Wallpaper portal](portals.md#wallpaper), else, with `use-wallpaper` on (the
+default), the wallpaper daemon's current image. Explicit lock images work without
+the daemon.
 Missing or invalid images fall back to the theme background. `dim` blends the image
 toward the background color.
 
@@ -355,7 +360,9 @@ canopa idle watch
 
 Global options: `--stasis PATH` (default `stasis` from `PATH`) and `--session ID`.
 `canopa-idle run` gives Stasis `CANOPA_LOCK`, `CANOPA_IDLE` and `CANOPA_NIRI`
-(absolute paths used by the Rune commands) and `XDG_SESSION_ID`. `canopa-lock` must
+(absolute paths used by the Rune commands) and `XDG_SESSION_ID`. `CANOPA_NIRI` is
+`CANOPA_NIRI_BIN` when set, else the bundled `/usr/lib/canopa/niri`, else `niri`
+from `PATH`, as in Settings. `canopa-lock` must
 be installed next to `canopa-idle`. Run one Stasis per user and do not also start
 Stasis's own service. Stopping `canopa-idle.service` stops Stasis; an active lock
 screen stays.
@@ -458,7 +465,7 @@ lockscreen {
 | `auth-timeout` | 5–600 seconds | 120 |
 | `avatar`, `weather-file` | path | none |
 | `widgets` | widget names; `widgets;` hides all | `battery media keyboard username notifications` |
-| `layout { margin; gap; REGION ... }` | see [Layout](#layout-and-custom-widgets); margin and gap 0–256 | default placement uses margin 42, gap 18; an explicit `layout` defaults to 32 and 12 |
+| `layout { margin; gap; REGION ... }` | see [Layout](#layout-and-custom-widgets); margin and gap 0–256 | 42 and 18, also inside an explicit `layout` that does not set them |
 | `widget "NAME" { ... }` | custom widget, at most 32 | — |
 
 Custom widget fields: `type "script"`, `command` (a string or `command { argv ...; }`,
@@ -469,7 +476,5 @@ reuse built-in widget names.
 
 ## Known limitations
 
-- `canopa wallpaper reload` erases all saved wallpaper choices; its help text does not say so.
 - `canopa-shell lock` runs swaylock, not Canopa Lock.
-- `canopa-idle.service` checks `~/.config/canopa/stasis.rune` literally, while `canopa-idle` uses `$XDG_CONFIG_HOME`.
 - The weather widget only reads a local file; Canopa ships no weather provider.

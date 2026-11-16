@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='canopa-units-') as directory:
             if source.name == 'canopa-idle.service':
                 assert unit['Service']['Type'] == 'notify'
                 assert unit['Unit']['BindsTo'] == 'canopa-lock.service'
-                assert 'ConditionPathExists=%h/.config/canopa/stasis.rune' in content
+                assert 'ConditionPathExists=%E/canopa/stasis.rune' in content
                 assert 'ConditionPathExists=/etc/pam.d/canopa-lock' in content
             if source.name == 'canopa-lock.service':
                 assert unit['Service']['Type'] == 'notify'

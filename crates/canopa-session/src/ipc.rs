@@ -35,7 +35,10 @@ pub enum Request {
     SlideshowStop {},
     Next {},
     Status {},
+    /// Re-read the configuration and keep saved choices.
     Reload {},
+    /// Re-read the configuration and forget every saved choice.
+    Reset {},
     Stop {},
 }
 fn default_persist() -> bool {

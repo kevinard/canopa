@@ -124,9 +124,16 @@ pub struct Placement {
 }
 impl Layout {
     pub fn parse(document: &kdl::KdlDocument) -> Result<Self> {
+        Self::parse_over(document, &Self::default())
+    }
+
+    /// Parse a `layout` block whose unset `margin` and `gap` keep `defaults`',
+    /// so adding a block never changes spacing it does not mention.
+    pub fn parse_over(document: &kdl::KdlDocument, defaults: &Self) -> Result<Self> {
         let mut layout = Self {
             regions: Vec::new(),
-            ..Default::default()
+            margin: defaults.margin,
+            gap: defaults.gap,
         };
         let mut seen = HashSet::new();
         for node in document.nodes() {

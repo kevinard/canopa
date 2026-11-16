@@ -79,7 +79,10 @@ def verify(binary,session):
     wallpaper_config.write_text('schema-version 1\nwallpaper { fit "invalid"; }\n')
     time.sleep(.3);painted(colors[1],colors[2],'invalid-config.png')
     wallpaper_config.write_text(f'schema-version 1\nwallpaper {{ image "{blue}"; }}\n')
-    ctl('reload');painted(colors[1],colors[1],'explicit-reload.png')
+    ctl('reload');painted(colors[1],colors[2],'explicit-reload-keeps-choices.png')
+    stop();start();painted(colors[1],colors[2],'reload-saved-choices.png')
+    ctl('reset');painted(colors[1],colors[1],'explicit-reset.png')
+    stop();start();painted(colors[1],colors[1],'reset-persisted.png')
     # Connector assignments survive removal/reappearance, including changes while absent.
     session.run(['swaymsg','output','HEADLESS-2','disable'])
     session.wait_for(lambda:len(outputs())==1,'output retirement')

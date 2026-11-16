@@ -51,3 +51,14 @@ wallpaper-preview-hint = Enter applies and saves · Tab selects · F5 refreshes
 wallpaper-preview-failed = This image could not be previewed. Choose another image.
 wallpaper-applied = Wallpaper applied and saved
 wallpaper-apply-failed = Wallpaper change failed; the previous assignment was retained
+
+## canopa-idle
+idle-not-installed = { $program } is not installed in PATH
+idle-already-running = Canopa idle supervisor is already running for this display
+idle-locker-missing = Install canopa-lock beside canopa-idle
+idle-coordinator-unavailable = The selected session's Canopa lock and sleep listener is not running; start canopa-lock.service first
+idle-suspend-timeout = The suspend request timed out
+idle-config-missing = No Stasis configuration; create one with canopa idle init
+idle-config-invalid = The Stasis configuration must be a regular file of at most 1 MiB
+idle-stasis-exited = Stasis stopped: { $status }
+idle-coordinator-stopped = The Canopa lock and sleep listener stopped

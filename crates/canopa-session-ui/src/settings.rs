@@ -157,9 +157,10 @@ impl Settings {
                     "duplicate or invalid layout"
                 );
                 explicit_layout = true;
-                value.layout = crate::layout::Layout::parse(
+                value.layout = crate::layout::Layout::parse_over(
                     node.children()
                         .ok_or_else(|| anyhow::anyhow!("layout requires a block"))?,
+                    &value.layout,
                 )?;
                 continue;
             }

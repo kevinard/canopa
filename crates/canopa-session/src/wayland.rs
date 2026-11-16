@@ -384,6 +384,16 @@ pub fn lock(
     logind_session: Option<String>,
 ) -> Result<()> {
     let username = auth::preflight()?;
+    // A lock-screen image chosen through the Wallpaper portal replaces the
+    // desktop wallpaper copy; an image set in the lockscreen block wins.
+    if settings.background.image.is_none()
+        && let Some(image) = crate::portal_lock_image::store()
+            .as_deref()
+            .and_then(crate::portal_lock_image::lock_image_in)
+    {
+        settings.background.image = Some(image);
+        settings.background.fit = Default::default();
+    }
     if settings.use_wallpaper
         && let Ok(snapshot) =
             ipc::send_with_timeout(&ipc::Request::Status {}, Duration::from_millis(300))
@@ -1056,7 +1066,8 @@ impl App {
                 }
             }
             ipc::Request::Next {} => self.advance_slideshow()?,
-            ipc::Request::Reload {} => self.reload_wallpaper(true)?,
+            ipc::Request::Reload {} => self.reload_wallpaper(false)?,
+            ipc::Request::Reset {} => self.reload_wallpaper(true)?,
             ipc::Request::Stop {} => self.exit = true,
             ipc::Request::Status {} => {}
         }

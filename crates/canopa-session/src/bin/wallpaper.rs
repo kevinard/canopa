@@ -63,8 +63,12 @@ enum Command {
     Next,
     /// List output names, dimensions and active image assignments as JSON.
     Status,
-    /// Re-read startup configuration; invalid candidates preserve current assignments.
+    /// Re-read the configuration, keeping saved per-output, --all and slideshow
+    /// choices; an invalid candidate keeps the current wallpaper.
     Reload,
+    /// Forget every saved choice (wallpaper.json) and stop the slideshow, returning
+    /// to what the configuration says.
+    Reset,
     Stop,
     /// Validate the wallpaper namespace without connecting to Wayland.
     CheckConfig {
@@ -145,6 +149,7 @@ fn run() -> Result<()> {
         Command::Next => Request::Next {},
         Command::Status => Request::Status {},
         Command::Reload => Request::Reload {},
+        Command::Reset => Request::Reset {},
         Command::Stop => Request::Stop {},
     };
     println!("{}", serde_json::to_string(&ipc::send(&operation)?)?);
