@@ -76,10 +76,13 @@ For other distributions or the release archive:
 1. Install greetd, Niri (or Cage, or Weston 15 or later with `kiosk-shell.so`),
    fonts and the Wayland runtime libraries. greetd's PAM stack must run
    `pam_systemd`, which gives the greeter account the `XDG_RUNTIME_DIR` Niri needs.
-2. Install `canopa-greeter` as a root-owned executable, for example
-   `/usr/local/bin/canopa-greeter`.
+2. Install `canopa-greeter` as a root-owned executable. The samples use the
+   packaged path `/usr/bin/canopa-greeter`; adjust it for another prefix such as
+   `/usr/local/bin`.
 3. Create an unprivileged system account for the greeter with a private writable
-   home, or use the one your greetd package provides (often `greeter`).
+   home. The samples use the packaged `canopa-greeter` account
+   (`packaging/system/canopa-login.sysusers`); adjust `user` if you reuse the one
+   your greetd package provides (often `greeter`).
 4. Install `packaging/greetd/greeter.kdl` (release archive:
    `share/canopa/greetd/greeter.kdl`) as root-owned `/etc/canopa/greeter.kdl`.
 5. Install a Canopa session entry in `/usr/local/share/wayland-sessions/` or

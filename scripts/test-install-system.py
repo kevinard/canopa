@@ -168,6 +168,10 @@ class SystemInstallTests(unittest.TestCase):
         self.assertIn('--compositor niri"', (greetd / 'canopa.toml').read_text())
         self.assertIn('--compositor cage"', (greetd / 'canopa-cage.toml').read_text())
         self.assertIn('--compositor weston"', (greetd / 'canopa-weston.toml').read_text())
+        for name in ('canopa.toml', 'canopa-cage.toml', 'canopa-weston.toml'):
+            text = (greetd / name).read_text()
+            self.assertIn('/usr/bin/canopa-greeter session', text)
+            self.assertIn('user = "canopa-greeter"', text)
         helper = login / 'usr/lib/canopa/greeter-displays'
         self.assertTrue(helper.is_file() and helper.stat().st_mode & 0o111)
         policy = (login / 'usr/share/polkit-1/actions/org.canopa.greeter.policy').read_text()
@@ -288,6 +292,19 @@ class SystemInstallTests(unittest.TestCase):
         self.assertIn('already running', result)
         self.assertFalse(any(item['program'] == 'canopa-settings' for item in calls))
         self.assertFalse((self.root / 'config').exists())
+
+    def test_session_selects_the_portal_qt_theme_unless_one_is_chosen(self):
+        with mock.patch.dict(os.environ, {'QT_QPA_PLATFORMTHEME': ''}):
+            result, calls, _ = self.invoke_session()
+        self.assertEqual(result, 0)
+        imported = next(item for item in calls if 'import-environment' in item['args'])
+        self.assertIn('QT_QPA_PLATFORMTHEME', imported['args'])
+        self.assertIn('QT_QPA_PLATFORMTHEME', calls[-2]['args'])
+
+    def test_session_keeps_a_chosen_qt_theme(self):
+        with mock.patch.dict(os.environ, {'QT_QPA_PLATFORMTHEME': 'qt6ct'}):
+            result, _, output = self.invoke_session(print_command=True)
+        self.assertNotIn('QT_QPA_PLATFORMTHEME', json.loads(output)['environment'])
 
     def test_print_command_has_no_side_effects(self):
         result, calls, output = self.invoke_session(print_command=True)

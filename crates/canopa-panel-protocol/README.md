@@ -54,4 +54,7 @@ future alive across unrelated work.
 - [External panel providers](../../docs/shell/external-panel-providers.md):
   writing and declaring a provider.
 
-Licensed under MIT.
+Licensed under MIT (`LICENSE`), the option this crate selected from the original
+v4 dual license. `LICENSE-MIT` and `LICENSE-APACHE` are those original v4 texts,
+kept for attribution; they do not add a license option. See `LICENSES.md` at the
+repository root.

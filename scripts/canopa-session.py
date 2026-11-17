@@ -14,6 +14,10 @@ import threading
 VARIABLES = ("WAYLAND_DISPLAY", "DISPLAY", "NIRI_SOCKET", "NIRI_CONFIG", "CANOPA_SESSION",
              "CANOPA_SESSION_PID", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE")
 COMPOSITOR = Path("/usr/lib/canopa/niri")
+# Qt applications reach Canopa's file chooser and other portal dialogs through
+# Qt's xdgdesktopportal platform theme (ADR 0154). A theme the user already
+# chose (qt6ct, kvantum, …) is kept.
+QT_PLATFORM_THEME = "xdgdesktopportal"
 
 
 def main():
@@ -26,6 +30,10 @@ def main():
     config = config_home / "canopa/niri.kdl"
     environment = dict(CANOPA_SESSION="1", NIRI_CONFIG=str(config), XDG_CURRENT_DESKTOP="canopa:niri",
                        XDG_SESSION_DESKTOP="canopa", XDG_SESSION_TYPE="wayland")
+    variables = VARIABLES
+    if not os.environ.get("QT_QPA_PLATFORMTHEME"):
+        environment["QT_QPA_PLATFORMTHEME"] = QT_PLATFORM_THEME
+        variables = (*VARIABLES, "QT_QPA_PLATFORMTHEME")
     command = ["systemctl", "--user", "--wait", "start", "canopa-compositor.service"]
     if args.print_command:
         print(json.dumps({"environment": environment, "command": command}, indent=2))
@@ -104,8 +112,8 @@ def main():
                     waiter.kill(); waiter.wait()
             if observer is not None and observer.ident is not None:
                 observer.join()
-            cleanup(["systemctl", "--user", "unset-environment", *VARIABLES])
-            cleanup(["dbus-update-activation-environment", *[f"{name}=" for name in VARIABLES]])
+            cleanup(["systemctl", "--user", "unset-environment", *variables])
+            cleanup(["dbus-update-activation-environment", *[f"{name}=" for name in variables]])
         finally:
             signal.set_wakeup_fd(previous_wakeup)
             for number, handler in previous.items():

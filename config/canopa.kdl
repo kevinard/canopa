@@ -14,6 +14,7 @@ appearance {
 
 notifications {
     sound enabled=#true theme="freedesktop" default="message-new-instant"
-    icons theme="hicolor" scale=1
+    // Icons follow the desktop icon theme; icons theme="NAME" pins one instead.
+    icons scale=1
     // rule "quiet-chat" app="org.example.Chat" outcome="silenced"
 }

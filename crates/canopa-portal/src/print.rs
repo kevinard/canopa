@@ -1,6 +1,7 @@
-//! Bounded Print request data. Printer/file authority is kept out of caller hints.
-//!
-//! This is the contract foundation; no Print interface is advertised yet.
+//! The opt-in Print portal: bounded request data, printer/file authority kept out
+//! of caller hints, and (with the desktop feature) the dialog, renderer, workers
+//! and recovery. The interface is served only with `--experimental-print` and is
+//! not in the shipped portal descriptor; see `docs/printing.md`.
 pub mod authority;
 #[cfg(feature = "desktop")]
 pub mod file_target;

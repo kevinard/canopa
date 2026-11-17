@@ -4,7 +4,7 @@
 ## Aide
 
 cli-about = Outils du bureau Canopa
-cli-settings-about = Ouvrir les Paramètres de Canopa pour les écrans, les périphériques d’entrée, la personnalisation et la mise en veille
+cli-settings-about = Ouvrir les Paramètres de Canopa pour les périphériques, l’apparence, le système et le bureau
 cli-wallpaper-about = Service de fond d’écran et contrôle des images animées
 cli-lock-about = Verrouillage sécurisé de la session ; passez preview ou --help pour les outils de rendu
 cli-greeter-about = Interface graphique de connexion greetd et outils d’aperçu

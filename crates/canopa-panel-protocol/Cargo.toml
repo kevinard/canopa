@@ -3,6 +3,8 @@ autotests = false
 name = "canopa-panel-protocol"
 version = "0.1.0"
 edition = "2024"
+# MIT only (LICENSE); LICENSE-MIT and LICENSE-APACHE are the retained original
+# v4 texts, not an Apache-2.0 option. See LICENSES.md.
 license = "MIT"
 
 [features]

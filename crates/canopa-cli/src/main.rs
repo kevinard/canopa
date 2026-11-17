@@ -18,7 +18,7 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Operation {
-    /// Open Canopa Settings for displays, input, personalization and idle policy.
+    /// Open Canopa Settings for devices, appearance, system and desktop preferences.
     #[command(disable_help_flag = true)]
     Settings {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
