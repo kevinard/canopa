@@ -165,3 +165,34 @@ fn custom_widgets_join_the_default_layout_only_when_enabled() {
     assert!(placed.iter().any(|n| n.as_str() == "status"));
     assert!(!placed.iter().any(|n| n.as_str() == "disabled"));
 }
+
+#[test]
+fn an_explicit_layout_keeps_the_component_spacing_it_does_not_set() {
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("canopa.kdl");
+    for component in [Component::Lockscreen, Component::Greeter] {
+        let namespace = component.namespace();
+        std::fs::write(
+            &file,
+            format!("schema-version 1\n{namespace} {{ widgets; layout {{ center \"clock\" \"authentication\"; }}; }}\n"),
+        )
+        .unwrap();
+        let (explicit, _) = Settings::load(&Request::common(&file), component).unwrap();
+        let (default, _) = Settings::load(&Request::Defaults, component).unwrap();
+        assert_eq!(
+            (explicit.layout.margin, explicit.layout.gap),
+            (default.layout.margin, default.layout.gap),
+            "{namespace}"
+        );
+        assert_eq!((default.layout.margin, default.layout.gap), (42., 18.));
+        std::fs::write(
+            &file,
+            format!(
+                "schema-version 1\n{namespace} {{ widgets; layout {{ margin 10; center \"clock\" \"authentication\"; }}; }}\n"
+            ),
+        )
+        .unwrap();
+        let (margin, _) = Settings::load(&Request::common(&file), component).unwrap();
+        assert_eq!((margin.layout.margin, margin.layout.gap), (10., 18.));
+    }
+}

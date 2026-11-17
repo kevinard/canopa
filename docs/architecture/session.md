@@ -125,7 +125,8 @@ owned by the user. Each connection carries one bounded JSON request.
 
 The effective assignment is the `wallpaper` configuration plus a saved overlay in
 `$XDG_STATE_HOME/canopa/wallpaper.json` (default image, up to 64 per-output entries,
-slideshow). Temporary assignments live only in memory. A candidate (configuration
+slideshow). Temporary assignments live only in memory. `reload` re-reads the
+configuration under the overlay; `reset` replaces the overlay with an empty one. A candidate (configuration
 change, `set`, slideshow frame, hotplug) is fully prepared for every output before
 anything is replaced; a failure keeps the current images. Each distinct image is
 decoded once per candidate, shared between outputs and dropped after submission; the
@@ -158,8 +159,11 @@ socket with bounded frames:
 
 Only an authenticated result unlocks. Rendering and authentication failures fail
 closed. An invalid configuration falls back to defaults so the Lock action never
-does nothing. The background comes from the configuration or, with `use-wallpaper`,
-from the wallpaper daemon's `status` (300 ms timeout).
+does nothing. The background comes from the configuration, else from the lock-screen
+image the Wallpaper portal stored in the Shell's store
+(`$XDG_STATE_HOME/canopa/shell/wallpaper/selection.json`, read only by
+`canopa_session::portal_lock_image`), else, with `use-wallpaper`, from the wallpaper
+daemon's `status` (300 ms timeout).
 
 ### Listener and control endpoint
 
@@ -496,11 +500,7 @@ starting so they pick up the Canopa environment.
 
 ## Known limitations
 
-- `canopa-idle` resolves `niri` from `PATH` for `CANOPA_NIRI`, not the bundled `/usr/lib/canopa/niri`.
-- `canopa-idle.service` checks `%h/.config/canopa/stasis.rune` rather than `$XDG_CONFIG_HOME`.
-- `canopa-idle` does not load translations; its errors are English only.
 - `canopa-shell lock` execs swaylock instead of `canopa-lock`.
-- The wallpaper `reload` request erases the saved overlay.
 - Physical DRM/VT handoff, suspend/resume and distribution PAM policy are not covered by the automated tests; the kept last frame in particular has not been checked on hardware.
 - With Niri, the login screen shows on the focused output only, and touchpad workspace swipes can move it out of view.
 - `canopa-session` keeps its own logind client instead of the one in `canopa-services`.

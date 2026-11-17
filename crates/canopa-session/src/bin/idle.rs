@@ -45,6 +45,7 @@ enum Operation {
     },
 }
 fn main() {
+    canopa_i18n::init();
     if let Err(error) = run(Cli::parse()) {
         eprintln!("canopa-idle: {error:#}");
         std::process::exit(1);

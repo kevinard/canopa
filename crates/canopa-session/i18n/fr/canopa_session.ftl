@@ -43,3 +43,14 @@ wallpaper-preview-hint = Entrée applique et enregistre · Tab sélectionne · F
 wallpaper-preview-failed = Impossible d’afficher l’aperçu de cette image. Choisissez-en une autre.
 wallpaper-applied = Fond d’écran appliqué et enregistré
 wallpaper-apply-failed = Échec du changement de fond d’écran ; l’attribution précédente est conservée
+
+## canopa-idle
+idle-not-installed = { $program } n’est pas installé dans le PATH
+idle-already-running = Le superviseur de mise en veille de Canopa est déjà lancé pour cet affichage
+idle-locker-missing = Installez canopa-lock à côté de canopa-idle
+idle-coordinator-unavailable = Le service de verrouillage et de veille de Canopa ne tourne pas pour la session choisie ; démarrez d’abord canopa-lock.service
+idle-suspend-timeout = La demande de mise en veille a expiré
+idle-config-missing = Aucune configuration Stasis ; créez-en une avec canopa idle init
+idle-config-invalid = La configuration Stasis doit être un fichier ordinaire d’au plus 1 Mio
+idle-stasis-exited = Stasis s’est arrêté : { $status }
+idle-coordinator-stopped = Le service de verrouillage et de veille de Canopa s’est arrêté

@@ -131,7 +131,7 @@ made in Settings.
 | Shell | Automatically, about 0.5 s after a save settles. `canopa-shell reload` (alias `--reload`) asks for a reload and waits up to 10 s for the result. |
 | Notify | Only on request: `canopa-notify ctl reload`. Settings runs it after saving. Changes apply to later notifications; appearance changes repaint open banners. |
 | Files | Automatically after a settled save, including theme file edits. |
-| Wallpaper | Automatically (the file, its theme and the image files are watched). `canopa-wallpaper reload` also clears runtime choices made with `set` and `slideshow`. |
+| Wallpaper | Automatically (the file, its theme and the image files are watched). `canopa-wallpaper reload` re-reads it on request and keeps the choices made with `set` and `slideshow`; `canopa-wallpaper reset` clears them. |
 | Lock screen | At the next lock. Each lock reads the file again. |
 | Greeter | When the greeter starts. |
 | Polkit | When the agent starts: `systemctl --user restart canopa-polkit.service`. |
