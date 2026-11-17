@@ -151,7 +151,7 @@ behind another file manager, and failing to get the name does not stop Files.
 |---|---|
 | `ShowFolders` | One browser window with one tab per distinct folder. |
 | `ShowItems` | Items grouped by parent, one tab per parent, items selected. Explicitly requested hidden items are shown for that session without revealing their hidden siblings. |
-| `ShowItemProperties` | A Properties window for the items, without a browser. |
+| `ShowItemProperties` | A read-only Properties window for the items, without a browser: no rename or access changes. |
 
 A request is decoded and validated whole before anything is presented: at most
 64 local `file://` URIs within 64 KiB, and a bounded `StartupId`. Invalid batches

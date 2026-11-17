@@ -53,6 +53,15 @@ pub(super) fn control(window: window::Id, index: usize) -> iced::widget::Id {
     iced::widget::Id::from(format!("files-question-{window:?}-{index}"))
 }
 
+/// The answer Return gives: the safe, non-destructive one (keep both items,
+/// else skip this one), never Cancel when another answer exists.
+fn default_choice<'a>(choices: impl IntoIterator<Item = &'a UndoChoice> + Clone) -> usize {
+    let position = |wanted: UndoChoice| choices.clone().into_iter().position(|c| *c == wanted);
+    position(UndoChoice::KeepBoth)
+        .or_else(|| position(UndoChoice::Skip))
+        .unwrap_or(0)
+}
+
 fn choices(conflict: &UndoConflict) -> Vec<(String, UndoChoice)> {
     use UndoChoice::*;
     use UndoSource::*;
@@ -334,7 +343,8 @@ impl Desktop {
             self.file_operations.error = Some(fl!("files-question-failed"));
             return Task::none();
         }
-        iced::widget::operation::focus(control(id, 0)).chain(window::gain_focus(id))
+        // The dialog's focus group focuses its default answer on first layout.
+        window::gain_focus(id)
     }
 
     pub(super) fn sync_file_question(&mut self) -> Task<Message> {
@@ -604,6 +614,7 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
         .enumerate()
         .map(|(index, _)| control(dialog.window, index))
         .collect();
+    let default = default_choice(choices.iter().map(|(_, choice)| choice));
     let mut buttons = Vec::new();
     for (index, (label, choice)) in choices.into_iter().enumerate() {
         let message = Message::FileOperation(Event::Answer(dialog.job, dialog.generation, choice));
@@ -648,5 +659,23 @@ fn content<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
     .width(Length::Fill)
     .height(Length::Fill)
     .style(move |_| chrome::window_surface(&appearance, true));
-    super::focus::group(body, order, Vec::new(), Some(control(dialog.window, 0)))
+    super::focus::group(
+        body,
+        order,
+        Vec::new(),
+        Some(control(dialog.window, default)),
+    )
+}
+
+#[cfg(test)]
+mod default_tests {
+    use super::*;
+
+    #[test]
+    fn return_keeps_both_or_skips_instead_of_cancelling() {
+        use UndoChoice::*;
+        assert_eq!(default_choice(&[Cancel, Replace, KeepBoth, Skip]), 2);
+        assert_eq!(default_choice(&[Cancel, KeepItem, Skip]), 2);
+        assert_eq!(default_choice(&[Cancel]), 0);
+    }
 }

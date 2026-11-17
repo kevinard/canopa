@@ -178,7 +178,8 @@ When a name is already taken, Files asks:
 - **Skip**: leave both untouched.
 
 Check **Apply to remaining file conflicts** or **Apply to remaining folder
-conflicts** to reuse the answer. Cancel has the initial focus in every question.
+conflicts** to reuse the answer. Each question starts on its safe answer, so Return
+keeps both (or skips the item when keeping both is not offered); Escape cancels.
 
 ### Operations window
 
@@ -287,7 +288,9 @@ Alt+Return shows the selection's properties: size, dates, type, the application 
 opens with (**Change…**), image dimensions, link target, owner, group and access
 levels. You can rename from the name field (Enter), change access levels and toggle
 **Allow executing as a program**; access changes apply immediately and are not
-undoable. **Copy locations** (Ctrl+C) copies the items' `file://` URIs.
+undoable. They apply only to the item shown: a symbolic link is never followed, and
+an item replaced since Properties read it is refused. A Properties window another
+application opened (FileManager1 `ShowItemProperties`) only shows the items. **Copy locations** (Ctrl+C) copies the items' `file://` URIs.
 
 Properties opens in its own window by default. Choose **In a side panel** in
 Preferences > Views (or `properties "panel"`) to show it beside the listing,

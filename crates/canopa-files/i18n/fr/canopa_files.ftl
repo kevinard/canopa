@@ -1533,3 +1533,4 @@ files-report-not-started = { $count ->
 
 files-preview-regular-only = seuls les fichiers ordinaires peuvent être prévisualisés
 files-preview-too-large = le fichier dépasse la taille maximale de l’aperçu
+files-properties-access-changed = L’élément a changé ou est un lien ; ses droits d’accès n’ont pas été modifiés.

@@ -1577,3 +1577,4 @@ files-report-not-started = { $count } not started
 
 files-preview-regular-only = only regular files can be previewed
 files-preview-too-large = file exceeds the preview budget
+files-properties-access-changed = The item changed or is a link; its access was not changed.

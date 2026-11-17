@@ -84,7 +84,7 @@ impl Desktop {
                 }
                 self.new_target_window(targets)
             }
-            crate::presentation::View::Properties(paths) => self.show_properties(paths),
+            crate::presentation::View::Properties(paths) => self.show_properties_read_only(paths),
         };
         if let Some(instance) = &self.instance {
             instance.presented(opening);

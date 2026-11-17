@@ -14,7 +14,8 @@ pub(super) enum Event {
     PanelReady(window::Id, Vec<PathBuf>, Arc<Result<Vec<Item>, String>>),
     Copy(window::Id),
     /// Change one class's access to `path` to the given mode bits.
-    SetAccess(PathBuf, u32),
+    /// Path, the identity read with it, and the new mode.
+    SetAccess(PathBuf, (u64, u64), u32),
     AccessSet(PathBuf, Result<(), String>),
     ClosePanel(window::Id),
     /// Show or hide Access in browser `id`'s side panel.
@@ -52,6 +53,9 @@ pub(super) struct Window {
     name_error: Option<String>,
     /// A rename from the panel is being prepared.
     renaming: bool,
+    /// Opened through FileManager1, which never changes files: no rename or
+    /// access changes.
+    read_only: bool,
 }
 impl Window {
     /// Properties for `paths`, before they have been read.
@@ -66,6 +70,7 @@ impl Window {
             name_draft: None,
             name_error: None,
             renaming: false,
+            read_only: false,
         }
     }
 }
@@ -283,7 +288,16 @@ fn modified(time: std::time::SystemTime) -> String {
 }
 
 impl Desktop {
+    /// Properties that FileManager1 asked for: they only show the items.
+    pub(super) fn show_properties_read_only(&mut self, paths: Vec<PathBuf>) -> Task<Message> {
+        self.show_properties_window(paths, true)
+    }
+
     pub(super) fn show_properties(&mut self, paths: Vec<PathBuf>) -> Task<Message> {
+        self.show_properties_window(paths, false)
+    }
+
+    fn show_properties_window(&mut self, paths: Vec<PathBuf>, read_only: bool) -> Task<Message> {
         // A fixed size lets compositors float Properties like other inspectors
         // instead of tiling a short card across a full column.
         let size = if paths.len() == 1 {
@@ -303,7 +317,8 @@ impl Desktop {
             ..Default::default()
         };
         let (id, opened) = window::open(settings);
-        let window = Window::pending(paths);
+        let mut window = Window::pending(paths);
+        window.read_only = read_only;
         let task = read_task(&window, move |result| Event::Ready(id, result));
         self.properties.insert(id, window);
         Task::batch([
@@ -414,12 +429,11 @@ impl Desktop {
                             .join("\n"),
                     )
                 }),
-            Event::SetAccess(path, mode) => {
+            Event::SetAccess(path, identity, mode) => {
                 let done = path.clone();
                 Task::perform(
                     async move {
-                        use std::os::unix::fs::PermissionsExt;
-                        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+                        crate::file_properties::set_access(&path, identity, mode)
                             .map_err(|error| error.to_string())
                     },
                     move |result| Message::Properties(Event::AccessSet(done.clone(), result)),
@@ -892,7 +906,7 @@ fn sections<'a>(
                                     metadata,
                                     key_width,
                                     true,
-                                    (owner, properties.advanced_open),
+                                    (owner, properties.advanced_open, properties.read_only),
                                     properties.access_error.as_deref(),
                                 )
                             ]
@@ -903,7 +917,7 @@ fn sections<'a>(
                                 metadata,
                                 key_width,
                                 false,
-                                (owner, properties.advanced_open),
+                                (owner, properties.advanced_open, properties.read_only),
                                 properties.access_error.as_deref(),
                             ),
                         });
@@ -950,7 +964,7 @@ fn access_section<'a>(
     metadata: &'a crate::file_properties::Metadata,
     key_width: f32,
     stacked: bool,
-    (owner, advanced): (window::Id, bool),
+    (owner, advanced, read_only): (window::Id, bool, bool),
     error: Option<&'a str>,
 ) -> iced::widget::Column<'a, Message> {
     let appearance = &desktop.configuration.appearance;
@@ -959,8 +973,10 @@ fn access_section<'a>(
     let body_size = appearance.typography().body_size.px();
     let muted = chrome::ink(appearance, canopa_theme::ColorRole::Muted);
     let directory = metadata.kind == crate::browse::EntryKind::Directory;
-    let editable = (directory || metadata.kind == crate::browse::EntryKind::File)
+    let editable = !read_only
+        && (directory || metadata.kind == crate::browse::EntryKind::File)
         && metadata.owner == rustix::process::getuid().as_raw();
+    let item_identity = metadata.identity;
     let path = item.filesystem.path.clone();
     let line = |who: String, identity: Option<String>, shift: u32| {
         let current = (metadata.permissions >> shift) & 7;
@@ -971,7 +987,7 @@ fn access_section<'a>(
             let permissions = metadata.permissions;
             let list = iced::widget::pick_list(choices, selected, move |level: Level| {
                 let mode = (permissions & !(7 << shift)) | (level.bits << shift);
-                Message::Properties(Event::SetAccess(path.clone(), mode))
+                Message::Properties(Event::SetAccess(path.clone(), item_identity, mode))
             })
             .placeholder(permission_label(current))
             .font(font)
@@ -1066,6 +1082,7 @@ fn access_section<'a>(
             &item.filesystem.path,
             metadata,
             if stacked { size + 1.0 } else { body_size },
+            read_only,
         ));
     }
     // Numeric modes and identities are for those who ask for them.
@@ -1407,7 +1424,7 @@ fn name_field<'a>(
         .and_then(|tab| tab.browser.as_ref())
         .map(Browser::path);
     let renameable = match (properties.paths.as_slice(), properties.result.as_deref()) {
-        ([path], Some(Ok(items))) => {
+        ([path], Some(Ok(items))) if !properties.read_only => {
             Some(path.as_path()) != current_folder
                 && items
                     .first()
@@ -1486,6 +1503,7 @@ fn executable_toggle<'a>(
     path: &Path,
     metadata: &crate::file_properties::Metadata,
     size: f32,
+    read_only: bool,
 ) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
     let permissions = metadata.permissions;
@@ -1495,8 +1513,9 @@ fn executable_toggle<'a>(
     } else {
         permissions | ((permissions & 0o444) >> 2) | 0o100
     };
-    let owner = metadata.owner == rustix::process::getuid().as_raw();
-    let message = owner.then(|| Message::Properties(Event::SetAccess(path.to_owned(), mode)));
+    let owner = !read_only && metadata.owner == rustix::process::getuid().as_raw();
+    let message = owner
+        .then(|| Message::Properties(Event::SetAccess(path.to_owned(), metadata.identity, mode)));
     let toggle = message.clone();
     let mut check = iced::widget::checkbox(executable)
         .label(fl!("files-properties-executable"))
