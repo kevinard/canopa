@@ -29,7 +29,8 @@ when its last window closes and its work is finished, unless it is resident (see
 
 - **Views**: Columns (default, Ctrl+1), List (Ctrl+2) and Icons (Ctrl+3). The
   toolbar's view button switches the current tab. List view has sortable, resizable
-  column headings (click a heading to sort) and can show folders as an expandable
+  column headings (click a heading to sort; names sort by number value, so `file2`
+  comes before `file10`) and can show folders as an expandable
   tree (Preferences > Views, or `tree=#true`). In List view, folders show their
   item count, up to 10,000+.
 - **Columns**: Left goes to the parent and Right enters the selected folder at

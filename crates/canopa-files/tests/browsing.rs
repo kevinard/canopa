@@ -353,3 +353,41 @@ fn folders_can_sort_among_files_instead_of_first() {
         .unwrap();
     assert_eq!(names(&browser), ["gamma.txt", "beta", "alpha.txt"]);
 }
+
+#[test]
+fn names_sort_by_number_value() {
+    let root = tempfile::tempdir().unwrap();
+    for name in [
+        "file10",
+        "file2",
+        "File1",
+        "file02",
+        "notes",
+        "2024-12.txt",
+        "2024-2.txt",
+    ] {
+        fs::write(root.path().join(name), b"x").unwrap();
+    }
+    let browser = Browser::open(root.path()).unwrap();
+    let names: Vec<String> = browser
+        .visible_entries()
+        .iter()
+        .map(|entry| entry.name().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "2024-2.txt",
+            "2024-12.txt",
+            "File1",
+            "file2",
+            "file02",
+            "file10",
+            "notes"
+        ]
+    );
+    let natural = |name: &str| canopa_files::browse::NaturalName::new(name);
+    assert!(natural("file2") < natural("file10"));
+    assert!(natural("a99999999999999999999999") < natural("a100000000000000000000000"));
+    assert!(natural("Élan2") < natural("élan10"));
+}
