@@ -14,7 +14,7 @@ makedepends=(rust git pkgconf python clang cmake wayland-protocols meson ninja
 options=(!lto !debug !strip)
 # Separately built programs come from Canopa's GitHub forks, pinned by commit
 # with the archive checksums recorded in packaging/forks.json.
-_niri_commit=7b3538af5e67a4ecccf80b6357cc97d09e8ea24c
+_niri_commit=edfe72a95293c91c12badcf76f7b88d515b5d0bf
 _portal_commit=5272cf5b3e0ad62a0f71213f4c87c728bd142720
 _portal_release=1.22.1
 source=('canopa-@VERSION@.tar.gz'
@@ -25,7 +25,7 @@ noextract=("niri-$_niri_commit.tar.gz"
     "xdg-desktop-portal-$_portal_commit.tar.gz"
     "xdg-desktop-portal-$_portal_release.tar.xz")
 sha256sums=('@SOURCE_SHA256@'
-    '08c78d6c6e8aec93d8569adef5b9e5751775ecfc6af0d3648a93503a6e8ef021'
+    '60c343ff367b9fa2596140a2c2ae79b24e59825a35cbc137827465a373b39c8a'
     '4c12e31e8201706365fb0b84df9e4799ce99b228d06832a7db76030d8ac4f0ce'
     'd4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3')
 

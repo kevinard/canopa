@@ -14,8 +14,8 @@ domain language, state and lifetime; shared crates share code, not ownership.
 | Shared foundations (`canopa-config`, `canopa-theme`, `canopa-ui`, `canopa-assets`, `canopa-apps`, `canopa-i18n`, `canopa-services`, `canopa-widgets`, `canopa-cli`) | Configuration discovery and reload, appearance, shared controls, icons and MIME, translations, system-service clients, passive widget data | — | [foundations](docs/architecture/foundations.md) | [adr](docs/adr/README.md) |
 | Panel protocol (`canopa-panel-protocol`) | The Shell ↔ provider protocol | — | [panel protocol](docs/architecture/panel-protocol.md), [provider reference](docs/shell/external-panel-providers.md) | [adr](docs/adr/README.md) |
 
-External owners keep their authority: Niri owns windows, outputs and lock
-security; greetd owns login authentication and session lifetime; PAM owns
+External owners keep their authority: Niri owns windows, SSD titlebars, outputs
+and lock security; greetd owns login authentication and session lifetime; PAM owns
 authentication policy; native polkit owns action policy and credentials; GnuPG
 owns keys and caching; NetworkManager, BlueZ, UPower, logind and the audio server
 own their state.
