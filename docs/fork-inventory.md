@@ -154,14 +154,13 @@ private sockets.
 | Touchscreen 3/4-finger swipes, `gestures { touchscreen-swipe }` | `canopa/touch-gestures`, on remote-input-touch (#18) | Strip and overview by touch (13) | Touchpad-only upstream | **Upstream** after hardware tests |
 | `org.canopa.Niri.WindowPreview1.Capture`, `window-previews { off; }` | `canopa/window-preview`, base (#19) | Taskbar thumbnails (08) | No upstream service | **Keep**, private |
 | Pinned columns: `PinColumn`/`UnpinColumn`/`TogglePinnedColumn`, `open-pinned`, `WindowLayout.pinned` | `canopa/pinned-columns`, base (#20) | Columns that stay on screen (10) | No upstream equivalent | **Discuss upstream** |
+| Optional `layout { titlebar { on; } }`, reserved frame geometry and pointer/touch controls | `canopa/titlebars`, base ([#22](https://github.com/kevinard/niri/pull/22)) | Consistent frames for SSD windows ([ADR 0153](adr/0153-compositor-owned-ssd-titlebars.md)) | No upstream submission planned | **Keep**, Canopa presentation |
 | Smithay `DrmDeviceFd::set_keep_last_frame` (surfaces and device left as they are on drop, framebuffers closed with `CLOSEFB`); Niri `NIRI_KEEP_LAST_FRAME_ON_EXIT` | `canopa/keep-last-frame`, base (#21, Smithay #5) | Login screen to desktop handoff without a blank screen ([ADR 0151](adr/0151-niri-login-compositor.md)) | No CLOSEFB support in Smithay master | **Upstream to Smithay**; Niri may prefer a config option |
 
-Where the shipped patch lives: about 10,100 added lines are new modules
-(`dbus/global_shortcuts*` 3,162, `dbus/remote_input*` 2,525,
-`dbus/input_capture*` 2,462, `input/remote_touch*` 638, plus 134 tests). About
-1,050 lines touch 12 upstream files, mostly `src/input/mod.rs` (+510/−50) and
-`src/dbus/mutter_screen_cast.rs` (+272/−157). Every upstream input refactor
-conflicts there.
+Most fork behavior lives in dedicated modules: `dbus/global_shortcuts*`,
+`dbus/remote_input*`, `dbus/input_capture*`, `input/remote_touch*`,
+`layout/titlebar.rs` and `input/titlebar_grab.rs`. Upstream input dispatch,
+tile sizing/rendering and ScreenCast glue remain the main merge points.
 
 ## xdg-desktop-portal 1.22.1 frontend
 

@@ -241,6 +241,16 @@ compositor defaults in [`packaging/niri/defaults.kdl`](../../packaging/niri/defa
 so every application in the session gets the same shape. Unsupported compositors
 show square windows, which is still correct.
 
+**Window titlebars.** The Niri fork draws titlebars above windows that negotiate
+server-side decorations. The frame reserves layout space and owns title text,
+dragging, close and maximize/restore controls for pointer and touch input.
+Fullscreen windows omit it; maximized windows retain it. Canopa enables the
+optional `layout { titlebar { on; } }` and supplies its initial style in the
+compositor defaults. Applications that negotiate client-side decorations retain
+their headerbars. Titlebar controls work independently of the Shell; there is no
+shell-hosted titlebar menu or live Canopa appearance synchronization in this
+version ([ADR 0153](../adr/0153-compositor-owned-ssd-titlebars.md)).
+
 ## Assets, icons, MIME types and thumbnails
 
 | Piece | Crate | Notes |

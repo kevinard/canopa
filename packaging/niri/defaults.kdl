@@ -5,6 +5,16 @@ layout {
     // so the switch from the login screen to the desktop shows one colour
     // until the wallpaper appears.
     background-color "#10191d"
+    // The compositor owns frames for applications that negotiated SSD.
+    // Application-provided headerbars remain untouched.
+    titlebar {
+        on
+        height 32
+        font "Inter 10"
+        active-color "#202d31"
+        inactive-color "#10191d"
+        text-color "#edf4f0"
+    }
     gaps 12
     center-focused-column "on-overflow"
     default-column-width { proportion 0.5; }

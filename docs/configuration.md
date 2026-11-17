@@ -608,6 +608,37 @@ Canopa keeps some settings outside `config.kdl`. Settings is the usual editor.
 | `~/.config/canopa/launcher.json` | Launcher extensions, keywords, search shortcuts, pins and aliases ([launcher](launcher.md)) |
 | `~/.local/state/canopa/shell/clipboard.json` | Clipboard history options and snippets |
 
+### Compositor titlebars
+
+Canopa's Niri fork enables titlebars for windows that negotiate server-side
+decorations. They contain the window title and close/maximize controls; drag the
+titlebar to move a window. Controls also accept touch input. Application-provided
+headerbars remain intact, and fullscreen windows have no titlebar.
+
+Override the compositor defaults in `~/.config/canopa/niri-custom.kdl`:
+
+```kdl
+layout {
+    titlebar {
+        on
+        height 32
+        font "Inter 10"
+        active-color "#202d31"
+        inactive-color "#10191d"
+        text-color "#edf4f0"
+    }
+}
+```
+
+Use `off` to disable titlebars. Height accepts 24–64 logical pixels; the font is
+a Pango font description. These settings reload with Niri's configuration.
+`prefer-no-csd` must also be enabled to expose decoration negotiation to newly
+started applications; restart applications after changing that preference.
+
+This block requires the Canopa compositor fork. Titlebar styling currently comes
+from compositor configuration and does not follow live `appearance` changes.
+Shell-defined titlebar menus and extra actions are not implemented yet.
+
 ## Known limitations
 
 - The Shell's error hint for an unknown module name lists only some module types;
