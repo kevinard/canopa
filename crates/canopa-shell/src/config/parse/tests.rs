@@ -252,6 +252,24 @@ fn parse_named_module_missing_explicit_type_errors() {
 }
 
 #[test]
+fn unknown_module_type_hint_lists_every_module_type() {
+    for kdl in [
+        r#"modules { module "my-custom" }"#,
+        r#"modules { module "my-custom" { type "bogus"; } }"#,
+    ] {
+        let err = parse(kdl).unwrap_err();
+        let msg = format!("{err:?}");
+        for descriptor in crate::modules::MODULE_DESCRIPTORS {
+            assert!(
+                msg.contains(descriptor.config_name),
+                "hint omits {}: {msg}",
+                descriptor.config_name
+            );
+        }
+    }
+}
+
+#[test]
 fn parse_runtime_only_module_type_is_unknown_config_type() {
     let kdl = r#"
 modules {

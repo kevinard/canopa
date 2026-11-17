@@ -19,7 +19,7 @@ canopa-notify \- Wayland desktop notifications and local notification history
 .br
 .B canopa-notify panel-provider
 .RB [ --socket " PATH"]
-.RB [ --protocol " canopa-v4|canopa-v5"]
+.RB [ --protocol " canopa-v5|canopa-v4"]
 .br
 .B canopa-notify check-config
 .RB [ --config " PATH" | --canopa-config " PATH" | --defaults ]
@@ -59,7 +59,8 @@ Send one command to the running daemon. It never starts the daemon.
 .TP
 .B panel-provider
 Serve the Notification Center to a panel host over stdin and stdout. The default
-protocol is canopa-v4; Canopa Shell's built-in Center uses canopa-v5.
+protocol is canopa-v5, which Canopa Shell's built-in Center uses; canopa-v4
+remains for existing hosts and cannot carry activation tokens.
 .TP
 .B check-config
 Validate the notifications namespace without starting a service and print one JSON

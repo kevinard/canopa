@@ -352,9 +352,10 @@ fn parse_modules_section(
                     module_index_ctx.node_err(
                         node,
                         format!("module name {name:?} is not a known module type"),
-                        Some(
-                            "add a `type \"<module type>\"` child; expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray".into(),
-                        ),
+                        Some(format!(
+                            "add a `type \"<module type>\"` child; expected one of: {}",
+                            crate::modules::config_module_type_list()
+                        )),
                     )
                 })?
                 .to_string()
@@ -364,9 +365,10 @@ fn parse_modules_section(
             module_index_ctx.node_err(
                 node,
                 format!("unknown module type {module_type:?}"),
-                Some(
-                    "expected one of: battery, clock, network, volume, workspaces, focused-window, script, button, tray".into(),
-                ),
+                Some(format!(
+                    "expected one of: {}",
+                    crate::modules::config_module_type_list()
+                )),
             )
         })?;
         let module_ctx = module_index_ctx.child(&module_type);

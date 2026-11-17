@@ -44,7 +44,13 @@ struct Provider {
 impl Provider {
     fn start(socket: &Path) -> Self {
         let mut process = tokio::process::Command::from(support::canopa_notify_command())
-            .args(["panel-provider", "--socket", support::path_arg(socket)])
+            .args([
+                "panel-provider",
+                "--protocol",
+                "canopa-v4",
+                "--socket",
+                support::path_arg(socket),
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)

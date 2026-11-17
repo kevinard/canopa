@@ -55,10 +55,55 @@ fn set_owner_only_permissions(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, perms)
 }
 
+/// The listener claimed by [`claim_instance`] until the IPC subscription starts.
+static CLAIMED: std::sync::Mutex<Option<IpcServer>> = std::sync::Mutex::new(None);
+
+/// Why this process may not run the Shell.
+#[derive(Debug)]
+pub struct AlreadyRunning;
+
+impl std::fmt::Display for AlreadyRunning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("another Canopa Shell is already running in this session")
+    }
+}
+
+impl std::error::Error for AlreadyRunning {}
+
+/// Claim this session's Shell instance before any surface opens.
+///
+/// Fails only when another Shell owns the control socket. A Shell that cannot
+/// create the socket for other reasons (no `XDG_RUNTIME_DIR`, permissions) still
+/// runs without IPC, as before.
+pub fn claim_instance() -> Result<(), AlreadyRunning> {
+    match socket_path().and_then(IpcServer::bind) {
+        Ok(server) => {
+            *CLAIMED.lock().unwrap_or_else(|poison| poison.into_inner()) = Some(server);
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => Err(AlreadyRunning),
+        Err(error) => {
+            tracing::error!(target: "canopa_shell::ipc", %error, "IPC listener unavailable");
+            Ok(())
+        }
+    }
+}
+
+fn claimed_or_bind() -> std::io::Result<IpcServer> {
+    let claimed = CLAIMED
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .take();
+    match claimed {
+        Some(server) => Ok(server),
+        None => socket_path().and_then(IpcServer::bind),
+    }
+}
+
 /// Own the socket name for exactly the lifetime of the listener. The lock also
 /// serializes stale-socket recovery by simultaneous starting instances.
 struct IpcServer {
-    listener: UnixListener,
+    listener: std::os::unix::net::UnixListener,
     _lock: std::fs::File,
     path: PathBuf,
     identity: (u64, u64),
@@ -84,7 +129,10 @@ impl IpcServer {
             },
         )?;
         remove_stale_socket_if_safe(&path)?;
-        let listener = UnixListener::bind(&path)?;
+        // A std listener binds before the async runtime exists, so the Shell can
+        // claim its instance before opening any surface.
+        let listener = std::os::unix::net::UnixListener::bind(&path)?;
+        listener.set_nonblocking(true)?;
         set_owner_only_permissions(&path)?;
         let metadata = std::fs::metadata(&path)?;
         Ok(Self {
@@ -96,12 +144,19 @@ impl IpcServer {
     }
 
     async fn run(self, tx: mpsc::Sender<Message>) {
+        let listener = match self.listener.try_clone().and_then(UnixListener::from_std) {
+            Ok(listener) => listener,
+            Err(error) => {
+                tracing::error!(target: "canopa_shell::ipc", %error, "IPC listener unavailable");
+                return;
+            }
+        };
         let mut clients = tokio::task::JoinSet::new();
         loop {
             tokio::select! {
                 _ = tx.closed() => break,
                 _ = clients.join_next(), if !clients.is_empty() => {},
-                accepted = self.listener.accept() => match accepted {
+                accepted = listener.accept() => match accepted {
                     Ok((socket, _)) if clients.len() < 64 => {
                         let tx = tx.clone();
                         clients.spawn(async move {
@@ -193,7 +248,7 @@ pub fn ipc_subscription() -> iced::Subscription<Message> {
                 Some(rx) => rx,
                 None => {
                     let (tx, rx) = mpsc::channel(32);
-                    match socket_path().and_then(IpcServer::bind) {
+                    match claimed_or_bind() {
                         Ok(server) => {
                             tokio::spawn(server.run(tx));
                         }
@@ -544,7 +599,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("canopa-shell.sock");
         let first = IpcServer::bind(path.clone()).unwrap();
-        assert!(IpcServer::bind(path.clone()).is_err());
+        // The kind is what makes a second Shell exit instead of running headless.
+        assert_eq!(
+            IpcServer::bind(path.clone())
+                .err()
+                .map(|error| error.kind()),
+            Some(std::io::ErrorKind::AddrInUse)
+        );
         assert!(tokio::net::UnixStream::connect(&path).await.is_ok());
         drop(first);
         let stale = UnixListener::bind(&path).unwrap();

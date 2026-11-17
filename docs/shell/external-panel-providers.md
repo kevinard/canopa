@@ -268,7 +268,8 @@ Events are fire-and-forget; the host does not wait for a reply.
 
 `canopa-wifi-provider` (`crates/canopa-shell/src/wifi_provider.rs`) is a form-content
 provider and a reference implementation. Without arguments it speaks
-`niribar-v1`; the Shell runs it with `--protocol canopa-v5`.
+`canopa-v5`, as the Shell runs it; `--protocol niribar-v1` keeps the legacy wire
+for existing declarations.
 
 - **Backend.** It shares the network bundle in `canopa-services` with the Shell's
   status module: NetworkManager when present, otherwise iwd for control (with
@@ -323,9 +324,11 @@ panel-providers {
 }
 ```
 
-`canopa-notify panel-provider` defaults to `--protocol canopa-v4` when the flag is
-omitted, so set the flag and `protocol` together. Only `canopa-v5` carries
-activation tokens for Center actions.
+`canopa-notify panel-provider` speaks `canopa-v5` when the flag is omitted;
+`--protocol canopa-v4` remains for existing hosts. Set the flag and `protocol`
+together: a declaration without `protocol` still means `niribar-v1`, which no
+built-in provider speaks by default. Only `canopa-v5` carries activation tokens
+for Center actions.
 
 Behaviour a host can rely on:
 
