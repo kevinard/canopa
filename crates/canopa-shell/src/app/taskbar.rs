@@ -119,14 +119,14 @@ impl TaskbarRuntime {
 }
 
 #[cfg(not(test))]
-pub(super) fn applications() -> &'static [crate::desktop_apps::DesktopApplication] {
+pub(super) fn applications() -> std::sync::Arc<Vec<crate::desktop_apps::DesktopApplication>> {
     crate::focused_window_icons::installed_applications()
 }
 
 // Unit tests never read the host's installed applications.
 #[cfg(test)]
-pub(super) fn applications() -> &'static [crate::desktop_apps::DesktopApplication] {
-    &[]
+pub(super) fn applications() -> std::sync::Arc<Vec<crate::desktop_apps::DesktopApplication>> {
+    Default::default()
 }
 
 #[cfg(not(test))]
@@ -245,7 +245,7 @@ impl App {
                     &windows,
                     &state.workspaces,
                     focused,
-                    applications(),
+                    &applications(),
                 );
                 #[cfg(not(test))]
                 let entries = entries
@@ -371,10 +371,11 @@ impl App {
         }) else {
             return Task::none();
         };
+        let applications = applications();
         let application = entry
             .desktop_id
             .as_deref()
-            .and_then(|id| applications().iter().find(|app| app.id == id));
+            .and_then(|id| applications.iter().find(|app| app.id == id));
         // Layout commands act on the window in front, if it is this
         // application's, otherwise on its most recent one.
         let front = self.current_taskbar_window();

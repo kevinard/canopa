@@ -372,15 +372,13 @@ impl App {
         {
             let id = id.to_owned();
             tokio::spawn(async move {
-                let lookup_id = id.clone();
-                let app = tokio::task::spawn_blocking(move || {
-                    crate::desktop_apps::discover_installed_applications()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .find(|app| app.id == lookup_id)
-                })
-                .await;
-                if let Ok(Some(app)) = app {
+                // The entry from the catalog read when the launcher opened, so
+                // the launch is the row the person chose, without a rescan.
+                let app = crate::focused_window_icons::installed_applications()
+                    .iter()
+                    .find(|app| app.id == id)
+                    .cloned();
+                if let Some(app) = app {
                     if let Err(error) =
                         crate::command::spawn_desktop_application_fire_and_forget(&app, None).await
                     {

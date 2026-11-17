@@ -535,15 +535,7 @@ fn application_from_entry(
         name,
         generic_name: localized_field(&fields, "GenericName", &env.locales),
         comment: localized_field(&fields, "Comment", &env.locales),
-        keywords: localized_field(&fields, "Keywords", &env.locales)
-            .as_deref()
-            .map(|value| {
-                semicolon_list(value)
-                    .into_iter()
-                    .map(ToOwned::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
+        keywords: keywords(&fields, &env.locales),
         icon: optional_non_empty_field(&fields, "Icon"),
         actions: desktop_actions(&entry.body, &fields, &env.locales, dbus_activatable),
         exec_program,
@@ -599,7 +591,63 @@ fn valid_action_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+/// The session language's keywords followed by the untranslated ones, so an
+/// English search keeps working in a localized session.
+fn keywords(fields: &HashMap<String, String>, locales: &[String]) -> Vec<String> {
+    let mut keywords = localized_raw(fields, "Keywords", locales)
+        .map(|value| string_list(&value))
+        .unwrap_or_default();
+    for keyword in optional_non_empty_field(fields, "Keywords")
+        .map(|value| string_list(&value))
+        .unwrap_or_default()
+    {
+        if !keywords.contains(&keyword) {
+            keywords.push(keyword);
+        }
+    }
+    keywords
+}
+
+/// A desktop-entry `string(s)` list: items end at unescaped `;`, and `\;`
+/// stands for a literal semicolon inside an item.
+fn string_list(value: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => match chars.next() {
+                Some(';') => current.push(';'),
+                Some(next) => {
+                    current.push('\\');
+                    current.push(next);
+                }
+                None => current.push('\\'),
+            },
+            ';' => items.push(std::mem::take(&mut current)),
+            ch => current.push(ch),
+        }
+    }
+    items.push(current);
+    items
+        .iter()
+        .map(|item| unescape_string(item.trim()))
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
 fn localized_field(
+    fields: &HashMap<String, String>,
+    key: &str,
+    locales: &[String],
+) -> Option<String> {
+    localized_raw(fields, key, locales)
+        .or_else(|| optional_non_empty_field(fields, key))
+        .map(|value| unescape_string(&value))
+}
+
+/// The best localized `key[locale]` value, still escaped.
+fn localized_raw(
     fields: &HashMap<String, String>,
     key: &str,
     locales: &[String],
@@ -623,11 +671,11 @@ fn localized_field(
         candidates.push(language.to_owned());
         for locale in candidates {
             if let Some(value) = optional_non_empty_field(fields, &format!("{key}[{locale}]")) {
-                return Some(unescape_string(&value));
+                return Some(value);
             }
         }
     }
-    optional_non_empty_field(fields, key).map(|value| unescape_string(&value))
+    None
 }
 
 fn unescape_string(value: &str) -> String {
@@ -726,7 +774,7 @@ mod tests {
                     "[Desktop Entry]\nType=Application\nName=Default\nExec=true\n",
                     "Name[fr]=Français\nName[fr_CA]=Québécois\n",
                     "GenericName[fr]=Éditeur\\sde texte\nComment[fr]=Description\n",
-                    "Keywords[fr]=texte;édition;\n"
+                    "Keywords[fr]=texte;édition;\nKeywords=text;editor;texte;\n"
                 ),
             )],
             &env,
@@ -734,8 +782,18 @@ mod tests {
         assert_eq!(apps[0].name, "Québécois");
         assert_eq!(apps[0].generic_name.as_deref(), Some("Éditeur de texte"));
         assert_eq!(apps[0].comment.as_deref(), Some("Description"));
-        assert_eq!(apps[0].keywords, ["texte", "édition"]);
+        // The French keywords come first; the English ones still match.
+        assert_eq!(apps[0].keywords, ["texte", "édition", "text", "editor"]);
         assert_eq!(apps[0].desktop_file, PathBuf::from("app.desktop"));
+    }
+
+    #[test]
+    fn string_lists_keep_escaped_semicolons() {
+        assert_eq!(
+            string_list(r"one;two\;three; four ;;\sfive;"),
+            ["one", "two;three", "four", " five"]
+        );
+        assert!(string_list("").is_empty());
     }
 
     #[test]

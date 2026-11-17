@@ -237,7 +237,7 @@ impl App {
         {
             return Task::none();
         }
-        let current = record(self.niri.state(), super::taskbar::applications());
+        let current = record(self.niri.state(), &super::taskbar::applications());
         let known = self
             .session_restore
             .pending
@@ -279,7 +279,7 @@ impl App {
     fn restore_window_session(&mut self) -> Task<Message> {
         let saved = read_record();
         self.session_restore.saved = saved.clone();
-        let already_open = !record(self.niri.state(), super::taskbar::applications())
+        let already_open = !record(self.niri.state(), &super::taskbar::applications())
             .windows
             .is_empty();
         let Some(saved) = saved.filter(|saved| !saved.windows.is_empty() && !already_open) else {

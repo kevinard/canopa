@@ -2002,15 +2002,12 @@ async fn receive_token(
 
 #[cfg(not(test))]
 async fn installed_application(id: String) -> Option<crate::desktop_apps::DesktopApplication> {
-    tokio::task::spawn_blocking(move || {
-        crate::desktop_apps::discover_installed_applications()
-            .unwrap_or_default()
-            .into_iter()
-            .find(|app| app.id == id)
-    })
-    .await
-    .ok()
-    .flatten()
+    // The catalog read when the launcher opened: no rescan, and no other
+    // entry that appeared since can answer for the chosen row.
+    crate::focused_window_icons::installed_applications()
+        .iter()
+        .find(|app| app.id == id)
+        .cloned()
 }
 
 #[cfg(not(test))]

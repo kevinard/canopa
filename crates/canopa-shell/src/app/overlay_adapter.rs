@@ -183,9 +183,15 @@ impl super::App {
                         let _ = pending;
                         tasks.push(iced::Task::perform(
                             async {
-                                tokio::task::spawn_blocking(
-                                    crate::desktop_apps::discover_installed_applications,
-                                )
+                                tokio::task::spawn_blocking(|| {
+                                    let apps =
+                                        crate::desktop_apps::discover_installed_applications()?;
+                                    // Window icons follow the same catalog.
+                                    crate::focused_window_icons::publish_installed_applications(
+                                        apps.clone(),
+                                    );
+                                    Ok::<_, anyhow::Error>(apps)
+                                })
                                 .await
                                 .ok()
                                 .and_then(Result::ok)
