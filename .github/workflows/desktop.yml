@@ -3,13 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       niri:
-        description: Absolute path to the compatible Niri executable on this runner
-        required: true
-        default: /usr/bin/niri
+        description: Absolute path to a Canopa compositor build on this runner; empty builds the pinned fork
+        required: false
+        default: ''
         type: string
       niri_sha256:
-        description: SHA-256 of that exact executable
-        required: true
+        description: SHA-256 of that exact executable (required with niri)
+        required: false
+        default: ''
         type: string
       stasis:
         description: Absolute path to the external Stasis 1.7 executable
@@ -27,11 +28,30 @@ jobs:
     timeout-minutes: 720
     env:
       CARGO_INCREMENTAL: '0'
-      ACCEPTANCE_NIRI: ${{ inputs.niri }}
-      ACCEPTANCE_NIRI_SHA256: ${{ inputs.niri_sha256 }}
       ACCEPTANCE_STASIS: ${{ inputs.stasis }}
     steps:
       - uses: actions/checkout@v4
+      # Test the compositor Canopa ships: the pinned kevinard/niri fork, built
+      # here unless the dispatch names an existing build and its checksum.
+      - name: Select the Canopa compositor
+        env:
+          INPUT_NIRI: ${{ inputs.niri }}
+          INPUT_NIRI_SHA256: ${{ inputs.niri_sha256 }}
+        run: |
+          if [ -n "$INPUT_NIRI" ]; then
+            test -n "$INPUT_NIRI_SHA256" || { echo "niri_sha256 is required with niri" >&2; exit 1; }
+            printf 'ACCEPTANCE_NIRI=%s\nACCEPTANCE_NIRI_SHA256=%s\n' "$INPUT_NIRI" "$INPUT_NIRI_SHA256" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          work="target/desktop-niri/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python3 scripts/build-niri.py --archives target/fork-archives --download --fetch --release --work-dir "$work"
+          python3 - "$work/canopa-build.json" >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          receipt = json.load(open(sys.argv[1]))
+          assert receipt["status"] == "built" and receipt["origin"]["pinned"], receipt
+          print(f"ACCEPTANCE_NIRI={receipt['binary']}")
+          print(f"ACCEPTANCE_NIRI_SHA256={receipt['binary_sha256']}")
+          PY
       - name: Check runner prerequisites
         run: |
           test "${ACCEPTANCE_STASIS:0:1}" = /
@@ -45,7 +65,7 @@ jobs:
       - name: Build the ordinary-window drag transport probe
         run: bash scripts/cargo.sh build --locked -p canopa-files --example drag_transport
       - name: Validate Settings with the selected native compositor parser
-        run: CANOPA_NIRI_BIN="$ACCEPTANCE_NIRI" bash scripts/cargo.sh test --locked --workspace --test backend -- --ignored
+        run: CANOPA_NIRI_BIN="$ACCEPTANCE_NIRI" bash scripts/cargo.sh test --locked -p canopa-settings --test integration backend:: -- --ignored
       - name: Run the maintained desktop acceptance matrix
         run: python3 scripts/run-desktop-acceptance.py --shell target/debug/canopa-shell --notify target/debug/canopa-notify --niri "$ACCEPTANCE_NIRI" --niri-sha256 "$ACCEPTANCE_NIRI_SHA256" --stasis "$ACCEPTANCE_STASIS" --output desktop-artifacts
       - uses: actions/upload-artifact@v4

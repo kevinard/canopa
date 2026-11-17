@@ -154,7 +154,7 @@ fn main() {
         }
         #[cfg(not(feature = "desktop"))]
         {
-            anyhow::bail!("Print layout requires the desktop feature")
+            Err(anyhow::anyhow!("Print layout requires the desktop feature"))
         }
     } else if args.print_worker {
         print_worker()
@@ -981,6 +981,8 @@ async fn run(args: Args) -> anyhow::Result<()> {
     };
     let connection = builder.build().await?;
     let screenshot_targets = screenshot.observe_available_targets(&connection).await?;
+    // Headless builds advertise no remote input devices, so nothing changes.
+    #[cfg(feature = "desktop")]
     let available_devices = remote_desktop
         .observe_available_devices(&connection)
         .await?;
@@ -1035,6 +1037,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
             }
         }
     }
+    #[cfg(feature = "desktop")]
     available_devices.stop().await;
     screenshot_targets.stop().await;
     #[cfg(feature = "desktop")]

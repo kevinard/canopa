@@ -11,6 +11,8 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     strategy:
+      # Report both profiles; a core failure must not hide the desktop result.
+      fail-fast: false
       matrix:
         profile: [core, desktop]
     steps:
