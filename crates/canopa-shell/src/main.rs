@@ -46,6 +46,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::Run(_) => "run",
         cli::Command::CheckConfig(_) => "check-config",
         cli::Command::PrintVersion => "version",
+        cli::Command::PrintHelp => "help",
         cli::Command::ClipboardFrame(_) => "clipboard-frame",
         cli::Command::LauncherExtension(..) => "launcher-extension",
         cli::Command::AppScope(_) => "app-scope",
@@ -105,6 +106,7 @@ fn main() {
             }
         }
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
+        cli::Command::PrintHelp => print!("{}", cli::USAGE),
         cli::Command::Reload => std::process::exit(run_reload_cli()),
         cli::Command::Lock => {
             if let Err(error) = wallpaper::lock() {
