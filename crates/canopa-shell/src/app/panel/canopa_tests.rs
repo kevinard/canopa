@@ -129,6 +129,38 @@ async fn stale_updates_do_not_change_selection_or_reopen_a_closed_panel() {
 }
 
 #[tokio::test]
+async fn a_failed_provider_explains_itself_and_retry_restarts_it() {
+    let (mut app, window) = open(document(&mut CanopaSession::default()).await);
+    let _ = app.update(Message::ExternalPanel(
+        ExternalPanelEvent::ProviderSessionFailed {
+            session_id: "session-1".into(),
+            provider_name: "notifications".into(),
+            message: "provider process exited with exit status: 1".into(),
+        },
+    ));
+    // Canopa content, so the AT-SPI bridge exposes it like a working provider.
+    let failure = displayed(&app);
+    assert_eq!(failure.content.title, "This panel stopped working");
+    assert!(failure.content.error.is_some());
+    assert_eq!(
+        failure.content.sections[0].items[0].title,
+        "provider process exited with exit status: 1"
+    );
+    let retry = failure.content.actions[0].clone();
+    assert_eq!(retry.label, "Retry");
+    let retry_id = failure.action_id(canopa_panel_protocol::InteractionTarget::Content, &retry);
+    assert_eq!(app.pending_external_panel_session_id_for_test(), None);
+    let _ = app.update(Message::ExternalPanel(
+        ExternalPanelEvent::ButtonActivated {
+            provider_name: "notifications".into(),
+            element_id: retry_id,
+        },
+    ));
+    assert!(app.pending_external_panel_session_id_for_test().is_some());
+    assert_eq!(app.foreground.active_panel_window(), Some(window));
+}
+
+#[tokio::test]
 async fn provider_failure_remains_in_the_same_keyboard_dismissible_window() {
     let (mut app, window) = open(document(&mut CanopaSession::default()).await);
     let _ = app.update(Message::ExternalPanel(

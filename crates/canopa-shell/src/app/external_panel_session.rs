@@ -546,6 +546,12 @@ impl ExternalPanelSessionRuntime {
     }
 
     #[cfg(test)]
+    #[cfg(test)]
+    pub(super) fn pending_session_id_for_test(&self) -> Option<&str> {
+        self.pending_session_id.as_deref()
+    }
+
+    #[cfg(test)]
     pub(super) fn set_pending_for_test(&mut self, session_id: &str) {
         self.pending_session_id = Some(session_id.to_string());
     }

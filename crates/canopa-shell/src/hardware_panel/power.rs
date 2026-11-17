@@ -25,21 +25,39 @@ struct Snapshot {
     profiles: Option<PowerProfiles>,
 }
 
+/// Whether this provider runs in a logind session, which brightness changes
+/// need. Looked up until found, then kept: the session does not change.
+#[derive(Default)]
+struct SessionLookup(bool);
+
+impl SessionLookup {
+    async fn found(&mut self, connection: &Connection) -> bool {
+        if !self.0 {
+            self.0 = matches!(
+                tokio::time::timeout(
+                    Duration::from_millis(800),
+                    logind::Session::find(connection)
+                )
+                .await,
+                Ok(Ok(_))
+            );
+        }
+        self.0
+    }
+}
+
 impl Snapshot {
-    async fn read(connection: Option<&Connection>) -> Self {
+    async fn read(connection: Option<&Connection>, session: &mut SessionLookup) -> Self {
         let light = Backlight::discover(Path::new(backlight::ROOT));
         let Some(connection) = connection else {
             return Self::default();
         };
         let (profiles, session) = tokio::join!(
             PowerProfiles::discover(connection),
-            tokio::time::timeout(
-                Duration::from_millis(800),
-                logind::Session::find(connection)
-            ),
+            session.found(connection)
         );
         Self {
-            light: light.filter(|_| matches!(session, Ok(Ok(_)))),
+            light: light.filter(|_| session),
             profiles,
         }
     }
@@ -91,12 +109,22 @@ pub(super) async fn run(
     output: &mut (impl AsyncWrite + Unpin),
 ) -> Result<()> {
     let mut panel = Session::default();
-    let mut snapshot = Snapshot::default();
+    let mut session = SessionLookup::default();
     let mut connection = None;
     let mut error = None;
     let mut tick = tokio::time::interval(Duration::from_secs(3));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    // Send a frame immediately even when D-Bus is slow or absent.
+    // The first frame waits for the first read, so a present service never
+    // flashes "unavailable"; a slow or absent D-Bus still gets a frame quickly.
+    let mut snapshot = tokio::time::timeout(FIRST_READ, async {
+        connection = tokio::time::timeout(Duration::from_secs(1), Connection::system())
+            .await
+            .ok()
+            .and_then(Result::ok);
+        Snapshot::read(connection.as_ref(), &mut session).await
+    })
+    .await
+    .unwrap_or_default();
     publish(&mut panel, output, snapshot.content(None)).await?;
     loop {
         tokio::select! {
@@ -105,7 +133,7 @@ pub(super) async fn run(
                     connection = tokio::time::timeout(Duration::from_secs(1), Connection::system())
                         .await.ok().and_then(Result::ok);
                 }
-                let next = Snapshot::read(connection.as_ref()).await;
+                let next = Snapshot::read(connection.as_ref(), &mut session).await;
                 if next != snapshot {
                     snapshot = next;
                     publish(&mut panel, output, snapshot.content(error.as_deref())).await?;
@@ -126,7 +154,7 @@ pub(super) async fn run(
                     _ => continue,
                 };
                 error = (!matches!(result, Ok(Ok(())))).then(|| fl!("shell-power-change-failed"));
-                snapshot = Snapshot::read(Some(connection)).await;
+                snapshot = Snapshot::read(Some(connection), &mut session).await;
                 publish(&mut panel, output, snapshot.content(error.as_deref())).await?;
             }
         }

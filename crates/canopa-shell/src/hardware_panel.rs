@@ -8,6 +8,10 @@ use tokio::io::{AsyncBufRead, AsyncWrite};
 mod bluetooth;
 mod power;
 
+/// How long a hardware provider waits for its service before publishing its
+/// first frame; the Shell keeps the panel closed until that frame arrives.
+const FIRST_READ: std::time::Duration = std::time::Duration::from_millis(1500);
+
 pub async fn run(
     name: &str,
     input: impl AsyncBufRead + Unpin + Send + 'static,

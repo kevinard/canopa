@@ -68,16 +68,46 @@ pub struct ExternalPanelContent {
 }
 
 impl ExternalPanelContent {
+    /// The action key of the failure panel's Retry, handled by the Shell.
+    pub const RETRY: &'static str = "canopa-shell-retry";
+
+    /// A provider that failed or stopped: a plain explanation, the technical
+    /// message under Details, and Retry. It is Canopa content so it has the
+    /// same keyboard focus and accessibility nodes as a working provider.
     pub fn failure(provider_name: impl Into<String>, message: impl Into<String>) -> Self {
+        use canopa_panel_protocol::{PanelAction, PanelContent, PanelItem, PanelSection};
+        let content = PanelContent {
+            title: fl!("shell-provider-failed"),
+            sections: vec![PanelSection {
+                id: "details".into(),
+                title: fl!("shell-provider-failed-details"),
+                icon: None,
+                items: vec![PanelItem {
+                    id: "message".into(),
+                    title: message.into(),
+                    attribution: None,
+                    body: None,
+                    styled_body: None,
+                    rich_body: None,
+                    metadata: Vec::new(),
+                    actions: Vec::new(),
+                    slider: None,
+                }],
+                controls: Vec::new(),
+            }],
+            actions: vec![PanelAction {
+                key: Self::RETRY.into(),
+                label: fl!("shell-provider-retry"),
+                value: None,
+                request_activation_token: false,
+                destructive: false,
+                pressed: None,
+            }],
+            error: Some(fl!("shell-provider-failed-explanation")),
+        };
         Self::from_provider_document(
             provider_name,
-            ExternalPanelDocument::Elements {
-                elements: vec![ExternalPanelElement::Status {
-                    title: fl!("shell-provider-failed"),
-                    message: message.into(),
-                    severity: ExternalPanelSeverity::Error,
-                }],
-            },
+            ExternalPanelDocument::Canopa(Box::new(CanopaSnapshot::local(content))),
         )
     }
 
@@ -88,7 +118,18 @@ impl ExternalPanelContent {
     #[cfg(test)]
     pub fn failure_text(&self) -> String {
         if let Some(snapshot) = self.document.canopa() {
-            return snapshot.content.title.clone();
+            let content = &snapshot.content;
+            return std::iter::once(content.title.as_str())
+                .chain(content.error.as_deref())
+                .chain(
+                    content
+                        .sections
+                        .iter()
+                        .flat_map(|section| &section.items)
+                        .map(|item| item.title.as_str()),
+                )
+                .collect::<Vec<_>>()
+                .join("\n");
         }
         self.elements()
             .iter()

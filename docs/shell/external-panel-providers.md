@@ -26,8 +26,10 @@ reimplementing frame encoding, message types or validation.
   the provider's process group: 250 ms in general, 3 s for `bluetooth` and 35 s for
   `wifi`. Closing a panel does not roll back work already handed to a backend.
 - Invalid JSON, oversized frames, incompatible versions, unexpected messages,
-  invalid content and provider exits show provider failure content in the panel
-  and are logged. Invalid output after the session starts ends the session rather
+  invalid content and provider exits show a failure in the panel and are logged:
+  a plain explanation, the technical message under **Details**, and **Retry**,
+  which starts the provider again in the same panel. The failure is Canopa
+  content, so screen readers read it like any provider's panel. Invalid output after the session starts ends the session rather
   than leaving stale content interactive.
 - The Shell keeps the last 4 KiB of the provider's stderr for diagnostics and never
   shows it in the panel. Providers must not write secrets (such as network

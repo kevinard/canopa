@@ -183,7 +183,10 @@ shell-config-alert-description = The Shell configuration was rejected
 shell-list-use-custom-value = Use custom value
 # $value is the text the person typed.
 shell-list-use-custom-value-named = Use custom value { $value }
-shell-provider-failed = Provider failed
+shell-provider-failed = This panel stopped working
+shell-provider-failed-explanation = The program that provides it stopped or could not start. Retry to start it again.
+shell-provider-failed-details = Details
+shell-provider-retry = Retry
 shell-provider-value-too-long = Value is too long. Shorten it and try again.
 # A provider's selected entry; $label is its text.
 shell-provider-selected = Selected: { $label }

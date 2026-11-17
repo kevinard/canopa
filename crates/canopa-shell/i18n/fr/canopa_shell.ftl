@@ -163,7 +163,10 @@ shell-config-alert = Erreur de configuration
 shell-config-alert-description = La configuration du Shell a été refusée
 shell-list-use-custom-value = Utiliser une valeur personnalisée
 shell-list-use-custom-value-named = Utiliser la valeur personnalisée { $value }
-shell-provider-failed = Échec du fournisseur
+shell-provider-failed = Ce panneau ne fonctionne plus
+shell-provider-failed-explanation = Le programme qui le fournit s’est arrêté ou n’a pas pu démarrer. Réessayez pour le relancer.
+shell-provider-failed-details = Détails
+shell-provider-retry = Réessayer
 shell-provider-value-too-long = La valeur est trop longue. Raccourcissez-la et réessayez.
 shell-provider-selected = Sélection : { $label }
 
