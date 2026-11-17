@@ -218,7 +218,8 @@ only graphical Wayland session of the user. It then:
   inhibitor once the compositor confirms the lock, then takes a new one after resume;
 - sets logind's `LockedHint` after the compositor confirms and clears it after unlock;
 - restarts a locker that crashed while locked (after 750 ms, up to five times a
-  minute), so the screen does not stay locked with no prompt;
+  minute), so the screen does not stay locked with no prompt, and stops once another
+  locker has unlocked the session;
 - reconnects when logind restarts.
 
 Stopping or restarting the listener leaves an active lock screen in place. If the
