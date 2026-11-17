@@ -123,6 +123,7 @@ settings-footer-reload = Reload this page and discard its edits
 settings-footer-save = Save changes
 settings-footer-test-displays = Test display changes
 settings-saved = Settings saved.
+settings-saved-reload-failed = Saved, but { $programs } did not reload; some applications keep the previous appearance until it restarts
 # $page is a page title.
 settings-activate-busy = Finish the current change, then open { $page }.
 settings-session-required-title = Changes require a Canopa session
@@ -1122,6 +1123,7 @@ settings-error-compositor-reload = Compositor reload failed. Previous settings r
 settings-error-busy = Another settings operation is active.
 settings-error-changed-outside = The settings changed outside this editor; reload before saving.
 settings-error-not-owned = The settings file must be a regular file you own; symlinked configuration is read-only.
+settings-error-symlink = { $path } is a symbolic link, as dotfile managers such as GNU Stow or Home Manager create. Settings does not change linked files, so this page is read-only; edit the file the link points to instead.
 settings-error-too-large = The settings exceed the 1 MiB limit.
 settings-error-input-layouts = Choose one to eight keyboard layouts.
 settings-error-input-speed = Pointer speed must be between -1 and 1.

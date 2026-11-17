@@ -262,7 +262,9 @@ fn stale_sources_validation_errors_and_symlinks_cannot_destroy_configuration() {
     let original = root.path().join("original");
     std::fs::write(&original, "keep").unwrap();
     symlink(&original, &path).unwrap();
-    assert!(Snapshot::load(&path).is_err());
+    let refused = Snapshot::load(&path).unwrap_err().to_string();
+    // The page explains why a dotfile-managed link is read-only.
+    assert!(refused.contains("symbolic link"), "{refused}");
     assert_eq!(std::fs::read_to_string(original).unwrap(), "keep");
 }
 #[test]

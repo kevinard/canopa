@@ -2,10 +2,7 @@ use anyhow::{Context, Result, ensure};
 use std::{
     fs::{File, OpenOptions},
     io::Write,
-    os::{
-        fd::AsRawFd,
-        unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
-    },
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -17,6 +14,9 @@ pub struct Snapshot {
     pub path: PathBuf,
     pub text: String,
     identity: Option<(u64, u64)>,
+    /// Set by a page's save when the file was written but a program that
+    /// applies it did not reload; the page reports it instead of "Saved".
+    pub reload_problem: Option<String>,
 }
 
 impl Snapshot {
@@ -28,8 +28,15 @@ impl Snapshot {
             Err(error) => return Err(error.into()),
         };
         let (text, identity) = if let Some(metadata) = metadata {
+            // Dotfile managers (GNU Stow, Home Manager, chezmoi links) keep the
+            // real file elsewhere; writing through the link would bypass them.
             ensure!(
-                metadata.is_file() && metadata.uid() == unsafe { libc::geteuid() },
+                !metadata.file_type().is_symlink(),
+                "{}",
+                fl!("settings-error-symlink", path = path.display().to_string())
+            );
+            ensure!(
+                metadata.is_file() && metadata.uid() == rustix::process::geteuid().as_raw(),
                 "{}",
                 fl!("settings-error-not-owned")
             );
@@ -47,6 +54,7 @@ impl Snapshot {
             path,
             text,
             identity,
+            reload_problem: None,
         })
     }
 
@@ -111,12 +119,12 @@ pub fn lock(path: &Path) -> Result<File> {
         .create(true)
         .truncate(false)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
         .open(path)?;
     let metadata = file.metadata()?;
     ensure!(
         metadata.is_file()
-            && metadata.uid() == unsafe { libc::geteuid() }
+            && metadata.uid() == rustix::process::geteuid().as_raw()
             && metadata.mode() & 0o077 == 0,
         "invalid settings lock file"
     );
@@ -126,7 +134,7 @@ pub fn lock(path: &Path) -> Result<File> {
     // mistaken for a concurrent settings operation.
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
     loop {
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        if rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive).is_ok() {
             return Ok(file);
         }
         ensure!(
@@ -164,7 +172,9 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>, args: &[String]) -> Result<
     impl Drop for Cleanup {
         fn drop(&mut self) {
             // Descendants must not retain a captured pipe beyond the deadline.
-            unsafe { libc::kill(-(self.0.id() as i32), libc::SIGKILL) };
+            if let Some(group) = rustix::process::Pid::from_raw(self.0.id() as i32) {
+                let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+            }
             let _ = self.0.wait();
         }
     }
