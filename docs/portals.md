@@ -318,7 +318,7 @@ and the read-only option. Places lists Home, Documents, Downloads and Pictures
   ```
 
   The packaged Canopa session sets `QT_QPA_PLATFORMTHEME=xdgdesktopportal` unless
-  you already chose a platform theme (ADR 0153); other sessions need it set by
+  you already chose a platform theme (ADR 0154); other sessions need it set by
   hand, and the plugin must be installed (Arch: part of `qt6-base`). A `QFileDialog`
   created before the application's event loop starts uses Qt's own dialog.
   Dialogs opened after startup reach Canopa.
@@ -527,7 +527,7 @@ Portal dialogs use the Wayland app ID `org.canopa.Portal`. When an application
 passes its window as the parent, the dialog attaches to it (xdg-foreign) and
 Niri opens it floating, like other parented dialogs. Without a parent, or when the
 parent handle has expired, the dialog is an independent window. The packaged
-session's Niri defaults float it anyway (ADR 0153). In your own Niri
+session's Niri defaults float it anyway (ADR 0154). In your own Niri
 configuration, outside the packaged session, add the same rule to float them:
 
 ```kdl

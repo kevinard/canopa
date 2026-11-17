@@ -15,7 +15,7 @@ VARIABLES = ("WAYLAND_DISPLAY", "DISPLAY", "NIRI_SOCKET", "NIRI_CONFIG", "CANOPA
              "CANOPA_SESSION_PID", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE")
 COMPOSITOR = Path("/usr/lib/canopa/niri")
 # Qt applications reach Canopa's file chooser and other portal dialogs through
-# Qt's xdgdesktopportal platform theme (ADR 0153). A theme the user already
+# Qt's xdgdesktopportal platform theme (ADR 0154). A theme the user already
 # chose (qt6ct, kvantum, …) is kept.
 QT_PLATFORM_THEME = "xdgdesktopportal"
 
