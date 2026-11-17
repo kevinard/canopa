@@ -40,7 +40,7 @@ menus {
     // Cancel is first so Enter never ends the session by default.
     menu "Log out?" title-id="shell-menu-log-out-title" prompt-id="shell-menu-unsaved-work" {
         item label-id="shell-menu-cancel" { open-bar-panel; }
-        item label-id="shell-menu-log-out" { command { argv "niri" "msg" "action" "quit" "--skip-confirmation"; }; }
+        item label-id="shell-menu-log-out" { session "log-out"; }
     }
     menu "Reboot?" title-id="shell-menu-reboot-title" prompt-id="shell-menu-unsaved-work" {
         item label-id="shell-menu-cancel" { open-bar-panel; }
@@ -212,7 +212,7 @@ modules {
         icon "canopa:overview"
         tooltip-id "shell-tooltip-overview"
         ui { padding 11 0; }
-        actions { click { command { argv "niri" "msg" "action" "toggle-overview"; }; } }
+        actions { click { toggle-overview; } }
     }
     module "system" {
         type "button"

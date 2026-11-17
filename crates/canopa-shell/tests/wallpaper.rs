@@ -5,8 +5,12 @@ use std::{
 };
 
 fn lock(root: &std::path::Path) -> Output {
+    lock_with(root, &["lock", "--swaylock"])
+}
+
+fn lock_with(root: &std::path::Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_canopa-shell"))
-        .arg("lock")
+        .args(args)
         .env("CANOPA_LANGUAGE", "en")
         .env("PATH", root)
         .env("HOME", root)
@@ -20,7 +24,26 @@ fn lock(root: &std::path::Path) -> Output {
 }
 
 #[test]
-fn lock_executes_once_without_a_desktop_and_pins_the_selected_image_descriptor() {
+fn lock_hands_off_to_canopa_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let locker = root.join("canopa-lock");
+    fs::write(&locker, "#!/bin/sh\necho canopa-lock \"$@\"\n").unwrap();
+    fs::set_permissions(&locker, fs::Permissions::from_mode(0o700)).unwrap();
+    // Even with Swaylock installed, plain `lock` uses Canopa Lock.
+    fs::write(root.join("swaylock"), "#!/bin/sh\necho swaylock\n").unwrap();
+    fs::set_permissions(root.join("swaylock"), fs::Permissions::from_mode(0o700)).unwrap();
+    let locked = lock_with(root, &["lock"]);
+    assert!(locked.status.success(), "{locked:?}");
+    assert_eq!(String::from_utf8_lossy(&locked.stdout), "canopa-lock\n");
+    fs::remove_file(locker).unwrap();
+    fs::remove_file(root.join("swaylock")).unwrap();
+    let missing = lock_with(root, &["lock"]);
+    assert_eq!(missing.status.code(), Some(1));
+}
+
+#[test]
+fn swaylock_lock_executes_once_without_a_desktop_and_pins_the_selected_image_descriptor() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let locker = root.join("swaylock");

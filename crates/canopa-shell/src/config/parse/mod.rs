@@ -696,7 +696,13 @@ fn parse_menu_action_operation(
         "command" => actions::parse_command_node_ctx(node, ctx, command_policy)
             .map(super::PanelAction::Command),
         "launch" => actions::parse_launch(node, ctx).map(super::PanelAction::Launch),
-        "session" => actions::parse_session(node, ctx).map(super::PanelAction::Session),
+        "session" => actions::parse_session(node, ctx),
+        "toggle-overview" => {
+            require_no_arguments(node, ctx)?;
+            Ok(super::PanelAction::Compositor(
+                super::CompositorAction::ToggleOverview,
+            ))
+        }
         "open-panel" => {
             require_no_arguments(node, ctx)?;
             Ok(super::PanelAction::OpenPanel)

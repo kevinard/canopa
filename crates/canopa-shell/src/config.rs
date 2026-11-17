@@ -21,11 +21,12 @@ pub(crate) use error::{
 #[allow(unused_imports)]
 pub use module::{
     ActionBinding, ActionTrigger, ActionsConfig, BatteryConfig, ButtonConfig, ClockConfig,
-    CommandPolicy, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig, IconThreshold,
-    IdleBackend, IdleInhibitorConfig, MediaConfig, MenuConfig, MenuItemConfig, MenuSourceConfig,
-    MenuSourceKind, MinimapConfig, ModuleActionsConfig, ModuleConfig, ModuleParams, NetworkConfig,
-    NotificationsConfig, PanelAction, PanelProviderConfig, ScriptConfig, StateRule, StatesConfig,
-    TaskbarConfig, TrayConfig, VolumeConfig, WorkspaceLabelConfig, WorkspacesConfig,
+    CommandPolicy, CompositorAction, ConfiguredCommand, FocusedWindowConfig, IconRulesConfig,
+    IconThreshold, IdleBackend, IdleInhibitorConfig, MediaConfig, MenuConfig, MenuItemConfig,
+    MenuSourceConfig, MenuSourceKind, MinimapConfig, ModuleActionsConfig, ModuleConfig,
+    ModuleParams, NetworkConfig, NotificationsConfig, PanelAction, PanelProviderConfig,
+    ScriptConfig, StateRule, StatesConfig, TaskbarConfig, TrayConfig, VolumeConfig,
+    WorkspaceLabelConfig, WorkspacesConfig,
 };
 pub(crate) use module::{CommandPolicyError, ConfiguredCommandSpec};
 #[allow(unused_imports)]

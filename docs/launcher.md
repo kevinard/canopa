@@ -231,7 +231,8 @@ Type `lock`, `log out`, `suspend`, `hibernate`, `reboot`/`restart` or
 Lock runs `canopa-lock` (or `loginctl lock-session` when Canopa Lock is not
 installed). Suspend and Hibernate ask logind directly, like the bar buttons.
 Log out, Reboot and Power off open the configured confirmation menu, the one
-whose items log out (`niri msg action quit`) or name `session "reboot"` or
+whose items log out (`session "log-out"`, or a configuration's own
+`niri msg action quit`) or name `session "reboot"` or
 `session "power-off"`; without such a menu they are not offered. Rows follow
 logind's `Can*` answers, read again when the launcher opens: an action logind
 refuses is hidden, and Hibernate needs a plain “yes”. Failures are reported

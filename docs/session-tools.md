@@ -147,7 +147,7 @@ helper. The lock and idle units do not start while the file is missing.
 | `loginctl lock-session`, logind `Lock` (other programs, the Settings lid choice **Lock the screen**) | the listener `canopa-lock daemon` starts the locker |
 | System suspend or hibernate | the listener locks before sleep |
 | Idle timeout (Stasis) | `canopa-lock` |
-| `canopa-shell lock` | **swaylock**, not Canopa Lock, with the Shell's wallpaper image when available |
+| `canopa-shell lock` | `canopa-lock` (or `loginctl lock-session`); `--swaylock` runs Swaylock with the portal's lock image instead |
 
 Plain `canopa-lock` first attaches to the listener's locker, so every path above
 except `canopa-shell lock` shares one lock screen. Without a listener it locks
@@ -476,5 +476,4 @@ reuse built-in widget names.
 
 ## Known limitations
 
-- `canopa-shell lock` runs swaylock, not Canopa Lock.
 - The weather widget only reads a local file; Canopa ships no weather provider.

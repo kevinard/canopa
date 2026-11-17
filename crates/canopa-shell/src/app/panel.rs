@@ -726,6 +726,10 @@ impl App {
                 Task::batch(self.apply_app_effects(vec![AppEffect::LaunchApplication(argv)]))
             }
             crate::config::PanelAction::Session(action) => self.request_session_action(action),
+            crate::config::PanelAction::Compositor(action) => {
+                super::niri::run_niri_action(action.niri_action());
+                Task::none()
+            }
             crate::config::PanelAction::OpenProvider(provider_name) => {
                 self.open_provider_panel(origin_window, origin, provider_name, None)
             }
@@ -1761,7 +1765,8 @@ pub(super) fn panel_event_for_action(
         }
         crate::config::PanelAction::Command(_)
         | crate::config::PanelAction::Launch(_)
-        | crate::config::PanelAction::Session(_) => None,
+        | crate::config::PanelAction::Session(_)
+        | crate::config::PanelAction::Compositor(_) => None,
     }
 }
 

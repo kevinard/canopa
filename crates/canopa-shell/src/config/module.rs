@@ -507,6 +507,9 @@ pub enum PanelAction {
     Launch(Vec<String>),
     /// Suspend, hibernate, reboot or power off through logind.
     Session(crate::session::SessionAction),
+    /// An action of the compositor, sent over the Shell's own Niri IPC socket
+    /// instead of running a `niri` executable.
+    Compositor(CompositorAction),
     OpenPanel,
     TogglePanel,
     OpenBarPanel,
@@ -515,6 +518,27 @@ pub enum PanelAction {
     OpenMenu(String),
     ToggleMenu(String),
     OpenProvider(String),
+}
+
+/// Compositor actions a menu item or module click can request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompositorAction {
+    /// `session "log-out"`: end the session. The menu asking for confirmation
+    /// is the Shell's, so Niri's own dialog is skipped.
+    LogOut,
+    /// `toggle-overview`.
+    ToggleOverview,
+}
+
+impl CompositorAction {
+    pub fn niri_action(self) -> niri_ipc::Action {
+        match self {
+            Self::LogOut => niri_ipc::Action::Quit {
+                skip_confirmation: true,
+            },
+            Self::ToggleOverview => niri_ipc::Action::ToggleOverview {},
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

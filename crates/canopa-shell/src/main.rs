@@ -52,7 +52,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::AppScope(_) => "app-scope",
         cli::Command::HardwarePanel(_) => "hardware-panel",
         cli::Command::Reload => "reload",
-        cli::Command::Lock => "lock",
+        cli::Command::Lock { .. } => "lock",
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
@@ -108,11 +108,10 @@ fn main() {
         cli::Command::PrintVersion => println!("{}", env!("CARGO_PKG_VERSION")),
         cli::Command::PrintHelp => print!("{}", cli::USAGE),
         cli::Command::Reload => std::process::exit(run_reload_cli()),
-        cli::Command::Lock => {
-            if let Err(error) = wallpaper::lock() {
-                eprintln!("canopa-shell: failed to start Swaylock: {error}");
-                std::process::exit(1);
-            }
+        cli::Command::Lock { swaylock } => {
+            let error = wallpaper::lock(swaylock);
+            eprintln!("canopa-shell: failed to start the lock screen: {error}");
+            std::process::exit(1);
         }
         cli::Command::IpcCommand(cmd) => send_ipc_command(&cmd),
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),

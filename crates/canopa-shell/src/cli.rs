@@ -11,7 +11,10 @@ pub enum Command {
     AppScope(crate::command::app_scope::Request),
     HardwarePanel(String),
     Reload,
-    Lock,
+    /// `lock [--swaylock]`.
+    Lock {
+        swaylock: bool,
+    },
     IpcCommand(String),
     OpenMenu(String),
     ToggleMenu(String),
@@ -120,7 +123,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             Err(message) => Command::UsageError(message),
         };
     }
-    let mut args = args.into_iter();
+    let mut args = args.into_iter().peekable();
     let mut special_mode = None;
     let mut dmenu = false;
     let mut configuration = ConfigOptions::default();
@@ -168,7 +171,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     return Command::UsageError("choose one command mode".into());
                 }
                 special_mode = Some(if arg == "lock" {
-                    Command::Lock
+                    let swaylock = args.peek().is_some_and(|next| next == "--swaylock");
+                    if swaylock {
+                        args.next();
+                    }
+                    Command::Lock { swaylock }
                 } else if matches!(arg.as_str(), "reload" | "--reload") {
                     Command::Reload
                 } else if arg == "--toggle-panel" {
@@ -303,7 +310,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                 | Command::ToggleMenu(_)
                 | Command::OpenTemplate(_)
                 | Command::Reload
-                | Command::Lock
+                | Command::Lock { .. }
                 | Command::LauncherExtension(..)
                 | Command::ClipboardFrame(_)
         ) {
@@ -393,7 +400,14 @@ mod tests {
 
     #[test]
     fn lock_is_a_standalone_command_without_configuration_or_dmenu_options() {
-        assert!(matches!(parse_args(["lock".into()]), Command::Lock));
+        assert!(matches!(
+            parse_args(["lock".into()]),
+            Command::Lock { swaylock: false }
+        ));
+        assert!(matches!(
+            parse_args(["lock".into(), "--swaylock".into()]),
+            Command::Lock { swaylock: true }
+        ));
         for extra in [
             "--defaults",
             "--json",

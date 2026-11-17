@@ -24,9 +24,9 @@ before switching to the packages, and do it while logged out of Canopa.
 | `canopa-login` | Optional greetd integration: the `canopa-greeter` system account (home `/var/lib/canopa-greeter`), `/etc/canopa/greeter.kdl`, greetd samples at `/usr/share/canopa/greetd/` (`canopa.toml` runs the login screen in the bundled Niri; `canopa-cage.toml` and `canopa-weston.toml` use Cage or Weston, optional dependencies), and the helper and polkit action that let Settings set the login screen's display layout. Depends on `greetd` and `polkit`. |
 | `canopa-oo7` | Optional oo7 Secret Service setup for greetd logins: PAM hooks in `/etc/pam.d/canopa-oo7`, an early-start drop-in for `oo7-daemon.service`, Secret portal routing to `oo7-portal`, and a keyring prompter that uses Canopa's dialog. Depends on `canopa-login`, `oo7` and `gcr`. |
 
-`canopa` depends on the matching `canopa-compositor` and on the distribution's
-`niri` package, which provides `niri msg` and a separate Niri session for recovery.
-Optional dependencies add features: `stasis` (automatic idle policy),
+`canopa` depends on the matching `canopa-compositor`; Canopa talks to it over its IPC
+socket and never needs the distribution's `niri` package. Optional dependencies add
+features: `niri` (the stock `niri msg` CLI and a separate Niri session for recovery), `stasis` (automatic idle policy),
 `networkmanager` or `iwd` (Wi-Fi), `bluez`, `power-profiles-daemon`,
 `xwayland-satellite`, `poppler` (PDF previews in Files), `gnome-keyring`,
 `geoclue`, `accountsservice`, `cups-pk-helper`, `avahi`, and the `gvfs-smb`,

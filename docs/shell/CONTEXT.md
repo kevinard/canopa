@@ -90,8 +90,8 @@ from **Bar Surfaces**. It covers the output without reserving workarea.
 
 The private Wallpaper Owner prepares bounded PNG descriptors off the UI thread,
 persists selections and installs background pixels in App. `canopa-shell lock`
-pins the selected lock image and executes Swaylock through the session-owned
-launch path. See [Shell architecture](../architecture/shell.md). The public
+hands off to Canopa Lock, which reads the selected lock image; `--swaylock` pins it
+and executes Swaylock through the session-owned launch path. See [Shell architecture](../architecture/shell.md). The public
 Wallpaper portal is not advertised while native acceptance and review are pending.
 
 ### Modules

@@ -1456,3 +1456,42 @@ fn templates_list_apps_with_optional_widths() {
         assert!(super::parse(refused).is_err(), "{refused}");
     }
 }
+
+#[test]
+fn compositor_actions_use_the_shell_niri_socket() {
+    let config = parse(
+        r#"
+        menus {
+            menu "Bye" { item "Log out" { session "log-out"; }; }
+        }
+        modules { module "ov" { type "button"; label "Overview"; icon "view-grid"; actions { click { toggle-overview; } } } }
+    "#,
+    )
+    .unwrap();
+    assert_eq!(
+        config.menus[0].items[0].action,
+        Some(crate::config::PanelAction::Compositor(
+            crate::config::CompositorAction::LogOut
+        ))
+    );
+    assert!(matches!(
+        crate::config::CompositorAction::LogOut.niri_action(),
+        niri_ipc::Action::Quit {
+            skip_confirmation: true
+        }
+    ));
+}
+
+/// The shipped configuration ends the session and opens the overview through
+/// the compositor socket; it never runs a `niri` executable from `PATH`.
+#[test]
+fn shipped_configuration_never_runs_the_niri_cli() {
+    let defaults = include_str!("../../../config/default.kdl");
+    for line in defaults
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+    {
+        assert!(!line.contains("argv \"niri\""), "{line}");
+        assert!(!line.contains("\"niri msg"), "{line}");
+    }
+}
