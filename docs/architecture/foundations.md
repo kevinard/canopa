@@ -242,14 +242,20 @@ so every application in the session gets the same shape. Unsupported compositors
 show square windows, which is still correct.
 
 **Window titlebars.** The Niri fork draws titlebars above windows that negotiate
-server-side decorations. The frame reserves layout space and owns title text,
-dragging, close and maximize/restore controls for pointer and touch input.
-Fullscreen windows omit it; maximized windows retain it. Canopa enables the
-optional `layout { titlebar { on; } }` and supplies its initial style in the
-compositor defaults. Applications that negotiate client-side decorations retain
-their headerbars. Titlebar controls work independently of the Shell; there is no
-shell-hosted titlebar menu or live Canopa appearance synchronization in this
-version ([ADR 0153](../adr/0153-compositor-owned-ssd-titlebars.md)).
+server-side decorations. The frame reserves layout space, including in the size
+and bounds of the first configure, and owns title text, dragging, double-click
+maximize, and close and maximize/restore controls for pointer and touch input.
+Fullscreen windows omit it; maximized windows retain it, and fixed-size windows
+get no maximize control. Canopa enables the optional `layout { titlebar { on; } }`
+in the compositor defaults. Settings generates `niri-appearance.kdl` with the
+titlebar colors and font of the shared `appearance`
+([`canopa-settings/src/titlebar.rs`](../../crates/canopa-settings/src/titlebar.rs))
+at session start and after Personalization saves; `niri.kdl` includes it before
+`niri-custom.kdl`, so personal titlebar options and `draw-titlebar` window rules
+win. Applications that negotiate client-side decorations retain their headerbars.
+Titlebar controls work independently of the Shell; there is no shell-hosted
+titlebar menu ([ADR 0153](../adr/0153-compositor-owned-ssd-titlebars.md),
+[ADR 0155](../adr/0155-titlebar-style-from-appearance.md)).
 
 ## Assets, icons, MIME types and thumbnails
 

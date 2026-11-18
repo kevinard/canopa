@@ -611,33 +611,60 @@ Canopa keeps some settings outside `config.kdl`. Settings is the usual editor.
 ### Compositor titlebars
 
 Canopa's Niri fork enables titlebars for windows that negotiate server-side
-decorations. They contain the window title and close/maximize controls; drag the
-titlebar to move a window. Controls also accept touch input. Application-provided
-headerbars remain intact, and fullscreen windows have no titlebar.
+decorations. They show the window title and close and maximize/restore buttons.
+Drag the titlebar to move a window; double-click (or double-tap) it to maximize
+or restore. Buttons highlight under the pointer and act on release over the same
+button, with the pointer or by touch. Windows that cannot change size get no
+maximize button. Application-provided headerbars remain intact, and fullscreen
+windows have no titlebar. Canopa's compositor defaults enable `prefer-no-csd`,
+which offers server-side decorations to applications; restart an application to
+pick up a change to that preference.
 
-Override the compositor defaults in `~/.config/canopa/niri-custom.kdl`:
+Titlebar colors and font follow `appearance`. Settings writes them to
+`~/.config/canopa/niri-appearance.kdl` at login and whenever Personalization
+saves: the surface color for the focused window, the background color for the
+others, the text and muted colors for their titles, and the first `typography`
+families at the body size times `text-scale`. Edits to `config.kdl` made outside
+Settings apply at the next login. Do not edit the generated file; Settings
+replaces it.
+
+`niri.kdl` includes the generated file before `niri-custom.kdl`, so options in
+`~/.config/canopa/niri-custom.kdl` override it. Every option is optional:
 
 ```kdl
 layout {
     titlebar {
-        on
-        height 32
-        font "Inter 10"
+        on                          // or `off` to disable titlebars
+        height 32                   // 24 to 64 logical pixels
+        font "Inter, sans-serif 14px" // a Pango font description
+        title-align "left"          // or "center"
+        buttons "maximize" "close"  // order and choice; `buttons` alone hides both
+        buttons-side "right"        // or "left"
+        double-click "maximize"     // or "none"
         active-color "#202d31"
         inactive-color "#10191d"
         text-color "#edf4f0"
+        inactive-text-color "#b5c7c3" // defaults to text-color
+        button-hover-color "#edf4f026"
+        close-hover-color "#f38ba8"
     }
 }
 ```
 
-Use `off` to disable titlebars. Height accepts 24–64 logical pixels; the font is
-a Pango font description. These settings reload with Niri's configuration.
-`prefer-no-csd` must also be enabled to expose decoration negotiation to newly
-started applications; restart applications after changing that preference.
+A window rule turns titlebars off (or on) for particular applications:
 
-This block requires the Canopa compositor fork. Titlebar styling currently comes
-from compositor configuration and does not follow live `appearance` changes.
-Shell-defined titlebar menus and extra actions are not implemented yet.
+```kdl
+window-rule {
+    match app-id="^foot$"
+    draw-titlebar false
+}
+```
+
+`draw-titlebar true` shows titlebars for the matched windows even when the layout
+setting is `off`. Only windows that negotiate server-side decorations get a
+titlebar either way. These settings reload with Niri's configuration and require
+the Canopa compositor fork; distribution Niri rejects them. Shell-defined titlebar
+menus and extra actions are not implemented.
 
 ## Known limitations
 

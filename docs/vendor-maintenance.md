@@ -203,7 +203,7 @@ The topics that make up the pin, each a tracking PR in the fork:
 | `canopa/touch-gestures` (#18) | `canopa/remote-input-touch` | Touchscreen strip and overview gestures |
 | `canopa/window-preview` (#19) | `canopa/base` | Taskbar tooltip thumbnails (`org.canopa.Niri.WindowPreview1`) |
 | `canopa/pinned-columns` (#20) | `canopa/base` | Pinned columns in the minimap, taskbar menu and `Mod+P` defaults |
-| `canopa/titlebars` ([#22](https://github.com/kevinard/niri/pull/22)) | `canopa/base` | Negotiated SSD titlebars, including compositor-owned close/maximize controls and dragging |
+| `canopa/titlebars` ([#22](https://github.com/kevinard/niri/pull/22)) | `canopa/base` | Negotiated SSD titlebars: compositor-owned close/maximize controls, dragging and double-click maximize, configurable style and layout, `draw-titlebar` rule |
 | `canopa/keep-last-frame` (#21, with Smithay `canopa/keep-last-frame`, kevinard/smithay#5) | `canopa/base` | `NIRI_KEEP_LAST_FRAME_ON_EXIT=1` leaves the login screen's last frame on screen for the desktop session (`DRM_IOCTL_MODE_CLOSEFB`) |
 
 The std-only checks `scripts/test-remote-touch-core.py` (workspace gate) and

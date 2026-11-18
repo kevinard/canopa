@@ -124,7 +124,7 @@ impl crate::file_page::FileModel for Personalization {
         .expect("embedded lock settings are valid");
         Personal::from_lock(lock).into()
     }
-    fn write(&self, _: &crate::session::Paths, source: &Snapshot) -> Result<Snapshot> {
+    fn write(&self, paths: &crate::session::Paths, source: &Snapshot) -> Result<Snapshot> {
         let mut value = self.values.clone();
         value.appearance.accent = parse_accent(&self.accent)?;
         let mut saved = value.save(source)?;
@@ -151,6 +151,10 @@ impl crate::file_page::FileModel for Personalization {
         {
             failed.push("canopa-notify");
         }
+        // Compositor titlebars follow the appearance through a generated include.
+        if paths.active() && !refresh_titlebars(paths, &saved) {
+            failed.push("niri");
+        }
         if !failed.is_empty() {
             saved.reload_problem = Some(fl!(
                 "settings-saved-reload-failed",
@@ -162,6 +166,21 @@ impl crate::file_page::FileModel for Personalization {
     /// Widgets writes the rest of `config.kdl`.
     fn section(text: &str) -> Result<String> {
         Ok(common_sections(text)?.0)
+    }
+}
+
+/// Regenerates the compositor titlebar style from the saved appearance and
+/// reloads Niri when it changed. Returns whether that succeeded.
+fn refresh_titlebars(paths: &crate::session::Paths, saved: &Snapshot) -> bool {
+    let refreshed = Personal::load(saved).and_then(|personal| {
+        crate::titlebar::refresh(paths, &personal.appearance, crate::niri::validate)
+    });
+    match refreshed {
+        Ok(false) => true,
+        Ok(true) => crate::niri::Client::discover()
+            .and_then(|client| client.reload())
+            .is_ok(),
+        Err(_) => false,
     }
 }
 
