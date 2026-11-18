@@ -899,3 +899,42 @@ fn profile_guard_keeps_live_layouts_separate_and_rolls_back_stale_automatic_chan
     assert_eq!(peer.output.lock().unwrap().logical.unwrap().scale, 1.5);
     assert_eq!(std::fs::read(paths.displays()).unwrap(), baseline);
 }
+
+#[test]
+fn titlebar_style_is_generated_and_included_before_custom_options() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    // Sessions initialized before the generated include existed lack its line.
+    let niri = std::fs::read_to_string(paths.niri())
+        .unwrap()
+        .replace("include \"niri-appearance.kdl\"\n", "");
+    std::fs::write(paths.niri(), &niri).unwrap();
+    std::fs::write(
+        paths.common(),
+        "schema-version 1\nappearance {\n    color-scheme \"light\"\n}\n",
+    )
+    .unwrap();
+
+    let appearance = canopa_settings::titlebar::appearance(&paths).unwrap();
+    let accept = |_: &std::path::Path| Ok(());
+    assert!(canopa_settings::titlebar::refresh(&paths, &appearance, accept).unwrap());
+    let generated = std::fs::read_to_string(paths.titlebar_appearance()).unwrap();
+    assert!(
+        generated.contains("active-color \"#fbfcf8\""),
+        "{generated}"
+    );
+    let niri = std::fs::read_to_string(paths.niri()).unwrap();
+    assert!(niri.contains("include \"niri-appearance.kdl\"\ninclude \"niri-custom.kdl\"\n"));
+    assert!(!canopa_settings::titlebar::refresh(&paths, &appearance, accept).unwrap());
+}
+
+#[test]
+#[ignore = "requires the Canopa Niri parser; the desktop workflow runs this check"]
+fn generated_titlebar_style_validates_with_niri() {
+    let root = tempfile::tempdir().unwrap();
+    let paths = paths(root.path());
+    let appearance = canopa_settings::titlebar::appearance(&paths).unwrap();
+    canopa_settings::titlebar::refresh(&paths, &appearance, canopa_settings::niri::validate)
+        .unwrap();
+    canopa_settings::niri::validate(&paths.niri()).unwrap();
+}

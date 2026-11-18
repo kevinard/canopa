@@ -128,6 +128,18 @@ fn run() -> Result<()> {
                     eprintln!("canopa-settings: keyboard shortcuts were not updated: {error:#}")
                 }
             }
+            // Like shortcuts, the titlebar style must never prevent logging in.
+            if let Err(error) =
+                canopa_settings::titlebar::appearance(&paths).and_then(|appearance| {
+                    canopa_settings::titlebar::refresh(
+                        &paths,
+                        &appearance,
+                        canopa_settings::niri::validate,
+                    )
+                })
+            {
+                eprintln!("canopa-settings: the titlebar style was not updated: {error:#}");
+            }
             canopa_settings::niri::validate(&paths.niri())?;
             println!("{}", paths.niri().display());
         }

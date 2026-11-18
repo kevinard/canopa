@@ -42,6 +42,10 @@ impl Paths {
     pub fn generated_shortcuts(&self) -> PathBuf {
         self.directory.join(crate::shortcuts::GENERATED)
     }
+    /// Titlebar style generated from the shared appearance, for Niri to include.
+    pub fn titlebar_appearance(&self) -> PathBuf {
+        self.directory.join(crate::titlebar::GENERATED)
+    }
     pub fn active(&self) -> bool {
         std::env::var_os("NIRI_CONFIG")
             .map(PathBuf::from)
@@ -54,6 +58,7 @@ impl Paths {
         let base = self.shipped_defaults(defaults)?;
         create(&self.input(), &crate::input::Input::default().text()?)?;
         create(&self.displays(), "// Managed display preferences.\n")?;
+        create(&self.titlebar_appearance(), crate::titlebar::placeholder())?;
         create(
             &self.directory.join("niri-custom.kdl"),
             "// Your additional Niri options and key bindings.\n",
@@ -61,7 +66,7 @@ impl Paths {
         create(
             &self.niri(),
             &format!(
-                "// Canopa session; your ordinary Niri configuration is separate.\ninclude {}\ninclude \"niri-input.kdl\"\ninclude \"niri-displays.kdl\"\ninclude \"niri-custom.kdl\"\n",
+                "// Canopa session; your ordinary Niri configuration is separate.\ninclude {}\ninclude \"niri-input.kdl\"\ninclude \"niri-displays.kdl\"\ninclude \"niri-appearance.kdl\"\ninclude \"niri-custom.kdl\"\n",
                 quote(
                     base.to_str()
                         .ok_or_else(|| anyhow::anyhow!("session path must be UTF-8"))?

@@ -105,8 +105,9 @@ To use the Canopa login screen with greetd, install `canopa-login` and follow
 
 The packaged compositor provides titlebars for applications that negotiate
 server-side decorations. Applications with their own headerbars keep them.
-See [compositor titlebars](configuration.md#compositor-titlebars) for styling and
-the option to disable them. This requires the Canopa compositor; distribution
+Their colors and font follow the appearance chosen in Settings. See
+[compositor titlebars](configuration.md#compositor-titlebars) for the options and
+the way to disable them. This requires the Canopa compositor; distribution
 Niri does not understand the `titlebar` configuration block.
 
 `canopa-settings init-session` creates these files in `~/.config/canopa/` (or

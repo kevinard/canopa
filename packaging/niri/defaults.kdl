@@ -6,11 +6,13 @@ layout {
     // until the wallpaper appears.
     background-color "#10191d"
     // The compositor owns frames for applications that negotiated SSD.
-    // Application-provided headerbars remain untouched.
+    // Application-provided headerbars remain untouched. Settings generates
+    // the colors and font of the chosen appearance in niri-appearance.kdl;
+    // these match the default dark appearance.
     titlebar {
         on
         height 32
-        font "Inter 10"
+        font "Inter, sans-serif 14px"
         active-color "#202d31"
         inactive-color "#10191d"
         text-color "#edf4f0"

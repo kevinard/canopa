@@ -1,6 +1,6 @@
 # 0153. Keep SSD titlebars in the compositor
 
-Status: accepted
+Status: accepted; the styling consequence is superseded by 0155
 
 ## Context
 

@@ -29,6 +29,7 @@ pub mod session;
 pub mod shortcuts;
 pub mod sound;
 pub mod storage;
+pub mod titlebar;
 #[cfg(feature = "desktop")]
 pub mod ui;
 pub mod users;
