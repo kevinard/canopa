@@ -67,6 +67,11 @@ gestures {
     hot-corners { top-left; }
 }
 hotkey-overlay { skip-at-startup; }
+// Niri renames the desktop to "niri" when it starts as a session; applications
+// it spawns keep Canopa's name for OnlyShowIn and default-application lookups.
+environment {
+    XDG_CURRENT_DESKTOP "canopa:niri"
+}
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 binds {
     Mod+Return { spawn "xdg-terminal-exec"; }

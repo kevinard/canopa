@@ -45,8 +45,8 @@ Settings must be reloaded. Symlinked files are read-only.
 
 Pages that write the compositor configuration (Displays, Keyboard & pointer, the
 Niri parts of Personalization, Accessibility, Power and Shortcuts) need the Canopa
-session, where `NIRI_CONFIG` is `~/.config/canopa/niri.kdl`. In other sessions they
-say so and do not write. Your own Niri configuration is never rewritten.
+session, which runs Niri on `~/.config/canopa/niri.kdl`. In other sessions they say
+so and do not write. Your own Niri configuration is never rewritten.
 
 ## Navigation
 

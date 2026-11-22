@@ -46,12 +46,36 @@ impl Paths {
     pub fn titlebar_appearance(&self) -> PathBuf {
         self.directory.join(crate::titlebar::GENERATED)
     }
+    /// Whether the running compositor reads this managed `niri.kdl`.
     pub fn active(&self) -> bool {
-        std::env::var_os("NIRI_CONFIG")
-            .map(PathBuf::from)
-            .and_then(|path| path.canonicalize().ok())
-            == self.niri().canonicalize().ok()
-            && self.niri().is_file()
+        // Unit tests often run inside a developer's Canopa session; their
+        // temporary configurations must not count as the running one.
+        let canopa_session = if cfg!(test) {
+            None
+        } else {
+            std::env::var_os("CANOPA_SESSION")
+        };
+        self.active_with(
+            std::env::var_os("NIRI_CONFIG").as_deref(),
+            canopa_session.as_deref(),
+        )
+    }
+
+    /// `NIRI_CONFIG` names the compositor configuration when it is set. Niri
+    /// removes it from its own environment after loading, so applications it
+    /// spawns (the launcher, key bindings) lack it; there `CANOPA_SESSION=1`
+    /// stands in, because `canopa-session` always points Niri at this file.
+    fn active_with(
+        &self,
+        niri_config: Option<&std::ffi::OsStr>,
+        canopa_session: Option<&std::ffi::OsStr>,
+    ) -> bool {
+        let niri = self.niri();
+        let configured = match niri_config {
+            Some(path) => Path::new(path).canonicalize().ok() == niri.canonicalize().ok(),
+            None => canopa_session.is_some_and(|value| value == "1"),
+        };
+        configured && niri.is_file()
     }
     pub fn initialize(&self, defaults: Option<&Path>) -> Result<()> {
         std::fs::create_dir_all(&self.directory)?;
@@ -121,4 +145,47 @@ fn create(path: &Path, text: &str) -> Result<()> {
         Err(error) => return Err(error.into()),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Paths;
+    use std::ffi::OsStr;
+
+    fn managed() -> (tempfile::TempDir, Paths) {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            directory: root.path().join("canopa"),
+        };
+        std::fs::create_dir_all(&paths.directory).unwrap();
+        std::fs::write(paths.niri(), "// managed\n").unwrap();
+        (root, paths)
+    }
+
+    #[test]
+    fn niri_config_names_the_compositor_configuration_when_set() {
+        let (root, paths) = managed();
+        let niri = paths.niri();
+        assert!(paths.active_with(Some(niri.as_os_str()), None));
+        let other = root.path().join("config.kdl");
+        std::fs::write(&other, "").unwrap();
+        // CANOPA_SESSION does not override a compositor started on another file.
+        assert!(!paths.active_with(Some(other.as_os_str()), Some(OsStr::new("1"))));
+    }
+
+    #[test]
+    fn the_canopa_session_counts_when_niri_removed_its_config_variable() {
+        let (_root, paths) = managed();
+        assert!(paths.active_with(None, Some(OsStr::new("1"))));
+        assert!(!paths.active_with(None, Some(OsStr::new("0"))));
+        assert!(!paths.active_with(None, None));
+    }
+
+    #[test]
+    fn a_missing_managed_configuration_is_never_active() {
+        let (_root, paths) = managed();
+        std::fs::remove_file(paths.niri()).unwrap();
+        assert!(!paths.active_with(None, Some(OsStr::new("1"))));
+        assert!(!paths.active_with(Some(paths.niri().as_os_str()), None));
+    }
 }

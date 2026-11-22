@@ -103,9 +103,12 @@ reading the snapshot, and only while the page is shown.
 | `Shortcuts` | `shortcuts.kdl` → generated `niri-shortcuts.kdl` | `niri validate` | Niri `LoadConfigFile` |
 
 Niri is `CANOPA_NIRI_BIN`, else `/usr/lib/canopa/niri`, else `niri` from `PATH`.
-`session::Paths::active()` requires `NIRI_CONFIG` to point at
-`~/.config/canopa/niri.kdl`; otherwise compositor-writing controls refuse with
-"needs the Canopa session". An unrelated Niri configuration is never written.
+`session::Paths::active()` requires `~/.config/canopa/niri.kdl` to exist and
+`NIRI_CONFIG` to point at it. Niri removes `NIRI_CONFIG` from its environment after
+loading, so applications it spawns (launcher entries, key bindings) lack it; when it
+is unset, `CANOPA_SESSION=1` stands in, since `canopa-session` always starts Niri on
+that file. Otherwise compositor-writing controls refuse with "needs the Canopa
+session". An unrelated Niri configuration is never written.
 
 Live pages and their clients:
 
@@ -188,9 +191,9 @@ The Shell opens Widgets for errors in its `shell` section and Personalization fo
 syntax, schema-version and appearance errors.
 
 **A separate session configuration.** Settings writes only under
-`~/.config/canopa/` and only when `NIRI_CONFIG` points there, so an ordinary Niri
-session's configuration is never touched and Settings never implies persistence it
-cannot provide.
+`~/.config/canopa/` and only when the Canopa session's Niri reads it, so an
+ordinary Niri session's configuration is never touched and Settings never implies
+persistence it cannot provide.
 
 **Display changes are trials in a helper process.** A short-lived `display-guard`
 process snapshots the outputs, applies the change over IPC and restores it on timeout
