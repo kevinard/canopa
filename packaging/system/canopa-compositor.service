@@ -9,4 +9,7 @@ After=graphical-session-pre.target
 Type=notify
 Slice=session.slice
 ExecStart=/usr/lib/canopa/niri --session
+# Niri imports XDG_CURRENT_DESKTOP=niri before it reports readiness; restore the
+# name canopa-session set before the session units and D-Bus services start.
+ExecStartPost=-/usr/bin/dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP=canopa:niri
 TimeoutStopSec=10

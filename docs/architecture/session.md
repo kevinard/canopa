@@ -91,7 +91,12 @@ setup:
    restart with the new environment, clears failed Canopa units, and runs
    `systemctl --user --wait start canopa-compositor.service`.
 4. `canopa-compositor.service` runs the bundled Niri build `/usr/lib/canopa/niri
-   --session` (Type=notify) and wants `canopa-session.target`.
+   --session` (Type=notify) and wants `canopa-session.target`. Niri imports
+   `XDG_CURRENT_DESKTOP=niri` before reporting readiness, so `ExecStartPost` restores
+   `canopa:niri` in the user manager and D-Bus activation environments before the
+   session units start, and the shipped `niri-defaults.kdl` sets it in an
+   `environment` block for the applications Niri spawns. Niri also removes
+   `NIRI_CONFIG` from what it spawns; Settings accepts `CANOPA_SESSION=1` instead.
 5. `canopa-session.target` (`ConditionEnvironment=CANOPA_SESSION=1`, bound to the
    compositor) wants the Shell, Notify, wallpaper, lock, polkit, idle and
    `canopa-display-profiles.service` units.
