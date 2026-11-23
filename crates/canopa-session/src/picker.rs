@@ -56,20 +56,16 @@ impl Controller {
         );
         if inputs.is_empty() {
             inputs.extend(outputs.iter().filter_map(|o| o.background.image.clone()));
-            if let Some(home) = std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .filter(|p| p.is_absolute())
-            {
-                let pictures = home.join("Pictures");
-                let wallpapers = pictures.join("Wallpapers");
-                inputs.push(if wallpapers.is_dir() {
-                    wallpapers
-                } else {
-                    pictures
-                });
-            }
+            inputs.extend(default_folders(&|name| std::env::var_os(name)));
         }
         let images = scan(&inputs)?;
+        // A picture named first is the one shown first, among its neighbours.
+        let image = inputs
+            .first()
+            .filter(|path| path.is_file())
+            .and_then(|path| std::path::absolute(path).ok())
+            .and_then(|path| images.iter().position(|image| *image == path))
+            .unwrap_or(0);
         let preview_color = settings.color;
         settings.color = settings.appearance.palette().background;
         settings.background.image = None;
@@ -106,7 +102,7 @@ impl Controller {
             settings,
             images,
             outputs,
-            image: 0,
+            image,
             output: 0,
             fit,
             preview_color,
@@ -361,24 +357,92 @@ impl Controller {
 }
 const PREVIEW_HEIGHT: u16 = 500;
 
+/// The folders searched when no picture is named: the person's wallpapers
+/// and pictures (the XDG pictures folder when it is set), then the
+/// wallpapers installed for everyone.
+fn default_folders(var: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<PathBuf> {
+    let absolute =
+        |value: std::ffi::OsString| Some(PathBuf::from(value)).filter(|p| p.is_absolute());
+    let mut folders = Vec::new();
+    if let Some(home) = var("HOME").and_then(absolute) {
+        let config = var("XDG_CONFIG_HOME")
+            .and_then(absolute)
+            .unwrap_or_else(|| home.join(".config"));
+        let pictures = std::fs::read_to_string(config.join("user-dirs.dirs"))
+            .ok()
+            .and_then(|dirs| pictures_folder(&dirs, &home))
+            .unwrap_or_else(|| home.join("Pictures"));
+        folders.push(pictures.join("Wallpapers"));
+        folders.push(pictures);
+        let data = var("XDG_DATA_HOME")
+            .and_then(absolute)
+            .unwrap_or_else(|| home.join(".local/share"));
+        folders.push(data.join("backgrounds"));
+        folders.push(data.join("wallpapers"));
+    }
+    let shared = var("XDG_DATA_DIRS")
+        .filter(|dirs| !dirs.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    for directory in std::env::split_paths(&shared)
+        .filter(|p| p.is_absolute())
+        .take(8)
+    {
+        folders.push(directory.join("backgrounds"));
+        folders.push(directory.join("wallpapers"));
+    }
+    folders.dedup();
+    folders
+}
+/// `XDG_PICTURES_DIR` from a `user-dirs.dirs` file.
+fn pictures_folder(dirs: &str, home: &std::path::Path) -> Option<PathBuf> {
+    let value = dirs.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("XDG_PICTURES_DIR=")
+            .map(|value| value.trim().trim_matches('"'))
+    })?;
+    let path = match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => PathBuf::from(value),
+    };
+    // A pictures folder set to the home folder itself would scan everything.
+    (path.is_absolute() && path != home).then_some(path)
+}
+/// Pictures among `inputs`: files as named, and JPEG or PNG images in the
+/// folders and two levels of their subfolders, skipping hidden ones.
 pub fn scan(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    let mut budget = 2048usize;
-    for path in inputs.iter().take(256) {
-        if path.is_file() {
-            paths.push(std::path::absolute(path)?);
-        } else if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.take(budget) {
-                budget = budget.saturating_sub(1);
+    let mut budget = 4096usize;
+    let image = |path: &std::path::Path| {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|s| matches!(s.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png"))
+    };
+    for input in inputs.iter().take(256) {
+        if input.is_file() {
+            paths.push(std::path::absolute(input)?);
+            continue;
+        }
+        let mut folders = vec![(input.clone(), 0)];
+        while let Some((folder, depth)) = folders.pop() {
+            let Ok(entries) = std::fs::read_dir(&folder) else {
+                continue;
+            };
+            for entry in entries {
+                if budget == 0 {
+                    break;
+                }
+                budget -= 1;
                 let Ok(entry) = entry else {
                     continue;
                 };
                 let path = entry.path();
-                if path.is_file()
-                    && path.extension().and_then(|e| e.to_str()).is_some_and(|s| {
-                        matches!(s.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png")
-                    })
-                {
+                let hidden = entry.file_name().to_string_lossy().starts_with('.');
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                if kind.is_dir() && !hidden && depth < 2 {
+                    folders.push((path, depth + 1));
+                } else if !hidden && path.is_file() && image(&path) {
                     paths.push(std::path::absolute(path)?);
                 }
             }
@@ -386,11 +450,8 @@ pub fn scan(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
     }
     paths.sort();
     paths.dedup();
-    paths.truncate(256);
-    ensure!(
-        !paths.is_empty(),
-        "no local wallpaper images found; pass an image file or folder"
-    );
+    paths.truncate(512);
+    ensure!(!paths.is_empty(), "{}", fl!("wallpaper-none-found"));
     Ok(paths)
 }
 #[derive(Clone)]
@@ -532,6 +593,47 @@ mod tests {
             scale: 1,
             background: Default::default(),
         }
+    }
+    #[test]
+    fn pictures_are_found_in_the_xdg_folder_its_subfolders_and_the_system_wallpapers() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let pictures = home.join("Documents/Pictures");
+        std::fs::create_dir_all(pictures.join("Holidays/2026")).unwrap();
+        std::fs::create_dir_all(pictures.join(".cache")).unwrap();
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        std::fs::write(
+            home.join(".config/user-dirs.dirs"),
+            "XDG_DESKTOP_DIR=\"$HOME/\"\nXDG_PICTURES_DIR=\"$HOME/Documents/Pictures\"\n",
+        )
+        .unwrap();
+        let shared = root.path().join("share");
+        std::fs::create_dir_all(shared.join("backgrounds/vendor")).unwrap();
+        for file in [
+            pictures.join("Holidays/2026/beach.JPG"),
+            pictures.join(".cache/thumb.png"),
+            pictures.join("notes.txt"),
+            shared.join("backgrounds/vendor/blue.png"),
+        ] {
+            std::fs::write(file, b"").unwrap();
+        }
+        let vars = |name: &str| match name {
+            "HOME" => Some(home.clone().into_os_string()),
+            "XDG_DATA_DIRS" => Some(shared.clone().into_os_string()),
+            _ => None,
+        };
+        let folders = default_folders(&vars);
+        assert_eq!(folders[0], pictures.join("Wallpapers"));
+        assert_eq!(folders[1], pictures);
+        assert_eq!(
+            scan(&folders).unwrap(),
+            vec![
+                pictures.join("Holidays/2026/beach.JPG"),
+                shared.join("backgrounds/vendor/blue.png"),
+            ]
+        );
+        // The home folder itself is never searched as the pictures folder.
+        assert_eq!(pictures_folder("XDG_PICTURES_DIR=\"$HOME/\"", &home), None);
     }
     #[test]
     fn monitor_previews_keep_landscape_and_portrait_proportions_and_stale_results_cannot_enable_apply()

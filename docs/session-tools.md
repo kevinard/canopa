@@ -110,9 +110,14 @@ the choice through the daemon.
 | F5 | Rescan images and monitors |
 | Escape | Close |
 
-Without arguments the picker offers the active wallpapers plus `~/Pictures/Wallpapers`,
-or `~/Pictures` when that folder does not exist. Arguments (files or folders, up to
-256) replace that list. Folder scans stop after 2048 entries and 256 images.
+Without arguments the picker offers the active wallpapers plus the PNG and JPEG
+pictures in the pictures folder (`XDG_PICTURES_DIR` from `user-dirs.dirs`, else
+`~/Pictures`) and its `Wallpapers` folder, `~/.local/share/backgrounds` and
+`wallpapers`, and the `backgrounds` and `wallpapers` folders of each `XDG_DATA_DIRS`
+entry (`/usr/share/backgrounds`…). Arguments (files or folders, up to 256) replace
+that list; when the first is a file, the picker starts on it. Folders are searched
+two levels of subfolders deep, skipping hidden ones; scans stop after 4096 entries
+and 512 images.
 
 ### Slideshow
 

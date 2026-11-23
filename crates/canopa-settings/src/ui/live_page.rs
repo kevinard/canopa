@@ -1,7 +1,7 @@
 //! The live service page pattern in the window: runs [`Live`] effects
 //! against the service, follows its updates while the page is open, and draws
 //! the loading, unavailable and per-control states with the shared controls.
-use super::{Message, button, focus, settings_group};
+use super::{Message, button, focus, heading, kit};
 use crate::live::{ControlStatus, Effect, Event, Live, LiveService, ServiceError, Status};
 use canopa_ui::{
     accessibility::{Node, semantic},
@@ -130,34 +130,68 @@ impl<S: LiveService> LivePage<S> {
                     Node::status(connecting.clone())
                         .key("settings-live-loading")
                         .busy(true),
-                    text(connecting).style(canopa_ui::muted),
+                    kit::loading(connecting),
                 )
             }
-            Status::Unavailable(reason) => settings_group(
-                fl!("settings-live-unavailable-title"),
-                column![
-                    {
-                        let message = fl!(
-                            "settings-live-unavailable",
-                            service = self.service.name(),
-                            reason = reason.as_str()
-                        );
+            Status::Unavailable(reason) => {
+                let hint = fl!("settings-live-unavailable", service = self.service.name());
+                let message = if reason.trim().is_empty() {
+                    hint.clone()
+                } else {
+                    format!("{} {hint}", reason.trim())
+                };
+                container(
+                    column![
+                        container(kit::glyph("plug", 26.0, kit::Tint::Muted))
+                            .padding(14)
+                            .style(|theme| container::Style {
+                                background: Some(
+                                    kit::blend(
+                                        canopa_ui::colors(theme).surface,
+                                        canopa_ui::colors(theme).text,
+                                        0.06
+                                    )
+                                    .into()
+                                ),
+                                border: iced::border::rounded(u32::MAX),
+                                ..Default::default()
+                            }),
                         semantic(
-                            Node::status(message.clone()).key("settings-live-unavailable"),
-                            text(message).style(canopa_ui::muted),
-                        )
-                    },
-                    button(
-                        "settings-button-try-again",
-                        fl!("settings-live-try-again"),
-                        Some(map(Event::Reload)),
-                        canopa_ui::Action::Normal,
-                        Length::Shrink,
-                        false,
-                    ),
-                ]
-                .spacing(12),
-            ),
+                            Node::heading(fl!("settings-live-unavailable-title"), 2),
+                            heading(fl!("settings-live-unavailable-title"), kit::size::SECTION)
+                        ),
+                        semantic(
+                            Node::status(message).key("settings-live-unavailable"),
+                            column![
+                                text(reason.trim().to_owned())
+                                    .align_x(iced::alignment::Horizontal::Center)
+                                    .width(Length::Fill),
+                                text(hint)
+                                    .size(kit::size::CAPTION)
+                                    .style(canopa_ui::muted)
+                                    .align_x(iced::alignment::Horizontal::Center)
+                                    .width(Length::Fill),
+                            ]
+                            .spacing(4)
+                        ),
+                        container(button(
+                            "settings-button-try-again",
+                            fl!("settings-live-try-again"),
+                            Some(map(Event::Reload)),
+                            canopa_ui::Action::Primary,
+                            Length::Shrink,
+                            false,
+                        ))
+                        .padding(iced::Padding::ZERO.top(6)),
+                    ]
+                    .spacing(10)
+                    .align_x(Alignment::Center),
+                )
+                .padding([36, 28])
+                .width(Length::Fill)
+                .style(kit::card)
+                .into()
+            }
             Status::Ready(state) => ready(state),
         }
     }
@@ -232,7 +266,10 @@ fn control_button<'a>(
             None,
             None,
             false,
-            canopa_ui::action(text(label), Some(message), treatment, false).padding([6, 12]),
+            iced::widget::button(text(label).size(kit::size::CAPTION))
+                .on_press(message)
+                .style(move |theme, status| kit::button_style(theme, status, treatment.into()))
+                .padding([5, 12]),
         ),
     )
 }

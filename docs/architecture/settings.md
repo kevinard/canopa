@@ -19,8 +19,9 @@ the git history at commit cb300936 under docs/adr/.
   session service directory.
 - `canopa settings ...` forwards to `canopa-settings`. The Shell launcher lists pages
   from `canopa-settings pages`.
-- Hidden subcommands: `display-guard` (the display trial helper) and
-  `watch-display-profiles` (the session observer).
+- Hidden subcommands: `display-guard` (the display trial helper),
+  `watch-display-profiles` (the session observer) and `identify-displays` (the
+  labels on the screens while Displays arranges them).
 
 ## Page registry
 
@@ -46,6 +47,23 @@ The visible order is: Displays, Keyboard & pointer, Network, Bluetooth, Printers
 Sound (Devices); Personalization, Accessibility (Appearance); Power, Date & time,
 Region & language, Users, Privacy, About (System); Notifications, Default
 applications, Launcher, Shortcuts, Widgets (Desktop).
+
+## Visual building blocks
+
+Pages are composed from `src/ui/kit.rs` and the helpers in `src/ui.rs`, never
+styled one by one: the type scale and the shared appearance font (Inter by default,
+so headings never fall back to another face); sections whose title sits above a
+card of rows divided by hairlines; label-and-description rows with the control at
+the trailing edge (pick lists and fields share one width); switches for on/off
+values; segmented controls; secondary, primary and destructive buttons; tinted
+status notices and centred empty states; footnotes under a card; and collapsible
+"advanced" rows. The sidebar draws one outline glyph per page id, from the same
+module. The content column is centred and at most 720 logical pixels wide.
+
+File-backed pages show the save bar only while their draft differs from the
+version last read or saved (`FileDraft::dirty`, which compares the draft with that
+version through its debug form). A clean file page reads its documents again when it
+is opened.
 
 ## Page patterns
 
@@ -218,9 +236,33 @@ file is kept as `niri.kdl.before-shortcut-changes`.
 
 **The Widgets editor edits the owners' layouts.** Widgets edits Shell bar zones and
 lockscreen regions in `config.kdl` with the same snapshot and validation as
-Personalization, materializing the Shell defaults on the first bar edit. Its diagram
-uses the lockscreen layout planner from `canopa-session-ui` and sample data; it never
-starts providers, scripts or authentication.
+Personalization, materializing the Shell defaults on the first bar edit. Lock screen
+widgets show sample data; it never starts providers, scripts or authentication. The
+arrangement board is laid out by
+one function for drawing and for drops (`Geometry` in `src/ui/widget_layouts.rs`):
+three zone columns for a bar or a 3×3 grid of lock screen regions, each widget a
+row. A drop lands in the zone under the pointer (or the nearest one), before the
+first widget whose middle lies below the pointer.
+
+**The display arrangement keeps what Niri will accept.** Niri places a display whose
+configured position overlaps another one somewhere else, so Settings never asks for
+one: `src/ui/arrangement.rs` snaps a dragged display's edges to its neighbours',
+settles a dropped one where it touches another without overlapping, rejoins any
+display left apart and shifts the arrangement to start at 0, 0; sizes are rounded as
+Niri rounds them. `display::validate` refuses typed overlapping positions. The
+drawing's scale comes from the displays' sizes only, so it does not change while
+they move. While Displays has focus with several displays, Settings runs
+`canopa-settings identify-displays` (`src/identify.rs`, an `iced_layershell` overlay
+per output) and writes the labels to its standard input as JSON lines; dropping the
+process removes them. Names Niri reports as "Unknown" come from the connector's EDID
+in `/sys/class/drm`.
+
+**Shortcut recording holds off the compositor's shortcuts.** While a shortcut is
+recorded, Settings binds `zwp_keyboard_shortcuts_inhibit_manager_v1` on its own
+window's Wayland connection (`src/ui/inhibit.rs`) and drops the inhibitor when
+recording ends or the page changes. Key presses map to Niri key names through
+xkbcommon; a compositor without the protocol keeps its shortcuts, which can still be
+typed.
 
 **Shared system-service clients.** NetworkManager, BlueZ, audio, UPower,
 power-profiles-daemon, logind, MPRIS, AccountsService, hostnamed, localed, timedated,
@@ -306,5 +348,4 @@ tracked in [issue #38](https://github.com/kevinard/canopa/issues/38).
 
 - "Ask every time" network secrets are answered only while Settings is open.
 - The power button offers Suspend or the system setting only.
-- Page icons are declared and published by `pages` but not drawn in the sidebar.
 - Region & language changes reach Files, Notify and the Shell only after they restart.

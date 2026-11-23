@@ -79,7 +79,7 @@ impl State {
                 "Simulation",
                 column![
                     text("These controls change the simulated service directly.")
-                        .size(14)
+                        .size(13)
                         .style(canopa_ui::muted),
                     row![
                         self.action(

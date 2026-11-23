@@ -1,15 +1,14 @@
 //! The Default applications page: the web browser, mail, calendar, music,
 //! video, photos, text editor, file manager and terminal, and any other file
 //! type found by name or extension. Each choice is saved at once.
-use super::{Message, State, field, live_page::LivePage, pick, settings_group};
+use super::{Message, State, field, kit, live_page::LivePage, pick, settings_group};
 use crate::{
     default_apps::{CATEGORIES, Choice, DefaultAction, DefaultApps, DefaultAppsService},
     live::{Event, LiveAction},
 };
-use canopa_ui::direction;
 use iced::{
-    Alignment, Element, Length,
-    widget::{column, text},
+    Element,
+    widget::{column, container, text},
 };
 
 pub(super) type DefaultAppsPage = LivePage<DefaultAppsService>;
@@ -19,7 +18,7 @@ pub(super) fn message(event: Event<DefaultAppsService>) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
 /// Other file types shown for a search, at most.
@@ -56,6 +55,18 @@ impl State {
         current: &Choice,
         action: impl Fn(String) -> DefaultAction + 'a,
     ) -> Element<'a, Message> {
+        self.described_app_choice(id, title, None, current, action)
+    }
+
+    /// An [`app_choice`](Self::app_choice) with an explanation under its name.
+    fn described_app_choice<'a>(
+        &'a self,
+        id: String,
+        title: String,
+        description: Option<String>,
+        current: &Choice,
+        action: impl Fn(String) -> DefaultAction + 'a,
+    ) -> Element<'a, Message> {
         let page = &self.default_apps;
         let probe = action(String::new()).control();
         let selected_id = match page.live.pending(&probe) {
@@ -75,15 +86,7 @@ impl State {
             })
         };
         column![
-            direction::row([
-                text(title)
-                    .width(Length::Fixed(180.))
-                    .align_x(direction::text_start())
-                    .into(),
-                control,
-            ])
-            .spacing(12)
-            .align_y(Alignment::Center),
+            kit::row(title, description, control),
             page.control_status(&probe, message),
         ]
         .spacing(4)
@@ -91,24 +94,23 @@ impl State {
     }
 
     fn default_apps_sections<'a>(&'a self, state: &'a DefaultApps) -> Element<'a, Message> {
-        let mut defaults = column![].spacing(10);
+        let mut defaults: Vec<Element<'_, Message>> = Vec::new();
         for (category, current) in CATEGORIES.iter().zip(&state.categories) {
             let key = category.key;
-            defaults = defaults.push(self.app_choice(
+            defaults.push(self.app_choice(
                 format!("default-apps-{key}"),
                 category.title(),
                 current,
                 move |id| DefaultAction::Category(key, id),
             ));
         }
-        defaults = defaults
-            .push(self.app_choice(
-                "default-apps-terminal".into(),
-                fl!("settings-default-apps-terminal"),
-                &state.terminal,
-                DefaultAction::Terminal,
-            ))
-            .push(muted(fl!("settings-default-apps-terminal-hint")));
+        defaults.push(self.described_app_choice(
+            "default-apps-terminal".into(),
+            fl!("settings-default-apps-terminal"),
+            Some(fl!("settings-default-apps-terminal-hint")),
+            &state.terminal,
+            DefaultAction::Terminal,
+        ));
         let mut others = column![field(
             "default-apps-search",
             fl!("settings-default-apps-search"),
@@ -135,14 +137,18 @@ impl State {
             others = others.push(muted(fl!("settings-default-apps-search-hint")));
         }
         column![
-            settings_group(fl!("settings-default-apps"), defaults),
-            settings_group(fl!("settings-default-apps-others"), others),
-            muted(fl!(
-                "settings-default-apps-saved-in",
-                file = "~/.config/mimeapps.list"
-            )),
+            settings_group(fl!("settings-default-apps-common"), kit::rows(defaults)),
+            column![
+                settings_group(fl!("settings-default-apps-others"), others),
+                container(muted(fl!(
+                    "settings-default-apps-saved-in",
+                    file = "~/.config/mimeapps.list"
+                )))
+                .padding([0, 4]),
+            ]
+            .spacing(10),
         ]
-        .spacing(14)
+        .spacing(28)
         .into()
     }
 

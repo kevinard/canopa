@@ -751,7 +751,7 @@ esac"#,
                 "American English (United States)",
                 "English (United Kingdom)",
                 "French (France)",
-                "Unspecified (C)"
+                "Basic English (C)"
             ]
         );
         let state = service

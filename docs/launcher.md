@@ -414,8 +414,10 @@ keywords, available/observed action names and last safe provider status. Configu
 providers report their action names after returning results. Start Shell to publish
 the actual configured catalog. Refreshing discovery preserves typed drafts.
 
-Enable/disable extensions, change routing keywords, edit the default web search URL,
-and add/remove keyword search templates, then save. Executable argv stays in the
+Enable/disable extensions, change routing keywords, choose the default **Search
+engine** (DuckDuckGo, Google, Bing, Brave Search, Startpage, Ecosia or Qwant, or
+**Custom address** to type any HTTP(S) URL with `{query}`), and add/remove
+**Search keywords** (a keyword and its address per line), then save. Executable argv stays in the
 Shell configuration. Changes apply to Shell within
 about one second and cancel affected queries. Configured extension names identify
 preferences across menus; duplicate enabled keywords are rejected when saving.
@@ -443,8 +445,9 @@ Glyph appearance depends on installed fonts. A configured extension that uses
 ## Clipboard history and snippets
 
 Open **Canopa Settings → Launcher → Clipboard history** to choose whether to
-record history, include images, and retain between 1 and 64 recent entries.
-Select **Save clipboard settings** to apply those options to the running Shell.
+record history and, while recording, whether to include images and how many
+recent entries to keep (1 to 64). **Save changes** applies those options to the
+running Shell.
 Both recording and image capture are off by default. You can also type `clip`
 in Applications and select **Turn on clipboard history**.
 

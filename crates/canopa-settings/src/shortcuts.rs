@@ -71,6 +71,59 @@ pub struct Shortcut {
     claim: Option<usize>,
 }
 
+/// What a shipped shortcut is for, to show related shortcuts together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Category {
+    Session,
+    Windows,
+    Workspaces,
+    Screenshots,
+    Keys,
+    Other,
+}
+
+impl Category {
+    pub const ALL: [Category; 6] = [
+        Category::Session,
+        Category::Windows,
+        Category::Workspaces,
+        Category::Screenshots,
+        Category::Keys,
+        Category::Other,
+    ];
+}
+
+impl Shortcut {
+    /// Grouped by the shipped binding: its key for screenshots and hardware
+    /// keys, otherwise its action.
+    pub fn category(&self) -> Category {
+        let key = self.shipped.name().value();
+        let Ok(action) = action(&self.shipped) else {
+            return Category::Other;
+        };
+        let action = action.name().value();
+        if key.starts_with("XF86") {
+            Category::Keys
+        } else if key.ends_with("Print") || action.starts_with("screenshot") {
+            Category::Screenshots
+        } else if action.contains("workspace") {
+            Category::Workspaces
+        } else if action.starts_with("spawn") || action == "quit" || action.contains("power") {
+            Category::Session
+        } else if action.contains("column")
+            || action.contains("window")
+            || action.contains("overview")
+            || action.contains("fullscreen")
+            || action.contains("floating")
+            || action.contains("tabbed")
+        {
+            Category::Windows
+        } else {
+            Category::Other
+        }
+    }
+}
+
 /// Added or changed bindings, and shipped actions that were moved or turned off.
 #[derive(Clone, Debug, Default)]
 struct Delta {
@@ -1154,7 +1207,7 @@ fn label(node: &KdlNode) -> Result<String> {
     Ok(label)
 }
 
-fn normalize(key: &str) -> Option<String> {
+pub(crate) fn normalize(key: &str) -> Option<String> {
     if key.is_empty() || key.len() > 100 {
         return None;
     }

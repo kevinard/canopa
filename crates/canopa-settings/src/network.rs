@@ -447,6 +447,15 @@ impl LiveService for NetworkService {
 
 /// Ask the desktop portal for a file. `None` when the person cancels.
 pub async fn choose_file(title: &str) -> anyhow::Result<Option<PathBuf>> {
+    open_file(title, None).await
+}
+
+/// Ask the desktop portal for a JPEG or PNG picture.
+pub async fn choose_picture(title: &str, filter: &str) -> anyhow::Result<Option<PathBuf>> {
+    open_file(title, Some(filter)).await
+}
+
+async fn open_file(title: &str, pictures: Option<&str>) -> anyhow::Result<Option<PathBuf>> {
     use zbus::zvariant::{OwnedValue, Value};
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let bus = zbus::Connection::session().await?;
@@ -474,10 +483,22 @@ pub async fn choose_file(title: &str) -> anyhow::Result<Option<PathBuf>> {
         "org.freedesktop.portal.FileChooser",
     )
     .await?;
-    let options = HashMap::from([
+    let mut options = HashMap::from([
         ("handle_token", Value::from(token.as_str())),
         ("modal", Value::from(true)),
     ]);
+    if let Some(name) = pictures {
+        // One filter of MIME types (kind 1), the only ones a wallpaper reads.
+        let filter = (
+            name.to_owned(),
+            vec![
+                (1_u32, "image/jpeg".to_owned()),
+                (1, "image/png".to_owned()),
+            ],
+        );
+        options.insert("filters", Value::new(vec![filter.clone()]));
+        options.insert("current_filter", Value::new(filter));
+    }
     let _: zbus::zvariant::OwnedObjectPath =
         chooser.call("OpenFile", &("", title, options)).await?;
     let Some(message) = responses.next().await.transpose()? else {

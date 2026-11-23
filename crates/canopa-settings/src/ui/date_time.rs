@@ -2,7 +2,7 @@
 //! when GeoClue is installed), network time, the date and time when network
 //! time is off, and the 12/24-hour clock for Canopa. timedated asks polkit
 //! for each system change.
-use super::{Message, State, field, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, described_toggle, field, kit, live_page::LivePage, settings_group};
 use crate::{
     clock_format::{ClockChoice, ClockFormats, HourCycle},
     date_time::{DateTimeAction, DateTimeService, DateTimeState, local_usec, now_label},
@@ -31,7 +31,7 @@ fn edit(edit: Edit) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
 /// Time zones shown for a search, at most.
@@ -76,6 +76,16 @@ pub(super) fn matching<'a>(zones: &'a [String], query: &str) -> Vec<&'a String> 
         })
         .take(MATCHES)
         .collect()
+}
+
+/// A time zone as people say it: "Europe/Paris" → "Paris · Europe",
+/// "America/Argentina/Buenos_Aires" → "Buenos Aires · America".
+fn readable_zone(zone: &str) -> String {
+    let parts: Vec<_> = zone.split('/').map(|part| part.replace('_', " ")).collect();
+    match parts.as_slice() {
+        [region, .., city] => format!("{city} · {region}"),
+        _ => zone.replace('_', " "),
+    }
 }
 
 impl State {
@@ -137,7 +147,7 @@ impl State {
                         // an unsaved draft takes the new one with the file.
                         if let Some(lock) = crate::clock_format::lock_format(&saved.text) {
                             self.personal.follow(&previous, &saved, |draft| {
-                                draft.values.lock.clock_format = lock;
+                                draft.values.lock.clock_format = lock.clone();
                             });
                         }
                     }
@@ -165,33 +175,35 @@ impl State {
         let page = &self.date_time;
         let forms = &self.date_time_forms;
         let current = match page.live.pending("timezone") {
-            Some(DateTimeAction::Timezone(zone)) => zone.replace('_', " "),
+            Some(DateTimeAction::Timezone(zone)) => readable_zone(zone),
             _ if state.clock.timezone.is_empty() => fl!("settings-date-time-zone-unset"),
-            _ => state.clock.timezone.replace('_', " "),
+            _ => readable_zone(&state.clock.timezone),
         };
-        let mut body = column![
-            text(fl!("settings-date-time-zone-current", zone = current)),
-            muted(now_label(self.hour_cycle())),
-        ]
-        .spacing(10);
+        let mut body = column![kit::row(
+            current,
+            Some(now_label(self.hour_cycle())),
+            iced::widget::space(),
+        )]
+        .spacing(12);
         if state.locate {
-            body = body.push(
-                direction::row([
+            body = body
+                .push(iced::widget::rule::horizontal(1).style(kit::divider))
+                .push(kit::row(
+                    fl!("settings-date-time-locate-label"),
+                    Some(fl!("settings-date-time-locate-hint")),
                     self.action(
                         "settings-button-use-my-location",
                         fl!("settings-date-time-locate"),
                         Some(apply(DateTimeAction::Locate)),
                         false,
                     ),
-                    muted(fl!("settings-date-time-locate-hint")),
-                ])
-                .spacing(10)
-                .align_y(Alignment::Center),
-            );
+                ));
         }
-        body = body.push(field(
+        body = body.push(iced::widget::rule::horizontal(1).style(kit::divider));
+        body = body.push(super::hinted_field(
             "date-time-zone-search",
             fl!("settings-date-time-zone-search"),
+            &fl!("settings-date-time-zone-placeholder"),
             &forms.zone_query,
             |value| edit(Edit::ZoneQuery(value)),
         ));
@@ -234,22 +246,22 @@ impl State {
             Some(DateTimeAction::Ntp(value)) => *value,
             _ => state.clock.ntp,
         };
-        let mut body = column![].spacing(10);
+        let mut body = column![].spacing(6);
         if state.clock.can_ntp {
             body = body
-                .push(toggle(
+                .push(described_toggle(
                     "date-time-ntp",
                     fl!("settings-date-time-ntp"),
+                    Some(if !state.clock.ntp {
+                        fl!("settings-date-time-ntp-off")
+                    } else if state.clock.ntp_synchronized {
+                        fl!("settings-date-time-ntp-synchronized")
+                    } else {
+                        fl!("settings-date-time-ntp-waiting")
+                    }),
                     ntp,
                     apply(DateTimeAction::Ntp(!ntp)),
                 ))
-                .push(muted(if !state.clock.ntp {
-                    fl!("settings-date-time-ntp-off")
-                } else if state.clock.ntp_synchronized {
-                    fl!("settings-date-time-ntp-synchronized")
-                } else {
-                    fl!("settings-date-time-ntp-waiting")
-                }))
                 .push(page.control_status("ntp", message));
         } else {
             body = body.push(muted(fl!("settings-date-time-ntp-missing")));
@@ -296,7 +308,7 @@ impl State {
                 let afternoon = "14:30:00".parse().expect("a valid time");
                 let example = |cycle| canopa_i18n::format::time_with(afternoon, false, cycle);
                 let option = |key: &'static str, label: String, option: ClockChoice| {
-                    self.action(
+                    self.segment(
                         key,
                         label,
                         (choice != Some(option)).then(|| edit(Edit::Clock(option))),
@@ -314,29 +326,33 @@ impl State {
                         example = example(HourCycleChoice::Locale)
                     )
                 };
+                let segments = kit::segmented([
+                    option(
+                        "settings-button-clock-automatic",
+                        fl!("settings-clock-automatic"),
+                        ClockChoice::Automatic,
+                    ),
+                    option(
+                        "settings-button-24-hour-14-30",
+                        fl!("settings-clock-24", example = example(HourCycleChoice::H24)),
+                        ClockChoice::Fixed(HourCycle::H24),
+                    ),
+                    option(
+                        "settings-button-12-hour-2-30-pm",
+                        fl!("settings-clock-12", example = example(HourCycleChoice::H12)),
+                        ClockChoice::Fixed(HourCycle::H12),
+                    ),
+                ]);
+                // The choice is wide; it sits under its explanation.
                 let mut body = column![
-                    direction::row([
-                        option(
-                            "settings-button-clock-automatic",
-                            fl!("settings-clock-automatic"),
-                            ClockChoice::Automatic,
-                        ),
-                        option(
-                            "settings-button-24-hour-14-30",
-                            fl!("settings-clock-24", example = example(HourCycleChoice::H24)),
-                            ClockChoice::Fixed(HourCycle::H24),
-                        ),
-                        option(
-                            "settings-button-12-hour-2-30-pm",
-                            fl!("settings-clock-12", example = example(HourCycleChoice::H12)),
-                            ClockChoice::Fixed(HourCycle::H12),
-                        ),
-                    ])
-                    .spacing(10),
-                    muted(language),
-                    muted(fl!("settings-clock-applies")),
+                    column![
+                        text(fl!("settings-clock-format-label")),
+                        kit::caption(language),
+                    ]
+                    .spacing(2),
+                    segments,
                 ]
-                .spacing(10);
+                .spacing(12);
                 for clock in formats.custom() {
                     body = body.push(muted(fl!(
                         "settings-clock-custom",
@@ -347,19 +363,23 @@ impl State {
                 body.into()
             }
         };
-        settings_group(fl!("settings-clock-format"), body)
+        super::noted_group(
+            fl!("settings-clock-format"),
+            body,
+            [fl!("settings-clock-applies")],
+        )
     }
 
     pub(super) fn date_time_view(&self) -> Element<'_, Message> {
         column![
             self.date_time.view(message, |state| {
                 column![self.time_zone_section(state), self.clock_section(state)]
-                    .spacing(14)
+                    .spacing(28)
                     .into()
             }),
             self.hour_cycle_section(),
         ]
-        .spacing(14)
+        .spacing(28)
         .into()
     }
 }
@@ -367,6 +387,16 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zones_read_city_first() {
+        assert_eq!(readable_zone("Europe/Paris"), "Paris · Europe");
+        assert_eq!(
+            readable_zone("America/Argentina/Buenos_Aires"),
+            "Buenos Aires · America"
+        );
+        assert_eq!(readable_zone("UTC"), "UTC");
+    }
 
     #[test]
     fn zones_are_found_by_city_or_region() {

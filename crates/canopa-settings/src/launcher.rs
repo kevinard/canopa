@@ -116,6 +116,13 @@ impl ClipboardEditor {
         }
     }
 
+    /// Whether the fields differ from the saved options.
+    pub fn dirty(&self) -> bool {
+        self.recording != self.saved.recording
+            || self.images != self.saved.images
+            || self.limit != self.saved.max_entries.to_string()
+    }
+
     pub fn load() -> Result<Self> {
         let path = clipboard::path().map_err(anyhow::Error::msg)?;
         let saved = clipboard::Saved::load(&path).map_err(anyhow::Error::msg)?;

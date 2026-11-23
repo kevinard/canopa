@@ -96,11 +96,17 @@ impl Bar {
     }
 
     pub(crate) fn place(&mut self, widget: &str, zone: Option<usize>) {
+        self.place_before(widget, zone, None);
+    }
+
+    /// Move `widget` into `zone` just before `before`, or to the zone's end
+    /// when `before` is not in it. `None` removes the widget from the bar.
+    pub(crate) fn place_before(&mut self, widget: &str, zone: Option<usize>, before: Option<&str>) {
         for widgets in &mut self.zones {
             widgets.retain(|name| name != widget);
         }
         if let Some(index) = zone {
-            self.zones[index].push(widget.into());
+            insert_before(&mut self.zones[index], widget, before);
         }
         self.changed = true;
     }
@@ -155,6 +161,14 @@ impl Bar {
         }
         Ok(node)
     }
+}
+
+/// Insert `widget` before `before` in `widgets`, or at the end.
+fn insert_before(widgets: &mut Vec<String>, widget: &str, before: Option<&str>) {
+    let index = before
+        .and_then(|before| widgets.iter().position(|name| name == before))
+        .unwrap_or(widgets.len());
+    widgets.insert(index, widget.into());
 }
 
 #[derive(Clone, Debug)]
@@ -292,6 +306,17 @@ impl Editor {
     }
 
     pub(crate) fn place_lock(&mut self, widget: &str, anchor: Option<Anchor>) {
+        self.place_lock_before(widget, anchor, None);
+    }
+
+    /// Move `widget` into the region at `anchor` just before `before`, or to
+    /// the region's end. `None` takes it off the lock screen.
+    pub(crate) fn place_lock_before(
+        &mut self,
+        widget: &str,
+        anchor: Option<Anchor>,
+        before: Option<&str>,
+    ) {
         if widget == "authentication" && anchor.is_none() {
             return;
         }
@@ -299,7 +324,7 @@ impl Editor {
             region.widgets.retain(|name| name != widget);
         }
         if let Some(anchor) = anchor {
-            self.region(anchor).widgets.push(widget.into());
+            insert_before(&mut self.region(anchor).widgets, widget, before);
             if !matches!(widget, "clock" | "date" | "authentication")
                 && !self.lock.widgets.iter().any(|value| value == widget)
             {

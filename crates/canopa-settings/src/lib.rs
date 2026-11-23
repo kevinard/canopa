@@ -9,8 +9,11 @@ pub mod date_time;
 pub mod default_apps;
 pub mod display;
 pub mod file_page;
+#[cfg(feature = "desktop")]
+pub mod identify;
 pub mod input;
 pub mod instance;
+pub mod keyboard_layouts;
 pub mod launcher;
 pub mod live;
 pub mod network;

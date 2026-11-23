@@ -2,7 +2,7 @@
 //! administrators, the other accounts (type, password at next login,
 //! removal) and adding one. AccountsService and polkit decide what each
 //! person may change; your own password goes to `passwd` (ADR 0143).
-use super::{Message, State, field, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, focus, kit, live_page::LivePage, settings_group, toggle};
 use crate::{
     live::{Event, LiveAction},
     users::{UsersAction, UsersService, UsersState, check_picture, suggested_name, wipe},
@@ -30,11 +30,20 @@ fn edit(edit: Edit) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label)
+        .size(13)
+        .style(canopa_ui::muted)
+        .width(Length::Fill)
+        .into()
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
-fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+fn treated_button<'a>(
+    id: String,
+    label: String,
+    message: Option<Message>,
+    treatment: super::kit::Treatment,
+) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
@@ -46,10 +55,82 @@ fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Elemen
             None,
             None,
             false,
-            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
-                .padding([6, 12]),
+            iced::widget::button(text(label))
+                .on_press_maybe(message)
+                .style(move |theme, status| super::kit::button_style(theme, status, treatment))
+                .padding([7, 14]),
         ),
     )
+}
+
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Secondary)
+}
+/// The action a card leads with.
+fn primary_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Primary)
+}
+/// An action that removes or forgets something.
+fn danger_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Destructive)
+}
+
+/// A person's initials in a round badge, then their name and a detail.
+fn profile<'a>(
+    name: &str,
+    detail: String,
+    size: f32,
+    picture: Option<iced::widget::image::Handle>,
+) -> Element<'a, Message> {
+    let initials: String = name
+        .split_whitespace()
+        .filter_map(|word| word.chars().next())
+        .take(2)
+        .flat_map(char::to_uppercase)
+        .collect();
+    let badge: Element<'a, Message> = if let Some(picture) = picture {
+        iced::widget::image(picture)
+            .width(size)
+            .height(size)
+            .content_fit(iced::ContentFit::Cover)
+            .border_radius(size / 2.0)
+            .into()
+    } else {
+        iced::widget::container(
+            text(initials)
+                .size(size * 0.38)
+                .font(kit::strong_font(iced::font::Weight::Semibold))
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(kit::on_selection(theme)),
+                }),
+        )
+        .width(size)
+        .height(size)
+        .center_x(size)
+        .center_y(size)
+        .style(|theme: &iced::Theme| iced::widget::container::Style {
+            background: Some(kit::selection(theme).into()),
+            border: iced::border::rounded(u32::MAX),
+            ..Default::default()
+        })
+        .into()
+    };
+    direction::row([
+        badge,
+        column![
+            text(name.to_owned())
+                .size(if size > 48.0 { 17 } else { kit::size::BODY })
+                .font(kit::strong_font(iced::font::Weight::Semibold)),
+            muted(detail),
+        ]
+        .spacing(2)
+        .width(Length::Fill)
+        .into(),
+    ])
+    .spacing(14)
+    .align_y(Alignment::Center)
+    .width(Length::Fill)
+    .into()
 }
 
 fn secret<'a>(
@@ -71,9 +152,10 @@ fn secret<'a>(
                 .secure(true)
                 .on_input(move |value| edit(change(value)))
                 .align_x(direction::start())
-                .padding(10)
+                .padding([6, 12])
+                .style(kit::text_input_style)
         ]
-        .spacing(6)
+        .spacing(7)
         .width(Length::Fill),
     )
 }
@@ -98,6 +180,8 @@ pub(super) enum Edit {
     Remove(Option<u64>),
     /// Remove it, deleting its home folder or keeping it.
     RemoveConfirmed(u64, bool),
+    /// A picture file, decoded for display; `None` when it can't be shown.
+    Picture(String, Option<iced::widget::image::Handle>),
 }
 
 /// The page's unsaved input. Passwords are wiped once sent or abandoned.
@@ -115,6 +199,39 @@ pub(super) struct UsersForms {
     add_name_typed: bool,
     add_administrator: bool,
     removing: Option<u64>,
+    /// Decoded account pictures by file; `None` while loading or unreadable.
+    pictures: HashMap<String, Option<iced::widget::image::Handle>>,
+}
+
+/// Decode an account picture with the greeter's limits, for display only.
+fn decode_picture(path: &str) -> Option<iced::widget::image::Handle> {
+    use canopa_assets::{
+        DecoderAllocation, FileAccess, Formats, RasterBatch, RasterBudget, RasterPolicy,
+    };
+    let mut batch = RasterBatch::new(
+        RasterPolicy {
+            max_encoded_bytes: 2 * 1024 * 1024,
+            max_dimension: 2048,
+            max_pixels: 4_194_304,
+            decoder_allocation: DecoderAllocation::IncludingOutput(32 * 1024 * 1024),
+            formats: Formats::EnabledRasterCodecs,
+            file_access: FileAccess::Follow,
+            apply_orientation: true,
+            thumbnail: Some(192),
+        },
+        RasterBudget {
+            file_attempts: 1,
+            encoded_bytes: 2 * 1024 * 1024,
+            pixel_bytes: 16 * 1024 * 1024,
+        },
+        &|| false,
+    );
+    let raster = batch.load(std::path::Path::new(path))?;
+    Some(iced::widget::image::Handle::from_rgba(
+        raster.width,
+        raster.height,
+        raster.pixels,
+    ))
 }
 
 impl UsersForms {
@@ -126,9 +243,49 @@ impl UsersForms {
 }
 
 impl State {
+    /// Decode the pictures of the accounts shown that are not decoded yet.
+    pub(super) fn load_user_pictures(&mut self) -> Task<Message> {
+        let crate::live::Status::Ready(state) = self.users.live.status() else {
+            return Task::none();
+        };
+        let wanted: Vec<String> = state
+            .accounts
+            .users
+            .iter()
+            .map(|user| user.icon_file.clone())
+            .filter(|file| !file.is_empty() && !self.users_forms.pictures.contains_key(file))
+            .collect();
+        Task::batch(wanted.into_iter().map(|file| {
+            self.users_forms.pictures.insert(file.clone(), None);
+            let decode = file.clone();
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || decode_picture(&decode))
+                        .await
+                        .ok()
+                        .flatten()
+                },
+                move |handle| edit(Edit::Picture(file.clone(), handle)),
+            )
+        }))
+    }
+
+    /// The decoded picture of `user`, if it has one that can be shown.
+    fn picture(&self, user: &User) -> Option<iced::widget::image::Handle> {
+        self.users_forms
+            .pictures
+            .get(&user.icon_file)
+            .cloned()
+            .flatten()
+    }
+
     pub(super) fn users_edit(&mut self, change: Edit) -> Task<Message> {
         let forms = &mut self.users_forms;
         match change {
+            Edit::Picture(path, handle) => {
+                self.users_forms.pictures.insert(path, handle);
+                return Task::none();
+            }
             Edit::Name(uid, name) => {
                 forms.names.insert(
                     uid,
@@ -246,21 +403,32 @@ impl State {
             .get(&uid)
             .is_some_and(|name| name.trim() != user.real_name);
         column![
-            direction::row([
-                field(
-                    format!("users-{uid}-name"),
-                    fl!("settings-users-full-name"),
-                    typed,
-                    move |value| edit(Edit::Name(uid, value)),
-                ),
-                row_button(
-                    format!("users-{uid}-save-name"),
-                    fl!("settings-users-save-name"),
-                    changed.then(|| edit(Edit::SaveName(uid))),
-                ),
-            ])
-            .spacing(12)
-            .align_y(Alignment::End),
+            kit::row(
+                fl!("settings-users-full-name"),
+                None,
+                // Save appears once the typed name differs.
+                direction::row(
+                    [Some(super::bare_field(
+                        format!("users-{uid}-name"),
+                        fl!("settings-users-full-name"),
+                        &fl!("settings-users-full-name-placeholder"),
+                        typed,
+                        move |value| edit(Edit::Name(uid, value)),
+                        Length::Fixed(kit::PICK_WIDTH),
+                    ))]
+                    .into_iter()
+                    .chain([changed.then(|| {
+                        primary_button(
+                            format!("users-{uid}-save-name"),
+                            fl!("settings-users-save-name"),
+                            Some(edit(Edit::SaveName(uid))),
+                        )
+                    })])
+                    .flatten(),
+                )
+                .spacing(8)
+                .align_y(Alignment::Center),
+            ),
             self.users.control_status(
                 &UsersAction::RealName(uid, String::new()).control(),
                 message
@@ -274,29 +442,32 @@ impl State {
         let uid = user.uid;
         column![
             direction::row([
-                text(if user.icon_file.is_empty() {
-                    fl!("settings-users-picture-none")
-                } else {
-                    fl!("settings-users-picture", file = user.icon_file.as_str())
-                })
+                column![
+                    text(fl!("settings-users-picture-label")),
+                    muted(if self.picture(user).is_some() {
+                        fl!("settings-users-picture-custom")
+                    } else {
+                        fl!("settings-users-picture-initials")
+                    }),
+                ]
+                .spacing(2)
                 .width(Length::Fill)
-                .align_x(direction::text_start())
                 .into(),
                 row_button(
                     format!("users-{uid}-picture"),
                     fl!("settings-users-choose-picture-button"),
                     Some(edit(Edit::ChoosePicture(uid))),
                 ),
-                row_button(
+                danger_button(
                     format!("users-{uid}-picture-remove"),
                     fl!("settings-users-remove-picture"),
-                    (!user.icon_file.is_empty())
+                    self.picture(user)
+                        .is_some()
                         .then(|| apply(UsersAction::Picture(uid, String::new()))),
                 ),
             ])
             .spacing(10)
             .align_y(Alignment::Center),
-            muted(fl!("settings-users-picture-hint")),
             self.users
                 .control_status(&UsersAction::Picture(uid, String::new()).control(), message),
         ]
@@ -352,52 +523,77 @@ impl State {
                 ),
             ])
             .spacing(12),
-            row_button(
-                "users-password-change".into(),
-                if forms.changing {
-                    fl!("settings-users-password-changing")
-                } else {
-                    fl!("settings-users-password-change")
-                },
-                ready.then(|| edit(Edit::ChangePassword)),
-            ),
+            direction::row([
+                iced::widget::space().width(Length::Fill).into(),
+                primary_button(
+                    "users-password-change".into(),
+                    if forms.changing {
+                        fl!("settings-users-password-changing")
+                    } else {
+                        fl!("settings-users-password-change")
+                    },
+                    ready.then(|| edit(Edit::ChangePassword)),
+                ),
+            ])
+            .spacing(16)
+            .align_y(Alignment::Center),
         ]
-        .spacing(10);
+        .spacing(12);
         match &forms.password_result {
             Some(Ok(())) => password = password.push(muted(fl!("settings-users-password-changed"))),
             Some(Err(error)) => password = password.push(text(error.clone()).size(14)),
             None => {}
         }
-        password = password.push(muted(fl!("settings-users-password-hint")));
-        settings_group(
-            fl!("settings-users-yours"),
-            column![
-                text(fl!(
-                    "settings-users-me",
-                    name = me.name.as_str(),
-                    administrator = if me.administrator { "yes" } else { "no" }
-                )),
-                self.name_editor(me),
-                self.picture_row(me),
+
+        column![
+            super::noted_group(
+                fl!("settings-users-yours"),
+                kit::rows([
+                    profile(
+                        me.display_name(),
+                        // The login name only when the full name hides it.
+                        if me.real_name.trim().is_empty() {
+                            if me.administrator {
+                                fl!("settings-users-role-administrator")
+                            } else {
+                                fl!("settings-users-role-standard")
+                            }
+                        } else {
+                            fl!(
+                                "settings-users-me",
+                                name = me.name.as_str(),
+                                administrator = if me.administrator { "yes" } else { "no" }
+                            )
+                        },
+                        56.0,
+                        self.picture(me),
+                    ),
+                    self.name_editor(me),
+                    self.picture_row(me),
+                ]),
+                [fl!("settings-users-picture-hint")],
+            ),
+            super::noted_group(
+                fl!("settings-users-password-title"),
                 password,
-            ]
-            .spacing(14),
-        )
+                [fl!("settings-users-password-hint")],
+            ),
+        ]
+        .spacing(28)
+        .into()
     }
 
     fn other_account<'a>(&'a self, user: &'a User) -> Element<'a, Message> {
         let uid = user.uid;
         let mut card = column![
             direction::row([
-                column![
-                    text(user.display_name().to_owned()),
-                    muted(user.name.clone())
-                ]
-                .spacing(2)
-                .align_x(direction::start())
-                .width(Length::Fill)
-                .into(),
-                row_button(
+                profile(
+                    user.display_name(),
+                    user.name.clone(),
+                    40.0,
+                    self.picture(user)
+                ),
+                danger_button(
                     format!("users-{uid}-remove"),
                     fl!("settings-users-remove"),
                     Some(edit(Edit::Remove(Some(uid)))),
@@ -457,7 +653,7 @@ impl State {
                             fl!("settings-users-remove-keep"),
                             Some(edit(Edit::RemoveConfirmed(uid, false))),
                         ),
-                        row_button(
+                        danger_button(
                             format!("users-{uid}-remove-delete"),
                             fl!("settings-users-remove-delete"),
                             Some(edit(Edit::RemoveConfirmed(uid, true))),
@@ -483,11 +679,7 @@ impl State {
                 message,
             ),
         );
-        iced::widget::container(card)
-            .padding(12)
-            .width(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        card.spacing(14).into()
     }
 
     fn add_account(&self) -> Element<'_, Message> {
@@ -531,7 +723,7 @@ impl State {
             ),
             muted(fl!("settings-users-add-hint")),
             direction::row([
-                row_button(
+                primary_button(
                     "users-add-submit".into(),
                     fl!("settings-users-add"),
                     valid.then(|| edit(Edit::AddSubmit)),
@@ -549,7 +741,7 @@ impl State {
     }
 
     fn users_sections<'a>(&'a self, state: &'a UsersState) -> Element<'a, Message> {
-        let mut body = column![].spacing(14);
+        let mut body = column![].spacing(28);
         match state.me() {
             Some(me) => body = body.push(self.my_account(me)),
             None => {
@@ -560,26 +752,23 @@ impl State {
             }
         }
         let administrator = state.me().is_some_and(|me| me.administrator);
-        let mut others = column![].spacing(12);
-        let mut any = false;
-        for user in state
+        let mut others: Vec<Element<'_, Message>> = state
             .accounts
             .users
             .iter()
             .filter(|user| user.uid != state.me)
-        {
-            any = true;
-            others = others.push(self.other_account(user));
+            .map(|user| self.other_account(user))
+            .collect();
+        if others.is_empty() {
+            others.push(super::kit::empty(fl!("settings-users-no-others")));
         }
-        if !any {
-            others = others.push(muted(fl!("settings-users-no-others")));
-        }
-        others = others.push(self.add_account());
-        if !administrator {
-            others = others.push(muted(fl!("settings-users-others-hint")));
-        }
-        body.push(settings_group(fl!("settings-users-others"), others))
-            .into()
+        others.push(self.add_account());
+        body.push(super::noted_group(
+            fl!("settings-users-others"),
+            kit::rows(others),
+            (!administrator).then(|| fl!("settings-users-others-hint")),
+        ))
+        .into()
     }
 
     pub(super) fn users_view(&self) -> Element<'_, Message> {

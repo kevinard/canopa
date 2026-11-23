@@ -2,7 +2,7 @@
 //! (connect, disconnect, trust, forget, battery) and nearby devices to pair.
 //! Pairing questions (confirm a code, enter a PIN or passkey, type a code on
 //! the device) appear at the top. Changes apply at once.
-use super::{Message, State, field, focus, live_page::LivePage, settings_group, toggle};
+use super::{Message, State, field, focus, kit, live_page::LivePage, settings_group, toggle};
 use crate::{
     bluetooth::{BluetoothAction, BluetoothService, BluetoothState, Pairing, kind_label},
     live::{Event, LiveAction},
@@ -25,11 +25,16 @@ fn apply(action: BluetoothAction) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
-fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+fn treated_button<'a>(
+    id: String,
+    label: String,
+    message: Option<Message>,
+    treatment: super::kit::Treatment,
+) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
@@ -41,13 +46,42 @@ fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Elemen
             None,
             None,
             false,
-            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
-                .padding([6, 12]),
+            iced::widget::button(text(label))
+                .on_press_maybe(message)
+                .style(move |theme, status| super::kit::button_style(theme, status, treatment))
+                .padding([7, 14]),
         ),
     )
 }
 
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Secondary)
+}
+/// The action a card leads with.
+fn primary_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Primary)
+}
+/// An action that removes or forgets something.
+fn danger_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Destructive)
+}
+
 /// A stable, short focus id part for an object path.
+/// BlueZ names a device without an alias by its address.
+fn unnamed(device: &Device) -> bool {
+    device
+        .label
+        .replace('-', ":")
+        .eq_ignore_ascii_case(&device.address)
+}
+fn device_title(device: &Device) -> String {
+    if unnamed(device) {
+        fl!("settings-bluetooth-unnamed")
+    } else {
+        device.label.clone()
+    }
+}
+
 fn key(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_lowercase()
 }
@@ -85,7 +119,7 @@ impl State {
             )
         };
         let answer = |label: String| {
-            row_button(
+            primary_button(
                 "bluetooth-pairing-answer".into(),
                 label,
                 Some(apply(BluetoothAction::Answer(String::new()))),
@@ -145,7 +179,7 @@ impl State {
                     ),
                     muted(hint),
                     direction::row([
-                        row_button(
+                        primary_button(
                             "bluetooth-pairing-answer".into(),
                             fl!("settings-bluetooth-pair"),
                             submit,
@@ -188,7 +222,14 @@ impl State {
 
     fn device_status(device: &Device) -> String {
         // A list of short facts joined by " · ", each a message of its own.
-        let mut parts = vec![kind_label(device.kind)];
+        // A generic kind ("Device") tells nothing; it is left out.
+        let mut parts: Vec<String> = (device.kind != canopa_services::bluetooth::DeviceKind::Other)
+            .then(|| kind_label(device.kind))
+            .into_iter()
+            .collect();
+        if unnamed(device) {
+            parts.push(device.address.clone());
+        }
         if device.paired {
             parts.push(if device.connected {
                 fl!("settings-bluetooth-connected")
@@ -231,17 +272,25 @@ impl State {
         };
         column![
             direction::row([
-                column![text(&device.label), muted(Self::device_status(device))]
-                    .spacing(2)
-                    .align_x(direction::start())
-                    .width(Length::Fill)
-                    .into(),
+                {
+                    // A status line only when there is one, so a lone name
+                    // centres on its button.
+                    let status = Self::device_status(device);
+                    let mut lead = column![text(device_title(device))].spacing(2);
+                    if !status.trim().is_empty() {
+                        lead = lead.push(muted(status));
+                    }
+                    lead
+                }
+                .align_x(direction::start())
+                .width(Length::Fill)
+                .into(),
                 row_button(
                     format!("bluetooth-{id}-connect"),
                     connect.0,
                     Some(apply(connect.1)),
                 ),
-                row_button(
+                danger_button(
                     format!("bluetooth-{id}-forget"),
                     fl!("settings-bluetooth-forget"),
                     Some(apply(BluetoothAction::Forget(path.into()))),
@@ -267,11 +316,19 @@ impl State {
         let control = BluetoothAction::Pair(path.into()).control();
         column![
             direction::row([
-                column![text(&device.label), muted(Self::device_status(device))]
-                    .spacing(2)
-                    .align_x(direction::start())
-                    .width(Length::Fill)
-                    .into(),
+                {
+                    // A status line only when there is one, so a lone name
+                    // centres on its button.
+                    let status = Self::device_status(device);
+                    let mut lead = column![text(device_title(device))].spacing(2);
+                    if !status.trim().is_empty() {
+                        lead = lead.push(muted(status));
+                    }
+                    lead
+                }
+                .align_x(direction::start())
+                .width(Length::Fill)
+                .into(),
                 row_button(
                     format!("bluetooth-{}-pair", key(path)),
                     fl!("settings-bluetooth-pair"),
@@ -289,7 +346,7 @@ impl State {
     fn bluetooth_sections<'a>(&'a self, state: &'a BluetoothState) -> Element<'a, Message> {
         let page = &self.bluetooth;
         let snapshot = &state.snapshot;
-        let mut body = column![].spacing(14);
+        let mut body = column![].spacing(28);
         if let Some(pairing) = &state.pairing {
             body = body.push(self.pairing_section(pairing));
         }
@@ -315,82 +372,125 @@ impl State {
                 _ => adapter.discoverable,
             };
             let id = key(path);
-            let mut group = column![
-                toggle(
-                    format!("bluetooth-{id}-powered"),
-                    "Bluetooth",
-                    powered,
-                    apply(BluetoothAction::Powered(path.into(), !powered)),
-                ),
-                page.control_status(&power, message),
-            ]
-            .spacing(8);
+            let mut rows: Vec<Element<'_, Message>> = vec![
+                column![
+                    toggle(
+                        format!("bluetooth-{id}-powered"),
+                        fl!("settings-bluetooth-power-label"),
+                        powered,
+                        apply(BluetoothAction::Powered(path.into(), !powered)),
+                    ),
+                    page.control_status(&power, message),
+                ]
+                .into(),
+            ];
+            let mut detail = column![].spacing(2);
             if adapter.powered {
-                group = group
-                    .push(toggle(
-                        format!("bluetooth-{id}-visible"),
-                        fl!("settings-bluetooth-visible", name = adapter.label.as_str()),
-                        discoverable,
-                        apply(BluetoothAction::Discoverable(path.into(), !discoverable)),
-                    ))
-                    .push(page.control_status(&visible, message));
-                if adapter.discovering {
-                    group = group.push(muted(fl!("settings-bluetooth-searching")));
-                }
+                rows.push(
+                    column![
+                        toggle(
+                            format!("bluetooth-{id}-visible"),
+                            fl!("settings-bluetooth-visible", name = adapter.label.as_str()),
+                            discoverable,
+                            apply(BluetoothAction::Discoverable(path.into(), !discoverable)),
+                        ),
+                        page.control_status(&visible, message),
+                    ]
+                    .into(),
+                );
             } else {
-                group = group.push(muted(fl!("settings-bluetooth-off-hint")));
+                detail = detail.push(muted(fl!("settings-bluetooth-off-hint")));
             }
-            if !adapter.address.is_empty() {
-                group = group.push(muted(fl!(
+            let address = (!adapter.address.is_empty()).then(|| {
+                fl!(
                     "settings-bluetooth-address",
                     address = adapter.address.as_str()
-                )));
+                )
+            });
+            if !adapter.powered {
+                rows.push(detail.into());
             }
-            body = body.push(settings_group(
-                if several {
-                    adapter.label.as_str()
-                } else {
-                    "Bluetooth"
-                }
-                .to_owned(),
-                group,
-            ));
+            let group = kit::rows(rows);
+            let card = if several {
+                settings_group(adapter.label.clone(), group)
+            } else {
+                // The page title already says Bluetooth.
+                iced::widget::container(group)
+                    .padding(kit::ROW_PADDING)
+                    .width(Length::Fill)
+                    .style(kit::card)
+                    .into()
+            };
+            // The address is reference, not a setting: under the card.
+            body = body.push(match address {
+                Some(address) => column![card, kit::footnote(address)].spacing(8).into(),
+                None => card,
+            });
         }
         if !snapshot.adapters.iter().any(|adapter| adapter.powered) {
             return body.into();
         }
         let pairing = state.pairing.is_some();
-        let mut paired = column![].spacing(12);
-        let mut nearby = column![].spacing(12);
-        let (mut any_paired, mut any_nearby) = (false, false);
-        for device in &snapshot.devices {
-            if device.paired {
-                any_paired = true;
-                paired = paired.push(self.paired_device(device));
-            } else {
-                any_nearby = true;
-                nearby = nearby.push(self.nearby_device(device, pairing));
-            }
+        let paired: Vec<_> = snapshot
+            .devices
+            .iter()
+            .filter(|device| device.paired)
+            .map(|device| self.paired_device(device))
+            .collect();
+        // Named devices are the ones people look for; devices that only
+        // give an address are folded away under one row.
+        let (anonymous, named): (Vec<&Device>, Vec<&Device>) = snapshot
+            .devices
+            .iter()
+            .filter(|device| !device.paired)
+            .partition(|device| unnamed(device));
+        let mut nearby: Vec<_> = named
+            .into_iter()
+            .map(|device| self.nearby_device(device, pairing))
+            .collect();
+        if !anonymous.is_empty() {
+            nearby.push(self.disclosure(
+                "bluetooth-unnamed",
+                fl!("settings-bluetooth-unnamed-count", count = anonymous.len()),
+                || {
+                    kit::rows(
+                        anonymous
+                            .into_iter()
+                            .map(|device| self.nearby_device(device, pairing)),
+                    )
+                },
+            ));
+        }
+        let (any_paired, any_nearby) = (!paired.is_empty(), !nearby.is_empty());
+        // While searching, the list says so above what it found so far.
+        let searching = snapshot
+            .adapters
+            .iter()
+            .any(|adapter| adapter.powered && adapter.discovering);
+        if searching && any_nearby {
+            nearby.insert(
+                0,
+                kit::status_line(kit::Notice::Info, fl!("settings-bluetooth-searching")),
+            );
         }
         body.push(settings_group(
             fl!("settings-bluetooth-mine"),
             if any_paired {
-                paired.into()
+                kit::rows(paired)
             } else {
-                muted(fl!("settings-bluetooth-none-paired"))
+                super::kit::empty(fl!("settings-bluetooth-none-paired"))
             },
         ))
-        .push(settings_group(
+        .push(super::noted_group(
             fl!("settings-bluetooth-nearby"),
-            column![
-                if any_nearby {
-                    nearby.into()
-                } else {
-                    muted(fl!("settings-bluetooth-none-nearby"))
-                },
-                muted(fl!("settings-bluetooth-profiles-hint")),
-            ]
-            .spacing(10),
+            if any_nearby {
+                kit::rows(nearby)
+            } else if searching {
+                kit::loading(fl!("settings-bluetooth-searching"))
+            } else {
+                super::kit::empty(fl!("settings-bluetooth-none-nearby"))
+            },
+            [fl!("settings-bluetooth-profiles-hint")],
         ))
         .into()
     }

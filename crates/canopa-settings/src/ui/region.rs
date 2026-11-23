@@ -5,9 +5,8 @@
 //! A new language or formats choice also applies to Settings at once
 //! (`canopa_i18n::select_locale`); the window shows it at its next redraw,
 //! and a notice names the applications that need a restart.
-use super::{Message, State, live_page::LivePage, pick, settings_group};
+use super::{Message, State, kit, live_page::LivePage, pick, settings_group};
 use crate::{
-    Page,
     file_page::FileModel,
     input::Input,
     live::Event,
@@ -15,7 +14,7 @@ use crate::{
 };
 use canopa_ui::direction;
 use iced::{
-    Alignment, Element, Length, Task,
+    Element, Length, Task,
     widget::{column, text},
 };
 
@@ -26,7 +25,7 @@ pub(super) fn message(event: Event<RegionService>) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
 fn fact<'a>(label: String, value: String) -> Element<'a, Message> {
@@ -38,7 +37,7 @@ fn fact<'a>(label: String, value: String) -> Element<'a, Message> {
             .into(),
         text(value)
             .width(Length::Fill)
-            .align_x(direction::text_start())
+            .align_x(direction::text_end())
             .into(),
     ])
     .spacing(12)
@@ -130,17 +129,31 @@ impl State {
             .find(|locale| same_locale(&locale.name, &selected))
             .map(|locale| locale.name.clone());
         column![
-            direction::row([
-                text(title)
-                    .width(Length::Fixed(220.))
-                    .align_x(direction::text_start())
-                    .into(),
-                pick(id, options, selected, move |name| {
-                    message(Event::Apply(action(name)))
-                }),
-            ])
-            .spacing(12)
-            .align_y(Alignment::Center),
+            // With one language installed there is nothing to choose: the
+            // value is shown as text, not as a list that looks open.
+            if options.len() <= 1 {
+                kit::row(
+                    title,
+                    None,
+                    iced::widget::text(
+                        selected
+                            .as_ref()
+                            .and_then(|name| options.iter().find(|(value, _)| value == name))
+                            .or(options.first())
+                            .map(|(_, label)| label.clone())
+                            .unwrap_or_else(|| fl!("settings-choice-placeholder")),
+                    )
+                    .style(canopa_ui::muted),
+                )
+            } else {
+                kit::row(
+                    title,
+                    None,
+                    pick(id, options, selected, move |name| {
+                        message(Event::Apply(action(name)))
+                    }),
+                )
+            },
             page.control_status(&control, message),
         ]
         .spacing(4)
@@ -148,54 +161,46 @@ impl State {
     }
 
     fn region_sections<'a>(&'a self, state: &'a RegionState) -> Element<'a, Message> {
-        let mut personal = column![].spacing(10);
-        if state.installed.len() <= 1 {
-            personal = personal.push(muted(fl!("settings-region-only-c")));
-        }
-        personal = personal
-            .push(self.locale_choice(
+        let personal: Vec<Element<'_, Message>> = vec![
+            self.locale_choice(
                 "region-language",
                 fl!("settings-region-language"),
                 state,
                 state.language(),
                 RegionAction::UserLanguage,
-            ))
-            .push(self.locale_choice(
+            ),
+            self.locale_choice(
                 "region-formats",
                 fl!("settings-region-formats"),
                 state,
                 state.formats(),
                 RegionAction::UserFormats,
-            ));
-        if let Some(preview) = &state.preview {
-            personal = personal.push(
-                column![
-                    fact(fl!("settings-region-preview-date"), preview.date.clone()),
-                    fact(fl!("settings-region-preview-time"), preview.time.clone()),
-                    fact(
-                        fl!("settings-region-preview-number"),
-                        preview.number.clone()
-                    ),
-                    fact(
-                        fl!("settings-region-preview-money"),
-                        preview.currency.clone()
-                    ),
-                    fact(
-                        fl!("settings-region-preview-measurement"),
-                        if preview.metric {
-                            fl!("settings-region-metric")
-                        } else {
-                            fl!("settings-region-us-customary")
-                        }
-                    ),
-                ]
-                .spacing(6),
-            );
-        }
-        personal = personal.push(muted(fl!(
-            "settings-region-applies",
-            file = "~/.config/locale.conf"
-        )));
+            ),
+        ];
+        // Examples of the chosen formats, as rows like every other list.
+        let examples = state.preview.as_ref().map(|preview| {
+            kit::rows([
+                fact(fl!("settings-region-preview-date"), preview.date.clone()),
+                fact(fl!("settings-region-preview-time"), preview.time.clone()),
+                fact(
+                    fl!("settings-region-preview-number"),
+                    preview.number.clone(),
+                ),
+                fact(
+                    fl!("settings-region-preview-money"),
+                    preview.currency.clone(),
+                ),
+                fact(
+                    fl!("settings-region-preview-measurement"),
+                    if preview.metric {
+                        fl!("settings-region-metric")
+                    } else {
+                        fl!("settings-region-us-customary")
+                    },
+                ),
+            ])
+        });
+        let personal = kit::rows(personal);
 
         let layouts = self
             .input
@@ -206,16 +211,23 @@ impl State {
             None => muted(fl!("settings-region-no-localed")),
             Some(system) => {
                 let keyboard = if system.x11_layout.is_empty() {
-                    fl!("settings-region-keyboard-unset", layout = "us")
+                    fl!(
+                        "settings-region-keyboard-unset",
+                        layout = crate::keyboard_layouts::name("us")
+                    )
                 } else if system.x11_variant.is_empty() {
-                    system.x11_layout.clone()
+                    crate::keyboard_layouts::codes(&system.x11_layout)
+                        .into_iter()
+                        .map(crate::keyboard_layouts::name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 } else {
                     format!("{} ({})", system.x11_layout, system.x11_variant)
                 };
                 let same = system.x11_layout == layouts.layouts
                     && system.x11_variant == layouts.variants
                     && system.x11_options == layouts.options;
-                column![
+                kit::rows([
                     self.locale_choice(
                         "region-system-language",
                         fl!("settings-region-system-language"),
@@ -223,42 +235,65 @@ impl State {
                         system.get("LANG").unwrap_or("C.UTF-8").to_owned(),
                         RegionAction::SystemLanguage,
                     ),
-                    fact(fl!("settings-region-system-keyboard"), keyboard),
-                    fact(fl!("settings-region-your-layouts"), layouts.layouts.clone()),
-                    direction::row([
-                        self.action(
-                            "settings-button-use-my-layouts-for-the-login-screen-and-console",
-                            fl!("settings-region-use-my-layouts"),
-                            (!same && !layouts.layouts.trim().is_empty()).then(|| {
-                                message(Event::Apply(RegionAction::SystemKeyboard {
-                                    layouts: layouts.layouts.clone(),
-                                    variants: layouts.variants.clone(),
-                                    options: layouts.options.clone(),
-                                }))
-                            }),
-                            false,
+                    column![
+                        kit::row(
+                            fl!("settings-region-login-keyboard"),
+                            Some(fl!(
+                                "settings-region-keyboard-detail",
+                                system = keyboard,
+                                mine = crate::keyboard_layouts::codes(&layouts.layouts)
+                                    .into_iter()
+                                    .map(crate::keyboard_layouts::name)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )),
+                            self.action(
+                                "settings-button-use-my-layouts-for-the-login-screen-and-console",
+                                fl!("settings-region-use-my-layouts-short"),
+                                (!same && !layouts.layouts.trim().is_empty()).then(|| {
+                                    message(Event::Apply(RegionAction::SystemKeyboard {
+                                        layouts: layouts.layouts.clone(),
+                                        variants: layouts.variants.clone(),
+                                        options: layouts.options.clone(),
+                                    }))
+                                }),
+                                false,
+                            ),
                         ),
-                        self.action(
-                            "settings-button-change-my-layouts",
-                            fl!("settings-region-change-layouts"),
-                            Some(Message::Page(Page::Input)),
-                            false,
-                        ),
-                    ])
-                    .spacing(10),
-                    self.region.control_status("system-keyboard", message),
-                    muted(fl!("settings-region-system-permission")),
-                ]
-                .spacing(10)
-                .into()
+                        self.region.control_status("system-keyboard", message),
+                    ]
+                    .spacing(10)
+                    .into(),
+                ])
             }
         };
-        column![
-            settings_group(fl!("settings-region-yours"), personal),
-            settings_group(fl!("settings-region-system"), system),
-        ]
-        .spacing(14)
-        .into()
+        let mut yours = column![kit::section_heading(fl!("settings-region-yours"))].spacing(10);
+        if state.installed.len() <= 1 {
+            yours = yours.push(kit::status_card(
+                kit::Notice::Info,
+                fl!("settings-region-only-c-title"),
+                Some(fl!("settings-region-only-c")),
+            ));
+        }
+        let yours = yours
+            .push(
+                iced::widget::container(personal)
+                    .padding(kit::ROW_PADDING)
+                    .width(Length::Fill)
+                    .style(kit::card),
+            )
+            .push(kit::footnote(fl!("settings-region-applies")));
+        let mut sections = column![yours].spacing(28);
+        if let Some(examples) = examples {
+            sections = sections.push(settings_group(fl!("settings-region-examples"), examples));
+        }
+        sections
+            .push(super::noted_group(
+                fl!("settings-region-system"),
+                system,
+                [fl!("settings-region-system-permission")],
+            ))
+            .into()
     }
 
     pub(super) fn region_view(&self) -> Element<'_, Message> {
@@ -270,6 +305,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Page;
     use crate::region::{Installed, UserLocale};
     use std::sync::Arc;
 

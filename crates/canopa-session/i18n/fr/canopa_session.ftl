@@ -43,6 +43,7 @@ wallpaper-preview-hint = Entrée applique et enregistre · Tab sélectionne · F
 wallpaper-preview-failed = Impossible d’afficher l’aperçu de cette image. Choisissez-en une autre.
 wallpaper-applied = Fond d’écran appliqué et enregistré
 wallpaper-apply-failed = Échec du changement de fond d’écran ; l’attribution précédente est conservée
+wallpaper-none-found = Aucune image n’a été trouvée dans votre dossier Images ni parmi les fonds d’écran installés. Choisissez plutôt un fichier image.
 
 ## canopa-idle
 idle-not-installed = { $program } n’est pas installé dans le PATH

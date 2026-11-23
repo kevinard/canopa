@@ -67,6 +67,10 @@ enum Operation {
     },
     #[command(hide = true)]
     WatchDisplayProfiles,
+    /// Label each display with the number Displays gives it, reading the
+    /// labels from standard input until it closes.
+    #[command(hide = true)]
+    IdentifyDisplays,
 }
 /// `{"pages":[{"id","title","description","icon","keywords"}]}`, the same
 /// registry entries the sidebar, search and D-Bus `Pages` use, in the
@@ -174,6 +178,12 @@ fn run() -> Result<()> {
             }
         }
         Some(Operation::WatchDisplayProfiles) => canopa_settings::profile_watch::run()?,
+        Some(Operation::IdentifyDisplays) => {
+            #[cfg(feature = "desktop")]
+            canopa_settings::identify::run()?;
+            #[cfg(not(feature = "desktop"))]
+            anyhow::bail!("this build does not include the desktop interface");
+        }
         None => {
             #[cfg(feature = "desktop")]
             {

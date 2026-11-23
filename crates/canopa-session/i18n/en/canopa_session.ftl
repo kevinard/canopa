@@ -51,6 +51,7 @@ wallpaper-preview-hint = Enter applies and saves · Tab selects · F5 refreshes
 wallpaper-preview-failed = This image could not be previewed. Choose another image.
 wallpaper-applied = Wallpaper applied and saved
 wallpaper-apply-failed = Wallpaper change failed; the previous assignment was retained
+wallpaper-none-found = No pictures were found in your Pictures folder or the installed wallpapers. Choose a picture file instead.
 
 ## canopa-idle
 idle-not-installed = { $program } is not installed in PATH

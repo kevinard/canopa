@@ -59,6 +59,25 @@ impl Monitor {
             y: value.logical.map_or(0, |v| v.y),
         }
     }
+    /// The size the compositor gives an enabled display, in whole logical
+    /// pixels.
+    fn logical_size(&self) -> Option<(i32, i32)> {
+        if !self.enabled {
+            return None;
+        }
+        let mode = self.mode.and_then(|index| self.modes.get(index))?;
+        let scale = self.scale.max(0.1);
+        let (width, height) = (
+            (f64::from(mode.width) / scale).round() as i32,
+            (f64::from(mode.height) / scale).round() as i32,
+        );
+        Some(match self.transform {
+            Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 => {
+                (height, width)
+            }
+            _ => (width, height),
+        })
+    }
     fn identity(&self, output: &Output) -> bool {
         self.name == output.name
             && self.make == output.make
@@ -133,6 +152,90 @@ impl Monitor {
     }
 }
 
+/// The maker and product name a monitor reports in its EDID, read from
+/// sysfs, for monitors the compositor names "Unknown" (it can miss them when
+/// a monitor is plugged in).
+pub fn reported_identity(connector: &str) -> Option<(String, String)> {
+    let suffix = format!("-{connector}");
+    std::fs::read_dir("/sys/class/drm")
+        .ok()?
+        .flatten()
+        .find(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("card") && name.ends_with(&suffix)
+        })
+        .and_then(|entry| canopa_file::read_bounded(&entry.path().join("edid"), 32768).ok())
+        .and_then(|bytes| edid_identity(&bytes))
+}
+
+/// The maker (by name when known) and the product name in an EDID block.
+fn edid_identity(edid: &[u8]) -> Option<(String, String)> {
+    if edid.len() < 128 || edid[..8] != [0, 255, 255, 255, 255, 255, 255, 0] {
+        return None;
+    }
+    let id = u16::from_be_bytes([edid[8], edid[9]]);
+    let code: String = [10, 5, 0]
+        .into_iter()
+        .map(|shift| char::from(b'A' - 1 + ((id >> shift) & 0x1f) as u8))
+        .collect();
+    if !code.chars().all(|c| c.is_ascii_uppercase()) {
+        return None;
+    }
+    let make = VENDORS
+        .iter()
+        .find(|(known, _)| *known == code)
+        .map_or(code.clone(), |(_, name)| (*name).to_owned());
+    // Display descriptors: the product name is tagged 0xFC.
+    let model = (0..4)
+        .map(|index| &edid[54 + index * 18..72 + index * 18])
+        .find(|descriptor| descriptor[..3] == [0, 0, 0] && descriptor[3] == 0xFC)
+        .map(|descriptor| {
+            String::from_utf8_lossy(&descriptor[5..])
+                .split('\n')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        })
+        .unwrap_or_default();
+    Some((make, model))
+}
+
+/// Plug and Play maker codes of common monitors.
+const VENDORS: &[(&str, &str)] = &[
+    ("ACI", "ASUS"),
+    ("ACR", "Acer"),
+    ("AOC", "AOC"),
+    ("APP", "Apple"),
+    ("AUO", "AU Optronics"),
+    ("AUS", "ASUS"),
+    ("BNQ", "BenQ"),
+    ("BOE", "BOE"),
+    ("CMN", "Innolux"),
+    ("DEL", "Dell"),
+    ("ENC", "EIZO"),
+    ("FUS", "Fujitsu"),
+    ("GBT", "Gigabyte"),
+    ("GSM", "LG"),
+    ("HKC", "HKC"),
+    ("HPN", "HP"),
+    ("HWP", "HP"),
+    ("IVM", "iiyama"),
+    ("LEN", "Lenovo"),
+    ("LGD", "LG Display"),
+    ("MED", "Medion"),
+    ("MSI", "MSI"),
+    ("NEC", "NEC"),
+    ("PHL", "Philips"),
+    ("SAM", "Samsung"),
+    ("SDC", "Samsung"),
+    ("SHP", "Sharp"),
+    ("SNY", "Sony"),
+    ("VSC", "ViewSonic"),
+    ("XMI", "Xiaomi"),
+];
+
 fn settled(client: &Client, monitors: &[Monitor]) -> Result<()> {
     wait_for_outputs(
         client,
@@ -152,7 +255,8 @@ fn wait_for_outputs(
     ready: impl Fn(&HashMap<String, Output>) -> bool,
     failure: &str,
 ) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    // A real monitor can take a few seconds to change mode.
+    let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         if ready(&client.outputs()?) {
             return Ok(());
@@ -190,6 +294,28 @@ pub fn validate(monitors: &[Monitor], outputs: &HashMap<String, Output>) -> Resu
             "display scale or position is outside its supported range"
         );
         monitor.actions(output)?;
+    }
+    // The compositor places a display that overlaps another somewhere else
+    // instead, so the arrangement would not come out as asked.
+    let placed: Vec<_> = monitors
+        .iter()
+        .filter_map(|monitor| Some((monitor, monitor.logical_size()?)))
+        .collect();
+    for (index, (first, (width, height))) in placed.iter().enumerate() {
+        for (second, (other_width, other_height)) in &placed[index + 1..] {
+            ensure!(
+                first.x >= second.x + other_width
+                    || second.x >= first.x + width
+                    || first.y >= second.y + other_height
+                    || second.y >= first.y + height,
+                "{}",
+                fl!(
+                    "settings-error-display-overlap",
+                    first = first.name.clone(),
+                    second = second.name.clone()
+                )
+            );
+        }
     }
     Ok(())
 }
@@ -788,5 +914,30 @@ pub fn use_for_login_screen(outputs: &HashMap<String, Output>) -> Result<String>
                 fl!("settings-displays-login-screen-failed", error = detail)
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_monitor_the_compositor_cannot_name_is_named_from_its_edid() {
+        let mut edid = vec![0_u8; 128];
+        edid[..8].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 0]);
+        // "GBT", Gigabyte.
+        edid[8..10].copy_from_slice(&[0x1c, 0x54]);
+        edid[72..77].copy_from_slice(&[0, 0, 0, 0xFF, 0]);
+        edid[77..90].copy_from_slice(b"0000000000000");
+        edid[90..95].copy_from_slice(&[0, 0, 0, 0xFC, 0]);
+        edid[95..108].copy_from_slice(b"G27Q2\n       ");
+        assert_eq!(
+            edid_identity(&edid),
+            Some(("Gigabyte".into(), "G27Q2".into()))
+        );
+        // "DEL", Dell.
+        edid[8..10].copy_from_slice(&[0x10, 0xAC]);
+        assert_eq!(edid_identity(&edid).unwrap().0, "Dell");
+        assert_eq!(edid_identity(&edid[..64]), None);
     }
 }

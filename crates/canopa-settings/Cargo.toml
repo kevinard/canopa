@@ -8,11 +8,12 @@ license.workspace = true
 
 [features]
 default = ["desktop"]
-desktop = ["dep:iced", "dep:canopa-ui"]
+desktop = ["dep:iced", "dep:iced_layershell", "dep:canopa-ui"]
 
 [dependencies]
 canopa-i18n.workspace = true
 canopa-apps.workspace = true
+canopa-assets.workspace = true
 canopa-launcher.workspace = true
 canopa-notify-client.workspace = true
 canopa-services = { workspace = true, features = ["audio"] }
@@ -24,18 +25,22 @@ canopa-session-ui.workspace = true
 canopa-ui = { workspace = true, optional = true, features = ["accessibility"] }
 clap.workspace = true
 futures-util.workspace = true
-iced = { workspace = true, optional = true, features = ["tokio", "tiny-skia"] }
+iced = { workspace = true, optional = true, features = ["tokio", "tiny-skia", "svg"] }
+iced_layershell = { workspace = true, optional = true }
 kdl = { workspace = true, features = ["v1"] }
 libc.workspace = true
 rustix.workspace = true
+roxmltree.workspace = true
 niri-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "net"] }
-wayland-client.workspace = true
+wayland-client = { workspace = true, features = ["system"] }
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 xkbcommon = "0.8"
+raw-window-handle = "0.6"
+wayland-protocols = { workspace = true, features = ["unstable"] }
 zbus.workspace = true
 
 [dev-dependencies]

@@ -36,10 +36,12 @@ Retry, next to the control. When the service behind the page is not running, the
 says so and reconnects when it returns. Changes that need permission ask through the
 [polkit agent](polkit.md).
 
-**Save** pages keep a draft. **Save changes** (Ctrl+S) checks that the file has not
-changed since it was read, validates the candidate with the owning program (or
-`niri validate`), then replaces the file. **Reload this page and discard its edits**
-re-reads the file for that page only. Personalization and Widgets both edit
+**Save** pages keep a draft. As soon as it differs from the saved file, a bar at the
+bottom of the page says so and offers **Save changes** (Ctrl+S) and **Discard
+changes**. Saving checks that the file has not changed since it was read, validates
+the candidate with the owning program (or `niri validate`), then replaces the file.
+Discarding re-reads the file for that page only. A page without unsaved edits reads
+its file again each time it is opened, so changes made elsewhere show up. Personalization and Widgets both edit
 `config.kdl`: saving one keeps the other's unsaved edits, but a change made outside
 Settings must be reloaded. Symlinked files are read-only.
 
@@ -66,14 +68,26 @@ runs, a page request only brings the window forward.
 
 ## Displays
 
-For each connected display: on/off, resolution and refresh rate, scale, rotation and
-position in logical pixels. At least one display stays on. **Test display changes**
+Displays are numbered; each card's title starts with its number. With several
+enabled displays, **Arrangement** draws them where their positions place them, at a
+scale that depends only on their sizes, and while the window has focus each screen
+shows its number and name in its top left corner. Drag a display to move it: its
+edges snap to the other displays' edges, and its label on the screen lights up.
+Dropped, it settles at the nearest place where it touches another display without
+overlapping one, and a display the move left apart joins the others again. Monitors
+the compositor names "Unknown" (it can miss a monitor plugged in later) are named
+from the EDID they report. For each connected display: on/off, resolution and
+refresh rate, scale (25% steps from 50% to 400%), rotation and, under **Exact
+position**, its position in logical pixels from the arrangement's top left corner
+at 0, 0. Typed positions that overlap are refused, because Niri would place the
+display elsewhere. At least one display stays on. **Test display changes**
 applies the layout and offers **Keep changes** or **Revert** for 20 seconds (Escape
 reverts). Only Keep writes `~/.config/canopa/niri-displays.kdl`. A separate helper
 process restores the previous layout if the window closes or crashes, the time runs
-out or the change partly fails. **Reload connected displays** discards the draft.
+out or the change partly fails. **Reload** (in Arrangement, or beside the one-display notice) discards the draft and
+reads the monitors and saved profiles again.
 
-With the `canopa-login` package, **Use on the login screen** copies the applied layout
+With the `canopa-login` package, **Login screen** › **Use on login screen** copies the applied layout
 (not unsaved changes) to `/etc/canopa/greeter-displays.kdl` after administrator
 authentication, so the login screen uses the same modes, scales and positions. See
 [Login screen](greeter.md#display-layout).
@@ -128,9 +142,11 @@ change.
 
 ## Keyboard and pointer
 
-XKB layouts (up to eight, in switching order), variants and options; for example,
-layouts `us,fr` with option `grp:alt_shift_toggle`. Keymaps are compiled before
-saving. Also key repeat delay and rate, mouse speed, left-handed buttons and natural
+XKB layouts (up to eight, in switching order), listed by name; **Add a layout**
+offers the layouts installed on the computer, and the first one is the default.
+**Variants and keyboard options** shows the layout codes, variants and options as
+text; for example, layouts `us,fr` with option `grp:alt_shift_toggle`. Keymaps are
+compiled before saving. Also key repeat delay and rate, mouse speed, left-handed buttons and natural
 scrolling, touchpad speed, tap to click, natural scrolling and disable while typing.
 Saved to `~/.config/canopa/niri-input.kdl`. Put custom device rules in
 `~/.config/canopa/niri-custom.kdl`; a managed file with edits Settings does not
@@ -184,14 +200,15 @@ sounds** writes `notifications { sound enabled=... }` in `config.kdl` at once.
 
 ## Personalization
 
-- **Appearance**: light or dark, accent color (`#RRGGBB`), text size 100–150% and
-  **Reduce Shell panel motion**, written to the `appearance` block of `config.kdl`.
-- **Choose wallpaper…** opens the [wallpaper picker](session-tools.md#picker).
-- **Lock screen**: clock and date formats (empty follows Region & language), font,
-  avatar image and background dimming, written to the `lockscreen` block.
-  **Edit lock screen widgets…** opens Widgets.
-- **Window and workspace motion**: turns Niri's animations off in `niri.kdl`, or
-  **Use Niri animation settings** to remove the override.
+- **Appearance**: light or dark, and the accent color: one of eight presets or any
+  `#RRGGBB` under **Custom color**, written to the `appearance` block of
+  `config.kdl`. Text size and reduced motion are on the Accessibility page.
+- **Choose wallpaper…** opens the [wallpaper picker](session-tools.md#picker) on the
+  pictures it finds; **From a file…** asks for a JPEG or PNG picture through the file
+  chooser and opens the picker on it, among the pictures of its folder.
+- **Lock screen**: background dimming, and under **Formats, font and picture** the
+  clock and date formats (empty follows Region & language), font and avatar image,
+  written to the `lockscreen` block. **Edit lock screen widgets…** opens Widgets.
 - **Window layout**: space around windows (none, small, medium, large), center the
   focused column (never, when it does not fit, always) and new window width (one
   third, half, two thirds, full width). **Use the Canopa layout** restores the
@@ -206,19 +223,24 @@ apply to Niri at once.
 
 **High contrast** (`appearance { high-contrast #true }`) makes every Canopa surface
 black and white with full-strength text and borders; the Settings portal reports it to
-applications. **Larger text** and **Reduce motion** are the same settings as on
-Personalization. These three are written by Save. **Cursor size** (24, 32, 48, 64 or
-96) applies at once through `niri-input.kdl`; save or reload pending Keyboard & pointer
-edits first. Window and workspace motion is the same control as on Personalization.
-Canopa surfaces expose AT-SPI trees for screen readers such as Orca.
+applications. **Larger text** (100–150%) and **Reduce motion in Canopa and in
+applications** are written to the `appearance` block of `config.kdl`; these three are
+written by Save. **Cursor size** (24, 32, 48, 64 or 96) applies at once through
+`niri-input.kdl`; save or reload pending Keyboard & pointer edits first. **Reduce
+window and workspace animations** turns Niri's animations off in `niri.kdl` at once,
+and turning it off removes the override.
+Canopa surfaces expose AT-SPI trees for screen readers such as Orca. When Orca is
+installed, **Start Orca** starts it; starting it at every login is an Orca
+preference.
 
 ## Power
 
 - **Battery**: charge, state, time estimate and, when reported, health and charge
-  cycles (UPower).
+  cycles (UPower). Shown only on computers with a battery.
 - **Power mode**: power-profiles-daemon's profiles.
 - **Brightness**: the built-in display, on the same scale as the brightness keys.
-- **When the lid is closed**: the system setting (default), Suspend, Hibernate, Lock
+  Shown only when there is a backlight.
+- **When the lid is closed** (computers with a lid): the system setting (default), Suspend, Hibernate, Lock
   the screen, Do nothing or Power off. Saved to `~/.config/canopa/power.kdl`. For any
   choice other than the system setting, the Canopa session holds logind's lid
   inhibitor and asks logind for the action. With an external display or dock, closing
@@ -320,20 +342,27 @@ them; other lines are kept. The terminal goes first in
 
 ## Launcher
 
-Enable or disable launcher extensions, change their keywords and web search templates,
+Enable or disable launcher extensions, change their keywords, choose the default search
+engine (or type a custom address), edit search keywords,
 and see their actions and last status. Saved to `~/.config/canopa/launcher.json`; the
 Shell's pins and aliases in that file are kept, and the open launcher picks up the
-change. The **Clipboard history** section has its own **Save clipboard settings**
-button: recording (off by default), including images, and the number of recent copies
-(1–64, default 64). Browse them with `clip` in the Applications menu. See
+change. **Save changes** also saves the **Clipboard history** section: recording
+(off by default) and, while recording, including images and the number of recent
+copies (1–64, default 64). Browse them with `clip` in the Applications menu. See
 [Launcher](launcher.md).
 
 ## Shortcuts
 
-Find packaged actions by name or key, type a Niri key combination such as
-`Mod+Shift+Space` and save. Mod is normally Super. An empty shortcut turns the action
-off. **Reset to defaults** stages the shipped keys for review. Saving rejects
-duplicates and conflicts with included bindings.
+Find packaged actions by name or key. Each shortcut shows its keys as key caps, named
+as keyboards print them (Mod is shown as Super). Select one and press the new keys:
+**Esc** keeps the current shortcut and **Backspace** turns it off. While you press
+keys, Settings asks the compositor to pass its own shortcuts through (the Wayland
+keyboard-shortcuts-inhibit protocol), so combinations Canopa already uses can be
+recorded. **Type instead** edits the combination as text, in Niri's syntax such as
+`Mod+Shift+Space`, for pointer triggers like `Mod+WheelScrollDown`. A shortcut whose
+keys another one also uses says so under its name; saving rejects such duplicates and
+conflicts with included bindings. **Reset to defaults**, at the end of the list,
+stages the shipped keys for review.
 
 Settings stores only your changes, in `~/.config/canopa/shortcuts.kdl`, so unchanged
 shortcuts follow Canopa updates. It generates `niri-shortcuts.kdl` (shipped bindings
@@ -360,14 +389,19 @@ Canopa Shell device keys), your changes follow the replacement.
 
 ## Widgets
 
-Choose **Bar layout** or **Lock screen layout**. Select a widget in the diagram or with
-**Placed widget**, move it with **Zone** or **Region**, reorder it with **Earlier** and
-**Later**, and use **Add widget** or **Remove widget**. **Preview monitor** uses that
-monitor's proportions; **Preview scale** changes the sample size.
+Choose **Bar** or **Lock screen**. **Arrangement** shows the bar's three zones side by
+side, named as they run along the bar (Top, Middle and Bottom on a side bar; Left,
+Center and Right along a top or bottom bar), or the lock screen's nine regions as a
+grid. Drag a widget to another place: the zone under the pointer lights up and a
+line shows where the widget will land. Select a widget to see where it is, move it up
+or down, choose its **Position**, or remove it; these work from the keyboard too.
+**Add widget** places a widget next to the selected one. **Show for monitor** shows
+what that monitor gets (a bar hidden there, or lock screen widgets hidden there); it
+is not saved, and **Detect** lists monitors connected since the page opened.
 
-- **Bar**: the screen edge and **All monitors**, **Selected monitors** or **All except
-  selected monitors**. **Duplicate** a bar to give another monitor its own layout; the
-  copy starts with no monitors selected. Module styling and actions stay in KDL.
+- **Bar**: the screen edge and **Show on** all monitors, selected monitors or all
+  except selected ones. Under **More bars**, **Duplicate** a bar to give another
+  monitor its own layout; the copy starts with no monitors selected. Module styling and actions stay in KDL.
 - **Lock screen**: regions, row flow, and **Hide this widget on the preview monitor**.
   The password field stays on every monitor. Script widgets appear once defined in
   KDL; see [lock screen layout](session-tools.md#layout-and-custom-widgets).

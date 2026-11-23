@@ -45,6 +45,8 @@ pub trait FileModel: Clone + Send + Sized + 'static {
 pub struct FileDraft<M> {
     pub value: M,
     source: Option<Snapshot>,
+    /// The values as last read or saved, to tell whether the draft differs.
+    saved: M,
 }
 
 impl<M: FileModel> FileDraft<M> {
@@ -56,7 +58,14 @@ impl<M: FileModel> FileDraft<M> {
             Ok(value) => (value.unwrap_or_else(M::fallback), None),
             Err(error) => (M::fallback(), Some(error.to_string())),
         };
-        (Self { value, source }, problem)
+        (
+            Self {
+                saved: value.clone(),
+                value,
+                source,
+            },
+            problem,
+        )
     }
 
     /// Discard the draft and read the saved document again.
@@ -85,7 +94,17 @@ impl<M: FileModel> FileDraft<M> {
         if let Ok(value) = M::read(&saved) {
             self.value = value;
         }
+        self.saved = self.value.clone();
         self.source.replace(saved)
+    }
+
+    /// Whether the draft differs from the values last read or saved. Models
+    /// compare by their debug form, so they need no equality of their own.
+    pub fn dirty(&self) -> bool
+    where
+        M: std::fmt::Debug,
+    {
+        format!("{:?}", self.value) != format!("{:?}", self.saved)
     }
 
     /// The shared-document rule: another page saved `saved` over `previous`.
@@ -112,14 +131,16 @@ impl<M: FileModel> FileDraft<M> {
         &mut self,
         previous: &Snapshot,
         saved: &Snapshot,
-        change: impl FnOnce(&mut M),
+        change: impl Fn(&mut M),
     ) -> bool {
         let follows = self
             .source
             .as_ref()
             .is_some_and(|source| source.same(previous));
         if follows {
+            // The saved document now holds the change too.
             change(&mut self.value);
+            change(&mut self.saved);
             self.source = Some(saved.clone());
         }
         follows

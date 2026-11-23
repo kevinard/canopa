@@ -71,7 +71,7 @@ async fn native_settings_tree_follows_pages_focus_and_live_controls() {
     let sound = testing::named_role(&connection, "Sound", "list item").await;
     sound.wait_for_state(atspi::STATE_SELECTED).await;
     // A live page starts with an announced loading status.
-    testing::named(&connection, "Connecting to The audio server…")
+    testing::named(&connection, "Connecting to the audio server…")
         .await
         .role_name()
         .await;
@@ -116,7 +116,8 @@ async fn native_settings_tree_follows_pages_focus_and_live_controls() {
         level: 40,
     }))));
     publish(&state, &mut bridge);
-    let switch = testing::named_role(&connection, "Example switch", "check box").await;
+    // On/off settings are switches, which AT-SPI calls toggle buttons.
+    let switch = testing::named_role(&connection, "Example switch", "toggle button").await;
     assert!(!switch.has_state(atspi::STATE_CHECKED).await);
     assert!(switch.do_action(0).await);
     let message = action(&bridge).await;

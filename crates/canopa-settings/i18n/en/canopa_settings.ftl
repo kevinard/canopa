@@ -4,8 +4,6 @@
 
 settings-window-title = Canopa Settings
 # The small line above the sidebar heading.
-settings-sidebar-brand = Canopa
-settings-sidebar-heading = Settings
 settings-sidebar-navigation = Settings pages
 settings-sidebar-pages = Pages
 settings-search-placeholder = Search settings
@@ -116,10 +114,12 @@ settings-page-live-example-description = The live service page pattern on a simu
 
 # Read by screen readers for a drop-down list: "3 of 8".
 settings-choice-position = { $position } of { $count }
+settings-choice-placeholder = Default
 settings-applying = Applying…
 settings-footer-label = Page actions
 # Reloads only the page shown; other pages keep their edits.
-settings-footer-reload = Reload this page and discard its edits
+settings-footer-reload = Discard changes
+settings-footer-unsaved = You have unsaved changes
 settings-footer-save = Save changes
 settings-footer-test-displays = Test display changes
 settings-saved = Settings saved.
@@ -131,21 +131,33 @@ settings-session-required = Sign in to the Canopa desktop to save display and in
 
 ## Displays
 
-settings-displays-intro = Choose a mode, scale and position for each connected display.
+settings-displays-arrangement = Arrangement
+settings-displays-arrangement-hint = Drag displays to arrange them. Changes are tested before they are kept.
+settings-displays-arrangement-single = Plug in another to arrange them side by side, then reload.
+settings-displays-login-title = Login screen
+settings-displays-login-label = Use this layout when nobody is logged in
+settings-displays-login-hint = Save your changes first. Applying it asks for an administrator’s permission.
+settings-displays-login-button = Use on login screen
+settings-displays-reload-short = Reload
 settings-displays-refreshing = Refreshing…
-settings-displays-reload = Reload connected displays
 settings-displays-none = No connected displays are available.
 settings-displays-changed-while-editing = Displays changed while you were editing. Reload connected displays to update the draft.
-settings-displays-positions-hint = Positions use logical pixels. Keep at least one display enabled.
+settings-displays-positions-hint = Positions use logical pixels.
 settings-display-enabled = Enabled
+settings-display-numbered = { $number } · { $name }
+settings-display-built-in = Built-in display
+settings-display-virtual = Virtual display
+settings-display-hdmi = HDMI display
+settings-display-displayport = DisplayPort display
 settings-display-mode = Resolution & refresh rate
 # A display mode. $width and $height are pixels, $refresh the refresh rate in hertz.
 settings-display-mode-option = { $width } × { $height } · { $refresh } Hz
 settings-display-rotation = Rotation
 # $scale is a formatted percentage, such as 125%.
-settings-display-scale = Scale: { $scale }
+settings-display-scale-label = Scale
 settings-display-x = Horizontal position
 settings-display-y = Vertical position
+settings-display-exact-position = Exact position
 settings-rotation-normal = Normal
 settings-rotation-90 = 90°
 settings-rotation-180 = 180°
@@ -169,15 +181,27 @@ settings-trial-keep = Keep changes
 settings-input-keyboard = Keyboard
 settings-input-mouse = Mouse
 settings-input-touchpad = Touchpad
-settings-input-layouts = Layouts, in switch order (for example us,fr)
 settings-input-variants = Variants (optional, in the same order)
 settings-input-options = XKB options (for example grp:alt_shift_toggle)
 # $delay is in milliseconds.
-settings-input-repeat-delay = Repeat delay: { $delay } ms
-settings-input-repeat-rate = Repeat rate: { $rate } keys/second
 # $speed is a number from -1 to 1.
-settings-input-pointer-speed = Pointer speed: { $speed }
-settings-input-touchpad-speed = Touchpad speed: { $speed }
+settings-input-repeat-delay-label = Repeat delay
+settings-input-repeat-delay-value = { $delay } ms
+settings-input-repeat-rate-label = Repeat rate
+settings-input-repeat-rate-value = { $rate } keys/s
+settings-input-pointer-speed-label = Pointer speed
+settings-input-touchpad-speed-label = Touchpad speed
+settings-input-speed-default = Default
+settings-input-layouts-add = Add a layout…
+settings-input-layouts-add-label = Add a layout
+settings-input-layout-remove = Remove
+settings-input-layout-first = Default
+settings-input-layout-only = Add another layout to switch between them.
+settings-input-layouts-codes = Layout codes
+settings-input-layouts-switch = The first layout in the list is the default.
+settings-a11y-text-size-label = Text size
+settings-a11y-text-size-default = Default ({ $size })
+settings-a11y-cursor-size-label = Cursor size
 settings-input-left-handed = Left-handed buttons
 settings-input-mouse-natural-scroll = Natural scrolling for mouse
 settings-input-tap = Tap to click
@@ -192,20 +216,23 @@ settings-a11y-seeing = Seeing
 settings-a11y-motion = Motion
 settings-a11y-screen-reader = Screen reader
 settings-a11y-high-contrast = High contrast
-settings-a11y-high-contrast-hint = Black and white surfaces with full-strength text and borders. Applications that follow the desktop contrast setting change too.
+settings-a11y-high-contrast-hint = Black and white surfaces with full-strength text and borders.
 # $scale is a formatted percentage.
-settings-a11y-text-scale = Larger text · { $scale }
-settings-a11y-cursor-size = Cursor size (applies at once)
 settings-a11y-reduced-motion = Reduce motion in Canopa and in applications
-settings-a11y-screen-reader-hint = Settings, the launcher, Files, the Shell bar and notifications work with the Orca screen reader. Start it with the command orca, or turn it on for every session in Orca’s own preferences.
+settings-a11y-orca-label = Orca screen reader
+settings-a11y-orca-start = Start Orca
+settings-a11y-orca-hint = Reads Settings, the launcher, Files, the bar and notifications aloud. To start it at every login, use Orca’s own preferences.
+settings-a11y-orca-missing = Orca isn’t installed. Install the orca package with your software manager, then reopen this page.
+settings-a11y-orca-started = Orca is starting.
 # $size is in pixels.
 settings-cursor-size-default = Default ({ $size } px)
 settings-cursor-size-pixels = { $size } px
 settings-cursor-size-needs-session = The cursor size is editable in a Canopa session.
 settings-cursor-size-unsaved-input = Save or reload your Keyboard & pointer edits before changing the cursor size.
 settings-cursor-size-applied = Cursor size applied. New windows use it at once.
-settings-motion-use-niri = Use Niri animation settings
-settings-motion-reduce = Reduce window and workspace motion
+settings-motion-windows-label = Reduce window and workspace animations
+settings-motion-windows-hint = Opening, closing and moving windows, and switching workspaces.
+settings-a11y-reduced-motion-hint = Panels, menus and transitions here and in applications that follow the setting.
 settings-motion-needs-session = Compositor motion is editable in a Canopa session with a managed Niri configuration.
 settings-compositor-motion-unsaved-shortcuts = Save or discard your shortcut edits before changing compositor motion.
 settings-compositor-motion-saved = Compositor motion settings saved.
@@ -214,7 +241,6 @@ settings-compositor-motion-saved = Compositor motion settings saved.
 
 settings-personal-appearance = Appearance
 settings-personal-lock-screen = Lock screen
-settings-personal-motion = Window and workspace motion
 settings-window-layout = Window layout
 settings-window-layout-saved = Window layout applied.
 settings-window-layout-reset = Use the Canopa layout
@@ -234,19 +260,36 @@ settings-window-width-two-thirds = Two thirds
 settings-window-width-full = Full width
 settings-personal-light = Light appearance
 settings-personal-accent = Accent color (optional, #RRGGBB)
-settings-personal-text-scale = Text size · { $scale }
-settings-personal-reduced-motion = Reduce Shell panel motion
 settings-personal-wallpaper = Choose wallpaper…
+settings-personal-wallpaper-file = From a file…
+settings-personal-wallpaper-file-title = Choose a wallpaper picture
+settings-personal-wallpaper-file-filter = Pictures (JPEG, PNG)
 # $folder is a path.
-settings-personal-wallpaper-hint = Preview and save wallpaper for each monitor. The default image folder is { $folder }.
+settings-personal-wallpaper-hint = Preview and set a picture for each monitor.
 settings-personal-clock-format = Clock format
 settings-personal-date-format = Date format
 # Under the clock and date format fields.
 settings-personal-formats-hint = Leave a format empty to follow Region & language. Formats use strftime patterns, such as %H:%M.
 settings-personal-font = Font family
 settings-personal-avatar = Avatar image (optional absolute path)
-settings-personal-dimming = Background dimming: { $dim }
 settings-personal-edit-lock-widgets = Edit lock screen widgets…
+settings-personal-accent-label = Accent color
+settings-personal-accent-custom = Custom color
+settings-personal-accent-custom-hint = Any #RRGGBB color. Leave empty for the Canopa green.
+settings-accent-default = Canopa green
+settings-accent-blue = Blue
+settings-accent-purple = Purple
+settings-accent-pink = Pink
+settings-accent-red = Red
+settings-accent-orange = Orange
+settings-accent-yellow = Yellow
+settings-accent-teal = Teal
+settings-personal-lock-advanced = Formats, font and picture
+settings-input-advanced = Variants and keyboard options
+settings-personal-wallpaper-label = Wallpaper
+settings-personal-dimming-label = Background dimming
+settings-personal-lock-widgets-label = Lock screen widgets
+settings-personal-lock-widgets-hint = Choose what the lock screen shows and where.
 settings-wallpaper-stopped = Wallpaper launcher stopped unexpectedly.
 settings-alert-sounds-updated = Notification sounds updated.
 
@@ -274,10 +317,10 @@ settings-shortcuts-saved = Keyboard shortcuts saved.
 ## $service is a service name, such as NetworkManager or BlueZ.
 
 settings-live-connecting = Connecting to { $service }…
-settings-live-stopped = { $service } stopped.
-settings-live-unavailable-title = Service not available
+settings-live-stopped = Lost the connection to { $service }.
+settings-live-unavailable-title = Not available right now
 # $reason is a sentence explaining why, possibly empty.
-settings-live-unavailable = { $service } is not installed or not running. { $reason }
+settings-live-unavailable = This page works once { $service } is running. If it isn’t installed, install it with your software manager, then try again.
 settings-live-try-again = Try again
 settings-live-retry = Retry
 settings-live-dismiss = Dismiss
@@ -346,8 +389,9 @@ settings-region-system = System
 settings-region-language = Language
 settings-region-formats = Formats (dates, numbers, money)
 # The name of the C locale, which has no language or country.
-settings-region-unspecified-locale = Unspecified (C)
-settings-region-only-c = Only the C locale is installed. An administrator adds languages by enabling them in /etc/locale.gen and running locale-gen.
+settings-region-unspecified-locale = Basic English (C)
+settings-region-only-c = Only the basic C language is installed on this computer. An administrator can install more languages.
+settings-region-only-c-title = Only one language is installed
 settings-region-preview-date = Date
 settings-region-preview-time = Time
 settings-region-preview-number = Number
@@ -358,15 +402,15 @@ settings-region-preview-dates = { $long } · { $short }
 settings-region-metric = Metric
 settings-region-us-customary = US customary
 # $file is a path.
-settings-region-applies = Settings changes at once. Files, Notify and the Shell follow when they restart, and other applications at your next login. Saved in { $file }.
+settings-region-applies = Changes apply at once here, and everywhere after you log out and back in.
 settings-region-no-localed = systemd-localed is not running, so the system language and keyboard cannot be shown or changed here.
 # $layout is an XKB layout name.
 settings-region-keyboard-unset = Not set ({ $layout })
 settings-region-system-language = Login screen and new users
-settings-region-system-keyboard = System keyboard
-settings-region-your-layouts = Your layouts
-settings-region-use-my-layouts = Use my layouts for the login screen and console
-settings-region-change-layouts = Change my layouts…
+settings-region-use-my-layouts-short = Use my layouts
+settings-region-login-keyboard = Login screen and console keyboard
+settings-region-examples = Examples
+settings-region-keyboard-detail = Login screen: { $system }. Yours: { $mine }.
 settings-region-system-permission = System changes ask for an administrator’s permission.
 # The name of a language Canopa is translated into, written in the current language. $code is its code.
 settings-language-name = { $code ->
@@ -388,17 +432,17 @@ settings-region-error-not-installed = That language is not installed.
 
 settings-date-time-zone = Time zone
 # $zone is a time zone name such as "Europe/Paris".
-settings-date-time-zone-current = Time zone: { $zone }
 settings-date-time-zone-unset = Not set (UTC)
 # The current date and time. $date is a full date, $time a time with seconds.
 settings-date-time-now = { $date } · { $time }
 settings-date-time-locate = Use my location
-settings-date-time-locate-hint = Sets the time zone of this computer’s location once, through GeoClue.
+settings-date-time-locate-hint = Looks up this computer’s location once to set its time zone.
+settings-date-time-locate-label = Set from my location
 settings-date-time-zone-search = Find a time zone (city or region)
 settings-date-time-zone-none = No time zone matches.
 settings-date-time-zone-in-use = In use
 settings-date-time-zone-use = Use
-settings-date-time-clock = Date and time
+settings-date-time-clock = Network time
 settings-date-time-ntp = Set the time automatically from the network
 settings-date-time-ntp-off = Off: the clock keeps the time set below.
 settings-date-time-ntp-synchronized = The clock is synchronized.
@@ -420,6 +464,7 @@ settings-date-time-no-zone-here = No time zone matches this location.
 ## Clock format (Date & time page)
 
 settings-clock-format = Clock format
+settings-clock-format-label = Time format
 settings-clock-reading = Reading config.kdl…
 settings-clock-unreadable = The clock formats are set in config.kdl, which could not be read: { $error }
 # Clocks follow the language's formats chosen on Region & language.
@@ -571,10 +616,10 @@ settings-network-forget = Forget this connection
 
 ## Service names, in sentences such as "Connecting to the audio server…"
 
-settings-service-power = The power services
-settings-service-audio = The audio server
-settings-service-permission-store = The portal permission store
-settings-service-applications = The application list
+settings-service-power = the power services
+settings-service-audio = the audio server
+settings-service-permission-store = the portal permission store
+settings-service-applications = the application list
 settings-error-device-changed = The device changed. Try again.
 settings-error-service-timed-out = The service did not answer in time.
 
@@ -609,7 +654,6 @@ settings-duration-and-seconds = { $duration } { $seconds ->
 
 settings-battery = Battery
 settings-battery-no-upower = Battery information is not available because UPower is not running.
-settings-battery-none = This computer has no battery.
 settings-battery-charging = Charging
 settings-battery-discharging = On battery
 settings-battery-empty = Empty
@@ -627,7 +671,11 @@ settings-battery-health = Health: { $capacity } of its original capacity
 settings-battery-health-unknown = The battery does not report its health.
 settings-battery-cycles = Charge cycles: { $cycles }
 settings-power-mode = Power mode
-settings-power-modes-unavailable = Power modes are not available because power-profiles-daemon is not running.
+settings-power-status = Battery and power
+settings-power-energy = Energy
+settings-power-button-title = Power button
+settings-power-modes-unavailable = Install and start power-profiles-daemon to choose between power saver, balanced and performance.
+settings-power-modes-unavailable-title = Power modes are unavailable
 settings-power-mode-current = Current mode: { $mode }
 settings-power-mode-saver = Power saver
 settings-power-mode-balanced = Balanced
@@ -637,13 +685,11 @@ settings-power-error-no-backlight = There is no built-in display backlight.
 settings-power-error-brightness = The brightness could not be changed in this session.
 settings-power-error-mode = The power mode could not be changed.
 settings-brightness = Brightness
-settings-brightness-none = This computer has no built-in display backlight.
-settings-brightness-built-in = Built-in display: { $value }
 settings-power-lid-and-button = Lid and power button
 settings-power-lid-closed = When the lid is closed
-settings-power-lid-hint = Applies after Save, in the Canopa session. While an external display is connected, closing the lid does nothing.
+settings-power-lid-hint = In the Canopa session. While an external display is connected, closing the lid does nothing.
 settings-power-button-pressed = When the power button is pressed
-settings-power-button-hint = Applies at once. The system setting is usually Power off.
+settings-power-button-hint = The system setting is usually Power off.
 settings-power-button-needs-session = The power button can be changed in a Canopa session.
 settings-power-system-setting = Use the system setting
 settings-power-suspend = Suspend
@@ -655,18 +701,21 @@ settings-idle = Idle
 settings-idle-lock-after = Lock the screen after
 settings-idle-displays-after = Then turn off the displays after
 settings-idle-suspend-after = Then suspend after
+settings-idle-displays-after-hint = Counted from when the screen locks.
+settings-idle-suspend-after-hint = Counted from when the displays turn off.
+settings-idle-total = In all, the computer suspends after { $time } without use.
+settings-idle-total-pending = Once idle actions run, the computer will suspend after { $time } without use.
 # $status is settings-idle-status.
 settings-idle-running = Idle daemon: running. { $status }
-settings-idle-not-running = Idle daemon: not running.
-settings-idle-optional = Stasis is optional. You can still save timeouts; they take effect when Stasis starts.
+settings-idle-not-running = Idle actions aren’t running.
+settings-idle-optional = Your delays are saved now and apply when the idle service, Stasis, starts with your session.
 settings-idle-pause = Pause idle actions
 settings-idle-resume = Resume
 settings-idle-profile = Stasis profile
 settings-idle-use-profile = Use profile
-settings-idle-stages-hint = Each stage waits after the previous one: lock, displays off, then suspend.
 settings-idle-ac = On AC power
 settings-idle-battery = On battery
-settings-idle-custom-hint = Custom commands, profiles and inhibition rules stay in your existing idle policy.
+settings-idle-custom-hint = Idle settings you wrote by hand are kept.
 
 ## Users
 
@@ -678,6 +727,8 @@ settings-users-last-administrator = Another account must be an administrator fir
 settings-users-own-password = Change your own password with your current one.
 settings-users-remove-self = You cannot remove the account you are using.
 settings-users-yours = Your account
+settings-users-role-administrator = Administrator
+settings-users-role-standard = Standard account
 settings-users-others = Other users
 settings-users-unknown-me = AccountsService does not know your account.
 settings-users-no-others = No other accounts.
@@ -690,12 +741,14 @@ settings-users-me = { $administrator ->
 settings-users-full-name = Full name
 settings-users-user-name = User name
 settings-users-save-name = Save name
-settings-users-picture-none = Picture: none, initials are shown
 # $file is a path.
-settings-users-picture = Picture: { $file }
 settings-users-choose-picture = Choose a picture
 settings-users-choose-picture-button = Choose picture…
 settings-users-remove-picture = Remove
+settings-users-picture-label = Picture
+settings-users-picture-initials = None. Your initials are shown instead.
+settings-users-picture-custom = A custom picture is set.
+settings-users-password-title = Password
 settings-users-picture-hint = A PNG or JPEG picture up to 2 MB and 2048 pixels a side, as the login screen shows.
 settings-users-picture-unreadable = The picture cannot be read.
 settings-users-picture-not-file = Choose an image file.
@@ -711,7 +764,7 @@ settings-users-password-confirm = New password again
 settings-users-password-change = Change password
 settings-users-password-changing = Changing…
 settings-users-password-changed = Your password was changed.
-settings-users-password-hint = The system checks your current password and its password rules, as passwd does in a terminal.
+settings-users-password-hint = Your current password and the system’s password rules are checked before the change.
 settings-users-password-mismatch = The new passwords do not match.
 # $reason is passwd's English explanation.
 settings-users-password-weak = The new password is too weak: { $reason }.
@@ -746,6 +799,7 @@ settings-notifications-too-old = The running Canopa Notify has no preferences co
 settings-notifications-refused = Canopa Notify refused the change: { $reason }
 settings-notifications-bad-reply = Canopa Notify sent a reply Settings does not understand.
 settings-dnd = Do not disturb
+settings-dnd-section = Interruptions
 # $time is a time of day, possibly with settings-notifications-tomorrow.
 settings-dnd-off-until = Off. Turns on at { $time }.
 settings-dnd-off = Off. Notifications show banners and play sounds.
@@ -760,6 +814,7 @@ settings-dnd-for-hours = { $hours ->
    *[other] For { $hours } hours
 }
 settings-dnd-until-tomorrow = Until tomorrow morning
+settings-dnd-quick = Turn on for a while
 settings-dnd-schedule = Turn on automatically every day
 # "From 22:00 to 07:00", with time choices between.
 settings-dnd-from = From
@@ -832,6 +887,12 @@ settings-bluetooth-confirm-code = Does { $name } show this code?
 settings-bluetooth-authorize = { $name } wants to pair with this computer.
 settings-bluetooth-service = { $name } wants to use a service on this computer.
 settings-bluetooth-pair = Pair
+settings-bluetooth-unnamed = Unnamed device
+settings-bluetooth-unnamed-count = { $count ->
+    [one] One unnamed device
+   *[other] { $count } unnamed devices
+}
+settings-bluetooth-power-label = Bluetooth
 settings-bluetooth-allow = Allow
 settings-bluetooth-pin = PIN
 settings-bluetooth-passkey = Passkey
@@ -875,11 +936,12 @@ settings-sound-no-inputs = No input devices.
 settings-sound-in-use = In use
 settings-sound-use-device = Use this device
 # $volume is a formatted percentage.
-settings-sound-volume = Volume: { $volume }
 settings-sound-mute = Mute
-settings-sound-balance-center = Balance: centered
-settings-sound-balance-left = Balance: { $value } left
-settings-sound-balance-right = Balance: { $value } right
+settings-sound-volume-label = Volume
+settings-sound-balance-label = Balance
+settings-sound-balance-centered = Centered
+settings-sound-balance-left-value = { $value } left
+settings-sound-balance-right-value = { $value } right
 settings-sound-input-level = Input level
 # $recording is yes or no; $title is what the application plays.
 settings-sound-stream = { $recording ->
@@ -958,6 +1020,7 @@ settings-printers-job-mine = Yours · { $size }
 settings-printers-job-of = { $user } · { $size }
 settings-printers-add-title = Add a printer
 settings-printers-search = Search the network
+settings-printers-search-label = Printers on this network
 settings-printers-searching = Searching…
 settings-printers-search-hint = Finds printers that work without a driver (IPP Everywhere, AirPrint).
 settings-printers-none-found = No new printers found. Check that the printer is on and on this network.
@@ -973,7 +1036,7 @@ settings-about-software = Software
 settings-about-device-name = Device name
 settings-about-rename = Rename
 # $name is the network host name.
-settings-about-network-name = Other devices see this computer as { $name } on the network.
+settings-about-network-name = Seen as { $name } on the network.
 settings-about-no-hostnamed-hint = systemd-hostnamed is not running, so the computer’s name cannot be shown or changed here.
 settings-about-no-hostnamed = systemd-hostnamed is not available.
 settings-about-name-changed = The name changed. Try again.
@@ -1040,18 +1103,21 @@ settings-privacy-allow = Allow
 settings-privacy-deny = Deny
 settings-privacy-forget = Forget
 settings-privacy-permissions = Application permissions
-settings-privacy-permissions-hint = Sandboxed applications ask through the desktop portal. Forget removes the answer, so the application asks again.
-settings-privacy-none-asked = No application has asked.
-settings-privacy-screen-hint = Canopa asks every time an application wants to share or control the screen, and does not remember those answers.
+settings-privacy-permissions-hint = Forget an answer to have the application ask again.
+settings-privacy-nothing-asked-title = No application has asked for access yet.
+settings-privacy-screen-hint = Screen sharing is always asked, never remembered.
 settings-privacy-autostart = Start at login
 settings-privacy-no-autostart = Nothing starts automatically when you log in.
 # $name is an application's name.
-settings-privacy-autostart-sandboxed = { $name } (added by the application)
-settings-privacy-autostart-system = { $name } (installed for everyone)
+settings-privacy-autostart-sandboxed-hint = Added by the application
+settings-privacy-autostart-system-hint = Installed for everyone
 
 ## Default applications
 
-settings-default-apps = Default applications
+settings-default-apps-common = Everyday tasks
+settings-date-time-zone-placeholder = Paris, Tokyo, New York…
+settings-shortcuts-search-placeholder = Lock, terminal, screenshot…
+settings-users-full-name-placeholder = Your name as others see it
 settings-default-apps-browser = Web browser
 settings-default-apps-mail = Mail
 settings-default-apps-calendar = Calendar
@@ -1061,7 +1127,7 @@ settings-default-apps-photos = Photos
 settings-default-apps-text = Text editor
 settings-default-apps-files = File manager
 settings-default-apps-terminal = Terminal
-settings-default-apps-terminal-hint = Programs that run in a terminal open in this one, through xdg-terminal-exec. Without a choice, the first installed terminal is used.
+settings-default-apps-terminal-hint = Programs that run in a terminal open in this one. Without a choice, the first installed terminal is used.
 settings-default-apps-none = No installed application opens these.
 settings-default-apps-others = Other file types
 settings-default-apps-search = File type or extension
@@ -1081,15 +1147,19 @@ settings-displays-position-invalid = Display positions must be whole numbers.
 settings-profiles = Display profiles
 settings-profiles-needs-session = Display profiles are available in the Canopa session.
 settings-profiles-reload = Reload display profiles
-settings-profiles-when-changed = When connected displays change
+settings-profiles-intro = Saved layouts for the sets of displays you connect.
+settings-profiles-saved-label = Saved profile
+settings-profiles-when-changed = When displays change
 settings-profiles-manual = Manual only
 settings-profiles-suggest = Suggest matching profiles
 settings-profiles-automatic = Switch automatically
-settings-profiles-save-policy = Save switching policy
-settings-profiles-test = Test saved profile
-settings-profiles-delete = Delete selected profile
+settings-profiles-save-short = Save
+settings-profiles-test-short = Test
+settings-profiles-delete-short = Delete
+settings-profiles-save-layout-label = Save this layout as
+settings-displays-one-connected = One display is connected
+settings-displays-apply-note = Changes are tried first. Keep them within 20 seconds, or they go back.
 settings-profiles-new-name = New profile name
-settings-profiles-save-layout = Save layout as profile
 settings-profiles-saved = Display profiles saved.
 settings-profiles-choose = Choose a display profile.
 # $error explains why.
@@ -1105,7 +1175,6 @@ settings-profiles-offer-review = Review layout
 settings-displays-profile-applied = Display profile applied.
 settings-displays-saved = Display settings saved.
 settings-displays-reverted = Previous display settings restored.
-settings-displays-login-screen = Use on the login screen
 settings-displays-login-screen-saved = The login screen will use the current display layout.
 settings-displays-login-screen-denied = The login screen’s display layout was not changed: authorization was not granted.
 settings-displays-login-screen-failed = Could not set the login screen’s display layout: { $error }
@@ -1114,6 +1183,7 @@ settings-error-display-select = Select at least one connected display.
 settings-error-display-select-mode = Select a monitor mode.
 settings-error-display-disconnected = A monitor was disconnected; reload displays.
 settings-error-display-identity = A monitor’s identity changed; reload displays.
+settings-error-display-overlap = Displays { $first } and { $second } overlap. Move one so they only touch.
 settings-error-display-session = Display settings are saved only in the Canopa session.
 settings-error-display-mode-gone = The selected monitor mode is no longer available.
 settings-error-display-profile-mismatch = The connected displays changed; choose a matching profile.
@@ -1203,15 +1273,61 @@ settings-shortcut-next-track = Next track
 settings-shortcut-previous-track = Previous track
 settings-shortcuts-loading = Loading keyboard shortcuts…
 settings-shortcuts-unavailable = Shortcuts unavailable
-settings-shortcuts-intro = Edit the keyboard shortcuts shipped with Canopa. Use Niri key names such as Mod+Shift+Space. Mod is normally Super. Leave a shortcut empty to turn it off. Shortcuts you have not changed follow Canopa updates.
+settings-shortcuts-intro = Shortcuts you haven’t changed follow Canopa updates.
+settings-shortcuts-select-hint = Select a shortcut, then press the keys you want.
 settings-shortcuts-search = Search shortcuts
 settings-shortcuts-migration = Your shortcuts are stored as a full copy of an older set of defaults. Saving keeps only your changes, so new and updated default shortcuts reach you again. A backup of niri.kdl is kept next to it.
 settings-shortcuts-reset = Reset to defaults
+settings-shortcuts-reset-hint = Undo every change you made to the shortcuts above.
+settings-shortcuts-reset-short = Reset
+settings-shortcuts-list = Desktop shortcuts
+settings-shortcuts-group-session = Apps and session
+settings-shortcuts-group-windows = Windows and columns
+settings-shortcuts-group-workspaces = Workspaces
+settings-shortcuts-group-screenshots = Screenshots
+settings-shortcuts-group-keys = Media and hardware keys
+settings-shortcuts-group-other = Other
+settings-shortcut-off-placeholder = Off
+settings-shortcut-done = Done
+settings-shortcuts-edit-hint = Type keys joined by +, such as Mod+Shift+T. Leave empty to turn it off.
+settings-shortcut-change = Change the shortcut for { $action }
+settings-shortcut-super = Super
+settings-shortcut-clash = Also used by “{ $action }”
+settings-shortcut-record-hint = Press the new keys. Esc keeps the current shortcut, Backspace turns it off.
+settings-shortcut-unsupported = That key can’t be used here. Try another, or type the shortcut.
+settings-shortcut-recording = Press keys…
+settings-shortcut-type = Type instead
+settings-shortcut-cancel = Cancel
+settings-key-ctrl = Ctrl
+settings-key-shift = Shift
+settings-key-enter = Enter
+settings-key-space = Space
+settings-key-backspace = Backspace
+settings-key-delete = Delete
+settings-key-escape = Esc
+settings-key-tab = Tab
+settings-key-page-up = Page Up
+settings-key-page-down = Page Down
+settings-key-home = Home
+settings-key-end = End
+settings-key-print = Print Screen
+settings-key-volume-up = Volume Up
+settings-key-volume-down = Volume Down
+settings-key-mute = Mute
+settings-key-mic-mute = Mic Mute
+settings-key-play = Play/Pause
+settings-key-stop = Stop
+settings-key-next = Next Track
+settings-key-previous = Previous Track
+settings-key-brightness-up = Brightness Up
+settings-key-brightness-down = Brightness Down
+settings-key-scroll-up = Scroll Up
+settings-key-scroll-down = Scroll Down
+settings-key-scroll-left = Scroll Left
+settings-key-scroll-right = Scroll Right
 settings-shortcuts-needs-session = Log into the Canopa session to save keyboard shortcuts.
 settings-shortcuts-none-match = No shortcuts match your search.
 # $action is a shortcut's name, $key its keys.
-settings-shortcut-key = { $action } · { $key }
-settings-shortcut-off = { $action } · Off
 settings-error-shortcuts-custom-blocks = Custom top-level binding blocks are read-only. Keep your own bindings in niri-custom.kdl.
 settings-error-shortcuts-defaults-include = Canopa defaults that include other files cannot be combined with shortcut changes.
 settings-error-shortcuts-not-separable = Your shortcut changes could not be separated from the shipped bindings. Edit niri.kdl in KDL.
@@ -1220,8 +1336,7 @@ settings-error-shortcuts-recursive-includes = Too many or recursive Niri include
 
 ## Launcher
 
-settings-launcher-intro = Enable extensions and choose their launcher keywords. Changes apply automatically.
-settings-launcher-pin-hint = Use Tab on a launcher result to pin it or assign an alias.
+settings-launcher-intro = Enable extensions and choose their launcher keywords. The launcher picks up saved changes without restarting.
 settings-launcher-loading = Loading launcher preferences…
 settings-launcher-no-extensions = Start Canopa Shell to discover configured extensions and their latest status.
 settings-launcher-keyword = Keyword
@@ -1230,13 +1345,20 @@ settings-launcher-actions = Actions: { $actions }
 # $status is the extension's own status text.
 settings-launcher-status = Last status: { $status }
 settings-launcher-web = Web searches
-settings-launcher-web-hint = Only pasted URLs and explicit search keywords offer browser actions. A request starts when you select the result.
+settings-launcher-extensions = Extensions
+settings-launcher-web-hint = Nothing is sent to a search engine until you choose a web result.
 # $placeholder is the text replaced by the search, {query}.
-settings-launcher-default-url = Default search URL · include { $placeholder }
-settings-launcher-search-keyword = Search keyword
-settings-launcher-search-url = Search URL · include { $placeholder }
-settings-launcher-remove-search = Remove search shortcut
-settings-launcher-add-search = Add search shortcut
+settings-launcher-default-url = Default search address, with { $placeholder } for the search terms
+settings-launcher-search-keyword = Keyword
+settings-launcher-search-url = Address, with { $placeholder } for the terms
+settings-launcher-add-search = Add keyword
+settings-launcher-engine = Search engine
+settings-launcher-engine-hint = Used when you search the web from the launcher.
+settings-launcher-engine-custom = Custom address
+settings-launcher-keywords = Search keywords
+settings-launcher-keywords-hint = Type a keyword, then your search: “wiki Paris”.
+settings-launcher-no-keywords = No search keywords yet
+settings-launcher-remove-named = Remove { $keyword }
 settings-launcher-pins = Pins and aliases
 # A launcher result with its pin and alias. $pinned is yes or no.
 settings-launcher-pin = { $pinned ->
@@ -1248,12 +1370,11 @@ settings-launcher-pin-alias = { $pinned ->
    *[no] { $name } · { $alias }
 }
 settings-clipboard = Clipboard history
-settings-clipboard-hint = Use clip in Applications to find recent copies. History lasts for this Shell session.
+settings-clipboard-hint = Type clip in the launcher to find recent copies. History is kept until the Shell restarts.
 settings-clipboard-record = Record clipboard history
 settings-clipboard-images = Include images when recording
 # $limit is the largest number allowed.
 settings-clipboard-limit = Maximum recent entries (1–{ $limit })
-settings-clipboard-save = Save clipboard settings
 settings-clipboard-loading = Loading clipboard settings…
 settings-error-launcher-changed = Launcher preferences changed outside this editor; reload before saving.
 settings-error-launcher-keywords = Enabled extension keywords must be unique.
@@ -1264,35 +1385,40 @@ settings-error-clipboard-changed = Clipboard preferences changed. Reload saved s
 
 settings-widgets-loading = Loading widget layouts…
 settings-widgets-saved = Widget layouts saved.
-settings-widgets-bar-layout = Bar layout
-settings-widgets-lock-layout = Lock screen layout
-settings-widgets-refresh = Refresh monitors
+settings-widgets-bar-tab = Bar
+settings-widgets-lock-tab = Lock screen
+settings-widgets-preview = Preview
+settings-widgets-refresh = Detect
 settings-widgets-bar = Bar
 settings-widgets-edge = Screen edge
 settings-widgets-edge-left = Left
 settings-widgets-edge-right = Right
 settings-widgets-edge-top = Top
 settings-widgets-edge-bottom = Bottom
-settings-widgets-preview-monitor = Preview monitor
+settings-widgets-preview-monitor = Show for monitor
 settings-widgets-preview-scale = Preview scale
 settings-widgets-all-monitors = All monitors
 settings-widgets-selected-monitors = Selected monitors
 settings-widgets-except-monitors = All except selected monitors
-settings-widgets-preview-hint = Sample preview · Select a widget to edit its placement.
-settings-widgets-visibility = Bar visibility
 settings-widgets-choose-monitor = Choose at least one monitor before saving.
 settings-widgets-copy-name = Name for a copy of this bar
 settings-widgets-duplicate-bar = Duplicate bar
 settings-widgets-remove-bar = Remove bar
 settings-widgets-lock-hint = Lock screen changes take effect the next time you lock. Authentication is always available.
-settings-widgets-placed = Placed widget
 settings-widgets-add = Add widget
-settings-widgets-region = Region
-settings-widgets-zone = Zone
+settings-widgets-zone-heading = { $zone } of the bar
+settings-widgets-move-up = Move up
+settings-widgets-move-down = Move down
+settings-widgets-add-placeholder = Choose a widget to add
 # Bar zones.
 settings-widgets-zone-start = Start
 settings-widgets-zone-center = Center
 settings-widgets-zone-end = End
+settings-widgets-zone-top = Top
+settings-widgets-zone-middle = Middle
+settings-widgets-zone-bottom = Bottom
+settings-widgets-zone-left = Left
+settings-widgets-zone-right = Right
 # Lock screen regions.
 settings-widgets-region-top-left = Top left
 settings-widgets-region-top-center = Top center
@@ -1302,12 +1428,11 @@ settings-widgets-region-center-right = Center right
 settings-widgets-region-bottom-left = Bottom left
 settings-widgets-region-bottom-center = Bottom center
 settings-widgets-region-bottom-right = Bottom right
-settings-widgets-earlier = Earlier
-settings-widgets-later = Later
-settings-widgets-remove = Remove widget
+settings-widgets-remove-short = Remove
 settings-widgets-flow = Arrange this region in a row
 settings-widgets-hide = Hide this widget on the preview monitor
 settings-widgets-bar-hidden = This bar is hidden on the preview monitor.
+settings-widgets-drop-here = Drag widgets here
 # Sample content in the lock screen preview; keep it short.
 settings-widgets-sample-password = Password · ••••
 settings-widgets-sample-user = Sample user
@@ -1315,3 +1440,18 @@ settings-widgets-sample-media = Now playing
 settings-widgets-sample-weather = 18 °C · Clear
 settings-widgets-sample-keyboard = English (US)
 settings-widgets-sample-avatar = Avatar
+settings-widgets-unavailable = Widget layouts can’t be read
+settings-widgets-arrange = Arrangement
+settings-widgets-drag-hint = Drag a widget to move it. Select one to see what else you can do with it.
+settings-widgets-shown-on = Show on
+settings-widgets-more-bars = More bars
+settings-widgets-duplicate-hint = Start a new bar from this one’s widgets.
+settings-widgets-duplicate-short = Duplicate
+settings-widgets-remove-bar-hint = Removes “{ $bar }” and its widgets.
+settings-widgets-last-bar = The only bar can’t be removed.
+settings-widgets-any-monitor = Any monitor
+settings-widgets-move-left = Move left
+settings-widgets-move-right = Move right
+settings-widgets-position = Position
+settings-widgets-none-selected = Select a widget in the preview to move or remove it.
+settings-widgets-all-placed = Every widget is placed

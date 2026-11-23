@@ -2,7 +2,9 @@
 //! camera, microphone, speakers, screenshots, the background, notifications,
 //! screen-sharing restore grants), with allow, deny and revoke, and what
 //! starts at login.
-use super::{Message, State, focus, live_page::LivePage, settings_group, toggle};
+use super::{
+    Message, State, described_toggle, focus, heading, kit, live_page::LivePage, settings_group,
+};
 use crate::{
     live::{Event, LiveAction},
     privacy::{Access, Grant, PrivacyAction, PrivacyService, PrivacyState, store_missing},
@@ -24,10 +26,15 @@ fn apply(action: PrivacyAction) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
-fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+fn treated_button<'a>(
+    id: String,
+    label: String,
+    message: Option<Message>,
+    treatment: super::kit::Treatment,
+) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
@@ -39,10 +46,20 @@ fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Elemen
             None,
             None,
             false,
-            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
-                .padding([6, 12]),
+            iced::widget::button(text(label))
+                .on_press_maybe(message)
+                .style(move |theme, status| super::kit::button_style(theme, status, treatment))
+                .padding([7, 14]),
         ),
     )
+}
+
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Secondary)
+}
+/// An action that removes or forgets something.
+fn danger_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Destructive)
 }
 
 fn status(grant: &Grant) -> String {
@@ -91,7 +108,7 @@ impl State {
                 Some(apply(PrivacyAction::Set(grant.clone(), !allowed))),
             ));
         }
-        row.push(row_button(
+        row.push(danger_button(
             format!("privacy-{key}-revoke"),
             fl!("settings-privacy-forget"),
             Some(apply(PrivacyAction::Revoke(grant.clone()))),
@@ -105,7 +122,7 @@ impl State {
     }
 
     fn privacy_sections<'a>(&'a self, state: &'a PrivacyState) -> Element<'a, Message> {
-        let mut body = column![].spacing(14);
+        let mut body = column![].spacing(28);
         match &state.grants {
             None => {
                 body = body.push(settings_group(
@@ -117,28 +134,51 @@ impl State {
                 ));
             }
             Some(grants) => {
-                let mut list = column![muted(fl!("settings-privacy-permissions-hint"))].spacing(12);
+                let mut list: Vec<Element<'_, Message>> = Vec::new();
+                // Only the kinds of access some application asked for.
                 for access in Access::ALL {
                     let mine: Vec<_> = grants
                         .iter()
                         .filter(|grant| grant.access == access)
                         .collect();
-                    let mut section = column![text(access.title()).size(16)].spacing(8);
                     if mine.is_empty() {
-                        section = section.push(muted(fl!("settings-privacy-none-asked")));
+                        continue;
                     }
+                    let mut section = column![heading(access.title(), kit::size::BODY)].spacing(8);
                     for grant in mine {
                         section = section.push(self.grant_row(state, grant));
                     }
-                    list = list.push(section);
+                    list.push(section.into());
                 }
-                list = list.push(muted(fl!("settings-privacy-screen-hint")));
-                body = body.push(settings_group(fl!("settings-privacy-permissions"), list));
+                body = body.push(
+                    column![
+                        if grants.is_empty() {
+                            settings_group(
+                                fl!("settings-privacy-permissions"),
+                                kit::empty(fl!("settings-privacy-nothing-asked-title")),
+                            )
+                        } else {
+                            settings_group(fl!("settings-privacy-permissions"), kit::rows(list))
+                        },
+                        // How answers are kept: Forget is explained only
+                        // where there is something to forget.
+                        kit::footnote(if grants.is_empty() {
+                            fl!("settings-privacy-screen-hint")
+                        } else {
+                            format!(
+                                "{} {}",
+                                fl!("settings-privacy-permissions-hint"),
+                                fl!("settings-privacy-screen-hint")
+                            )
+                        }),
+                    ]
+                    .spacing(8),
+                );
             }
         }
-        let mut startup = column![].spacing(8);
+        let mut startup: Vec<Element<'_, Message>> = Vec::new();
         if state.autostart.is_empty() {
-            startup = startup.push(muted(fl!("settings-privacy-no-autostart")));
+            startup.push(super::kit::empty(fl!("settings-privacy-no-autostart")));
         }
         for entry in &state.autostart {
             let control = PrivacyAction::Autostart(entry.id.clone(), true).control();
@@ -146,30 +186,32 @@ impl State {
                 Some(PrivacyAction::Autostart(_, value)) => *value,
                 _ => entry.enabled,
             };
-            let label = if entry.sandboxed {
-                fl!(
-                    "settings-privacy-autostart-sandboxed",
-                    name = entry.name.as_str()
-                )
+            let origin = if entry.sandboxed {
+                Some(fl!("settings-privacy-autostart-sandboxed-hint"))
             } else if entry.system {
-                fl!(
-                    "settings-privacy-autostart-system",
-                    name = entry.name.as_str()
-                )
+                Some(fl!("settings-privacy-autostart-system-hint"))
             } else {
-                entry.name.clone()
+                None
             };
-            startup = startup
-                .push(toggle(
-                    format!("privacy-autostart-{}", entry.id.replace('.', "-")),
-                    label,
-                    enabled,
-                    apply(PrivacyAction::Autostart(entry.id.clone(), !enabled)),
-                ))
-                .push(self.privacy.control_status(&control, message));
+            startup.push(
+                column![
+                    described_toggle(
+                        format!("privacy-autostart-{}", entry.id.replace('.', "-")),
+                        entry.name.clone(),
+                        origin,
+                        enabled,
+                        apply(PrivacyAction::Autostart(entry.id.clone(), !enabled)),
+                    ),
+                    self.privacy.control_status(&control, message),
+                ]
+                .into(),
+            );
         }
-        body.push(settings_group(fl!("settings-privacy-autostart"), startup))
-            .into()
+        body.push(settings_group(
+            fl!("settings-privacy-autostart"),
+            kit::rows(startup),
+        ))
+        .into()
     }
 
     pub(super) fn privacy_view(&self) -> Element<'_, Message> {

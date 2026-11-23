@@ -1,9 +1,12 @@
 //! Ordinary settings window with shared controls and bounded background work.
 mod about;
+mod arrangement;
 mod bluetooth;
 mod date_time;
 mod default_apps;
 mod focus;
+mod inhibit;
+mod kit;
 mod launcher;
 #[cfg(debug_assertions)]
 mod live_example;
@@ -33,16 +36,16 @@ use crate::{
     storage::{Snapshot, companion},
 };
 use anyhow::{Context, Result, ensure};
+use arrangement::Screen;
 use canopa_ui::{
     accessibility::{self, Node, semantic},
     direction,
 };
 use iced::{
-    Alignment, Element, Font, Length, Subscription, Task, Theme,
+    Alignment, Element, Length, Subscription, Task, Theme,
     font::Weight,
     widget::{
-        checkbox, column, container, pick_list, row, rule, scrollable, slider, space, text,
-        text_input,
+        column, container, pick_list, row, rule, scrollable, slider, space, text, text_input,
     },
 };
 use niri_ipc::{Output, Transform};
@@ -75,6 +78,9 @@ enum Message {
     LauncherEnabled(String, bool),
     LauncherKeyword(String, String),
     LauncherTemplate(String),
+    /// A listed search engine by index into [`launcher::ENGINES`], or none
+    /// to type an address.
+    LauncherEngine(Option<usize>),
     LauncherSearch(usize, bool, String),
     LauncherRemoveSearch(usize),
     LauncherAddSearch,
@@ -82,6 +88,14 @@ enum Message {
     ShortcutsStored(Result<crate::shortcuts::Editor, String>),
     ShortcutSearch(String),
     ShortcutKey(usize, String),
+    /// Record one shortcut's keys, or go back to showing them.
+    EditShortcut(Option<usize>),
+    /// Type the shortcut being edited instead of pressing it.
+    TypeShortcut,
+    /// A key pressed while a shortcut is recorded.
+    ShortcutPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
+    /// The desktop's own shortcuts are held off while recording.
+    ShortcutsInhibited(Option<inhibit::Held>),
     ResetShortcuts,
     BackendChanged,
     ReloadSaved,
@@ -111,6 +125,16 @@ enum Message {
     InputFlag(u8, bool),
     PersonalText(u8, String),
     Light(bool),
+    /// Show or hide a collapsible section, by its key.
+    Expand(&'static str),
+    /// Start the Orca screen reader, detached from Settings.
+    StartScreenReader,
+    /// The pointer moved over the display arrangement, in its own coordinates.
+    ArrangementPointer(iced::Point),
+    /// A display in the arrangement was grabbed.
+    ArrangementGrab(MonitorSlot),
+    /// The grabbed display was let go.
+    ArrangementRelease,
     TextScale(f64),
     ReducedMotion(bool),
     HighContrast(bool),
@@ -138,10 +162,16 @@ enum Message {
     Wallpaper,
     Finished(std::result::Result<String, String>),
     WallpaperFinished(std::result::Result<(), String>),
+    /// Choose a picture file for the wallpaper through the desktop portal.
+    WallpaperFile,
+    /// The picture chosen for the wallpaper, if any.
+    WallpaperChosen(std::result::Result<Option<std::path::PathBuf>, String>),
     /// A later launch or a D-Bus caller asks for this window.
     Activated(Request),
     /// Whether the compositor focused the window.
     Raised(bool),
+    /// The window gained or lost keyboard focus.
+    WindowFocus(bool),
     Power(crate::live::Event<crate::power::PowerService>),
     Sound(crate::live::Event<crate::sound::SoundService>),
     Network(crate::live::Event<crate::network::NetworkService>),
@@ -185,12 +215,30 @@ impl accessibility::Message for Message {
 /// The accessibility root's key; it names the window among AT-SPI windows.
 const ACCESSIBILITY_ROOT: &str = "settings";
 struct State {
+    /// Whether the displays are labelled while Displays arranges them; off
+    /// where no window is shown, as in tests.
+    identify: bool,
+    /// The process labelling the displays, while it runs.
+    identifier: Option<Identifier>,
+    /// Whether the window has keyboard focus.
+    window_focused: bool,
     paths: Paths,
     launcher: crate::launcher::Model,
+    /// The default search is typed as an address rather than chosen.
+    custom_search: bool,
     clipboard: Option<crate::launcher::ClipboardEditor>,
     clipboard_notice: String,
     shortcuts: Option<Result<crate::shortcuts::Editor, String>>,
     shortcut_query: String,
+    /// The shortcut being recorded, or typed when `shortcut_typing`.
+    shortcut_editing: Option<usize>,
+    shortcut_typing: bool,
+    /// The last key pressed while recording could not be a shortcut.
+    shortcut_unsupported: bool,
+    /// The desktop's shortcuts, held off while one is recorded.
+    shortcut_inhibition: Option<inhibit::Held>,
+    /// Collapsible sections the person opened, by key.
+    expanded: std::collections::HashSet<&'static str>,
     compositor_motion: Option<bool>,
     /// `None` outside the Canopa session; an error when the block was edited.
     window_layout: Option<Result<Option<crate::niri::WindowLayout>, String>>,
@@ -200,8 +248,14 @@ struct State {
     busy: bool,
     refreshing: bool,
     outputs: HashMap<String, Output>,
+    /// What monitors the compositor calls "Unknown" report themselves, by
+    /// connector.
+    reported: HashMap<String, (String, String)>,
     monitors: Vec<Monitor>,
     positions: Vec<(String, String)>,
+    /// The pointer over the display arrangement, and the display being dragged.
+    arrangement_pointer: iced::Point,
+    display_drag: Option<DisplayDrag>,
     /// Advanced whenever `monitors` is replaced, so an edit queued for the
     /// previous list (a click during hotplug) is dropped instead of applied
     /// to another display or out of range.
@@ -264,6 +318,22 @@ fn task<T: Send + 'static>(
     )
 }
 impl State {
+    /// The monitor connected at `connector`, named by [`monitor_title`] from
+    /// what the compositor or, failing that, the monitor itself reports.
+    fn monitor_name(&self, connector: &str) -> String {
+        if let Some((make, model)) = self.reported.get(connector) {
+            return monitor_title(make, model, connector);
+        }
+        let monitor = self
+            .monitors
+            .iter()
+            .find(|monitor| monitor.name == connector);
+        match (self.outputs.get(connector), monitor) {
+            (Some(output), _) => monitor_title(&output.make, &output.model, connector),
+            (None, Some(monitor)) => monitor_title(&monitor.make, &monitor.model, connector),
+            (None, None) => connector.to_owned(),
+        }
+    }
     fn action<'a>(
         &self,
         key: impl Into<String>,
@@ -271,17 +341,138 @@ impl State {
         message: Option<Message>,
         active: bool,
     ) -> Element<'a, Message> {
-        button(
-            key,
-            label,
-            message,
-            if active {
-                canopa_ui::Action::Normal
-            } else {
-                canopa_ui::Action::Quiet
-            },
-            Length::Shrink,
-            self.busy,
+        // An active action without a message is the chosen one of a set.
+        let treatment = if active && message.is_none() {
+            kit::Treatment::Selected
+        } else {
+            kit::Treatment::Secondary
+        };
+        let key = key.into();
+        let label = label.into();
+        semantic(
+            Node::button(label.clone())
+                .key(key.clone())
+                .disabled(message.is_none())
+                .on_click(message.clone()),
+            focus::control(
+                key,
+                message.clone(),
+                None,
+                None,
+                self.busy,
+                styled_button(text(label), message, treatment).padding([7, 14]),
+            ),
+        )
+    }
+
+    /// A collapsible part of a card: a row that shows or hides `content`.
+    fn disclosure<'a>(
+        &self,
+        key: &'static str,
+        label: String,
+        content: impl FnOnce() -> Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let open = self.expanded.contains(key);
+        let toggle = Message::Expand(key);
+        let header = semantic(
+            Node::button(label.clone())
+                .key(format!("settings-disclosure-{key}"))
+                .expanded(open)
+                .on_click(Some(toggle.clone())),
+            focus::control(
+                format!("settings-disclosure-{key}"),
+                Some(toggle.clone()),
+                None,
+                None,
+                false,
+                styled_button(
+                    direction::row([
+                        text(label).width(Length::Fill).into(),
+                        kit::glyph(
+                            if open {
+                                "chevron-down"
+                            } else {
+                                "chevron-right"
+                            },
+                            16.0,
+                            kit::Tint::Muted,
+                        ),
+                    ])
+                    .align_y(Alignment::Center),
+                    Some(toggle),
+                    kit::Treatment::Flat,
+                )
+                .width(Length::Fill)
+                .padding([4, 0]),
+            ),
+        );
+        if open {
+            column![header, content()].spacing(12).into()
+        } else {
+            header
+        }
+    }
+
+    /// A button in an explicit treatment: the one action a card leads with
+    /// ([`kit::Treatment::Primary`]) or one that removes something.
+    fn treated_action<'a>(
+        &self,
+        key: impl Into<String>,
+        label: impl Into<String>,
+        message: Option<Message>,
+        treatment: kit::Treatment,
+    ) -> Element<'a, Message> {
+        let key = key.into();
+        let label = label.into();
+        semantic(
+            Node::button(label.clone())
+                .key(key.clone())
+                .disabled(message.is_none())
+                .on_click(message.clone()),
+            focus::control(
+                key,
+                message.clone(),
+                None,
+                None,
+                self.busy,
+                styled_button(text(label), message, treatment).padding([7, 14]),
+            ),
+        )
+    }
+
+    /// One segment of a [`kit::segmented`] control: chosen, or a quiet
+    /// button that chooses it.
+    fn segment<'a>(
+        &self,
+        key: impl Into<String>,
+        label: impl Into<String>,
+        message: Option<Message>,
+        selected: bool,
+    ) -> Element<'a, Message> {
+        let key = key.into();
+        let label = label.into();
+        semantic(
+            Node::button(label.clone())
+                .key(key.clone())
+                .disabled(message.is_none())
+                .on_click(message.clone()),
+            focus::control(
+                key,
+                message.clone(),
+                None,
+                None,
+                self.busy,
+                styled_button(
+                    text(label).size(kit::size::BODY),
+                    message,
+                    if selected {
+                        kit::Treatment::Selected
+                    } else {
+                        kit::Treatment::Flat
+                    },
+                )
+                .padding([6, 14]),
+            ),
         )
     }
 
@@ -330,10 +521,16 @@ impl State {
         let state = Self {
             paths,
             launcher: Default::default(),
+            custom_search: false,
             clipboard: None,
             clipboard_notice: String::new(),
             shortcuts: None,
             shortcut_query: String::new(),
+            shortcut_editing: None,
+            shortcut_typing: false,
+            shortcut_unsupported: false,
+            shortcut_inhibition: None,
+            expanded: Default::default(),
             compositor_motion,
             window_layout,
             page: Page::Displays,
@@ -341,9 +538,15 @@ impl State {
             notice,
             busy: false,
             refreshing: true,
+            identify: false,
+            identifier: None,
+            window_focused: true,
             outputs: HashMap::new(),
+            reported: HashMap::new(),
             monitors: vec![],
             positions: vec![],
+            arrangement_pointer: iced::Point::ORIGIN,
+            display_drag: None,
             display_generation: 0,
             display_dirty: false,
             display_profiles: profiles::Editor::default(),
@@ -406,6 +609,7 @@ impl State {
             };
         }
         let task = self.apply(message);
+        self.label_displays();
         match &mut self.accessibility {
             Some(bridge) => {
                 bridge.set_scale(
@@ -439,6 +643,7 @@ impl State {
                     | Message::LidClose(..)
                     | Message::Profile(..)
                     | Message::Wallpaper
+                    | Message::WallpaperFile
             )
         {
             return Task::none();
@@ -454,6 +659,9 @@ impl State {
                     Ok(model) => {
                         self.launcher = model;
                         self.notice = fl!("settings-launcher-saved");
+                        if self.clipboard.as_ref().is_some_and(|editor| editor.dirty()) {
+                            return self.update(Message::ClipboardSave);
+                        }
                     }
                     Err(error) => self.notice = error,
                 }
@@ -523,6 +731,12 @@ impl State {
             Message::LauncherTemplate(value) if !self.busy => {
                 self.launcher.draft.web_template = value
             }
+            Message::LauncherEngine(engine) if !self.busy => {
+                self.custom_search = engine.is_none();
+                if let Some((_, address)) = engine.and_then(|index| launcher::ENGINES.get(index)) {
+                    self.launcher.draft.web_template = (*address).to_owned();
+                }
+            }
             Message::LauncherSearch(index, template, value) if !self.busy => {
                 if let Some(search) = self.launcher.draft.searches.get_mut(index) {
                     if template {
@@ -571,38 +785,13 @@ impl State {
                 return self.update(Message::Page(registry::step(self.page, offset)));
             }
             Message::Page(page) if !self.busy && self.trial.is_none() => {
-                if page != self.page {
-                    // Typed passwords do not outlive the page, and one page's
-                    // result or error is not shown on another.
-                    self.users_forms.clear_secrets();
-                    self.notice.clear();
-                }
-                self.page = page;
-                self.idle_available = false;
-                self.input_level = None;
-                if page == Page::Sound {
-                    self.alert_sounds = Snapshot::load(self.paths.common())
-                        .ok()
-                        .and_then(|source| crate::sound::alert_sounds(&source.text).ok());
-                }
-                if page == Page::Widgets && self.widget_layouts.editor.is_none() {
-                    return widget_layouts::View::load(&self.paths);
-                }
-                if page == Page::DateTime {
-                    self.date_time_opened();
-                }
-                if page == Page::Notifications && self.notification_apps.is_none() {
-                    return task(notifications::installed, |apps| {
-                        Message::NotificationsForm(notifications::Edit::Installed(apps))
-                    });
-                }
-                if page == Page::Shortcuts && self.shortcuts.is_none() {
-                    let paths = self.paths.clone();
-                    return task(
-                        move || crate::shortcuts::Editor::load(&paths),
-                        Message::ShortcutsLoaded,
-                    );
-                }
+                let changed = page != self.page;
+                let opened = self.open_page(page);
+                return if changed {
+                    Task::batch([opened, navigation::reveal(page)])
+                } else {
+                    opened
+                };
             }
             Message::ShortcutsLoaded(result) => self.shortcuts = Some(result),
             Message::ShortcutsStored(result) => {
@@ -617,6 +806,50 @@ impl State {
                 }
             }
             Message::ShortcutSearch(value) if !self.busy => self.shortcut_query = value,
+            Message::EditShortcut(editing) => {
+                self.shortcut_editing = editing;
+                self.shortcut_typing = false;
+                self.shortcut_unsupported = false;
+                // Dropping the held inhibition gives the desktop its keys back.
+                self.shortcut_inhibition = None;
+                if editing.is_some() {
+                    return iced::window::latest()
+                        .and_then(|id| iced::window::run(id, inhibit::inhibit))
+                        .map(Message::ShortcutsInhibited);
+                }
+            }
+            // Recording may have ended before the compositor answered.
+            Message::ShortcutsInhibited(held)
+                if self.shortcut_editing.is_some() && !self.shortcut_typing =>
+            {
+                self.shortcut_inhibition = held;
+            }
+            Message::ShortcutsInhibited(_) => {}
+            Message::TypeShortcut => {
+                self.shortcut_typing = true;
+                self.shortcut_inhibition = None;
+                if let Some(index) = self.shortcut_editing {
+                    return iced::widget::operation::focus(format!("settings-shortcut-{index}"));
+                }
+            }
+            Message::ShortcutPressed(key, modifiers) if !self.busy => {
+                let Some(index) = self.shortcut_editing.filter(|_| !self.shortcut_typing) else {
+                    return Task::none();
+                };
+                match shortcuts::press(&key, modifiers) {
+                    shortcuts::Press::Modifier => {}
+                    shortcuts::Press::Unsupported => self.shortcut_unsupported = true,
+                    shortcuts::Press::Cancel => return self.update(Message::EditShortcut(None)),
+                    shortcuts::Press::Clear => {
+                        let _ = self.update(Message::ShortcutKey(index, String::new()));
+                        return self.update(Message::EditShortcut(None));
+                    }
+                    shortcuts::Press::Combination(combination) => {
+                        let _ = self.update(Message::ShortcutKey(index, combination));
+                        return self.update(Message::EditShortcut(None));
+                    }
+                }
+            }
             Message::ShortcutKey(index, value) if !self.busy => {
                 if let Some(Ok(editor)) = &mut self.shortcuts
                     && let Some(shortcut) = editor.rows.get_mut(index)
@@ -634,7 +867,12 @@ impl State {
             Message::Refresh if !self.busy && !self.refreshing && self.trial.is_none() => {
                 self.refreshing = true;
                 self.display_dirty = false;
-                return task(|| Client::discover()?.outputs(), Message::Outputs);
+                // Reload rereads the monitors and the saved profiles.
+                let profiles = self.update_profiles(profiles::Action::Load);
+                return Task::batch([
+                    task(|| Client::discover()?.outputs(), Message::Outputs),
+                    profiles,
+                ]);
             }
             Message::LoginDisplays
                 if !self.busy
@@ -655,6 +893,18 @@ impl State {
                 match result {
                     Ok(outputs) => {
                         self.outputs = outputs;
+                        let unknown = |value: &str| {
+                            value.trim().is_empty() || value.eq_ignore_ascii_case("unknown")
+                        };
+                        self.reported = self
+                            .outputs
+                            .values()
+                            .filter(|output| unknown(&output.make) && unknown(&output.model))
+                            .filter_map(|output| {
+                                crate::display::reported_identity(&output.name)
+                                    .map(|identity| (output.name.clone(), identity))
+                            })
+                            .collect();
                         if !self.display_dirty {
                             let mut names: Vec<_> = self.outputs.keys().cloned().collect();
                             names.sort();
@@ -663,10 +913,15 @@ impl State {
                                 .iter()
                                 .map(|name| Monitor::from_output(&self.outputs[name]))
                                 .collect();
+                            // Positions read from 0, 0, wherever the
+                            // compositor put the arrangement's corner.
+                            let enabled = || self.monitors.iter().filter(|m| m.enabled);
+                            let left = enabled().map(|m| m.x).min().unwrap_or(0);
+                            let top = enabled().map(|m| m.y).min().unwrap_or(0);
                             self.positions = self
                                 .monitors
                                 .iter()
-                                .map(|m| (m.x.to_string(), m.y.to_string()))
+                                .map(|m| ((m.x - left).to_string(), (m.y - top).to_string()))
                                 .collect();
                         } else {
                             self.notice = fl!("settings-displays-changed-while-editing");
@@ -927,9 +1182,15 @@ impl State {
                     | Page::Users
                     | Page::Privacy
                     | Page::Printers => self.busy = false,
-                    Page::Launcher => {
+                    // Launcher preferences first, then the Shell's clipboard
+                    // options when they changed too (see LauncherStored).
+                    Page::Launcher if self.launcher.draft != self.launcher.saved => {
                         let model = self.launcher.clone();
                         return task(move || model.save(), Message::LauncherStored);
+                    }
+                    Page::Launcher => {
+                        self.busy = false;
+                        return self.update(Message::ClipboardSave);
                     }
                     Page::Widgets => return self.save_widget_layouts(),
                     Page::Shortcuts => {
@@ -1015,26 +1276,135 @@ impl State {
                 self.notice = result.unwrap_or_else(|error| error);
                 return self.update(Message::Refresh);
             }
-            Message::Wallpaper => {
+            Message::ArrangementPointer(point) => {
+                self.arrangement_pointer = point;
+                if let Some(drag) = self.display_drag.as_mut()
+                    && !self.busy
+                    && self.trial.is_none()
+                {
+                    drag.moved = true;
+                    let drag = *drag;
+                    // Where the grabbed display is, its edges pulled onto
+                    // its neighbours' when they are close in the drawing.
+                    let others: Vec<_> = self
+                        .arranged()
+                        .into_iter()
+                        .filter(|(index, _)| *index != drag.slot.index)
+                        .map(|(_, screen)| screen)
+                        .collect();
+                    let placed = arrangement::snap(
+                        Screen {
+                            x: (point.x - drag.grab.x - drag.x) / drag.fit,
+                            y: (point.y - drag.grab.y - drag.y) / drag.fit,
+                            width: drag.width,
+                            height: drag.height,
+                        },
+                        &others,
+                        arrangement::REACH / drag.fit,
+                    );
+                    if let Some(position) = self
+                        .monitor_index(drag.slot)
+                        .and_then(|index| self.positions.get_mut(index))
+                    {
+                        *position = (
+                            (placed.x.round() as i32).to_string(),
+                            (placed.y.round() as i32).to_string(),
+                        );
+                        self.display_dirty = true;
+                    }
+                }
+            }
+            Message::ArrangementGrab(slot) if !self.busy && self.trial.is_none() => {
+                if let Some(geometry) = self.arrangement_geometry()
+                    && let Some((_, screen)) = self
+                        .arranged()
+                        .into_iter()
+                        .find(|(index, _)| *index == slot.index)
+                {
+                    self.display_drag = Some(DisplayDrag {
+                        slot,
+                        grab: iced::Point::new(
+                            self.arrangement_pointer.x - (geometry.x + screen.x * geometry.fit),
+                            self.arrangement_pointer.y - (geometry.y + screen.y * geometry.fit),
+                        ),
+                        x: geometry.x,
+                        y: geometry.y,
+                        fit: geometry.fit,
+                        width: screen.width,
+                        height: screen.height,
+                        moved: false,
+                    });
+                }
+            }
+            Message::ArrangementRelease => {
+                // A dropped display settles touching another, overlapping
+                // none, and the arrangement starts at 0, 0.
+                if let Some(drag) = self.display_drag.take()
+                    && drag.moved
+                    && !self.busy
+                    && self.trial.is_none()
+                    && self.monitor_index(drag.slot).is_some()
+                {
+                    let placed = self.arranged();
+                    if let Some(dropped) = placed
+                        .iter()
+                        .position(|(index, _)| *index == drag.slot.index)
+                    {
+                        let mut screens: Vec<_> =
+                            placed.iter().map(|(_, screen)| *screen).collect();
+                        arrangement::tidy(&mut screens, dropped);
+                        for ((index, _), screen) in placed.iter().zip(screens) {
+                            if let Some(position) = self.positions.get_mut(*index) {
+                                *position =
+                                    ((screen.x as i32).to_string(), (screen.y as i32).to_string());
+                            }
+                        }
+                        self.display_dirty = true;
+                    }
+                }
+            }
+            Message::StartScreenReader => {
+                self.notice = match orca().map(|path| {
+                    std::process::Command::new(path)
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                }) {
+                    Some(Ok(_)) => fl!("settings-a11y-orca-started"),
+                    Some(Err(error)) => error.to_string(),
+                    None => fl!("settings-a11y-orca-missing"),
+                };
+            }
+            Message::Expand(key) if !self.expanded.remove(key) => {
+                self.expanded.insert(key);
+            }
+            Message::Expand(_) => {}
+            Message::Wallpaper => return wallpaper_picker(Vec::new()),
+            Message::WallpaperFile => {
                 self.notice.clear();
-                let (send, receive) = iced::futures::channel::oneshot::channel();
-                std::thread::spawn(move || {
-                    let result = crate::storage::application(
-                        companion("canopa-wallpaper"),
-                        &["pick".into()],
-                    )
-                    .map_err(|error| format!("{error:#}"));
-                    let _ = send.send(result);
-                });
+                let title = fl!("settings-personal-wallpaper-file-title");
+                let filter = fl!("settings-personal-wallpaper-file-filter");
                 return Task::perform(
                     async move {
-                        receive
+                        crate::network::choose_picture(&title, &filter)
                             .await
-                            .unwrap_or_else(|_| Err(fl!("settings-wallpaper-stopped")))
+                            .map_err(|error| format!("{error:#}"))
                     },
-                    Message::WallpaperFinished,
+                    Message::WallpaperChosen,
                 );
             }
+            Message::WallpaperChosen(Ok(Some(path))) => {
+                // The picture first, then its folder to browse around it.
+                let mut images = vec![path.to_string_lossy().into_owned()];
+                images.extend(
+                    path.parent()
+                        .map(|folder| folder.to_string_lossy().into_owned()),
+                );
+                return wallpaper_picker(images);
+            }
+            Message::WallpaperChosen(Ok(None)) => {}
+            Message::WallpaperChosen(Err(error)) => self.notice = error,
             Message::WallpaperFinished(Err(error)) => {
                 self.notice = error;
             }
@@ -1043,6 +1413,7 @@ impl State {
                 self.notice = result.unwrap_or_else(|error| error);
             }
             Message::Activated(request) => return self.activate(request),
+            Message::WindowFocus(focused) => self.window_focused = focused,
             Message::Raised(false) => {
                 return iced::window::latest().then(|id| match id {
                     Some(id) => Task::batch([
@@ -1073,7 +1444,10 @@ impl State {
             Message::About(event) => return self.about.update(event, about::message),
             Message::AboutForm(edit) => return self.about_edit(edit),
             Message::Region(event) => return self.region_event(event),
-            Message::Users(event) => return self.users.update(event, users::message),
+            Message::Users(event) => {
+                let task = self.users.update(event, users::message);
+                return Task::batch([task, self.load_user_pictures()]);
+            }
             Message::UsersForm(edit) => return self.users_edit(edit),
             Message::Privacy(event) => return self.privacy.update(event, privacy::message),
             Message::Printers(event) => return self.printers.update(event, printers::message),
@@ -1350,6 +1724,29 @@ impl State {
         if matches!(self.page, Page::Displays | Page::Widgets) || self.trial.is_some() {
             subscriptions.push(Subscription::run(niri_events));
         }
+        if self.page == Page::Displays {
+            subscriptions.push(iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Window(iced::window::Event::Focused) => {
+                    Some(Message::WindowFocus(true))
+                }
+                iced::Event::Window(iced::window::Event::Unfocused) => {
+                    Some(Message::WindowFocus(false))
+                }
+                _ => None,
+            }));
+        }
+        if self.page == Page::Shortcuts && self.shortcut_editing.is_some() && !self.shortcut_typing
+        {
+            subscriptions.push(iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    repeat: false,
+                    ..
+                }) => Some(Message::ShortcutPressed(key, modifiers)),
+                _ => None,
+            }));
+        }
         if self.page == Page::Power {
             subscriptions.push(Subscription::run(idle_events));
             subscriptions.push(self.power.subscription(Message::Power));
@@ -1406,6 +1803,73 @@ impl State {
         }
         Subscription::batch(subscriptions)
     }
+    /// Read the selected page's documents again when it holds no edits, so
+    /// changes made outside Settings show without a reload button.
+    fn reread_clean_page(&mut self) {
+        let paths = self.paths.clone();
+        match self.page {
+            Page::Input => {
+                let _ = self.input.reload(&paths);
+            }
+            Page::Personal | Page::Accessibility => {
+                let _ = self.personal.reload(&paths);
+                if self.page == Page::Accessibility {
+                    let _ = self.input.reload(&paths);
+                }
+                self.compositor_motion = Self::load_motion(&paths);
+                self.window_layout = Self::load_window_layout(&paths);
+            }
+            Page::Power => {
+                let _ = self.idle.reload(&paths);
+                let _ = self.power_choices.reload(&paths);
+            }
+            _ => {}
+        }
+    }
+    /// Show `page`, loading what it needs the first time.
+    fn open_page(&mut self, page: Page) -> Task<Message> {
+        if page != self.page {
+            // Typed passwords do not outlive the page, and one page's
+            // result or error is not shown on another.
+            self.users_forms.clear_secrets();
+            self.notice.clear();
+        }
+        let changed = page != self.page;
+        if changed {
+            self.shortcut_editing = None;
+            self.shortcut_inhibition = None;
+        }
+        self.page = page;
+        if changed && !self.page_dirty() {
+            self.reread_clean_page();
+        }
+        self.idle_available = false;
+        self.input_level = None;
+        if page == Page::Sound {
+            self.alert_sounds = Snapshot::load(self.paths.common())
+                .ok()
+                .and_then(|source| crate::sound::alert_sounds(&source.text).ok());
+        }
+        if page == Page::Widgets && self.widget_layouts.editor.is_none() {
+            return widget_layouts::View::load(&self.paths);
+        }
+        if page == Page::DateTime {
+            self.date_time_opened();
+        }
+        if page == Page::Notifications && self.notification_apps.is_none() {
+            return task(notifications::installed, |apps| {
+                Message::NotificationsForm(notifications::Edit::Installed(apps))
+            });
+        }
+        if page == Page::Shortcuts && self.shortcuts.is_none() {
+            let paths = self.paths.clone();
+            return task(
+                move || crate::shortcuts::Editor::load(&paths),
+                Message::ShortcutsLoaded,
+            );
+        }
+        Task::none()
+    }
     fn view(&self) -> Element<'_, Message> {
         let navigation = self.navigation();
         let entry = self.page.entry();
@@ -1413,33 +1877,42 @@ impl State {
         let title = column![
             semantic(
                 Node::heading(page_title.clone(), 1).key("settings-page-title"),
-                heading(page_title.clone(), 28)
+                heading(page_title.clone(), kit::size::PAGE_TITLE)
                     .width(Length::Fill)
                     .align_x(direction::text_start())
             ),
             text(entry.description())
-                .size(14)
+                .size(kit::size::BODY)
                 .style(canopa_ui::muted)
                 .width(Length::Fill)
                 .align_x(direction::text_start())
         ]
         .align_x(direction::start())
-        .spacing(5);
+        .spacing(6);
         // Keep this child present so asynchronous notices do not replace the
         // page's widget tree and discard keyboard focus or typed drafts.
-        let mut body = column![semantic(
-            Node::status(&self.notice).key("settings-notice"),
-            container(text(&self.notice).size(14))
-                .padding(if self.notice.is_empty() { 0 } else { 12 })
-                .height(if self.notice.is_empty() {
-                    // Iced filters zero-height children out of a Column.
-                    Length::Fixed(1.)
-                } else {
-                    Length::Shrink
-                })
-                .style(canopa_ui::surface)
-        )]
-        .spacing(16);
+        let title = column![
+            title,
+            semantic(
+                Node::status(&self.notice).key("settings-notice"),
+                container(text(&self.notice).size(kit::size::BODY))
+                    .width(Length::Fill)
+                    .padding(if self.notice.is_empty() { 0 } else { 12 })
+                    .height(if self.notice.is_empty() {
+                        // Iced filters zero-height children out of a Column.
+                        Length::Fixed(1.)
+                    } else {
+                        Length::Shrink
+                    })
+                    .style(if self.notice.is_empty() {
+                        |_: &Theme| container::Style::default()
+                    } else {
+                        kit::note
+                    })
+            )
+        ]
+        .spacing(if self.notice.is_empty() { 0 } else { 16 });
+        let mut body = column![].spacing(24);
         if self.trial.is_some() {
             body = body.push(semantic(
                 Node::alert_dialog(fl!("settings-trial-title")).key("settings-trial"),
@@ -1466,14 +1939,15 @@ impl State {
                     .spacing(12),
                 )
                 .padding(16)
-                .style(canopa_ui::surface),
+                .width(Length::Fill)
+                .style(kit::note),
             ));
         }
         if matches!(self.page, Page::Displays | Page::Input) && !self.paths.active() {
             body = body.push(settings_group(
                 fl!("settings-session-required-title"),
                 text(fl!("settings-session-required"))
-                    .size(14)
+                    .size(13)
                     .style(canopa_ui::muted),
             ));
         }
@@ -1500,35 +1974,44 @@ impl State {
             #[cfg(debug_assertions)]
             Page::LiveExample => self.live_example_view(),
         });
-        let content = column![
-            container(title).padding([19, 20]).width(Length::Fill),
-            rule::horizontal(1).style(settings_rule),
-            semantic(
-                Node::new(accessibility::Role::Main)
-                    .label(page_title)
-                    .key("settings-page"),
-                canopa_ui::scroll_speed(
-                    scrollable(
-                        container(body.max_width(800).padding([14, 20])).width(Length::Fill)
+        let content = column![semantic(
+            Node::new(accessibility::Role::Main)
+                .label(page_title)
+                .key("settings-page"),
+            canopa_ui::scroll_speed(
+                scrollable(
+                    container(
+                        column![title, body]
+                            .spacing(24)
+                            .max_width(kit::CONTENT_WIDTH)
                     )
-                    .id("settings-page-scroll")
-                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .padding(iced::Padding {
+                        top: 30.0,
+                        right: 36.0,
+                        bottom: 36.0,
+                        left: 36.0,
+                    })
                 )
-            ),
-        ]
+                .id("settings-page-scroll")
+                .style(canopa_ui::scrollbar)
+                .height(Length::Fill)
+            )
+        ),]
         .width(Length::Fill);
-        // Live pages apply each change at once and have no footer.
+        // Live pages apply each change at once and have no footer; file
+        // pages show theirs only while they hold edits to save or discard.
         let content = match self.file_footer() {
-            Some(footer) => content
-                .push(rule::horizontal(1).style(settings_rule))
-                .push(footer),
-            None => content,
+            Some(footer) if self.page_dirty() || self.busy || self.trial.is_some() => {
+                content.push(footer)
+            }
+            _ => content,
         };
         let window = focus::group(
             // The sidebar leads: on the right in right-to-left languages.
             direction::row([
                 navigation,
-                rule::vertical(1).style(settings_rule).into(),
+                rule::vertical(1).style(kit::divider).into(),
                 content.into(),
             ]),
             self.trial.as_ref().map(|_| Message::Decision(false)),
@@ -1558,8 +2041,26 @@ impl State {
         )
     }
     /// Whether the selected file-backed page can save its draft now.
+    /// Whether the selected file-backed page holds edits it has not saved.
+    fn page_dirty(&self) -> bool {
+        match self.page {
+            Page::Displays => self.display_dirty,
+            Page::Input => self.input.dirty(),
+            Page::Personal => self.personal.dirty(),
+            Page::Accessibility => self.personal.dirty() || self.input.dirty(),
+            Page::Power => self.power_choices.dirty() || self.idle_dirty(),
+            Page::Launcher => {
+                self.launcher.draft != self.launcher.saved
+                    || self.clipboard.as_ref().is_some_and(|editor| editor.dirty())
+            }
+            Page::Shortcuts => matches!(&self.shortcuts, Some(Ok(editor)) if editor.dirty()),
+            Page::Widgets => self.widget_layouts.dirty(),
+            _ => false,
+        }
+    }
     fn can_save(&self) -> bool {
-        (self.page != Page::Launcher || self.launcher.loaded)
+        self.page_dirty()
+            && (self.page != Page::Launcher || self.launcher.loaded)
             && !self.busy
             && self.trial.is_none()
             && (self.page != Page::Shortcuts
@@ -1574,73 +2075,349 @@ impl State {
         };
         Some(semantic(
             Node::toolbar(fl!("settings-footer-label")).key("settings-footer"),
-            // Actions sit at the trailing edge, the primary one last.
-            direction::row([
-                space().width(Length::Fill).into(),
-                // Reloads only the selected page; other drafts remain.
-                self.action(
-                    "settings-reload-page",
-                    fl!("settings-footer-reload"),
-                    (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
-                    false,
-                ),
-                button(
-                    "settings-apply",
-                    if self.busy {
-                        fl!("settings-applying")
-                    } else if apply == Apply::Trial {
-                        fl!("settings-footer-test-displays")
-                    } else {
-                        fl!("settings-footer-save")
+            container(
+                // Actions sit at the trailing edge, the primary one last.
+                direction::row([
+                    {
+                        let dirty = self.page_dirty();
+                        let status = fl!("settings-footer-unsaved");
+                        semantic(
+                            Node::status(status.clone()).key("settings-footer-status"),
+                            direction::row([
+                                container(space().width(8).height(8))
+                                    .style(move |theme: &Theme| container::Style {
+                                        background: Some(
+                                            if dirty {
+                                                canopa_ui::colors(theme).accent
+                                            } else {
+                                                kit::hairline(theme)
+                                            }
+                                            .into(),
+                                        ),
+                                        border: iced::border::rounded(u32::MAX),
+                                        ..Default::default()
+                                    })
+                                    .into(),
+                                text(status)
+                                    .size(kit::size::CAPTION)
+                                    .style(if dirty {
+                                        |theme: &Theme| text::Style {
+                                            color: Some(canopa_ui::colors(theme).text),
+                                        }
+                                    } else {
+                                        canopa_ui::muted
+                                    })
+                                    .into(),
+                            ])
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .width(Length::Fill),
+                        )
                     },
-                    self.can_save().then_some(Message::Save),
-                    canopa_ui::Action::Primary,
-                    Length::Shrink,
-                    self.busy,
-                ),
-            ])
-            .align_y(Alignment::Center)
-            .spacing(12)
-            .padding([10, 20]),
+                    // Reloads only the selected page; other drafts remain.
+                    button(
+                        "settings-reload-page",
+                        fl!("settings-footer-reload"),
+                        (!self.busy && self.trial.is_none()).then_some(Message::ReloadSaved),
+                        canopa_ui::Action::Normal,
+                        Length::Shrink,
+                        self.busy,
+                    ),
+                    button(
+                        "settings-apply",
+                        if self.busy {
+                            fl!("settings-applying")
+                        } else if apply == Apply::Trial {
+                            fl!("settings-footer-test-displays")
+                        } else {
+                            fl!("settings-footer-save")
+                        },
+                        self.can_save().then_some(Message::Save),
+                        canopa_ui::Action::Primary,
+                        Length::Shrink,
+                        self.busy,
+                    ),
+                ])
+                .align_y(Alignment::Center)
+                .spacing(10)
+                .padding([12, 24]),
+            )
+            .width(Length::Fill)
+            .style(|theme| container::Style {
+                background: Some(kit::sidebar_background(theme).into()),
+                border: iced::Border {
+                    color: kit::hairline(theme),
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            }),
         ))
     }
-    fn displays(&self) -> Element<'_, Message> {
-        let mut body = column![
-            text(fl!("settings-displays-intro")),
-            self.action(
-                "settings-button-reload-displays",
-                if self.refreshing {
-                    fl!("settings-displays-refreshing")
-                } else {
-                    fl!("settings-displays-reload")
-                },
-                (!self.busy && !self.refreshing && self.trial.is_none())
-                    .then_some(Message::Refresh),
-                false
-            )
-        ]
-        .spacing(14);
-        if crate::display::login_screen_available() {
-            // Copies what is applied, so an unsaved draft must be saved first.
-            body = body.push(
-                self.action(
-                    "settings-button-login-screen-displays",
-                    fl!("settings-displays-login-screen"),
-                    (!self.busy
-                        && !self.refreshing
-                        && !self.display_dirty
-                        && self.trial.is_none()
-                        && !self.outputs.is_empty())
-                    .then_some(Message::LoginDisplays),
-                    false,
-                ),
-            );
+    /// The enabled displays in logical pixels, where the position fields put
+    /// them, by monitor index.
+    fn arranged(&self) -> Vec<(usize, Screen)> {
+        self.monitors
+            .iter()
+            .enumerate()
+            .filter(|(_, monitor)| monitor.enabled)
+            .filter_map(|(index, monitor)| {
+                let mode = monitor.mode.and_then(|mode| monitor.modes.get(mode))?;
+                let scale = monitor.scale.max(0.1) as f32;
+                let (mut width, mut height) = (
+                    f32::from(mode.width) / scale,
+                    f32::from(mode.height) / scale,
+                );
+                if matches!(
+                    monitor.transform,
+                    Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270
+                ) {
+                    std::mem::swap(&mut width, &mut height);
+                }
+                let typed = self.positions.get(index);
+                let x = typed
+                    .and_then(|(x, _)| x.trim().parse::<f32>().ok())
+                    .unwrap_or(monitor.x as f32);
+                let y = typed
+                    .and_then(|(_, y)| y.trim().parse::<f32>().ok())
+                    .unwrap_or(monitor.y as f32);
+                // The compositor rounds sizes to whole logical pixels.
+                Some((
+                    index,
+                    Screen {
+                        x,
+                        y,
+                        width: width.round(),
+                        height: height.round(),
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// The labels the displays should show: while Displays is in front and
+    /// arranges several displays, each one's number and name.
+    fn display_labels(&self) -> Option<crate::identify::Labels> {
+        if !self.identify || self.page != Page::Displays || !self.window_focused {
+            return None;
         }
+        let screens = self.arranged();
+        (screens.len() > 1).then(|| crate::identify::Labels {
+            displays: screens
+                .into_iter()
+                .map(|(index, _)| crate::identify::Label {
+                    output: self.monitors[index].name.clone(),
+                    number: index + 1,
+                    name: self.monitor_name(&self.monitors[index].name),
+                    lit: self
+                        .display_drag
+                        .is_some_and(|drag| drag.slot.index == index),
+                })
+                .collect(),
+        })
+    }
+
+    /// Start, update or stop the labels on the displays.
+    fn label_displays(&mut self) {
+        let Some(labels) = self.display_labels() else {
+            self.identifier = None;
+            return;
+        };
+        let Ok(line) = serde_json::to_string(&labels) else {
+            return;
+        };
+        if self.identifier.is_none() {
+            self.identifier = Identifier::start();
+        }
+        if let Some(identifier) = &mut self.identifier
+            && identifier.sent != line
+        {
+            use std::io::Write;
+            if writeln!(identifier.input, "{line}").is_ok() {
+                identifier.sent = line;
+            } else {
+                // It stopped; the next change starts another.
+                self.identifier = None;
+            }
+        }
+    }
+
+    /// How the arrangement maps logical pixels to the drawing; frozen while a
+    /// display is dragged so it stays under the pointer.
+    fn arrangement_geometry(&self) -> Option<ArrangementGeometry> {
+        if let Some(drag) = self.display_drag {
+            return Some(ArrangementGeometry {
+                x: drag.x,
+                y: drag.y,
+                fit: drag.fit,
+            });
+        }
+        let screens: Vec<_> = self.arranged().into_iter().map(|(_, s)| s).collect();
+        if screens.is_empty() {
+            return None;
+        }
+        let fit = arrangement::fit(&screens);
+        let (x, y) = arrangement::origin(&screens, fit);
+        Some(ArrangementGeometry { x, y, fit })
+    }
+
+    /// The enabled displays drawn where they are placed, numbered as on
+    /// their cards and on the screens themselves. Dragging one moves it,
+    /// through the same position fields as typing.
+    fn arrangement(&self) -> Option<Element<'_, Message>> {
+        let geometry = self.arrangement_geometry()?;
+        let mut canvas = iced::widget::stack![
+            space()
+                .width(arrangement::WIDTH)
+                .height(arrangement::HEIGHT)
+        ];
+        for (index, screen) in self.arranged() {
+            let monitor = &self.monitors[index];
+            let mode = monitor.mode.and_then(|mode| monitor.modes.get(mode));
+            let product = self.monitor_name(&monitor.name);
+            let dragged = self
+                .display_drag
+                .is_some_and(|drag| drag.slot.index == index);
+            let slot = MonitorSlot {
+                generation: self.display_generation,
+                index,
+            };
+            let picture: iced::widget::Container<'_, Message> = container(
+                column![
+                    display_number(index + 1, dragged),
+                    text(product)
+                        .size(kit::size::CAPTION)
+                        .font(kit::strong_font(Weight::Semibold))
+                        .wrapping(iced::widget::text::Wrapping::None),
+                    text(
+                        mode.map(|m| format!("{} × {}", m.width, m.height))
+                            .unwrap_or_default()
+                    )
+                    .size(kit::size::SMALL)
+                    .style(canopa_ui::muted)
+                    .wrapping(iced::widget::text::Wrapping::None),
+                    // A rotated display says so, on a line of its own.
+                    text(if monitor.transform == Transform::Normal {
+                        String::new()
+                    } else {
+                        transform_label(monitor.transform)
+                    })
+                    .size(kit::size::SMALL)
+                    .style(canopa_ui::muted)
+                    .wrapping(iced::widget::text::Wrapping::None),
+                ]
+                .spacing(3)
+                .align_x(Alignment::Center),
+            )
+            // A hairline apart, so displays that touch read as two.
+            .center_x((screen.width * geometry.fit - 2.0).max(1.0))
+            .center_y((screen.height * geometry.fit - 2.0).max(1.0))
+            .clip(true)
+            .style(move |theme: &Theme| {
+                let p = canopa_ui::colors(theme);
+                container::Style {
+                    background: Some(
+                        kit::blend(p.raised, p.accent, if dragged { 0.3 } else { 0.12 }).into(),
+                    ),
+                    border: iced::Border {
+                        color: kit::blend(p.raised, p.accent, if dragged { 0.95 } else { 0.55 }),
+                        width: if dragged { 2.0 } else { 1.0 },
+                        radius: 6.0.into(),
+                    },
+                    shadow: iced::Shadow {
+                        color: iced::Color {
+                            a: if dragged { 0.25 } else { 0.0 },
+                            ..iced::Color::BLACK
+                        },
+                        offset: iced::Vector::new(0.0, 4.0),
+                        blur_radius: 12.0,
+                    },
+                    ..Default::default()
+                }
+            });
+            let picture = iced::widget::mouse_area(picture)
+                .on_press(Message::ArrangementGrab(slot))
+                .interaction(if dragged {
+                    iced::mouse::Interaction::Grabbing
+                } else {
+                    iced::mouse::Interaction::Grab
+                });
+            canvas = canvas.push(column![
+                space().height((geometry.y + screen.y * geometry.fit + 1.0).max(0.0)),
+                row![
+                    space().width((geometry.x + screen.x * geometry.fit + 1.0).max(0.0)),
+                    picture
+                ]
+            ]);
+        }
+        let canvas = iced::widget::mouse_area(
+            container(canvas)
+                .width(arrangement::WIDTH)
+                .height(arrangement::HEIGHT)
+                .clip(true)
+                .style(|theme: &Theme| {
+                    let p = canopa_ui::colors(theme);
+                    container::Style {
+                        background: Some(kit::blend(p.background, p.surface, 0.4).into()),
+                        border: iced::Border {
+                            radius: kit::CONTROL_RADIUS.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+        )
+        .on_move(Message::ArrangementPointer)
+        .on_release(Message::ArrangementRelease)
+        .on_exit(Message::ArrangementRelease);
+        Some(container(canvas).center_x(Length::Fill).into())
+    }
+    fn displays(&self) -> Element<'_, Message> {
+        let reload = self.action(
+            "settings-button-reload-displays",
+            if self.refreshing {
+                fl!("settings-displays-refreshing")
+            } else {
+                fl!("settings-displays-reload-short")
+            },
+            (!self.busy && !self.refreshing && self.trial.is_none()).then_some(Message::Refresh),
+            false,
+        );
+        let several = self.arranged().len() > 1;
+        // One display has nothing to arrange: a quiet line instead of a card.
+        let mut body = if several {
+            let mut arrangement = column![kit::row(
+                fl!("settings-displays-arrangement-hint"),
+                None,
+                reload
+            )]
+            .spacing(14);
+            if let Some(picture) = self.arrangement() {
+                arrangement = arrangement.push(picture);
+            }
+            column![settings_group(
+                fl!("settings-displays-arrangement"),
+                arrangement
+            )]
+        } else {
+            column![kit::status(
+                kit::Notice::Info,
+                fl!("settings-displays-one-connected"),
+                Some(fl!("settings-displays-arrangement-single")),
+                Some(reload),
+            )]
+        }
+        .spacing(28);
         if self.display_profiles.prominent {
             body = body.push(self.profiles_view());
         }
         if self.monitors.is_empty() {
-            body = body.push(text(fl!("settings-displays-none")));
+            body = body.push(
+                container(text(fl!("settings-displays-none")))
+                    .padding(kit::ROW_PADDING)
+                    .width(Length::Fill)
+                    .style(kit::card),
+            );
         }
         for (index, monitor) in self.monitors.iter().enumerate() {
             let slot = MonitorSlot {
@@ -1653,193 +2430,340 @@ impl State {
                 .enumerate()
                 .map(|(index, mode)| (index, mode_label(mode)))
                 .collect();
-            let card = column![
-                text(format!(
-                    "{} · {} {}",
-                    monitor.name, monitor.make, monitor.model
-                ))
-                .size(20),
+            // Two monitors of the same kind are told apart by connector.
+            let product = self.monitor_name(&monitor.name);
+            let title = if self
+                .monitors
+                .iter()
+                .filter(|other| self.monitor_name(&other.name) == product)
+                .count()
+                > 1
+            {
+                format!("{product} ({})", monitor.name)
+            } else {
+                product
+            };
+            // Numbered as in the arrangement and on the screens themselves.
+            let title = if self.monitors.len() > 1 {
+                fl!(
+                    "settings-display-numbered",
+                    number = (index + 1).to_string(),
+                    name = title
+                )
+            } else {
+                title
+            };
+            let mut rows: Vec<Element<'_, Message>> = vec![
                 toggle(
                     format!("display-enabled-{index}"),
                     fl!("settings-display-enabled"),
                     monitor.enabled,
-                    Message::Enabled(slot, !monitor.enabled)
+                    Message::Enabled(slot, !monitor.enabled),
                 ),
-                row![
-                    column![
-                        text(fl!("settings-display-mode")),
-                        pick(
-                            format!("display-mode-{index}"),
-                            modes,
-                            monitor.mode,
-                            move |v| { Message::Mode(slot, v) }
-                        )
-                    ]
-                    .spacing(6),
-                    column![
-                        text(fl!("settings-display-rotation")),
-                        pick(
-                            format!("display-rotation-{index}"),
-                            transforms()
-                                .into_iter()
-                                .map(|v| (v, transform_label(v)))
-                                .collect(),
-                            Some(monitor.transform),
-                            move |v| Message::Rotation(slot, v)
-                        )
-                    ]
-                    .spacing(6)
-                ]
-                .spacing(18),
-                text(fl!(
-                    "settings-display-scale",
-                    scale = canopa_i18n::format::percent(monitor.scale * 100.)
-                )),
-                adjust(
-                    format!("display-scale-{index}"),
-                    0.5..=4.,
-                    monitor.scale,
-                    0.25,
-                    move |v| Message::Scale(slot, v)
-                ),
-                row![
-                    field(
-                        format!("display-x-{}", monitor.name),
-                        fl!("settings-display-x"),
-                        &self.positions[index].0,
-                        move |v| Message::Position(slot, true, v)
+                kit::row(
+                    fl!("settings-display-mode"),
+                    None,
+                    pick(
+                        format!("display-mode-{index}"),
+                        modes,
+                        monitor.mode,
+                        move |v| Message::Mode(slot, v),
                     ),
-                    field(
-                        format!("display-y-{}", monitor.name),
-                        fl!("settings-display-y"),
-                        &self.positions[index].1,
-                        move |v| Message::Position(slot, false, v)
-                    )
-                ]
-                .spacing(18),
-                text(fl!("settings-displays-positions-hint"))
-            ]
-            .spacing(10);
-            body = body.push(
-                container(card)
-                    .padding(16)
-                    .width(Length::Fill)
-                    .style(canopa_ui::surface),
-            );
+                ),
+                kit::row(
+                    fl!("settings-display-rotation"),
+                    None,
+                    pick(
+                        format!("display-rotation-{index}"),
+                        transforms()
+                            .into_iter()
+                            .map(|v| (v, transform_label(v)))
+                            .collect(),
+                        Some(monitor.transform),
+                        move |v| Message::Rotation(slot, v),
+                    ),
+                ),
+                kit::row(
+                    fl!("settings-display-scale-label"),
+                    None,
+                    pick(
+                        format!("display-scale-{index}"),
+                        {
+                            // Quarter steps, and the current scale if it is between them.
+                            let mut scales: Vec<f64> =
+                                (2..=16).map(|quarter| f64::from(quarter) * 0.25).collect();
+                            if !scales
+                                .iter()
+                                .any(|scale| (scale - monitor.scale).abs() < 1e-6)
+                            {
+                                scales.push(monitor.scale);
+                                scales.sort_by(f64::total_cmp);
+                            }
+                            scales
+                                .into_iter()
+                                .map(|scale| (scale, canopa_i18n::format::percent(scale * 100.)))
+                                .collect()
+                        },
+                        Some(monitor.scale),
+                        move |v| Message::Scale(slot, v),
+                    ),
+                ),
+            ];
+            // Typed positions for exact placement; dragging does the rest.
+            // A lone display has nowhere else to be.
+            if several {
+                rows.push(self.disclosure(
+                    "display-positions",
+                    fl!("settings-display-exact-position"),
+                    || {
+                        column![
+                            row![
+                                field(
+                                    format!("display-x-{}", monitor.name),
+                                    fl!("settings-display-x"),
+                                    &self.positions[index].0,
+                                    move |v| Message::Position(slot, true, v)
+                                ),
+                                field(
+                                    format!("display-y-{}", monitor.name),
+                                    fl!("settings-display-y"),
+                                    &self.positions[index].1,
+                                    move |v| Message::Position(slot, false, v)
+                                )
+                            ]
+                            .spacing(16),
+                            kit::caption(fl!("settings-displays-positions-hint")),
+                        ]
+                        .spacing(8)
+                        .into()
+                    },
+                ));
+            }
+            let card = kit::rows(rows);
+            // How changes apply, under the last display's card.
+            body = body.push(if index + 1 == self.monitors.len() {
+                noted_group(title, card, [fl!("settings-displays-apply-note")])
+            } else {
+                settings_group(title, card)
+            });
         }
         if !self.display_profiles.prominent {
             body = body.push(self.profiles_view());
         }
+        if crate::display::login_screen_available() {
+            // Copies what is applied, so an unsaved draft must be saved first.
+            body = body.push(settings_group(
+                fl!("settings-displays-login-title"),
+                kit::row(
+                    fl!("settings-displays-login-label"),
+                    Some(fl!("settings-displays-login-hint")),
+                    self.action(
+                        "settings-button-login-screen-displays",
+                        fl!("settings-displays-login-button"),
+                        (!self.busy
+                            && !self.refreshing
+                            && !self.display_dirty
+                            && self.trial.is_none()
+                            && !self.outputs.is_empty())
+                        .then_some(Message::LoginDisplays),
+                        false,
+                    ),
+                ),
+            ));
+        }
         body.into()
     }
     fn input_view(&self) -> Element<'_, Message> {
-        let keyboard = column![
-            field(
-                "settings-field-layouts-in-switch-order-for-example-us-fr",
-                fl!("settings-input-layouts"),
-                &self.input.value.layouts,
-                |v| Message::InputText(0, v)
+        let value = &self.input.value;
+        // A speed of zero is libinput's default; others are shown as an offset.
+        let speed = |speed: f64| {
+            if speed.abs() < 0.005 {
+                fl!("settings-input-speed-default")
+            } else {
+                format!(
+                    "{}{}",
+                    if speed > 0.0 { "+" } else { "\u{2212}" },
+                    canopa_i18n::format::percent(speed.abs() * 100.0)
+                )
+            }
+        };
+        // One row per layout, by name; the codes stay editable below.
+        let layouts = value.layouts.clone();
+        let codes = crate::keyboard_layouts::codes(&value.layouts);
+        let single = codes.len() <= 1;
+        let mut keyboard_rows: Vec<Element<'_, Message>> = codes
+            .iter()
+            .enumerate()
+            .map(|(index, code)| {
+                let remaining = crate::keyboard_layouts::without(&layouts, code);
+                let mut lead = vec![text(crate::keyboard_layouts::name(code)).into()];
+                // The first layout is the one in use at login.
+                if index == 0 {
+                    lead.push(kit::badge(fl!("settings-input-layout-first")));
+                }
+                // The only layout cannot be removed.
+                direction::row([
+                    direction::row(lead)
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .width(Length::Fill)
+                        .into(),
+                    if single {
+                        space().into()
+                    } else {
+                        self.treated_action(
+                            format!("settings-input-layout-remove-{code}"),
+                            fl!("settings-input-layout-remove"),
+                            Some(Message::InputText(0, remaining)),
+                            kit::Treatment::Destructive,
+                        )
+                    },
+                ])
+                .spacing(16)
+                .align_y(Alignment::Center)
+                .into()
+            })
+            .collect();
+        keyboard_rows.push(kit::row(
+            fl!("settings-input-layouts-add-label"),
+            Some(if single {
+                fl!("settings-input-layout-only")
+            } else {
+                fl!("settings-input-layouts-switch")
+            }),
+            hinted_choice(
+                "settings-input-layout-add",
+                crate::keyboard_layouts::all()
+                    .iter()
+                    .map(|layout| layout.name.clone())
+                    .collect(),
+                None,
+                fl!("settings-input-layouts-add"),
+                move |name| {
+                    let code = crate::keyboard_layouts::all()
+                        .iter()
+                        .find(|layout| layout.name == name)
+                        .map_or(name.as_str(), |layout| layout.code.as_str());
+                    Message::InputText(0, crate::keyboard_layouts::with(&layouts, code))
+                },
             ),
-            field(
-                "settings-field-variants-optional-in-the-same-order",
-                fl!("settings-input-variants"),
-                &self.input.value.variants,
-                |v| Message::InputText(1, v)
+        ));
+        keyboard_rows.push(self.disclosure(
+            "input-advanced",
+            fl!("settings-input-advanced"),
+            || {
+                column![
+                    field(
+                        "settings-field-layouts-in-switch-order-for-example-us-fr",
+                        fl!("settings-input-layouts-codes"),
+                        &value.layouts,
+                        |v| Message::InputText(0, v)
+                    ),
+                    row![
+                        field(
+                            "settings-field-variants-optional-in-the-same-order",
+                            fl!("settings-input-variants"),
+                            &value.variants,
+                            |v| Message::InputText(1, v)
+                        ),
+                        field(
+                            "settings-field-xkb-options-for-example-grp-alt-shift-toggle",
+                            fl!("settings-input-options"),
+                            &value.options,
+                            |v| Message::InputText(2, v)
+                        ),
+                    ]
+                    .spacing(16),
+                ]
+                .spacing(12)
+                .into()
+            },
+        ));
+        let keyboard = kit::rows(keyboard_rows.into_iter().chain([
+            kit::slider_row(
+                fl!("settings-input-repeat-delay-label"),
+                fl!(
+                    "settings-input-repeat-delay-value",
+                    delay = value.repeat_delay
+                ),
+                adjust(
+                    "repeat-delay",
+                    100.0..=2000.,
+                    f64::from(value.repeat_delay),
+                    50.,
+                    |v| Message::InputNumber(0, v),
+                ),
             ),
-            field(
-                "settings-field-xkb-options-for-example-grp-alt-shift-toggle",
-                fl!("settings-input-options"),
-                &self.input.value.options,
-                |v| Message::InputText(2, v)
+            kit::slider_row(
+                fl!("settings-input-repeat-rate-label"),
+                fl!("settings-input-repeat-rate-value", rate = value.repeat_rate),
+                adjust(
+                    "repeat-rate",
+                    1.0..=100.,
+                    f64::from(value.repeat_rate),
+                    1.,
+                    |v| Message::InputNumber(1, v),
+                ),
             ),
-            text(fl!(
-                "settings-input-repeat-delay",
-                delay = self.input.value.repeat_delay
-            )),
-            adjust(
-                "repeat-delay",
-                100.0..=2000.,
-                f64::from(self.input.value.repeat_delay),
-                50.,
-                |v| Message::InputNumber(0, v)
-            ),
-            text(fl!(
-                "settings-input-repeat-rate",
-                rate = self.input.value.repeat_rate
-            )),
-            adjust(
-                "repeat-rate",
-                1.0..=100.,
-                f64::from(self.input.value.repeat_rate),
-                1.,
-                |v| Message::InputNumber(1, v)
-            ),
-        ]
-        .spacing(10);
-        let mouse = column![
-            text(fl!(
-                "settings-input-pointer-speed",
-                speed = canopa_i18n::format::decimal(self.input.value.mouse_speed, 2, true)
-            )),
-            adjust(
-                "mouse-speed",
-                -1.0..=1.,
-                self.input.value.mouse_speed,
-                0.05,
-                |v| Message::InputNumber(2, v)
+        ]));
+        let mouse = kit::rows([
+            kit::slider_row(
+                fl!("settings-input-pointer-speed-label"),
+                speed(value.mouse_speed),
+                adjust("mouse-speed", -1.0..=1., value.mouse_speed, 0.05, |v| {
+                    Message::InputNumber(2, v)
+                }),
             ),
             toggle(
                 "input-flag-0",
                 fl!("settings-input-left-handed"),
-                self.input.value.mouse_left_handed,
-                Message::InputFlag(0, !self.input.value.mouse_left_handed)
+                value.mouse_left_handed,
+                Message::InputFlag(0, !value.mouse_left_handed),
             ),
             toggle(
                 "input-flag-1",
                 fl!("settings-input-mouse-natural-scroll"),
-                self.input.value.mouse_natural_scroll,
-                Message::InputFlag(1, !self.input.value.mouse_natural_scroll)
+                value.mouse_natural_scroll,
+                Message::InputFlag(1, !value.mouse_natural_scroll),
             ),
-        ]
-        .spacing(10);
-        let touchpad = column![
-            text(fl!(
-                "settings-input-touchpad-speed",
-                speed = canopa_i18n::format::decimal(self.input.value.touchpad_speed, 2, true)
-            )),
-            adjust(
-                "touchpad-speed",
-                -1.0..=1.,
-                self.input.value.touchpad_speed,
-                0.05,
-                |v| Message::InputNumber(3, v)
+        ]);
+        let touchpad = kit::rows([
+            kit::slider_row(
+                fl!("settings-input-touchpad-speed-label"),
+                speed(value.touchpad_speed),
+                adjust(
+                    "touchpad-speed",
+                    -1.0..=1.,
+                    value.touchpad_speed,
+                    0.05,
+                    |v| Message::InputNumber(3, v),
+                ),
             ),
             toggle(
                 "input-flag-2",
                 fl!("settings-input-tap"),
-                self.input.value.touchpad_tap,
-                Message::InputFlag(2, !self.input.value.touchpad_tap)
+                value.touchpad_tap,
+                Message::InputFlag(2, !value.touchpad_tap),
             ),
             toggle(
                 "input-flag-3",
                 fl!("settings-input-touchpad-natural-scroll"),
-                self.input.value.touchpad_natural_scroll,
-                Message::InputFlag(3, !self.input.value.touchpad_natural_scroll)
+                value.touchpad_natural_scroll,
+                Message::InputFlag(3, !value.touchpad_natural_scroll),
             ),
             toggle(
                 "input-flag-4",
                 fl!("settings-input-disable-while-typing"),
-                self.input.value.touchpad_disable_while_typing,
-                Message::InputFlag(4, !self.input.value.touchpad_disable_while_typing)
-            )
-        ]
-        .spacing(10);
+                value.touchpad_disable_while_typing,
+                Message::InputFlag(4, !value.touchpad_disable_while_typing),
+            ),
+        ]);
         column![
             settings_group(fl!("settings-input-keyboard"), keyboard),
             settings_group(fl!("settings-input-mouse"), mouse),
             settings_group(fl!("settings-input-touchpad"), touchpad)
         ]
-        .spacing(14)
+        .spacing(28)
         .into()
     }
     /// High contrast, larger text and cursor, and motion, over the
@@ -1855,210 +2779,354 @@ impl State {
             .chain(crate::input::CURSOR_SIZES[1..].iter().copied().map(Some))
             .map(|size| (size, cursor_label(size)))
             .collect();
-        let cursor_control: Element<'_, Message> = if self.paths.active() {
-            pick(
-                "settings-cursor-size",
-                cursor_options,
-                Some(cursor),
-                Message::CursorSize,
+        let cursor_row = if self.paths.active() {
+            kit::row(
+                fl!("settings-a11y-cursor-size-label"),
+                None,
+                pick(
+                    "settings-cursor-size",
+                    cursor_options,
+                    Some(cursor),
+                    Message::CursorSize,
+                ),
             )
         } else {
-            text(fl!("settings-cursor-size-needs-session"))
-                .size(14)
-                .style(canopa_ui::muted)
-                .into()
+            kit::row(
+                fl!("settings-a11y-cursor-size-label"),
+                Some(fl!("settings-cursor-size-needs-session")),
+                space(),
+            )
         };
-        let seeing = column![
-            toggle(
+        let seeing = kit::rows([
+            described_toggle(
                 "settings-high-contrast",
                 fl!("settings-a11y-high-contrast"),
+                Some(fl!("settings-a11y-high-contrast-hint")),
                 values.high_contrast,
-                Message::HighContrast(!values.high_contrast)
+                Message::HighContrast(!values.high_contrast),
             ),
-            text(fl!("settings-a11y-high-contrast-hint"))
-                .size(14)
-                .style(canopa_ui::muted),
-            text(fl!(
-                "settings-a11y-text-scale",
-                scale = canopa_i18n::format::percent(f64::from(values.text_scale))
-            )),
-            adjust(
-                "settings-accessibility-text-scale",
-                100.0..=150.0,
-                f64::from(values.text_scale),
-                5.0,
-                Message::TextScale
+            // Text size in the steps people choose between; a size set in
+            // the file stays listed.
+            kit::row(
+                fl!("settings-a11y-text-size-label"),
+                None,
+                pick(
+                    "settings-accessibility-text-scale",
+                    {
+                        let mut sizes = vec![100_u16, 110, 125, 150];
+                        if !sizes.contains(&values.text_scale) {
+                            sizes.push(values.text_scale);
+                            sizes.sort_unstable();
+                        }
+                        sizes
+                            .into_iter()
+                            .map(|size| {
+                                let percent = canopa_i18n::format::percent(f64::from(size));
+                                (
+                                    size,
+                                    if size == 100 {
+                                        fl!("settings-a11y-text-size-default", size = percent)
+                                    } else {
+                                        percent
+                                    },
+                                )
+                            })
+                            .collect()
+                    },
+                    Some(values.text_scale),
+                    |size| Message::TextScale(f64::from(size)),
+                ),
             ),
-            text(fl!("settings-a11y-cursor-size")),
-            cursor_control,
-        ]
-        .spacing(12);
-        let motion = column![
-            toggle(
+            cursor_row,
+        ]);
+        let motion = kit::rows([
+            described_toggle(
                 "settings-accessibility-reduced-motion",
                 fl!("settings-a11y-reduced-motion"),
+                Some(fl!("settings-a11y-reduced-motion-hint")),
                 values.reduced_motion,
-                Message::ReducedMotion(!values.reduced_motion)
+                Message::ReducedMotion(!values.reduced_motion),
             ),
             match self.compositor_motion {
-                Some(reduced) => self.action(
+                Some(reduced) => described_toggle(
                     "settings-accessibility-compositor-motion",
-                    if reduced {
-                        fl!("settings-motion-use-niri")
-                    } else {
-                        fl!("settings-motion-reduce")
-                    },
-                    Some(Message::CompositorMotion(!reduced)),
-                    false,
+                    fl!("settings-motion-windows-label"),
+                    Some(fl!("settings-motion-windows-hint")),
+                    reduced,
+                    Message::CompositorMotion(!reduced),
                 ),
-                None => text(fl!("settings-motion-needs-session"))
-                    .size(14)
-                    .style(canopa_ui::muted)
-                    .into(),
+                None => kit::caption(fl!("settings-motion-needs-session")),
             },
-        ]
-        .spacing(12);
-        let reader = text(fl!("settings-a11y-screen-reader-hint"))
-            .size(14)
-            .style(canopa_ui::muted);
+        ]);
         column![
             settings_group(fl!("settings-a11y-seeing"), seeing),
             settings_group(fl!("settings-a11y-motion"), motion),
-            settings_group(fl!("settings-a11y-screen-reader"), reader),
+            settings_group(
+                fl!("settings-a11y-screen-reader"),
+                match orca() {
+                    Some(_) => kit::row(
+                        fl!("settings-a11y-orca-label"),
+                        Some(fl!("settings-a11y-orca-hint")),
+                        self.action(
+                            "settings-button-start-orca",
+                            fl!("settings-a11y-orca-start"),
+                            Some(Message::StartScreenReader),
+                            false,
+                        ),
+                    ),
+                    None => kit::row(
+                        fl!("settings-a11y-orca-label"),
+                        Some(fl!("settings-a11y-orca-missing")),
+                        space(),
+                    ),
+                }
+            ),
         ]
-        .spacing(16)
+        .spacing(28)
         .into()
     }
     fn personal_view(&self) -> Element<'_, Message> {
-        let appearance = column![
+        let values = &self.personal.value.values;
+        let light = values.appearance.color_scheme == canopa_theme::ColorScheme::Light;
+        let typed = self.personal.value.accent.trim().to_lowercase();
+        // Accent presets, each tuned for the dark and the light appearance.
+        let presets: [(
+            &'static str,
+            String,
+            Option<&'static str>,
+            Option<&'static str>,
+        ); 8] = [
+            ("default", fl!("settings-accent-default"), None, None),
+            (
+                "blue",
+                fl!("settings-accent-blue"),
+                Some("#8ab4f8"),
+                Some("#1c5fb0"),
+            ),
+            (
+                "purple",
+                fl!("settings-accent-purple"),
+                Some("#c6a0f6"),
+                Some("#6a3fa0"),
+            ),
+            (
+                "pink",
+                fl!("settings-accent-pink"),
+                Some("#f5a3c7"),
+                Some("#a3306b"),
+            ),
+            (
+                "red",
+                fl!("settings-accent-red"),
+                Some("#f38ba8"),
+                Some("#b0203f"),
+            ),
+            (
+                "orange",
+                fl!("settings-accent-orange"),
+                Some("#f5a97f"),
+                Some("#a8480f"),
+            ),
+            (
+                "yellow",
+                fl!("settings-accent-yellow"),
+                Some("#eed49f"),
+                Some("#7d5d00"),
+            ),
+            (
+                "teal",
+                fl!("settings-accent-teal"),
+                Some("#8bd5ca"),
+                Some("#126b63"),
+            ),
+        ];
+        let swatches =
+            direction::row(presets.into_iter().map(|(key, name, dark, bright)| {
+                let hex = if light { bright } else { dark };
+                let selected = match hex {
+                    None => typed.is_empty(),
+                    Some(hex) => typed == hex,
+                };
+                let color = hex.and_then(canopa_theme::Rgb::parse_hex);
+                let choose = Message::PersonalText(0, hex.unwrap_or_default().to_owned());
+                semantic(
+                    Node::button(name.clone())
+                        .key(format!("settings-accent-{key}"))
+                        .toggled(selected)
+                        .on_click(Some(choose.clone())),
+                    focus::control(
+                        format!("settings-accent-{key}"),
+                        Some(choose.clone()),
+                        None,
+                        None,
+                        false,
+                        iced::widget::button(container(space().width(20).height(20)).style(
+                            move |theme: &Theme| {
+                                container::Style {
+                                    background: Some(
+                                        color
+                                            .map(canopa_ui::color)
+                                            .unwrap_or(canopa_ui::color(
+                                                canopa_theme::Appearance {
+                                                    color_scheme: if light {
+                                                        canopa_theme::ColorScheme::Light
+                                                    } else {
+                                                        canopa_theme::ColorScheme::Dark
+                                                    },
+                                                    ..Default::default()
+                                                }
+                                                .palette()
+                                                .accent,
+                                            ))
+                                            .into(),
+                                    ),
+                                    border: iced::Border {
+                                        color: kit::hairline(theme),
+                                        width: 1.0,
+                                        radius: u32::MAX.into(),
+                                    },
+                                    ..Default::default()
+                                }
+                            },
+                        ))
+                        .on_press(choose)
+                        .padding(3)
+                        .style(move |theme: &Theme, status| iced::widget::button::Style {
+                            background: None,
+                            border: iced::Border {
+                                color: if selected {
+                                    canopa_ui::colors(theme).text
+                                } else if status == iced::widget::button::Status::Hovered {
+                                    kit::hairline(theme)
+                                } else {
+                                    iced::Color::TRANSPARENT
+                                },
+                                width: 2.0,
+                                radius: u32::MAX.into(),
+                            },
+                            ..Default::default()
+                        }),
+                    ),
+                )
+            }))
+            .spacing(6)
+            .align_y(Alignment::Center);
+        let appearance = kit::rows([
             toggle(
                 "light",
                 fl!("settings-personal-light"),
-                self.personal.value.values.appearance.color_scheme
-                    == canopa_theme::ColorScheme::Light,
-                Message::Light(
-                    self.personal.value.values.appearance.color_scheme
-                        != canopa_theme::ColorScheme::Light
-                )
+                light,
+                Message::Light(!light),
             ),
-            container(field(
-                "settings-field-accent-color-optional-rrggbb",
-                fl!("settings-personal-accent"),
-                &self.personal.value.accent,
-                |v| { Message::PersonalText(0, v) }
-            ))
-            .max_width(300),
-            text(fl!(
-                "settings-personal-text-scale",
-                scale =
-                    canopa_i18n::format::percent(f64::from(self.personal.value.values.text_scale))
-            )),
-            adjust(
-                "settings-text-scale",
-                100.0..=150.0,
-                f64::from(self.personal.value.values.text_scale),
-                5.0,
-                Message::TextScale
+            column![
+                kit::row(fl!("settings-personal-accent-label"), None, swatches),
+                kit::row(
+                    fl!("settings-personal-accent-custom"),
+                    Some(fl!("settings-personal-accent-custom-hint")),
+                    bare_field(
+                        "settings-field-accent-color-optional-rrggbb",
+                        fl!("settings-personal-accent"),
+                        "#RRGGBB",
+                        &self.personal.value.accent,
+                        |v| Message::PersonalText(0, v),
+                        Length::Fixed(kit::PICK_WIDTH),
+                    ),
+                ),
+            ]
+            .spacing(14)
+            .into(),
+            kit::row(
+                fl!("settings-personal-wallpaper-label"),
+                Some(fl!("settings-personal-wallpaper-hint")),
+                row![
+                    self.action(
+                        "settings-button-wallpaper-file",
+                        fl!("settings-personal-wallpaper-file"),
+                        Some(Message::WallpaperFile),
+                        false,
+                    ),
+                    self.action(
+                        "settings-button-choose-wallpaper",
+                        fl!("settings-personal-wallpaper"),
+                        Some(Message::Wallpaper),
+                        true,
+                    ),
+                ]
+                .spacing(8),
             ),
-            toggle(
-                "settings-reduced-motion",
-                fl!("settings-personal-reduced-motion"),
-                self.personal.value.values.reduced_motion,
-                Message::ReducedMotion(!self.personal.value.values.reduced_motion)
+        ]);
+        let lockscreen = kit::rows([
+            kit::slider_row(
+                fl!("settings-personal-dimming-label"),
+                canopa_i18n::format::percent(f64::from(values.lock.dim)),
+                adjust(
+                    "lock-dim",
+                    0.0..=100.,
+                    f64::from(values.lock.dim),
+                    1.,
+                    Message::Dim,
+                ),
             ),
-            self.action(
-                "settings-button-choose-wallpaper",
-                fl!("settings-personal-wallpaper"),
-                Some(Message::Wallpaper),
-                true
+            kit::row(
+                fl!("settings-personal-lock-widgets-label"),
+                Some(fl!("settings-personal-lock-widgets-hint")),
+                self.action(
+                    "settings-button-edit-lock-screen-widgets",
+                    fl!("settings-personal-edit-lock-widgets"),
+                    Some(Message::OpenLockWidgetEditor),
+                    false,
+                ),
             ),
-            text(fl!(
-                "settings-personal-wallpaper-hint",
-                folder = "~/Pictures/Wallpapers"
-            ))
-            .size(14)
-            .style(canopa_ui::muted),
-        ]
-        .spacing(12);
-        let lockscreen = column![
-            field(
-                "settings-field-clock-format",
-                fl!("settings-personal-clock-format"),
-                &self.personal.value.values.lock.clock_format,
-                |v| { Message::PersonalText(1, v) }
-            ),
-            field(
-                "settings-field-date-format",
-                fl!("settings-personal-date-format"),
-                &self.personal.value.values.lock.date_format,
-                |v| { Message::PersonalText(2, v) }
-            ),
-            text(fl!("settings-personal-formats-hint"))
-                .size(14)
-                .style(canopa_ui::muted),
-            field(
-                "settings-field-font-family",
-                fl!("settings-personal-font"),
-                &self.personal.value.values.lock.font,
-                |v| { Message::PersonalText(3, v) }
-            ),
-            field(
-                "settings-field-avatar-image-optional-absolute-path",
-                fl!("settings-personal-avatar"),
-                &self
-                    .personal
-                    .value
-                    .values
-                    .lock
-                    .avatar
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                |v| Message::PersonalText(4, v)
-            ),
-            text(fl!(
-                "settings-personal-dimming",
-                dim = canopa_i18n::format::percent(f64::from(self.personal.value.values.lock.dim))
-            )),
-            adjust(
-                "lock-dim",
-                0.0..=100.,
-                f64::from(self.personal.value.values.lock.dim),
-                1.,
-                Message::Dim
-            ),
-            self.action(
-                "settings-button-edit-lock-screen-widgets",
-                fl!("settings-personal-edit-lock-widgets"),
-                Some(Message::OpenLockWidgetEditor),
-                false
-            )
-        ]
-        .spacing(12);
-        let motion = if let Some(reduced) = self.compositor_motion {
-            self.action(
-                "settings-button-compositor-motion",
-                if reduced {
-                    fl!("settings-motion-use-niri")
-                } else {
-                    fl!("settings-motion-reduce")
+            self.disclosure(
+                "personal-lock",
+                fl!("settings-personal-lock-advanced"),
+                || {
+                    column![
+                        row![
+                            field(
+                                "settings-field-clock-format",
+                                fl!("settings-personal-clock-format"),
+                                &values.lock.clock_format,
+                                |v| { Message::PersonalText(1, v) }
+                            ),
+                            field(
+                                "settings-field-date-format",
+                                fl!("settings-personal-date-format"),
+                                &values.lock.date_format,
+                                |v| { Message::PersonalText(2, v) }
+                            ),
+                        ]
+                        .spacing(16),
+                        kit::caption(fl!("settings-personal-formats-hint")),
+                        field(
+                            "settings-field-font-family",
+                            fl!("settings-personal-font"),
+                            &values.lock.font,
+                            |v| Message::PersonalText(3, v),
+                        ),
+                        field(
+                            "settings-field-avatar-image-optional-absolute-path",
+                            fl!("settings-personal-avatar"),
+                            &values
+                                .lock
+                                .avatar
+                                .as_ref()
+                                .map(|p| p.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                            |v| Message::PersonalText(4, v),
+                        ),
+                    ]
+                    .spacing(12)
+                    .into()
                 },
-                Some(Message::CompositorMotion(!reduced)),
-                false,
-            )
-        } else {
-            text(fl!("settings-motion-needs-session"))
-                .size(14)
-                .style(canopa_ui::muted)
-                .into()
-        };
+            ),
+        ]);
         column![
             settings_group(fl!("settings-personal-appearance"), appearance),
             settings_group(fl!("settings-personal-lock-screen"), lockscreen),
             settings_group(fl!("settings-window-layout"), self.window_layout_view()),
-            settings_group(fl!("settings-personal-motion"), motion),
         ]
-        .spacing(14)
+        .spacing(28)
         .into()
     }
 }
@@ -2069,12 +3137,12 @@ impl State {
         let layout = match &self.window_layout {
             None => {
                 return text(fl!("settings-motion-needs-session"))
-                    .size(14)
+                    .size(13)
                     .style(canopa_ui::muted)
                     .into();
             }
             Some(Err(error)) => {
-                return text(error.clone()).size(14).style(canopa_ui::muted).into();
+                return text(error.clone()).size(13).style(canopa_ui::muted).into();
             }
             Some(Ok(layout)) => *layout,
         };
@@ -2114,20 +3182,18 @@ impl State {
                 (width, label)
             })
             .collect();
-        let labelled = |label: String, control: Element<'static, Message>| {
-            row![text(label).width(Length::Fill), control]
-                .spacing(12)
-                .align_y(iced::Alignment::Center)
-        };
-        let mut content = column![
+        // Niri takes these at once, unlike the rest of the page.
+        let labelled =
+            |label: String, control: Element<'static, Message>| kit::row(label, None, control);
+        let mut content = vec![
             labelled(
                 fl!("settings-window-gaps"),
                 pick(
                     "settings-window-gaps",
                     gaps,
                     Some(current.gaps),
-                    move |gaps| { Message::WindowLayout(Some(WindowLayout { gaps, ..current })) }
-                )
+                    move |gaps| Message::WindowLayout(Some(WindowLayout { gaps, ..current })),
+                ),
             ),
             labelled(
                 fl!("settings-window-center"),
@@ -2135,10 +3201,8 @@ impl State {
                     "settings-window-center",
                     center,
                     Some(current.center),
-                    move |center| {
-                        Message::WindowLayout(Some(WindowLayout { center, ..current }))
-                    }
-                )
+                    move |center| Message::WindowLayout(Some(WindowLayout { center, ..current })),
+                ),
             ),
             labelled(
                 fl!("settings-window-width"),
@@ -2146,20 +3210,19 @@ impl State {
                     "settings-window-width",
                     width,
                     Some(current.width),
-                    move |width| { Message::WindowLayout(Some(WindowLayout { width, ..current })) }
-                )
+                    move |width| Message::WindowLayout(Some(WindowLayout { width, ..current })),
+                ),
             ),
-        ]
-        .spacing(10);
+        ];
         if layout.is_some() {
-            content = content.push(self.action(
+            content.push(self.action(
                 "settings-button-window-layout-reset",
                 fl!("settings-window-layout-reset"),
                 Some(Message::WindowLayout(None)),
                 false,
             ));
         }
-        content.into()
+        kit::rows(content)
     }
 }
 
@@ -2170,6 +3233,16 @@ fn field<'a>(
     value: &str,
     change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
 ) -> Element<'a, Message> {
+    hinted_field(key, label, "", value, change)
+}
+/// A labelled text field showing `placeholder` while empty.
+fn hinted_field<'a>(
+    key: impl Into<String>,
+    label: impl Into<String>,
+    placeholder: &str,
+    value: &str,
+    change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
+) -> Element<'a, Message> {
     let key = key.into();
     let label = label.into();
     semantic(
@@ -2177,22 +3250,146 @@ fn field<'a>(
             .key(format!("{key}-field"))
             .on_text(change.clone()),
         column![
-            text(label),
-            text_input("", value)
+            text(label).size(kit::size::BODY),
+            text_input(placeholder, value)
                 .id(key)
                 .on_input(change)
                 .align_x(direction::start())
-                .padding(10)
+                .padding([6, 12])
+                .style(kit::text_input_style)
         ]
-        .spacing(6)
+        .spacing(7)
         .width(Length::Fill),
     )
 }
-fn heading<'a>(label: impl Into<String>, size: u32) -> iced::widget::Text<'a> {
-    text(label.into()).size(size).font(Font {
-        weight: Weight::Semibold,
-        ..Font::DEFAULT
+/// A [`bare_field`] for a key combination: compact and monospaced.
+fn key_field<'a>(
+    key: impl Into<String>,
+    label: impl Into<String>,
+    placeholder: &str,
+    value: &str,
+    change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
+) -> Element<'a, Message> {
+    let key = key.into();
+    semantic(
+        Node::text_input(label.into(), value)
+            .key(format!("{key}-field"))
+            .on_text(change.clone()),
+        text_input(placeholder, value)
+            .id(key)
+            .on_input(change)
+            .align_x(direction::start())
+            .padding([4, 10])
+            .size(kit::size::CAPTION)
+            .font(iced::Font::MONOSPACE)
+            .width(Length::Fixed(200.))
+            .style(kit::text_input_style),
+    )
+}
+/// A text field named for assistive technologies only, for rows whose
+/// visible label leads the row. `key` is its focus and accessibility identity.
+fn bare_field<'a>(
+    key: impl Into<String>,
+    label: impl Into<String>,
+    placeholder: &str,
+    value: &str,
+    change: impl Fn(String) -> Message + Clone + Send + Sync + 'static,
+    width: Length,
+) -> Element<'a, Message> {
+    let key = key.into();
+    semantic(
+        Node::text_input(label.into(), value)
+            .key(format!("{key}-field"))
+            .on_text(change.clone()),
+        text_input(placeholder, value)
+            .id(key)
+            .on_input(change)
+            .align_x(direction::start())
+            .padding([6, 12])
+            .width(width)
+            .style(kit::text_input_style),
+    )
+}
+/// Open the wallpaper picker on `images`, or on the pictures it finds.
+fn wallpaper_picker(images: Vec<String>) -> Task<Message> {
+    let (send, receive) = iced::futures::channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let mut args = vec!["pick".to_owned()];
+        args.extend(images);
+        let result = crate::storage::application(companion("canopa-wallpaper"), &args)
+            .map_err(|error| format!("{error:#}"));
+        let _ = send.send(result);
+    });
+    Task::perform(
+        async move {
+            receive
+                .await
+                .unwrap_or_else(|_| Err(fl!("settings-wallpaper-stopped")))
+        },
+        Message::WallpaperFinished,
+    )
+}
+/// A monitor as people know it: its product name without the company's
+/// legal suffix or a repeated brand, the laptop's own screen, or the kind of
+/// connector when the monitor does not say what it is.
+fn monitor_title(make: &str, model: &str, connector: &str) -> String {
+    let kind = connector.split('-').next().unwrap_or_default();
+    if matches!(kind, "eDP" | "LVDS" | "DSI") {
+        return fl!("settings-display-built-in");
+    }
+    // Nested and headless compositors draw into a window or memory.
+    if make == "Smithay" || matches!(kind, "winit" | "headless" | "WL" | "X11") {
+        return fl!("settings-display-virtual");
+    }
+    let make = make
+        .trim()
+        .trim_end_matches('.')
+        .trim_end_matches(" Inc")
+        .trim_end_matches(',')
+        .trim_end_matches(" Corporation")
+        .trim_end_matches(" Co., Ltd")
+        .trim();
+    let model = model.trim();
+    let unknown = |value: &str| value.is_empty() || value.eq_ignore_ascii_case("unknown");
+    let product = match (unknown(make), unknown(model)) {
+        (true, true) => String::new(),
+        (true, false) => model.to_owned(),
+        (false, true) => make.to_owned(),
+        // "Dell Inc. DELL U2720Q" reads "Dell U2720Q".
+        (false, false) => {
+            let model = model
+                .strip_prefix(&make.to_uppercase())
+                .or_else(|| model.strip_prefix(make))
+                .map_or(model, str::trim_start);
+            format!("{make} {model}")
+        }
+    };
+    if !product.is_empty() {
+        return product;
+    }
+    match kind {
+        "HDMI" => fl!("settings-display-hdmi"),
+        "DP" => fl!("settings-display-displayport"),
+        _ => connector.to_owned(),
+    }
+}
+
+/// The Orca executable on `PATH`, looked up once.
+fn orca() -> Option<&'static std::path::Path> {
+    static ORCA: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    ORCA.get_or_init(|| {
+        std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|directory| directory.join("orca"))
+                .find(|candidate| candidate.is_file())
+        })
     })
+    .as_deref()
+}
+fn heading<'a>(label: impl Into<String>, size: u32) -> iced::widget::Text<'a> {
+    text(label.into())
+        .size(size)
+        .font(kit::strong_font(Weight::Semibold))
 }
 
 fn settings_group<'a>(
@@ -2202,33 +3399,36 @@ fn settings_group<'a>(
     let label = label.into();
     semantic(
         Node::group(label.clone()),
-        container(
-            column![
-                semantic(
-                    Node::heading(label.clone(), 2),
-                    heading(label, 18)
+        column![
+            semantic(
+                Node::heading(label.clone(), 2),
+                container(
+                    heading(label, kit::size::SECTION)
                         .width(Length::Fill)
                         .align_x(direction::text_start())
-                ),
-                content.into()
-            ]
-            .spacing(12),
-        )
-        .padding(16)
-        .width(Length::Fill)
-        .style(canopa_ui::surface),
+                )
+            ),
+            container(content)
+                .padding(kit::ROW_PADDING)
+                .width(Length::Fill)
+                .style(kit::card),
+        ]
+        .spacing(10),
     )
 }
 
-fn settings_rule(theme: &Theme) -> rule::Style {
-    rule::Style {
-        color: canopa_ui::colors(theme).border,
-        radius: 0.0.into(),
-        fill_mode: rule::FillMode::Full,
-        snap: true,
+/// A [`settings_group`] with notes about the whole section under its card.
+fn noted_group<'a>(
+    label: impl Into<String>,
+    content: impl Into<Element<'a, Message>>,
+    notes: impl IntoIterator<Item = String>,
+) -> Element<'a, Message> {
+    let mut section = column![settings_group(label, content)].spacing(8);
+    for note in notes {
+        section = section.push(kit::footnote(note));
     }
+    section.into()
 }
-
 /// A push button. `key` is a stable focus and accessibility identity that
 /// never depends on the (translatable) label.
 fn button<'a>(
@@ -2252,11 +3452,21 @@ fn button<'a>(
             None,
             None,
             preserve_disabled,
-            canopa_ui::action(text(label), message, treatment, false)
+            styled_button(text(label), message, treatment.into())
                 .width(width)
-                .padding([8, 12]),
+                .padding([7, 14]),
         ),
     )
+}
+/// A button in one of the Settings treatments.
+fn styled_button<'a>(
+    content: impl Into<Element<'a, Message>>,
+    message: Option<Message>,
+    treatment: kit::Treatment,
+) -> iced::widget::Button<'a, Message> {
+    iced::widget::button(content)
+        .on_press_maybe(message)
+        .style(move |theme, status| kit::button_style(theme, status, treatment))
 }
 fn toggle<'a>(
     id: impl Into<String>,
@@ -2264,10 +3474,31 @@ fn toggle<'a>(
     value: bool,
     message: Message,
 ) -> Element<'a, Message> {
+    described_toggle(id, label, None, value, message)
+}
+/// A [`toggle`] with an explanation under its name.
+fn described_toggle<'a>(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    description: Option<String>,
+    value: bool,
+    message: Message,
+) -> Element<'a, Message> {
     let id = id.into();
     let label = label.into();
+    let press = message.clone();
+    let mut lead = column![
+        text(label.clone())
+            .size(kit::size::BODY)
+            .width(Length::Fill)
+            .align_x(direction::text_start())
+    ]
+    .spacing(2);
+    if let Some(description) = description {
+        lead = lead.push(kit::caption(description));
+    }
     semantic(
-        Node::check_box(label.clone(), value)
+        Node::switch(label.clone(), value)
             .key(id.clone())
             .on_click(Some(message.clone())),
         focus::control(
@@ -2276,9 +3507,59 @@ fn toggle<'a>(
             None,
             None,
             false,
-            checkbox(value)
-                .label(label)
-                .on_toggle(move |_| message.clone()),
+            // The label toggles too, like the switch it names.
+            direction::row([
+                iced::widget::mouse_area(lead.width(Length::Fill))
+                    .on_press(press)
+                    .interaction(iced::mouse::Interaction::Pointer)
+                    .into(),
+                iced::widget::toggler(value)
+                    .size(20)
+                    .on_toggle(move |_| message.clone())
+                    .style(kit::switch_style)
+                    .into(),
+            ])
+            .spacing(16)
+            .align_y(Alignment::Center)
+            .width(Length::Fill),
+        ),
+    )
+}
+/// An on/off choice drawn as a pill, for compact sets such as weekdays.
+fn chip<'a>(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    value: bool,
+    message: Message,
+) -> Element<'a, Message> {
+    let id = id.into();
+    let label = label.into();
+    semantic(
+        Node::switch(label.clone(), value)
+            .key(id.clone())
+            .on_click(Some(message.clone())),
+        focus::control(
+            id,
+            Some(message.clone()),
+            None,
+            None,
+            false,
+            iced::widget::button(text(label).size(kit::size::CAPTION))
+                .on_press(message)
+                .padding([5, 12])
+                .style(move |theme, status| {
+                    let mut style = kit::button_style(
+                        theme,
+                        status,
+                        if value {
+                            kit::Treatment::Selected
+                        } else {
+                            kit::Treatment::Secondary
+                        },
+                    );
+                    style.border.radius = u32::MAX.into();
+                    style
+                }),
         ),
     )
 }
@@ -2289,6 +3570,26 @@ fn adjust<'a>(
     value: f64,
     step: f64,
     change: impl Fn(f64) -> Message + Clone + Send + Sync + 'static,
+) -> Element<'a, Message> {
+    styled_adjust(id, range, value, step, change, kit::slider_style)
+}
+/// An [`adjust`] for a value centred on zero, such as balance.
+fn centered_adjust<'a>(
+    id: impl Into<String>,
+    range: std::ops::RangeInclusive<f64>,
+    value: f64,
+    step: f64,
+    change: impl Fn(f64) -> Message + Clone + Send + Sync + 'static,
+) -> Element<'a, Message> {
+    styled_adjust(id, range, value, step, change, kit::centered_slider_style)
+}
+fn styled_adjust<'a>(
+    id: impl Into<String>,
+    range: std::ops::RangeInclusive<f64>,
+    value: f64,
+    step: f64,
+    change: impl Fn(f64) -> Message + Clone + Send + Sync + 'static,
+    style: fn(&Theme, iced::widget::slider::Status) -> iced::widget::slider::Style,
 ) -> Element<'a, Message> {
     let id = id.into();
     let left = change((value - step).max(*range.start()));
@@ -2325,7 +3626,10 @@ fn adjust<'a>(
             Some(left),
             Some(right),
             false,
-            slider(range, value, change).step(step),
+            slider(range, value, change)
+                .step(step)
+                .height(22)
+                .style(style),
         ),
     )
 }
@@ -2335,6 +3639,33 @@ fn choice<'a>(
     id: impl Into<String>,
     options: Vec<String>,
     selected: Option<String>,
+    change: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message> {
+    hinted_choice(
+        id,
+        options,
+        selected,
+        fl!("settings-choice-placeholder"),
+        change,
+    )
+}
+/// A [`choice`] that shows `placeholder` while nothing is chosen.
+fn hinted_choice<'a>(
+    id: impl Into<String>,
+    options: Vec<String>,
+    selected: Option<String>,
+    placeholder: String,
+    change: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message> {
+    sized_choice(id, options, selected, placeholder, kit::PICK_WIDTH, change)
+}
+/// A [`hinted_choice`] of a given width, for dense rows.
+fn sized_choice<'a>(
+    id: impl Into<String>,
+    options: Vec<String>,
+    selected: Option<String>,
+    placeholder: String,
+    width: f32,
     change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
     let id = id.into();
@@ -2389,9 +3720,103 @@ fn choice<'a>(
             left,
             right,
             false,
-            pick_list(options, selected, change),
+            container(
+                pick_list(options, selected, change)
+                    .placeholder(placeholder)
+                    .width(Length::Fill)
+                    .padding([5, 12])
+                    .text_size(kit::size::BODY)
+                    .style(kit::pick_list_style)
+                    .menu_style(kit::menu_style),
+            )
+            .width(Length::Fixed(width)),
         ),
     )
+}
+/// The process labelling the displays; it ends with this value.
+struct Identifier {
+    child: std::process::Child,
+    input: std::process::ChildStdin,
+    /// The labels last written.
+    sent: String,
+}
+impl Identifier {
+    fn start() -> Option<Self> {
+        let mut child = std::process::Command::new(std::env::current_exe().ok()?)
+            .arg("identify-displays")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let input = child.stdin.take()?;
+        Some(Self {
+            child,
+            input,
+            sent: String::new(),
+        })
+    }
+}
+impl Drop for Identifier {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+/// The arrangement drawing's origin, where logical 0, 0 lands, and scale.
+#[derive(Clone, Copy, Debug)]
+struct ArrangementGeometry {
+    x: f32,
+    y: f32,
+    fit: f32,
+}
+/// A display being dragged in the arrangement: where it was grabbed, the
+/// drawing's geometry when the drag began, and whether it has moved.
+#[derive(Clone, Copy, Debug)]
+struct DisplayDrag {
+    slot: MonitorSlot,
+    grab: iced::Point,
+    x: f32,
+    y: f32,
+    fit: f32,
+    width: f32,
+    height: f32,
+    moved: bool,
+}
+/// A display's number, as on its card and on the screen itself.
+fn display_number<'a>(number: usize, lit: bool) -> Element<'a, Message> {
+    container(
+        text(number.to_string())
+            .size(kit::size::CAPTION)
+            .font(kit::strong_font(Weight::Bold))
+            .style(move |theme: &Theme| {
+                let p = canopa_ui::colors(theme);
+                iced::widget::text::Style {
+                    color: Some(if lit { p.on_accent } else { p.text }),
+                }
+            }),
+    )
+    .center_x(22)
+    .center_y(22)
+    .style(move |theme: &Theme| {
+        let p = canopa_ui::colors(theme);
+        container::Style {
+            background: Some(
+                if lit {
+                    p.accent
+                } else {
+                    kit::blend(p.raised, p.text, 0.1)
+                }
+                .into(),
+            ),
+            border: iced::Border {
+                radius: 11.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
+    .into()
 }
 /// A display in the list drawn at `generation`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2427,6 +3852,16 @@ fn pick<'a, V: Clone + PartialEq + 'a>(
     selected: Option<V>,
     change: impl Fn(V) -> Message + 'a,
 ) -> Element<'a, Message> {
+    sized_pick(id, options, selected, kit::PICK_WIDTH, change)
+}
+/// A [`pick`] of a given width, for dense rows.
+fn sized_pick<'a, V: Clone + PartialEq + 'a>(
+    id: impl Into<String>,
+    options: Vec<(V, String)>,
+    selected: Option<V>,
+    width: f32,
+    change: impl Fn(V) -> Message + 'a,
+) -> Element<'a, Message> {
     let options = distinct_labels(options);
     let Some(fallback) = options.first().map(|(value, _)| value.clone()) else {
         return choice(id, Vec::new(), None, |_| Message::Noop);
@@ -2438,13 +3873,20 @@ fn pick<'a, V: Clone + PartialEq + 'a>(
             .find(|(value, _)| *value == selected)
             .map(|(_, label)| label.clone())
     });
-    choice(id, labels, selected, move |label| {
-        let value = options
-            .iter()
-            .find(|(_, known)| *known == label)
-            .map_or_else(|| fallback.clone(), |(value, _)| value.clone());
-        change(value)
-    })
+    sized_choice(
+        id,
+        labels,
+        selected,
+        fl!("settings-choice-placeholder"),
+        width,
+        move |label| {
+            let value = options
+                .iter()
+                .find(|(_, known)| *known == label)
+                .map_or_else(|| fallback.clone(), |(value, _)| value.clone());
+            change(value)
+        },
+    )
 }
 fn mode_label(mode: &niri_ipc::Mode) -> String {
     // Pixel counts are passed as text: no digit grouping.
@@ -2630,10 +4072,20 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
     let paths = Paths::discover()?;
     let activations =
         instance.map(|instance| Activations(Arc::new(Mutex::new(Some(instance.requests)))));
+    // The shared typography decides the family; headings reuse it at a heavier weight.
+    let font = canopa_ui::font(
+        &FileDraft::<Personalization>::load(&paths)
+            .0
+            .value
+            .values
+            .appearance,
+    );
+    kit::set_font(font);
     iced::application(
         move || {
             let (mut state, task) = State::boot_with(paths.clone());
             state.activations = activations.clone();
+            state.identify = true;
             let mut bridge = accessibility::Bridge::new("canopa-settings");
             bridge.open(ACCESSIBILITY_ROOT, &fl!("settings-window-title"), None);
             // A new ordinary window normally has focus; compositor events correct it.
@@ -2657,6 +4109,11 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
         f32::from(state.personal.value.values.appearance.text_scale()) / 100.0
     })
     .subscription(State::subscription)
+    .settings(iced::Settings {
+        default_font: font,
+        default_text_size: iced::Pixels(kit::size::BODY as f32),
+        ..Default::default()
+    })
     .window(iced::window::Settings {
         size: iced::Size::new(1000., 780.),
         min_size: Some(iced::Size::new(760., 600.)),
@@ -2739,6 +4196,55 @@ mod tests {
         let _ = state.update(Message::Position(beyond, true, "10".into()));
         assert_eq!(state.monitors[0].scale, 2.);
         assert!(state.monitors[0].enabled);
+    }
+
+    #[test]
+    fn dragging_a_display_snaps_it_and_dropping_it_apart_settles_it_beside_its_neighbour() {
+        let (_root, mut state) = fresh();
+        let display = |name: &str, x: i32| crate::display::Monitor {
+            name: name.into(),
+            make: String::new(),
+            model: String::new(),
+            serial: None,
+            enabled: true,
+            mode: Some(0),
+            modes: vec![niri_ipc::Mode {
+                width: 1000,
+                height: 500,
+                refresh_rate: 60_000,
+                is_preferred: true,
+            }],
+            custom_mode: false,
+            scale: 1.,
+            transform: Transform::Normal,
+            x,
+            y: 0,
+        };
+        state.monitors = vec![display("DP-1", 0), display("DP-2", 1000)];
+        state.positions = vec![("0".into(), "0".into()), ("1000".into(), "0".into())];
+        let second = MonitorSlot {
+            generation: state.display_generation,
+            index: 1,
+        };
+        let geometry = state.arrangement_geometry().unwrap();
+        // Grab the second display at its centre, then move it 300 logical
+        // pixels right and 10 down: the small vertical offset snaps back.
+        let grab = iced::Point::new(
+            geometry.x + 1500. * geometry.fit,
+            geometry.y + 250. * geometry.fit,
+        );
+        let _ = state.update(Message::ArrangementPointer(grab));
+        let _ = state.update(Message::ArrangementGrab(second));
+        let _ = state.update(Message::ArrangementPointer(iced::Point::new(
+            grab.x + 300. * geometry.fit,
+            grab.y + 10. * geometry.fit,
+        )));
+        assert_eq!(state.positions[1], ("1300".to_owned(), "0".to_owned()));
+        assert!(state.display_dirty);
+        // Dropped apart, it comes back to touch its neighbour.
+        let _ = state.update(Message::ArrangementRelease);
+        let _ = state.update(Message::ArrangementPointer(iced::Point::ORIGIN));
+        assert_eq!(state.positions[1], ("1000".to_owned(), "0".to_owned()));
     }
 
     #[test]

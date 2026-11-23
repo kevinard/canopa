@@ -1,7 +1,7 @@
 //! The Printers page: CUPS queues with their state, your default, a test
 //! page and removal; print jobs with cancel; and driverless printers found on
 //! the network to add.
-use super::{Message, State, focus, live_page::LivePage, settings_group};
+use super::{Message, State, focus, kit, live_page::LivePage, settings_group};
 use crate::{
     live::{Event, LiveAction},
     printers::{PrinterAction, PrintersService, PrintersState, Queue, QueueState},
@@ -23,10 +23,15 @@ fn apply(action: PrinterAction) -> Message {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
-fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+fn treated_button<'a>(
+    id: String,
+    label: String,
+    message: Option<Message>,
+    treatment: super::kit::Treatment,
+) -> Element<'a, Message> {
     canopa_ui::accessibility::semantic(
         canopa_ui::accessibility::Node::button(label.clone())
             .key(id.clone())
@@ -38,10 +43,20 @@ fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Elemen
             None,
             None,
             false,
-            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
-                .padding([6, 12]),
+            iced::widget::button(text(label))
+                .on_press_maybe(message)
+                .style(move |theme, status| super::kit::button_style(theme, status, treatment))
+                .padding([7, 14]),
         ),
     )
+}
+
+fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Secondary)
+}
+/// An action that removes or forgets something.
+fn danger_button<'a>(id: String, label: String, message: Option<Message>) -> Element<'a, Message> {
+    treated_button(id, label, message, super::kit::Treatment::Destructive)
 }
 
 fn key(name: &str) -> String {
@@ -105,7 +120,7 @@ impl State {
                     fl!("settings-printers-test-page"),
                     Some(apply(PrinterAction::TestPage(queue.name.clone()))),
                 ),
-                row_button(
+                danger_button(
                     format!("printers-{id}-remove"),
                     fl!("settings-printers-remove"),
                     Some(apply(PrinterAction::Remove(queue.name.clone()))),
@@ -124,22 +139,22 @@ impl State {
 
     fn printers_sections<'a>(&'a self, state: &'a PrintersState) -> Element<'a, Message> {
         let page = &self.printers;
-        let mut queues = column![].spacing(12);
+        let mut queues: Vec<Element<'_, Message>> = Vec::new();
         if state.queues.is_empty() {
-            queues = queues.push(muted(fl!("settings-printers-none")));
+            queues.push(super::kit::empty(fl!("settings-printers-none")));
         }
         for queue in &state.queues {
-            queues = queues.push(self.queue_card(queue));
+            queues.push(self.queue_card(queue));
         }
-        queues = queues.push(page.control_status("default", message));
+        let queues = column![kit::rows(queues), page.control_status("default", message)].spacing(4);
 
-        let mut jobs = column![].spacing(8);
+        let mut jobs: Vec<Element<'_, Message>> = Vec::new();
         if state.jobs.is_empty() {
-            jobs = jobs.push(muted(fl!("settings-printers-no-jobs")));
+            jobs.push(super::kit::empty(fl!("settings-printers-no-jobs")));
         }
         for job in &state.jobs {
             let mine = job.user == state.user;
-            jobs = jobs.push(
+            jobs.push(
                 column![
                     direction::row([
                         column![
@@ -176,35 +191,45 @@ impl State {
                     .align_y(Alignment::Center),
                     page.control_status(&PrinterAction::Cancel(job.clone()).control(), message),
                 ]
-                .spacing(4),
+                .spacing(4)
+                .into(),
             );
         }
+        let jobs = kit::rows(jobs);
 
-        let mut add = column![
-            direction::row([
-                row_button(
-                    "printers-search".into(),
-                    if page.live.control("search") == crate::live::ControlStatus::Applying {
-                        fl!("settings-printers-searching")
-                    } else {
-                        fl!("settings-printers-search")
-                    },
-                    Some(apply(PrinterAction::Search)),
+        let mut add: Vec<Element<'_, Message>> = vec![
+            column![
+                kit::row(
+                    fl!("settings-printers-search-label"),
+                    Some(fl!("settings-printers-search-hint")),
+                    treated_button(
+                        "printers-search".into(),
+                        if page.live.control("search") == crate::live::ControlStatus::Applying {
+                            fl!("settings-printers-searching")
+                        } else {
+                            fl!("settings-printers-search")
+                        },
+                        Some(apply(PrinterAction::Search)),
+                        // With nothing set up, searching is the page's next step.
+                        if state.queues.is_empty() {
+                            super::kit::Treatment::Primary
+                        } else {
+                            super::kit::Treatment::Secondary
+                        },
+                    ),
                 ),
-                muted(fl!("settings-printers-search-hint")),
-            ])
-            .spacing(10)
-            .align_y(Alignment::Center),
-            page.control_status("search", message),
-        ]
-        .spacing(10);
+                page.control_status("search", message),
+            ]
+            .spacing(4)
+            .into(),
+        ];
         match &state.found {
             Some(found) if found.is_empty() => {
-                add = add.push(muted(fl!("settings-printers-none-found")));
+                add.push(super::kit::empty(fl!("settings-printers-none-found")));
             }
             Some(found) => {
                 for printer in found {
-                    add = add.push(
+                    add.push(
                         column![
                             direction::row([
                                 column![text(printer.name.clone()), muted(printer.uri.clone())]
@@ -225,23 +250,36 @@ impl State {
                                 message
                             ),
                         ]
-                        .spacing(4),
+                        .spacing(4)
+                        .into(),
                     );
                 }
             }
             None => {}
         }
-        add = add.push(muted(if state.helper {
+        let helper = if state.helper {
             fl!("settings-printers-helper-hint")
         } else {
             fl!("settings-printers-no-helper-hint")
-        }));
+        };
+        // With nothing set up, finding a printer is the next step: it joins
+        // the empty list instead of waiting in a section further down.
+        if state.queues.is_empty() {
+            let mut first = vec![Element::from(queues)];
+            first.extend(add);
+            return column![
+                super::noted_group(fl!("settings-printers"), kit::rows(first), [helper]),
+                settings_group(fl!("settings-printers-jobs"), jobs),
+            ]
+            .spacing(28)
+            .into();
+        }
         column![
             settings_group(fl!("settings-printers"), queues),
+            super::noted_group(fl!("settings-printers-add-title"), kit::rows(add), [helper]),
             settings_group(fl!("settings-printers-jobs"), jobs),
-            settings_group(fl!("settings-printers-add-title"), add),
         ]
-        .spacing(14)
+        .spacing(28)
         .into()
     }
 

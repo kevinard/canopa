@@ -216,7 +216,7 @@ fn path(text: &str) -> Option<PathBuf> {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label).size(13).style(canopa_ui::muted).into()
 }
 
 /// A button with a focus id of its own, for rows with repeated labels.
@@ -232,8 +232,12 @@ fn row_button<'a>(id: String, label: String, message: Option<Message>) -> Elemen
             None,
             None,
             false,
-            canopa_ui::action(text(label), message, canopa_ui::Action::Normal, false)
-                .padding([6, 12]),
+            iced::widget::button(text(label))
+                .on_press_maybe(message)
+                .style(|theme, status| {
+                    super::kit::button_style(theme, status, super::kit::Treatment::Secondary)
+                })
+                .padding([7, 14]),
         ),
     )
 }
@@ -257,9 +261,10 @@ fn secret<'a>(
                 .secure(true)
                 .on_input(change)
                 .align_x(direction::start())
-                .padding(10)
+                .padding([6, 12])
+                .style(super::kit::text_input_style)
         ]
-        .spacing(6)
+        .spacing(7)
         .width(Length::Fill),
     )
 }
@@ -756,7 +761,7 @@ impl State {
             container(body)
                 .padding(12)
                 .width(Length::Fill)
-                .style(canopa_ui::surface)
+                .style(super::kit::note)
                 .into(),
         )
     }
@@ -775,7 +780,7 @@ impl State {
             Some(NetworkAction::WifiEnabled(value)) => *value,
             _ => overview.wireless_enabled,
         };
-        let mut body = column![
+        let mut head = column![
             toggle(
                 "network-wifi",
                 "Wi-Fi",
@@ -784,12 +789,13 @@ impl State {
             ),
             page.control_status("wifi-enabled", message),
         ]
-        .spacing(10);
+        .spacing(4);
         if !overview.wireless_hardware_enabled {
-            body = body.push(muted(fl!("settings-network-wifi-hardware-off")));
+            head = head.push(muted(fl!("settings-network-wifi-hardware-off")));
         }
+        let mut body: Vec<Element<'_, Message>> = vec![head.into()];
         if let Some(form) = self.join_form() {
-            body = body.push(form);
+            body.push(form);
         }
         if enabled {
             for ap in overview.access_points.iter().take(16) {
@@ -822,7 +828,7 @@ impl State {
                         edit(Edit::Join(Some(ap.clone()))),
                     ),
                 };
-                body = body.push(
+                body.push(
                     column![
                         direction::row([
                             column![text(ap.name()), muted(description)]
@@ -836,23 +842,24 @@ impl State {
                         .align_y(Alignment::Center),
                         page.control_status(&control, message),
                     ]
-                    .spacing(4),
+                    .spacing(4)
+                    .into(),
                 );
             }
             if overview.access_points.is_empty() {
-                body = body.push(muted(fl!("settings-network-none-found")));
+                body.push(super::kit::empty(fl!("settings-network-none-found")));
             }
-            body = body.push(row_button(
+            body.push(row_button(
                 "network-hidden".into(),
                 fl!("settings-network-join-hidden"),
                 Some(edit(Edit::Join(None))),
             ));
         }
-        settings_group("Wi-Fi", body)
+        settings_group("Wi-Fi", super::kit::rows(body))
     }
 
     fn wired_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
-        let mut body = column![].spacing(8);
+        let mut body: Vec<Element<'_, Message>> = Vec::new();
         let mut any = false;
         for device in state
             .overview
@@ -879,13 +886,17 @@ impl State {
                 (false, 40..=90) => fl!("settings-network-connecting"),
                 _ => fl!("settings-network-disconnected"),
             };
-            body = body.push(column![text(&device.interface), muted(status)].spacing(2));
+            body.push(
+                column![text(&device.interface), muted(status)]
+                    .spacing(2)
+                    .into(),
+            );
         }
         if !any {
-            body = body.push(muted(fl!("settings-network-no-wired")));
+            body.push(super::kit::empty(fl!("settings-network-no-wired")));
         }
-        body = body.push(muted(fl!("settings-network-wired-hint")));
-        settings_group(fl!("settings-network-wired"), body)
+        body.push(muted(fl!("settings-network-wired-hint")));
+        settings_group(fl!("settings-network-wired"), super::kit::rows(body))
     }
 
     fn vpn_section<'a>(&'a self, state: &'a NetworkState) -> Element<'a, Message> {
@@ -949,7 +960,7 @@ impl State {
             );
         }
         if vpns.is_empty() {
-            body = body.push(muted(fl!("settings-network-no-vpn")));
+            body = body.push(super::kit::empty(fl!("settings-network-no-vpn")));
         }
         if forms.wireguard {
             body = body.push(
@@ -993,7 +1004,7 @@ impl State {
                 )
                 .padding(12)
                 .width(Length::Fill)
-                .style(canopa_ui::surface),
+                .style(super::kit::note),
             );
         } else {
             body = body.push(row_button(
@@ -1126,7 +1137,7 @@ impl State {
         if connections.is_empty() {
             return settings_group(
                 fl!("settings-network-connections"),
-                muted(fl!("settings-network-no-connections")),
+                super::kit::empty(fl!("settings-network-no-connections")),
             );
         }
         let selected = forms
@@ -1291,7 +1302,7 @@ impl State {
 
     pub(super) fn network_view(&self) -> Element<'_, Message> {
         self.network.view(message, |state| {
-            let mut body = column![].spacing(14);
+            let mut body = column![].spacing(28);
             if let Some(question) = self.question_section(state) {
                 body = body.push(question);
             }

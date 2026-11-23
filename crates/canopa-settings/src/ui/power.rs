@@ -1,6 +1,6 @@
 //! The Power page: live battery, power mode and brightness sections, then the
 //! saved lid choice and idle timeouts, and the power button (applied at once).
-use super::{Message, State, adjust, live_page::LivePage, pick, settings_group};
+use super::{Message, State, adjust, kit, live_page::LivePage, pick, settings_group};
 use crate::{
     live::Event,
     power::{DURATIONS, PowerAction, PowerService, PowerState, duration_label, lid_label},
@@ -10,7 +10,7 @@ use canopa_services::{power_switches::LidAction, upower::PowerState as Charge};
 use canopa_ui::direction;
 use iced::{
     Alignment, Element,
-    widget::{column, text},
+    widget::{column, container, text},
 };
 
 pub(super) type PowerPage = LivePage<PowerService>;
@@ -47,7 +47,12 @@ fn approximately(seconds: u64) -> String {
 }
 
 fn muted<'a>(label: impl text::IntoFragment<'a>) -> Element<'a, Message> {
-    text(label).size(14).style(canopa_ui::muted).into()
+    text(label)
+        .size(kit::size::CAPTION)
+        .style(canopa_ui::muted)
+        .width(iced::Length::Fill)
+        .align_x(direction::text_start())
+        .into()
 }
 
 impl State {
@@ -60,15 +65,30 @@ impl State {
             .is_none_or(|saved| saved != self.idle.value)
     }
 
-    fn battery_section(state: &PowerState) -> Element<'_, Message> {
+    /// What the power supply says about the computer: `None` reads "no battery".
+    fn hardware(&self) -> Option<&crate::power::PowerState> {
+        match self.power.live.status() {
+            crate::live::Status::Ready(state) => Some(state),
+            _ => None,
+        }
+    }
+    fn has_battery(&self) -> bool {
+        self.hardware()
+            .and_then(|state| state.supply.as_ref())
+            .is_none_or(|supply| !supply.batteries.is_empty())
+    }
+
+    /// The battery row; `None` on a computer without one.
+    fn battery_section(state: &PowerState) -> Option<Element<'_, Message>> {
         let Some(supply) = &state.supply else {
-            return settings_group(
+            return Some(kit::row(
                 fl!("settings-battery"),
-                muted(fl!("settings-battery-no-upower")),
-            );
+                Some(fl!("settings-battery-no-upower")),
+                iced::widget::space(),
+            ));
         };
         if supply.batteries.is_empty() {
-            return settings_group(fl!("settings-battery"), muted(fl!("settings-battery-none")));
+            return None;
         }
         let mut body = column![].spacing(10);
         for battery in &supply.batteries {
@@ -126,68 +146,95 @@ impl State {
             }
             body = body.push(card);
         }
-        settings_group(fl!("settings-battery"), body)
+        Some(
+            column![
+                super::heading(fl!("settings-battery"), kit::size::BODY),
+                body
+            ]
+            .spacing(8)
+            .into(),
+        )
     }
 
     fn live_power_sections<'a>(&'a self, state: &'a PowerState) -> Element<'a, Message> {
         let page = &self.power;
         let profiles: Element<'_, Message> = match &state.profiles {
-            None => muted(fl!("settings-power-modes-unavailable")),
+            None => kit::status(
+                kit::Notice::Warning,
+                fl!("settings-power-modes-unavailable-title"),
+                Some(fl!("settings-power-modes-unavailable")),
+                None,
+            ),
             Some(profiles) => {
                 let active = match page.live.pending("power-profile") {
                     Some(PowerAction::Profile(profile)) => profile.as_str(),
                     _ => profiles.active.as_str(),
                 };
-                let buttons = direction::row(profiles.supported.iter().map(|name| {
-                    self.action(
+                let buttons = kit::segmented(profiles.supported.iter().map(|name| {
+                    self.segment(
                         format!("power-profile-{name}"),
                         profile_label(name),
                         (active != *name)
                             .then(|| message(Event::Apply(PowerAction::Profile((*name).into())))),
                         active == *name,
                     )
-                }))
-                .spacing(10);
+                }));
                 column![
-                    text(fl!(
-                        "settings-power-mode-current",
-                        mode = profile_label(active)
-                    )),
-                    buttons,
+                    kit::row(
+                        fl!("settings-power-mode"),
+                        Some(fl!(
+                            "settings-power-mode-current",
+                            mode = profile_label(active)
+                        )),
+                        buttons,
+                    ),
                     page.control_status("power-profile", message),
                 ]
-                .spacing(10)
+                .spacing(6)
                 .into()
             }
         };
-        let brightness: Element<'_, Message> = match &state.backlight {
-            None => muted(fl!("settings-brightness-none")),
-            Some(light) => {
-                let value = match page.live.pending("brightness") {
-                    Some(PowerAction::Brightness(value)) => *value,
-                    _ => light.perceptual().max(1),
-                };
-                column![
-                    text(fl!(
-                        "settings-brightness-built-in",
-                        value = canopa_i18n::format::percent(f64::from(value))
-                    )),
+        // Desktops have no backlight to set; the row is left out.
+        let brightness: Option<Element<'_, Message>> = state.backlight.as_ref().map(|light| {
+            let value = match page.live.pending("brightness") {
+                Some(PowerAction::Brightness(value)) => *value,
+                _ => light.perceptual().max(1),
+            };
+            column![
+                kit::slider_row(
+                    fl!("settings-brightness"),
+                    canopa_i18n::format::percent(f64::from(value)),
                     adjust("power-brightness", 1.0..=100., f64::from(value), 1., |v| {
                         message(Event::Apply(PowerAction::Brightness(v.round() as u16)))
                     }),
-                    page.control_status("brightness", message),
-                ]
-                .spacing(10)
-                .into()
-            }
+                ),
+                page.control_status("brightness", message),
+            ]
+            .spacing(6)
+            .into()
+        });
+        let battery = Self::battery_section(state);
+        if battery.is_none() && brightness.is_none() && state.profiles.is_none() {
+            return column![
+                kit::section_heading(fl!("settings-power-energy")),
+                kit::status_card(
+                    kit::Notice::Warning,
+                    fl!("settings-power-modes-unavailable-title"),
+                    Some(fl!("settings-power-modes-unavailable")),
+                ),
+            ]
+            .spacing(10)
+            .into();
+        }
+        let title = if battery.is_some() {
+            fl!("settings-power-status")
+        } else {
+            fl!("settings-power-energy")
         };
-        column![
-            Self::battery_section(state),
-            settings_group(fl!("settings-power-mode"), profiles),
-            settings_group(fl!("settings-brightness"), brightness),
-        ]
-        .spacing(14)
-        .into()
+        settings_group(
+            title,
+            kit::rows(battery.into_iter().chain([profiles]).chain(brightness)),
+        )
     }
 
     fn lid_section(&self) -> Element<'_, Message> {
@@ -197,33 +244,41 @@ impl State {
             .map(|action| (action, lid_label(action)))
             .collect();
         let power_key: Element<'_, Message> = if self.paths.active() {
-            column![
-                text(fl!("settings-power-button-pressed")),
+            kit::row(
+                fl!("settings-power-button-pressed"),
+                Some(fl!("settings-power-button-hint")),
                 pick(
                     "power-button",
                     power_key_options(),
                     Some(self.input.value.power_key_to_logind),
                     Message::PowerKey,
                 ),
-                muted(fl!("settings-power-button-hint")),
-            ]
-            .spacing(6)
-            .into()
+            )
         } else {
-            muted(fl!("settings-power-button-needs-session"))
+            kit::row(
+                fl!("settings-power-button-pressed"),
+                Some(fl!("settings-power-button-needs-session")),
+                iced::widget::space(),
+            )
         };
+        // Only a computer with a lid gets the lid choice.
+        let lid_present = self
+            .hardware()
+            .and_then(|state| state.supply.as_ref())
+            .is_none_or(|supply| supply.lid_present);
+        if !lid_present {
+            return settings_group(fl!("settings-power-button-title"), power_key);
+        }
         settings_group(
             fl!("settings-power-lid-and-button"),
-            column![
-                column![
-                    text(fl!("settings-power-lid-closed")),
+            kit::rows([
+                kit::row(
+                    fl!("settings-power-lid-closed"),
+                    Some(fl!("settings-power-lid-hint")),
                     pick("lid-close", options, Some(lid), Message::LidClose),
-                    muted(fl!("settings-power-lid-hint")),
-                ]
-                .spacing(6),
+                ),
                 power_key,
-            ]
-            .spacing(14),
+            ]),
         )
     }
 
@@ -251,30 +306,72 @@ impl State {
                 .iter()
                 .map(|value| (*value, duration_label(*value)))
                 .collect();
-            column![
-                text(stages[index].clone()),
-                pick(
-                    format!("idle-{}-{index}", if battery { "battery" } else { "ac" }),
-                    options,
-                    current,
-                    move |value| Message::IdleTime(battery, index, value.to_string()),
-                ),
-            ]
-            .spacing(6)
+            pick(
+                format!("idle-{}-{index}", if battery { "battery" } else { "ac" }),
+                options,
+                current,
+                move |value| Message::IdleTime(battery, index, value.to_string()),
+            )
         };
-        let mut ac = column![].spacing(10);
-        let mut battery = column![].spacing(10);
-        for index in 0..3 {
-            ac = ac.push(picker(false, index));
-            battery = battery.push(picker(true, index));
+        let has_battery = self.has_battery();
+        // One row per stage; on a laptop, a column for each power source.
+        let mut timeouts: Vec<Element<'_, Message>> = Vec::new();
+        if has_battery {
+            timeouts.push(
+                direction::row([
+                    iced::widget::space().width(iced::Length::Fill).into(),
+                    container(muted(fl!("settings-idle-ac")))
+                        .width(kit::PICK_WIDTH)
+                        .into(),
+                    container(muted(fl!("settings-idle-battery")))
+                        .width(kit::PICK_WIDTH)
+                        .into(),
+                ])
+                .spacing(12)
+                .into(),
+            );
+        }
+        for (index, stage) in stages.iter().enumerate() {
+            let mut controls = vec![picker(false, index)];
+            if has_battery {
+                controls.push(picker(true, index));
+            }
+            timeouts.push(kit::row(
+                stage.clone(),
+                match index {
+                    1 => Some(fl!("settings-idle-displays-after-hint")),
+                    2 => Some(fl!("settings-idle-suspend-after-hint")),
+                    _ => None,
+                },
+                direction::row(controls).spacing(12),
+            ));
+        }
+        // The stages add up; the total answers "when does it suspend?".
+        let total: u32 = self
+            .idle
+            .value
+            .ac
+            .iter()
+            .filter_map(|value| value.parse::<u32>().ok())
+            .sum();
+        if total > 0 {
+            // Said as what will happen while idle actions are not running.
+            let time = crate::power::duration_label(total);
+            timeouts.push(muted(if self.idle_available {
+                fl!("settings-idle-total", time = time)
+            } else {
+                fl!("settings-idle-total-pending", time = time)
+            }));
         }
         let daemon: Element<'_, Message> = if self.idle_available {
             column![
-                text(fl!(
-                    "settings-idle-running",
-                    status = self.idle_status.as_str()
-                )),
                 direction::row([
+                    text(fl!(
+                        "settings-idle-running",
+                        status = self.idle_status.as_str()
+                    ))
+                    .width(iced::Length::Fill)
+                    .into(),
                     self.action(
                         "settings-button-pause-idle-actions",
                         fl!("settings-idle-pause"),
@@ -288,7 +385,8 @@ impl State {
                         false,
                     ),
                 ])
-                .spacing(12),
+                .spacing(8)
+                .align_y(Alignment::Center),
                 direction::row([
                     super::field(
                         "settings-field-stasis-profile",
@@ -310,24 +408,31 @@ impl State {
             .spacing(12)
             .into()
         } else {
-            column![
-                text(fl!("settings-idle-not-running")),
-                muted(fl!("settings-idle-optional")),
+            // A stopped service is said above the card, as on every page.
+            return column![
+                kit::section_heading(fl!("settings-idle")),
+                kit::status_card(
+                    kit::Notice::Warning,
+                    fl!("settings-idle-not-running"),
+                    Some(fl!("settings-idle-optional")),
+                ),
+                container(kit::rows(timeouts))
+                    .padding(kit::ROW_PADDING)
+                    .width(iced::Length::Fill)
+                    .style(kit::card),
+                kit::footnote(fl!("settings-idle-custom-hint")),
             ]
-            .spacing(6)
-            .into()
+            .spacing(10)
+            .into();
         };
         column![
-            settings_group(fl!("settings-idle"), daemon),
-            muted(fl!("settings-idle-stages-hint")),
-            direction::row([
-                settings_group(fl!("settings-idle-ac"), ac),
-                settings_group(fl!("settings-idle-battery"), battery),
-            ])
-            .spacing(12),
-            muted(fl!("settings-idle-custom-hint")),
+            settings_group(
+                fl!("settings-idle"),
+                kit::rows(std::iter::once(daemon).chain(timeouts)),
+            ),
+            kit::footnote(fl!("settings-idle-custom-hint")),
         ]
-        .spacing(14)
+        .spacing(10)
         .into()
     }
 
@@ -336,7 +441,7 @@ impl State {
             .power
             .view(message, |state| self.live_power_sections(state));
         column![live, self.lid_section(), self.idle_section()]
-            .spacing(14)
+            .spacing(28)
             .into()
     }
 }
