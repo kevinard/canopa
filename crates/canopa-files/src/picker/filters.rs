@@ -1,5 +1,5 @@
 //! Filename/MIME hints from shared-mime-info, without a GLib/GTK dependency.
-use crate::file_chooser::Filter;
+use canopa_file::picker::Filter;
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -11,7 +11,7 @@ struct MimeGlob {
     case_sensitive: bool,
 }
 #[derive(Default)]
-pub(super) struct MimeGlobs(Vec<MimeGlob>);
+pub struct MimeGlobs(Vec<MimeGlob>);
 
 impl MimeGlobs {
     pub fn load() -> Self {

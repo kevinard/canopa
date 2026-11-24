@@ -1,11 +1,13 @@
 //! Explicit, searchable monitor/window consent in the shared Iced appearance.
 use crate::{
+    dialog_ui,
     screencast::{DialogInput, Item},
     screencast_capture::Source,
 };
+use canopa_files::browser_ui::Icon;
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, scrollable, text, text_input},
+    widget::{column, container, image, scrollable, space, text, text_input},
     window,
 };
 use std::{
@@ -13,6 +15,12 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+
+mod previews;
+use previews::{Previews, Target};
+
+const ROW_SPACING: f32 = 6.;
+const MAX_PREVIEW_ROWS: usize = 10;
 
 pub fn run(
     input: DialogInput,
@@ -75,6 +83,10 @@ fn run_inner(
             },
         "Invalid capture source catalog"
     );
+    let requester = dialog_ui::requester(&input.app_id);
+    let foreground = appearance.palette().text;
+    let display_icon = dialog_ui::symbol(Icon::Desktop, foreground);
+    let window_icon = dialog_ui::symbol(Icon::Window, foreground);
     let font = canopa_ui::font(&appearance);
     let theme = canopa_ui::theme(appearance);
     let result = Arc::new(Mutex::new(None));
@@ -82,23 +94,29 @@ fn run_inner(
     iced::daemon(
         move || {
             let mut settings = window::Settings {
-                size: if input.types == 0 {
-                    Size::new(520.0, if devices & 2 != 0 { 420.0 } else { 340.0 })
+                size: if screenshot {
+                    Size::new(640., if input.items.len() <= 1 { 302. } else { 386. })
+                } else if input.types == 0 {
+                    Size::new(
+                        560.0,
+                        230.0
+                            + 58.0 * (devices.count_ones() + u32::from(clipboard_requested)) as f32,
+                    )
                 } else {
                     Size::new(
                         680.0,
-                        if devices & 2 != 0 {
-                            740.0
-                        } else if devices == 0 {
-                            600.0
-                        } else {
-                            660.0
-                        },
+                        340.0
+                            + if input.types & 2 != 0 {
+                                78.0 * input.items.len().clamp(1, 3) as f32 - 108.0
+                            } else {
+                                0.
+                            }
+                            + 58.0 * (devices.count_ones() + u32::from(clipboard_requested)) as f32,
                     )
                 },
                 min_size: Some(Size::new(
-                    420.0,
-                    if input.types == 0 { 300.0 } else { 420.0 },
+                    460.0,
+                    if input.types == 0 { 285.0 } else { 302.0 },
                 )),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -108,10 +126,10 @@ fn run_inner(
                 ..Default::default()
             };
             if devices & 4 != 0 {
-                settings.size.height += 80.0;
+                settings.size.height += 64.0;
             }
             if clipboard_requested && (devices != 0 || input.types != 0) {
-                settings.size.height += 80.0;
+                settings.size.height += 64.0;
             }
             let (_window, opening) = window::open_dialog_with_activation(
                 input
@@ -126,6 +144,13 @@ fn run_inner(
             (
                 Dialog {
                     screenshot,
+                    requester: requester.clone(),
+                    display_icon: display_icon.clone(),
+                    window_icon: window_icon.clone(),
+                    foreground,
+                    previews: Previews::default(),
+                    preview_top: 0.,
+                    preview_height: 420.,
                     input: input.clone(),
                     items: input.items.clone(),
                     theme: theme.clone(),
@@ -169,11 +194,20 @@ enum Message {
     Touch(bool),
     Clipboard(bool),
     Loaded(Result<Vec<Item>, String>),
+    Scrolled(scrollable::Viewport),
+    PreviewsReady(Vec<(Target, previews::Visual)>),
     Share,
     Cancel,
     Event(Event),
 }
 struct Dialog {
+    requester: String,
+    display_icon: Option<image::Handle>,
+    window_icon: Option<image::Handle>,
+    foreground: canopa_theme::Rgb,
+    previews: Previews,
+    preview_top: f32,
+    preview_height: f32,
     screenshot: bool,
     input: DialogInput,
     items: Vec<Item>,
@@ -237,7 +271,7 @@ impl Dialog {
                     _ => "control",
                 }
             } else {
-                "share-control"
+                "remote-desktop"
             }
         } else {
             "screen"
@@ -319,12 +353,55 @@ impl Dialog {
         })
     }
 
+    fn row_height(&self) -> f32 {
+        if self.input.types & 2 != 0 { 78. } else { 54. }
+    }
+
+    fn preview_target(item: &Item) -> Option<Target> {
+        let Source::Window(id) = item.source else {
+            return None;
+        };
+        Some(Target {
+            id,
+            app_id: item.app_id.clone(),
+        })
+    }
+
+    fn load_previews(&mut self) -> Task<Message> {
+        if self.input.types & 2 == 0 {
+            return Task::none();
+        }
+        let stride = self.row_height() + ROW_SPACING;
+        let rows = (self.preview_height / stride).ceil() as usize + 2;
+        let targets = if self.available {
+            self.visible()
+                .into_iter()
+                .skip((self.preview_top / stride).floor() as usize)
+                .take(rows.min(MAX_PREVIEW_ROWS))
+                .filter_map(|index| Self::preview_target(&self.items[index]))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.previews
+            .set_targets(targets, self.input.compositor_pid, self.foreground)
+    }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         if self.completed {
             return Task::none();
         }
         match message {
-            Message::Opened => {}
+            Message::Opened => return self.load_previews(),
+            Message::Scrolled(viewport) => {
+                self.preview_top = viewport.absolute_offset().y;
+                self.preview_height = viewport.bounds().height;
+                return self.load_previews();
+            }
+            Message::PreviewsReady(ready) => {
+                self.previews.complete(ready);
+                return self.load_previews();
+            }
             Message::Cancel => {
                 self.completed = true;
                 return iced::exit();
@@ -348,6 +425,14 @@ impl Dialog {
             Message::Query(query) => {
                 self.query = query;
                 self.reconcile();
+                self.preview_top = 0.;
+                return Task::batch([
+                    iced::widget::operation::snap_to(
+                        "capture-sources",
+                        scrollable::RelativeOffset::START,
+                    ),
+                    self.load_previews(),
+                ]);
             }
             Message::Toggle(index) => {
                 if self.input.types != 0
@@ -402,6 +487,11 @@ impl Dialog {
                     }
                     Err(_) => self.available = false,
                 }
+                let stride = self.row_height() + ROW_SPACING;
+                self.preview_top = self
+                    .preview_top
+                    .min((self.visible().len() as f32 * stride - self.preview_height).max(0.));
+                return self.load_previews();
             }
             Message::Event(Event::Window(window::Event::CloseRequested)) => {
                 return self.update(Message::Cancel);
@@ -449,19 +539,25 @@ impl Dialog {
                             (Some(i), false) => i.saturating_sub(1),
                         };
                         self.highlight = Some(visible[next]);
+                        let row_top = next as f32 * (self.row_height() + ROW_SPACING);
+                        let row_bottom = row_top + self.row_height();
+                        let offset = self
+                            .preview_top
+                            .min(row_top)
+                            .max(row_bottom - self.preview_height);
+                        self.preview_top = offset;
                         return Task::batch([
                             iced::advanced::widget::operate(
                                 iced::advanced::widget::operation::focusable::unfocus(),
                             ),
-                            iced::widget::operation::snap_to(
+                            iced::widget::operation::scroll_to(
                                 "capture-sources",
-                                iced::widget::operation::RelativeOffset {
+                                scrollable::AbsoluteOffset {
                                     x: None,
-                                    y: Some(
-                                        next as f32 / visible.len().saturating_sub(1).max(1) as f32,
-                                    ),
+                                    y: Some(offset),
                                 },
                             ),
+                            self.load_previews(),
                         ]);
                     }
                 }
@@ -477,180 +573,231 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let requester: String = self.input.app_id.chars().take(120).collect();
-        let requester = if requester.is_empty() {
-            fl!("portal-an-application")
-        } else {
-            requester
-        };
-        let mut choices = column![].spacing(6);
-        for index in self.visible() {
+        let visible = self.visible();
+        let mut choices = column![].spacing(ROW_SPACING);
+        for index in visible.iter().copied().filter(|_| self.available) {
             let item = &self.items[index];
             let selected = self.selected.contains(&item.source);
+            let focused = self.available && self.highlight == Some(index);
             let marker = match (self.input.multiple, selected) {
                 (true, true) => "☑",
                 (true, false) => "☐",
                 (false, true) => "●",
                 (false, false) => "○",
             };
+            let visual = Self::preview_target(item).and_then(|target| self.previews.get(&target));
+            let glyph = match item.source {
+                Source::Monitor(_) => &self.display_icon,
+                Source::Window(_) => &self.window_icon,
+            };
+            let preview: Element<'_, Message> = if self.input.types & 2 != 0 {
+                let picture = visual.and_then(|value| value.thumbnail.as_ref());
+                let content: Element<'_, Message> = if let Some(picture) = picture {
+                    image(picture.clone())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .content_fit(iced::ContentFit::Contain)
+                        .into()
+                } else {
+                    glyph.as_ref().map_or_else(
+                        || space().into(),
+                        |icon| image(icon.clone()).width(25).height(25).into(),
+                    )
+                };
+                container(content)
+                    .center_x(previews::THUMBNAIL_WIDTH)
+                    .center_y(previews::THUMBNAIL_HEIGHT)
+                    .style(dialog_ui::card)
+                    .clip(true)
+                    .into()
+            } else {
+                glyph.as_ref().map_or_else(
+                    || space().width(26).into(),
+                    |icon| image(icon.clone()).width(24).height(24).into(),
+                )
+            };
+            let mut app = canopa_ui::direction::row([]);
+            if let Some(icon) = visual.and_then(|value| value.icon.as_ref()) {
+                app = app.push(image(icon.clone()).width(18).height(18));
+            }
+            let app = app
+                .push(
+                    dialog_ui::detail(&item.subtitle)
+                        .size(13)
+                        .width(Length::Fill)
+                        .height(18)
+                        .wrapping(iced::widget::text::Wrapping::None),
+                )
+                .spacing(6)
+                .align_y(iced::Center);
             choices = choices.push(
-                canopa_ui::action(
+                iced::widget::button(
                     canopa_ui::direction::row([
-                        text(marker).size(18).into(),
+                        preview,
                         column![
                             text(&item.title)
                                 .size(16)
                                 .width(Length::Fill)
                                 .height(22)
                                 .wrapping(iced::widget::text::Wrapping::None),
-                            text(&item.subtitle)
-                                .size(12)
-                                .style(canopa_ui::muted)
-                                .width(Length::Fill)
-                                .height(16)
-                                .wrapping(iced::widget::text::Wrapping::None)
+                            app
                         ]
                         .spacing(3)
                         .width(Length::Fill)
                         .into(),
+                        text(marker).size(18).into(),
                     ])
+                    .align_y(iced::Center)
                     .spacing(10)
                     .width(Length::Fill),
-                    Some(Message::Toggle(index)),
-                    canopa_ui::Action::Normal,
-                    selected || self.highlight == Some(index),
                 )
                 .width(Length::Fill)
-                .height(64),
+                .on_press_maybe(self.available.then_some(Message::Toggle(index)))
+                .padding([6, 10])
+                .style(move |theme, status| {
+                    let mut style = dialog_ui::selection(theme, status, selected, focused);
+                    if !selected && !focused && status == iced::widget::button::Status::Active {
+                        let colors = canopa_ui::colors(theme);
+                        style.background = Some(colors.text.scale_alpha(0.025).into());
+                        style.border.width = 1.0;
+                        style.border.color = colors.border.scale_alpha(0.5);
+                    }
+                    style
+                })
+                .height(self.row_height()),
             );
         }
         let mut body = column![
-            text(self.title()).size(22),
-            text(fl!("portal-requested-by", requester = requester))
-                .size(14)
-                .height(20)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .style(canopa_ui::muted),
+            dialog_ui::heading(self.title()),
+            text(fl!(
+                "portal-requested-by",
+                requester = self.requester.as_str()
+            ))
+            .size(14)
+            .height(20)
+            .wrapping(iced::widget::text::Wrapping::None)
+            .style(canopa_ui::muted),
         ]
-        .spacing(12);
-        if self.requested_devices & 1 != 0 {
-            body = body.push(
-                canopa_ui::action(
-                    canopa_ui::direction::row([
-                        text(if self.keyboard { "☑" } else { "☐" }).size(18).into(),
-                        column![
-                            text(fl!("portal-screencast-keyboard")).size(14),
-                            text(fl!("portal-screencast-keyboard-hint"))
-                                .size(12)
-                                .style(canopa_ui::muted),
-                        ]
-                        .spacing(4)
-                        .width(Length::Fill)
-                        .into(),
-                    ])
-                    .spacing(10)
-                    .width(Length::Fill),
-                    Some(Message::Keyboard(!self.keyboard)),
-                    canopa_ui::Action::Normal,
+        .spacing(9);
+        if self.requested_devices != 0 || self.requested_clipboard {
+            let mut permissions = column![].spacing(5);
+            for (requested, checked, title, hint, toggle) in [
+                (
+                    self.requested_devices & 1 != 0,
                     self.keyboard,
-                )
-                .width(Length::Fill),
-            );
-        }
-        if self.requested_devices & 2 != 0 {
-            body = body.push(
-                canopa_ui::action(
-                    canopa_ui::direction::row([
-                        text(if self.pointer { "☑" } else { "☐" }).size(18).into(),
-                        column![
-                            text(fl!("portal-screencast-pointer")).size(14),
-                            text(fl!("portal-screencast-pointer-hint"))
-                                .size(12)
-                                .style(canopa_ui::muted),
-                        ]
-                        .spacing(4)
-                        .width(Length::Fill)
-                        .into(),
-                    ])
-                    .spacing(10)
-                    .width(Length::Fill),
-                    Some(Message::Pointer(!self.pointer)),
-                    canopa_ui::Action::Normal,
+                    fl!("portal-screencast-keyboard"),
+                    fl!("portal-screencast-keyboard-hint"),
+                    Message::Keyboard(!self.keyboard),
+                ),
+                (
+                    self.requested_devices & 2 != 0,
                     self.pointer,
-                )
-                .width(Length::Fill),
-            );
-        }
-        if self.requested_devices & 4 != 0 {
-            body = body.push(
-                canopa_ui::action(
-                    canopa_ui::direction::row([
-                        text(if self.touch { "☑" } else { "☐" }).size(18).into(),
-                        column![
-                            text(fl!("portal-screencast-touch")).size(14),
-                            text(fl!("portal-screencast-touch-hint"))
-                                .size(12)
-                                .style(canopa_ui::muted)
-                        ]
-                        .spacing(4)
-                        .width(Length::Fill)
-                        .into(),
-                    ])
-                    .spacing(10)
-                    .width(Length::Fill),
-                    Some(Message::Touch(!self.touch)),
-                    canopa_ui::Action::Normal,
+                    fl!("portal-screencast-pointer"),
+                    fl!("portal-screencast-pointer-hint"),
+                    Message::Pointer(!self.pointer),
+                ),
+                (
+                    self.requested_devices & 4 != 0,
                     self.touch,
-                )
-                .width(Length::Fill),
-            );
-        }
-        if self.requested_clipboard {
-            body = body.push(
-                canopa_ui::action(
-                    canopa_ui::direction::row([
-                        text(if self.clipboard { "☑" } else { "☐" }).size(18).into(),
-                        column![
-                            text(fl!("portal-screencast-clipboard")).size(14),
-                            text(fl!("portal-screencast-clipboard-hint"))
-                                .size(12)
-                                .style(canopa_ui::muted)
-                        ]
-                        .spacing(4)
-                        .width(Length::Fill)
-                        .into(),
-                    ])
-                    .spacing(10)
-                    .width(Length::Fill),
-                    Some(Message::Clipboard(!self.clipboard)),
-                    canopa_ui::Action::Normal,
+                    fl!("portal-screencast-touch"),
+                    fl!("portal-screencast-touch-hint"),
+                    Message::Touch(!self.touch),
+                ),
+                (
+                    self.requested_clipboard,
                     self.clipboard,
-                )
-                .width(Length::Fill),
-            );
+                    fl!("portal-screencast-clipboard"),
+                    fl!("portal-screencast-clipboard-hint"),
+                    Message::Clipboard(!self.clipboard),
+                ),
+            ] {
+                if requested {
+                    permissions = permissions.push(
+                        dialog_ui::action(
+                            canopa_ui::direction::row([
+                                text(if checked { "☑" } else { "☐" }).size(18).into(),
+                                column![text(title).size(14), dialog_ui::detail(hint).size(13)]
+                                    .spacing(2)
+                                    .width(Length::Fill)
+                                    .into(),
+                            ])
+                            .spacing(10)
+                            .align_y(iced::Center)
+                            .width(Length::Fill),
+                            Some(toggle),
+                            canopa_ui::Action::Normal,
+                            false,
+                        )
+                        .padding([5, 10])
+                        .width(Length::Fill)
+                        .style(move |theme, status| {
+                            dialog_ui::selection(theme, status, checked, false)
+                        }),
+                    );
+                }
+            }
+            body = body
+                .push(dialog_ui::section(fl!("portal-screencast-permissions")))
+                .push(
+                    container(permissions)
+                        .padding(5)
+                        .width(Length::Fill)
+                        .style(dialog_ui::card),
+                );
         }
         if self.input.types != 0 {
-            body = body
-                .push(
-                    text(match (self.input.types, self.input.multiple) {
-                        (1, false) => fl!("portal-screencast-choose-display"),
-                        (1, true) => fl!("portal-screencast-choose-displays"),
-                        (2, false) => fl!("portal-screencast-choose-window"),
-                        (2, true) => fl!("portal-screencast-choose-windows"),
-                        (_, false) => fl!("portal-screencast-choose-source"),
-                        (_, true) => fl!("portal-screencast-choose-sources"),
-                    })
-                    .size(13),
-                )
-                .push(
-                    text_input(&fl!("portal-screencast-search"), &self.query)
+            let help = if self.screenshot {
+                fl!("portal-screencast-choose-capture-window")
+            } else {
+                match (self.input.types, self.input.multiple) {
+                    (1, false) => fl!("portal-screencast-choose-display"),
+                    (1, true) => fl!("portal-screencast-choose-displays"),
+                    (2, false) => fl!("portal-screencast-choose-window"),
+                    (2, true) => fl!("portal-screencast-choose-windows"),
+                    (_, false) => fl!("portal-screencast-choose-source"),
+                    (_, true) => fl!("portal-screencast-choose-sources"),
+                }
+            };
+            let search = if self.input.types == 2 {
+                fl!("portal-screencast-search-windows")
+            } else {
+                fl!("portal-screencast-search")
+            };
+            body = body.push(dialog_ui::section(help));
+            if self.available && (self.items.len() > 3 || !self.query.is_empty()) {
+                body = body.push(
+                    text_input(&search, &self.query)
+                        .padding([7, 10])
+                        .style(dialog_ui::field)
                         .on_input(Message::Query),
-                )
-                .push(
-                    scrollable(choices)
-                        .id("capture-sources")
-                        .height(Length::Fill),
                 );
+            } else if !self.available {
+                choices = choices.push(
+                    container(
+                        column![
+                            text(fl!("portal-screencast-source-connection")),
+                            dialog_ui::detail(fl!("portal-screencast-source-connection-hint")),
+                        ]
+                        .spacing(6),
+                    )
+                    .width(Length::Fill)
+                    .padding(14)
+                    .style(dialog_ui::card),
+                );
+            }
+            if self.available && visible.is_empty() {
+                choices = choices.push(
+                    container(dialog_ui::detail(fl!("portal-screencast-no-matches"))).padding(10),
+                );
+            }
+            body = body.push(
+                scrollable(choices)
+                    .style(canopa_ui::scrollbar)
+                    .id("capture-sources")
+                    .on_scroll(Message::Scrolled)
+                    .spacing(5)
+                    .height(Length::Fill),
+            );
         } else {
             body = body.push(iced::widget::Space::new().height(Length::Fill));
         }
@@ -673,6 +820,18 @@ impl Dialog {
                 3 => fl!("portal-screencast-keyboard-pointer-allowed"),
                 _ => fl!("portal-screencast-control-undecided"),
             }
+        } else if self.selected.len() == 1
+            && let Some(item) = self
+                .items
+                .iter()
+                .find(|item| self.selected.contains(&item.source))
+        {
+            fl!(
+                "portal-screencast-selected-source",
+                source = item.title.as_str()
+            )
+        } else if self.selected.is_empty() {
+            fl!("portal-screencast-pick-first")
         } else if self.input.multiple {
             fl!(
                 "portal-screencast-selected-of",
@@ -682,56 +841,59 @@ impl Dialog {
         } else {
             fl!("portal-screencast-selected", count = self.selected.len())
         }];
-        if self.input.types != 0 {
-            match self.devices() {
-                1 => status.push(fl!("portal-screencast-keyboard-allowed")),
-                2 => status.push(fl!("portal-screencast-pointer-allowed")),
-                3 => status.push(fl!("portal-screencast-keyboard-pointer-allowed")),
-                _ => {}
-            }
-        }
         if self.clipboard
             && self.requested_clipboard
-            && !(self.input.types == 0 && self.requested_devices == 0)
+            && self.input.types == 0
+            && self.requested_devices != 0
         {
             status.push(fl!("portal-screencast-clipboard-allowed"));
         }
-        if self.valid() {
-            status.push(fl!(
-                "portal-screencast-shortcut",
-                action = self.action_kind()
-            ));
+        if self.input.types != 0
+            && self.valid()
+            && (self.requested_devices != 0 || self.requested_clipboard)
+            && self.devices() == 0
+            && !self.clipboard
+        {
+            status.push(fl!("portal-screencast-view-only"));
         }
         let status = status.join(" · ");
-        body = body
-            .push(text(status).size(13).style(canopa_ui::muted))
-            .push(
-                canopa_ui::direction::row([
-                    canopa_ui::action(
-                        text(fl!("portal-cancel")),
-                        Some(Message::Cancel),
-                        canopa_ui::Action::Normal,
-                        false,
-                    )
-                    .width(Length::Fill)
-                    .into(),
-                    canopa_ui::action(
-                        text(self.action()),
-                        self.valid().then_some(Message::Share),
-                        canopa_ui::Action::Normal,
-                        false,
-                    )
-                    .width(Length::Fill)
-                    .into(),
-                ])
-                .spacing(12),
-            );
-        container(body)
-            .padding(20)
+        if self.available || self.input.types == 0 {
+            body =
+                body.push(dialog_ui::section(status).wrapping(iced::widget::text::Wrapping::None));
+        }
+        let actions = canopa_ui::direction::row([
+            dialog_ui::detail(if self.valid() {
+                fl!("portal-screencast-confirm-keys")
+            } else {
+                String::new()
+            })
+            .size(13)
             .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+            .into(),
+            dialog_ui::action(
+                text(fl!("portal-cancel")),
+                Some(Message::Cancel),
+                canopa_ui::Action::Normal,
+                false,
+            )
+            .into(),
+            dialog_ui::action(
+                text(self.action()),
+                self.valid().then_some(Message::Share),
+                canopa_ui::Action::Primary,
+                false,
+            )
+            .into(),
+        ])
+        .align_y(iced::Center)
+        .spacing(8);
+        dialog_ui::frame(
+            container(body)
+                .padding([20, 24])
+                .width(Length::Fill)
+                .height(Length::Fill),
+            actions,
+        )
     }
 }
 
@@ -768,20 +930,30 @@ mod tests {
                 source: Source::Monitor("DP-1".into()),
                 title: "Display".into(),
                 subtitle: "Desktop".into(),
+                app_id: None,
             },
             Item {
                 source: Source::Window(1),
                 title: "Editor".into(),
                 subtitle: "Text editor".into(),
+                app_id: None,
             },
             Item {
                 source: Source::Window(2),
                 title: "Browser".into(),
                 subtitle: "Web browser".into(),
+                app_id: None,
             },
         ];
         Dialog {
             screenshot: false,
+            requester: "Fixture".into(),
+            display_icon: None,
+            window_icon: None,
+            foreground: canopa_theme::Rgb(255, 255, 255),
+            previews: Previews::default(),
+            preview_top: 0.,
+            preview_height: 420.,
             input: DialogInput {
                 app_id: "app".into(),
                 parent_window: "".into(),
@@ -1055,6 +1227,7 @@ mod tests {
                 source: Source::Window(id),
                 title: format!("Window {id}"),
                 subtitle: "app".into(),
+                app_id: None,
             })
             .collect();
         for id in 0..20 {

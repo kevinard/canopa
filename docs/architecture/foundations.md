@@ -316,7 +316,8 @@ generic name, keywords, icon, desktop actions, D-Bus activation,
 visibility for the launcher; `discover_choice_metadata` keeps names and icons for
 hidden handlers that a portal request names explicitly. The crate does not
 launch, choose or authorize anything: the Shell owns launches and menus, the
-portal owns AppChooser selection. Call it on a worker.
+portal owns AppChooser selection. Shell and portal windows also share the
+desktop-entry matcher for compositor application IDs. Call it on a worker.
 
 ## File primitives
 
@@ -416,6 +417,10 @@ revalidate before acting. Wording stays with the callers. Fake services for
 tests (private bus, logind, UPower, BlueZ, MPRIS, NetworkManager, iwd, a private
 Pulse server) are behind the `test-support` feature. `canopa-session` keeps its
 own logind client for locking.
+
+The Niri window-preview client resolves the service's unique bus owner and
+checks PNG dimensions and size. Shell taskbar tooltips and the portal window
+pickers both use it. Portal pickers also supply the expected compositor PID.
 
 ## Widget data
 

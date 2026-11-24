@@ -4,7 +4,7 @@ mod tests;
 mod view;
 use crate::{
     chooser_ui::{self, Outcome, Picker, PickerOptions, PickerStart},
-    file_chooser::{ChooserRequest, Mode},
+    file_chooser::Mode,
     print::{
         file_target::{
             Pinned, RecoveryBody, RecoveryItem, RecoveryStatus, RecoveryStore, Reviewed,
@@ -37,13 +37,12 @@ pub fn run(
     let reaper = client.clone();
     let handle = runtime.handle().clone();
     let (cancel, cancelled) = watch::channel(false);
-    let theme = canopa_ui::theme(appearance.clone());
     let font = canopa_ui::font(&appearance);
     let result = iced::daemon(
         move || {
             let (_, open) = window::open(window::Settings {
-                size: Size::new(860., 650.),
-                min_size: Some(Size::new(580., 440.)),
+                size: Size::new(680., 300.),
+                min_size: Some(Size::new(550., 290.)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Portal".into(),
@@ -52,7 +51,7 @@ pub fn run(
                 ..Default::default()
             });
             let mut app = Recovery::new(
-                theme.clone(),
+                appearance.clone(),
                 client.clone(),
                 handle.clone(),
                 cancelled.clone(),
@@ -103,6 +102,7 @@ impl Drop for Running {
 }
 
 struct Recovery {
+    appearance: canopa_theme::Appearance,
     theme: Theme,
     client: Client,
     runtime: Handle,
@@ -157,13 +157,14 @@ enum Message {
 
 impl Recovery {
     fn new(
-        theme: Theme,
+        appearance: canopa_theme::Appearance,
         client: Client,
         runtime: Handle,
         cancelled: watch::Receiver<bool>,
     ) -> Self {
         Self {
-            theme,
+            theme: canopa_ui::theme(appearance.clone()),
+            appearance,
             client,
             runtime,
             cancelled,
@@ -475,7 +476,7 @@ impl Recovery {
                         let Some(item) = self.item() else {
                             return self.back();
                         };
-                        let mut request = ChooserRequest::parse(
+                        let mut request = crate::file_chooser::parse_request(
                             Mode::Save,
                             String::new(),
                             String::new(),
@@ -485,8 +486,11 @@ impl Recovery {
                         .expect("bounded recovery picker");
                         request.accept_label = fl!("portal-recovery-save-copy");
                         request.current_name = Some(suggested(item, body));
+                        let appearance = self.appearance.clone();
                         return Task::perform(
-                            crate::worker::run(move || chooser_ui::prepare_picker(request)),
+                            crate::worker::run(move || {
+                                chooser_ui::prepare_picker(request, appearance)
+                            }),
                             move |result| {
                                 Message::PickerReady(
                                     generation,

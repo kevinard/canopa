@@ -547,16 +547,7 @@ fn disclosure<'a>(
     row![indent, chevron].into()
 }
 
-/// The hover wash for rows and headings: the text colour, faint enough to sit
-/// on any surface without reading as a selection.
-pub(super) fn hover_wash(appearance: &canopa_theme::Appearance) -> iced::Color {
-    let alpha = if appearance.high_contrast() {
-        0.16
-    } else {
-        0.07
-    };
-    chrome::ink(appearance, ColorRole::Text).scale_alpha(alpha)
-}
+pub(super) use crate::browser_ui::entry::hover_wash;
 
 fn label_for(field: SortField) -> String {
     match field {
@@ -618,11 +609,6 @@ pub(super) struct Presentation<'a> {
     pub position: (usize, usize),
 }
 
-/// High contrast keeps the bold selected name as a second, non-colour cue.
-fn style_contrast(appearance: &canopa_theme::Appearance) -> bool {
-    appearance.high_contrast()
-}
-
 pub(super) fn entry<'a>(
     desktop: &'a Desktop,
     id: window::Id,
@@ -643,11 +629,18 @@ pub(super) fn entry<'a>(
     let browser = tab.browser.as_ref().unwrap();
     let settings = browser.view();
     let current = column_path == browser.path();
-    let current_folder = !current && entry.path == browser.path();
     let size = appearance.typography().body_size.px();
     let label_size = appearance.typography().label_size.px();
     let font = canopa_ui::font(appearance);
     let inline = current && !searching && inline_details(appearance, settings, tab.viewport_width);
+    let row_state = crate::browser_ui::entry::RowState {
+        selected,
+        // The keyboard ring belongs to the active window only.
+        focused: focused && desktop.focused_window == Some(id),
+        ancestor: !current,
+        alternate: inline && alternate,
+        disabled: false,
+    };
     let items = entry
         .is_directory()
         .then(|| desktop.folder_counts.items(entry, browser.show_hidden()))
@@ -676,21 +669,9 @@ pub(super) fn entry<'a>(
             .align_x(Alignment::Center)
             .into()
     } else {
-        // Selection is carried by the row's fill; the name keeps its weight
-        // so it never shifts as the selection moves.
-        let mut name_font = font;
-        if selected && style_contrast(appearance) {
-            name_font.weight = iced::font::Weight::Semibold;
-        }
-        let name = chrome::file_name_line(
-            entry.name().into_owned(),
-            name_font,
-            size,
-            None,
-            tab.location.is_none()
-                && desktop.action_menu.is_none()
-                && desktop.folder_options.is_none(),
-        );
+        let reveal = tab.location.is_none()
+            && desktop.action_menu.is_none()
+            && desktop.folder_options.is_none();
         let file_icon = desktop.icons.file(entry, 22.0);
         let arrow = || {
             desktop
@@ -709,16 +690,32 @@ pub(super) fn entry<'a>(
         } else {
             0.0
         };
-        let name: Element<'a, Message> = if inline {
-            container(name).width((name_width - lead).max(40.0)).into()
+        let mut name_line = if inline || tree {
+            let mut name_font = font;
+            if selected && appearance.high_contrast() {
+                name_font.weight = iced::font::Weight::Semibold;
+            }
+            let name =
+                chrome::file_name_line(entry.name().into_owned(), name_font, size, None, reveal);
+            let name = if inline {
+                container(name).width((name_width - lead).max(40.0)).into()
+            } else {
+                name
+            };
+            let mut line = row![].spacing(8).align_y(Alignment::Center);
+            if tree {
+                line = line.push(disclosure(desktop, id, tab, entry, depth, selected));
+            }
+            line.push(file_icon).push(name)
         } else {
-            name
+            crate::browser_ui::entry::name_row(
+                appearance,
+                entry.name().into_owned(),
+                file_icon,
+                row_state,
+                reveal,
+            )
         };
-        let mut name_line = row![].spacing(8).align_y(Alignment::Center);
-        if tree {
-            name_line = name_line.push(disclosure(desktop, id, tab, entry, depth, selected));
-        }
-        let mut name_line = name_line.push(file_icon).push(name);
         // Chevrons promise a column to the right; List view opens folders in place.
         let drills = entry.is_directory() && (!current || settings.mode == ViewMode::Columns);
         if inline {
@@ -783,83 +780,12 @@ pub(super) fn entry<'a>(
         super::view::row_height(appearance)
     };
     let style_appearance = appearance.clone();
-    // The keyboard cursor's ring belongs to the active window only; the
-    // accessible focus state below does not depend on it.
-    let ring = focused && desktop.focused_window == Some(id);
     let card = container(content)
-        .padding(super::view::entry_padding(appearance, grid))
+        .padding(crate::browser_ui::entry::entry_padding(appearance, grid))
         .height(height)
         .width(Length::Fill)
         .clip(true)
-        .style(move |_| {
-            let base = style_appearance.style(UiKind::MenuRow);
-            let resolved = base.state(selected, false, false, false, ring);
-            let mut style = canopa_ui::frame(&style_appearance, resolved);
-            // High contrast keeps selection and its edge opaque in every column.
-            let contrast = style_appearance.high_contrast();
-            if selected && base.states[0].background.is_none() {
-                // Ancestors share one neutral fill; the accent stays with the
-                // current folder's selection and keyboard focus.
-                let color = if contrast {
-                    chrome::ink(&style_appearance, ColorRole::AccentSurface)
-                } else if current {
-                    // A firmer tint than hover so the selection reads at a glance.
-                    chrome::mix(
-                        chrome::ink(&style_appearance, ColorRole::AccentSurface),
-                        chrome::ink(&style_appearance, ColorRole::Accent),
-                        0.22,
-                    )
-                } else {
-                    // Ancestors' trail: a neutral fill that still reads on the
-                    // column's own tint.
-                    chrome::mix(
-                        chrome::ink(&style_appearance, ColorRole::Raised),
-                        chrome::ink(&style_appearance, ColorRole::Text),
-                        0.07,
-                    )
-                };
-                // The current folder's selection is the accent surface without an
-                // outline, so it never reads as the keyboard focus ring.
-                style.background = Some(color.into());
-                if !base.custom_border && base.states[0].border_color.is_none() {
-                    let mut edge = chrome::ink(&style_appearance, ColorRole::Accent);
-                    edge.a = if contrast {
-                        1.0
-                    } else if current {
-                        0.0
-                    } else if current_folder {
-                        0.42
-                    } else {
-                        0.0
-                    };
-                    style.border.width = if contrast { 1.0 } else { 0.0 };
-                    style.border.color = edge;
-                }
-            }
-            if inline
-                && alternate
-                && !contrast
-                && !selected
-                && !ring
-                && canopa_ui::resolve_color(&style_appearance, base.background).a == 0.0
-            {
-                style.background = Some(
-                    chrome::ink(&style_appearance, ColorRole::Raised)
-                        .scale_alpha(0.4)
-                        .into(),
-                );
-            }
-            if !base.custom_radius {
-                style.border.radius = 7.0.into();
-            }
-            if ring && base.states[4].border_color.is_none() {
-                style.border.width = style.border.width.max(1.0);
-                // A quieter ring than controls': rows are focused continuously.
-                style.border.color = canopa_ui::color(style_appearance.role(ColorRole::Focus))
-                    .scale_alpha(if contrast { 1.0 } else { 0.6 });
-            }
-            style
-        });
+        .style(move |_| row_state.frame(&style_appearance));
     // Rows the pointer can act on show it: a faint wash under the hovered row.
     let interactive = tab.location.is_none()
         && desktop

@@ -1,4 +1,5 @@
 use super::Input;
+use crate::dialog_ui;
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
     widget::{column, container, scrollable, text},
@@ -26,11 +27,11 @@ pub(super) fn run(
         move || {
             let (_, opening) = window::open(window::Settings {
                 size: Size::new(
-                    480.0,
-                    if input.capture_input && input.clipboard {
-                        340.0
+                    500.0,
+                    if input.sources.is_empty() {
+                        360.0
                     } else {
-                        280.0
+                        420.0
                     },
                 ),
                 resizable: false,
@@ -123,67 +124,78 @@ impl Controls {
         } else {
             self.input.requester.clone()
         };
-        let sources = self
-            .input
-            .sources
-            .iter()
-            .fold(column![].spacing(6), |items, name| {
-                items.push(
+        let mut details = column![].spacing(10);
+        if self.input.devices != 0 || self.input.clipboard {
+            let mut access =
+                column![dialog_ui::section(fl!("portal-sharing-active-permissions")).size(16)]
+                    .spacing(5);
+            if self.input.devices != 0 {
+                access = access.push(text(self.input.control_label()).size(14));
+            }
+            if self.input.clipboard {
+                access = access.push(
+                    text(if self.input.capture_input {
+                        fl!("portal-sharing-clipboard-capture")
+                    } else {
+                        fl!("portal-sharing-clipboard")
+                    })
+                    .size(14),
+                );
+            }
+            details = details.push(
+                container(access)
+                    .padding([10, 12])
+                    .width(Length::Fill)
+                    .style(dialog_ui::card),
+            );
+        }
+        if !self.input.sources.is_empty() {
+            let mut sources =
+                column![dialog_ui::section(fl!("portal-sharing-active-sources")).size(16)]
+                    .spacing(5);
+            for name in &self.input.sources {
+                sources = sources.push(
                     text(name)
                         .size(14)
                         .width(Length::Fill)
-                        .height(22)
                         .wrapping(iced::widget::text::Wrapping::None),
-                )
-            });
-        let sources = if self.input.clipboard {
-            sources.push(
-                text(if self.input.capture_input {
-                    fl!("portal-sharing-clipboard-capture")
-                } else {
-                    fl!("portal-sharing-clipboard")
-                })
-                .size(14),
-            )
-        } else {
-            sources
-        };
-        let sources = if self.input.devices != 0 {
-            column![text(self.input.control_label()).size(14), sources].spacing(6)
-        } else {
-            sources
-        };
-        container(
-            column![
-                text(self.input.heading()).size(22),
-                text(if self.input.capture_input {
-                    fl!("portal-sharing-input-to", requester = requester)
-                } else if self.input.devices != 0 && !self.input.clipboard {
-                    fl!("portal-sharing-control-to", requester = requester)
-                } else {
-                    fl!("portal-sharing-with", requester = requester)
-                })
-                .size(14)
+                );
+            }
+            details = details.push(
+                container(sources)
+                    .padding([10, 12])
+                    .width(Length::Fill)
+                    .style(dialog_ui::card),
+            );
+        }
+        let body = column![
+            dialog_ui::heading(self.input.heading()),
+            text(if self.input.capture_input {
+                fl!("portal-sharing-input-to", requester = requester)
+            } else if self.input.devices != 0 && !self.input.clipboard {
+                fl!("portal-sharing-control-to", requester = requester)
+            } else {
+                fl!("portal-sharing-with", requester = requester)
+            })
+            .size(14)
+            .width(Length::Fill)
+            .height(20)
+            .wrapping(iced::widget::text::Wrapping::None),
+            scrollable(details)
+                .style(canopa_ui::scrollbar)
+                .spacing(5)
+                .height(Length::Fill),
+            text(self.input.hint()).size(14),
+        ]
+        .spacing(12);
+        let actions =
+            dialog_ui::footer([dialog_ui::danger(self.input.stop_label(), Message::Stop).into()]);
+        dialog_ui::frame(
+            container(body)
+                .padding([18, 24])
                 .width(Length::Fill)
-                .height(20)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .style(canopa_ui::muted),
-                scrollable(sources).height(Length::Fill),
-                text(self.input.hint()).size(12).style(canopa_ui::muted),
-                canopa_ui::action(
-                    text(self.input.stop_label()),
-                    Some(Message::Stop),
-                    canopa_ui::Action::Destructive,
-                    false
-                )
-                .width(Length::Fill)
-            ]
-            .spacing(12),
+                .height(Length::Fill),
+            actions,
         )
-        .padding(20)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(canopa_ui::surface)
-        .into()
     }
 }

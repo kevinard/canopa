@@ -60,6 +60,8 @@ def application(mode, output):
                          Gio.DBusCallFlags.NONE, 5000, None)
     notification = Gio.Notification.new('Canopa portal notification')
     notification.set_body('Literal <b>body</b> — sender may exit')
+    # Keep the banner visible while testing the independent sender lifetime.
+    notification.set_priority(Gio.NotificationPriority.URGENT)
     notification.set_default_action_and_target('app.default', GLib.Variant('(si)', ('payload', 7)))
     notification.add_button_with_target('Reply to fixture', 'app.reply', GLib.Variant('s', 'answer'))
     svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><rect width='32' height='32' fill='#468ac2'/></svg>"
@@ -200,6 +202,7 @@ def verify(binary, session, scheme, scale, shell_binary):
     session.run(['niri', 'msg', 'action', 'close-window', '--id', str(window['id'])])
     session.wait_for(lambda: not any(item['id'] == window['id'] for item in json.loads(session.run(['niri', 'msg', '--json', 'windows']))), 'fixture application window closed')
     session.wait_for(lambda: not active(), 'default action retires its notification')
+    session.run([str(pointer), '1540', '500', 'move'])
     send()
     time.sleep(.5)
     left, top, right, bottom = frame('button.png')
@@ -266,6 +269,8 @@ def verify(binary, session, scheme, scale, shell_binary):
             'default-action-target': GLib.Variant('(si)', ('center-target', 27)),
         }))
         session.wait_for(active, 'notification before opening Center')
+        session.wait_for(lambda: 'requires_attention=1' in (session.output / 'shell.log').read_text(),
+                         'notification count reaches the Shell')
         click(25, 20)
         session.run([str(pointer), '800', '500', 'move'])
         def center_drawn():
@@ -276,7 +281,7 @@ def verify(binary, session, scheme, scale, shell_binary):
         session.wait_for(center_drawn, 'drawn Notification Center reading panel')
         # Center geometry is fixed by the small private shell configuration;
         # keep a capture for reviewing the native target before accepting it.
-        click(108, 296)
+        click(124, 240)
         def center_signal():
             drain()
             return next((signal for signal in signals if signal.get_child_value(1).unpack() == 'chosen-center'), None)

@@ -181,6 +181,14 @@ impl Desktop {
     }
 
     pub(super) fn action_event(&mut self, event: Event) -> Task<Message> {
+        if self.picker.is_some()
+            && matches!(
+                event,
+                Event::Context(_) | Event::Row(_) | Event::Background(..) | Event::Invoke(..)
+            )
+        {
+            return Task::none();
+        }
         match event {
             Event::Builtin(source, command) => {
                 if self.matches_source(&source) {
@@ -200,7 +208,21 @@ impl Desktop {
                 let Some(source) = self.action_source(id) else {
                     return Task::none();
                 };
-                let items = self.application_items(id);
+                let items = if let Some(picker) = &self.picker {
+                    [
+                        Command::Location,
+                        Command::Search,
+                        Command::ShowHidden,
+                        Command::Refresh,
+                        Command::NewFolder,
+                    ]
+                    .into_iter()
+                    .filter(|command| picker.allows(*command))
+                    .map(|command| (command.label(), Item::Command(command)))
+                    .collect()
+                } else {
+                    self.application_items(id)
+                };
                 return self.present_menu(source, items);
             }
             Event::Context(id) => {
@@ -899,6 +921,13 @@ impl Desktop {
             items.push((fl!("files-command-back"), Item::Back));
         }
         for place in &self.configuration.settings.places {
+            if self.picker.as_ref().is_some_and(|picker| match place {
+                Place::Builtin(PlaceKind::Trash | PlaceKind::Recovery) => true,
+                Place::Builtin(PlaceKind::Recent) => !picker.allows(Command::ShowRecent),
+                _ => false,
+            }) {
+                continue;
+            }
             let item = match place {
                 Place::Builtin(PlaceKind::Recent) => Some(Item::Command(Command::ShowRecent)),
                 Place::Builtin(PlaceKind::Trash) => Some(Item::Command(Command::ShowTrash)),
@@ -911,6 +940,12 @@ impl Desktop {
         }
         if self.devices.catalog.status == crate::local_volumes::DeviceStatus::Ready {
             for device in &self.devices.catalog.devices {
+                if self.picker.is_some() {
+                    if device.root.is_some() {
+                        items.push((device.name.clone(), Item::Device(device.token, false)));
+                    }
+                    continue;
+                }
                 if device.root.is_some() || device.can_mount {
                     let device_name = device.name.clone();
                     let label = if device.root.is_some() {
@@ -936,6 +971,9 @@ impl Desktop {
         id: window::Id,
         chord: &KeyChord,
     ) -> Option<Task<Message>> {
+        if self.picker.is_some() {
+            return None;
+        }
         let action = self
             .configuration
             .actions

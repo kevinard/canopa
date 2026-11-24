@@ -111,6 +111,7 @@ def verify(args, result):
                 chooser = next(w for w in windows() if w['id'] == chooser['id'])
                 width, height = chooser['layout']['window_size']
                 session.capture(mode + '-review.png')
+                assert Path(f"/proc/{chooser['pid']}/exe").resolve() == args.binary.with_name('canopa-files')
                 assert 'libgtk' not in Path(f"/proc/{chooser['pid']}/maps").read_text()
                 if mode == 'cancel':
                     session.run(['wtype', '-k', 'Escape'])
@@ -123,7 +124,7 @@ def verify(args, result):
                         session.wait_for(save_folder.is_dir, 'explicit New folder inside sandbox Save review')
                         time.sleep(.3)
                     if mode == 'open':
-                        click(320, 150)
+                        session.run(['wtype', '-k', 'End'])
                         click(38, 10 + height - 65)  # Explicit Open read-only choice.
                     click(20 + width - 42, 10 + height - 30)
                 actual = process.wait(timeout=15)
@@ -196,7 +197,7 @@ def main():
     args.output = args.output.resolve(); args.output.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(__file__, args.output / 'probe-source.py')
     shutil.copyfile(ROOT / 'scripts/desktop-fixture/file-chooser-flatpak.c', args.output / 'client-source.c')
-    pins = {str(p): digest(p) for p in [Path(__file__), args.binary, args.niri, args.frontend, args.client_build, ROOT / 'scripts/desktop-fixture/file-chooser-flatpak.c', Path('/usr/lib/xdg-document-portal'), Path('/usr/lib/xdg-permission-store')]}
+    pins = {str(p): digest(p) for p in [Path(__file__), args.binary, args.binary.with_name('canopa-files'), args.niri, args.frontend, args.client_build, ROOT / 'scripts/desktop-fixture/file-chooser-flatpak.c', Path('/usr/lib/xdg-document-portal'), Path('/usr/lib/xdg-permission-store')]}
     result = dict(status='running', checks=[], pins=pins, scope=__doc__, modes=args.modes, new_folder=args.new_folder, check_folder_history=args.check_folder_history)
     try:
         verify(args, result); result['status'] = 'passed'

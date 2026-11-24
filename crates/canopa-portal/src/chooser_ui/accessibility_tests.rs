@@ -4,7 +4,15 @@
 use super::*;
 use canopa_ui::accessibility::testing::{self, atspi};
 use canopa_ui::accessibility::{Bridge, Event as Accessibility, Harness};
-use iced::advanced::renderer::Headless;
+use iced::{Size, advanced::renderer::Headless};
+const WINDOW_KEY: &str = "embedded-chooser";
+
+impl canopa_ui::accessibility::Message for Message {
+    fn accessibility(event: Accessibility<Self>) -> Self {
+        Self::Accessibility(event)
+    }
+}
+
 use std::time::Duration;
 
 const SIZE: Size = Size::new(820.0, 560.0);
@@ -51,7 +59,7 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     std::fs::write(&alpha, b"alpha").unwrap();
     std::fs::write(root.path().join("beta.pdf"), b"beta").unwrap();
     std::fs::create_dir(root.path().join("folder")).unwrap();
-    let request = ChooserRequest::parse(
+    let request = crate::file_chooser::parse_request(
         Mode::Open,
         String::new(),
         String::new(),
@@ -59,23 +67,16 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
         Default::default(),
     )
     .unwrap();
-    let (picker, _) = Picker::new(
+    let (mut picker, _) = Picker::new(
         PickerStart::fixture(request, root.path().into()),
         PickerOptions::default(),
     );
-    let mut dialog = Dialog {
-        picker,
-        theme: canopa_ui::theme(Default::default()),
-        output: Arc::default(),
-        window: window::Id::unique(),
-        accessibility: None,
-    };
-    let _ = dialog.update(Message::Loaded(
-        dialog.picker.revision,
+    let _ = picker.update(Message::Loaded(
+        picker.revision,
         false,
         Ok(Directory::read(root.path()).unwrap()),
     ));
-    let title = dialog.picker.window_title();
+    let title = picker.window_title();
     let mut bridge = Bridge::new("file-chooser-test");
     bridge.open(WINDOW_KEY, &title, None);
     bridge.set_window_focused(WINDOW_KEY, true);
@@ -84,16 +85,20 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     let renderer = iced::Renderer::new(iced::Font::DEFAULT, iced::Pixels(16.0), Some("tiny-skia"))
         .await
         .unwrap();
-    let publish = |dialog: &Dialog, bridge: &mut Bridge<Message>| {
-        let mut harness = Harness::new(dialog.view(dialog.window), &renderer, SIZE);
+    let publish = |picker: &Picker, bridge: &mut Bridge<Message>| {
+        let mut harness = Harness::new(
+            semantic(Node::window(WINDOW_KEY, title.clone()), picker.view()),
+            &renderer,
+            SIZE,
+        );
         bridge.publish_snapshot(&harness.collect());
     };
-    publish(&dialog, &mut bridge);
+    publish(&picker, &mut bridge);
     let window = testing::named(&connection, &title).await;
     if std::env::var_os("CANOPA_ACCESSIBILITY_DUMP").is_some() {
         testing::dump(&window).await;
     }
-    testing::named_role(&connection, "Open a document", "dialog").await;
+    testing::named_role(&connection, "Open a document", "heading").await;
     testing::named_role(&connection, "3 items", "status bar").await;
 
     // Rows are options named by file name and described by their type; the
@@ -106,22 +111,21 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     assert!(row.do_action(0).await);
     let message = action(&bridge).await;
     assert!(matches!(&message, Message::Select(path) if *path == alpha));
-    let _ = dialog.update(message);
-    publish(&dialog, &mut bridge);
+    let _ = picker.update(message);
+    publish(&picker, &mut bridge);
     let row = testing::named_role(&connection, "alpha.txt", "list item").await;
     row.wait_for_state(atspi::STATE_SELECTED).await;
     row.wait_for_state(atspi::STATE_FOCUSED).await;
 
     // Arrow keys move the cursor row, and accessibility focus follows it.
-    let order: Vec<String> = dialog
-        .picker
+    let order: Vec<String> = picker
         .entries()
         .into_iter()
         .map(|entry| entry.name().into_owned())
         .collect();
     let below = &order[order.iter().position(|name| name == "alpha.txt").unwrap() + 1];
-    let _ = dialog.update(key(keyboard::key::Named::ArrowDown));
-    publish(&dialog, &mut bridge);
+    let _ = picker.update(key(keyboard::key::Named::ArrowDown));
+    publish(&picker, &mut bridge);
     let next_row = testing::named_role(&connection, below, "list item").await;
     next_row.wait_for_state(atspi::STATE_FOCUSED).await;
     next_row.wait_for_state(atspi::STATE_SELECTED).await;
@@ -132,6 +136,8 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
 
     // The search field filters the list it controls; focusing it from an
     // assistive technology moves keyboard focus there.
+    let _ = picker.update(Message::ShowNameFilter);
+    publish(&picker, &mut bridge);
     let search = testing::named_role(&connection, "Filter names in this folder", "entry").await;
     let controlled = search.relation(atspi::RELATION_CONTROLLER_FOR).await;
     assert_eq!(controlled.len(), 1);
@@ -143,9 +149,13 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     };
     assert_eq!(*id, iced::widget::Id::from("search"));
     let id = id.clone();
-    let _ = dialog.update(Message::Accessibility(event));
+    let _ = picker.update(Message::Accessibility(event));
     {
-        let mut harness = Harness::new(dialog.view(dialog.window), &renderer, SIZE);
+        let mut harness = Harness::new(
+            semantic(Node::window(WINDOW_KEY, title.clone()), picker.view()),
+            &renderer,
+            SIZE,
+        );
         harness.focus(id);
         bridge.publish_snapshot(&harness.collect());
     }
@@ -158,8 +168,8 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     assert!(matches!(action(&bridge).await, Message::Accept));
 
     // A refused acceptance is announced assertively.
-    let _ = dialog.update(Message::Checked(Err("Select a file".into())));
-    publish(&dialog, &mut bridge);
+    let _ = picker.update(Message::Checked(Err("Select a file".into())));
+    publish(&picker, &mut bridge);
     testing::named_role(&connection, "Select a file", "notification").await;
 
     // Cancel sends Cancel and the chooser finishes without a selection.
@@ -167,9 +177,9 @@ async fn native_file_list_focus_and_dialog_buttons_send_the_input_messages() {
     assert!(cancel.do_action(0).await);
     let message = action(&bridge).await;
     assert!(matches!(message, Message::Cancel));
-    let _ = dialog.update(message);
-    assert!(dialog.picker.finished);
-    assert!(dialog.output.lock().unwrap().is_none());
+    let _ = picker.update(message);
+    assert!(picker.finished);
+    assert!(matches!(picker.take_outcome(), Some(Outcome::Cancelled)));
 
     drop(bridge);
     testing::gone(&connection, &title).await;

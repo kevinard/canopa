@@ -1,16 +1,17 @@
 //! A sharing draft lives only in this request. Only Share completes it.
 #[cfg(test)]
 mod tests;
+use crate::dialog_ui;
 use crate::{
     account::{AccountRequest, FIELD_BYTES, UserInformation},
     account_profile::{self, Avatar, Profile},
     chooser_ui::{self, Outcome, Picker, PickerOptions, PickerStart},
-    file_chooser::{ChooserRequest, Mode},
+    file_chooser::Mode,
     worker::run as worker,
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{checkbox, column, container, image, scrollable, text, text_input},
+    widget::{checkbox, column, container, image, text, text_input},
     window,
 };
 use std::{
@@ -25,13 +26,12 @@ pub fn run(
 ) -> anyhow::Result<Option<UserInformation>> {
     let foreground = appearance.palette().text;
     let font = canopa_ui::font(&appearance);
-    let theme = canopa_ui::theme(appearance);
     let result = Arc::new(Mutex::new(None));
     let output = result.clone();
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(680.0, 620.0),
+                size: Size::new(680.0, 510.0),
                 min_size: Some(Size::new(440.0, 360.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -51,7 +51,12 @@ pub fn run(
                 Message::Loaded,
             );
             (
-                Dialog::new(request.clone(), theme.clone(), foreground, output.clone()),
+                Dialog::new(
+                    request.clone(),
+                    appearance.clone(),
+                    foreground,
+                    output.clone(),
+                ),
                 Task::batch([opening.map(|_| Message::Opened), load]),
             )
         },
@@ -82,6 +87,7 @@ enum View {
 
 struct Dialog {
     request: AccountRequest,
+    appearance: canopa_theme::Appearance,
     theme: Theme,
     foreground: canopa_theme::Rgb,
     output: Arc<Mutex<Option<UserInformation>>>,
@@ -130,7 +136,7 @@ enum Message {
 impl Dialog {
     fn new(
         request: AccountRequest,
-        theme: Theme,
+        appearance: canopa_theme::Appearance,
         foreground: canopa_theme::Rgb,
         output: Arc<Mutex<Option<UserInformation>>>,
     ) -> Self {
@@ -141,7 +147,8 @@ impl Dialog {
         };
         Self {
             request,
-            theme,
+            theme: canopa_ui::theme(appearance.clone()),
+            appearance,
             foreground,
             output,
             view: View::Profile,
@@ -230,6 +237,8 @@ impl Dialog {
                     Ok(profile) => {
                         self.id = profile.id;
                         self.name = profile.name;
+                        self.share_id = !self.id.trim().is_empty();
+                        self.share_name = !self.name.trim().is_empty();
                         self.requester = profile.requester;
                         self.pictures = profile.pictures;
                         self.install_avatar(profile.avatar);
@@ -259,6 +268,9 @@ impl Dialog {
                 self.share_name = value;
                 if value {
                     self.invalid_name = false;
+                    if self.name.is_empty() {
+                        return iced::widget::operation::focus("account-name");
+                    }
                 }
             }
             Message::ShareImage(value)
@@ -278,7 +290,7 @@ impl Dialog {
                 let generation = self.generation;
                 self.view = View::PreparingPicker(generation);
                 self.error = None;
-                let mut request = ChooserRequest::parse(
+                let mut request = crate::file_chooser::parse_request(
                     Mode::Open,
                     self.request.app_id.clone(),
                     String::new(),
@@ -305,8 +317,9 @@ impl Dialog {
                 );
                 request.filters = vec![filter];
                 request.current_filter = request.filters.first().cloned();
+                let appearance = self.appearance.clone();
                 return Task::perform(
-                    worker(move || chooser_ui::prepare_picker(request)),
+                    worker(move || chooser_ui::prepare_picker(request, appearance)),
                     move |result| {
                         Message::PickerReady(
                             generation,
@@ -493,25 +506,21 @@ impl Dialog {
                 .padding(20)
                 .height(Length::Fill)
                 .width(Length::Fill)
-                .style(canopa_ui::surface)
+                .style(dialog_ui::surface)
                 .into();
             }
             View::Profile => {}
         }
         let enabled = self.editable();
         let mut content = column![
-            text(fl!("portal-account-title")).size(22),
-            text(fl!(
+            dialog_ui::heading(fl!("portal-account-title")),
+            dialog_ui::detail(fl!(
                 "portal-requested-by",
                 requester = self.requester.as_str()
-            ))
-            .size(16),
+            )),
         ]
-        .spacing(14)
+        .spacing(12)
         .width(Length::Fill);
-        if !self.request.app_id.is_empty() && self.request.app_id != self.requester {
-            content = content.push(text(&self.request.app_id).size(13).style(canopa_ui::muted));
-        }
         if !self.request.reason.is_empty() {
             content = content.push(text(&self.request.reason));
         }
@@ -519,40 +528,58 @@ impl Dialog {
             content = content.push(text(fl!("portal-account-loading")).style(canopa_ui::muted));
         } else {
             let preview: Element<'_, Message> = match &self.preview {
-                Some(handle) => image(handle.clone()).width(96).height(96).into(),
+                Some(handle) => image(handle.clone()).width(78).height(78).into(),
                 None => container(text(fl!("portal-account-no-image")).style(canopa_ui::muted))
-                    .center_x(96)
-                    .center_y(96)
+                    .center_x(78)
+                    .center_y(78)
+                    .style(dialog_ui::card)
                     .into(),
             };
-            let actions = column![
-                canopa_ui::action(
+            let mut image_actions = vec![
+                dialog_ui::action(
                     text(fl!("portal-account-choose-image")),
                     (enabled && !self.image_loading).then_some(Message::ChooseImage),
                     canopa_ui::Action::Normal,
-                    false
-                ),
-                canopa_ui::action(
-                    text(fl!("portal-account-clear-image")),
-                    (enabled && (self.avatar.is_some() || self.image_loading))
-                        .then_some(Message::ClearImage),
-                    canopa_ui::Action::Quiet,
-                    false
-                ),
-            ]
-            .spacing(8);
-            content = content.push(
-                canopa_ui::direction::row([preview, actions.into()])
-                    .spacing(16)
-                    .align_y(iced::Center),
-            );
+                    false,
+                )
+                .into(),
+            ];
+            if self.avatar.is_some() || self.image_loading {
+                image_actions.push(
+                    dialog_ui::action(
+                        text(fl!("portal-account-clear-image")),
+                        enabled.then_some(Message::ClearImage),
+                        canopa_ui::Action::Quiet,
+                        false,
+                    )
+                    .into(),
+                );
+            }
             let mut share_image = checkbox(self.share_image)
                 .label(fl!("portal-account-share-image"))
                 .style(canopa_ui::checkbox_style);
             if enabled && !self.image_loading && self.avatar.is_some() {
                 share_image = share_image.on_toggle(Message::ShareImage);
             }
-            content = content.push(share_image);
+            let mut image_controls = column![
+                canopa_ui::direction::row(image_actions)
+                    .spacing(6)
+                    .align_y(iced::Center)
+            ]
+            .spacing(8);
+            if self.avatar.is_some() {
+                image_controls = image_controls.push(share_image);
+            }
+            content = content.push(
+                container(
+                    canopa_ui::direction::row([preview, image_controls.into()])
+                        .spacing(14)
+                        .align_y(iced::Center),
+                )
+                .padding(12)
+                .width(Length::Fill)
+                .style(dialog_ui::card),
+            );
             let mut share_id = checkbox(self.share_id)
                 .label(fl!("portal-account-share-username"))
                 .style(canopa_ui::checkbox_style);
@@ -563,17 +590,40 @@ impl Dialog {
                 share_id = share_id.on_toggle(Message::ShareId);
                 share_name = share_name.on_toggle(Message::ShareName);
             }
-            let mut id = text_input(&fl!("portal-account-username"), &self.id).id("account-id");
-            let mut name = text_input(&fl!("portal-account-name"), &self.name).id("account-name");
-            if enabled && self.share_id {
-                id = id.on_input(Message::Id);
-            }
-            if enabled && self.share_name {
-                name = name.on_input(Message::Name);
-            }
-            content = content
-                .push(column![share_id, id].spacing(6))
-                .push(column![share_name, name].spacing(6));
+            let username: Element<'_, Message> = if self.share_id {
+                text_input(&fl!("portal-account-username"), &self.id)
+                    .id("account-id")
+                    .padding([7, 10])
+                    .style(dialog_ui::field)
+                    .on_input_maybe(enabled.then_some(Message::Id))
+                    .into()
+            } else {
+                container(dialog_ui::detail(fl!("portal-account-withheld")))
+                    .padding([5, 0])
+                    .into()
+            };
+            let name: Element<'_, Message> = if self.share_name {
+                text_input(&fl!("portal-account-add-name"), &self.name)
+                    .id("account-name")
+                    .padding([7, 10])
+                    .style(dialog_ui::field)
+                    .on_input_maybe(enabled.then_some(Message::Name))
+                    .into()
+            } else {
+                container(dialog_ui::detail(if self.name.is_empty() {
+                    fl!("portal-account-name-unset")
+                } else {
+                    fl!("portal-account-withheld")
+                }))
+                .padding([5, 0])
+                .into()
+            };
+            content = content.push(
+                container(column![share_id, username, share_name, name].spacing(8))
+                    .padding(12)
+                    .width(Length::Fill)
+                    .style(dialog_ui::card),
+            );
             if (self.share_id && self.invalid_id) || (self.share_name && self.invalid_name) {
                 content =
                     content.push(text(fl!("portal-account-invalid-name")).style(text::danger));
@@ -583,37 +633,58 @@ impl Dialog {
                     .push(text(fl!("portal-account-preparing-image")).style(canopa_ui::muted));
             }
         }
+        let fields = [
+            (
+                self.share_id && !self.id.trim().is_empty(),
+                fl!("portal-account-disclosure-username"),
+            ),
+            (
+                self.share_name && !self.name.trim().is_empty(),
+                fl!("portal-account-disclosure-name"),
+            ),
+            (
+                self.share_image && self.avatar.is_some(),
+                fl!("portal-account-disclosure-photo"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(selected, field)| selected.then_some(field))
+        .collect::<Vec<_>>();
+        let disclosure = if self.loading {
+            String::new()
+        } else if fields.is_empty() {
+            fl!("portal-account-disclosure-empty")
+        } else {
+            fl!("portal-account-disclosure", fields = fields.join(" · "))
+        };
         if let Some(error) = &self.error {
             content = content.push(text(error).style(text::danger));
         }
         let footer = canopa_ui::direction::row([
-            canopa_ui::action(
+            dialog_ui::section(disclosure).width(Length::Fill).into(),
+            dialog_ui::action(
                 text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
                 false,
             )
-            .width(Length::Fill)
             .into(),
-            canopa_ui::action(
+            dialog_ui::action(
                 text(if self.busy {
                     fl!("portal-account-sharing")
+                } else if fields.is_empty() && !self.loading {
+                    fl!("portal-account-share-none")
                 } else {
                     fl!("portal-share")
                 }),
                 self.can_share().then_some(Message::Share(self.generation)),
-                canopa_ui::Action::Normal,
+                canopa_ui::Action::Primary,
                 false,
             )
-            .width(Length::Fill)
             .into(),
         ])
-        .spacing(12);
-        container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        .spacing(8)
+        .align_y(iced::Center);
+        dialog_ui::layout(content, footer)
     }
 }

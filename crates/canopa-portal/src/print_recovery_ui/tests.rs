@@ -16,7 +16,12 @@ fn app(runtime: &tokio::runtime::Runtime) -> Recovery {
         arguments: vec![],
     });
     let (_, cancelled) = watch::channel(false);
-    let mut app = Recovery::new(Theme::Dark, client, runtime.handle().clone(), cancelled);
+    let mut app = Recovery::new(
+        canopa_theme::Appearance::default(),
+        client,
+        runtime.handle().clone(),
+        cancelled,
+    );
     let item = item(RecoveryStatus::Uncertain);
     app.selected = Some(item.id.clone());
     app.items = vec![item];

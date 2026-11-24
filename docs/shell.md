@@ -286,8 +286,9 @@ installs.
   corner) opens Applications with that text. Closing the launcher closes the
   overview. This needs `overview { emit-typed-text; }`, which the shipped Niri
   defaults set.
-- **Window thumbnails** in taskbar tooltips come from Niri's window preview service.
-  `window-previews { off; }` in Niri turns them off.
+- **Window thumbnails** in taskbar tooltips and portal window pickers come
+  from Niri's window preview service. `window-previews { off; }` in Niri turns
+  off thumbnails in both places.
 - **Pinned columns**: Super+P and Super+Shift+P (or the taskbar menu) pin a column
   to the left or right edge of the view while the rest scrolls.
 - **Window restore**: with `windows { restore #true; }`, the Shell records open

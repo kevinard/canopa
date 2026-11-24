@@ -160,7 +160,7 @@ layout { border { off; }; focus-ring { off; }; }
         def popup():
             drain()
             assert path not in responses, ("Start returned before fresh combined consent", responses.get(path))
-            return next((w for w in windows() if w["app_id"] == "org.canopa.Portal" and w["title"] == "Share and allow control — Canopa"), None)
+            return next((w for w in windows() if w["app_id"] == "org.canopa.Portal" and w["title"] == "Remote desktop — Canopa"), None)
 
         dialog = session.wait_for(popup, "combined Iced consent", timeout=30)
         if not dialog["is_floating"]:

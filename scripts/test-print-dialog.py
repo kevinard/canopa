@@ -164,6 +164,7 @@ def verify(args, session, result):
             assert window['is_floating'], window
         focus(window)
         time.sleep(.6)
+        window = next(w for w in windows() if w['id'] == window['id'])
         return process, window, output
     def finish(dialog, expected):
         process, window, output = dialog
@@ -209,7 +210,7 @@ def verify(args, session, result):
         assert dialog[0].poll() is None and dialog[2].read_text() == '', 'file approved without a picker target'
         def choose_file():
             width, _ = dialog[1]['layout']['window_size']
-            click(20 + width - 85, 10 + 285)
+            click(20 + width - 85, 10 + 244)
             session.wait_for(lambda: any(w['id'] == dialog[1]['id'] and w['title'] == 'Save printed document — Canopa' for w in windows()), 'embedded Files picker')
             time.sleep(.8)
         choose_file()
@@ -243,8 +244,8 @@ def verify(args, session, result):
         time.sleep(.6)
         session.capture('04-overwrite-review.png')
         assert any(w['id'] == dialog[1]['id'] and w['title'] == 'Save printed document — Canopa' for w in windows())
-        height = dialog[1]['layout']['window_size'][1]
-        click(200, 10 + height - 69)
+        width, height = dialog[1]['layout']['window_size']
+        click(20 + width / 2 + 160, 10 + height / 2 + 49)
         session.wait_for(lambda: any(w['id'] == dialog[1]['id'] and w['title'] == 'Print — Canopa' for w in windows()), 'confirmed overwrite draft')
         approve(dialog)
         finish(dialog, 'file-existing')

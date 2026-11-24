@@ -178,7 +178,7 @@ layout { border { off; }; focus-ring { off; }; }
         response(request(caller,REMOTE,'SelectDevices','(oa{sv})',(key,options(types=GLib.Variant('u',3)))))
         response(request(caller,CAST,'SelectSources','(oa{sv})',(key,options(types=GLib.Variant('u',3 if args.matrix else 2),multiple=GLib.Variant('b',args.matrix),cursor_mode=GLib.Variant('u',1)))))
         start = request(caller,REMOTE,'Start','(osa{sv})',(key,'',options()))
-        dialog = session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Share and allow control — Canopa'),None),'Iced combined consent')
+        dialog = session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Remote desktop — Canopa'),None),'Iced combined consent')
         if not dialog['is_floating']: action('move-window-to-floating','--id',dialog['id'])
         for dimension,value in [('width',680),('height',min(740,logical['height']-20))]: action('set-window-'+dimension,'--id',dialog['id'],value)
         action('move-floating-window','--id',dialog['id'],'--x',20,'--y',10); action('focus-window','--id',dialog['id'])

@@ -11,7 +11,7 @@ default = ["desktop", "accessibility-testing"]
 # Native AT-SPI acceptance helpers for the lib tests. A dev-dependency would
 # pull Iced into the core (--no-default-features) test profile.
 accessibility-testing = ["desktop", "canopa-ui/accessibility-testing"]
-desktop = ["dep:iced", "dep:canopa-ui", "canopa-ui/accessibility", "dep:canopa-files", "dep:glob", "dep:canopa-apps", "dep:canopa-assets", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
+desktop = ["dep:iced", "dep:canopa-ui", "canopa-ui/accessibility", "dep:canopa-files", "dep:canopa-apps", "dep:canopa-services", "dep:canopa-assets", "dep:whoami", "dep:image", "dep:sha2", "dep:tempfile", "dep:base64", "dep:reqwest", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr", "dep:pipewire", "dep:reis", "dep:libc", "dep:libloading"]
 
 [[bin]]
 name = "xdg-desktop-portal-canopa"
@@ -36,11 +36,11 @@ serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
 rusqlite.workspace = true
-canopa-files = { path = "../canopa-files", default-features = false, optional = true }
+canopa-files = { path = "../canopa-files", default-features = false, features = ["browser-ui"], optional = true }
 canopa-ui = { workspace = true, optional = true }
 iced = { workspace = true, optional = true, features = ["tiny-skia"] }
-glob = { version = "0.3.4", optional = true }
 canopa-apps = { workspace = true, optional = true }
+canopa-services = { workspace = true, optional = true }
 canopa-assets = { workspace = true, optional = true, features = ["svg"] }
 canopa-file.workspace = true
 whoami = { version = "1.6.1", default-features = false, optional = true }

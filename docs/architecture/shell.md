@@ -237,7 +237,8 @@ them):
   workspace, column and width (`src/app/session_restore.rs`, record in
   `$XDG_STATE_HOME/canopa/shell/windows.json`).
 - `org.canopa.Niri.WindowPreview1` on the session bus: taskbar tooltip
-  thumbnails.
+  thumbnails, through the same `canopa-services` client used by the portal
+  window pickers.
 
 Log out (`session "log-out"`, `PanelAction::Compositor`) sends `Action::Quit` with
 `skip_confirmation` over the Shell's Niri IPC socket from the default Power menu, as

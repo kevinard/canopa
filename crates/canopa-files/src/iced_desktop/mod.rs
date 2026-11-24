@@ -21,7 +21,7 @@ mod device_question;
 mod devices_ui;
 mod drag_geometry;
 mod drag_ui;
-mod file_icon;
+use crate::browser_ui::file_icon;
 mod file_operation_rows;
 mod file_operations;
 mod focus;
@@ -43,6 +43,8 @@ mod naming_tests;
 mod network_tests;
 mod network_ui;
 mod open_with_ui;
+mod picker_ui;
+pub use picker_ui::run as run_picker;
 mod operation_details;
 #[cfg(test)]
 mod operation_tests;
@@ -157,7 +159,7 @@ pub fn run(
                 home.clone(),
                 preference_path.clone(),
                 personal_folders.clone(),
-                configuration_frontend.clone(),
+                configuration_frontend.clone().map(Some),
             );
             desktop.activation_notices = frontend_instance
                 .take_notices()
@@ -206,6 +208,9 @@ fn finish_application(application: &crate::application::Application) -> io::Resu
 }
 
 struct Desktop {
+    picker: Option<picker_ui::Picker>,
+    picker_monitor: Option<Arc<crate::local_volumes::Monitor>>,
+    picker_device_notices: Option<activation_ui::Notices>,
     activity: Option<crate::local_activity::LocalActivity>,
     activity_notices: Option<activation_ui::Notices>,
     instance: Option<crate::activation::Instance>,
@@ -510,6 +515,7 @@ enum Message {
     DeleteDialog(delete_dialog::Event),
     OpenWith(open_with_ui::Event),
     Network(network_ui::Event),
+    Picker(picker_ui::Event),
     Accessibility(canopa_ui::accessibility::Event<Message>),
 }
 
@@ -521,16 +527,19 @@ impl Desktop {
         home: PathBuf,
         preference_path: PathBuf,
         personal_folders: PersonalFolders,
-        configuration_worker: Result<ConfigurationJobs, String>,
+        configuration_worker: Result<Option<ConfigurationJobs>, String>,
     ) -> (Self, Task<Message>) {
         let theme = canopa_ui::theme(configuration.appearance.clone());
         let configuration_error = configuration_worker.as_ref().err().cloned();
-        let configuration_worker = configuration_worker.ok();
+        let configuration_worker = configuration_worker.ok().flatten();
         let configuration_notices = configuration_worker
             .as_ref()
             .and_then(ConfigurationJobs::take_notices)
             .map(configuration_ui::Notices::new);
         let mut desktop = Self {
+            picker: None,
+            picker_monitor: None,
+            picker_device_notices: None,
             activity: None,
             activity_notices: None,
             instance: None,
@@ -692,16 +701,43 @@ impl Desktop {
             },
             ..Default::default()
         };
-        let (id, opened) = window::open(settings);
-        self.drag.open(id);
+        let (id, opened) = if let Some(picker) = &self.picker {
+            let settings = window::Settings {
+                size: Size::new(1000.0, 600.0),
+                min_size: Some(Size::new(560.0, 360.0)),
+                platform_specific: window::settings::PlatformSpecific {
+                    application_id: "org.canopa.Portal".into(),
+                    ..Default::default()
+                },
+                ..settings
+            };
+            if let Some(handle) = picker
+                .request
+                .parent_window
+                .strip_prefix("wayland:")
+                .filter(|handle| !handle.is_empty())
+            {
+                let (id, opened) =
+                    window::open_dialog(handle.to_owned(), picker.request.modal, settings);
+                (id, opened.map(move |_| id))
+            } else {
+                window::open(settings)
+            }
+        } else {
+            window::open(settings)
+        };
+        if self.picker.is_none() {
+            self.drag.open(id);
+        }
         self.windows.insert(
             id,
             BrowserWindow {
                 tabs,
                 active: 0,
                 // In panel mode a new window opens with its Properties panel.
-                properties: (self.configuration.settings.properties
-                    == crate::interface::PropertiesDisplay::Panel)
+                properties: (self.picker.is_none()
+                    && self.configuration.settings.properties
+                        == crate::interface::PropertiesDisplay::Panel)
                     .then(|| properties_ui::Window::pending(Vec::new())),
                 width: 1000.0,
                 height: 700.0,
@@ -711,6 +747,9 @@ impl Desktop {
                 tab_geometry: Arc::default(),
             },
         );
+        if self.picker.is_some() {
+            return (id, opened.map(Message::Opened));
+        }
         (
             id,
             opened.then(move |window| {
@@ -825,6 +864,19 @@ impl Desktop {
 
     fn apply(&mut self, message: Message) -> Task<Message> {
         let task = match message {
+            Message::Picker(event) => self.picker_event(event),
+            Message::Drag(_) if self.picker.is_some() => Task::none(),
+            Message::Go(..)
+            | Message::Select(..)
+            | Message::Activate(..)
+            | Message::Command(..)
+                if self
+                    .picker
+                    .as_ref()
+                    .is_some_and(picker_ui::Picker::blocks_browser) =>
+            {
+                Task::none()
+            }
             Message::Properties(event) => self.properties_event(event),
             Message::FolderCounts(counted) => {
                 self.folder_counts.completed(counted);
@@ -1315,6 +1367,7 @@ impl Desktop {
     fn update_browser(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ActivationPoll
+            | Message::Picker(_)
             | Message::Device(_)
             | Message::ActivityPoll
             | Message::MediaPoll
@@ -1356,7 +1409,15 @@ impl Desktop {
                     return self.new_window(vec![self.home.clone()]);
                 }
             }
-            Message::Opened(_id) => {}
+            Message::Opened(id) => {
+                if let Some(picker) = self
+                    .picker
+                    .as_ref()
+                    .filter(|_| self.windows.contains_key(&id))
+                {
+                    return picker.focus_name();
+                }
+            }
             Message::Preview(_) => {}
             Message::Close(id) => {
                 let browser = self.windows.remove(&id).is_some();
@@ -1407,7 +1468,11 @@ impl Desktop {
                     window.modifiers = modifiers;
                 }
             }
-            Message::Key(id, key, modifiers, text) => return self.key(id, key, modifiers, text),
+            Message::Key(id, key, modifiers, text) => {
+                return self
+                    .picker_key(id, &key, modifiers)
+                    .unwrap_or_else(|| self.key(id, key, modifiers, text));
+            }
             Message::Command(id, command) => return self.command(id, command),
             Message::Search(event) => return self.search_event(event),
             Message::Go(id, path) => return self.navigate(id, path, Navigation::Visit, None),
@@ -1426,6 +1491,7 @@ impl Desktop {
                     return Task::none();
                 };
                 tab.loading = false;
+                let first_load = tab.browser.is_none();
                 if !active_tab {
                     tab.preview_after_load = None;
                 }
@@ -1455,8 +1521,15 @@ impl Desktop {
                         }
                         let browser = tab.browser.as_mut().unwrap();
                         let _ = browser.set_view(view);
+                        if first_load && let Some(picker) = &self.picker {
+                            picker.filter(browser);
+                        }
                         if !scan.selected.is_empty() {
                             browser.reveal_selection(scan.selected);
+                        } else if self.picker.is_some()
+                            && !matches!(navigation, Navigation::Refresh)
+                        {
+                            browser.clear_selection();
                         }
                         tab.target = browser.path().to_owned();
                         tab.remote = scan.remote;
@@ -1509,6 +1582,9 @@ impl Desktop {
                     Err(error) => {
                         tab.preview_after_load = None;
                         tab.menu_after_load = None;
+                        if self.picker.is_some() && first_load && tab.target != self.home {
+                            return self.navigate(id, self.home.clone(), Navigation::Visit, None);
+                        }
                         tab.error = Some(error);
                         return self.load_columns(id);
                     }
@@ -1541,8 +1617,9 @@ impl Desktop {
                     .windows
                     .get(&id)
                     .map_or(SelectionMode::Replace, |window| {
-                        selection_mode(window.modifiers)
+                        self.browser_selection_mode(window.modifiers)
                     });
+                self.picker_select_name(id, &path);
                 let Some(tab) = self.active_mut(id) else {
                     return Task::none();
                 };
@@ -1615,6 +1692,12 @@ impl Desktop {
                     // A server address mounts through GVFS and then opens its
                     // folder; other URIs and paths stay local navigation.
                     if let Some(address) = network_location(&value) {
+                        if self.picker.is_some() {
+                            if let Some(tab) = self.active_mut(id) {
+                                tab.error = Some(fl!("files-picker-local-folder"));
+                            }
+                            return Task::none();
+                        }
                         return match address {
                             Ok(address) => self.connect_server(id, &address, false),
                             Err(error) => {
@@ -1837,6 +1920,8 @@ impl Desktop {
             .is_some_and(|entry| entry.is_directory());
         if is_directory {
             self.navigate(id, path, Navigation::Visit, None)
+        } else if self.picker.is_some() {
+            self.picker_open(id, path)
         } else if tab_id.is_some() {
             self.open_file(id, path)
         } else {
@@ -1857,6 +1942,14 @@ impl Desktop {
     }
 
     fn command(&mut self, id: window::Id, command: Command) -> Task<Message> {
+        if let Some(picker) = &self.picker {
+            if !picker.allows(command) || picker.blocks_browser() {
+                return Task::none();
+            }
+            if command == Command::NewFolder {
+                return self.picker_new_folder(id);
+            }
+        }
         self.acknowledge_error(id);
         match command {
             Command::Recovery => return self.show_recovery(),
@@ -1997,8 +2090,19 @@ impl Desktop {
                 }
             }
             Command::SelectAll => {
+                let directory = self.picker.as_ref().map(|picker| picker.request.directory);
                 if let Some(browser) = self.active_mut(id).and_then(|tab| tab.browser.as_mut()) {
-                    browser.select_all();
+                    if let Some(directory) = directory {
+                        let paths = browser
+                            .visible_entries()
+                            .into_iter()
+                            .filter(|entry| entry.is_directory() == directory)
+                            .map(|entry| entry.path.clone())
+                            .collect::<Vec<_>>();
+                        browser.set_selection(paths);
+                    } else {
+                        browser.select_all();
+                    }
                 }
             }
             Command::NewWindow => return self.new_window(vec![tab.path().to_owned()]),
@@ -2341,6 +2445,7 @@ impl Desktop {
             return Task::none();
         };
         let geometry = listing_ui::geometry(self, tab);
+        let mode = self.browser_selection_mode(modifiers);
         let Some(tab) = self.active_mut(id).filter(|tab| tab.location.is_none()) else {
             return Task::none();
         };
@@ -2374,13 +2479,28 @@ impl Desktop {
         if modifiers.control() && !modifiers.shift() {
             browser.focus_entry(&path, false);
         } else {
-            browser.select(&path, selection_mode(modifiers));
+            browser.select(&path, mode);
         }
         tab.prefix.clear();
         self.reveal_focus(id)
     }
 
+    fn browser_selection_mode(&self, modifiers: keyboard::Modifiers) -> SelectionMode {
+        if self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| !picker.request.multiple)
+        {
+            SelectionMode::Replace
+        } else {
+            selection_mode(modifiers)
+        }
+    }
+
     fn title(&self, id: window::Id) -> String {
+        if let Some(picker) = &self.picker {
+            return picker.title();
+        }
         if let Some(properties) = self.properties.get(&id) {
             return properties.title();
         }
@@ -2564,6 +2684,13 @@ impl Desktop {
 
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            self.picker_device_notices
+                .as_ref()
+                .map_or_else(Subscription::none, |notices| {
+                    notices
+                        .subscription()
+                        .map(|()| Message::Picker(picker_ui::Event::Devices))
+                }),
             self.media.subscription(),
             self.activation_notices
                 .as_ref()
@@ -2636,6 +2763,9 @@ impl Desktop {
     }
 
     fn window_view(&self, id: window::Id) -> Element<'_, Message> {
+        if let Some(picker) = self.picker_view(id) {
+            return picker;
+        }
         if let Some(properties) = self.properties.get(&id) {
             return properties_ui::view(self, id, properties);
         }

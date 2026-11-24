@@ -212,6 +212,10 @@ Built-in defaults:
 Borders are drawn inside an element's bounds. Margins on popovers and tooltips are
 transparent space around them; banner margins space the banner stack.
 
+The portal file chooser uses the Files panel and input styles for its browser
+surface, toolbar and location and search fields. Other portal dialogs
+follow the effective palette and the compositor's titlebar style.
+
 ## Local overrides
 
 A `ui` block can also be placed on a single element. It applies after the shared

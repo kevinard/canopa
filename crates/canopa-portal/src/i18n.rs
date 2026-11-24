@@ -3,7 +3,7 @@ canopa_i18n::localization!();
 
 #[cfg(test)]
 mod tests {
-    use crate::file_chooser::{ChooserRequest, Mode};
+    use crate::file_chooser::Mode;
     use canopa_i18n::{Selection, negotiate, select};
     use std::sync::{Mutex, MutexGuard};
 
@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn default_labels_and_counts_follow_the_language() {
         let _french = Language::french();
-        let request = ChooserRequest::parse(
+        let request = crate::file_chooser::parse_request(
             Mode::Save,
             "org.example.App".into(),
             String::new(),
@@ -97,9 +97,9 @@ mod tests {
     #[cfg(feature = "desktop")]
     #[test]
     fn folder_rows_point_toward_the_reading_end() {
-        assert_eq!(crate::chooser_ui::entry_marker(true), "▸");
+        use canopa_files::browser_ui::Icon;
+        assert_eq!(Icon::Forward.directional(), Icon::Forward);
         let _pseudo = Language::pseudo();
-        assert_eq!(crate::chooser_ui::entry_marker(true), "◂");
-        assert_eq!(crate::chooser_ui::entry_marker(false), " ");
+        assert_eq!(Icon::Forward.directional(), Icon::Back);
     }
 }

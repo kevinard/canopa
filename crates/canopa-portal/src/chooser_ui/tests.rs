@@ -5,7 +5,7 @@ fn embedded_save_keeps_the_entry_reviewed_before_overwrite_confirmation() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("file.pdf");
     std::fs::write(&path, b"reviewed version").unwrap();
-    let request = ChooserRequest::parse(
+    let request = crate::file_chooser::parse_request(
         Mode::Save,
         String::new(),
         String::new(),
@@ -45,7 +45,7 @@ fn embedded_save_keeps_the_entry_reviewed_before_overwrite_confirmation() {
 }
 
 fn request(mode: Mode) -> ChooserRequest {
-    ChooserRequest::parse(
+    crate::file_chooser::parse_request(
         mode,
         String::new(),
         String::new(),

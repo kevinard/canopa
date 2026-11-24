@@ -791,22 +791,15 @@ fn app_chooser(args: Args) -> anyhow::Result<()> {
 fn chooser(args: Args) -> anyhow::Result<()> {
     #[cfg(feature = "desktop")]
     {
-        use std::io::{Read, Write};
-        let mut bytes = Vec::new();
-        std::io::stdin()
-            .take(1024 * 1024 + 1)
-            .read_to_end(&mut bytes)?;
-        anyhow::ensure!(bytes.len() <= 1024 * 1024, "Chooser request too large");
-        let input = serde_json::from_slice(&bytes)?;
-        let source = match args.canopa_config {
-            Some(path) => Request::common(path),
-            None if args.defaults => Request::Defaults,
-            None => Request::Discover,
-        };
-        let configuration = SharedConfiguration::load(&source)?;
-        let selection = canopa_portal::chooser_ui::run(input, configuration.appearance)?;
-        std::io::stdout().write_all(&serde_json::to_vec(&selection)?)?;
-        Ok(())
+        use std::os::unix::process::CommandExt;
+        let mut command =
+            std::process::Command::new(canopa_portal::file_chooser::files_picker_executable()?);
+        if let Some(path) = args.canopa_config {
+            command.arg("--canopa-config").arg(path);
+        } else if args.defaults {
+            command.arg("--defaults");
+        }
+        Err(command.arg("--internal-picker").exec().into())
     }
     #[cfg(not(feature = "desktop"))]
     {

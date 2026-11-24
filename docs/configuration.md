@@ -536,6 +536,11 @@ files {
 | `shortcut "COMMAND" "BINDING"…` (repeatable) | GTK-style accelerators, up to 8; no bindings disables the command | built-in keys |
 | `action "ID"` (repeatable) | `name=`, `command=`, `icon=`, `shortcut=`, `toolbar=`; children `selection min= max= files= directories=`, `patterns` | |
 
+FileChooser opens Files in picker mode and uses the Files Places, toolbar,
+folder views and navigation shortcuts. Recent is available when opening files.
+The picker can browse mounted devices with local paths. View adjustments made
+during a request are temporary.
+
 Unknown nodes and properties are errors. Custom action commands are split with
 shell-like quoting but never run through a shell; `%f`/`%F` are the first or all
 selected paths, `%n`/`%N` the basenames, `%d` the current folder and `%%` a percent

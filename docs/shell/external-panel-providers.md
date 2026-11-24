@@ -209,8 +209,8 @@ How the Shell renders it:
   view or setting switch. Content-level actions render as compact chips,
   destructive ones in the danger tone and switches with an on/off switch. On an
   attributed item, a destructive item action becomes the card's round close
-  control, and a presence status with a single other action becomes an unread dot
-  that performs it.
+  control. Presence statuses show their labels, and their actions keep separate
+  labeled controls.
 - A `slider` (`key`, `label`, `min`, `max`, `step`, `value`, `unit`) commits its
   value through the item's `invoke` as a decimal string.
 - Body links are `link` segments carrying a `uri` and an opaque action. The URI is

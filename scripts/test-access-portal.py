@@ -117,7 +117,7 @@ def verify(binary, session, scheme, scale):
         return response[1]
     def action(window, grant):
         width, height = window['layout']['window_size']
-        click(20 + width * (.75 if grant else .25), 10 + height - 36)
+        click(20 + width - (62 if grant else 147), 10 + height - 30)
     def closed(window):
         session.wait_for(lambda: not any(w['id'] == window['id'] for w in windows()), 'Access helper closes')
 
@@ -139,9 +139,10 @@ def verify(binary, session, scheme, scale):
     options = {'deny_label': GLib.Variant('s', 'Refuse'), 'grant_label': GLib.Variant('s', 'Permit'), 'icon': GLib.Variant('s', 'fixture-lock-symbolic'), 'choices': GLib.Variant('a(ssa(ss)s)', [('remember', 'Remember this decision', [], 'false'), ('scope', 'Duration', [('once', 'Once'), ('session', 'This session')], 'once')])}
     path, window = begin(options)
     session.capture('02-grant-choices.png')
-    click(48, 233)
-    click(100, 300)
-    click(100, 267)
+    click(64, 210)
+    click(100, 275)
+    session.capture('05-choice-menu.png')
+    click(100, 244)
     session.capture('04-changed-choices.png')
     action(window, True)
     assert result(path, 0)['choices'] == [('remember', 'true'), ('scope', 'session')]

@@ -3,6 +3,9 @@
 //! are not prepared yet (see `icons_ui::FileVisual`).
 use crate::browse::{Entry, EntryKind};
 use canopa_file::mime::{self, MimeDatabase};
+
+/// Prefix for a folder with its own themed icon.
+pub(crate) const SPECIAL_FOLDER: &str = "x-canopa-folder/";
 /// Source and markup types drawn with the code glyph. Scripts arrive through
 /// their `text-x-script` generic icon instead.
 const SOURCE_TYPES: &[&str] = &[
@@ -34,7 +37,7 @@ const SOURCE_TYPES: &[&str] = &[
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum FileIcon {
+pub enum FileIcon {
     Folder,
     File,
     Link,
@@ -83,7 +86,7 @@ impl FileIcon {
             .unwrap_or_default();
         match mime {
             mime::DIRECTORY => Self::Folder,
-            _ if mime.starts_with(super::icons_ui::SPECIAL_FOLDER) => Self::Folder,
+            _ if mime.starts_with(SPECIAL_FOLDER) => Self::Folder,
             "inode/symlink" => Self::Link,
             "application/pdf" => Self::Pdf,
             "text/markdown" => Self::Markdown,

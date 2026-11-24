@@ -1,4 +1,5 @@
 use super::*;
+use crate::dialog_ui;
 use iced::{
     Length,
     widget::{column, container, scrollable, text},
@@ -184,54 +185,70 @@ pub(super) fn view(app: &Recovery) -> Element<'_, Message> {
                     } else {
                         fl!("portal-recovery-empty")
                     })
-                    .size(22),
-                    text(fl!("portal-recovery-empty-hint"))
+                    .size(18),
+                    dialog_ui::detail(
+                        if app.busy || app.error.is_some() || app.file_load_error.is_some() {
+                            String::new()
+                        } else {
+                            fl!("portal-recovery-empty-hint")
+                        }
+                    )
                 ]
                 .spacing(12)
                 .into()
             };
             // Embedded scrollbars reserve width instead of covering path text.
-            let file_body = canopa_ui::direction::row([
-                scrollable(entries)
-                    .spacing(6)
-                    .width(Length::FillPortion(2))
-                    .into(),
+            let details = container(details)
+                .padding(16)
+                .width(Length::Fill)
+                .style(dialog_ui::card);
+            let file_body: Element<'_, Message> = if app.items.is_empty() {
                 scrollable(details)
-                    .spacing(6)
-                    .width(Length::FillPortion(3))
-                    .into(),
-            ])
-            .spacing(22)
-            .height(Length::Fill);
+                    .style(canopa_ui::scrollbar)
+                    .height(Length::Fill)
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                canopa_ui::direction::row([
+                    scrollable(entries)
+                        .spacing(6)
+                        .width(Length::FillPortion(2))
+                        .into(),
+                    scrollable(details)
+                        .spacing(6)
+                        .width(Length::FillPortion(3))
+                        .into(),
+                ])
+                .spacing(16)
+                .height(Length::Fill)
+                .into()
+            };
             let body = if app.tab == Tab::Printers {
                 printer_body(app)
             } else {
-                file_body.into()
+                file_body
+            };
+            let tab = |view, label| {
+                dialog_ui::tab(
+                    label,
+                    app.tab == view,
+                    app.editable().then_some(Message::Tab(view)),
+                )
             };
             let tabs = canopa_ui::direction::row([
-                canopa_ui::action(
-                    text(fl!("portal-recovery-files-tab", count = app.items.len())),
-                    app.editable().then_some(Message::Tab(Tab::Files)),
-                    canopa_ui::Action::Normal,
-                    app.tab == Tab::Files,
-                )
-                .into(),
-                canopa_ui::action(
-                    text(fl!(
-                        "portal-recovery-printers-tab",
-                        count = app.printers.len()
-                    )),
-                    app.editable().then_some(Message::Tab(Tab::Printers)),
-                    canopa_ui::Action::Normal,
-                    app.tab == Tab::Printers,
-                )
-                .into(),
+                tab(
+                    Tab::Files,
+                    fl!("portal-recovery-files-tab", count = app.items.len()),
+                ),
+                tab(
+                    Tab::Printers,
+                    fl!("portal-recovery-printers-tab", count = app.printers.len()),
+                ),
             ])
             .spacing(8);
             let mut layout = column![
                 canopa_ui::direction::row([
-                    text(fl!("portal-recovery-title"))
-                        .size(28)
+                    dialog_ui::heading(fl!("portal-recovery-title"))
                         .width(Length::Fill)
                         .into(),
                     action(
@@ -259,9 +276,13 @@ pub(super) fn view(app: &Recovery) -> Element<'_, Message> {
             if let Some(notice) = &app.notice {
                 layout = layout.push(text(notice));
             }
-            layout
-                .push(action(fl!("portal-close"), Some(Message::Close), false))
-                .into()
+            return dialog_ui::frame(
+                container(layout)
+                    .padding([20, 24])
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                dialog_ui::footer([action(fl!("portal-close"), Some(Message::Close), false)]),
+            );
         }
         Screen::Picker(_) => unreachable!(),
     };
@@ -269,7 +290,7 @@ pub(super) fn view(app: &Recovery) -> Element<'_, Message> {
         .padding(24)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(canopa_ui::surface)
+        .style(dialog_ui::surface)
         .into()
 }
 
@@ -355,20 +376,39 @@ fn printer_body(app: &Recovery) -> Element<'_, Message> {
                 } else {
                     fl!("portal-recovery-printers-empty")
                 })
-                .size(22),
+                .size(18),
             )
-            .push(text(fl!("portal-recovery-printers-empty-hint")));
+            .push(dialog_ui::detail(
+                if app.busy || app.printer_load_error.is_some() {
+                    String::new()
+                } else {
+                    fl!("portal-recovery-printers-empty-hint")
+                },
+            ));
     }
-    details = details
-        .push(text(fl!("portal-recovery-check-all")).size(18))
-        .push(text(fl!("portal-recovery-check-all-hint")))
-        .push(action(
-            fl!("portal-recovery-check-cleanup"),
-            (app.editable() && !app.printers.is_empty() && app.printer_load_error.is_none())
-                .then_some(Message::CheckPrinters),
-            true,
-        ))
-        .push(text(fl!("portal-recovery-record-limit", count = 16)).size(13));
+    if !app.printers.is_empty() {
+        details = details
+            .push(text(fl!("portal-recovery-check-all")).size(18))
+            .push(text(fl!("portal-recovery-check-all-hint")))
+            .push(action(
+                fl!("portal-recovery-check-cleanup"),
+                (app.editable() && !app.printers.is_empty() && app.printer_load_error.is_none())
+                    .then_some(Message::CheckPrinters),
+                true,
+            ))
+            .push(text(fl!("portal-recovery-record-limit", count = 16)).size(13));
+    }
+    let details = container(details)
+        .padding(16)
+        .width(Length::Fill)
+        .style(dialog_ui::card);
+    if app.printers.is_empty() {
+        return scrollable(details)
+            .style(canopa_ui::scrollbar)
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into();
+    }
     canopa_ui::direction::row([
         scrollable(entries)
             .spacing(6)

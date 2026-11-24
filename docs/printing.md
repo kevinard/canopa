@@ -69,8 +69,13 @@ not pull them in:
 ## The print dialog
 
 Choose a destination: one of your CUPS printers or Print to file. Refresh reloads
-the printer list. The dialog shows whether the selected printer is idle, busy,
-stopped or not accepting jobs.
+the printer list. A ready printer shows **Ready** beside **Destination**.
+Busy or stopped printers and printers that cannot accept jobs show an explanation
+below the destination.
+
+**Document** groups pages, copies and layout.
+**Paper and printer options** groups media and settings from the printer. For
+file output, the second tab is **Paper and margins**.
 
 For a printer, the dialog offers:
 
@@ -85,6 +90,9 @@ For a printer, the dialog offers:
 - **Paper source**, **Paper type**, **Print quality** and **Resolution**, when the
   queue advertises them. Choices the driver cannot combine stay editable but keep
   Print disabled; Check printer settings confirms them together.
+
+If printer discovery fails, use Retry or choose the file option from the error
+card. That option is named Save as PDF when PDF is the only available format.
 
 For Print to file, choose the file format (PDF, PostScript or SVG), a paper size
 (A4, Letter, Legal or custom) with margins, and the file with Choose file…, which
@@ -115,10 +123,10 @@ the application exiting cancels the request. If printing is disabled by the
 ## Signing in to a printer
 
 When a print server asks for credentials, Canopa opens a Printer authentication
-dialog naming the server or printer and saying whether the connection is local,
-on this computer or encrypted. Enter the username (and domain, if asked) and
-password, then choose Authenticate. If the server rejects them, you can try
-again or cancel.
+dialog showing the server address, the printer or realm when available, and
+whether the connection is local, on this computer or encrypted. Enter the
+username (and domain, if asked) and password, then choose Authenticate. If the
+server rejects them, you can try again or cancel.
 
 Credentials are used only for that print request and are not saved by Canopa.
 Canopa refuses to send credentials to another computer over an unencrypted
@@ -145,6 +153,8 @@ run with `--experimental-print`. Choose a printer, select a job marked "Sign-in
 needed", and choose Sign in…. The job continues with the document the printer
 service already holds. The review never sends the document again, creates a job
 or cancels one. It lists only jobs owned by the account you are signed in as.
+If there are no printers, **Open printer settings** takes you to the Printers
+page in Canopa Settings. Use **Refresh** after adding a printer.
 
 ## Recovery
 

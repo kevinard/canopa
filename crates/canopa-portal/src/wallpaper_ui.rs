@@ -1,10 +1,11 @@
 //! Review only: the backend keeps the full frozen image and installs after Apply.
+use crate::dialog_ui;
 use std::sync::{Arc, Mutex};
 
 use crate::accessibility_ui::{self as a11y, Node, semantic};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, image, scrollable, text},
+    widget::{column, container, image, text},
     window,
 };
 
@@ -23,13 +24,14 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
     let (width, height, pixels) = input.preview.pixels()?;
     let preview = image::Handle::from_rgba(width, height, pixels);
     let theme = canopa_ui::theme(appearance.clone());
+    let requester = dialog_ui::requester(&input.app_id);
     let font = canopa_ui::font(&appearance);
     let output = Arc::new(Mutex::new(false));
     let result = output.clone();
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(700.0, 600.0),
+                size: Size::new(700.0, 570.0),
                 min_size: Some(Size::new(420.0, 360.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -45,7 +47,7 @@ pub fn run(input: DialogInput, appearance: canopa_theme::Appearance) -> anyhow::
             let (window, open) = window::open_dialog(parent.to_owned(), true, settings);
             (
                 Dialog {
-                    app_id: input.app_id.clone(),
+                    requester: requester.clone(),
                     destination: input.destination,
                     dimensions: (input.width, input.height),
                     preview: preview.clone(),
@@ -76,7 +78,7 @@ mod tests {
 
     fn dialog() -> Dialog {
         Dialog {
-            app_id: "app".into(),
+            requester: "app".into(),
             destination: crate::wallpaper::Destination::Both,
             dimensions: (100, 50),
             preview: image::Handle::from_rgba(1, 1, vec![1, 2, 3, 255]),
@@ -113,7 +115,7 @@ fn window_title() -> String {
 }
 
 struct Dialog {
-    app_id: String,
+    requester: String,
     destination: crate::wallpaper::Destination,
     dimensions: (u32, u32),
     preview: image::Handle,
@@ -212,11 +214,7 @@ impl Dialog {
     }
 
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let requester = if self.app_id.is_empty() {
-            fl!("portal-requesting-app")
-        } else {
-            self.app_id.clone()
-        };
+        let requester = self.requester.as_str();
         let question = fl!("portal-wallpaper-question");
         let size = fl!(
             "portal-pixel-size",
@@ -229,44 +227,53 @@ impl Dialog {
                 image(self.preview.clone())
                     .content_fit(iced::ContentFit::Contain)
                     .width(Length::Fill)
-                    .height(300),
+                    .height(290),
             )
-            .style(|_| container::Style::default().background(iced::Color::BLACK)),
+            .style(dialog_ui::card),
         );
-        let mut content = column![
+        let content = column![
             semantic(
                 Node::heading(question.clone(), 1),
-                text(question.clone()).size(22)
+                dialog_ui::heading(question.clone())
             ),
-            text(fl!("portal-requested-by", requester = requester.as_str()))
-                .style(canopa_ui::muted),
-            preview,
-            text(self.destination.label()).size(18),
-            text(size.clone()).style(canopa_ui::muted)
+            text(fl!("portal-requested-by", requester = requester)).style(canopa_ui::muted),
+            canopa_ui::direction::row([
+                text(fl!(
+                    "portal-wallpaper-scope",
+                    destination = self.destination.label()
+                ))
+                .size(16)
+                .into(),
+                iced::widget::space().width(Length::Fill).into(),
+                dialog_ui::detail(size.clone()).into(),
+            ])
+            .align_y(iced::Center),
+            preview
         ]
         .spacing(14)
         .width(Length::Fill);
-        if self.destination != crate::wallpaper::Destination::Background {
-            content = content.push(text(fl!("portal-wallpaper-lock-hint")).style(canopa_ui::muted));
-        }
-        let action = |key: &'static str, label: String, message: Message| {
+        let action = |key: &'static str, label: String, message: Message, style| {
             a11y::button(
                 key,
                 label.clone(),
                 Some(message.clone()),
-                canopa_ui::action(text(label), Some(message), canopa_ui::Action::Normal, false)
-                    .width(Length::Fill),
+                dialog_ui::action(text(label), Some(message), style, false),
             )
         };
-        let actions = canopa_ui::direction::row([
-            action("wallpaper-cancel", fl!("portal-cancel"), Message::Cancel),
+        let actions = dialog_ui::footer([
+            action(
+                "wallpaper-cancel",
+                fl!("portal-cancel"),
+                Message::Cancel,
+                canopa_ui::Action::Normal,
+            ),
             action(
                 "wallpaper-apply",
                 fl!("portal-wallpaper-apply"),
                 Message::Apply,
+                canopa_ui::Action::Primary,
             ),
-        ])
-        .spacing(12);
+        ]);
         a11y::dialog_window(
             WINDOW_KEY,
             window_title(),
@@ -274,15 +281,11 @@ impl Dialog {
                 .key("wallpaper-dialog")
                 .description(fl!(
                     "portal-wallpaper-description",
-                    requester = requester.as_str(),
+                    requester = requester,
                     destination = self.destination.label(),
                     size = size
                 )),
-            container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
-                .padding(20)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(canopa_ui::surface),
+            dialog_ui::layout(content, actions),
         )
     }
 }

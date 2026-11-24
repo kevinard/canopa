@@ -507,7 +507,16 @@ fn exercise(root: &Path) {
     let mounted_token = device(&runtime).token;
     let mounted_id = device(&runtime).id();
     fs::write(media.join("unplugged"), b"").unwrap();
-    wait(|| runtime.devices().devices.is_empty().then_some(()));
+    // GIO can report host mounts alongside the fixture.
+    wait(|| {
+        let catalog = runtime.devices();
+        (catalog.status == DeviceStatus::Ready
+            && !catalog
+                .devices
+                .iter()
+                .any(|device| device.name == "Fixture USB"))
+        .then_some(())
+    });
     assert!(payload.is_dir());
     assert!(requests.mounted_root(mounting).is_err());
     assert!(requests.root(mounted_token).is_err());

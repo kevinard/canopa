@@ -11,7 +11,6 @@ use std::sync::mpsc;
 const APP_ICON_VISUAL_SIZE: u16 = 34;
 const NOTIFICATION_IMAGE_VISUAL_SIZE: u16 = 58;
 /// Width kept clear of the floating close control on a banner's first line.
-const CLOSE_CORNER_SPACE: f32 = 34.0;
 const BODY_IMAGE_VISUAL_HEIGHT: u32 = 48;
 const BODY_PREVIEW_MAX_HEIGHT: u32 = 120;
 const BANNER_MAX_WIDTH: f32 = 360.0;
@@ -110,9 +109,8 @@ impl IcedLayerShellBannerPresenter {
             },
             exclusive_zone: spec.exclusive_zone,
             size: Some((0, 0)),
-            // Cards carry their own side margin, so banners sit as far from
-            // the bar as the Shell's panels do.
-            margin: (12, 0, 12, 0),
+            // Keep the stack clear of both edges at the anchored corner.
+            margin: (12, 12, 12, 12),
             keyboard_interactivity: match spec.keyboard_interactivity {
                 BannerKeyboardInteractivity::None => KeyboardInteractivity::None,
             },
@@ -2037,37 +2035,24 @@ fn notification_banner_content<'a>(
 
     let mut title_font = canopa_ui::font(appearance);
     title_font.weight = iced::font::Weight::Semibold;
-    // The first line leaves room for the close control floating at the corner;
-    // the rest of the card uses the full width.
-    let corner = iced::Padding {
-        right: CLOSE_CORNER_SPACE,
-        ..iced::Padding::ZERO
-    };
-    let mut content = column![].spacing(3).width(Length::Fill);
-    let named = banner_title(banner) != banner.app_name;
-    if named {
+    let mut content = column![].spacing(4).width(Length::Fill);
+    if banner_title(banner) != banner.app_name {
         content = content.push(
-            container(
-                text(&banner.app_name)
-                    .font(canopa_ui::font(appearance))
-                    .size(appearance.typography().label_size.px())
-                    .width(Length::Fill)
-                    .style(canopa_ui::muted),
-            )
-            .padding(corner),
+            text(&banner.app_name)
+                .font(canopa_ui::font(appearance))
+                .size(appearance.typography().label_size.px())
+                .width(Length::Fill)
+                .style(canopa_ui::muted),
         );
     }
     content = content
         .push(
-            container(
-                text(banner_title(banner))
-                    .font(title_font)
-                    .size(banner_title_size(appearance))
-                    .width(Length::Fill)
-                    .line_height(iced::Pixels(banner_title_size(appearance) * 1.3))
-                    .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-            )
-            .padding(if named { iced::Padding::ZERO } else { corner }),
+            text(banner_title(banner))
+                .font(title_font)
+                .size(banner_title_size(appearance))
+                .width(Length::Fill)
+                .line_height(iced::Pixels(banner_title_size(appearance) * 1.3))
+                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
         )
         .push(
             container(notification_body_widget(banner, appearance))
@@ -2076,12 +2061,15 @@ fn notification_banner_content<'a>(
         );
 
     let activate = button(container(content).width(Length::Fill).clip(true))
-        .padding(0)
+        .padding([2, 4])
         .width(Length::Fill)
         .style({
             let appearance = appearance.clone();
             move |theme, status| {
                 let mut style = content_button_style(theme, status);
+                if style.background.is_some() {
+                    style.border.radius = 8.0.into();
+                }
                 if appearance.customization.ui[canopa_theme::UiKind::Notification as usize]
                     .foreground
                     .is_some()
@@ -2116,13 +2104,7 @@ fn notification_banner_content<'a>(
     {
         header = header.push(notification_image_visual(image));
     }
-    header = header.push(activate);
-    let header = iced::widget::stack![
-        header,
-        container(dismiss)
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right),
-    ];
+    let header = header.push(activate).push(dismiss);
 
     let mut card = column![header]
         .spacing(
@@ -2176,8 +2158,8 @@ fn banner_actions_widget<'a>(
     use iced::widget::{button, column, container, row};
     use iced::{Alignment, Length};
 
-    // Configured button styles keep the shared action; by default actions are
-    // soft, borderless buttons, two to a row, like the Center's chips.
+    // Configured button styles keep the shared action treatment.
+    let single_action = banner.actions.len() == 1;
     let style = appearance.style(canopa_theme::UiKind::Button);
     let custom = style.custom_padding || style.custom_border || style.custom_radius;
     let mut actions = column![].spacing(6).width(Length::Fill);
@@ -2189,7 +2171,7 @@ fn banner_actions_widget<'a>(
             .width(Length::Fill);
         for (column_index, action) in pair.iter().enumerate() {
             let control = canopa_ui::styled_action(
-                banner_action_content(action, appearance),
+                banner_action_content(action, appearance, single_action && !custom),
                 // The reply action opens the composer; sending invokes it.
                 Some(
                     if banner
@@ -2207,14 +2189,34 @@ fn banner_actions_widget<'a>(
                 appearance,
             )
             .height(Length::Shrink)
-            .width(Length::Fill);
+            .width(if single_action && !custom {
+                Length::Shrink
+            } else {
+                Length::Fill
+            });
             let control = if custom {
                 control
             } else {
-                control.padding([6, 10]).style(|theme, status| {
+                control.padding([6, 10]).style(move |theme, status| {
                     let colors = canopa_ui::colors(theme);
                     let engaged =
                         matches!(status, button::Status::Hovered | button::Status::Pressed);
+                    if single_action {
+                        let mut style = canopa_ui::action_style(
+                            theme,
+                            status,
+                            canopa_ui::Action::Normal,
+                            false,
+                        );
+                        style.background = Some(
+                            colors
+                                .accent
+                                .scale_alpha(if engaged { 0.25 } else { 0.13 })
+                                .into(),
+                        );
+                        style.border.color = colors.accent.scale_alpha(0.6);
+                        return style;
+                    }
                     button::Style {
                         background: Some(
                             colors
@@ -2234,7 +2236,8 @@ fn banner_actions_widget<'a>(
                         banner.target(),
                         row_index * 2 + column_index + 4,
                     ))
-                    .width(Length::Fill),
+                    .width(Length::Fill)
+                    .align_x(iced::Center),
             );
         }
         actions = actions.push(action_row);
@@ -2293,10 +2296,16 @@ fn reply_composer_widget<'a>(
 fn banner_action_content<'a>(
     action: &'a BannerAction,
     appearance: &canopa_theme::Appearance,
+    compact: bool,
 ) -> iced::Element<'a, BannerUiMessage> {
     use iced::widget::{row, text};
     use iced::{Alignment, Length};
 
+    let width = if compact {
+        Length::Shrink
+    } else {
+        Length::Fill
+    };
     let mut font = canopa_ui::font(appearance);
     font.weight = iced::font::Weight::Semibold;
     let label = text(action.label.as_str())
@@ -2305,7 +2314,7 @@ fn banner_action_content<'a>(
         .line_height(iced::Pixels(
             appearance.typography().body_size.px() * 1.4286,
         ))
-        .width(Length::Fill)
+        .width(width)
         .align_x(iced::alignment::Horizontal::Center)
         .wrapping(iced::widget::text::Wrapping::WordOrGlyph);
 
@@ -2313,7 +2322,7 @@ fn banner_action_content<'a>(
         Some(icon) => row![visual_image(icon, 16), label]
             .spacing(5)
             .align_y(Alignment::Center)
-            .width(Length::Fill)
+            .width(width)
             .into(),
         None => label.into(),
     }

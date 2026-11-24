@@ -90,6 +90,14 @@ shortcut actions and USB devices all start unchecked; ScreenCast confirms with
 Ctrl+Enter, never a plain initial Enter. `persist_mode` is accepted but the reply
 always returns 0, so there are no restore tokens.
 
+The Screenshot, ScreenCast and RemoteDesktop source pickers use the same
+Niri window preview client as Shell's taskbar. They request bounded PNG
+snapshots for rows near the visible list and resolve the preview service's
+unique bus owner against the compositor PID used for the inventory. Thumbnails
+and desktop app icons stay in the dialog process. The source catalog and
+explicit confirmation determine the grant, including when previews are disabled
+or a window cannot be rendered.
+
 ### Sharing controls
 
 Each active session owns a `--screencast-status` helper: a floating Iced window

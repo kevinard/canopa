@@ -105,13 +105,15 @@ concurrent work, not hard memory or I/O deadlines.
 
 ## Dialog helpers
 
-Every dialog runs in a child process: the backend re-executes its own binary
+Each dialog runs in a child process. For most dialogs, the backend re-executes its own binary
 (`canopa_file::executable::current()`) with a hidden mode flag such as
-`--file-chooser`, `--app-chooser`, `--access-dialog`, `--account-dialog`,
+`--app-chooser`, `--access-dialog`, `--account-dialog`,
 `--background-dialog`, `--dynamic-launcher-dialog`, `--wallpaper-dialog`,
 `--screenshot-dialog` or `--screenshot-window-picker`. The backend passes its
 own `--canopa-config` or `--defaults` selection so the helper loads the same
-appearance. Each helper keeps the appearance it opened with.
+appearance. FileChooser runs the sibling `canopa-files` executable in picker mode
+with the same configuration selection. Each helper keeps the appearance it
+opened with.
 
 - **Transport.** The request goes to the helper's stdin as JSON; the result
   comes back on stdout. Messages are limited to 1 MiB. AppChooser uses
@@ -133,6 +135,11 @@ appearance. Each helper keeps the appearance it opened with.
   commit, and keeps the relationship until the window is destroyed. A missing
   or expired handle, or a missing protocol, gives an ordinary independent
   window. Other parent types (X11) are ignored.
+- **Presentation.** `dialog_ui` provides the window surface, section headings,
+  input styling and fixed action footer used across consent and review dialogs.
+  Request information that can exceed the viewport scrolls independently of the
+  decision controls. The FileChooser and its embedded variants use Files'
+  breadcrumb and file-row widgets, browser chrome and glyphs.
 - **Accessibility.** FileChooser, AppChooser, Access, Background,
   DynamicLauncher and Wallpaper dialogs publish an AT-SPI tree through the
   `canopa-ui` bridge. Nothing is collected while no assistive technology
@@ -145,7 +152,7 @@ appearance. Each helper keeps the appearance it opened with.
 
 | Crate | Used for |
 | --- | --- |
-| `canopa-files` (`default-features = false`) | `browse::Browser`/`Directory` model, personal folders and cancellation for the file chooser. Files' operation engine, resident host and GIO runtime are not linked or started. See [files.md](files.md). |
+| `canopa-files` (`browser-ui`, default features disabled) | Browser widgets and target preparation for the embedded pickers in Account, Print and Print Recovery. The public FileChooser starts Files as its own process. See [files.md](files.md). |
 | `canopa-apps` | Desktop-entry catalog shared with Shell's launcher, used by AppChooser and for app names in dialogs |
 | `canopa-assets` | Bounded PNG/JPEG/GIF/WebP/SVG decoding for icons, avatars, wallpapers |
 | `canopa-file` | Bounded regular-file reads and the current executable path |
@@ -170,18 +177,19 @@ defaults, never a legacy application file, repeated on each reload. An explicit
 [`file_chooser.rs`](../../crates/canopa-portal/src/file_chooser.rs) parses
 OpenFile, SaveFile and SaveFiles options, keeping paths as NUL-terminated byte
 arrays and producing percent-encoded `file://` URIs from the original bytes.
-[`chooser_ui.rs`](../../crates/canopa-portal/src/chooser_ui.rs) is the Iced
-picker; its `Picker` state and view are also embedded in the Account dialog.
-[`chooser_ui/filters.rs`](../../crates/canopa-portal/src/chooser_ui/filters.rs)
-applies glob and shared-mime-info filename rules.
-[`chooser_ui/folders.rs`](../../crates/canopa-portal/src/chooser_ui/folders.rs)
-creates folders. Accepting never creates or truncates a file; existing
-non-regular destinations are refused.
+[`picker_ui.rs`](../../crates/canopa-files/src/iced_desktop/picker_ui.rs) hosts
+Files' normal browser window with a selection footer and a request-specific
+file type filter. It uses the user's configured Places, local bookmarks,
+Recent (when opening files), mounted devices with local paths, and Files'
+folder views and search. Picker mode skips resident activation and keeps its
+view changes in memory. The portal validates the reply and closes the helper
+on cancellation. The frontend still owns document access.
 
-New folder opens the parent once on the filesystem worker and keeps the
-descriptor. At creation it rechecks the parent's identity and calls `mkdirat`
-for one validated name, refusing any existing entry. Revision checks drop late
-results from earlier operations.
+Account, Print and Print Recovery embed [`chooser_ui.rs`](../../crates/canopa-portal/src/chooser_ui.rs)
+in their own dialog. Both picker hosts share target preparation, filename/MIME
+filtering and the retained-parent check for New folder. Accepting Save returns
+a destination for the caller to write. New folder anchors `mkdirat` to the
+reviewed parent, and existing files require explicit replacement confirmation.
 
 Folder memory is [`file_chooser/history.rs`](../../crates/canopa-portal/src/file_chooser/history.rs):
 a SQLite database at `$XDG_STATE_HOME/canopa/portal-file-chooser.db`, opened
@@ -197,6 +205,12 @@ stored. Failures fall back to ordinary defaults.
 active choice list authoritative in the backend and serializes
 `UpdateChoices` with result validation. Updates reach the helper over the framed
 pipe; a choice that disappears invalidates a pending acceptance.
+
+The dialog uses the shared MIME association reader to group the offered
+applications by file or URI type. An offered configured default leads the
+associated group. Recency only changes position within the same group.
+Presentation preserves the exact frontend IDs, including their original
+suffix spelling.
 
 The helper uses the incoming activation token when it creates its window. On
 acceptance it asks the window adapter for a new `xdg-activation` token bound to
@@ -452,11 +466,9 @@ Wayland parent and modal hint at window creation so the relationship exists
 before the first commit. Missing support degrades to an independent window.
 X11 parents are out of scope.
 
-**Reuse Files' browser, not Files.** The chooser uses Files' renderer-independent
-`Browser` without default features, so the portal does not start Files' operation
-engine, GIO runtime or resident host, and the two keep one browsing model. The
-chooser owns only the small New folder operation, done with `mkdirat` on a
-retained parent so it cannot replace existing entries.
+**Files owns the picker window.** The public FileChooser runs a request-scoped
+Files process and shares its browser, sidebar and navigation. The portal owns
+caller options and request lifetime. The two executable files ship side by side.
 
 **Folder memory is advisory backend state.** It is keyed by the frontend's
 application ID, stores only folders, and fails open to normal defaults. It is
@@ -537,5 +549,6 @@ into a base file the user chooses and treats `none` as a veto, not a fallback.
 - DynamicLauncher icons are read-only and `RequestInstallToken` is always denied.
 - Lockdown `Set` has no caller check; any session-bus client can change a switch.
 - The Wallpaper lock image reaches only `canopa-shell lock`, not `canopa-lock`.
-- The file chooser has no previews, remote locations or content-based MIME detection.
+- FileChooser handles local paths including mounted devices with a local path. It
+  does not connect to remote locations. Portal MIME filters use filename patterns.
 - Real Flatpak runtimes are covered only for FileChooser; other portals are tested with host or synthetic sandbox clients.

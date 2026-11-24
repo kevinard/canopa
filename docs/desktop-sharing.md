@@ -34,11 +34,17 @@ GlobalShortcuts or Usb portal.
 ## Sharing your screen
 
 When an application asks to share the screen, a dialog lists your displays and
-windows. Nothing is selected at first.
+windows. Window rows include a thumbnail of the current contents and the
+application icon when available. Canopa uses the same Niri preview service as
+the Shell taskbar. The window title and application name remain available if a
+preview cannot be rendered. Nothing is selected at first.
 
-- Search with the search field, or press Tab to move focus.
+- A search field appears when there are more than three sources. Press Tab to
+  move focus.
 - Up and Down move through the list; Space selects or clears a source.
-- Choose Share, or press Ctrl+Enter.
+- When one source is selected, its name appears above the confirmation buttons.
+  With a remote session, View only means the app gets the selected picture
+  without input control or clipboard access. Choose Share or press Ctrl+Enter.
 - Escape, Cancel or closing the dialog shares nothing.
 
 If the application allows several sources, you can choose up to 16. A source that
@@ -61,7 +67,7 @@ kind of access the application asks for:
 - Allow keyboard control of your desktop
 - Allow pointer control of your desktop
 - Allow touch control (Alt+T)
-- Share clipboard contents (Alt+C)
+- Allow clipboard read and write (Alt+C)
 
 Every choice starts unchecked. Allowing one does not allow the others. Touch
 control works only inside a display or window you share, so it also needs a
@@ -113,8 +119,9 @@ Canopa shows the one you chose last time for that application, but you decide.
 - Type a shortcut such as `CTRL+ALT+a` or `LOGO+F9`, or choose Record keys and
   press the combination; release the keys to finish, or press Escape to cancel
   recording.
-- Choose Save shortcuts. If a shortcut is already in use, the dialog stays open
-  so you can pick another.
+- Choose the Allow button for the checked shortcuts, or Allow none to finish
+  without registering any. In the editor, choose Save shortcuts. If a shortcut
+  is already in use, the dialog stays open so you can pick another.
 
 While the dialog has keyboard focus, existing global shortcuts are paused so you
 can record them. Applications can reopen the dialog to change their shortcuts;
@@ -130,8 +137,8 @@ devices it asks for, with vendor, product ID, serial number and location when
 known. No device is selected at first.
 
 - Select devices, or press Alt+S to select or clear all.
-- If the application asked for read-write access, you can choose read-only
-  instead (Alt+R).
+- After selecting a device that requests read-write access, choose read-only
+  instead. Alt+R applies this to the selected devices.
 - Choose Allow selected (Alt+A). Deny, Escape or closing the window grants
   nothing.
 

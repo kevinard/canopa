@@ -206,9 +206,17 @@ def verify(binary, shell_binary, session, scheme, scale, shipped):
         return path, window
 
     def action(window, accept):
-        w, h = window['layout']['window_size']
-        session.run([str(pointer), str(round((20 + w * (.75 if accept else .25)) / width * 1600)),
-            str(round((10 + h - 36) / height * 1000))])
+        _, h = window['layout']['window_size']
+        # Shell reserves space at the side of this output. Locate the actual
+        # right window edge before targeting the two compact footer controls.
+        frame = session.capture('action-target.png')
+        y = min(frame.height - 1, round((10 + h - 20) * scale))
+        background = frame.getpixel((frame.width - 1, y))
+        right = next(x for x in range(frame.width - 2, 0, -1)
+                     if max(abs(a - b) for a, b in zip(frame.getpixel((x, y)), background)) > 8)
+        x = right / scale - (62 if accept else 148)
+        session.run([str(pointer), str(round(x / width * 1600)),
+                     str(round((10 + h - 30) / height * 1000))])
 
     def result(path, status, public=True):
         response = session.wait_for(lambda: (drain(), (responses if public else pending).get(path))[1], 'wallpaper response', timeout=45)
@@ -259,7 +267,7 @@ def verify(binary, shell_binary, session, scheme, scale, shipped):
     assert first['background'] == first['lockscreen']
     assert Image.open(state / (first['background'] + '.png')).size == (2048, 1024)
     painted('02-frozen-both.png', red)
-    assert json.loads(session.run([str(shell_binary), 'lock']))['hash'] == first['lockscreen']
+    assert json.loads(session.run([str(shell_binary), 'lock', '--swaylock']))['hash'] == first['lockscreen']
     checks.append('Apply uses the reviewed frozen image after caller deletion for actual desktop and locker')
 
     image(blue)
@@ -270,7 +278,7 @@ def verify(binary, shell_binary, session, scheme, scale, shipped):
     closed(window)
     locked = selection()
     assert locked['background'] == first['background'] and locked['lockscreen'] != first['lockscreen']
-    assert json.loads(session.run([str(shell_binary), 'lock']))['hash'] == locked['lockscreen']
+    assert json.loads(session.run([str(shell_binary), 'lock', '--swaylock']))['hash'] == locked['lockscreen']
     painted('03-lock-only.png', red)
     image(green)
     path, window = begin(target=None)

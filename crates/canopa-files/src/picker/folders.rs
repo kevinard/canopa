@@ -7,22 +7,22 @@ use std::{
 };
 
 #[derive(Debug)]
-pub(crate) struct Parent {
+pub struct Parent {
     directory: File,
     path: PathBuf,
 }
 
-pub(super) fn valid_name(name: &str) -> bool {
-    !name.contains('\0') && name.len() <= 255 && crate::file_chooser::file_name(Path::new(name))
+pub fn valid_name(name: &str) -> bool {
+    !name.contains('\0') && name.len() <= 255 && canopa_file::picker::file_name(Path::new(name))
 }
 
 impl Parent {
-    pub(super) fn open(path: PathBuf) -> io::Result<Self> {
+    pub fn open(path: PathBuf) -> io::Result<Self> {
         use rustix::fs::{Mode, OFlags, open};
         if !path.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                fl!("portal-chooser-absolute-folder"),
+                fl!("files-picker-absolute-folder"),
             ));
         }
         let directory = File::from(open(
@@ -33,7 +33,7 @@ impl Parent {
         Ok(Self { directory, path })
     }
 
-    pub(super) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
@@ -41,16 +41,16 @@ impl Parent {
         let pinned = self.directory.metadata()?;
         let current = std::fs::metadata(&self.path)?;
         if (pinned.dev(), pinned.ino()) != (current.dev(), current.ino()) {
-            return Err(io::Error::other(fl!("portal-chooser-folder-changed")));
+            return Err(io::Error::other(fl!("files-picker-folder-changed")));
         }
         Ok(())
     }
 
-    pub(super) fn create(&self, name: &str) -> io::Result<PathBuf> {
+    pub fn create(&self, name: &str) -> io::Result<PathBuf> {
         if !valid_name(name) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                fl!("portal-chooser-folder-name-rule"),
+                fl!("files-picker-folder-name-rule"),
             ));
         }
         self.verify()?;

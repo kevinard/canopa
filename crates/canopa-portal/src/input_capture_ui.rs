@@ -1,5 +1,6 @@
 //! Fresh unchecked input-capture consent in the shared Iced appearance.
 use crate::accessibility_ui::{self as a11y, Node, semantic};
+use crate::dialog_ui;
 use crate::input_capture::DialogInput;
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
@@ -43,8 +44,8 @@ pub fn run(
                 window::Settings {
                     size: Size::new(
                         560.,
-                        380. + if input.clipboard { 80. } else { 0. }
-                            + if input.capabilities == 3 { 60. } else { 0. },
+                        360. + if input.clipboard { 65. } else { 0. }
+                            + if input.capabilities == 3 { 42. } else { 0. },
                     ),
                     min_size: Some(Size::new(440., 340.)),
                     exit_on_close_request: false,
@@ -83,6 +84,7 @@ fn window_title() -> String {
 
 struct Dialog {
     input: DialogInput,
+    requester: String,
     theme: Theme,
     pointer: bool,
     keyboard: bool,
@@ -112,6 +114,7 @@ impl canopa_ui::accessibility::Message for Message {
 impl Dialog {
     fn new(input: DialogInput, theme: Theme, output: Arc<Mutex<Option<Selection>>>) -> Self {
         Self {
+            requester: dialog_ui::requester(&input.app_id),
             input,
             theme,
             pointer: false,
@@ -195,25 +198,20 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let requester = if self.input.app_id.is_empty() {
-            fl!("portal-an-application")
-        } else {
-            self.input.app_id.clone()
-        };
+        let requester = &self.requester;
         let question = fl!("portal-input-capture-question");
         let mut content = column![
             semantic(
                 Node::heading(question.clone(), 1),
-                text(question.clone()).size(24)
+                dialog_ui::heading(question.clone())
             ),
-            text(fl!(
+            dialog_ui::detail(fl!(
                 "portal-input-capture-request",
                 requester = requester.as_str()
-            ))
-            .size(16),
+            )),
             text(fl!("portal-input-capture-explanation")).size(14),
         ]
-        .spacing(18);
+        .spacing(12);
         let choice = |key: &'static str,
                       label: String,
                       shortcut: &'static str,
@@ -253,52 +251,71 @@ impl Dialog {
             ));
         }
         if self.input.clipboard {
-            content = content.push(choice(
-                "input-capture-clipboard",
-                fl!("portal-input-capture-clipboard"),
-                "Alt+C",
-                self.clipboard,
-                Message::Clipboard,
-            ));
+            content = content.push(
+                container(
+                    column![
+                        choice(
+                            "input-capture-clipboard",
+                            fl!("portal-input-capture-clipboard"),
+                            "Alt+C",
+                            self.clipboard,
+                            Message::Clipboard
+                        ),
+                        dialog_ui::detail(fl!("portal-input-capture-clipboard-scope")).size(13),
+                    ]
+                    .spacing(6),
+                )
+                .padding([10, 12])
+                .width(Length::Fill)
+                .style(dialog_ui::card),
+            );
         }
         let allow = (self.selected() != 0).then_some(Message::Allow);
-        let content = content.extend([
-            text(fl!("portal-input-capture-hint"))
-                .size(12)
-                .style(canopa_ui::muted)
-                .into(),
-            canopa_ui::direction::row([
-                a11y::button(
-                    "input-capture-cancel",
-                    fl!("portal-cancel"),
+        let mut content = content.push(
+            container(
+                column![
+                    dialog_ui::section(fl!("portal-input-capture-pause")),
+                    dialog_ui::detail(fl!("portal-input-capture-end")),
+                ]
+                .spacing(5),
+            )
+            .width(Length::Fill)
+            .padding([10, 12])
+            .style(dialog_ui::card),
+        );
+        if allow.is_none() {
+            content =
+                content.push(dialog_ui::detail(fl!("portal-input-capture-select-input")).size(13));
+        }
+        let actions = dialog_ui::footer([
+            a11y::button(
+                "input-capture-cancel",
+                fl!("portal-cancel"),
+                Some(Message::Cancel),
+                dialog_ui::action(
+                    text(fl!("portal-cancel")),
                     Some(Message::Cancel),
-                    canopa_ui::action(
-                        text(fl!("portal-cancel")),
-                        Some(Message::Cancel),
-                        canopa_ui::Action::Quiet,
-                        false,
-                    ),
+                    canopa_ui::Action::Quiet,
+                    false,
                 ),
-                semantic(
-                    Node::button(fl!("portal-input-capture-allow"))
-                        .key("input-capture-allow")
-                        .shortcut("Alt+A")
-                        .disabled(allow.is_none())
-                        .on_click(allow.clone()),
-                    canopa_ui::action(
-                        text(fl!(
-                            "portal-with-shortcut",
-                            label = fl!("portal-input-capture-allow"),
-                            shortcut = "Alt+A"
-                        )),
-                        allow,
-                        canopa_ui::Action::Normal,
-                        false,
-                    ),
+            ),
+            semantic(
+                Node::button(fl!("portal-input-capture-allow"))
+                    .key("input-capture-allow")
+                    .shortcut("Alt+A")
+                    .disabled(allow.is_none())
+                    .on_click(allow.clone()),
+                dialog_ui::action(
+                    text(fl!(
+                        "portal-with-shortcut",
+                        label = fl!("portal-input-capture-allow"),
+                        shortcut = "Alt+A"
+                    )),
+                    allow,
+                    canopa_ui::Action::Primary,
+                    false,
                 ),
-            ])
-            .spacing(12)
-            .into(),
+            ),
         ]);
         a11y::dialog_window(
             WINDOW_KEY,
@@ -309,11 +326,7 @@ impl Dialog {
                     "portal-input-capture-description",
                     requester = requester.as_str()
                 )),
-            container(content)
-                .padding(24)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(canopa_ui::surface),
+            dialog_ui::layout(content, actions),
         )
     }
 }

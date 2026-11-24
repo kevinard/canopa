@@ -18,6 +18,7 @@ use transport::{control_reply_line, panel_response_line};
 
 const PANEL_NOTIFICATION_ACTION_KEY: &str = "canopa-notify:notification-action";
 const PANEL_ACKNOWLEDGE_ITEM_KEY: &str = "canopa-notify:acknowledge-item";
+const PANEL_DISMISS_ITEM_KEY: &str = "canopa-notify:dismiss-item";
 const PANEL_REMOVE_ITEM_KEY: &str = "canopa-notify:remove-item";
 const PANEL_ACTIVATE_ITEM_KEY: &str = "canopa-notify:activate-item";
 const PANEL_APP_PERMISSION_KEY: &str = "canopa-notify:app-permission";
@@ -376,7 +377,10 @@ fn parse_panel_interaction_request(json: &str) -> Option<SocketControlRequest> {
         else {
             return None;
         };
-        if matches!(action, NotificationCenterAction::Acknowledge) {
+        if matches!(
+            action,
+            NotificationCenterAction::Acknowledge | NotificationCenterAction::Dismiss
+        ) {
             return None;
         }
         *activation_token = Some(token);
@@ -569,38 +573,35 @@ fn panel_content_from_projection(projection: NotificationCenterProjection) -> Pa
                                     )
                                 }))
                                 .chain(
-                                    (item.status == canopa_notify::NotificationStatus::Active)
+                                    (item.status == canopa_notify::NotificationStatus::Active
+                                        && item.has_default_action)
                                         .then(|| {
                                             panel_center_action(
                                                 item.target.clone(),
                                                 NotificationCenterAction::Activate,
-                                                if item.has_default_action {
-                                                    fl!("notify-center-open")
-                                                } else {
-                                                    fl!("notify-center-dismiss")
-                                                },
+                                                fl!("notify-center-open"),
                                             )
                                         }),
                                 )
                                 .chain(
-                                    ((item.requires_attention
-                                        && item.status
-                                            != canopa_notify::NotificationStatus::Active)
-                                        || (item.status
-                                            == canopa_notify::NotificationStatus::Active
-                                            && item.has_default_action))
+                                    (item.requires_attention
+                                        || item.status
+                                            == canopa_notify::NotificationStatus::Active)
                                         .then(|| {
-                                            panel_center_action(
-                                                item.target.clone(),
-                                                NotificationCenterAction::Acknowledge,
-                                                if item.status
-                                                    == canopa_notify::NotificationStatus::Active
-                                                {
-                                                    fl!("notify-center-dismiss")
-                                                } else {
-                                                    fl!("notify-center-mark-read")
-                                                },
-                                            )
+                                            let active = item.status
+                                                == canopa_notify::NotificationStatus::Active;
+                                            let (action, label) = if active {
+                                                (
+                                                    NotificationCenterAction::Dismiss,
+                                                    fl!("notify-center-dismiss"),
+                                                )
+                                            } else {
+                                                (
+                                                    NotificationCenterAction::Acknowledge,
+                                                    fl!("notify-center-mark-read"),
+                                                )
+                                            };
+                                            panel_center_action(item.target.clone(), action, label)
                                         }),
                                 )
                                 .chain(
@@ -732,9 +733,14 @@ fn panel_center_action(
     PanelAction {
         request_activation_token: !matches!(
             action,
-            NotificationCenterAction::Acknowledge | NotificationCenterAction::Remove
+            NotificationCenterAction::Acknowledge
+                | NotificationCenterAction::Dismiss
+                | NotificationCenterAction::Remove
         ),
-        destructive: matches!(action, NotificationCenterAction::Remove),
+        destructive: matches!(
+            action,
+            NotificationCenterAction::Dismiss | NotificationCenterAction::Remove
+        ),
         pressed: None,
         key: panel_center_action_key(&action).to_string(),
         label,
@@ -753,6 +759,7 @@ fn panel_center_action_key(action: &NotificationCenterAction) -> &'static str {
     match action {
         NotificationCenterAction::OpenLink { .. } => "canopa-notify:open-link",
         NotificationCenterAction::Acknowledge => PANEL_ACKNOWLEDGE_ITEM_KEY,
+        NotificationCenterAction::Dismiss => PANEL_DISMISS_ITEM_KEY,
         NotificationCenterAction::Remove => PANEL_REMOVE_ITEM_KEY,
         NotificationCenterAction::Activate => PANEL_ACTIVATE_ITEM_KEY,
         NotificationCenterAction::InvokeAction { .. } => PANEL_NOTIFICATION_ACTION_KEY,

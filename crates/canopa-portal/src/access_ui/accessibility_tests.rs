@@ -55,6 +55,7 @@ async fn native_consent_choices_and_buttons_send_the_input_messages() {
         ),
     ];
     let mut dialog = Dialog {
+        requester: "Camera test".into(),
         request,
         theme: canopa_ui::theme(Default::default()),
         icon: None,

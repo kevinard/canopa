@@ -15,7 +15,8 @@ background-actions = ["dep:tokio", "dep:zbus", "dep:futures-util"]
 background-operations = ["dep:tokio", "dep:zbus", "dep:futures-util"]
 media-playback = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
 local-runtime = ["background-actions", "background-operations", "dep:gio", "dep:glib"]
-desktop = ["local-runtime", "media-playback", "dep:iced", "dep:canopa-ui", "canopa-ui/icons", "canopa-ui/accessibility", "dep:clap", "dep:canopa-assets", "dep:resvg", "wayland-clipboard"]
+browser-ui = ["dep:glob", "dep:iced", "dep:canopa-ui", "canopa-ui/accessibility"]
+desktop = ["local-runtime", "media-playback", "browser-ui", "canopa-ui/icons", "canopa-ui/accessibility", "dep:clap", "dep:canopa-assets", "dep:resvg", "wayland-clipboard"]
 wayland-clipboard = ["dep:wayland-client", "dep:wayland-protocols", "rustix/event", "rustix/pipe", "rustix/net"]
 
 [[bin]]
@@ -83,6 +84,7 @@ futures-util = { workspace = true, optional = true }
 url.workspace = true
 roxmltree.workspace = true
 unicode-segmentation.workspace = true
+glob = { version = "0.3.4", optional = true }
 gio = { workspace = true, optional = true, features = ["v2_58"] }
 glib = { workspace = true, optional = true }
 gstreamer = { workspace = true, optional = true }

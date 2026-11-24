@@ -36,9 +36,17 @@ def verify(args,session):
         (portals/'portals.conf').write_text('[preferred]\ndefault=none\n'+IMPL+'=canopa\norg.freedesktop.impl.portal.Settings=canopa\n')
     applications=Path(session.env['XDG_DATA_HOME'])/'applications';applications.mkdir(parents=True)
     (applications/'org.canopa.CastTest.desktop').write_text('[Desktop Entry]\nType=Application\nName=Screen sharing fixture\nExec=true\n')
+    preview_icon = session.runtime / 'preview-icon.svg'
+    preview_icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect x="2" y="2" width="28" height="28" fill="#bd37dc"/></svg>')
+    (applications/'org.canopa.PortalTest.desktop').write_text(f'[Desktop Entry]\nType=Application\nName=Preview fixture\nExec=true\nIcon={preview_icon}\n')
     session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home),XDG_CURRENT_DESKTOP='Canopa',XDG_DESKTOP_PORTAL_DIR=str(portals),XDG_DATA_DIRS=session.env['XDG_DATA_HOME'],GIO_USE_VFS='local',GSETTINGS_BACKEND='memory',GSETTINGS_SCHEMA_DIR='/usr/share/glib-2.0/schemas',PATH=str(args.binary.parent)+os.pathsep+session.env['PATH'],RUST_LOG='niri=debug')
+    if not args.media:
+        session.env.update(PIPEWIRE_RUNTIME_DIR=str(session.runtime), PIPEWIRE_REMOTE='pipewire-0')
     output=session.start_niri('debug { dbus-interfaces-in-non-session-instances; }\nprefer-no-csd\nanimations { off; }\nxwayland-satellite { off; }\nhotkey-overlay { skip-at-startup; }\nlayout { gaps 8; border { off; }; focus-ring { off; }; }\n',scale=args.scale,service_directories=[services])
+    if not args.media:
+        session.start(['pipewire'], 'pipewire.log')
+        session.wait_for(lambda: (session.runtime/'pipewire-0').is_socket(), 'private PipeWire')
     fixture=ROOT/'scripts/desktop-fixture'
     for mode,suffix in [('client-header','.h'),('private-code','.c')]:
         subprocess.run(['wayland-scanner',mode,str(fixture/'virtual-keyboard-unstable-v1.xml'),str(session.output/('virtual-keyboard'+suffix))],check=True,timeout=15)
@@ -138,16 +146,15 @@ def verify(args,session):
         window=session.wait_for(lambda:next((v for v in windows() if v['id']==window['id'] and abs(v['layout']['window_size'][0]-w)<2 and abs(v['layout']['window_size'][1]-h)<2),None),'consent geometry')
         session.run(['niri','msg','action','move-floating-window','--id',str(window['id']),'--x','20','--y','10']);session.run(['niri','msg','action','focus-window','--id',str(window['id'])]);time.sleep(.2);return window
     def action(window,share):
-        w,h=window['layout']['window_size'];session.run([str(pointer),str(round((20+w*(.75 if share else .25))/width*1600)),str(round((10+h-38)/height*1000))])
+        w,h=window['layout']['window_size'];session.run([str(pointer),str(round((20+w-(64 if share else 147))/width*1600)),str(round((10+h-38)/height*1000))])
     def gone(window):session.wait_for(lambda:not any(v['id']==window['id'] for v in windows()),'consent retired')
     control_layouts=[]
     def controls(label):
         window=session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Screen sharing — Canopa'),None),'ongoing sharing controls')
         control_layouts.append({'case':label,'initial_floating':window['is_floating'],'initial_layout':window['layout']})
         assert window['is_floating'],'sharing controls should open compact and floating'
-        session.run(['niri','msg','action','set-window-width','--id',str(window['id']),'480'])
-        session.run(['niri','msg','action','set-window-height','--id',str(window['id']),'280'])
-        window=session.wait_for(lambda:next((v for v in windows() if v['id']==window['id'] and tuple(v['layout']['window_size'])==(480,280)),None),'sharing controls geometry')
+        w,h=window['layout']['window_size']
+        assert 0 < w <= 500 and 0 < h <= 420, window
         session.run(['niri','msg','action','move-floating-window','--id',str(window['id']),'--x','20','--y','10'])
         session.run(['niri','msg','action','focus-window','--id',str(window['id'])]);time.sleep(.2)
         session.capture(label+'-controls.png')
@@ -155,13 +162,30 @@ def verify(args,session):
     def choose_first(window,label):
         from PIL import ImageChops
         w,h=window['layout']['window_size']
-        box=tuple(round(value*args.scale) for value in (40,10+h-85,180,10+h-48))
+        box=tuple(round(value*args.scale) for value in (40,10+h-110,275,10+h-65))
         before=session.capture(label+'-before.png').crop(box)
         keys(108,57) # Linux evdev Down and Space, using the same full US keymap.
         def selected():
             assert any(v['id']==window['id'] for v in windows()),'consent vanished before selection'
             return ImageChops.difference(before,session.capture(label+'.png').crop(box)).getbbox()
         session.wait_for(selected,'visible source selection')
+
+    def finish_nested(path, key, window, source_type):
+        response = session.wait_for(lambda:(drain(), responses.get(path))[1], 'nested Start response')
+        status = response.get_child_value(0).unpack()
+        values = response.get_child_value(1).unpack()
+        gone(window)
+        if status == 0:
+            streams = values['streams']
+            assert len(streams) == 1 and streams[0][0] > 0, streams
+            assert streams[0][1]['source_type'] == source_type, streams
+            control = controls(f'nested-source-{source_type}')
+            call(FRONTEND,key,'org.freedesktop.portal.Session','Close','()',())
+            gone(control)
+            return 'returned a stream descriptor and closed its sharing controls'
+        assert status == 2 and values == {}, response
+        assert 'no GBM device available' in (session.output/'niri.log').read_text()
+        return 'reported NoGBM without granting a stream'
 
     assert call(BACKEND,PATH,'org.freedesktop.DBus.Properties','Get','(ss)',(IMPL,'version'))[0]==6
     assert call(FRONTEND,PATH,'org.freedesktop.DBus.Properties','Get','(ss)',(PUBLIC,'AvailableSourceTypes'))[0]==3
@@ -191,9 +215,8 @@ def verify(args,session):
         gone(status)
         checks.append('keyboard consent delivers actual monitor pixels through the restricted frontend PipeWire FD; public Close retires the producer and sharing controls')
     else:
-        assert result(path,2)=={};gone(window)
-        assert 'no GBM device available' in (session.output/'niri.log').read_text()
-        checks.append('keyboard search, source selection and Ctrl+Enter reach actual installed nested NoGBM startup failure without a stream grant')
+        outcome = finish_nested(path, key, window, 1)
+        checks.append(f'keyboard search, source selection and Ctrl+Enter reach native monitor capture, which {outcome}')
 
     if args.media:
         for mode in ('button','escape','window-close'):
@@ -201,7 +224,9 @@ def verify(args,session):
             values=result(path,0);gone(window);status=controls('05-'+mode)
             def stop_controls():
                 if mode=='button':
-                    session.run([str(pointer),str(round(260/width*1600)),str(round(252/height*1000))])
+                    w,h=status['layout']['window_size']
+                    session.run([str(pointer),str(round((20+w-88)/width*1600)),
+                                 str(round((10+h-30)/height*1000))])
                 elif mode=='escape':keys(1)
                 else:session.run(['niri','msg','action','close-window','--id',str(status['id'])])
             session.check_stream(connection,key,values,1,logical,pattern_box,stop_controls,label=mode)
@@ -231,16 +256,29 @@ def verify(args,session):
                 gone(status)
                 checks.append(f'restricted-FD source type {kind} cursor mode {cursor_mode} delivers correct source pixels and cursor image/metadata')
 
-    key=create();select(key,types=2);path=start(key);window=popup();choose_first(window,'03-selected-window');action(window,True)
+    key=create();select(key,types=2);path=start(key);window=popup()
+    if args.media:
+        def thumbnail_drawn():
+            shot = session.capture('03-window-thumbnail.png')
+            box = tuple(round(edge * args.scale) for edge in (54, 85, 169, 320))
+            colors = shot.crop(box).convert('RGB').getcolors(100_000)
+            icon_box = tuple(round(edge * args.scale) for edge in (169, 85, 216, 320))
+            icon_colors = shot.crop(icon_box).convert('RGB').getcolors(100_000)
+            return colors and icon_colors and all(
+                any(count >= 20 and pixel == color for count, pixel in colors)
+                for color in ((180, 20, 40), (10, 40, 140), (20, 150, 40), (180, 154, 24))
+            ) and any(count >= 20 and pixel == (189, 55, 220) for count, pixel in icon_colors)
+        session.wait_for(thumbnail_drawn, 'compositor window pixels and app icon in the picker')
+        checks.append('window picker shows a compositor thumbnail and app icon before selection')
+    choose_first(window,'03-selected-window');action(window,True)
     if args.media:
         values=result(path,0);gone(window);status=controls('06-source-loss')
         session.check_stream(connection,key,values,2,logical,None,lambda:session.retire(parent))
         session.wait_for(lambda:(drain(),key in closed)[1],'public source-loss Closed signal');gone(status)
         checks.append('actual window pixels exclude other surfaces; source destruction closes the public session, sharing controls and producer')
     else:
-        assert result(path,2)=={};gone(window)
-        assert 'record_window' in (session.output/'niri.log').read_text()
-        checks.append('window-only source consent uses real RecordWindow and failed startup retires the session')
+        outcome = finish_nested(path, key, window, 2)
+        checks.append(f'window-only consent reaches native window capture, which {outcome}')
 
     if args.media:
         key=create();select(key,types=1);path=start(key);window=popup();choose_first(window,'07-selected-backend-loss');keys('ctrl 28')

@@ -108,46 +108,6 @@ fn mini_switch<'a>(on: bool) -> Element<'a, Message> {
         .into()
 }
 
-/// A status dot that is also its item's only action (an unread dot that marks
-/// the message read): a 16px target that shows a soft ring on hover.
-pub(super) fn marker<'a>(
-    id: String,
-    label: &str,
-    provider: &str,
-    focused: bool,
-) -> Element<'a, Message> {
-    use iced::widget::button;
-    let dot = container(iced::widget::Space::new().width(8).height(8)).style(|theme| {
-        container::Style::default()
-            .background(canopa_ui::colors(theme).accent)
-            .border(iced::Border::default().rounded(4))
-    });
-    // The name is the accessible label; the card's close control sits beside it.
-    let _ = label;
-    let content = button(container(dot).center(16))
-        .padding(0)
-        .on_press(Message::ExternalPanel(
-            ExternalPanelEvent::ButtonActivated {
-                provider_name: provider.to_owned(),
-                element_id: id.clone(),
-            },
-        ))
-        .style(move |theme, status| {
-            let colors = canopa_ui::colors(theme);
-            let engaged = matches!(status, button::Status::Hovered | button::Status::Pressed);
-            button::Style {
-                background: engaged.then(|| colors.accent.scale_alpha(0.18).into()),
-                border: iced::Border {
-                    color: colors.focus,
-                    width: if focused { 2.0 } else { 0.0 },
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            }
-        });
-    crate::surface::identity::identify(id, content)
-}
-
 /// A message card's round close control, the same one the banners use.
 pub(super) fn dismiss<'a>(id: String, provider: &str, focused: bool) -> Element<'a, Message> {
     use iced::widget::button;

@@ -179,7 +179,7 @@ def verify(binary, notify, session, scheme, scale, shipped):
 
     path = begin()
     window = review(path, '04-choice-source.png')
-    click(20 + window['layout']['window_size'][0] * .82, 10 + window['layout']['window_size'][1] - 78)
+    click(20 + window['layout']['window_size'][0] - 77, 257)
     result(path, 1)
     close_review(window)
     checks.append('Iced review returns an explicit Allow decision')

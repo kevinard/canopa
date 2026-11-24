@@ -186,6 +186,49 @@ fn applications(
     apps
 }
 
+/// Match a compositor application ID to an installed desktop entry.
+pub fn match_desktop_application_for_app_id<'a>(
+    app_id: &str,
+    applications: &'a [DesktopApplication],
+) -> Option<&'a DesktopApplication> {
+    if app_id.is_empty() {
+        return None;
+    }
+
+    applications
+        .iter()
+        .find(|application| application.id == app_id)
+        .or_else(|| {
+            applications
+                .iter()
+                .find(|application| desktop_id_stem(&application.id) == Some(app_id))
+        })
+        .or_else(|| {
+            let suffix = app_id.rsplit('.').next()?;
+            applications
+                .iter()
+                .find(|application| desktop_id_stem(&application.id) == Some(suffix))
+        })
+        .or_else(|| {
+            // XWayland classes can differ in case from their desktop IDs (for
+            // example, Chatgpt and chatgpt.desktop). Preserve exact matches and
+            // only accept an unambiguous case-insensitive fallback.
+            let suffix = app_id.rsplit('.').next()?;
+            let mut matches = applications.iter().filter(|application| {
+                application.id.eq_ignore_ascii_case(app_id)
+                    || desktop_id_stem(&application.id).is_some_and(|stem| {
+                        stem.eq_ignore_ascii_case(app_id) || stem.eq_ignore_ascii_case(suffix)
+                    })
+            });
+            let application = matches.next()?;
+            matches.next().is_none().then_some(application)
+        })
+}
+
+fn desktop_id_stem(id: &str) -> Option<&str> {
+    id.strip_suffix(".desktop")
+}
+
 /// The `Icon=` of one desktop entry, without scanning the catalog: the first
 /// `applications/<id>.desktop` in the XDG data directories wins, and a hidden
 /// entry has no icon. A trailing `.desktop` on `id` is accepted. Call on a worker.
@@ -194,6 +237,18 @@ pub fn desktop_entry_icon(id: &str) -> Option<String> {
 }
 
 pub fn desktop_entry_icon_in_data_dirs(id: &str, data_dirs: &[PathBuf]) -> Option<String> {
+    let fields = desktop_entry_fields(id, data_dirs)?;
+    optional_non_empty_field(&fields, "Icon")
+}
+
+/// Localized name of the first matching desktop entry, including entry aliases
+/// hidden from menus via NoDisplay. Call on a worker.
+pub fn desktop_entry_name(id: &str) -> Option<String> {
+    let fields = desktop_entry_fields(id, &xdg_data_dirs())?;
+    localized_field(&fields, "Name", &DesktopEnvironment::current().locales)
+}
+
+fn desktop_entry_fields(id: &str, data_dirs: &[PathBuf]) -> Option<HashMap<String, String>> {
     let id = id.trim();
     let id = id.strip_suffix(".desktop").unwrap_or(id);
     if id.is_empty() || id.len() > 255 || id.starts_with('.') || id.contains(['/', '\\', '\0']) {
@@ -208,10 +263,7 @@ pub fn desktop_entry_icon_in_data_dirs(id: &str, data_dirs: &[PathBuf]) -> Optio
         })
         .and_then(|bytes| String::from_utf8(bytes).ok())?;
     let fields = parse_desktop_entry_fields(&body);
-    if bool_field(&fields, "Hidden") {
-        return None;
-    }
-    optional_non_empty_field(&fields, "Icon")
+    (!bool_field(&fields, "Hidden")).then_some(fields)
 }
 
 fn xdg_data_dirs() -> Vec<PathBuf> {

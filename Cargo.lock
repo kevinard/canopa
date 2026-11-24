@@ -958,6 +958,7 @@ name = "canopa-file"
 version = "0.1.0"
 dependencies = [
  "rustix 1.1.4",
+ "serde",
  "tempfile",
 ]
 
@@ -980,6 +981,7 @@ dependencies = [
  "futures-util",
  "gio",
  "glib",
+ "glob",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-video",
@@ -1207,12 +1209,12 @@ dependencies = [
  "canopa-file",
  "canopa-files",
  "canopa-i18n",
+ "canopa-services",
  "canopa-theme",
  "canopa-ui",
  "clap",
  "futures-channel",
  "futures-util",
- "glob",
  "iced",
  "image",
  "libc",

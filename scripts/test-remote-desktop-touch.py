@@ -113,7 +113,7 @@ layout { border { off; }; focus-ring { off; }; }
         response(request(c,REMOTE,'SelectDevices','(oa{sv})',(key,options(types=GLib.Variant('u',4)))))
         response(request(c,CAST,'SelectSources','(oa{sv})',(key,options(types=GLib.Variant('u',2),cursor_mode=GLib.Variant('u',1)))))
         pending=request(c,REMOTE,'Start','(osa{sv})',(key,'',options()))
-        dialog=session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Share and allow control — Canopa'),None),'real Iced touch consent')
+        dialog=session.wait_for(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['title']=='Remote desktop — Canopa'),None),'real Iced touch consent')
         width=min(680,int(session.pixel_size[0]/args.scale)-40)
         height=min(740,int(session.pixel_size[1]/args.scale)-20)
         action('move-window-to-floating','--id',dialog['id']);action('set-window-width','--id',dialog['id'],width)

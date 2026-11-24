@@ -69,19 +69,41 @@ pub(crate) async fn read(
             .and_then(Value::as_object)
             .ok_or_else(|| anyhow::anyhow!("Invalid capture outputs"))?;
         anyhow::ensure!(outputs.len() <= 16, "Too many capture outputs");
-        for (name, output) in outputs {
-            if !output.get("logical").is_some_and(Value::is_object) {
-                continue;
-            }
+        for (index, (name, output)) in outputs
+            .iter()
+            .filter(|(_, output)| output.get("logical").is_some_and(Value::is_object))
+            .enumerate()
+        {
             anyhow::ensure!(
                 !name.is_empty() && name.len() <= 256 && !name.chars().any(char::is_control),
                 "Invalid capture output name"
             );
-            let model = label(output.get("model"), &fl!("portal-screencast-display"));
+            let model = label(output.get("model"), "");
+            let make = label(output.get("make"), "");
+            let title =
+                if model.is_empty() || model.eq_ignore_ascii_case(name) || model == "Unknown" {
+                    {
+                        let number: usize = index + 1;
+                        fl!("portal-display-numbered", number = number)
+                    }
+                } else if !make.is_empty() && make != "Unknown" && !model.starts_with(&make) {
+                    format!("{make} {model}")
+                } else {
+                    model
+                };
+            let subtitle = match (
+                output.pointer("/logical/width").and_then(Value::as_u64),
+                output.pointer("/logical/height").and_then(Value::as_u64),
+            ) {
+                (Some(width), Some(height)) if name == "winit" => format!("{width} × {height}"),
+                (Some(width), Some(height)) => format!("{name} · {width} × {height}"),
+                _ => name.clone(),
+            };
             items.push(Item {
                 source: Source::Monitor(name.clone().into()),
-                title: name.clone(),
-                subtitle: fl!("portal-screencast-display-subtitle", model = model),
+                title,
+                subtitle,
+                app_id: None,
             });
         }
     }
@@ -102,16 +124,20 @@ pub(crate) async fn read(
             if window.get("app_id").and_then(Value::as_str) == Some("org.canopa.Portal") {
                 continue;
             }
+            let app_id = label(window.get("app_id"), "");
+            let subtitle = if app_id.is_empty() {
+                fl!("portal-screencast-application-window")
+            } else {
+                crate::dialog_ui::requester(&app_id)
+            };
             items.push(Item {
                 source: Source::Window(id),
                 title: label(
                     window.get("title"),
                     &fl!("portal-screencast-untitled-window"),
                 ),
-                subtitle: label(
-                    window.get("app_id"),
-                    &fl!("portal-screencast-application-window"),
-                ),
+                subtitle,
+                app_id: (!app_id.is_empty()).then_some(app_id),
             });
         }
     }

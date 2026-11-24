@@ -27,9 +27,7 @@ const MAX_SNIFF_REQUEST: usize = 1024;
 /// Prepared type icons and remembered sniffed paths stay bounded.
 const MAX_TYPES: usize = 512;
 const MAX_SNIFFED: usize = 65536;
-/// The pseudo-type prefix of a folder with its own themed icon, such as
-/// `x-canopa-folder/folder-download`. It never leaves this module's lookups.
-pub(super) const SPECIAL_FOLDER: &str = "x-canopa-folder/";
+pub(super) use crate::browser_ui::file_icon::SPECIAL_FOLDER;
 /// The pseudo-type prefix of a sidebar place's themed icon, such as
 /// `x-canopa-place/user-trash`. Unlike a folder, it has no fallback name: a
 /// theme without it leaves the place its built-in glyph.

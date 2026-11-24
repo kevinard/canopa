@@ -277,8 +277,7 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
         );
         assert_eq!(bounds("New message").x, bounds("Hello").x);
         assert!(bounds("Mail").y < bounds("New message").y);
-        // An attributed item shows its status as a dot; the name stays accessible.
-        assert!(!labels.0.iter().any(|(label, _)| label == "Unread"));
+        let unread = bounds("Unread");
         let key = semantic_key(
             &snapshot,
             "notifications",
@@ -296,7 +295,7 @@ async fn short_actions_share_a_row_and_long_actions_wrap_within_the_panel() {
         );
         let marker = measure.bounds[&key];
         assert!(marker.x > bounds("Mail").x);
-        assert!(marker.width >= 8.0 && marker.height <= 24.0);
+        assert!(marker.contains(unread.center()));
         assert!(marker.y < bounds("Hello").y && viewport.contains(marker.center()));
         let reply = bounds("Reply");
         let dismiss = bounds("Dismiss");

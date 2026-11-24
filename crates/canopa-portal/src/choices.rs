@@ -2,7 +2,7 @@
 use crate::requests::{Options, option};
 use zbus::fdo;
 
-pub type Choice = (String, String, Vec<(String, String)>, String);
+pub use canopa_file::picker::Choice;
 
 pub(crate) fn parse(options: &mut Options) -> fdo::Result<Vec<Choice>> {
     let mut choices: Vec<Choice> = option(options, "choices")?.unwrap_or_default();

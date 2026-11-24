@@ -6,7 +6,7 @@ mod view;
 
 use crate::{
     chooser_ui::{self, Outcome, Picker, PickerOptions, PickerStart},
-    file_chooser::{ChooserRequest, Mode},
+    file_chooser::Mode,
     print::{
         Format, Layout, PageSetup, PrepareRequest,
         worker::{Capabilities, Client, CustomSize, Destination, JobOptions, Preferences, Printer},
@@ -167,14 +167,13 @@ pub fn run(
     let result = Arc::new(Mutex::new(None));
     let output = result.clone();
     let font = canopa_ui::font(&appearance);
-    let theme = canopa_ui::theme(appearance);
     let (cancel, cancelled) = watch::channel(false);
     let app_cancel = cancelled.clone();
     let run = iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(760., 720.),
-                min_size: Some(Size::new(480., 400.)),
+                size: Size::new(720., 548.),
+                min_size: Some(Size::new(480., 360.)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Portal".into(),
@@ -192,7 +191,7 @@ pub fn run(
                 window::open_dialog(parent.to_owned(), request.prepare.context.modal, settings);
             let mut dialog = Dialog::new(
                 request.clone(),
-                theme.clone(),
+                appearance.clone(),
                 output.clone(),
                 client.clone(),
                 handle.clone(),
@@ -245,6 +244,11 @@ enum DestinationChoice {
     File,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Section {
+    Document,
+    Paper,
+}
 enum Screen {
     Main,
     Preparing(u64),
@@ -271,7 +275,9 @@ impl Drop for Running {
 }
 
 struct Dialog {
+    requester: String,
     request: Request,
+    appearance: canopa_theme::Appearance,
     theme: Theme,
     output: Arc<Mutex<Option<Approved>>>,
     client: Client,
@@ -287,6 +293,7 @@ struct Dialog {
     checked: Option<JobOptions>,
     draft: Draft,
     screen: Screen,
+    section: Section,
     completed: bool,
     error: Option<String>,
     initial: bool,
@@ -299,6 +306,7 @@ enum Message {
     Refresh,
     Metadata(u64, Result<Metadata, String>),
     Destination(Choice<DestinationChoice>),
+    Section(Section),
     Edit(draft::Edit),
     ChooseFile,
     CheckCustomMedia,
@@ -313,7 +321,7 @@ enum Message {
 impl Dialog {
     fn new(
         request: Request,
-        theme: Theme,
+        appearance: canopa_theme::Appearance,
         output: Arc<Mutex<Option<Approved>>>,
         client: Client,
         runtime: Handle,
@@ -322,8 +330,10 @@ impl Dialog {
     ) -> Self {
         let draft = Draft::new(&request);
         Self {
+            requester: crate::dialog_ui::requester(&request.prepare.context.app_id),
             request,
-            theme,
+            theme: canopa_ui::theme(appearance.clone()),
+            appearance,
             output,
             client,
             authentication,
@@ -338,6 +348,7 @@ impl Dialog {
             checked: None,
             draft,
             screen: Screen::Main,
+            section: Section::Document,
             completed: false,
             error: None,
             initial: true,
@@ -395,6 +406,7 @@ impl Dialog {
         self.error = None;
         self.notice = None;
         self.target = Some(target.clone());
+        self.section = Section::Document;
         match target {
             DestinationChoice::Printer(destination) => self.query(Query::Capabilities(
                 destination,
@@ -697,6 +709,7 @@ impl Dialog {
                     return self.select(choice.value);
                 }
             }
+            Message::Section(section) if self.editable() => self.section = section,
             Message::Edit(edit) if self.editable() && !self.loading => {
                 let device_changed = matches!(
                     &edit,
@@ -756,7 +769,7 @@ impl Dialog {
                 self.generation += 1;
                 let generation = self.generation;
                 self.screen = Screen::Preparing(generation);
-                let mut request = ChooserRequest::parse(
+                let mut request = crate::file_chooser::parse_request(
                     Mode::Save,
                     self.request.prepare.context.app_id.clone(),
                     String::new(),
@@ -779,8 +792,9 @@ impl Dialog {
                 );
                 request.filters = vec![filter.clone()];
                 request.current_filter = Some(filter);
+                let appearance = self.appearance.clone();
                 return Task::perform(
-                    crate::worker::run(move || chooser_ui::prepare_picker(request)),
+                    crate::worker::run(move || chooser_ui::prepare_picker(request, appearance)),
                     move |result| {
                         Message::PickerReady(
                             generation,

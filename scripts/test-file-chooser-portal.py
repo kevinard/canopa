@@ -6,7 +6,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +19,7 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('desktop', ROOT / 'scripts/validate-desktop.py')
 desktop = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(desktop)
+import native_accessibility
 
 
 def verify(binary, session, scheme, scale, folder_history=False):
@@ -34,7 +34,31 @@ def verify(binary, session, scheme, scale, folder_history=False):
     (fixture / 'folder').mkdir()
     config = session.runtime / 'config/canopa/config.kdl'
     config.parent.mkdir(parents=True)
-    config.write_text(f'schema-version 1\nappearance {{ color-scheme "{scheme}"; }}\n')
+    bookmarked = home / 'Bookmarked folder'
+    bookmarked.mkdir()
+    recent = bookmarked / 'recent.txt'
+    recent.write_text('opened recently')
+    data = Path(session.env['XDG_DATA_HOME'])
+    data.mkdir(parents=True, exist_ok=True)
+    (data / 'recently-used.xbel').write_text(
+        f'<xbel version="1.0"><bookmark href="{recent.as_uri()}" '
+        'visited="2026-01-01T00:00:00Z"/></xbel>')
+    config.write_text(f'schema-version 1\nappearance {{ color-scheme "{scheme}"; }}\n'
+                      f'files {{ places {{ place "recent"; bookmark "Fixture bookmark" path={json.dumps(str(bookmarked))}; place "home"; }}; }}\n')
+    # Use the existing native GIO fixture so the chooser never lists host devices.
+    modules = session.output / 'gio-modules'
+    modules.mkdir()
+    gio_flags = subprocess.check_output(['pkg-config', '--cflags', '--libs', 'gio-2.0'], text=True).split()
+    subprocess.run(['cc', '-shared', '-fPIC', '-Wall', '-Wextra', '-Werror',
+                    '-DCANOPA_FIXTURE_NATIVE_MONITOR',
+                    str(ROOT / 'scripts/desktop-fixture/files-volume-monitor.c'),
+                    '-o', str(modules / 'libcanopa-volume-fixture.so'), *gio_flags], check=True)
+    media = session.runtime / 'volumes'
+    mounted = media / 'Fixture USB'
+    mounted.mkdir(parents=True)
+    (mounted / 'Drive notes.txt').write_text('mounted file')
+    session.env.update(GIO_EXTRA_MODULES=str(modules), GIO_USE_VOLUME_MONITOR='canopa-private-volume-fixture',
+                       GIO_USE_VFS='local', CANOPA_FIXTURE_VOLUMES=str(media))
     session.env['CANOPA_LANGUAGE'] = 'en'  # dialogs are checked by their English text
     session.env.update(HOME=str(home), WAYLAND_DEBUG='1')
     portals = session.runtime / 'portals'
@@ -60,6 +84,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     outputs = json.loads(session.run(['niri', 'msg', '--json', 'outputs']))
     logical = next(output['logical'] for output in outputs.values() if output.get('logical'))
     screen_width, screen_height = logical['width'], logical['height']
+    native_accessibility.start(session)
     session.start(['wtype', '-s', '600000'], 'keyboard.log')
     connection = Gio.DBusConnection.new_for_address_sync(session.env['DBUS_SESSION_BUS_ADDRESS'], Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
 
@@ -115,7 +140,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
         if expect_parent:
             assert window['is_floating'], window
             # Parenting before initial configure retains the requested dimensions.
-            assert abs(window['layout']['window_size'][0] - 820) <= 1, window
+            assert abs(window['layout']['window_size'][0] - 1000) <= 1, window
         session.run(['niri', 'msg', 'action', 'focus-window', '--id', str(window['id'])])
         time.sleep(.5)
         # Wait for first-frame CSD geometry before placing the window for input.
@@ -123,6 +148,18 @@ def verify(binary, session, scheme, scale, folder_history=False):
             session.run(['niri', 'msg', 'action', 'move-floating-window', '--id', str(window['id']), '--x', '20', '--y', '10'])
             time.sleep(.15)
         return handle
+
+    def picker_pid():
+        children = {int(pid) for task in Path(f'/proc/{backend_pid}/task').iterdir()
+                    for pid in (task / 'children').read_text().split()}
+        for pid in children:
+            try:
+                if (Path(f'/proc/{pid}/exe').resolve() == binary.with_name('canopa-files')
+                        and b'--internal-picker' in Path(f'/proc/{pid}/cmdline').read_bytes()):
+                    return pid
+            except FileNotFoundError:
+                pass
+        return None
 
     def keys(*names):
         for name in names:
@@ -158,29 +195,18 @@ def verify(binary, session, scheme, scale, folder_history=False):
     checks = []
     session.completed_checks = checks
     handle = begin('OpenFile', {'multiple': GLib.Variant('b', True), 'filters': GLib.Variant('a(sa(us))', [('Text', [(0, '*.txt')])]), 'choices': GLib.Variant('a(ssa(ss)s)', [('encoding', 'Encoding', [('utf8', 'UTF-8'), ('latin1', 'Latin-1')], 'latin1')])})
+    session.wait_for(picker_pid, 'the portal opened a Canopa Files picker process')
+    checks.append('public FileChooser launches Canopa Files in picker mode')
     session.capture('01-open.png')
-    click(320, 280)
-    # Keep the modifier's device alive until the selection completes. Modern
-    # compositors release its state when the wtype connection disappears.
-    shift = session.start(['wtype', '-M', 'shift', '-s', '600000'], 'selection-shift.log')
-    try:
-        def shift_applied():
-            trace = (session.output / 'selection-shift.log').read_text()
-            _, marker, tail = trace.partition('.modifiers(1, 0, 0, 0)')
-            if not marker:
-                return False
-            sync = re.search(r'\.sync\(new id wl_callback([#@]\d+)\)', tail)
-            return sync and f'wl_callback{sync[1]}.done(' in tail[sync.end():]
-        session.wait_for(shift_applied, 'selection Shift roundtrip')
-        click(320, 313)
-    finally:
-        session.retire(shift)
+    keys('Down', 'Down')
+    session.run(['wtype', '-M', 'shift', '-k', 'Down', '-m', 'shift'])
+    time.sleep(.15)
     click_footer(chooser(), 42)
     response = result(handle)
     assert response['uris'] == [uri(fixture / 'a.txt'), uri(fixture / 'b.txt')], response
     assert response['choices'] == [('encoding', 'latin1')], response
     assert response['current_filter'] == ('Text', [(0, '*.txt')]), response
-    checks.append('public filtered multi-open and choices')
+    checks.append('public filtered multi-open, keyboard range selection and choices')
 
     raw = Path(os.fsdecode(os.fsencode(fixture) + b'/raw-\xff.txt'))
     raw.write_text('non Unicode name')
@@ -188,16 +214,41 @@ def verify(binary, session, scheme, scale, folder_history=False):
     chord('f')
     session.run(['wtype', 'raw-'])
     time.sleep(.3)
-    # The first matching row's Open control must select that row itself.
-    click(795, 248)
+    keys('Down', 'Return')
     response = result(handle)
     assert response['uris'] == [uri(raw)], response
-    checks.append('row Open selects its file and preserves non-UTF-8 bytes')
+    checks.append('Files search opens the selected result and preserves non-UTF-8 bytes')
 
     handle = begin('OpenFile', {'directory': GLib.Variant('b', True)})
     click_footer(chooser(), 42)
     assert result(handle)['uris'] == [uri(fixture)]
     checks.append('directory selection')
+
+    # Browse away from the app's starting folder, then check the real selected
+    # directory returned after traversing the chooser's navigation history.
+    for forward, expected in [(False, fixture), (True, home)]:
+        handle = begin('OpenFile', {'directory': GLib.Variant('b', True)})
+        for direction in ['Up', 'Left', *(['Right'] if forward else [])]:
+            session.run(['wtype', '-M', 'alt', '-k', direction, '-m', 'alt'])
+            time.sleep(.25)
+        click_footer(chooser(), 42)
+        assert result(handle)['uris'] == [uri(expected)]
+    checks.append('Alt+Up, Back and Forward navigate the chooser without granting a different folder')
+
+    for place, filename, expected in [
+        ('Fixture bookmark', 'recent.txt', recent),
+        ('Recent', 'recent.txt', recent),
+        ('Fixture USB', 'Drive notes.txt', mounted / 'Drive notes.txt'),
+    ]:
+        handle = begin('OpenFile', {})
+        native_accessibility.request(session, '--window', 'OpenFile — Canopa Files', '--name', place, '--click')
+        native_accessibility.request(session, '--window', 'OpenFile — Canopa Files', '--name', filename, '--click')
+        click_footer(chooser(), 42)
+        assert result(handle)['uris'] == [uri(expected)]
+        checks.append(f'Files navigation opens an entry from {place}')
+    assert (media / 'events').read_text().splitlines().count('private provider initialized') >= 1
+    assert not (Path(session.env['XDG_STATE_HOME']) / 'canopa-files/operations.sqlite3').exists()
+    checks.append('picker mode leaves the resident Files operations store unopened')
 
     handle = begin('SaveFile', {'current_name': GLib.Variant('s', 'new.txt')})
     click_footer(chooser(), 42)
@@ -238,8 +289,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     checks.append('Escape cancels only the New folder prompt without a filesystem mutation')
 
     handle = begin('SaveFiles', {'files': GLib.Variant('aay', [b'one.txt\0', b'two.txt\0'])})
-    width, _ = chooser()['layout']['window_size']
-    click(20 + width - 65, 135)  # Toolbar below the client-side title bar.
+    session.run(['wtype', '-M', 'ctrl', '-M', 'shift', '-k', 'n', '-m', 'shift', '-m', 'ctrl'])
     time.sleep(.4)
     session.run(['wtype', 'Batch été']); keys('Return')
     batch = fixture / 'Batch été'
@@ -248,7 +298,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     click_footer(chooser(), 42)
     assert result(handle)['uris'] == [uri(batch / 'one.txt'), uri(batch / 'two.txt')]
     assert not (batch / 'one.txt').exists() and not (batch / 'two.txt').exists()
-    checks.append('SaveFiles toolbar creates a Unicode folder and preserves ordered unwritten destinations')
+    checks.append('SaveFiles creates a Unicode folder and preserves ordered unwritten destinations')
 
     handle = begin('SaveFile', {'current_name': GLib.Variant('s', 'a.txt')})
     click_footer(chooser(), 42)
@@ -267,7 +317,7 @@ def verify(binary, session, scheme, scale, folder_history=False):
     click_footer(chooser(), 42)
     time.sleep(.3)
     width, height = chooser()['layout']['window_size']
-    click(210, 10 + height - 78)
+    click(20 + width / 2 + 165, 10 + height / 2 + 60)
     assert result(handle)['uris'] == [uri(fixture / 'a.txt')]
     assert (fixture / 'a.txt').read_text() == 'original content'
     checks.append('confirmed replacement returns its path without modifying bytes')
@@ -364,12 +414,20 @@ def main():
     args.binary = args.binary.resolve(strict=True)
     def digest(path):
         with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
-    pins = {str(path): digest(path) for path in [Path(__file__).resolve(), args.binary,
-        ROOT / 'crates/canopa-portal/src/chooser_ui.rs', ROOT / 'crates/canopa-portal/src/chooser_ui/folders.rs',
+    pins = {str(path): digest(path) for path in [Path(__file__).resolve(), args.binary, args.binary.with_name('canopa-files'),
+        ROOT / 'crates/canopa-files/src/iced_desktop/picker_ui.rs',
+        ROOT / 'crates/canopa-files/src/iced_desktop/view.rs',
+        ROOT / 'crates/canopa-files/src/picker/folders.rs',
+        ROOT / 'crates/canopa-files/src/picker/mod.rs',
+        ROOT / 'crates/canopa-files/src/browser_ui.rs',
+        ROOT / 'crates/canopa-files/src/browser_ui/breadcrumb.rs', ROOT / 'crates/canopa-files/src/browser_ui/entry.rs',
+        ROOT / 'crates/canopa-files/src/browser_ui/text_layout.rs',
         ROOT / 'crates/canopa-portal/src/file_chooser.rs', ROOT / 'crates/canopa-portal/src/file_chooser/history.rs',
-        ROOT / 'scripts/validate-desktop.py']}
+        ROOT / 'scripts/validate-desktop.py',
+        ROOT / 'scripts/native_accessibility.py',
+        ROOT / 'scripts/desktop-fixture/files-volume-monitor.c']}
     result = dict(passed=False, checks=[], scheme=args.color_scheme, scale=args.scale, pins=pins, folder_history=args.folder_history)
-    with tempfile.TemporaryDirectory(prefix='canopa-chooser-') as directory:
+    with tempfile.TemporaryDirectory(prefix='canopa-files-native-chooser-') as directory:
         session = desktop.Session(Path(directory), args.output.resolve())
         try:
             result['checks'] = verify(args.binary, session, args.color_scheme, args.scale, args.folder_history)

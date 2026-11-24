@@ -39,9 +39,6 @@ struct Preview {
 const PREVIEW_SIZE: u32 = 192;
 /// A tooltip shows at most this many of an application's windows.
 const MAX_PREVIEWS: usize = 4;
-/// Niri renders a thumbnail on its main loop; a slow one is skipped.
-const PREVIEW_TIMEOUT: Duration = Duration::from_secs(2);
-
 /// A focus change the taskbar asked Niri for and Niri may not have reported.
 struct FocusRequest {
     window: u64,
@@ -551,31 +548,20 @@ async fn capture_previews(
     connection: zbus::Connection,
     windows: Vec<u64>,
 ) -> Vec<(u64, u32, u32, Vec<u8>)> {
+    let Some(client) = canopa_services::window_preview::Client::connect(connection, None).await
+    else {
+        return Vec::new();
+    };
     let mut previews = Vec::new();
-    for id in windows {
-        let arguments = (id, PREVIEW_SIZE);
-        let call = connection.call_method(
-            Some("org.canopa.Niri.WindowPreview1"),
-            "/org/canopa/Niri/WindowPreview1",
-            Some("org.canopa.Niri.WindowPreview1"),
-            "Capture",
-            &arguments,
-        );
-        let reply = match tokio::time::timeout(PREVIEW_TIMEOUT, call).await {
-            Ok(Ok(reply)) => reply,
-            Ok(Err(error)) => {
-                tracing::debug!(target: "canopa_shell::modules", %error, window = id, "window preview unavailable");
-                continue;
+    // Keep the tooltip responsive even if several previews are slow to render.
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        for id in windows {
+            if let Some(preview) = client.capture(id, PREVIEW_SIZE).await {
+                previews.push((id, preview.width, preview.height, preview.png));
             }
-            Err(_) => {
-                tracing::debug!(target: "canopa_shell::modules", window = id, "window preview timed out");
-                break;
-            }
-        };
-        if let Ok((width, height, png)) = reply.body().deserialize::<(u32, u32, Vec<u8>)>() {
-            previews.push((id, width, height, png));
         }
-    }
+    })
+    .await;
     previews
 }
 

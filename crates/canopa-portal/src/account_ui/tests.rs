@@ -3,7 +3,7 @@ use super::*;
 fn dialog() -> Dialog {
     let mut dialog = Dialog::new(
         AccountRequest::parse("org.canopa.Test".into(), String::new(), Default::default()).unwrap(),
-        Theme::Dark,
+        canopa_theme::Appearance::default(),
         canopa_theme::Rgb(250, 250, 250),
         Arc::default(),
     );
@@ -43,7 +43,7 @@ fn picker(dialog: &mut Dialog, folder: PathBuf) -> u64 {
     dialog.generation += 1;
     let generation = dialog.generation;
     dialog.view = View::PreparingPicker(generation);
-    let request = ChooserRequest::parse(
+    let request = crate::file_chooser::parse_request(
         Mode::Open,
         String::new(),
         String::new(),

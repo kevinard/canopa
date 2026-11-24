@@ -13,6 +13,8 @@ pub struct Item {
     pub source: Source,
     pub title: String,
     pub subtitle: String,
+    #[serde(default)]
+    pub app_id: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DialogInput {

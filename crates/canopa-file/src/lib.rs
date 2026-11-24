@@ -6,6 +6,7 @@ pub mod executable;
 pub mod gtk_bookmarks;
 pub mod icon_theme;
 pub mod mime;
+pub mod picker;
 pub mod private_state;
 pub mod watch;
 use std::io::Read;

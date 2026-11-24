@@ -12,6 +12,10 @@ portal-combo-position = { $position } of { $count }
 ## File chooser
 
 portal-place-home = Home
+portal-place-desktop = Desktop
+portal-place-music = Music
+portal-place-videos = Videos
+portal-chooser-edit-location = Edit location
 portal-place-documents = Documents
 portal-place-downloads = Downloads
 portal-place-pictures = Pictures
@@ -31,7 +35,6 @@ portal-chooser-places = Places
 # Accessible name of a row's Open button. $name is the file name.
 portal-chooser-open-entry = Open { $name }
 # Small button on each row.
-portal-chooser-open-row = Open
 portal-chooser-no-matches = No matching files
 portal-chooser-loading-folder = Loading folder…
 # Announced number of rows in the folder.
@@ -42,8 +45,8 @@ portal-chooser-item-count = { $count ->
 # Accessible name of the file list.
 portal-chooser-files = Files
 # Column heading.
-portal-chooser-name-column = Name
 portal-chooser-search = Filter names in this folder
+portal-chooser-close-search = Close name filter
 # Label before the file name field when saving.
 portal-chooser-name-label = Name
 portal-chooser-file-name = File name
@@ -73,6 +76,7 @@ portal-chooser-overwrite-names = { $more ->
 portal-chooser-overwrite-more = and { $count } more
 portal-chooser-keep-choosing = Keep choosing
 portal-chooser-replace = Replace
+portal-chooser-review-replacement = Replace…
 # Accessible descriptions of a file row.
 portal-chooser-kind-folder-link = Link to folder
 portal-chooser-kind-link = Link
@@ -112,6 +116,10 @@ portal-app-chooser-count = { $count ->
    *[other] { $count } applications
 }
 portal-app-chooser-search = Search applications
+portal-app-chooser-last-used = Last used
+portal-app-chooser-associated = Apps for this type
+portal-app-chooser-other = Other applications
+portal-app-chooser-default = Default
 portal-app-chooser-applications = Applications
 portal-app-chooser-open = Open
 
@@ -140,9 +148,9 @@ portal-screenshot-color-title = Choose a color
 portal-screenshot-screen-hint = All displays will be shared.
 portal-screenshot-window-hint = Only this window will be shared.
 portal-screenshot-area-hint = Drag to select an area. Use arrows and Space for keyboard selection.
-portal-screenshot-color-hint = Click a pixel, then use the color. Arrow keys adjust it; Shift moves ten pixels.
+portal-screenshot-color-hint = Click a pixel. Use the arrow keys to move one pixel, or hold Shift to move ten.
 # Mode buttons.
-portal-screenshot-mode-screen = Screen
+portal-screenshot-mode-screen = Entire screen
 portal-screenshot-mode-area = Area
 portal-screenshot-mode-window = Window (Alt+W)
 # The picked pixel: $color is its hexadecimal value (#RRGGBB), $x and $y its
@@ -169,7 +177,7 @@ portal-screencast-title = { $kind ->
     [keyboard] Allow keyboard control
     [pointer] Allow pointer control
     [control] Allow desktop control
-    [share-control] Share and allow control
+    [remote-desktop] Remote desktop
    *[screen] Share your screen
 }
 # The confirming button; $action says what it does.
@@ -182,23 +190,13 @@ portal-screencast-action = { $action ->
     [allow-control] Allow control
    *[share] Share
 }
-# Keyboard hint for the confirming button, in the status line.
-portal-screencast-shortcut = { $action ->
-    [capture-window] Ctrl+Enter to capture the window
-    [share-clipboard] Ctrl+Enter to share the clipboard
-    [allow-sharing] Ctrl+Enter to allow sharing
-    [share-screen-clipboard] Ctrl+Enter to share the screen and clipboard
-    [share-control] Ctrl+Enter to share and allow control
-    [allow-control] Ctrl+Enter to allow control
-   *[share] Ctrl+Enter to share
-}
 portal-screencast-keyboard = Allow keyboard control of your desktop
 portal-screencast-keyboard-hint = Type and use keyboard shortcuts.
 portal-screencast-pointer = Allow pointer control of your desktop
 portal-screencast-pointer-hint = Move the pointer, click, drag and scroll.
 portal-screencast-touch = Allow touch control (Alt+T)
 portal-screencast-touch-hint = Touch and swipe within the screen or window you share.
-portal-screencast-clipboard = Share clipboard contents (Alt+C)
+portal-screencast-clipboard = Allow clipboard read and write (Alt+C)
 portal-screencast-clipboard-hint = Read and replace copied text, images and other data.
 portal-screencast-choose-display = Choose a display to share.
 portal-screencast-choose-displays = Choose the displays to share.
@@ -210,11 +208,11 @@ portal-screencast-search = Search displays and windows
 # Status line parts, joined with " · ".
 portal-screencast-desktop-unavailable = Desktop unavailable. Retrying…
 portal-screencast-sources-unavailable = Sources unavailable. Retrying…
-portal-screencast-clipboard-allowed = Clipboard sharing allowed
+portal-screencast-clipboard-allowed = Clipboard sharing selected
 portal-screencast-clipboard-undecided = Choose whether to share your clipboard
-portal-screencast-keyboard-allowed = Keyboard control allowed
-portal-screencast-pointer-allowed = Pointer control allowed
-portal-screencast-keyboard-pointer-allowed = Keyboard and pointer control allowed
+portal-screencast-keyboard-allowed = Keyboard control selected
+portal-screencast-pointer-allowed = Pointer control selected
+portal-screencast-keyboard-pointer-allowed = Keyboard and pointer control selected
 portal-screencast-control-undecided = Choose whether to allow control
 # $count displays or windows are selected.
 portal-screencast-selected = { $count } selected
@@ -222,9 +220,7 @@ portal-screencast-selected = { $count } selected
 portal-screencast-selected-of = { $count } selected · up to { $max }
 
 # Offered capture sources.
-portal-screencast-display = Display
 # Subtitle of a display; $model is its model name.
-portal-screencast-display-subtitle = Display · { $model }
 portal-screencast-untitled-window = Untitled window
 portal-screencast-application-window = Application window
 
@@ -291,7 +287,7 @@ portal-background-question = Allow background activity?
 portal-background-explanation = This app is running without open windows. Allow once applies only to its current run. Block stops the current run.
 # Accessible description; $name is the app's name.
 portal-background-description = { $name }. This app is running without open windows. Allow once applies only to its current run. Block stops the current run.
-portal-background-closing = Closing this question keeps the current run without changing its permission.
+portal-background-closing = Cancel keeps the current run without changing its permission.
 # Buttons of the dialog and of the notification. "Allow once" and "Block" are
 # also named in the explanations above.
 portal-background-block = Block
@@ -324,7 +320,7 @@ portal-print-no-printers = No printers are available. Configure a printer, then 
 portal-print-not-accepting = This printer is not accepting jobs.
 portal-print-stopped = This printer is stopped. Submitted jobs may wait in its queue.
 portal-print-busy = This printer is busy. Submitted jobs will be queued.
-portal-print-idle = Print jobs are sent to this printer’s queue.
+portal-print-idle = Ready
 portal-print-printer-default = Printer default
 # A paper size offered by the printer: $name is its IPP name (such as
 # iso_a4_210x297mm), $width and $height are in millimetres.
@@ -461,7 +457,7 @@ portal-recovery-retained-folder = Retained folder
 portal-recovery-open-folder = Open folder
 portal-recovery-loading = Loading retained work…
 portal-recovery-unavailable = Retained work unavailable
-portal-recovery-empty = No retained print work
+portal-recovery-empty = No interrupted print files to recover
 portal-recovery-empty-hint = Interrupted print files will appear here when they can be found.
 # Tabs with the number of entries in each.
 portal-recovery-files-tab = Files ({ $count })
@@ -522,6 +518,7 @@ portal-jobs-sign-in = Sign in…
 portal-jobs-identity-unconfirmed = This job’s identity or sign-in method couldn’t be confirmed. Refresh to check again.
 portal-jobs-unavailable = Printer jobs unavailable
 portal-jobs-select-printer = Select a printer
+portal-jobs-printer = Printer
 portal-jobs-empty = No active printer jobs
 portal-jobs-select-job = Select a printer job
 portal-jobs-held-hint = Jobs held for sign-in can continue using the document already in the queue.
@@ -602,7 +599,7 @@ portal-usb-serial = Serial: { $serial }
 # $location is the device file, such as /dev/bus/usb/001/004.
 portal-usb-location = Location: { $location }
 portal-usb-use-read-only = Use read-only access instead
-portal-usb-read-only-hint = Alt+R makes the selected devices read-only.
+portal-usb-read-only-hint = Select a device to limit it to read-only access (Alt+R).
 portal-usb-allow-selected = Allow selected
 portal-usb-allow-selected-shortcut = Allow selected (Alt+A)
 # Name of a device that reports none.
@@ -638,7 +635,6 @@ portal-input-capture-description = { $requester } wants to receive input from th
 portal-input-capture-pointer = Allow pointer input
 portal-input-capture-keyboard = Allow keyboard input
 portal-input-capture-clipboard = Share clipboard while input is captured
-portal-input-capture-hint = Ctrl+Alt+Esc pauses capture. You can end this session from its control window.
 portal-input-capture-allow = Allow input capture
 
 ## Wallpaper
@@ -663,7 +659,6 @@ portal-shortcuts-question = Allow global shortcuts?
 portal-shortcuts-explanation = Choose which shortcuts this app can use while other windows are focused.
 portal-shortcuts-none-chosen = No shortcut chosen
 # Placeholder of a shortcut field. Modifier names stay in capitals as typed.
-portal-shortcuts-placeholder = CTRL+ALT+a or LOGO+F9
 portal-shortcuts-cancel-recording = Cancel recording
 portal-shortcuts-record = Record keys
 portal-shortcuts-preparing = Preparing keyboard recording…
@@ -674,7 +669,7 @@ portal-shortcuts-finishing = Finishing keyboard recording…
 portal-shortcuts-unavailable = This shortcut is unavailable. Choose another trigger.
 portal-shortcuts-none-requested = This app requested no shortcuts.
 # CTRL, ALT, SHIFT and LOGO are typed as shown.
-portal-shortcuts-syntax-hint = Use CTRL, ALT, SHIFT or LOGO (Super), followed by a key name. Example: CTRL+ALT+a.
+portal-shortcuts-syntax-hint = Use CTRL, ALT, SHIFT or LOGO (Super), followed by a key name. Example: CTRL+ALT+C.
 portal-shortcuts-applying = Applying…
 portal-shortcuts-save = Save shortcuts
 portal-shortcuts-unrepresentable = This key combination is unavailable in the current keyboard layout. Choose another shortcut.
@@ -690,3 +685,82 @@ portal-shortcuts-missing-key = Choose a key for every selected shortcut.
 
 # Document title shown when signing in to check unresolved printer jobs.
 portal-printer-recovery-title = Printer recovery
+
+portal-screencast-permissions = Permissions
+portal-screencast-choose-capture-window = Choose a window to capture
+portal-screencast-search-windows = Search windows
+portal-screencast-no-matches = No sources match your search
+
+portal-chooser-selected-count = { $count } selected
+portal-background-allow-future = Always allow
+portal-wallpaper-scope = Applies to { $destination }
+portal-screencast-source-connection = Waiting for available sources
+portal-screencast-source-connection-hint = The desktop will refresh this list automatically when it reconnects.
+portal-input-capture-pause = Pause capture with Ctrl+Alt+Esc
+portal-input-capture-end = To end capture, use the session’s control window.
+portal-shortcuts-allow-none = Allow none
+portal-screenshot-mode-window-tab = Window
+portal-print-retry = Retry
+portal-jobs-empty-detail = Active jobs appear here when a printer is available.
+portal-chooser-back = Back
+portal-chooser-forward = Forward
+portal-chooser-existing = You’ll be asked to confirm before replacing this file.
+portal-chooser-existing-row = Existing file
+portal-print-printers-unavailable = Printers are unavailable
+portal-print-fallback-detail = You can save a copy to print later.
+portal-sharing-active-permissions = Active permissions
+portal-sharing-active-sources = Shared displays and windows
+portal-account-add-name = Enter a name to share
+portal-chooser-choose-row = Choose
+
+portal-screencast-selected-source = Selected • { $source }
+portal-screenshot-screen-scope = { $count ->
+    [one] The preview shows the display that will be shared.
+   *[other] The preview shows all { $count } displays that will be shared.
+}
+portal-screenshot-select-pixel = Select a pixel to see its color.
+portal-screenshot-pixel-location = { $x }, { $y } · { $display }
+portal-background-once-detail = Keep the app running this time.
+portal-background-future-detail = Keep this app running now and in future sessions.
+portal-background-block-detail = Stop the app’s current background run.
+portal-background-close-detail = Closing keeps this run going without saving a permission.
+portal-shortcuts-edit-scope = Save applies changes to the checked shortcuts.
+portal-shortcuts-no-selection = Choose Allow none to finish without registering a shortcut.
+portal-shortcuts-selected-count = { $count } selected for registration
+portal-account-withheld = Excluded from this request
+portal-account-name-unset = Select this option to enter a name.
+portal-account-disclosure = Will share { $fields }
+portal-account-disclosure-empty = No profile details will be shared.
+portal-account-share-none = Continue without sharing
+portal-screencast-view-only = View only
+portal-screencast-confirm-keys = Ctrl+Enter to confirm
+portal-screencast-pick-first = Select a source to continue.
+portal-print-document-tab = Document
+portal-print-paper-tab = Paper and margins
+portal-print-printer-tab = Paper and printer options
+portal-print-checking-printer = Checking printer options…
+portal-print-awaiting-destination = Choose a file destination to continue.
+
+portal-background-running = This app is running without an open window.
+portal-input-capture-clipboard-scope = The app can read and replace copied data while capture is active.
+portal-input-capture-select-input = Select pointer or keyboard input to continue.
+portal-shortcuts-allow-count = { $count ->
+    [one] Allow 1 shortcut
+   *[other] Allow { $count } shortcuts
+}
+portal-print-auth-server-label = Print server
+portal-print-auth-realm = Print server · { $realm }
+portal-print-auth-queue-label = Printer · { $printer }
+portal-print-auth-password-placeholder = Leave blank if your printer uses no password
+portal-jobs-setup-detail = Add a printer in Canopa Settings, then refresh this list.
+portal-jobs-open-settings = Open printer settings
+portal-jobs-settings-failed = Couldn’t open Canopa Settings.
+portal-jobs-empty-for = { $printer } has no active print jobs.
+
+portal-account-disclosure-username = username
+portal-account-disclosure-name = name
+portal-account-disclosure-photo = profile photo
+portal-app-chooser-selected = Open with { $application }
+portal-app-chooser-select = Select an application to continue.
+portal-print-save-pdf = Save as PDF
+portal-jobs-no-printers = No printers available

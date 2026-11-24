@@ -176,6 +176,10 @@ binds { F10 { spawn "true"; }; }
         time.sleep(.15)
         drain()
 
+    def confirm(window):
+        width, height = window['layout']['window_size']
+        click(10 + width - 68, 10 + height - 42)
+
     def dialog(before):
         window = wait(lambda: next((w for w in windows() if w['app_id'] == 'org.canopa.Portal' and w['id'] not in before), None), 'Iced shortcut dialog')
         command = Path(f"/proc/{window['pid']}/cmdline").read_bytes().split(b'\0')
@@ -248,7 +252,7 @@ binds { F10 { spawn "true"; }; }
         assert listed(empty) == []
         path, window = begin(empty)
         session.capture('01-unchecked-' + args.scheme + '.png')
-        click(520, 10 + window['layout']['window_size'][1] - 42)
+        confirm(window)
         assert response(path)['shortcuts'] == []
         gone(window)
         assert listed(empty) == []
@@ -257,9 +261,9 @@ binds { F10 { spawn "true"; }; }
 
         key = create()
         path, window = begin(key)
-        click(64, 186)
+        click(64, 153)
         session.capture('02-selected-' + args.scheme + '.png')
-        click(520, 10 + window['layout']['window_size'][1] - 42)
+        confirm(window)
         rows = response(path)['shortcuts']
         assert rows == [('record', {'description': 'Record a moment', 'trigger_description': 'F9'})], rows
         gone(window)
@@ -299,16 +303,16 @@ binds { F10 { spawn "true"; }; }
                 assert probe.replace([(99, 'F9')])['error'] == 'conflict'
             finally:
                 probe.stream.close()
-        click(150, 218)
+        click(150, 187)
         keys('-M', 'ctrl', '-k', 'a', '-m', 'ctrl', 'F10')
-        click(520, 10 + window['layout']['window_size'][1] - 42)
+        confirm(window)
         time.sleep(.5)
         assert any(w['id'] == window['id'] for w in windows())
         assert listed(key) == rows
         session.capture('03-conflict-' + args.scheme + '.png')
-        click(150, 218)
+        click(150, 187)
         keys('-M', 'ctrl', '-k', 'a', '-m', 'ctrl', 'F11')
-        click(520, 10 + window['layout']['window_size'][1] - 42)
+        confirm(window)
         gone(window)
         changed = listed(key)
         assert changed[0][1]['trigger_description'] == 'F11', changed
@@ -339,7 +343,7 @@ binds { F10 { spawn "true"; }; }
                 def accepted():
                     if not present(window):
                         return True
-                    click(520, 10 + window['layout']['window_size'][1] - 42)
+                    confirm(window)
                     return not present(window)
                 wait(accepted, 'recording approval accepted by the dialog')
 
@@ -353,7 +357,7 @@ binds { F10 { spawn "true"; }; }
                 return result
 
             def record(window):
-                click(590, 218)
+                click(590, 187)
 
             def chord(*codes):
                 for code in codes:
@@ -380,7 +384,7 @@ binds { F10 { spawn "true"; }; }
             keyboard(29, True)
             keyboard(30, True)
             keyboard(29, False)
-            click(520, 10 + window['layout']['window_size'][1] - 42)
+            confirm(window)
             assert present(window) and listed(key) == changed
             session.capture('05-recording-held-' + args.scheme + '.png')
             keyboard(30, False)
@@ -389,7 +393,7 @@ binds { F10 { spawn "true"; }; }
             passed('recorded-chord-keeps-press-modifiers-after-early-release-and-requires-separate-apply')
 
             window = configure(key)
-            click(150, 218)
+            click(150, 187)
             chord(29, 16 if args.layout == 'fr' else 30)
             chord(42, 33)  # F
             if args.layout == 'fr':
@@ -446,7 +450,7 @@ binds { F10 { spawn "true"; }; }
             window = configure(key)
             record(window)
             chord(68)
-            click(520, 10 + window['layout']['window_size'][1] - 42)
+            confirm(window)
             assert present(window) and listed(key) == changed
             record(window)
             chord(87)
@@ -517,12 +521,12 @@ binds { F10 { spawn "true"; }; }
             # Restore the original live binding for the existing cancellation,
             # persisted-history and registration-release checks below.
             window = configure(key)
-            click(150, 218)
+            click(150, 187)
             keys('-M', 'ctrl', '-k', 'a', '-m', 'ctrl', 'F11')
             changed = save(window, 'F11')
 
         window = configure(key)
-        click(150, 218)
+        click(150, 187)
         keys('-M', 'ctrl', '-k', 'a', '-m', 'ctrl', 'F12')
         keys('-k', 'Escape')
         gone(window)

@@ -9,6 +9,8 @@ use iced::advanced::{
 use iced::{Color, Event, Length, Point, Rectangle, Size, Theme, mouse, widget::image::Handle};
 
 pub(super) struct Scene<'a> {
+    pub source: &'a crate::screenshot_image::Source,
+    pub file: &'a std::fs::File,
     pub frames: &'a [Frame],
     pub images: &'a [Handle],
     pub canvas: &'a Canvas,
@@ -58,6 +60,79 @@ impl Scene<'_> {
         } else {
             None
         }
+    }
+    fn draw_loupe(&self, renderer: &mut iced::Renderer, bounds: Rectangle, clip: Rectangle) {
+        let Some(Selection::Pixel { frame, x, y }) = self.selected else {
+            return;
+        };
+        const CELL: f32 = 13.0;
+        const SIDE: f32 = 7.0 * CELL;
+        let fit = self.fit(bounds);
+        let marker_on_right = self.marker().is_some_and(|(x, _)| {
+            fit.x + (x / self.canvas.width as f64) as f32 * fit.width > bounds.center_x()
+        });
+        let panel = Rectangle {
+            x: if marker_on_right {
+                bounds.x + 10.0
+            } else {
+                bounds.x + bounds.width - SIDE - 18.0
+            },
+            y: bounds.y + 10.0,
+            width: SIDE + 8.0,
+            height: SIDE + 8.0,
+        };
+        renderer.with_layer(clip, |renderer| {
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: panel,
+                    border: iced::Border::default()
+                        .rounded(4)
+                        .width(1)
+                        .color(Color::WHITE),
+                    ..Default::default()
+                },
+                Color::from_rgb8(20, 24, 29),
+            );
+            for dy in -3..=3 {
+                for dx in -3..=3 {
+                    let (Some(sx), Some(sy)) = (x.checked_add_signed(dx), y.checked_add_signed(dy))
+                    else {
+                        continue;
+                    };
+                    let Ok([r, g, b, _]) = self.source.pixel(self.file, *frame, sx, sy) else {
+                        continue;
+                    };
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x: panel.x + 4.0 + (dx + 3) as f32 * CELL,
+                                y: panel.y + 4.0 + (dy + 3) as f32 * CELL,
+                                width: CELL,
+                                height: CELL,
+                            },
+                            border: iced::Border::default()
+                                .width(1)
+                                .color(Color::BLACK.scale_alpha(0.35)),
+                            ..Default::default()
+                        },
+                        Color::from_rgb8(r, g, b),
+                    );
+                }
+            }
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: Rectangle {
+                        x: panel.x + 4.0 + 3.0 * CELL,
+                        y: panel.y + 4.0 + 3.0 * CELL,
+                        width: CELL,
+                        height: CELL,
+                    },
+                    border: iced::Border::default().width(2).color(Color::WHITE),
+                    ..Default::default()
+                },
+                Color::TRANSPARENT,
+            );
+        });
     }
 }
 impl Widget<Message, Theme, iced::Renderer> for Scene<'_> {
@@ -109,6 +184,10 @@ impl Widget<Message, Theme, iced::Renderer> for Scene<'_> {
                     clip,
                 );
             }
+        });
+        // The renderer batches images and quads separately within a layer.
+        // Put selection chrome on its own layer so it stays above the preview.
+        renderer.with_layer(clip, |renderer| {
             if let Some(Selection::Image(Some(rect))) = self.selected {
                 let selected = Rectangle {
                     x: fit.x + rect.x as f32 / self.canvas.width as f32 * fit.width,
@@ -135,6 +214,28 @@ impl Widget<Message, Theme, iced::Renderer> for Scene<'_> {
             if let Some((x, y)) = self.marker() {
                 let x = fit.x + (x / self.canvas.width as f64 * fit.width as f64) as f32;
                 let y = fit.y + (y / self.canvas.height as f64 * fit.height as f64) as f32;
+                if self.mode == Kind::Color {
+                    for (side, width, color) in
+                        [(30.0, 4.0, Color::BLACK), (28.0, 2.0, Color::WHITE)]
+                    {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: Rectangle {
+                                    x: x - side / 2.0,
+                                    y: y - side / 2.0,
+                                    width: side,
+                                    height: side,
+                                },
+                                border: iced::Border::default()
+                                    .rounded(side / 2.0)
+                                    .width(width)
+                                    .color(color),
+                                ..Default::default()
+                            },
+                            Color::TRANSPARENT,
+                        );
+                    }
+                }
                 for (width, height) in [(18.0, 3.0), (3.0, 18.0), (16.0, 1.0), (1.0, 16.0)] {
                     let color = if width == 3.0 || height == 3.0 {
                         Color::BLACK
@@ -156,6 +257,9 @@ impl Widget<Message, Theme, iced::Renderer> for Scene<'_> {
                 }
             }
         });
+        if self.mode == Kind::Color {
+            self.draw_loupe(renderer, bounds, clip);
+        }
     }
     fn update(
         &mut self,

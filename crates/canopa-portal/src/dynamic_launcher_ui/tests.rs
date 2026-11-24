@@ -11,6 +11,7 @@ fn dialog(editable: bool) -> Dialog {
             modal: true,
             editable_name: editable,
         },
+        requester: "Fixture".into(),
         name: "Original".into(),
         preview: image::Handle::from_rgba(1, 1, vec![0; 4]),
         theme: Theme::Dark,

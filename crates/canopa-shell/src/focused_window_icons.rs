@@ -116,47 +116,7 @@ fn application_icon_from_icon_value(icon: &str) -> Option<ApplicationIcon> {
     })
 }
 
-pub(crate) fn match_desktop_application_for_app_id<'a>(
-    app_id: &str,
-    applications: &'a [crate::desktop_apps::DesktopApplication],
-) -> Option<&'a crate::desktop_apps::DesktopApplication> {
-    if app_id.is_empty() {
-        return None;
-    }
-
-    applications
-        .iter()
-        .find(|application| application.id == app_id)
-        .or_else(|| {
-            applications
-                .iter()
-                .find(|application| desktop_id_stem(&application.id) == Some(app_id))
-        })
-        .or_else(|| {
-            let suffix = app_id.rsplit('.').next()?;
-            applications
-                .iter()
-                .find(|application| desktop_id_stem(&application.id) == Some(suffix))
-        })
-        .or_else(|| {
-            // XWayland classes can differ in case from their desktop IDs (for
-            // example, Chatgpt and chatgpt.desktop). Preserve exact matches and
-            // only accept an unambiguous case-insensitive fallback.
-            let suffix = app_id.rsplit('.').next()?;
-            let mut matches = applications.iter().filter(|application| {
-                application.id.eq_ignore_ascii_case(app_id)
-                    || desktop_id_stem(&application.id).is_some_and(|stem| {
-                        stem.eq_ignore_ascii_case(app_id) || stem.eq_ignore_ascii_case(suffix)
-                    })
-            });
-            let application = matches.next()?;
-            matches.next().is_none().then_some(application)
-        })
-}
-
-fn desktop_id_stem(id: &str) -> Option<&str> {
-    id.strip_suffix(".desktop")
-}
+pub(crate) use canopa_apps::match_desktop_application_for_app_id;
 
 #[cfg(test)]
 mod tests {

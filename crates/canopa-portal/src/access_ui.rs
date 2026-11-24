@@ -1,12 +1,13 @@
 //! Iced consent surface. Only an explicit grant action produces a grant.
 use crate::accessibility_ui::{self as a11y, Node, semantic};
+use crate::dialog_ui;
 use crate::{
     access::{AccessRequest, Grant},
     worker::run as worker,
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{checkbox, column, container, image, pick_list, scrollable, text},
+    widget::{checkbox, column, container, image, pick_list, text},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,7 @@ pub fn run(
     appearance: canopa_theme::Appearance,
 ) -> anyhow::Result<Option<Grant>> {
     let foreground = appearance.palette().text;
+    let requester = dialog_ui::requester(&request.app_id);
     let font = canopa_ui::font(&appearance);
     let theme = canopa_ui::theme(appearance);
     let result = Arc::new(Mutex::new(None));
@@ -31,8 +33,23 @@ pub fn run(
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(680.0, 440.0),
-                min_size: Some(Size::new(400.0, 280.0)),
+                size: Size::new(680.0, {
+                    let lines = request
+                        .body
+                        .lines()
+                        .map(|line| line.chars().count().div_ceil(65))
+                        .sum::<usize>();
+                    let has_menu = request.choices.iter().any(|choice| !choice.2.is_empty());
+                    let choices: usize = request
+                        .choices
+                        .iter()
+                        .map(|choice| if choice.2.is_empty() { 30 } else { 62 })
+                        .sum();
+                    let menu_room = if has_menu { 64 } else { 0 };
+                    let inset = usize::from(!request.choices.is_empty()) * 10;
+                    (200 + lines * 20 + choices + menu_room + inset).clamp(248, 504) as f32
+                }),
+                min_size: Some(Size::new(400.0, 248.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Portal".into(),
@@ -60,6 +77,7 @@ pub fn run(
             (
                 Dialog {
                     request: request.clone(),
+                    requester: requester.clone(),
                     theme: theme.clone(),
                     icon: None,
                     output: output.clone(),
@@ -86,6 +104,7 @@ const WINDOW_KEY: &str = "access";
 
 struct Dialog {
     request: AccessRequest,
+    requester: String,
     theme: Theme,
     icon: Option<image::Handle>,
     output: Arc<Mutex<Option<Grant>>>,
@@ -190,33 +209,47 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let title = semantic(
-            Node::heading(&self.request.title, 1),
-            text(&self.request.title).size(22),
-        );
+        let dialog_title = if self.request.title.is_empty() {
+            fl!("portal-access-title")
+        } else {
+            self.request.title.clone()
+        };
+        let mut identity = column![semantic(
+            Node::heading(&dialog_title, 1),
+            dialog_ui::heading(&dialog_title),
+        )]
+        .spacing(4)
+        .width(Length::Fill);
+        if !self.request.app_id.is_empty() {
+            identity = identity.push(dialog_ui::detail(fl!(
+                "portal-requested-by",
+                requester = self.requester.as_str()
+            )));
+        }
         let heading: Element<'_, Message> = if let Some(icon) = &self.icon {
-            canopa_ui::direction::row([image(icon.clone()).width(40).height(40).into(), title])
+            let icon = container(image(icon.clone()).width(26).height(26))
+                .center(48)
+                .style(dialog_ui::card);
+            canopa_ui::direction::row([icon.into(), identity.into()])
                 .spacing(12)
                 .align_y(iced::Center)
                 .into()
         } else {
-            title
+            identity.into()
         };
-        let mut content = column![heading].spacing(14).width(Length::Fill);
-        if !self.request.app_id.is_empty() {
-            content = content.push(text(&self.request.app_id).size(13).style(canopa_ui::muted));
-        }
-        if !self.request.subtitle.is_empty() {
-            content = content.push(text(&self.request.subtitle).size(18));
+        let mut content = column![heading].spacing(11).width(Length::Fill);
+        if !self.request.subtitle.is_empty() && self.request.subtitle != dialog_title {
+            content = content.push(text(&self.request.subtitle).size(17));
         }
         if !self.request.body.is_empty() {
-            content = content.push(text(&self.request.body));
+            content = content.push(dialog_ui::detail(&self.request.body).size(15));
         }
+        let mut choices = column![].spacing(12);
         for (index, (id, label, options, value)) in self.request.choices.iter().enumerate() {
             let key = format!("access-choice-{}", id.escape_default());
             if options.is_empty() {
                 let checked = value == "true";
-                content = content.push(a11y::check_box(
+                choices = choices.push(a11y::check_box(
                     key,
                     label,
                     checked,
@@ -238,7 +271,7 @@ impl Dialog {
                     .iter()
                     .map(|(option, label)| (label.clone(), Message::Choice(index, option.clone())))
                     .collect();
-                content = content.push(
+                choices = choices.push(
                     column![
                         text(label),
                         a11y::combo_box(
@@ -256,34 +289,38 @@ impl Dialog {
                 );
             }
         }
-        let actions = canopa_ui::direction::row([
+        if !self.request.choices.is_empty() {
+            content = content.push(
+                container(choices)
+                    .padding([10, 12])
+                    .width(Length::Fill)
+                    .style(dialog_ui::card),
+            );
+        }
+        let actions = dialog_ui::footer([
             a11y::button(
                 "access-deny",
                 &self.request.deny_label,
                 Some(Message::Deny),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(&self.request.deny_label),
                     Some(Message::Deny),
                     canopa_ui::Action::Normal,
                     false,
-                )
-                .width(Length::Fill),
+                ),
             ),
             a11y::button(
                 "access-grant",
                 &self.request.grant_label,
                 Some(Message::Grant),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(&self.request.grant_label),
                     Some(Message::Grant),
-                    canopa_ui::Action::Normal,
+                    canopa_ui::Action::Primary,
                     false,
-                )
-                .width(Length::Fill),
+                ),
             ),
-        ])
-        .spacing(12)
-        .align_y(iced::Center);
+        ]);
         // A consent question: an alert dialog, described by what it asks.
         let description = [&self.request.subtitle, &self.request.body]
             .into_iter()
@@ -291,22 +328,13 @@ impl Dialog {
             .cloned()
             .collect::<Vec<_>>()
             .join(" ");
-        let dialog_title = if self.request.title.is_empty() {
-            fl!("portal-access-title")
-        } else {
-            self.request.title.clone()
-        };
         a11y::dialog_window(
             WINDOW_KEY,
             self.window_title(),
             Node::alert_dialog(dialog_title)
                 .key("access-dialog")
                 .description(description),
-            container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
-                .padding(20)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(canopa_ui::surface),
+            dialog_ui::layout(content, actions),
         )
     }
 }
@@ -328,6 +356,7 @@ mod tests {
         )
         .unwrap();
         let mut dialog = Dialog {
+            requester: request.app_id.clone(),
             request,
             theme: canopa_ui::theme(Default::default()),
             icon: None,

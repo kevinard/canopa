@@ -15,7 +15,7 @@ const LIMIT: usize = 1024 * 1024;
 const IDENTITY_LIMIT: usize = 16 * 1024;
 
 pub struct Storage {
-    path: PathBuf,
+    path: Option<PathBuf>,
     state: Mutex<State>,
     writer: Mutex<()>,
 }
@@ -247,11 +247,20 @@ impl Storage {
                 },
             );
         }
-        Ok(Arc::new(Self {
+        Ok(Self::new(Some(path), state))
+    }
+
+    #[cfg(feature = "local-runtime")]
+    pub(crate) fn volatile() -> Arc<Self> {
+        Self::new(None, State::default())
+    }
+
+    fn new(path: Option<PathBuf>, state: State) -> Arc<Self> {
+        Arc::new(Self {
             path,
             state: Mutex::new(state),
             writer: Mutex::new(()),
-        }))
+        })
     }
 
     /// Publish unavailability first. Preparation must persist the placement
@@ -346,7 +355,9 @@ impl Storage {
                     .collect(),
             }
         };
-        crate::state_io::write_json(&self.path, &saved, LIMIT)?;
+        if let Some(path) = &self.path {
+            crate::state_io::write_json(path, &saved, LIMIT)?;
+        }
         let mut state = self.state.lock().map_err(|_| unavailable())?;
         if let Some(root) = state
             .roots

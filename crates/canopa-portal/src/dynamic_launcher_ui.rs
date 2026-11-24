@@ -1,12 +1,13 @@
 //! Request-owned launcher review. Only an explicit Install accepts the draft.
 use crate::accessibility_ui::{self as a11y, Node, semantic};
+use crate::dialog_ui;
 use crate::{
     dynamic_launcher::{LauncherDraft, LauncherType, NAME_BYTES, valid_name},
     dynamic_launcher_icon::DialogInput,
 };
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, image, scrollable, text, text_input},
+    widget::{column, container, image, text, text_input},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -17,6 +18,7 @@ pub fn run(
 ) -> anyhow::Result<Option<String>> {
     input.draft.validate()?;
     anyhow::ensure!(input.preview.valid(), "Invalid launcher preview");
+    let requester = dialog_ui::requester(&input.draft.app_id);
     let font = canopa_ui::font(&appearance);
     let theme = canopa_ui::theme(appearance);
     let output = Arc::new(Mutex::new(None));
@@ -29,8 +31,8 @@ pub fn run(
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(680.0, 520.0),
-                min_size: Some(Size::new(440.0, 340.0)),
+                size: Size::new(620.0, 350.0),
+                min_size: Some(Size::new(440.0, 316.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Portal".into(),
@@ -48,6 +50,7 @@ pub fn run(
             (
                 Dialog {
                     draft: input.draft.clone(),
+                    requester: requester.clone(),
                     name: input.draft.name.clone(),
                     preview: preview.clone(),
                     theme: theme.clone(),
@@ -83,6 +86,7 @@ fn window_title() -> String {
 
 struct Dialog {
     draft: LauncherDraft,
+    requester: String,
     name: String,
     preview: image::Handle,
     theme: Theme,
@@ -196,16 +200,12 @@ impl Dialog {
             LauncherType::Application => fl!("portal-launcher-install-application"),
             LauncherType::Webapp => fl!("portal-launcher-install-webapp"),
         };
-        let requester = if self.draft.app_id.is_empty() {
-            fl!("portal-requesting-app")
-        } else {
-            self.draft.app_id.clone()
-        };
+        let requester = &self.requester;
         let name_label = fl!("portal-launcher-name");
         let placeholder = fl!("portal-launcher-name-placeholder");
-        let icon = container(image(self.preview.clone()).width(96).height(96))
+        let icon = container(image(self.preview.clone()).width(56).height(56))
             .padding(8)
-            .style(|_| container::Style::default().background(iced::Color::WHITE));
+            .style(dialog_ui::card);
         let mut name = column![text(name_label.clone())]
             .spacing(8)
             .width(Length::Fill);
@@ -227,6 +227,7 @@ impl Dialog {
                 text_input(&placeholder, &self.name)
                     .on_input(Message::Name)
                     .id("launcher-name")
+                    .style(dialog_ui::field)
                     .padding(10),
             ));
         } else {
@@ -241,7 +242,7 @@ impl Dialog {
         let mut content = column![
             semantic(
                 Node::heading(heading.clone(), 1),
-                text(heading.clone()).size(22)
+                dialog_ui::heading(heading.clone())
             ),
             text(fl!("portal-requested-by", requester = requester.as_str()))
                 .style(canopa_ui::muted),
@@ -252,39 +253,44 @@ impl Dialog {
         .spacing(14)
         .width(Length::Fill);
         if self.draft.launcher_type == LauncherType::Webapp {
-            content = content
-                .push(text(fl!("portal-launcher-web-address")))
-                .push(text(&self.draft.target));
+            content = content.push(
+                container(
+                    column![
+                        dialog_ui::detail(fl!("portal-launcher-web-address")).size(13),
+                        text(&self.draft.target).size(17),
+                    ]
+                    .spacing(4),
+                )
+                .padding([8, 12])
+                .width(Length::Fill)
+                .style(dialog_ui::card),
+            );
         }
-        content = content.push(text(fl!("portal-launcher-hint")).style(canopa_ui::muted));
         let install = self.can_install().then_some(Message::Install);
-        let actions = canopa_ui::direction::row([
+        let actions = dialog_ui::footer([
             a11y::button(
                 "dynamic-launcher-cancel",
                 fl!("portal-cancel"),
                 Some(Message::Cancel),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-cancel")),
                     Some(Message::Cancel),
                     canopa_ui::Action::Normal,
                     false,
-                )
-                .width(Length::Fill),
+                ),
             ),
             a11y::button(
                 "dynamic-launcher-install",
                 fl!("portal-launcher-install"),
                 install.clone(),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-launcher-install")),
                     install,
-                    canopa_ui::Action::Normal,
+                    canopa_ui::Action::Primary,
                     false,
-                )
-                .width(Length::Fill),
+                ),
             ),
-        ])
-        .spacing(12);
+        ]);
         let description = if self.draft.launcher_type == LauncherType::Webapp {
             fl!(
                 "portal-launcher-description-webapp",
@@ -303,11 +309,7 @@ impl Dialog {
             Node::dialog(heading)
                 .key("dynamic-launcher-dialog")
                 .description(description),
-            container(column![scrollable(content).height(Length::Fill), actions].spacing(18))
-                .padding(20)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(canopa_ui::surface),
+            dialog_ui::layout(content, actions),
         )
     }
 }

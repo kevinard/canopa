@@ -165,7 +165,12 @@ impl Desktop {
     pub(super) fn device_event(&mut self, event: Event) -> Task<Message> {
         match event {
             Event::Open(mut origin, token) => {
-                if !origin.current(self) {
+                if !origin.current(self)
+                    || self
+                        .picker
+                        .as_ref()
+                        .is_some_and(super::picker_ui::Picker::blocks_browser)
+                {
                     return Task::none();
                 }
                 let Some(serial) = self.devices.serial.checked_add(1) else {
@@ -179,10 +184,13 @@ impl Desktop {
                 }
                 origin.location = None;
                 self.devices.error = None;
-                let result = self
-                    .device_runtime()
-                    .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
-                    .and_then(|runtime| runtime.device_requests().open(token));
+                let result = if let Some(monitor) = &self.picker_monitor {
+                    monitor.device_requests().root(token).map(Opened::Root)
+                } else {
+                    self.device_runtime()
+                        .ok_or_else(|| io::Error::other(fl!("files-devices-unavailable")))
+                        .and_then(|runtime| runtime.device_requests().open(token))
+                };
                 match result {
                     Ok(Opened::Root(root)) => {
                         return self.finish_device_navigation(origin, Ok(root));
@@ -346,7 +354,15 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
     let origin = Origin::capture(desktop, window);
     let model = super::network_ui::sidebar(&desktop.devices.catalog, &desktop.network.bookmarks);
     for device in model.devices {
-        let open = if device.remote_only {
+        let open = if desktop.picker.is_some() {
+            if device.root.is_none() {
+                continue;
+            }
+            origin
+                .as_ref()
+                .filter(|_| ready)
+                .map(|origin| Message::Device(Event::Open(origin.clone(), device.token)))
+        } else if device.remote_only {
             Some(Message::Network(super::network_ui::Event::ShowRemote(
                 window,
                 device.token,
@@ -396,7 +412,7 @@ pub(super) fn places<'a>(desktop: &'a Desktop, window: window::Id) -> Element<'a
             super::accessibility_ui::semantic(node, open)
         )]
         .align_y(Alignment::Center);
-        if let Some(kind) = device.removal {
+        if let Some(kind) = device.removal.filter(|_| desktop.picker.is_none()) {
             let enabled = ready && !desktop.devices.busy();
             let remove = enabled.then_some(Message::Device(Event::Remove(window, device.token)));
             let button = canopa_ui::styled_action(

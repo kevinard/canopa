@@ -1,17 +1,18 @@
 //! Iced application selection. The frontend retains launch and MIME policy.
 use crate::accessibility_ui::{self as a11y, Node, semantic};
-use crate::icons;
 use crate::{
     app_chooser::{AppRequest, AppSelection},
     worker::run as worker,
 };
+use crate::{dialog_ui, icons};
+use canopa_apps::mime_apps::{self, MimeApps};
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
     widget::{button, column, container, image, scrollable, text, text_input},
     window,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -24,20 +25,63 @@ struct Application {
     caption: String,
     search: String,
     icon: Option<image::Handle>,
+    fit: FileTypeFit,
+}
+
+/// Local file-type knowledge decorates the frontend’s offered IDs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum FileTypeFit {
+    Default,
+    Associated,
+    #[default]
+    Other,
+}
+
+fn request_type(content_type: Option<&str>, uri: Option<&str>) -> Option<String> {
+    content_type
+        .filter(|mime| mime_apps::valid_mime(mime))
+        .map(str::to_owned)
+        .or_else(|| {
+            let scheme = url::Url::parse(uri?).ok()?;
+            let mime = format!("x-scheme-handler/{}", scheme.scheme());
+            (scheme.scheme() != "file" && mime_apps::valid_mime(&mime)).then_some(mime)
+        })
+}
+
+fn desktop_id(id: &str) -> &str {
+    id.strip_suffix(".desktop").unwrap_or(id)
+}
+
+fn is_last_used(application: &Application, last_choice: Option<&str>) -> bool {
+    last_choice.is_some_and(|id| desktop_id(id) == desktop_id(&application.id))
 }
 
 fn applications(
     catalog: Vec<canopa_apps::DesktopApplication>,
     foreground: canopa_theme::Rgb,
     choices: &[String],
+    mime: Option<&str>,
 ) -> Vec<Application> {
+    let apps = mime.map(|_| MimeApps::load());
+    let chain = mime
+        .map(|mime| mime_apps::type_chain(&canopa_file::mime::MimeDatabase::system(), mime))
+        .unwrap_or_default();
+    let default = apps
+        .as_ref()
+        .and_then(|apps| chain.iter().find_map(|mime| apps.explicit_default(mime)));
+    let associations: HashSet<_> = apps
+        .as_ref()
+        .into_iter()
+        .flat_map(|apps| apps.applications_for(&chain))
+        .map(|app| app.id.as_str())
+        .collect();
     let visible: Vec<_> = catalog
         .iter()
         .filter(|app| {
             choices.is_empty()
                 || choices
                     .iter()
-                    .any(|id| id == &app.id || app.id.strip_suffix(".desktop") == Some(id.as_str()))
+                    .any(|id| desktop_id(id) == desktop_id(&app.id))
         })
         .cloned()
         .collect();
@@ -46,6 +90,13 @@ fn applications(
     catalog
         .into_iter()
         .map(|app| Application {
+            fit: if default.is_some_and(|default| default.id == app.id) {
+                FileTypeFit::Default
+            } else if associations.contains(app.id.as_str()) {
+                FileTypeFit::Associated
+            } else {
+                FileTypeFit::Other
+            },
             search: format!(
                 "{} {} {} {}",
                 app.name,
@@ -55,7 +106,7 @@ fn applications(
             )
             .to_lowercase(),
             icon: app.icon.as_ref().and_then(|name| images.get(name)).cloned(),
-            caption: app.generic_name.unwrap_or_else(|| app.id.clone()),
+            caption: app.generic_name.unwrap_or_default(),
             id: app.id,
             name: app.name,
         })
@@ -66,13 +117,15 @@ fn offered(choices: &[String], catalog: &[Application]) -> Vec<Application> {
     if choices.is_empty() {
         return catalog.to_owned();
     }
-    let index: HashMap<_, _> = catalog.iter().map(|app| (app.id.as_str(), app)).collect();
+    let index: HashMap<_, _> = catalog
+        .iter()
+        .map(|app| (desktop_id(&app.id), app))
+        .collect();
     choices
         .iter()
         .map(|id| {
             let mut row = index
-                .get(id.as_str())
-                .or_else(|| index.get(format!("{id}.desktop").as_str()))
+                .get(desktop_id(id))
                 .map(|row| (*row).clone())
                 .unwrap_or_else(|| Application {
                     id: id.clone(),
@@ -80,6 +133,7 @@ fn offered(choices: &[String], catalog: &[Application]) -> Vec<Application> {
                     caption: fl!("portal-app-chooser-caption"),
                     search: id.to_lowercase(),
                     icon: None,
+                    fit: FileTypeFit::Other,
                 });
             row.id.clone_from(id);
             row
@@ -100,7 +154,7 @@ pub fn run(
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(620.0, 480.0),
+                size: Size::new(620.0, 512.0),
                 min_size: Some(Size::new(400.0, 320.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -256,10 +310,14 @@ impl Chooser {
         self.loading = true;
         let foreground = self.foreground;
         let choices = self.request.choices.clone();
+        let mime = request_type(
+            self.request.content_type.as_deref(),
+            self.request.uri.as_deref(),
+        );
         Task::perform(
             worker(move || {
                 canopa_apps::discover_choice_metadata()
-                    .map(|catalog| applications(catalog, foreground, &choices))
+                    .map(|catalog| applications(catalog, foreground, &choices, mime.as_deref()))
                     .map_err(|error| error.to_string())
             }),
             |result| Message::Loaded(result.and_then(|value| value)),
@@ -274,6 +332,9 @@ impl Chooser {
     }
     fn reconcile(&mut self) {
         self.rows = offered(&self.request.choices, &self.catalog);
+        let last_choice = self.request.last_choice.as_deref();
+        self.rows
+            .sort_by_key(|row| (row.fit, !is_last_used(row, last_choice)));
         if self
             .selected
             .as_ref()
@@ -323,12 +384,7 @@ impl Chooser {
                 }
                 if self.initial {
                     self.initial = false;
-                    self.selected = self
-                        .request
-                        .last_choice
-                        .clone()
-                        .filter(|id| self.rows.iter().any(|row| &row.id == id))
-                        .or_else(|| self.rows.first().map(|row| row.id.clone()));
+                    self.selected = self.visible().first().map(|row| row.id.clone());
                 }
                 if std::mem::take(&mut self.reload_pending) {
                     return self.load();
@@ -346,6 +402,10 @@ impl Chooser {
                 self.search = value;
                 self.selected = self.visible().first().map(|row| row.id.clone());
                 self.last_click = None;
+                return iced::widget::operation::snap_to(
+                    "app-chooser-results",
+                    scrollable::RelativeOffset::START,
+                );
             }
             Message::Select(id) => {
                 self.pending = None;
@@ -432,9 +492,18 @@ impl Chooser {
                                 Some(i) => (i + 1).min(rows.len() - 1),
                                 None => 0,
                             };
+                            let position =
+                                index as f32 / rows.len().saturating_sub(1).max(1) as f32;
                             self.selected = Some(rows[index].id.clone());
                             self.last_click = None;
                             self.list_focus = true;
+                            return iced::widget::operation::snap_to(
+                                "app-chooser-results",
+                                scrollable::RelativeOffset {
+                                    x: None,
+                                    y: Some(position),
+                                },
+                            );
                         }
                     }
                     _ => {}
@@ -464,58 +533,91 @@ impl Chooser {
             .filter(|id| self.list_focus && visible.iter().any(|row| row.id == *id))
             .map(application_key);
         let mut listing = column![].spacing(4);
+        let has_associations = self.rows.iter().any(|row| row.fit != FileTypeFit::Other);
+        let mut group = None;
         for (index, application) in visible.into_iter().enumerate() {
+            let associated = application.fit != FileTypeFit::Other;
+            if has_associations && group != Some(associated) {
+                group = Some(associated);
+                let title = if associated {
+                    fl!("portal-app-chooser-associated")
+                } else {
+                    fl!("portal-app-chooser-other")
+                };
+                listing = listing.push(container(dialog_ui::section(title)).padding([8, 10]));
+            }
             let icon: Element<'_, Message> = application.icon.as_ref().map_or_else(
-                || container(text("◇")).width(32).height(32).center(32).into(),
+                || {
+                    let initial: String = application
+                        .name
+                        .chars()
+                        .next()
+                        .into_iter()
+                        .flat_map(char::to_uppercase)
+                        .collect();
+                    container(dialog_ui::section(initial))
+                        .width(32)
+                        .height(32)
+                        .center(32)
+                        .style(dialog_ui::card)
+                        .into()
+                },
                 |handle| image(handle.clone()).width(32).height(32).into(),
             );
             let selected = self.selected.as_deref() == Some(&application.id);
             let key = application_key(&application.id);
             let select = Message::Select(application.id.clone());
+            let mut label = column![text(&application.name)]
+                .spacing(3)
+                .width(Length::Fill);
+            if !application.caption.is_empty() {
+                label = label.push(dialog_ui::detail(&application.caption).size(13));
+            }
+            let badge = if application.fit == FileTypeFit::Default {
+                Some(fl!("portal-app-chooser-default"))
+            } else if is_last_used(application, self.request.last_choice.as_deref()) {
+                Some(fl!("portal-app-chooser-last-used"))
+            } else {
+                None
+            };
+            let description = [
+                application.caption.as_str(),
+                badge.as_deref().unwrap_or_default(),
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
+            let focused = focused_row.as_ref() == Some(&key);
             listing = listing.push(semantic(
                 Node::option(&application.name, selected)
                     .key(key.clone())
-                    .description(&application.caption)
+                    .description(description)
                     .position(index + 1, total)
                     .focused(focused_row.as_ref() == Some(&key))
                     .on_click(Some(select.clone())),
                 button(
                     canopa_ui::direction::row([
                         icon,
-                        column![
-                            text(&application.name),
-                            text(&application.caption)
-                                .size(13)
-                                .style(move |theme| if selected {
-                                    text::Style::default()
-                                } else {
-                                    canopa_ui::muted(theme)
-                                })
-                        ]
-                        .spacing(3)
-                        .into(),
+                        label.into(),
+                        badge.map_or_else(
+                            || iced::widget::space().width(0).into(),
+                            |badge| {
+                                container(dialog_ui::detail(badge).size(12))
+                                    .padding([3, 8])
+                                    .style(dialog_ui::card)
+                                    .into()
+                            },
+                        ),
                     ])
                     .spacing(10)
                     .align_y(iced::Center),
                 )
-                .padding(8)
+                .padding([8, 10])
                 .width(Length::Fill)
                 .on_press(select)
-                .style(move |theme: &Theme, status| {
-                    if selected {
-                        button::primary(theme, status)
-                    } else {
-                        button::text(theme, status)
-                    }
-                }),
+                .style(move |theme, status| dialog_ui::selection(theme, status, selected, focused)),
             ));
-        }
-        if self.rows.is_empty() {
-            listing = listing.push(text(if self.loading {
-                fl!("portal-app-chooser-loading")
-            } else {
-                fl!("portal-app-chooser-none")
-            }));
         }
         let status = if self.rows.is_empty() && self.loading {
             fl!("portal-app-chooser-loading")
@@ -526,9 +628,15 @@ impl Chooser {
         } else {
             fl!("portal-app-chooser-count", count = total)
         };
+        if total == 0 {
+            listing = listing.push(container(dialog_ui::detail(status.clone())).padding(12));
+        }
         let search = fl!("portal-app-chooser-search");
         let mut content = column![
-            semantic(Node::heading(&heading, 1), text(heading.clone()).size(20)),
+            semantic(
+                Node::heading(&heading, 1),
+                dialog_ui::heading(heading.clone())
+            ),
             semantic(
                 Node::search_input(search.clone(), &self.search)
                     .key("app-chooser-search")
@@ -538,6 +646,8 @@ impl Chooser {
                     .on_text(Message::Search),
                 text_input(&search, &self.search)
                     .id("applications-search")
+                    .padding([8, 10])
+                    .style(dialog_ui::field)
                     .on_input(Message::Search)
                     .on_submit(Message::Accept),
             ),
@@ -546,7 +656,17 @@ impl Chooser {
                     .key(APPLICATIONS_KEY)
                     .busy(self.loading)
                     .active_descendant(focused_row),
-                scrollable(listing).height(Length::Fill),
+                container(
+                    scrollable(listing)
+                        .style(canopa_ui::scrollbar)
+                        .id("app-chooser-results")
+                        .spacing(6)
+                        .height(Length::Fill)
+                )
+                .padding(6)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(dialog_ui::card),
             ),
             a11y::announcer("app-chooser-status", status, false),
         ]
@@ -559,13 +679,28 @@ impl Chooser {
         }
         let open = (!self.initial && self.pending.is_none() && self.selected.is_some())
             .then_some(Message::Accept);
+        let selection = self
+            .selected
+            .as_deref()
+            .and_then(|id| self.rows.iter().find(|row| row.id == id));
         let footer = canopa_ui::direction::row([
-            iced::widget::space().width(Length::Fill).into(),
+            dialog_ui::detail(selection.map_or_else(
+                || fl!("portal-app-chooser-select"),
+                |application| {
+                    fl!(
+                        "portal-app-chooser-selected",
+                        application = application.name.as_str()
+                    )
+                },
+            ))
+            .wrapping(iced::widget::text::Wrapping::None)
+            .width(Length::Fill)
+            .into(),
             a11y::button(
                 "app-chooser-cancel",
                 fl!("portal-cancel"),
                 Some(Message::Cancel),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-cancel")),
                     Some(Message::Cancel),
                     canopa_ui::Action::Normal,
@@ -576,15 +711,16 @@ impl Chooser {
                 "app-chooser-open",
                 fl!("portal-app-chooser-open"),
                 open.clone(),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-app-chooser-open")),
                     open,
-                    canopa_ui::Action::Normal,
+                    canopa_ui::Action::Primary,
                     false,
                 ),
             ),
         ])
-        .spacing(10);
+        .spacing(8)
+        .align_y(iced::Center);
         a11y::dialog_window(
             WINDOW_KEY,
             window_title(),
@@ -592,11 +728,13 @@ impl Chooser {
                 .key("app-chooser-dialog")
                 .description(heading)
                 .busy(self.loading || self.pending.is_some()),
-            container(content.push(footer))
-                .padding(16)
-                .style(canopa_ui::surface)
-                .width(Length::Fill)
-                .height(Length::Fill),
+            dialog_ui::frame(
+                container(content)
+                    .padding([20, 24])
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                footer,
+            ),
         )
     }
 }
@@ -613,6 +751,7 @@ mod tests {
             caption: id.into(),
             search: format!("{id} {name}").to_lowercase(),
             icon: None,
+            fit: FileTypeFit::Other,
         }
     }
     #[test]
@@ -639,6 +778,31 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn file_type_fit_outranks_recency_without_expanding_the_frontend_choices() {
+        let mut chooser = chooser();
+        let mut reader = app("reader.desktop", "Reader");
+        reader.fit = FileTypeFit::Default;
+        let mut browser = app("browser.desktop", "Browser");
+        browser.fit = FileTypeFit::Associated;
+        let mut omitted = app("omitted.desktop", "Another reader");
+        omitted.fit = FileTypeFit::Default;
+        chooser.catalog.extend([reader, browser, omitted]);
+        chooser.request.choices = vec!["b.desktop".into(), "browser".into(), "reader".into()];
+        chooser.request.last_choice = Some("b".into());
+        chooser.initial = true;
+        let _ = chooser.apply(Message::Loaded(Ok(chooser.catalog.clone())));
+        assert_eq!(chooser.selected.as_deref(), Some("reader"));
+        assert_eq!(
+            chooser
+                .rows
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["reader", "browser", "b.desktop"]
+        );
+    }
+
     pub(super) fn chooser() -> Chooser {
         Chooser {
             request: AppRequest::parse(

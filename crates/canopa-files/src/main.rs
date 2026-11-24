@@ -12,6 +12,8 @@ struct Arguments {
     internal_check_copy: bool,
     #[arg(long, hide = true, conflicts_with_all = ["paths", "config", "defaults", "check_config", "show_source", "daemon", "quit"])]
     internal_volume_monitor: bool,
+    #[arg(long, hide = true, conflicts_with_all = ["paths", "daemon", "quit", "quick_look", "check_config", "internal_check_copy", "internal_volume_monitor"])]
+    internal_picker: bool,
     /// Local folders or file:// URIs to open. Multiple locations become tabs.
     paths: Vec<PathBuf>,
     /// Stay resident without opening a browser; later launches use this runtime.
@@ -60,6 +62,15 @@ fn main() -> std::process::ExitCode {
             canopa_config::Request::common,
         )
     };
+    if arguments.internal_picker {
+        return match canopa_files::desktop::run_picker(request) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("canopa-files picker: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     if arguments.check_config {
         return match canopa_files::configuration::ConfigurationSnapshot::load(&request) {
             Ok(snapshot) => {

@@ -151,8 +151,8 @@ async fn optional_history_never_queues_behind_an_active_operation() {
 
 #[test]
 fn folder_hint_uses_only_the_selected_folder_or_a_common_file_parent() {
-    use crate::file_chooser::{ChooserRequest, Mode, Selection};
-    let mut request = ChooserRequest::parse(
+    use crate::file_chooser::{Mode, Selection, SelectionResponse};
+    let mut request = crate::file_chooser::parse_request(
         Mode::Open,
         "org.example.A".into(),
         String::new(),

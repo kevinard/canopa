@@ -132,7 +132,11 @@ impl Desktop {
     }
     /// Save folder views after a change made outside the View options.
     pub(super) fn save_folder_views(&mut self, folder: PathBuf) -> Task<Message> {
-        self.folder_writer.queue(self.preferences.clone(), folder)
+        if self.picker.is_some() {
+            Task::none()
+        } else {
+            self.folder_writer.queue(self.preferences.clone(), folder)
+        }
     }
     /// Show the active tab of window `id` in `mode` for now: the folder's
     /// saved view options stay as they are.

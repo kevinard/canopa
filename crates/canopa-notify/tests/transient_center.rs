@@ -557,8 +557,10 @@ async fn provider_advertises_dismissal_for_live_items_but_not_inactive_history()
         let item = &content.sections[0].items[0];
         assert_eq!(item.actions.len(), 1);
         let dismissal = &item.actions[0];
-        assert_eq!(dismissal.key, "canopa-notify:activate-item");
+        assert_eq!(dismissal.key, "canopa-notify:dismiss-item");
         assert_eq!(dismissal.label, "Dismiss");
+        assert!(dismissal.destructive);
+        assert!(!dismissal.request_activation_token);
         assert_eq!(item.metadata.len(), 1 + usize::from(!transient));
         assert_eq!(item.metadata.last().unwrap().key, "received");
         if !transient {

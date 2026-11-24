@@ -8,6 +8,8 @@ pub mod activation;
 pub mod application;
 pub mod archives;
 pub mod browse;
+#[cfg(feature = "browser-ui")]
+pub mod browser_ui;
 pub mod btrfs;
 pub mod bulk_rename;
 pub mod configuration;
@@ -40,6 +42,8 @@ pub use operations::transfer as transfers;
 pub use operations::trash;
 mod path_serde;
 pub mod personal_folders;
+#[cfg(feature = "browser-ui")]
+pub mod picker;
 #[cfg(feature = "media-playback")]
 pub mod playback;
 pub mod preferences;

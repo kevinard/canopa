@@ -20,7 +20,8 @@ direction). Banners never take keyboard focus.
 - Low and normal urgency banners close after 5 seconds unless the application asks
   for another timeout. Critical banners stay until dismissed.
 - A banner shows the application icon, summary, body (with basic markup and
-  images) and the application's action buttons. Clicking it runs the default action.
+  images) and the application's action buttons. Clicking the header runs the
+  default action. A single named action appears below the message.
 - Applications that support replies get an inline reply field.
 - HTTP and HTTPS links in the body open in your browser through the OpenURI portal.
   Opening a link does not dismiss the notification.

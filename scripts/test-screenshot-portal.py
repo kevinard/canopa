@@ -110,7 +110,7 @@ def verify(args,session):
         return window
     def action(window,accept):
         w,h=window['layout']['window_size']
-        session.run([str(pointer),str(round((20+w*(.75 if accept else .25))/width*1600)),str(round((10+h-38)/height*1000))])
+        session.run([str(pointer),str(round((20+w-(66 if accept else 160))/width*1600)),str(round((10+h-38)/height*1000))])
     def result(path,status):
         response=session.wait_for(lambda:(drain(),responses.get(path))[1],'portal response',timeout=40)
         assert response.get_child_value(0).unpack()==status,response

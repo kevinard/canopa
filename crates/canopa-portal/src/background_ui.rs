@@ -1,9 +1,10 @@
 //! Opened only by an explicit review action on the background notification.
 use crate::accessibility_ui::{self as a11y, Node, semantic};
 use crate::background::{BackgroundRequest, Decision};
+use crate::dialog_ui;
 use iced::{
     Element, Event, Length, Size, Subscription, Task, Theme, keyboard,
-    widget::{column, container, scrollable, text},
+    widget::{column, container, text},
     window,
 };
 use std::sync::{Arc, Mutex};
@@ -20,8 +21,8 @@ pub fn run(
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(680.0, 360.0),
-                min_size: Some(Size::new(440.0, 300.0)),
+                size: Size::new(640.0, 410.0),
+                min_size: Some(Size::new(470.0, 340.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
                     application_id: "org.canopa.Portal".into(),
@@ -161,57 +162,83 @@ impl Dialog {
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let question = fl!("portal-background-question");
+        let choice = |key: &'static str, label: String, consequence, decision, primary| {
+            let message = Message::Decide(decision);
+            let button = if decision == Decision::Forbid {
+                dialog_ui::danger(label.clone(), message.clone())
+            } else {
+                let treatment = if primary {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Normal
+                };
+                dialog_ui::action(text(label.clone()), Some(message.clone()), treatment, false)
+            };
+            container(
+                canopa_ui::direction::row([
+                    dialog_ui::detail(consequence).width(Length::Fill).into(),
+                    a11y::button(key, label.clone(), Some(message.clone()), button),
+                ])
+                .spacing(14)
+                .align_y(iced::Center),
+            )
+            .padding([10, 12])
+            .width(Length::Fill)
+            .style(dialog_ui::card)
+        };
         let content = column![
             semantic(
                 Node::heading(question.clone(), 1),
-                text(question.clone()).size(22)
+                dialog_ui::heading(question.clone())
             ),
-            text(&self.request.name).size(18),
-            text(&self.request.app_id).style(canopa_ui::muted),
-            text(fl!("portal-background-explanation")),
-            text(fl!("portal-background-closing")).style(canopa_ui::muted),
-        ]
-        .spacing(14)
-        .width(Length::Fill);
-        let choice = |key: &'static str, label: String, message: Message, treatment| {
-            a11y::button(
-                key,
-                label.clone(),
-                Some(message.clone()),
-                canopa_ui::action(text(label), Some(message), treatment, false).width(Length::Fill),
-            )
-        };
-        let choices = canopa_ui::direction::row([
-            choice(
-                "background-block",
-                fl!("portal-background-block"),
-                Message::Decide(Decision::Forbid),
-                canopa_ui::Action::Normal,
-            ),
+            dialog_ui::detail(fl!(
+                "portal-requested-by",
+                requester = self.request.name.as_str()
+            )),
+            text(fl!("portal-background-running")),
             choice(
                 "background-allow-once",
                 fl!("portal-background-allow-once"),
-                Message::Decide(Decision::AllowOnce),
-                canopa_ui::Action::Normal,
+                fl!("portal-background-once-detail"),
+                Decision::AllowOnce,
+                true
             ),
             choice(
                 "background-allow",
-                fl!("portal-background-allow"),
-                Message::Decide(Decision::Allow),
-                canopa_ui::Action::Normal,
+                fl!("portal-background-allow-future"),
+                fl!("portal-background-future-detail"),
+                Decision::Allow,
+                false
+            ),
+            choice(
+                "background-block",
+                fl!("portal-background-block"),
+                fl!("portal-background-block-detail"),
+                Decision::Forbid,
+                false
+            ),
+        ]
+        .spacing(10)
+        .width(Length::Fill);
+        let close = fl!("portal-close");
+        let footer = canopa_ui::direction::row([
+            dialog_ui::detail(fl!("portal-background-close-detail"))
+                .width(Length::Fill)
+                .into(),
+            a11y::button(
+                "background-cancel",
+                close.clone(),
+                Some(Message::Cancel),
+                dialog_ui::action(
+                    text(close),
+                    Some(Message::Cancel),
+                    canopa_ui::Action::Quiet,
+                    false,
+                ),
             ),
         ])
-        .spacing(12);
-        let footer = column![
-            choices,
-            choice(
-                "background-cancel",
-                fl!("portal-cancel"),
-                Message::Cancel,
-                canopa_ui::Action::Quiet
-            )
-        ]
-        .spacing(8);
+        .spacing(8)
+        .align_y(iced::Center);
         a11y::dialog_window(
             WINDOW_KEY,
             window_title(),
@@ -221,11 +248,7 @@ impl Dialog {
                     "portal-background-description",
                     name = self.request.name.as_str()
                 )),
-            container(column![scrollable(content).height(Length::Fill), footer].spacing(18))
-                .padding(20)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(canopa_ui::surface),
+            dialog_ui::layout(content, footer),
         )
     }
 }

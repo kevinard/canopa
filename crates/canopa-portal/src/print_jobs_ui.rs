@@ -1,4 +1,5 @@
 //! Display-only Iced child. The backend retains policy, job proofs and secrets.
+use crate::dialog_ui;
 use crate::print::{
     jobs_review::{Command, Configuration, Entry, Response},
     live_jobs::Status,
@@ -58,8 +59,8 @@ pub fn run(
                     .to_owned(),
                 false,
                 window::Settings {
-                    size: Size::new(860., 620.),
-                    min_size: Some(Size::new(580., 440.)),
+                    size: Size::new(680., 320.),
+                    min_size: Some(Size::new(550., 290.)),
                     exit_on_close_request: false,
                     platform_specific: window::settings::PlatformSpecific {
                         application_id: "org.canopa.Portal".into(),
@@ -117,6 +118,8 @@ enum Message {
     Destination(Choice),
     Select(String),
     Authenticate,
+    OpenPrinterSettings,
+    PrinterSettingsFailed,
     Replied(u64, Result<Response, String>),
     Close,
     Event(Event),
@@ -171,6 +174,24 @@ impl Review {
             })) => {
                 self.closed = true;
                 return iced::exit();
+            }
+            Message::OpenPrinterSettings => {
+                self.notice = None;
+                let launch = self.runtime.spawn(async {
+                    let mut command = tokio::process::Command::new("canopa-settings");
+                    command.args(["--page", "printers"]);
+                    let mut child = command.spawn()?;
+                    child.wait().await
+                });
+                return Task::future(async move {
+                    match launch.await {
+                        Ok(Ok(status)) if status.success() => Message::Opened,
+                        _ => Message::PrinterSettingsFailed,
+                    }
+                });
+            }
+            Message::PrinterSettingsFailed => {
+                self.notice = Some(fl!("portal-jobs-settings-failed"));
             }
             Message::Refresh if !self.busy => {
                 self.selected = None;
@@ -286,7 +307,7 @@ impl Review {
             .find(|entry| Some(&entry.key) == self.selected.as_ref())
         {
             let mut details = column![
-                text(&entry.title).size(22),
+                dialog_ui::heading(&entry.title),
                 text(status(entry.status)),
                 text(fl!("portal-jobs-existing-document"))
             ]
@@ -304,36 +325,66 @@ impl Review {
             }
             details.into()
         } else {
-            column![
-                text(if self.busy {
+            let empty_detail = if self.busy
+                || self.error.is_some()
+                || self.destination.is_none() && !self.printers.is_empty()
+            {
+                None
+            } else if self.printers.is_empty() {
+                Some(fl!("portal-jobs-setup-detail"))
+            } else if self.entries.is_empty() {
+                self.printers
+                    .iter()
+                    .find(|choice| Some(&choice.destination) == self.destination.as_ref())
+                    .map(|choice| fl!("portal-jobs-empty-for", printer = choice.to_string()))
+            } else {
+                Some(fl!("portal-jobs-held-hint"))
+            };
+            let mut summary = column![
+                dialog_ui::heading(if self.busy {
                     fl!("portal-recovery-checking")
                 } else if self.error.is_some() {
                     fl!("portal-jobs-unavailable")
-                } else if self.destination.is_none() && !self.printers.is_empty() {
+                } else if self.printers.is_empty() {
+                    fl!("portal-jobs-no-printers")
+                } else if self.destination.is_none() {
                     fl!("portal-jobs-select-printer")
                 } else if self.entries.is_empty() {
                     fl!("portal-jobs-empty")
                 } else {
                     fl!("portal-jobs-select-job")
                 })
-                .size(22),
-                text(fl!("portal-jobs-held-hint"))
+                .size(18)
             ]
-            .spacing(16)
-            .into()
+            .spacing(8);
+            if let Some(detail) = empty_detail {
+                summary = summary.push(dialog_ui::detail(detail));
+            }
+            if self.printers.is_empty() && !self.busy && self.error.is_none() {
+                summary = summary.push(dialog_ui::action(
+                    text(fl!("portal-jobs-open-settings")),
+                    Some(Message::OpenPrinterSettings),
+                    canopa_ui::Action::Normal,
+                    false,
+                ));
+            }
+            summary.into()
         };
         let selected = self
             .printers
             .iter()
             .find(|choice| Some(&choice.destination) == self.destination.as_ref())
             .cloned();
+        let details = container(details)
+            .padding(16)
+            .width(Length::Fill)
+            .style(dialog_ui::card);
         let mut content = column![
             canopa_ui::direction::row([
-                text(fl!("portal-jobs-title"))
-                    .size(28)
+                dialog_ui::heading(fl!("portal-jobs-title"))
                     .width(Length::Fill)
                     .into(),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-print-refresh")),
                     (!self.busy).then_some(Message::Refresh),
                     canopa_ui::Action::Normal,
@@ -341,39 +392,60 @@ impl Review {
                 )
                 .into(),
             ])
+            .align_y(iced::Center)
             .spacing(10),
-            pick_list(self.printers.clone(), selected, Message::Destination).width(Length::Fill),
+        ]
+        .spacing(14);
+        if !self.printers.is_empty() {
+            content = content.push(
+                column![
+                    dialog_ui::section(fl!("portal-jobs-printer")),
+                    pick_list(self.printers.clone(), selected, Message::Destination)
+                        .placeholder(fl!("portal-jobs-select-printer"))
+                        .width(Length::Fill),
+                ]
+                .spacing(5),
+            );
+        }
+        let details = scrollable(details)
+            .style(canopa_ui::scrollbar)
+            .height(Length::Fill);
+        let body: Element<'_, Message> = if self.entries.is_empty() {
+            details.width(Length::Fill).into()
+        } else {
             canopa_ui::direction::row([
                 scrollable(entries)
+                    .style(canopa_ui::scrollbar)
                     .spacing(6)
                     .width(Length::FillPortion(2))
                     .into(),
-                scrollable(details)
-                    .spacing(6)
-                    .width(Length::FillPortion(3))
-                    .into(),
+                details.width(Length::FillPortion(3)).into(),
             ])
-            .spacing(22)
+            .spacing(16)
             .height(Length::Fill)
-        ]
-        .spacing(18);
+            .into()
+        };
+        content = content.push(body);
         if let Some(notice) = &self.notice {
             content = content.push(text(notice));
         }
         if let Some(error) = &self.error {
             content = content.push(text(error));
         }
-        content = content.push(canopa_ui::action(
+        let actions = dialog_ui::footer([dialog_ui::action(
             text(fl!("portal-close")),
             Some(Message::Close),
             canopa_ui::Action::Normal,
             false,
-        ));
-        container(content)
-            .padding(24)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        )
+        .into()]);
+        dialog_ui::frame(
+            container(content)
+                .padding([20, 24])
+                .width(Length::Fill)
+                .height(Length::Fill),
+            actions,
+        )
     }
 }
 fn status(status: Status) -> String {

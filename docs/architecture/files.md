@@ -37,7 +37,7 @@ The crate has three layers. Each lower layer builds and tests without the one ab
 |---|---|---|
 | Domain | none (always built) | Filesystem and browsing semantics: directories, search, previews, preferences, the operation engine and its journal, Trash, archives, opening rules. No threads of its own beyond workers it is handed. |
 | Runtime | `local-runtime` (= `background-actions` + `background-operations` + GIO/GLib) | Admission, queues, cancellation, progress, questions, attention, persistence, reconciliation, clipboard intent, activation, FileManager1, the volume helper, and the lifetime of accepted work. |
-| Frontend | `desktop` (= `local-runtime` + `media-playback` + Iced + `canopa-ui` + `wayland-clipboard`) | Windows, focus, drafts, geometry, rendering and native transports. It turns input into typed commands and renders bounded snapshots. |
+| Frontend | `desktop` (= `local-runtime` + `media-playback` + `browser-ui` + `wayland-clipboard`) | Windows, focus, drafts, geometry, rendering and native transports. It turns input into typed commands and renders bounded snapshots. |
 
 The binary requires `desktop`; default features are `desktop` and
 `accessibility-testing`. `media-playback` links GStreamer core/app/video directly.
@@ -45,10 +45,13 @@ The binary requires `desktop`; default features are `desktop` and
 `--no-default-features`.
 
 The XDG desktop portal's FileChooser (`crates/canopa-portal`) depends on
-`canopa-files` with `default-features = false` and reuses its domain browsing model
-(`browse::{Browser, Directory, Entry, SelectionMode}`, `personal_folders`,
-`interface::PlaceKind`, `Cancellation`). The lower-level crate
-[`canopa-file`](../../crates/canopa-file/src/lib.rs) is shared by most of the
+`canopa-files` with `default-features = false` and `browser-ui`. It reuses its
+domain browsing model (`browse::{Browser, Directory, Entry, SelectionMode}`,
+`personal_folders`, `interface::PlaceKind`, `Cancellation`), and the same
+Iced widgets for breadcrumbs and file rows, plus the same browser surfaces,
+field styling and glyphs. The `browser-ui` feature exposes this presentation
+without the resident application and file operations runtime. The lower-level
+crate [`canopa-file`](../../crates/canopa-file/src/lib.rs) is shared by most of the
 workspace; Files uses its bounded reads, shared-mime-info database (`mime`),
 inotify watcher (`watch`) and byte-preserving GTK bookmarks editor (`gtk_bookmarks`).
 
@@ -63,6 +66,7 @@ Paths are relative to `crates/canopa-files/src/`.
 | `activation.rs` | Single owner per state directory, `runtime.lock`, private launch socket and frames. |
 | `file_manager.rs`, `presentation.rs` | `org.freedesktop.FileManager1` on the session bus; renderer-independent window intents (browsers, Quick Look, Properties). |
 | `browse.rs` | `Browser` (location, selection, focus, history) and immutable `Directory` snapshots. |
+| `browser_ui.rs`, `browser_ui/` | Breadcrumbs, file rows, text layout, browser chrome and glyphs shared with the portal picker. |
 | `folder_watch.rs` | One inotify worker for displayed folders (via `canopa_file::watch`). |
 | `search.rs`, `recent.rs` | Filename/content search with filters; `recently-used.xbel` reading and recording. |
 | `preview.rs`, `preview/`, `syntax.rs`, `playback.rs`, `playback/` | Quick Look preparation (image, PDF, text with highlighting, folder, binary) and the GStreamer playback worker. |
@@ -140,6 +144,21 @@ filesystem changes until Files restarts.
 The volume helper is the same executable re-run as
 `/proc/self/exe --internal-volume-monitor`, because GIO's volume monitor needs its
 own main context. It speaks bounded, versioned frames over a pipe and exits on EOF.
+
+### Picker mode
+
+The FileChooser portal starts `canopa-files` as a dedicated helper for each
+OpenFile, SaveFile or SaveFiles request. Picker mode uses the regular Files
+window, configured Places and bookmarks, search, folder views and the mounted
+device list. The picker reads Recent when selecting files to open. Open returns
+the user's selection and Save returns the destination, after confirmation for an
+existing file. Browsing and view changes stay local to that window.
+
+The helper runs without claiming the resident instance or starting the Files
+operation or action queues. Device discovery uses the same volume observer with
+in-memory state. Picker mode can navigate to mounted paths and create folders
+from Save. The portal owns cancellation and validates the reply, and the
+frontend grants document access.
 
 ### FileManager1
 

@@ -63,8 +63,9 @@ def verify(binary, session, scheme, scale):
         + f'os.execl({str(chosen)!r}, {str(chosen)!r})\n')
     recorder.chmod(0o755)
     for label in ['Alpha', 'Beta']:
+        pdf_type = 'application/pdf;' if label == 'Beta' else ''
         (applications / f'{label.lower()}.desktop').write_text(
-            f'[Desktop Entry]\nType=Application\nName={label} Viewer\nGenericName=Fixture application\nExec={recorder} {label} %u\nIcon=fixture-{label.lower()}\nMimeType=x-scheme-handler/canopa-test;\nStartupNotify=true\n')
+            f'[Desktop Entry]\nType=Application\nName={label} Viewer\nGenericName=Fixture application\nExec={recorder} {label} %u\nIcon=fixture-{label.lower()}\nMimeType=x-scheme-handler/canopa-test;{pdf_type}\nStartupNotify=true\n')
     (applications / 'mimeinfo.cache').write_text('[MIME Cache]\nx-scheme-handler/canopa-test=alpha.desktop;beta.desktop;\n')
     (config.parent.parent / 'mimeapps.list').write_text('[Default Applications]\nx-scheme-handler/canopa-test=alpha.desktop;\n[Added Associations]\nx-scheme-handler/canopa-test=alpha.desktop;beta.desktop;\n')
     icons = data / 'icons/hicolor/scalable/apps'
@@ -159,14 +160,14 @@ def verify(binary, session, scheme, scale):
 
     # The same direct caller owns the live choice update and Close operations.
     pending = {}
-    def begin(number, choices):
+    def begin(number, choices, **options):
         path = f'/org/freedesktop/portal/desktop/request/test/native{number}'
         def done(conn, result):
             try:
                 pending[path] = conn.call_finish(result).unpack()
             except GLib.Error as error:
                 pending[path] = error
-        connection.call('org.freedesktop.impl.portal.desktop.canopa', '/org/freedesktop/portal/desktop', 'org.freedesktop.impl.portal.AppChooser', 'ChooseApplication', GLib.Variant('(ossasa{sv})', (path, 'org.canopa.Test', exported, choices, {'activation_token': GLib.Variant('s', 'fixture-stale-incoming')})), None, Gio.DBusCallFlags.NONE, 15000, None, done)
+        connection.call('org.freedesktop.impl.portal.desktop.canopa', '/org/freedesktop/portal/desktop', 'org.freedesktop.impl.portal.AppChooser', 'ChooseApplication', GLib.Variant('(ossasa{sv})', (path, 'org.canopa.Test', exported, choices, {'activation_token': GLib.Variant('s', 'fixture-stale-incoming'), **options})), None, Gio.DBusCallFlags.NONE, 15000, None, done)
         focus()
         return path
 
@@ -194,6 +195,21 @@ def verify(binary, session, scheme, scale):
     session.wait_for(lambda: (drain(), pending.get(path))[1], 'Close response')
     assert pending[path][0] == 1, pending[path]
     checks.append('native Request.Close destroys the helper')
+    path = begin(
+        4, ['alpha.desktop', 'beta'],
+        content_type=GLib.Variant('s', 'application/pdf'),
+        filename=GLib.Variant('s', 'Field guide.pdf'),
+        last_choice=GLib.Variant('s', 'alpha.desktop'),
+    )
+    session.capture('04-file-type-priority.png')
+    chord('f')
+    keys('Return')
+    session.wait_for(lambda: (drain(), pending.get(path))[1], 'file type choice')
+    status, result = pending[path]
+    assert status == 0 and result['choice'] == 'beta', pending[path]
+    session.wait_for(lambda: chooser() is None, 'typed chooser closes')
+    checks.append('known PDF handler outranks an unrelated recent app and retains the offered ID')
+
     trace = (session.output / 'dbus.log').read_text()
     assert 'set_serial' in trace and 'get_activation_token' in trace
     assert 'activate("fixture-stale-incoming"' in trace

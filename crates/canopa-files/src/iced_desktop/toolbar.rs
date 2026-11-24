@@ -6,8 +6,7 @@ use crate::actions::CustomAction;
 use canopa_theme::{ColorRole, UiKind};
 use iced::{
     Alignment, Length,
-    font::Weight,
-    widget::{button, column, container, responsive, row, scrollable, text, text_input, tooltip},
+    widget::{column, container, row, scrollable, text, text_input, tooltip},
 };
 
 const SIDE_PADDING: f32 = 14.0;
@@ -35,6 +34,9 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
             } else if id == VIEW_ITEM {
                 Some(Item::View)
             } else if let Some(id) = id.strip_prefix("action:") {
+                if desktop.picker.is_some() {
+                    return None;
+                }
                 desktop
                     .configuration
                     .actions
@@ -43,7 +45,13 @@ fn items(desktop: &Desktop) -> Vec<Item<'_>> {
                     .map(Item::Action)
             } else {
                 Command::from_id(id)
-                    .filter(|command| !command.never_on_toolbar())
+                    .filter(|command| {
+                        !command.never_on_toolbar()
+                            && desktop
+                                .picker
+                                .as_ref()
+                                .is_none_or(|picker| picker.allows(*command))
+                    })
                     .map(Item::Builtin)
             }
         })
@@ -144,7 +152,7 @@ fn enabled(desktop: &Desktop, command: Command, tab: &Tab) -> bool {
                 && desktop.file_operations.storage_error.is_none()
                 && !browser.selected().is_empty()
         }
-        Command::NewFolder => desktop.file_operations.ready(),
+        Command::NewFolder => desktop.picker.is_some() || desktop.file_operations.ready(),
         Command::Trash | Command::DeletePermanently => {
             desktop.file_operations.ready() && !browser.selected().is_empty()
         }
@@ -250,201 +258,54 @@ fn breadcrumb<'a>(
     tab: &'a Tab,
     compact: bool,
 ) -> Element<'a, Message> {
+    use crate::browser_ui::breadcrumb;
+
     let appearance = &desktop.configuration.appearance;
     let font = canopa_ui::font(appearance);
-    let mut current_font = font;
-    current_font.weight = Weight::Semibold;
-    let size = appearance.typography().body_size.px();
-    let path = tab.path();
-    let within_home = path.starts_with(&desktop.home);
-    let mut ancestors: Vec<_> = path
-        .ancestors()
-        .take_while(|ancestor| !within_home || ancestor.starts_with(&desktop.home))
-        .map(|ancestor| {
-            let name = if ancestor == desktop.home {
-                fl!("files-place-home")
-            } else {
-                ancestor
-                    .file_name()
-                    .unwrap_or(ancestor.as_os_str())
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            (ancestor, name)
-        })
-        .collect();
-    let current = ancestors.remove(0).1;
-    let current_width = chrome::text_width(&current, current_font, size);
-    let ancestors: Vec<_> = ancestors
-        .into_iter()
-        .map(|(path, label)| {
-            let width = chrome::text_width(&label, font, size);
-            (path, label, width)
-        })
-        .collect();
-
-    let input_style = appearance.style(UiKind::Input);
-    let mut padding = canopa_ui::content_padding(input_style);
-    let button_inset = if compact { 3.0 } else { 6.0 };
-    if compact && !input_style.custom_padding {
-        padding.left -= 6.0;
-        padding.right -= 6.0;
-    }
-    let crumbs = responsive(move |bounds| {
-        let origin_width = if compact { 0.0 } else { 34.0 };
-        let mut available = bounds.width - current_width - origin_width - 2.0 * button_inset;
-        let count = ancestors
-            .iter()
-            .take_while(|(_, _, width)| {
-                available -= width + 20.0;
-                available >= 0.0
-            })
-            .count();
-        let origin_icon = desktop.icons.chrome(
-            if within_home {
-                Icon::Home
-            } else {
-                Icon::Folder
-            },
-            18.0,
-            0.87,
-        );
-        let origin: Element<'_, Message> = if within_home && count < ancestors.len() {
-            let message = Message::Go(id, desktop.home.clone());
-            let home = crumb_button(origin_icon, message.clone()).padding([4, 2]);
-            let home: Element<'_, Message> =
-                if tab.search.is_some() || desktop.action_menu.is_some() {
-                    home.into()
-                } else {
-                    tooltip(
-                        home,
-                        text(fl!("files-place-home")).font(font).size(size),
-                        tooltip::Position::Bottom,
-                    )
-                    .padding(6)
-                    .style(super::chrome::tooltip_style)
-                    .into()
-                };
-            a11y::named_button(
-                "files-crumb-home",
-                fl!("files-place-home"),
-                Some(message),
-                home,
-            )
-        } else {
-            container(origin_icon).padding([0, 2]).into()
-        };
-        // In reading order; mirrored for right-to-left languages.
-        let mut trail: Vec<Element<'_, Message>> = Vec::new();
-        // When space is tight, keep a clickable parent instead of using
-        // the same room for a Home icon. Places still exposes Home.
-        if !compact || count == 0 {
-            trail.push(origin);
-            if within_home && count != 0 && count < ancestors.len() {
-                trail.push(desktop.icons.chrome(Icon::Forward, 12.0, 0.82));
-            }
-        }
-        for (path, label, _) in ancestors[..count].iter().rev() {
-            let message = Message::Go(id, (*path).to_owned());
-            trail.push(a11y::named_button(
-                format!("files-crumb-{}", a11y::path_key(path)),
-                label.clone(),
-                Some(message.clone()),
-                crumb_button(
-                    text(label.clone())
-                        .font(font)
-                        .size(size)
-                        .shaping(text::Shaping::Advanced)
-                        .color(chrome::ink(appearance, ColorRole::Muted))
-                        .wrapping(text::Wrapping::None),
-                    message,
-                )
-                .padding([4, 4]),
-            ));
-            trail.push(desktop.icons.chrome(Icon::Forward, 12.0, 0.82));
-        }
-        let edit = Message::Command(id, Command::Location);
-        trail.push(semantic(
-            Node::button(current.clone())
-                .key("files-crumb-current")
-                .description(fl!("files-crumb-current-description"))
-                .on_click(Some(edit.clone())),
-            crumb_button(
-                chrome::single_line(current.clone(), current_font, size, None, false),
-                edit,
-            )
-            .padding([4.0, button_inset])
-            .width(Length::Fill),
-        ));
-        canopa_ui::direction::row(trail)
-            .align_y(Alignment::Center)
-            .into()
-    })
-    .height(Length::Shrink);
-
-    // The path's own search button; while searching, the field's cross closes it.
-    // The current folder's name still opens the location for typing.
-    let edit = crumb_button(
+    let show_tooltips = tab.search.is_none() && desktop.action_menu.is_none();
+    let search = Message::Command(id, Command::Search);
+    let inset = if compact { 3.0 } else { 6.0 };
+    let button = breadcrumb::crumb_button(
         desktop.icons.chrome(Icon::Search, 17.0, 0.93),
-        Message::Command(id, Command::Search),
+        Some(search.clone()),
     )
-    .padding([4.0, button_inset]);
-    let edit: Element<'_, Message> = if tab.search.is_some() || desktop.action_menu.is_some() {
-        edit.into()
-    } else {
+    .padding([4.0, inset]);
+    let control: Element<'_, Message> = if show_tooltips {
         tooltip(
-            edit,
+            button,
             text(Command::Search.label())
                 .font(font)
                 .size(appearance.typography().label_size.px()),
             tooltip::Position::Bottom,
         )
         .padding(6)
-        .style(super::chrome::tooltip_style)
+        .style(chrome::tooltip_style)
         .into()
+    } else {
+        button.into()
     };
-    let edit = a11y::named_button(
+    let search = a11y::named_button(
         "files-search-open",
         Command::Search.label(),
-        Some(Message::Command(id, Command::Search)),
-        edit,
+        Some(search),
+        control,
     );
-    container(
-        canopa_ui::direction::row([crumbs.into(), edit])
-            .spacing(2)
-            .align_y(Alignment::Center),
+    breadcrumb::view(
+        breadcrumb::Location {
+            appearance,
+            path: tab.path(),
+            home: &desktop.home,
+            home_label: fl!("files-place-home"),
+            key_prefix: "files-crumb",
+            edit_description: fl!("files-crumb-current-description"),
+            edit: Some(Message::Command(id, Command::Location)),
+            compact,
+            show_tooltips,
+        },
+        |icon, size, opacity| desktop.icons.chrome(icon, size, opacity),
+        move |path| Some(Message::Go(id, path.to_owned())),
+        Some(search),
     )
-    .width(Length::Fill)
-    .height((size * 1.3).ceil() + padding.top + padding.bottom)
-    .align_y(Alignment::Center)
-    .padding(iced::Padding {
-        top: 0.0,
-        right: padding.right,
-        bottom: 0.0,
-        left: padding.left,
-    })
-    .clip(true)
-    .style(move |theme| {
-        let input = view::input_style(appearance, theme, text_input::Status::Active);
-        container::Style::default()
-            .background(input.background)
-            .border(input.border)
-    })
-    .into()
-}
-
-fn crumb_button<'a>(
-    content: impl Into<Element<'a, Message>>,
-    message: Message,
-) -> button::Button<'a, Message> {
-    button(content)
-        .padding([4, 6])
-        .on_press(message)
-        .style(|theme, status| {
-            let mut style = canopa_ui::action_style(theme, status, canopa_ui::Action::Quiet, false);
-            style.border.radius = 6.0.into();
-            style
-        })
 }
 
 fn control<'a>(
@@ -589,7 +450,17 @@ fn control<'a>(
 
 pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> Element<'a, Message> {
     let appearance = &desktop.configuration.appearance;
-    let items = items(desktop);
+    let mut items = items(desktop);
+    if desktop
+        .picker
+        .as_ref()
+        .is_some_and(|picker| picker.allows(Command::NewFolder))
+        && !items
+            .iter()
+            .any(|item| matches!(item, Item::Builtin(Command::NewFolder)))
+    {
+        items.push(Item::Builtin(Command::NewFolder));
+    }
     let source = desktop.action_source(id);
     let button_style = appearance.style(UiKind::Button);
     let mut menu_padding = canopa_ui::content_padding(button_style);
@@ -715,7 +586,8 @@ pub(super) fn view<'a>(desktop: &'a Desktop, id: window::Id, tab: &'a Tab) -> El
     let mut additional = row![].spacing(6).align_y(Alignment::Center);
     let mut has_additional = false;
     for action in &desktop.configuration.actions {
-        if action.toolbar
+        if desktop.picker.is_none()
+            && action.toolbar
             && !items
                 .iter()
                 .any(|item| matches!(item, Item::Action(existing) if existing.id == action.id))

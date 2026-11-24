@@ -1534,3 +1534,40 @@ files-report-not-started = { $count ->
 files-preview-regular-only = seuls les fichiers ordinaires peuvent être prévisualisés
 files-preview-too-large = le fichier dépasse la taille maximale de l’aperçu
 files-properties-access-changed = L’élément a changé ou est un lien ; ses droits d’accès n’ont pas été modifiés.
+
+# File chooser mode
+files-picker-new-folder = Nouveau dossier
+files-picker-name-label = Nom
+files-picker-file-name = Nom du fichier
+files-picker-save-many = { $count ->
+    [one] Choisissez un dossier pour { $count } fichier
+   *[other] Choisissez un dossier pour { $count } fichiers
+}
+files-picker-file-type = Type de fichier
+files-picker-read-only = Ouvrir en lecture seule
+files-picker-accept-open = Ouvrir
+files-picker-accept-save = Enregistrer
+files-picker-folder-name = Nom du dossier
+files-picker-overwrite-title = Remplacer les fichiers existants ?
+files-picker-overwrite-question = La destination existe déjà. Autoriser l’application à la remplacer ?
+files-picker-overwrite-more = { $count ->
+    [one] et { $count } autre
+   *[other] et { $count } autres
+}
+files-picker-keep-choosing = Continuer à choisir
+files-picker-replace = Remplacer
+files-picker-review-replacement = Remplacer…
+files-picker-choose-existing-folder = Choisissez un dossier existant
+files-picker-select-file = Sélectionnez un fichier
+files-picker-select-type = Sélectionnez le type de fichier demandé
+files-picker-one-file-name = Saisissez un seul nom de fichier, sans chemin de dossier
+files-picker-choose-folder = Choisissez un dossier
+files-picker-invalid-name = Nom de fichier non valide
+files-picker-distinct-names = Les noms des fichiers à enregistrer doivent être différents
+files-picker-special-destination = La destination est un dossier ou un fichier spécial
+files-picker-absolute-folder = Choisissez un chemin de dossier absolu
+files-picker-folder-changed = L’emplacement du dossier a changé. Choisissez-le à nouveau.
+files-picker-folder-name-rule = Saisissez un seul nom de dossier, sans barre oblique, de 255 octets au maximum
+files-picker-requested-by = Demandé par { $requester }
+files-picker-existing = Une confirmation sera demandée avant de remplacer ce fichier.
+files-picker-local-folder = Saisissez un dossier local ou un emplacement monté.

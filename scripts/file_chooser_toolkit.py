@@ -146,14 +146,15 @@ def verify(args, session, result, build):
             for path in libraries:
                 if path not in result['pins']:result['pins'][path] = digest(Path(path))
             children = {int(pid) for task in Path(f'/proc/{backend}/task').iterdir() for pid in (task / 'children').read_text().split()}
-            helpers = [pid for pid in children if b'--file-chooser' in Path(f'/proc/{pid}/cmdline').read_bytes()]
+            helpers = [pid for pid in children if b'--internal-picker' in Path(f'/proc/{pid}/cmdline').read_bytes()]
             assert len(helpers) == 1, helpers
             clients[-1]['helper_pid'] = helpers[0]
+            assert Path(f'/proc/{helpers[0]}/exe').resolve() == args.binary.with_name('canopa-files')
             helper_maps = Path(f'/proc/{helpers[0]}/maps').read_text()
             assert 'libgtk-' not in helper_maps
             if mode == 'open':
                 session.capture('01-' + args.toolkit + '-opens-iced.png')
-                click(320, 218)
+                key('End')
             if mode == 'cancel': key('Escape')
             else:
                 width, height = chooser()['layout']['window_size']
@@ -213,7 +214,7 @@ def main(toolkit):
     assert shutil.disk_usage(ROOT).free > 3 * 1024**3
     source = source_for(toolkit)
     receipt, build = client_build(toolkit)
-    pins = {str(p):digest(p) for p in [Path(__file__), Path(sys.argv[0]).resolve(), source, args.binary, args.frontend, Path(build['program']), ROOT / 'scripts/portal-config.py', ROOT / 'scripts/validate-desktop.py']}
+    pins = {str(p):digest(p) for p in [Path(__file__), Path(sys.argv[0]).resolve(), source, args.binary, args.binary.with_name('canopa-files'), args.frontend, Path(build['program']), ROOT / 'scripts/portal-config.py', ROOT / 'scripts/validate-desktop.py']}
     result = dict(status='running', checks=[], pins=pins, client_build=str(receipt), client=build,
                   toolkit=toolkit, sandbox=False)
     if toolkit == 'qt':result.update(qt_platform='wayland', qt_platform_theme='xdgdesktopportal')

@@ -369,6 +369,19 @@ struct SearchView {
     folder: FolderState,
 }
 
+type EntryPredicate = dyn Fn(&Entry) -> bool + Send + Sync;
+
+#[derive(Clone)]
+struct EntryFilter(std::sync::Arc<EntryPredicate>);
+
+impl std::fmt::Debug for EntryFilter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("EntryFilter")
+            .finish_non_exhaustive()
+    }
+}
+
 /// One tab's browsing state. Visible column count is a projection, not navigation.
 #[derive(Clone, Debug)]
 pub struct Browser {
@@ -376,6 +389,7 @@ pub struct Browser {
     folder: FolderState,
     remembered: BTreeMap<PathBuf, FolderState>,
     show_hidden: bool,
+    entry_filter: Option<EntryFilter>,
     search: Option<SearchView>,
     history: Vec<PathBuf>,
     history_index: usize,
@@ -397,6 +411,7 @@ impl Browser {
             folder: FolderState::default(),
             remembered: BTreeMap::new(),
             show_hidden: false,
+            entry_filter: None,
             search: None,
             history,
             history_index: 0,
@@ -571,7 +586,30 @@ impl Browser {
         }
     }
 
+    #[cfg(feature = "desktop")]
+    pub(crate) fn set_entry_filter(
+        &mut self,
+        predicate: impl Fn(&Entry) -> bool + Send + Sync + 'static,
+    ) {
+        self.entry_filter = Some(EntryFilter(std::sync::Arc::new(predicate)));
+        self.prune_selection();
+    }
+
+    pub(crate) fn includes(&self, entry: &Entry) -> bool {
+        self.entry_filter
+            .as_ref()
+            .is_none_or(|filter| (filter.0)(entry))
+    }
+
     pub fn visible_entries(&self) -> Vec<&Entry> {
+        let mut entries = self.visible_unfiltered();
+        if self.entry_filter.is_some() {
+            entries.retain(|entry| self.includes(entry));
+        }
+        entries
+    }
+
+    fn visible_unfiltered(&self) -> Vec<&Entry> {
         if let Some(search) = &self.search {
             search
                 .results

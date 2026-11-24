@@ -126,7 +126,7 @@ def verify(binary, session, scheme, scale):
         session.wait_for(lambda: not any(w['id'] == window['id'] for w in windows()), 'Account helper closes')
     def action(window, share):
         width, height = window['layout']['window_size']
-        click(20 + width * (.75 if share else .25), 10 + height - 36)
+        click(20 + width - (62 if share else 148), 10 + height - 30)
 
     checks, pending, responses = [], {}, {}
     subscription = connection.signal_subscribe('org.freedesktop.portal.Desktop', 'org.freedesktop.portal.Request', 'Response', None, None, Gio.DBusSignalFlags.NONE,
@@ -170,10 +170,10 @@ def verify(binary, session, scheme, scale):
     checks.append('fixture-only profile loads; initial Enter does not share; explicit Cancel returns no fields')
 
     path, window = begin()
-    edit(180, 390, 'reviewed-user')
-    edit(180, 468, 'Reviewed Name')
+    edit(180, 341, 'reviewed-user')
+    edit(180, 412, 'Reviewed Name')
     # Returning from the same-window picker must keep edited fields and choices.
-    click(225, 225)
+    click(225, 205)
     time.sleep(.6)
     assert len([w for w in windows() if w['app_id'] == 'org.canopa.Portal']) == 1
     session.capture('02-embedded-picker.png')
@@ -197,12 +197,16 @@ def verify(binary, session, scheme, scale):
     checks.append('editable draft survives embedded picker Cancel; reviewed PNG survives source removal and helper exit')
 
     path, window = begin()
-    click(225, 225)
+    click(225, 205)
     time.sleep(.5)
-    session.run(['wtype', '-M', 'ctrl', '-k', 'l', '-k', 'a', '-m', 'ctrl', str(pictures), '-k', 'Return'])
+    session.run(['wtype', '-M', 'ctrl', '-k', 'l', '-m', 'ctrl'])
+    time.sleep(.2)
+    session.run(['wtype', '-M', 'ctrl', '-k', 'a', '-m', 'ctrl', str(pictures), '-k', 'Return'])
     time.sleep(.5)
-    # The filtered picker contains just new.png. Its explicit Open selects it.
-    click(655, 185)
+    # Select the sole matching image in the shared file list, then confirm it.
+    click(260, 164)
+    time.sleep(.2)
+    action(window, True)
     time.sleep(.7)
     session.capture('04-new-avatar.png')
     action(window, True)
@@ -216,9 +220,9 @@ def verify(binary, session, scheme, scale):
     checks.append('embedded image selection returns to the same draft and publishes the chosen pixels')
 
     path, window = begin()
-    click(48, 320)
-    click(48, 355)
-    click(48, 435)
+    click(156, 242)
+    click(64, 304)
+    click(64, 376)
     session.capture('05-excluded-fields.png')
     action(window, True)
     assert result(path, 0) == {'id': '', 'name': '', 'image': ''}
@@ -226,7 +230,7 @@ def verify(binary, session, scheme, scale):
     checks.append('explicit field exclusions return complete empty-string result shape')
 
     path, window = begin()
-    click(225, 275)
+    click(350, 205)
     action(window, True)
     cleared = result(path, 0)
     assert cleared == {'id': 'fixture-user', 'name': 'Fixture Name', 'image': ''}, cleared
@@ -235,7 +239,7 @@ def verify(binary, session, scheme, scale):
     checks.append('Clear removes only the shared image draft and leaves the local profile source unchanged')
 
     path, window = begin()
-    click(225, 225)
+    click(225, 205)
     time.sleep(.4)
     session.run(['niri', 'msg', 'action', 'close-window', '--id', str(window['id'])])
     assert result(path, 1) == {}
@@ -257,9 +261,9 @@ def verify(binary, session, scheme, scale):
     checks.append('only the owning caller can Close its request')
 
     first, first_window = begin()
-    edit(180, 468, 'First draft')
+    edit(180, 412, 'First draft')
     second, second_window = begin()
-    edit(180, 468, 'Second draft')
+    edit(180, 412, 'Second draft')
     assert call('org.freedesktop.impl.portal.desktop.canopa', '/org/freedesktop/portal/desktop', 'org.freedesktop.impl.portal.Settings', 'ReadAll', '(as)', ([],))[0]
     action(second_window, True)
     assert result(second, 0)['name'] == 'Second draft'

@@ -164,7 +164,9 @@ Banners are Iced layer-shell surfaces that never take keyboard focus
 - Each card acknowledges its own first display, which starts its timeout
   ([ADR 0044](../notify/adr/0044-per-card-banner-display-acknowledgement.md)).
 - All named actions are shown ([ADR 0048](../notify/adr/0048-all-named-actions-in-banner-cards.md)).
-  The inline reply composer accepts up to 4,096 bytes.
+  With the default button style, a single action sizes to its label, while
+  multiple actions use the two-column layout. The inline reply composer
+  accepts up to 4,096 bytes.
 - Images are read and decoded on a worker with fixed limits (16 MiB per file,
   4,096 pixels per side) ([ADR 0036](../notify/adr/0036-bounded-banner-image-preparation.md)).
   Icons use an indexed, bounded icon-theme lookup that follows the desktop theme
@@ -236,9 +238,12 @@ The Center is daemon-owned content hosted by the Shell
 generic rich panel content (`src/control_adapters.rs`, `control_adapters/pages.rs`).
 
 - The reading view is one list ordered newest first, with a Group by app toggle,
-  unread dots, per-item actions (Open, Dismiss, Mark as read, Remove, Reply), Mark
+  labeled unread indicators, per-item actions (Open, Dismiss, Mark as read, Remove,
+  Reply), Mark
   all read, Clear all with a 30 s Undo, and DND quick choices. A Settings view holds
-  per-app and per-category delivery choices and Delete history
+  per-app and per-category delivery choices and Delete history. The close
+  control dismisses live notifications and removes completed history entries.
+  Open stays a labeled action on the card
   ([ADR 0052](../notify/adr/0052-center-reading-and-settings-views.md),
   [ADR 0055](../notify/adr/0055-everyday-controls-lock-screen-and-portal-v2-presentation.md)).
 - Pages are built from keyset reads of at most 16 rows and capped at 1 MiB per
@@ -275,6 +280,8 @@ Shell-side hosting and protocol details: [shell.md](shell.md),
 - Ordinary portal notifications use the server-default timeout to hide the banner
   only; the notification and its actions stay live until the user acts or the
   application withdraws it. Application exit does not withdraw it.
+- The transport app ID owns the notification. Its localized desktop-entry name
+  supplies the sender label when available.
 - Icon and sound descriptors must be sealed; their contents are copied into
   bounded owned buffers before receipt.
 - Exported `app.*` actions and default activation call

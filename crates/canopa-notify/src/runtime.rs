@@ -912,6 +912,10 @@ impl NotificationRuntime {
                 })
                 .await
             }
+            NotificationCenterAction::Dismiss => {
+                self.dismiss_notification_for_revision(target.notification_id, target.revision)
+                    .await
+            }
             NotificationCenterAction::Remove => {
                 self.mutate(move |runtime| async move {
                     let removed = runtime

@@ -126,7 +126,7 @@ def verify(binary, session, scheme, scale, shipped):
 
     def action(window, accept):
         w, h = window['layout']['window_size']
-        click(20 + w * (.75 if accept else .25), 10 + h - 36)
+        click(20 + w - (65 if accept else 153), 10 + h - 30)
 
     def closed(window):
         session.wait_for(lambda: not any(w['id'] == window['id'] for w in windows()), 'launcher helper closes')
@@ -177,7 +177,7 @@ def verify(binary, session, scheme, scale, shipped):
                     pending[path] = error
             client.call(BACKEND, PATH, IMPL, 'PrepareInstall', GLib.Variant('(osssva{sv})', (path, 'org.canopa.PortalTest', exported, 'Original launcher', serialized(image_format), options)), None, Gio.DBusCallFlags.NONE, 30000, None, done)
         window = session.wait_for(lambda: (drain(), next((w for w in windows() if w['app_id'] == 'org.canopa.Portal' and w['id'] not in before), None))[1], 'launcher review window')
-        assert window['is_floating'] and abs(window['layout']['window_size'][0] - 680) <= 1, window
+        assert window['is_floating'] and abs(window['layout']['window_size'][0] - 620) <= 1, window
         focus(window)
         return path, window
 

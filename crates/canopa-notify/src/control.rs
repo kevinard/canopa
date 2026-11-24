@@ -399,6 +399,8 @@ pub enum NotificationCenterAction {
     },
     /// Acknowledge retained content, dismissing it if its sender lifecycle is still active.
     Acknowledge,
+    /// Dismiss the captured live revision without invoking a sender action.
+    Dismiss,
     /// Invoke the captured revision's default action, or dismiss if it has none.
     Activate,
     InvokeAction {

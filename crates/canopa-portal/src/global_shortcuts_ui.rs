@@ -1,4 +1,5 @@
 //! Explicit per-action consent and editable triggers in the shared Iced theme.
+use crate::dialog_ui;
 use crate::global_shortcuts::{
     self, Binding,
     editor::{Decision, Feedback, Request},
@@ -322,19 +323,18 @@ impl Dialog {
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
         let mut body = column![
-            text(if self.request.configuring {
+            dialog_ui::heading(if self.request.configuring {
                 fl!("portal-shortcuts-configure")
             } else {
                 fl!("portal-shortcuts-question")
-            })
-            .size(24),
-            text(self.name.as_deref().unwrap_or(&self.request.app_id)).size(18),
+            }),
+            dialog_ui::detail(fl!(
+                "portal-requested-by",
+                requester = self.name.as_deref().unwrap_or(&self.request.app_id)
+            )),
             text(fl!("portal-shortcuts-explanation")).size(14)
         ]
         .spacing(12);
-        if self.name.is_some() {
-            body = body.push(text(&self.request.app_id).size(12).style(canopa_ui::muted));
-        }
         let mut actions = column![].spacing(10);
         for (index, draft) in self.rows.iter().enumerate() {
             let mut toggle = checkbox(draft.enabled)
@@ -357,7 +357,9 @@ impl Dialog {
                 .width(Length::Fill)
                 .into()
             } else {
-                let mut input = text_input(&fl!("portal-shortcuts-placeholder"), &draft.trigger);
+                let mut input = text_input(&fl!("portal-shortcuts-none-chosen"), &draft.trigger)
+                    .padding([7, 10])
+                    .style(dialog_ui::field);
                 if !self.busy {
                     input = input.on_input(move |value| Message::Trigger(index, value));
                 }
@@ -366,7 +368,7 @@ impl Dialog {
             let can_record = !self.busy
                 && self.recording.is_none()
                 && self.inhibition == Some(window::keyboard_shortcuts::Status::Active);
-            let record = canopa_ui::action(
+            let record = dialog_ui::action(
                 text(if active.is_some() {
                     fl!("portal-shortcuts-cancel-recording")
                 } else {
@@ -377,13 +379,14 @@ impl Dialog {
                 } else {
                     can_record.then_some(Message::Record(index))
                 },
-                canopa_ui::Action::Quiet,
+                canopa_ui::Action::Normal,
                 false,
             );
             let mut item = column![
                 toggle,
-                canopa_ui::direction::row([trigger, record.into()]).spacing(8),
-                text(label(&draft.id)).size(12).style(canopa_ui::muted)
+                canopa_ui::direction::row([trigger, record.into()])
+                    .align_y(iced::Center)
+                    .spacing(8),
             ]
             .spacing(6);
             if let Some(recording) = active {
@@ -400,17 +403,26 @@ impl Dialog {
             if self.failed.contains(&draft.id) {
                 item = item.push(text(fl!("portal-shortcuts-unavailable")).size(13));
             }
-            actions = actions.push(
-                container(item)
-                    .padding(12)
-                    .width(Length::Fill)
-                    .style(canopa_ui::surface),
-            );
+            actions = actions.push(container(item).padding(12).width(Length::Fill).style(
+                move |theme| {
+                    let mut card = dialog_ui::card(theme);
+                    if draft.enabled {
+                        let colors = canopa_ui::colors(theme);
+                        card.background = Some(colors.accent.scale_alpha(0.11).into());
+                        card.border.color = colors.accent.scale_alpha(0.75);
+                    }
+                    card
+                },
+            ));
         }
         if self.rows.is_empty() {
             actions = actions.push(text(fl!("portal-shortcuts-none-requested")));
         }
-        body = body.push(scrollable(actions).height(Length::Fill));
+        body = body.push(
+            scrollable(actions)
+                .style(canopa_ui::scrollbar)
+                .height(Length::Fill),
+        );
         body = body.push(
             text(fl!("portal-shortcuts-syntax-hint"))
                 .size(12)
@@ -419,38 +431,54 @@ impl Dialog {
         if let Some(error) = &self.error {
             body = body.push(text(label(error)).size(14));
         }
-        body = body.push(
-            canopa_ui::direction::row([
-                canopa_ui::action(
-                    text(fl!("portal-cancel")),
-                    (!self.busy).then_some(Message::Cancel),
-                    canopa_ui::Action::Quiet,
-                    false,
-                )
-                .width(Length::Fill)
-                .into(),
-                canopa_ui::action(
-                    text(if self.busy {
-                        fl!("portal-shortcuts-applying")
-                    } else if self.request.configuring {
-                        fl!("portal-shortcuts-save")
-                    } else {
-                        fl!("portal-usb-allow-selected")
-                    }),
-                    (!self.busy && self.recording.is_none()).then_some(Message::Apply),
-                    canopa_ui::Action::Normal,
-                    false,
-                )
-                .width(Length::Fill)
-                .into(),
-            ])
-            .spacing(12),
-        );
-        container(body)
-            .padding(24)
+        let enabled = self.rows.iter().filter(|row| row.enabled).count();
+        let actions = canopa_ui::direction::row([
+            dialog_ui::detail(if self.request.configuring {
+                fl!("portal-shortcuts-edit-scope")
+            } else if enabled == 0 {
+                fl!("portal-shortcuts-no-selection")
+            } else {
+                fl!("portal-shortcuts-selected-count", count = enabled)
+            })
+            .size(13)
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .into(),
+            dialog_ui::action(
+                text(fl!("portal-cancel")),
+                (!self.busy).then_some(Message::Cancel),
+                canopa_ui::Action::Normal,
+                false,
+            )
+            .into(),
+            dialog_ui::action(
+                text(if self.busy {
+                    fl!("portal-shortcuts-applying")
+                } else if self.request.configuring {
+                    fl!("portal-shortcuts-save")
+                } else if enabled != 0 {
+                    fl!("portal-shortcuts-allow-count", count = enabled)
+                } else {
+                    fl!("portal-shortcuts-allow-none")
+                }),
+                (!self.busy && self.recording.is_none()).then_some(Message::Apply),
+                if self.request.configuring || self.rows.iter().any(|row| row.enabled) {
+                    canopa_ui::Action::Primary
+                } else {
+                    canopa_ui::Action::Normal
+                },
+                false,
+            )
+            .into(),
+        ])
+        .align_y(iced::Center)
+        .spacing(8);
+        dialog_ui::frame(
+            container(body)
+                .padding([20, 24])
+                .width(Length::Fill)
+                .height(Length::Fill),
+            actions,
+        )
     }
 }
 pub fn run(
@@ -469,7 +497,7 @@ pub fn run(
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(680.0, 640.0),
+                size: Size::new(680.0, 460.0),
                 min_size: Some(Size::new(440.0, 360.0)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {

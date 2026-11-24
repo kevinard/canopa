@@ -1,4 +1,5 @@
 //! Selection of an immutable capture; the helper never publishes an image file.
+use crate::dialog_ui;
 pub use crate::screenshot_image::{DialogInput, Selection};
 use crate::{
     screenshot::Kind,
@@ -34,6 +35,7 @@ pub fn run(
         .collect();
     let canvas = Canvas::new(&input.source.frames)?;
     let theme = canopa_ui::theme(appearance.clone());
+    let requester = dialog_ui::requester(&input.app_id);
     let font = canopa_ui::font(&appearance);
     let result = Arc::new(Mutex::new(None));
     let output = result.clone();
@@ -57,6 +59,7 @@ pub fn run(
             let (_, open) = window::open_dialog(parent, input.modal, settings);
             let mut dialog = Dialog {
                 input: input.clone(),
+                requester: requester.clone(),
                 file: file.clone(),
                 images: images.clone(),
                 canvas: canvas.clone(),
@@ -93,6 +96,7 @@ pub fn run(
 
 struct Dialog {
     input: DialogInput,
+    requester: String,
     file: Arc<File>,
     images: Vec<iced::widget::image::Handle>,
     canvas: Canvas,
@@ -299,51 +303,56 @@ impl Dialog {
         Task::none()
     }
     fn view(&self, _: window::Id) -> Element<'_, Message> {
-        let requester = if self.input.app_id.is_empty() {
-            fl!("portal-requesting-app")
-        } else {
-            let short: String = self.input.app_id.chars().take(120).collect();
-            if short.len() < self.input.app_id.len() {
-                format!("{short}…")
-            } else {
-                short
-            }
-        };
         let title = if self.mode == Kind::Color {
             fl!("portal-screenshot-color-title")
         } else {
             fl!("portal-screenshot-title")
         };
         let instruction = match self.mode {
-            Kind::Screen => fl!("portal-screenshot-screen-hint"),
+            Kind::Screen => fl!(
+                "portal-screenshot-screen-scope",
+                count = self.input.source.frames.len()
+            ),
             Kind::Window | Kind::ActiveWindow => fl!("portal-screenshot-window-hint"),
             Kind::Area => fl!("portal-screenshot-area-hint"),
             Kind::Color => fl!("portal-screenshot-color-hint"),
         };
         let mut top = column![
-            text(title).size(22),
-            text(fl!("portal-requested-by", requester = requester)).style(canopa_ui::muted)
+            dialog_ui::heading(title),
+            text(fl!(
+                "portal-requested-by",
+                requester = self.requester.as_str()
+            ))
+            .style(canopa_ui::muted)
         ]
         .spacing(8);
         if self.input.allow_area {
             let mut modes = row![
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-screenshot-mode-screen")),
                     Some(Message::Mode(Kind::Screen)),
-                    canopa_ui::Action::Normal,
-                    self.mode == Kind::Screen
+                    if self.mode == Kind::Screen {
+                        canopa_ui::Action::Primary
+                    } else {
+                        canopa_ui::Action::Normal
+                    },
+                    false
                 ),
-                canopa_ui::action(
+                dialog_ui::action(
                     text(fl!("portal-screenshot-mode-area")),
                     Some(Message::Mode(Kind::Area)),
-                    canopa_ui::Action::Normal,
-                    self.mode == Kind::Area
+                    if self.mode == Kind::Area {
+                        canopa_ui::Action::Primary
+                    } else {
+                        canopa_ui::Action::Normal
+                    },
+                    false
                 ),
             ]
             .spacing(8);
             if self.input.allow_window {
-                modes = modes.push(canopa_ui::action(
-                    text(fl!("portal-screenshot-mode-window")),
+                modes = modes.push(dialog_ui::action(
+                    text(fl!("portal-screenshot-mode-window-tab")),
                     Some(Message::ChooseWindow),
                     canopa_ui::Action::Normal,
                     false,
@@ -363,18 +372,27 @@ impl Dialog {
                     .pixel(&self.file, frame, x, y)
                     .unwrap_or([0; 4]);
                 let color = iced::Color::from_rgb8(rgba[0], rgba[1], rgba[2]);
-                let swatch = container(Space::new().width(28).height(28))
-                    .style(move |_| container::Style::default().background(color));
+                let swatch = container(Space::new().width(28).height(28)).style(move |theme| {
+                    container::Style::default().background(color).border(
+                        iced::Border::default()
+                            .rounded(6)
+                            .width(1)
+                            .color(canopa_ui::colors(theme).border),
+                    )
+                });
                 let mut line: Vec<Element<'_, Message>> = vec![
                     swatch.into(),
-                    text(fl!(
-                        "portal-screenshot-pixel",
-                        color = format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2]),
-                        x = x.to_string(),
-                        y = y.to_string(),
-                        display = self.input.source.frames[frame].name.as_str()
-                    ))
-                    .size(14)
+                    column![
+                        text(format!("#{:02X}{:02X}{:02X}", rgba[0], rgba[1], rgba[2])).size(20),
+                        dialog_ui::detail(fl!(
+                            "portal-screenshot-pixel-location",
+                            x = x.to_string(),
+                            y = y.to_string(),
+                            display = self.input.source.frames[frame].name.as_str()
+                        ))
+                        .size(13),
+                    ]
+                    .spacing(2)
                     .into(),
                 ];
                 if self.input.source.frames.len() > 1 {
@@ -388,7 +406,10 @@ impl Dialog {
                         .into(),
                     );
                 }
-                canopa_ui::direction::row(line).spacing(10).into()
+                canopa_ui::direction::row(line)
+                    .spacing(10)
+                    .align_y(iced::Center)
+                    .into()
             }
             Some(Selection::Image(rect)) => {
                 let rect = rect.unwrap_or(self.canvas.full());
@@ -404,12 +425,17 @@ impl Dialog {
                 .style(canopa_ui::muted)
                 .into()
             }
+            None if self.mode == Kind::Color => {
+                dialog_ui::detail(fl!("portal-screenshot-select-pixel")).into()
+            }
             None | Some(Selection::ChooseWindow) => text(fl!("portal-screenshot-select-area"))
                 .style(canopa_ui::muted)
                 .into(),
         };
         let scene = scene::Scene {
             frames: &self.input.source.frames,
+            source: &self.input.source,
+            file: &self.file,
             images: &self.images,
             canvas: &self.canvas,
             selected: self.selected.as_ref(),
@@ -418,35 +444,33 @@ impl Dialog {
             mode: self.mode,
             accent: self.theme.extended_palette().primary.base.color,
         };
-        let actions = canopa_ui::direction::row([
-            canopa_ui::action(
+        let actions = dialog_ui::footer([
+            dialog_ui::action(
                 text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
                 false,
             )
-            .width(Length::Fill)
             .into(),
-            canopa_ui::action(
+            dialog_ui::action(
                 text(if self.mode == Kind::Color {
                     fl!("portal-screenshot-use-color")
                 } else {
                     fl!("portal-share")
                 }),
                 self.valid().then_some(Message::Apply),
-                canopa_ui::Action::Normal,
+                canopa_ui::Action::Primary,
                 false,
             )
-            .width(Length::Fill)
             .into(),
-        ])
-        .spacing(12);
-        container(column![top, Element::new(scene), status, actions].spacing(14))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        ]);
+        dialog_ui::frame(
+            container(column![top, Element::new(scene), status].spacing(12))
+                .padding([18, 24])
+                .width(Length::Fill)
+                .height(Length::Fill),
+            actions,
+        )
     }
 }
 
@@ -487,6 +511,7 @@ mod tests {
             },
         };
         let mut result = Dialog {
+            requester: "Fixture".into(),
             input,
             file: Arc::new(file),
             images: vec![iced::widget::image::Handle::from_rgba(2, 2, pixels)],

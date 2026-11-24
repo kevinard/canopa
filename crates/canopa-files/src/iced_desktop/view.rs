@@ -10,24 +10,8 @@ use iced::{
     },
 };
 
-pub(super) fn entry_padding(appearance: &canopa_theme::Appearance, grid: bool) -> iced::Padding {
-    let style = appearance.style(UiKind::MenuRow);
-    let mut padding = canopa_ui::content_padding(style);
-    if !grid && !style.custom_padding {
-        padding.top -= 5.0;
-        padding.bottom -= 5.0;
-    }
-    padding
-}
-
-pub(super) fn row_height(appearance: &canopa_theme::Appearance) -> f32 {
-    let padding = entry_padding(appearance, false);
-    (appearance.typography().body_size.px() * 1.3)
-        .ceil()
-        .max(18.0)
-        + padding.top
-        + padding.bottom
-}
+use crate::browser_ui::entry::entry_padding;
+pub(super) use crate::browser_ui::entry::row_height;
 
 pub(super) fn entry_height(appearance: &canopa_theme::Appearance, searching: bool) -> f32 {
     row_height(appearance)
@@ -250,7 +234,11 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
                 let visible = if current {
                     browser.visible_entries()
                 } else {
-                    directory.visible_entries(browser.show_hidden(), child)
+                    directory
+                        .visible_entries(browser.show_hidden(), child)
+                        .into_iter()
+                        .filter(|entry| browser.includes(entry))
+                        .collect()
                 };
                 if visible.is_empty() {
                     entries = entries.push(keyed_row(
@@ -800,6 +788,9 @@ pub(super) fn browser(desktop: &Desktop, id: window::Id) -> Element<'_, Message>
             .padding([5, 20])
             .style(move |_| chrome::bar(appearance, false)),
     );
+    if let Some(picker) = &desktop.picker {
+        body = body.push(picker.footer(desktop, id));
+    }
     let shortcuts = if desktop
         .action_menu
         .as_ref()
@@ -1869,6 +1860,13 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
                 Message::Go(id, path.clone())
             }
         };
+        if desktop.picker.as_ref().is_some_and(|picker| match place {
+            Place::Builtin(PlaceKind::Trash | PlaceKind::Recovery) => true,
+            Place::Builtin(PlaceKind::Recent) => !picker.allows(Command::ShowRecent),
+            _ => false,
+        }) {
+            continue;
+        }
         let mut font = canopa_ui::font(appearance);
         if active {
             font.weight = Weight::Semibold;
@@ -2003,9 +2001,11 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
             .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
             .push(super::devices_ui::places(desktop, id));
     }
-    places = places
-        .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
-        .push(super::network_ui::places(desktop, id));
+    if desktop.picker.is_none() {
+        places = places
+            .push(container(rule::horizontal(1).style(chrome::divider)).padding([9, 8]))
+            .push(super::network_ui::places(desktop, id));
+    }
     container(scrollable(places).style(canopa_ui::scrollbar))
         .width(desktop.sidebar_width(id))
         .height(Length::Fill)
@@ -2015,51 +2015,7 @@ fn places(desktop: &Desktop, id: window::Id) -> Element<'_, Message> {
         .into()
 }
 
-pub(super) fn input_style(
-    appearance: &canopa_theme::Appearance,
-    theme: &Theme,
-    status: text_input::Status,
-) -> text_input::Style {
-    let hovered = matches!(
-        status,
-        text_input::Status::Hovered | text_input::Status::Focused { is_hovered: true }
-    );
-    let focused = matches!(status, text_input::Status::Focused { .. });
-    let style = appearance.style(UiKind::Input).state(
-        false,
-        hovered,
-        false,
-        status == text_input::Status::Disabled,
-        focused,
-    );
-    let frame = canopa_ui::frame(appearance, style);
-    let mut result = text_input::default(theme, status);
-    if let Some(background) = frame.background {
-        result.background = background;
-    }
-    if let Some(color) = frame.text_color {
-        result.value = color;
-    }
-    // Selected text reads clearly against the field, as in a pre-selected name.
-    result.selection = if appearance.high_contrast() {
-        chrome::ink(appearance, ColorRole::AccentSurface)
-    } else {
-        // Light enough that the selected characters keep their contrast.
-        chrome::ink(appearance, ColorRole::Accent).scale_alpha(
-            if appearance.color_scheme == canopa_theme::ColorScheme::Dark {
-                0.36
-            } else {
-                0.42
-            },
-        )
-    };
-    result.border = frame.border;
-    if focused && style.states[4].border_color.is_none() {
-        result.border.width = result.border.width.max(1.0);
-        result.border.color = canopa_ui::color(appearance.role(ColorRole::Focus));
-    }
-    result
-}
+pub(super) use crate::browser_ui::input_style;
 
 pub(super) fn relative_location(path: &Path, root: &Path) -> String {
     match path.strip_prefix(root) {

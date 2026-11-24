@@ -1,5 +1,6 @@
 use super::file_operations::{Event, Origin, Submission};
 use super::*;
+use crate::browser_ui::text_layout::stem_length;
 use crate::{
     archives::{ArchiveRequest, Format},
     operation_jobs::Request,
@@ -981,32 +982,6 @@ fn formats<'a>(desktop: &'a Desktop, dialog: &'a Dialog) -> Element<'a, Message>
 pub(super) fn batch_folder(paths: &[PathBuf]) -> Option<&Path> {
     let folder = paths.first()?.parent()?;
     (paths.len() > 1 && paths.iter().all(|path| path.parent() == Some(folder))).then_some(folder)
-}
-
-/// The length in graphemes of `name` before its extension, counting a
-/// compressed tarball's two suffixes as one; `None` without an extension.
-fn stem_length(name: &str) -> Option<usize> {
-    use unicode_segmentation::UnicodeSegmentation;
-    const COMPOUND: [&str; 6] = [
-        ".tar.gz",
-        ".tar.bz2",
-        ".tar.xz",
-        ".tar.zst",
-        ".tar.lz",
-        ".tar.lzma",
-    ];
-    let end = COMPOUND
-        .iter()
-        .find_map(|suffix| {
-            let start = name
-                .len()
-                .checked_sub(suffix.len())
-                .filter(|start| *start > 0)?;
-            (name.is_char_boundary(start) && name[start..].eq_ignore_ascii_case(suffix))
-                .then_some(start)
-        })
-        .or_else(|| name.rfind('.').filter(|dot| *dot > 0))?;
-    Some(name[..end].graphemes(true).count())
 }
 
 #[cfg(test)]

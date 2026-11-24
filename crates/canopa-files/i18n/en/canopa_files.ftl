@@ -1578,3 +1578,37 @@ files-report-not-started = { $count } not started
 files-preview-regular-only = only regular files can be previewed
 files-preview-too-large = file exceeds the preview budget
 files-properties-access-changed = The item changed or is a link; its access was not changed.
+
+# File chooser mode
+files-picker-new-folder = New folder
+files-picker-name-label = Name
+files-picker-file-name = File name
+files-picker-save-many = { $count ->
+    [one] Choose a folder for { $count } file
+   *[other] Choose a folder for { $count } files
+}
+files-picker-file-type = File type
+files-picker-read-only = Open read-only
+files-picker-accept-open = Open
+files-picker-accept-save = Save
+files-picker-folder-name = Folder name
+files-picker-overwrite-title = Replace existing files?
+files-picker-overwrite-question = The destination already exists. Allow the application to replace it?
+files-picker-overwrite-more = and { $count } more
+files-picker-keep-choosing = Keep choosing
+files-picker-replace = Replace
+files-picker-review-replacement = Replace…
+files-picker-choose-existing-folder = Choose an existing folder
+files-picker-select-file = Select a file
+files-picker-select-type = Select the requested file type
+files-picker-one-file-name = Enter one file name without a folder path
+files-picker-choose-folder = Choose a folder
+files-picker-invalid-name = Invalid file name
+files-picker-distinct-names = Save file names must be distinct
+files-picker-special-destination = The destination is a folder or special file
+files-picker-absolute-folder = Choose an absolute folder
+files-picker-folder-changed = The folder location changed. Choose it again.
+files-picker-folder-name-rule = Enter one folder name, without a slash, up to 255 bytes
+files-picker-requested-by = Requested by { $requester }
+files-picker-existing = You’ll be asked to confirm before replacing this file.
+files-picker-local-folder = Enter a local folder or a mounted location.

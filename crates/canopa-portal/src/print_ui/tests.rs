@@ -24,7 +24,7 @@ fn dialog(runtime: &tokio::runtime::Runtime) -> Dialog {
     let (_, cancelled) = watch::channel(false);
     Dialog::new(
         request(),
-        Theme::Dark,
+        canopa_theme::Appearance::default(),
         Arc::default(),
         Client::new(DialogProcess {
             executable: "/fixture-only/not-executable".into(),

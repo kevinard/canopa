@@ -951,8 +951,9 @@ mod tests {
             matches!(&content.elements()[0], crate::surface::panel::ExternalPanelElement::TextInput { value, .. } if value == "accepted")
         );
         assert_eq!(content.list_search(&ids[1]), "accepted");
+        let expected_error = fl!("shell-provider-value-too-long");
         for id in &ids {
-            assert!(content.input_error(id).unwrap().contains("too long"));
+            assert_eq!(content.input_error(id), Some(expected_error.as_str()));
         }
         let recovered = runtime.text_input_changed(
             "wifi".into(),

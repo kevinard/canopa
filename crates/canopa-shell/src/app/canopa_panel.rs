@@ -188,83 +188,38 @@ pub(super) fn render_with_back<'a>(
                 .spacing(metrics::GAP)
                 .wrap()
             };
-            let dots = item.attribution.is_some();
-            // On a message card, a destructive item action (Remove) is the card's
-            // close control; the others follow the dot, link and chip rules.
-            let (removals, card_actions): (Vec<&PanelAction>, Vec<&PanelAction>) = if dots {
+            let attributed = item.attribution.is_some();
+            // On a message card, a destructive item action is the card's
+            // close control. Other actions keep their visible labels.
+            let (removals, card_actions): (Vec<&PanelAction>, Vec<&PanelAction>) = if attributed {
                 item.actions.iter().partition(|action| action.destructive)
             } else {
                 (Vec::new(), item.actions.iter().collect())
             };
-            // One status and one action: the status dot is that action (an
-            // unread dot that marks the item read), named for assistive tools.
-            let dot_action = (dots
-                && item.slider.is_none()
-                && card_actions.len() == 1
-                && item
-                    .metadata
-                    .iter()
-                    .filter(|metadata| metadata.value.is_empty())
-                    .count()
-                    == 1)
-                .then(|| {
-                    snapshot.action_id(
-                        InteractionTarget::Item {
-                            id: item.id.clone(),
-                        },
-                        card_actions[0],
-                    )
-                });
-            // Otherwise a single short action joins the source line as a quiet link.
-            let header_action = dots
-                && dot_action.is_none()
+            // A single short action can join the source line if there is room.
+            let header_action = attributed
                 && item.slider.is_none()
                 && content_width >= 300.0
                 && matches!(card_actions.as_slice(), [action]
-                    if crate::theme::text_width(&action.label, crate::theme::label_size()) <= 110.0);
+                    if !action.request_activation_token
+                        && crate::theme::text_width(&action.label, crate::theme::label_size()) <= 110.0);
             let statuses = row(item
                 .metadata
                 .iter()
                 .enumerate()
                 .filter(|(_, metadata)| metadata.value.is_empty())
                 .map(|(index, metadata)| {
-                    // Attributed items show a status as an accent dot; its
-                    // name stays in the accessible metadata.
-                    let marker = if let Some(id) = &dot_action {
-                        container(
-                            container(action_widget::marker(
-                                id.clone(),
-                                &card_actions[0].label,
-                                provider,
-                                snapshot.focused_action_id() == Some(id.as_str()),
-                            ))
-                            .id(
-                                super::canopa_accessibility_bounds::widget_id(&semantic_key(
-                                    snapshot,
-                                    provider,
-                                    &SemanticNode::Action(id.clone()),
-                                )),
-                            ),
-                        )
-                    } else if dots {
-                        container(iced::widget::Space::new().width(8).height(8)).style(|_| {
-                            container::Style::default()
-                                .background(crate::theme::palette().accent)
-                                .border(iced::Border::default().rounded(4))
-                        })
-                    } else {
-                        container(
-                            crate::theme::strong_text(metadata_label(metadata))
-                                .size(crate::theme::label_size())
-                                .style(canopa_ui::link),
-                        )
-                        .padding([3, 7])
-                        .style(|_| {
-                            container::Style::default()
-                                .background(crate::theme::accent_surface())
-                                .border(iced::Border::default().rounded(7))
-                        })
-                    };
+                    let marker = container(
+                        crate::theme::strong_text(metadata_label(metadata))
+                            .size(crate::theme::label_size())
+                            .style(canopa_ui::link),
+                    )
+                    .padding([2, 6])
+                    .style(|_| {
+                        container::Style::default()
+                            .background(crate::theme::accent_surface())
+                            .border(iced::Border::default().rounded(6))
+                    });
                     marker
                         .id(super::canopa_accessibility_bounds::widget_id(
                             &semantic_key(
@@ -319,8 +274,7 @@ pub(super) fn render_with_back<'a>(
                         )),
                     );
                 }
-                // Status dots follow the source and time: "Messages · now ●".
-                let identity = identity.push(statuses);
+                let identity = identity.push(statuses).align_y(iced::Center);
                 // As on banners, the source icon leads the whole message when
                 // the card is wide enough; narrow cards keep it on the source line.
                 let mut source_row = if content_width >= 300.0 {
@@ -531,11 +485,7 @@ pub(super) fn render_with_back<'a>(
                     ),
                 ));
             }
-            if !inline_slider_actions
-                && !header_action
-                && dot_action.is_none()
-                && !card_actions.is_empty()
-            {
+            if !inline_slider_actions && !header_action && !card_actions.is_empty() {
                 card = card.push(if item.attribution.is_some() {
                     // Message actions are compact chips at the trailing edge.
                     let target = InteractionTarget::Item {
@@ -544,7 +494,17 @@ pub(super) fn render_with_back<'a>(
                     Element::from(
                         container(
                             row(card_actions.iter().map(|action| {
-                                chip_button(snapshot, provider, target.clone(), action)
+                                if action.request_activation_token && card_actions.len() == 1 {
+                                    action_button_with_treatment(
+                                        snapshot,
+                                        provider,
+                                        target.clone(),
+                                        action,
+                                        canopa_ui::Action::Normal,
+                                    )
+                                } else {
+                                    chip_button(snapshot, provider, target.clone(), action)
+                                }
                             }))
                             .spacing(6)
                             .width(Length::Fill)

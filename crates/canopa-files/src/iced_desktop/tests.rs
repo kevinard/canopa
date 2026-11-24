@@ -17,7 +17,7 @@ pub(super) fn desktop(root: &Path, paths: Vec<PathBuf>) -> (Desktop, window::Id)
         root.to_owned(),
         root.join("views.json"),
         PersonalFolders::conventional(root).unwrap(),
-        configuration_worker,
+        configuration_worker.map(Some),
     );
     // Unit controllers never send notifications to the developer's session.
     // Native acceptance supplies its own private notification service.

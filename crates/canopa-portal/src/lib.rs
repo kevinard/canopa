@@ -25,6 +25,8 @@ pub mod chooser_ui;
 pub mod clipboard;
 #[cfg(feature = "desktop")]
 pub mod clipboard_transport;
+#[cfg(feature = "desktop")]
+mod dialog_ui;
 pub mod dynamic_launcher;
 #[cfg(feature = "desktop")]
 pub mod dynamic_launcher_icon;

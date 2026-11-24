@@ -129,6 +129,7 @@ The release archive contains:
 | Archive path | Purpose |
 | --- | --- |
 | `bin/xdg-desktop-portal-canopa` | Backend |
+| `bin/canopa-files` | FileChooser picker helper |
 | `bin/canopa-portal-config` | Routing generator (below) |
 | `share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.service` | Backend activation |
 | `share/dbus-1/services/org.freedesktop.impl.portal.desktop.canopa.notify.service` | Notify portal activation |
@@ -139,7 +140,7 @@ The archive's `canopa.portal` lists the ten dialog interfaces. It also lists
 ScreenCast, RemoteDesktop and Clipboard, plus InputCapture, GlobalShortcuts and
 Usb, when the archive was built with those components.
 
-1. Put `xdg-desktop-portal-canopa` in `~/.local/bin`. The supplied unit runs
+1. Put `xdg-desktop-portal-canopa` and `canopa-files` together in `~/.local/bin`. The supplied unit runs
    `%h/.local/bin/xdg-desktop-portal-canopa`. Edit its `ExecStart` for another
    location.
 2. Copy both activation files to `~/.local/share/dbus-1/services/` and the unit
@@ -191,6 +192,13 @@ backends (or the `default` list) as fallbacks. Notification routes to
 `canopa-notify`. Comments, other groups and unselected entries stay as they
 were. A selected interface whose list contains `none` is replaced by Canopa
 alone, because `none` would veto the whole list. Unselected `none` entries stay.
+
+## Choosing an application
+
+**Open with** shows the applications offered by the portal frontend. When
+Canopa knows the file or link type, it puts its associated apps first and
+labels the configured default if it is available. Other offered applications
+remain searchable, and **Last used** marks a previous choice.
 
 ## Backend command line
 
@@ -273,24 +281,29 @@ removing the file takes effect at the next reload. A file chosen with
 The chooser opens files or folders (one or several), saves a file, or picks a
 folder for several files (SaveFiles). It honors the application's title, accept
 label, initial folder, file and name, filename and MIME filters, extra choices
-and the read-only option. Places lists Home, Documents, Downloads and Pictures
-(when those XDG folders exist) and Filesystem.
+and the read-only option. The portal opens a Canopa Files window in picker
+mode. Browse with your configured Places, local bookmarks and mounted devices,
+and use Recent when selecting a file to open. The toolbar and folder views
+follow Files settings. The chooser adds Open or Save controls for the requesting
+application. Key bindings can be configured in Files. These are the defaults.
 
 | Key | Action |
 | --- | --- |
-| Ctrl+L | Focus Location |
-| Ctrl+F | Focus the name filter |
+| Ctrl+L | Edit the current location |
+| Ctrl+F | Search with Files |
 | Ctrl+H | Show or hide hidden files |
 | Ctrl+A | Select all visible items (multiple selection only) |
 | Alt+Up | Parent folder |
+| Alt+Left, Alt+Right | Back and Forward |
 | Up, Down | Move through the list |
-| Enter | Open the focused folder, or accept |
+| Enter | Open the focused folder or select the focused file |
+| Ctrl+Enter | Confirm the current choice |
 | Ctrl+Shift+N | New folder (Save dialogs) |
-| Escape | Cancel, or close the New folder or Replace prompt |
+| Escape | Cancel, or close the location editor, search, New folder or Replace prompt |
 
-- **Saving.** The chooser never creates or truncates the file; the application
-  writes it. An existing destination needs Replace. A destination that is a
-  folder, symlink or special file is refused.
+- **Saving.** The application writes to the destination returned by the chooser.
+  If the filename already exists, **Replace…** opens a separate confirmation.
+  The chooser refuses folders, symlinks and special files as Save destinations.
 - **New folder.** Available in Save dialogs. Type one name, then Create or Enter.
   The folder is created and opened, and the file name you typed is kept. Existing
   entries are never replaced. A folder you created stays if you then cancel the
@@ -326,7 +339,8 @@ and the read-only option. Places lists Home, Documents, Downloads and Pictures
 ### App chooser
 
 Shows the applications the frontend offers, with names and icons from their
-desktop entries, including handlers hidden from the launcher. Search covers
+desktop entries, including handlers hidden from the launcher. The previous
+choice is marked **Last used** when it is offered again. Search covers
 names, IDs, generic names and keywords (Ctrl+F). Up and Down move, Enter
 chooses, Escape cancels. The list updates live when the offered applications
 change. The chooser asks the compositor for a fresh activation token after you
@@ -335,8 +349,9 @@ application and sets defaults; the dialog does neither.
 
 ### Access
 
-A plain question with Allow and Deny, an optional icon and optional checkboxes
-or drop-downs. Only an explicit Allow grants. Deny, Escape, closing the window
+The request shows the requesting app, the question and any options next to
+the decision. An app may provide an icon, checkboxes or drop-downs. Options
+stay together above the actions. Only an explicit Allow grants. Deny, Escape, closing the window
 and the requesting app quitting all deny. Opening the dialog or pressing Enter
 does not grant. The frontend stores the decision.
 
@@ -345,7 +360,9 @@ does not grant. The frontend stores the decision.
 Shows your username, name and profile picture from AccountsService (with an NSS
 fallback for missing fields and `~/.face` or `~/.face.icon` when AccountsService
 is unavailable). You can edit or exclude each field and choose or clear the
-picture before pressing Share. Excluded fields are sent as empty strings.
+picture before pressing Share. The footer lists the fields that will be shared.
+If you exclude them all, choose Continue without sharing. Excluded fields are
+sent as empty strings.
 Choose image opens the file chooser inside the same window. Clearing the picture
 only changes what is shared, not your account.
 
@@ -368,9 +385,9 @@ with three actions:
 | Allow once | Keep the current run, permission unchanged |
 | Block | Refuse; the frontend can stop the current run |
 
-Clicking the notification opens a review dialog with the same choices. Closing
-the dialog, Escape or no answer keep the current run without changing the
-permission. Questions expire after 20 seconds, also under Do Not Disturb.
+Clicking the notification opens a review dialog that describes what each
+choice does beside its button. Close, Escape or no answer keep the current
+run without changing the permission. Questions expire after 20 seconds, also under Do Not Disturb.
 
 Background needs Canopa Notify, which provides the timed questions, and the
 session's `NIRI_SOCKET` in the activation environment, which Niri imports. It
@@ -465,7 +482,8 @@ output, so Shell must be running. The selection survives restarts.
 
 ### Screenshot
 
-Screenshot offers Screen (all outputs), Area, Window and the color picker. The
+Screenshot offers Entire screen, Area, Window and the color picker. The entire
+screen preview covers every display that will be shared. The
 pixels are frozen before the review opens, so later changes on screen do not
 change the result.
 
@@ -473,9 +491,11 @@ change the result.
   color. Cancel, Escape or closing the window publish nothing.
 - **Area.** Drag in the preview, or move with the arrow keys and press Space to
   start and finish (Shift moves ten pixels).
-- **Color.** Click a pixel or use the arrow keys; Next display switches outputs.
-- **Window.** Alt+W, or an app's request for a window, opens a window picker.
-  The image contains the whole window, even on another workspace. The active
+- **Color.** Click a pixel or move with the arrow keys. The magnified grid
+  outlines the exact pixel under review. Hold Shift to move ten pixels.
+  Next display switches outputs.
+- **Window.** Alt+W, or an app's request for a window, opens a picker with
+  window thumbnails and app icons when available. The image contains the whole window, even on another workspace. The active
   window option captures the focused window and fails when there is none.
   Window capture needs the Canopa Niri build (packaged as `canopa-compositor`)
   and PipeWire. Without them only Screen, Area and the color picker are offered.
@@ -500,7 +520,8 @@ to `~/Pictures/Screenshots`.
 
 Canopa Notify implements Notification version 2 under
 `org.freedesktop.impl.portal.desktop.canopa.notify` while it runs as the session
-service. Portal notifications follow Notify's Do Not Disturb, sounds and history
+service. When a matching desktop entry is installed, the banner and Center use
+its localized application name. Portal notifications follow Notify's Do Not Disturb, sounds and history
 (see [Notifications](notifications.md)).
 
 - An application ID plus notification ID identifies a notification. Sending the

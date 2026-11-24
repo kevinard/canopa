@@ -1,12 +1,13 @@
 //! Small Iced authentication surface shared by metadata and document delivery.
 //! Only the private descriptor carries its answer; ordinary output is a bool.
+use crate::dialog_ui;
 use crate::print::{
     Context,
     authentication::{Challenge, Credentials, Field, Kind, Secret, Transport},
 };
 use iced::{
     Element, Event, Length, Size, Task, Theme, keyboard,
-    widget::{column, container, scrollable, text, text_input},
+    widget::{column, container, text, text_input},
     window,
 };
 use serde::{Deserialize, Serialize};
@@ -56,7 +57,7 @@ pub fn run(request: Request, appearance: canopa_theme::Appearance) -> anyhow::Re
     iced::daemon(
         move || {
             let settings = window::Settings {
-                size: Size::new(580., 540.),
+                size: Size::new(580., 480.),
                 min_size: Some(Size::new(420., 340.)),
                 exit_on_close_request: false,
                 platform_specific: window::settings::PlatformSpecific {
@@ -123,6 +124,7 @@ impl std::fmt::Debug for Message {
     }
 }
 struct Form {
+    requester: String,
     request: Request,
     theme: Theme,
     values: Vec<Secret>,
@@ -144,6 +146,7 @@ impl Form {
             })
             .collect();
         Self {
+            requester: dialog_ui::requester(&request.context.app_id),
             request,
             theme,
             values,
@@ -222,39 +225,33 @@ impl Form {
                 .padding(20)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(canopa_ui::surface)
+                .style(dialog_ui::surface)
                 .into();
         }
         let challenge = &self.request.challenge;
         let mut content = column![
-            text(fl!("portal-print-auth-title")).size(24),
+            dialog_ui::heading(fl!("portal-print-auth-title")),
             text(if self.request.context.title.is_empty() {
                 fl!("portal-print-document")
             } else {
                 self.request.context.title.clone()
             })
             .size(18),
-            text(if self.request.context.app_id.is_empty() {
-                fl!("portal-requested-by-application")
-            } else {
-                self.request.context.app_id.clone()
-            })
-            .style(canopa_ui::muted)
+            dialog_ui::detail(fl!(
+                "portal-requested-by",
+                requester = self.requester.as_str()
+            ))
         ]
         .spacing(12)
         .width(Length::Fill);
-        content = content.push(text(match &challenge.kind {
-            Kind::Server { realm, .. } if !realm.is_empty() => fl!(
-                "portal-print-auth-server-realm",
-                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port),
-                realm = realm.as_str()
-            ),
-            Kind::Server { .. } => fl!(
-                "portal-print-auth-server",
-                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port)
-            ),
+        let endpoint = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port);
+        let target = match &challenge.kind {
+            Kind::Server { realm, .. } if !realm.is_empty() => {
+                fl!("portal-print-auth-realm", realm = realm.as_str())
+            }
+            Kind::Server { .. } => fl!("portal-print-auth-server-label"),
             Kind::Queue { destination, .. } => fl!(
-                "portal-print-auth-queue",
+                "portal-print-auth-queue-label",
                 printer = format!(
                     "{}{}",
                     destination.queue,
@@ -263,18 +260,26 @@ impl Form {
                         .as_ref()
                         .map(|i| format!(" / {i}"))
                         .unwrap_or_default()
-                ),
-                server = format!("{}:{}", challenge.endpoint.server, challenge.endpoint.port)
+                )
             ),
-        }));
+        };
         content = content.push(
-            text(match challenge.endpoint.transport {
-                Transport::Local => fl!("portal-print-auth-local"),
-                Transport::Loopback => fl!("portal-print-auth-loopback"),
-                Transport::Tls => fl!("portal-print-auth-tls"),
-            })
-            .size(14)
-            .style(canopa_ui::muted),
+            container(
+                column![
+                    dialog_ui::detail(target).size(13),
+                    text(endpoint).size(18),
+                    dialog_ui::detail(match challenge.endpoint.transport {
+                        Transport::Local => fl!("portal-print-auth-local"),
+                        Transport::Loopback => fl!("portal-print-auth-loopback"),
+                        Transport::Tls => fl!("portal-print-auth-tls"),
+                    })
+                    .size(13),
+                ]
+                .spacing(4),
+            )
+            .padding([10, 12])
+            .width(Length::Fill)
+            .style(dialog_ui::card),
         );
         if challenge.attempt > 1 {
             content = content.push(text(fl!("portal-print-auth-rejected")).size(14));
@@ -286,11 +291,18 @@ impl Form {
                 Field::Password => fl!("portal-print-auth-password"),
             };
             let value = std::str::from_utf8(self.values[index].bytes()).expect("Iced UTF-8 input");
+            let placeholder = if *field == Field::Password {
+                fl!("portal-print-auth-password-placeholder")
+            } else {
+                String::new()
+            };
             content = content.push(
                 column![
-                    text(label.clone()).size(14),
-                    text_input(&label, value)
+                    dialog_ui::section(label),
+                    text_input(&placeholder, value)
                         .id(format!("print-auth-field-{index}"))
+                        .style(dialog_ui::field)
+                        .padding([7, 10])
                         .secure(*field == Field::Password)
                         .on_input(move |value| Message::Value(
                             index,
@@ -308,30 +320,23 @@ impl Form {
                 .size(13)
                 .style(canopa_ui::muted),
         );
-        let actions = canopa_ui::direction::row([
-            canopa_ui::action(
+        let actions = dialog_ui::footer([
+            dialog_ui::action(
                 text(fl!("portal-cancel")),
                 Some(Message::Cancel),
                 canopa_ui::Action::Normal,
                 false,
             )
             .into(),
-            iced::widget::Space::new().width(Length::Fill).into(),
-            canopa_ui::action(
+            dialog_ui::action(
                 text(fl!("portal-print-auth-authenticate")),
                 self.valid().then_some(Message::Authenticate),
-                canopa_ui::Action::Normal,
-                true,
+                canopa_ui::Action::Primary,
+                false,
             )
             .into(),
-        ])
-        .spacing(10);
-        container(column![scrollable(content).height(Length::Fill), actions].spacing(16))
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(canopa_ui::surface)
-            .into()
+        ]);
+        dialog_ui::layout(content, actions)
     }
 }
 

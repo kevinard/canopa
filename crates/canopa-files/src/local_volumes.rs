@@ -182,6 +182,19 @@ impl Monitor {
         path: PathBuf,
         activity: crate::local_activity::LocalActivity,
     ) -> io::Result<(Self, std::sync::mpsc::Receiver<Ready>)> {
+        Self::start_monitor(Some(path), activity)
+    }
+
+    #[cfg(feature = "desktop")]
+    pub(crate) fn observe_devices() -> io::Result<Self> {
+        Self::start_monitor(None, crate::local_activity::LocalActivity::default())
+            .map(|(monitor, _)| monitor)
+    }
+
+    fn start_monitor(
+        path: Option<PathBuf>,
+        activity: crate::local_activity::LocalActivity,
+    ) -> io::Result<(Self, std::sync::mpsc::Receiver<Ready>)> {
         let control = Arc::new(Control {
             stopped: AtomicBool::new(false),
             input: Mutex::new(None),
@@ -317,14 +330,17 @@ struct ObservedMount {
 type Observed = BTreeMap<u64, ObservedMount>;
 
 fn observe(
-    path: PathBuf,
+    path: Option<PathBuf>,
     control: &Control,
     ready: &mut Option<std::sync::mpsc::SyncSender<Ready>>,
     catalog: &Mutex<DeviceSnapshot>,
     notice: &mut mpsc::Sender<()>,
     requests: &requests::Requests,
 ) -> io::Result<()> {
-    let storage = Storage::load(path)?;
+    let storage = path
+        .map(Storage::load)
+        .transpose()?
+        .unwrap_or_else(Storage::volatile);
     // Pin the running executable across an installation update; do not execute
     // whichever pathname might replace it while this process is alive.
     let mut child = Command::new("/proc/self/exe")

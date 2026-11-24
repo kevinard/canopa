@@ -287,7 +287,15 @@ pub(super) fn prepare_at(
         }
     }
     let input = NotificationInput {
-        app_name: identity.app_id.clone(),
+        app_name: canopa_apps::desktop_entry_name(&identity.app_id)
+            .map(|name| {
+                name.chars()
+                    .filter(|ch| !ch.is_control())
+                    .take(120)
+                    .collect()
+            })
+            .filter(|name: &String| !name.is_empty())
+            .unwrap_or_else(|| identity.app_id.clone()),
         desktop_entry: Some(identity.app_id.clone()),
         summary: title,
         body,

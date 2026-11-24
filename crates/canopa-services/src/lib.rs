@@ -55,5 +55,6 @@ pub mod power_switches;
 pub mod testing;
 pub mod timedate;
 pub mod upower;
+pub mod window_preview;
 
 pub use error::{Error, ServiceState};

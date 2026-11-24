@@ -23,6 +23,17 @@ pub(crate) fn prepare(names: &[String], foreground: canopa_theme::Rgb) -> HashMa
         },
         &|| false,
     );
+    // Some desktops ship older standard names in a separate compatibility theme.
+    let mut legacy = IconLookup::new(
+        &roots,
+        LookupOptions {
+            theme: "AdwaitaLegacy",
+            scale: 1,
+            formats: IconFormats::PngSvgXpm,
+            allow_unindexed_hicolor: false,
+        },
+        &|| false,
+    );
     let mut rasters = RasterBatch::new(
         RasterPolicy {
             max_encoded_bytes: 256 * 1024,
@@ -50,7 +61,10 @@ pub(crate) fn prepare(names: &[String], foreground: canopa_theme::Rgb) -> HashMa
         let path = if Path::new(name).is_absolute() {
             Some(PathBuf::from(name))
         } else {
-            lookup.resolve(std::slice::from_ref(name), 32)
+            let names = std::slice::from_ref(name);
+            lookup
+                .resolve(names, 32)
+                .or_else(|| legacy.resolve(names, 32))
         };
         let Some(path) = path else {
             continue;

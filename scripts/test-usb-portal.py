@@ -166,7 +166,7 @@ def verify(args, session, result, testbed):
                     except GLib.Error as error: pending[path]=error
                 client.call(BACK,PATH,IMPL,'AcquireDevices',GLib.Variant('(ossa(sa{sv}a{sv})a{sv})',(path,exported,APP,direct,{})),None,Gio.DBusCallFlags.NO_AUTO_START,60000,None,done)
             window=wait(lambda:next((w for w in windows() if w['app_id']=='org.canopa.Portal' and w['id'] not in before),None),'Iced USB dialog')
-            assert window['is_floating'] and abs(window['layout']['window_size'][0]-680)<=1,window
+            assert window['is_floating'] and abs(window['layout']['window_size'][0]-640)<=1,window
             command=Path(f"/proc/{window['pid']}/cmdline").read_bytes().split(b'\0');assert b'--usb-dialog' in command,command
             window['pidfd']=os.pidfd_open(window['pid']);session.usb_helpers.append(window)
             action('move-floating-window','--id',window['id'],'--x',20,'--y',10);action('focus-window','--id',window['id']);time.sleep(.3)
@@ -197,12 +197,13 @@ def verify(args, session, result, testbed):
         assert path not in responses and not cached()
         session.capture('01-unchecked-'+args.scheme+'.png')
         # Use the real fixed footer button for explicit denial.
-        click(190,10+window['layout']['window_size'][1]-42)
+        width,height=window['layout']['window_size']
+        click(20+width-265,10+height-30)
         assert response(path,1)=={};gone(window)
         rejected(lambda:finish(path));assert not cached()
         passed('initial-enter-and-empty-allow-do-not-grant-explicit-deny-returns-no-device')
-        path,window=begin();click(64,233);click(64,372)
-        session.capture('02-read-only-'+args.scheme+'.png');click(530,10+window['layout']['window_size'][1]-42);assert response(path)=={};gone(window)
+        path,window=begin();click(64,225);click(86,278)
+        session.capture('02-read-only-'+args.scheme+'.png');click(530,10+window['layout']['window_size'][1]-30);assert response(path)=={};gone(window)
         values,owned=finish(path);assert len(values)==1 and values[0][0]==first and fcntl.fcntl(owned[0],fcntl.F_GETFL)&os.O_ACCMODE==os.O_RDONLY
         assert os.read(owned[0],100)==b'fixture-0';release(values);assert not cached()
         passed('pointer-selects-one-of-two-devices-and-read-only-downgrade-delivers-only-that-synthetic-fd')
