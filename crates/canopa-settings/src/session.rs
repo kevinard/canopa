@@ -42,7 +42,7 @@ impl Paths {
     pub fn generated_shortcuts(&self) -> PathBuf {
         self.directory.join(crate::shortcuts::GENERATED)
     }
-    /// Titlebar style generated from the shared appearance, for Niri to include.
+    /// Compositor appearance generated from the shared appearance, for Niri to include.
     pub fn titlebar_appearance(&self) -> PathBuf {
         self.directory.join(crate::titlebar::GENERATED)
     }
@@ -120,12 +120,47 @@ impl Paths {
         }
         std::fs::create_dir_all(&self.directory)?;
         let path = self.directory.join("niri-defaults.kdl");
-        create(&path, include_str!("../../../packaging/niri/defaults.kdl"))?;
+        refresh_built_in_defaults(&path)?;
         Ok(path)
     }
 }
 
 pub const SYSTEM_DEFAULTS: &str = "/usr/share/canopa/niri-defaults.kdl";
+
+fn refresh_built_in_defaults(path: &Path) -> Result<()> {
+    use canopa_config::fingerprint;
+    use std::os::unix::fs::MetadataExt;
+    const DEFAULTS: &str = include_str!("../../../packaging/niri/defaults.kdl");
+    const HEADER: &str = "// Canopa built-in defaults SHA-256: ";
+    // Private fallback copies from before this header had the exact packaged text.
+    const PREVIOUS_DEFAULTS: &str =
+        "a561b27d965526079f261a44f5eea296d39ce629d182fcc88d407a97aa97b23b";
+
+    // A fallback path managed by a dotfile tool or an administrator is already
+    // a source of defaults. Only consider private regular files for migration.
+    if std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+        !metadata.is_file() || metadata.uid() != rustix::process::geteuid().as_raw()
+    }) {
+        return Ok(());
+    }
+    let snapshot = Snapshot::load(path)?;
+    let current = format!("{HEADER}{}\n{DEFAULTS}", fingerprint(DEFAULTS));
+    if snapshot.text == current {
+        return Ok(());
+    }
+    let unchanged = snapshot
+        .text
+        .split_once('\n')
+        .is_some_and(|(header, body)| {
+            header
+                .strip_prefix(HEADER)
+                .is_some_and(|sha| fingerprint(body) == sha)
+        });
+    if !snapshot.exists() || unchanged || fingerprint(&snapshot.text) == PREVIOUS_DEFAULTS {
+        snapshot.save(&current, |_| Ok(()))?;
+    }
+    Ok(())
+}
 
 fn create(path: &Path, text: &str) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
@@ -151,6 +186,41 @@ fn create(path: &Path, text: &str) -> Result<()> {
 mod tests {
     use super::Paths;
     use std::ffi::OsStr;
+
+    #[test]
+    fn only_refresh_untouched_private_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("niri-defaults.kdl");
+        let previous = "// Previous generated defaults\n";
+        let generated = format!(
+            "// Canopa built-in defaults SHA-256: {}\n{previous}",
+            canopa_config::fingerprint(previous),
+        );
+        std::fs::write(&path, &generated).unwrap();
+        super::refresh_built_in_defaults(&path).unwrap();
+        let refreshed = std::fs::read_to_string(&path).unwrap();
+        assert!(refreshed.ends_with(include_str!("../../../packaging/niri/defaults.kdl")));
+
+        let edited = format!("{generated}// My defaults\n");
+        std::fs::write(&path, &edited).unwrap();
+        super::refresh_built_in_defaults(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+    }
+
+    #[test]
+    fn leave_managed_default_links_intact() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("managed.kdl");
+        let path = directory.path().join("niri-defaults.kdl");
+        let contents = "// Defaults owned by a dotfile tool\n";
+        std::fs::write(&target, contents).unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        super::refresh_built_in_defaults(&path).unwrap();
+
+        assert_eq!(std::fs::read_link(&path).unwrap(), target);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+    }
 
     fn managed() -> (tempfile::TempDir, Paths) {
         let root = tempfile::tempdir().unwrap();

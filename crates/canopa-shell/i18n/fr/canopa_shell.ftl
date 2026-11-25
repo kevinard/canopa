@@ -20,7 +20,7 @@ shell-panel-wifi = Wi-Fi
 ## Built-in bar buttons (config/default.kdl `label-id` and `tooltip-id`)
 
 shell-module-search = Rechercher
-shell-module-overview = Vue d’ensemble
+shell-module-overview = Aperçu
 shell-module-controls = Réglages
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Alimentation et écran

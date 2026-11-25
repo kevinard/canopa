@@ -182,7 +182,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
     // key, and changes a layout default.
     let updated = DEFAULTS
         .replace("    Mod+Q { close-window; }\n", "    Mod+Y { close-window; }\n")
-        .replace("gaps 12", "gaps 16")
+        .replace("gaps 16", "gaps 20")
         .replace(
             "    Print { screenshot; }\n",
             "    Print { screenshot; }\n    Mod+B { spawn \"canopa-browser\"; }\n    Mod+Shift+Space { spawn \"conflicting-default\"; }\n",
@@ -211,7 +211,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
     assert!(
         std::fs::read_to_string(paths.generated_shortcuts())
             .unwrap()
-            .contains("gaps 16")
+            .contains("gaps 20")
     );
     assert_eq!(refresh(&paths, None, check).unwrap(), None);
 

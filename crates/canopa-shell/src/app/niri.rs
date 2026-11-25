@@ -301,6 +301,9 @@ impl App {
                     Event::OverviewTyped { text } => {
                         task = self.search_from_overview(&text);
                     }
+                    Event::OverviewOpenedOrClosed { is_open } => {
+                        self.niri.state_mut().overview_open = is_open;
+                    }
                     Event::ConfigLoaded { .. } => {
                         // Output modes and scales live in the configuration.
                         task = self.refresh_niri_output_sizes();

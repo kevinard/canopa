@@ -592,13 +592,28 @@ impl TaskbarItemModule {
     }
 
     fn icon(&self, size: f32) -> iced::Element<'static, crate::app::Message> {
-        let path = self
+        let installed = self
             .entry
             .icon
             .as_ref()
             .and_then(|icon| icon.path.clone())
-            .filter(|path| path.exists())
-            .or_else(|| crate::icon_theme::resolve_icon_path("application-x-executable"));
+            .filter(|path| path.is_file());
+        if installed.is_none() {
+            let glyph: Option<&[u8]> = match self.entry.key.as_str() {
+                "org.canopa.Files" | "org.canopa.Files.desktop" => {
+                    Some(include_bytes!("../../assets/folder.svg"))
+                }
+                "org.canopa.Settings" | "org.canopa.Settings.desktop" => {
+                    Some(include_bytes!("../../assets/controls.svg"))
+                }
+                _ => None,
+            };
+            if let Some(glyph) = glyph {
+                return crate::theme::icon(glyph, size, crate::theme::palette().text);
+            }
+        }
+        let path =
+            installed.or_else(|| crate::icon_theme::resolve_icon_path("application-x-executable"));
         match path {
             Some(path)
                 if path
@@ -633,16 +648,16 @@ impl TaskbarItemModule {
             colors.accent
         } else {
             iced::Color {
-                a: 0.55,
+                a: 0.68,
                 ..colors.text
             }
         };
         let (long, short) = if self.entry.focused {
-            (16.0, 4.0)
+            (18.0, 4.0)
         } else if count > 1 {
-            (9.0, 4.0)
+            (10.0, 5.0)
         } else {
-            (4.0, 4.0)
+            (6.0, 6.0)
         };
         let (width, height) = if horizontal {
             (long, short)
@@ -653,7 +668,7 @@ impl TaskbarItemModule {
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(color)),
                 border: iced::Border {
-                    radius: 2.0.into(),
+                    radius: (short / 2.0).into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -668,7 +683,17 @@ impl TaskbarItemModule {
         use crate::config::Edge;
         use iced::Alignment;
         let horizontal = matches!(edge, Edge::Top | Edge::Bottom);
+        let focused = self.entry.focused;
+        let accent = crate::theme::palette().accent;
         let icon = iced::widget::container(self.icon(APP_ICON_SIZE))
+            .center_x(iced::Length::Fixed(CELL - 6.0))
+            .center_y(iced::Length::Fixed(CELL - 6.0))
+            .style(move |_| iced::widget::container::Style {
+                background: focused.then_some(accent.scale_alpha(0.14).into()),
+                border: iced::border::rounded(11),
+                ..Default::default()
+            });
+        let icon = iced::widget::container(icon)
             .center_x(iced::Length::Fill)
             .center_y(CELL);
         let (align_x, align_y) = match edge {

@@ -248,6 +248,7 @@ settings-window-gaps = Space around windows
 settings-window-gaps-none = None
 settings-window-gaps-small = Small
 settings-window-gaps-medium = Medium
+settings-window-gaps-comfortable = Comfortable
 settings-window-gaps-large = Large
 settings-window-center = Center the focused column
 settings-window-center-never = Never
@@ -268,6 +269,8 @@ settings-personal-wallpaper-file-filter = Pictures (JPEG, PNG)
 settings-personal-wallpaper-hint = Preview and set a picture for each monitor.
 settings-personal-clock-format = Clock format
 settings-personal-date-format = Date format
+settings-personal-clock-example = e.g. %H:%M
+settings-personal-date-example = e.g. %A, %B %d
 # Under the clock and date format fields.
 settings-personal-formats-hint = Leave a format empty to follow Region & language. Formats use strftime patterns, such as %H:%M.
 settings-personal-font = Font family

@@ -2,7 +2,7 @@ use iced::Element;
 use iced::widget::{container, mouse_area};
 
 use super::{App, Message};
-use crate::config::Edge;
+use crate::config::{CompositorAction, Edge, PanelAction};
 use crate::modules::focused_window;
 use crate::modules::{ModuleId, ModuleKind, ModuleState, Zone};
 use crate::surface::frame::module_frame;
@@ -450,6 +450,9 @@ impl App {
                     .action_for(&id, &crate::config::ActionTrigger::Click)
                     .is_some_and(|action| {
                         self.foreground.action_shows_active_panel(window, action)
+                            || self.niri.state().overview_open
+                                && *action
+                                    == PanelAction::Compositor(CompositorAction::ToggleOverview)
                     });
 
             let local = self
@@ -1207,6 +1210,54 @@ mod tests {
         let model = app.bar_render_model(origin);
 
         assert!(model.start[0].active);
+    }
+
+    #[test]
+    fn bar_render_model_marks_overview_action_active_while_open() {
+        use super::Message;
+        use crate::config::{
+            ActionBinding, ActionTrigger, ButtonConfig, CompositorAction, PanelAction,
+        };
+        use crate::modules::button::ButtonEvent;
+
+        let id = ModuleId::new("window-map");
+        let mut config = Config {
+            modules: vec![ModuleConfig {
+                name: id.display_name().into(),
+                module_type: "button".into(),
+                params: ModuleParams::Button(ButtonConfig {
+                    label: "Overview".into(),
+                    icon: "canopa:overview".into(),
+                    format: Default::default(),
+                    content_rotation: crate::config::ContentRotation::None,
+                    tooltip: crate::config::TooltipSetting::Default,
+                }),
+                actions: crate::config::ModuleActionsConfig {
+                    bindings: vec![ActionBinding {
+                        trigger: ActionTrigger::Click,
+                        action: PanelAction::Compositor(CompositorAction::ToggleOverview),
+                    }],
+                },
+            }],
+            ..Default::default()
+        };
+        config.bars[0].modules.start = vec![id.display_name().into()];
+        let (mut app, _) = App::boot(config, vec![]);
+        let _ = app.update(Message::Modules(
+            crate::app::messages::ModuleRuntimeEvent::Module(
+                id,
+                crate::modules::ModuleEvent::Button(ButtonEvent::Ready),
+            ),
+        ));
+        let origin = test_wid();
+        assert!(!app.bar_render_model(origin).start[0].active);
+
+        for is_open in [true, false] {
+            let _ = app.handle_niri_event(crate::niri::NiriEvent::Event(
+                niri_ipc::Event::OverviewOpenedOrClosed { is_open },
+            ));
+            assert_eq!(app.bar_render_model(origin).start[0].active, is_open);
+        }
     }
 
     #[test]

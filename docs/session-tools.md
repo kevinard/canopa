@@ -68,6 +68,11 @@ them. A choice for a disconnected output is kept and applied when it reappears.
 `--all` replaces the default image and clears every per-output choice, so monitors
 connected later get it too.
 
+Canopa shows its canopy wallpaper in a light or dark variant when an output has
+no image assignment. An explicit `wallpaper { color "#10191d"; }` uses a solid
+color on unassigned outputs. High contrast also uses a solid background for those
+outputs. Your configured images and saved choices take precedence.
+
 Fit modes: `fill` crops centrally to cover the monitor, `fit` shows the whole image
 with letterboxing in the background color, `stretch` ignores proportions, `center`
 uses the original pixel size and crops if larger. PNG and JPEG are supported, EXIF

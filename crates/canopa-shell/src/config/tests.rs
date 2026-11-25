@@ -110,8 +110,8 @@ mod config_tests {
                 "clock"
             ]
         );
-        // All default modules declared, with the Power menu button.
-        assert_eq!(config.modules.len(), 23);
+        // Include the optional minimap without putting it on the default rail.
+        assert_eq!(config.modules.len(), 24);
         let taskbar = config
             .modules
             .iter()
@@ -125,6 +125,7 @@ mod config_tests {
         let names: Vec<&str> = config.modules.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"focused-window"));
+        assert!(names.contains(&"minimap"));
         assert!(names.contains(&"volume"));
         assert!(names.contains(&"network"));
         assert!(names.contains(&"battery"));

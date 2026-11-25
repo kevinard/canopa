@@ -228,8 +228,10 @@ impl App {
             return;
         }
         let pins = self.taskbar.pins().clone();
-        let focused = self.current_taskbar_window();
         let state = self.niri.state();
+        let focused = (!state.overview_open)
+            .then(|| self.current_taskbar_window())
+            .flatten();
         let windows: Vec<_> = state.windows.values().collect();
         let desired: HashMap<_, _> = parents
             .into_iter()

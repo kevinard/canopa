@@ -137,6 +137,11 @@ anything is replaced; a failure keeps the current images. Each distinct image is
 decoded once per candidate, shared between outputs and dropped after submission; the
 compositor keeps the shared-memory buffer.
 
+The built-in light and dark wallpapers are embedded in the Session binary. The
+daemon resolves them when an output has no configured or saved image and a solid
+color or high-contrast appearance is inactive. It shares that decode across
+unassigned outputs during candidate preparation.
+
 One inotify observer (`canopa_file::watch`) covers the configuration, its theme file,
 the discovered `config.kdl` path (even when absent), the images and the slideshow
 folder. It coalesces events while a candidate is being admitted. Automatic reloads keep

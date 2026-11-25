@@ -53,7 +53,7 @@ panel you want to keep from
 | --- | --- |
 | `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch. Labels and icons per workspace with `workspace N { label; icon; }`. |
 | `taskbar` | Pinned applications, then the other running ones in screen order (see [Taskbar](#taskbar)). |
-| `minimap` | Niri's scrolling strip for the bar's output: one block per column, split by stacked windows, widths to scale, focused window in the accent color. Click a block to focus it; scroll to move between columns. Pinned columns are outlined. |
+| `minimap` | Optional map of the active workspace's scrolling strip. Each column is divided into its stacked windows. The focused window uses the accent, the viewport is outlined when part of the strip lies offscreen, and pinned columns have their own outline. Click a window to focus it, or scroll over the map to move between columns. |
 | `focused-window` | Icon and title of the focused window, shortened in the middle to 50 characters (`max-length`). The tooltip has the full title. |
 | `tray` | StatusNotifierItem icons. Click activates, right-click opens the item's menu. The Shell owns `org.kde.StatusNotifierWatcher` while a tray is placed. |
 | `network` | Connectivity icon (Wi-Fi, wired, limited, offline, VPN). Hidden while network status is unavailable. |
@@ -282,6 +282,29 @@ volume, 50 for brightness). Rebind the keys on the Settings **Shortcuts** page.
 These features use the Canopa Niri fork that the `canopa-compositor` package
 installs.
 
+The taskbar uses a neutral running-app marker while Overview is open, leaving
+the compositor to highlight the selected preview.
+
+- **Window strip** shows the neighboring columns and floating windows at the
+  top of the work area. It appears when there are multiple tiled columns or a
+  floating window. Tabs keep their layout order and reflect relative window
+  widths. A shared outline labeled **In view** follows the visible tile group
+  as it scrolls.
+  Choose a window name to bring it into view and focus it. The arrows at the
+  ends of the strip share a tint with the window they will focus. Click an
+  arrow to bring that tile into view and focus it. Point to a destination to
+  preview the tiles that will be in view. When windows fill the work area,
+  the strip keeps the **In view** group labeled. A **Next view** row names the
+  windows that will be visible, marks the one that will receive focus, and
+  identifies any window that stays in view.
+  Clicking an arrow dismisses its preview until the pointer leaves the button.
+  The same focus marker remains visible during motion.
+  When floating windows cover the tiles, choose a tiled tab to reveal them.
+  Choose a floating tab or **Show floating windows** to restore the layer.
+- **Overview selection** groups window previews by desktop position. The
+  Overview button stays highlighted while Overview is open. Point to a preview
+  or use the arrow keys to select it, then click or press Enter to open it.
+  Tab switches selection between tiled and floating previews.
 - **Overview typing**: typing in Niri's overview (Super+O, or the top-left hot
   corner) opens Applications with that text. Closing the launcher closes the
   overview. This needs `overview { emit-typed-text; }`, which the shipped Niri
@@ -393,7 +416,6 @@ unit drop-in (`systemctl --user edit canopa-shell.service`) for more detail.
 
 ## Known limitations
 
-- The minimap does not mark which columns are currently on screen.
 - Window restore does not restore pinned columns, and D-Bus-activated applications
   may open in Niri's usual place.
 - Window thumbnails, pinned columns, overview typing and window restore need the

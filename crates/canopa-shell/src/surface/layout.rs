@@ -16,14 +16,15 @@ pub const MODULE_GAP: f32 = 4.0;
 /// Render three zones in a column (vertical bar) or row (horizontal bar).
 ///
 /// **Vertical** (`horizontal = false`, left/right bars):
-/// - Start zone stacks downward; center is pinned to the bar surface midpoint; end stacks upward.
+/// - Start zone stacks downward; center starts at the bar surface midpoint; end stacks upward.
 ///
 /// **Horizontal** (`horizontal = true`, top/bottom bars):
-/// - Start zone aligns to the left; center is pinned to the bar surface midpoint; end aligns to the right.
+/// - Start zone aligns to the left; center starts at the bar surface midpoint; end aligns to the right.
 ///
 /// `BAR_PADDING` is applied as padding on all four edges of the outer container.
 /// `MODULE_GAP` separates modules within each zone.
-/// Visible zone bounds are clipped so zones do not overlap on short outputs.
+/// The center yields just enough to fit the edge zones when space allows.
+/// Visible zone bounds are clipped when the contents cannot fit together.
 pub fn zone_layout<'a, Message: Clone + 'a>(
     start: Vec<Element<'a, Message>>,
     center: Vec<Element<'a, Message>>,
@@ -320,7 +321,15 @@ fn axis_slots(
     let center_visible = center_length > 0.0;
 
     if center_visible {
-        let center_origin = (axis_length - center_length) / 2.0 + center_shift;
+        let midpoint = (axis_length - center_length) / 2.0 + center_shift;
+        let after_start = start_length + if start_length > 0.0 { gap } else { 0.0 };
+        let before_end =
+            axis_length - center_length - end_length - if end_length > 0.0 { gap } else { 0.0 };
+        let center_origin = if after_start <= before_end {
+            midpoint.clamp(after_start, before_end)
+        } else {
+            midpoint
+        };
         let center_end = center_origin + center_length;
         let start_limit = (center_origin - gap).max(0.0);
         let end_limit = (axis_length - center_end - gap).max(0.0);
@@ -478,6 +487,16 @@ mod tests {
         assert_eq!(slots[1].origin, 40.0);
         assert_eq!(slots[1].visible_origin, 40.0);
         assert_eq!(slots[1].visible_length, 20.0);
+    }
+
+    #[test]
+    fn center_shifts_to_keep_workspace_controls_visible_on_a_short_rail() {
+        let slots = axis_slots(100.0, 48.0, 30.0, 12.0, 4.0, 0.0);
+
+        assert_eq!(slots[0].visible_length, 48.0);
+        assert_eq!(slots[1].origin, 52.0);
+        assert_eq!(slots[1].visible_length, 30.0);
+        assert_eq!(slots[2].visible_length, 12.0);
     }
 
     #[test]

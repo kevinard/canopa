@@ -101,7 +101,7 @@ bar "main" {
         background "spine"
         radius 28
         border width=1 color="border"
-        padding 11 6
+        padding 11 4
         gap 8
     }
 
@@ -125,7 +125,7 @@ bar "main" {
     modules {
         // Start zone: stacks from the leading edge of the bar.
         start "launcher" "overview" "workspaces"
-        // Center zone: centered on the bar surface midpoint.
+        // Center zone: centered when it fits between the other zones.
         // Add "media" to a zone for MPRIS now-playing and playback controls.
         // See docs/shell.md; the module hides when no player is open.
         // The taskbar shows pinned applications, then the other open ones.
@@ -211,7 +211,17 @@ modules {
         label-id "shell-module-overview"
         icon "canopa:overview"
         tooltip-id "shell-tooltip-overview"
-        ui { padding 11 0; }
+        format { segment "{label}" size=10 weight="bold"; }
+        horizontal-format "{icon}" "{label}"
+        ui {
+            padding 11 0
+            background "surface"
+            radius 10
+            state "selected" {
+                background "accent"
+                foreground "on-accent"
+            }
+        }
         actions { click { toggle-overview; } }
     }
     module "system" {
@@ -282,6 +292,12 @@ modules {
         actions { click { open-menu "Power off?"; } }
     }
     module "media"
+    // Add "minimap" to a bar zone to keep the full scrolling strip within reach.
+    module "minimap" {
+        size 30
+        max-length 88
+        ui { padding 6 0; }
+    }
     // tray: StatusNotifierItem icons for background applications. Left click
     // activates an item, right click opens its menu. The Shell owns the
     // org.kde.StatusNotifierWatcher name while a tray module is placed.

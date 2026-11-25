@@ -221,10 +221,10 @@ impl ColumnWidth {
 
 impl WindowLayout {
     /// Gap sizes offered by Settings.
-    pub const GAPS: [u8; 4] = [0, 6, 12, 20];
+    pub const GAPS: [u8; 5] = [0, 6, 12, 16, 20];
     /// The values in `packaging/niri/defaults.kdl`.
     pub const SHIPPED: Self = Self {
-        gaps: 12,
+        gaps: 16,
         center: CenterColumn::OnOverflow,
         width: ColumnWidth::Half,
     };
@@ -405,7 +405,7 @@ mod window_layout_tests {
     #[test]
     fn an_edited_block_is_refused() {
         let written = with_window_layout(BASE, Some(WindowLayout::SHIPPED)).unwrap();
-        let edited = written.replace("gaps 12", "gaps 13");
+        let edited = written.replace("gaps 16", "gaps 13");
         assert!(split_layout(&edited).is_err());
     }
 

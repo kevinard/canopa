@@ -1,23 +1,25 @@
 // Canopa compositor defaults. Per-user input/display and custom files follow.
 prefer-no-csd
 layout {
-    // The dark palette background, which is also the login screen's last frame,
-    // so the switch from the login screen to the desktop shows one colour
-    // until the wallpaper appears.
-    background-color "#10191d"
+    // Tint each workspace over the stationary desktop backdrop. The matching
+    // dark backdrop blends with the login screen until the wallpaper appears.
+    background-color "#10191d42"
     // The compositor owns frames for applications that negotiated SSD.
-    // Application-provided headerbars remain untouched. Settings generates
-    // the colors and font of the chosen appearance in niri-appearance.kdl;
-    // these match the default dark appearance.
+    // Settings generates chrome colors and title typography from appearance.
+    // These values match the built-in dark appearance.
     titlebar {
         on
-        height 32
-        font "Inter, sans-serif 14px"
-        active-color "#202d31"
-        inactive-color "#10191d"
+        height 40
+        font "Inter, sans-serif Medium 14px"
+        active-color "#2e3f40"
+        inactive-color "#1a2529"
         text-color "#edf4f0"
+        inactive-text-color "#b5c7c3"
+        button-hover-color "#edf4f026"
+        close-hover-color "#f38ba8"
     }
-    gaps 12
+    gaps 16
+    clip-scroll-to-work-area
     center-focused-column "on-overflow"
     default-column-width { proportion 0.5; }
     // Mod+R cycles the focused column through these widths.
@@ -26,23 +28,36 @@ layout {
         proportion 0.5
         proportion 0.66667
     }
-    focus-ring { width 2; active-color "#7d938e"; inactive-color "#3e5450"; }
-    border { off; }
-    // Windows sit on a soft shadow so floating dialogs separate from their parent.
-    shadow { on; softness 28; spread 2; offset x=0 y=6; color "#00000070"; }
+    focus-ring { off; }
+    border {
+        on
+        width 2
+        active-color "#b0dec3"
+        active-gradient from="#9fc9b1" to="#658277" angle=155
+        inactive-color "#647d7699"
+        urgent-color "#f9e2af"
+    }
+    tab-indicator { gap 4; width 5; corner-radius 3; }
+    insert-hint { color "#b0dec35c"; }
+    // Tiled columns have a shallow shadow. Floating windows get more depth.
+    shadow { on; softness 34; spread 0; offset x=0 y=9; color "#00000080"; inactive-color "#0000004d"; }
 }
-// Every window shares the Canopa surface radius; content is clipped to it.
+// Settings needs room for its navigation and fixed save actions.
 window-rule {
-    geometry-corner-radius 12
+    match app-id="^org\\.canopa\\.Settings$"
+    default-column-width { proportion 0.78; }
+}
+// Match the window clip to the frame.
+window-rule {
+    geometry-corner-radius 16
     clip-to-geometry true
 }
-// Floating dialogs are outlined by a hairline and a deeper shadow rather than
-// the tiling focus ring, which stays for columns.
+// Floating windows use rounder corners and enough shadow to separate from
+// the windows beneath them.
 window-rule {
     match is-floating=true
-    focus-ring { off; }
-    border { on; width 1; active-color "#9aaba78c"; inactive-color "#9aaba759"; }
-    shadow { on; softness 20; spread 0; offset x=0 y=6; color "#00000040"; }
+    geometry-corner-radius 20
+    shadow { on; softness 52; spread 6; offset x=0 y=18; color "#000000b0"; inactive-color "#00000080"; }
 }
 // Authentication and passphrase prompts, and portal dialogs (file chooser,
 // screen sharing, …) even when the application gave no parent window, float
@@ -54,13 +69,23 @@ window-rule {
 }
 // The wallpaper stays behind the zoomed-out workspaces in the overview.
 layer-rule {
-    match namespace="^canopa-shell-wallpaper$"
+    match namespace="^canopa(-shell)?-wallpaper$"
     place-within-backdrop true
 }
 // Typing in the overview searches the launcher: Niri reports the text and
 // Canopa Shell opens Applications with it.
 overview {
     emit-typed-text
+    framed-workspaces
+    zoom 0.51
+    backdrop-color "#10191d"
+    workspace-shadow { on; softness 44; spread 1; offset x=0 y=8; color "#00000055"; }
+}
+animations {
+    horizontal-view-movement { spring damping-ratio=0.96 stiffness=950 epsilon=0.0001; }
+    workspace-switch { spring damping-ratio=1.0 stiffness=900 epsilon=0.0001; }
+    window-open { duration-ms 180; curve "ease-out-cubic"; }
+    window-close { duration-ms 140; curve "ease-out-quad"; }
 }
 // Pushing the pointer into the top-left corner opens the overview.
 gestures {

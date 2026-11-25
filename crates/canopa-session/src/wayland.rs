@@ -663,12 +663,16 @@ impl App {
                 Ok(image)
             } else {
                 let bg = self.settings.for_output(&name);
-                background::render(
-                    bg.image.as_deref(),
-                    bg.fit,
-                    self.settings.color,
-                    width,
-                    height,
+                background::wallpaper_source(bg.image.as_deref(), &self.settings).and_then(
+                    |source| {
+                        background::render_source(
+                            source.as_ref(),
+                            bg.fit,
+                            self.settings.color,
+                            width,
+                            height,
+                        )
+                    },
                 )
             };
             let image = match image {
@@ -795,7 +799,7 @@ impl App {
         // Decode each distinct file once. Only this source and the bounded set
         // of prepared output buffers are live together during admission.
         for (path, targets) in groups {
-            let source = path.as_deref().map(background::load).transpose()?;
+            let source = background::wallpaper_source(path.as_deref(), candidate)?;
             for (index, width, height, fit) in targets {
                 prepared[index] = Some(background::render_source(
                     source.as_ref(),

@@ -550,10 +550,13 @@ sign. See [Files](files.md) for command IDs and default shortcuts.
 
 | Key | Value | Default |
 | --- | --- | --- |
-| `image` | image path, relative to this file | none |
+| `image` | image path, relative to this file | Canopa's light or dark canopy wallpaper |
 | `fit` | `"fill"`, `"fit"`, `"stretch"`, `"center"` | `"fill"` |
 | `color` | `"#rrggbb"` solid color | the palette background |
 | `output "NAME" { image; fit; }` | per-output override, repeatable | |
+
+Without an image assignment, an explicit `color` or high-contrast appearance
+uses a solid backdrop.
 
 ## lockscreen
 
@@ -625,13 +628,13 @@ windows have no titlebar. Canopa's compositor defaults enable `prefer-no-csd`,
 which offers server-side decorations to applications; restart an application to
 pick up a change to that preference.
 
-Titlebar colors and font follow `appearance`. Settings writes them to
-`~/.config/canopa/niri-appearance.kdl` at login and whenever Personalization
-saves: the surface color for the focused window, the background color for the
-others, the text and muted colors for their titles, and the first `typography`
-families at the body size times `text-scale`. Edits to `config.kdl` made outside
-Settings apply at the next login. Do not edit the generated file; Settings
-replaces it.
+Window outlines, titlebars, and the overview backdrop follow `appearance`.
+Settings writes them to `~/.config/canopa/niri-appearance.kdl` at login and when
+Personalization saves. The focused outline uses the accent, and unfocused
+windows use the border color. High contrast uses a solid focus outline and full
+title text contrast. Titlebars use the configured font families at the scaled
+body size, capped at 36 logical pixels to fit within Niri's titlebar height
+limit. Manual edits to `config.kdl` apply to compositor chrome at the next login.
 
 `niri.kdl` includes the generated file before `niri-custom.kdl`, so options in
 `~/.config/canopa/niri-custom.kdl` override it. Every option is optional:
@@ -640,14 +643,14 @@ replaces it.
 layout {
     titlebar {
         on                          // or `off` to disable titlebars
-        height 32                   // 24 to 64 logical pixels
-        font "Inter, sans-serif 14px" // a Pango font description
+        height 40                   // 24 to 64 logical pixels
+        font "Inter, sans-serif Medium 14px" // a Pango font description
         title-align "left"          // or "center"
         buttons "maximize" "close"  // order and choice; `buttons` alone hides both
         buttons-side "right"        // or "left"
         double-click "maximize"     // or "none"
-        active-color "#202d31"
-        inactive-color "#10191d"
+        active-color "#2e3f40"
+        inactive-color "#1a2529"
         text-color "#edf4f0"
         inactive-text-color "#b5c7c3" // defaults to text-color
         button-hover-color "#edf4f026"
@@ -668,8 +671,13 @@ window-rule {
 `draw-titlebar true` shows titlebars for the matched windows even when the layout
 setting is `off`. Only windows that negotiate server-side decorations get a
 titlebar either way. These settings reload with Niri's configuration and require
-the Canopa compositor fork; distribution Niri rejects them. Shell-defined titlebar
-menus and extra actions are not implemented.
+the Canopa compositor fork.
+
+The shipped layout uses 16 logical pixels between columns. Tiled windows have
+16-pixel corners and floating windows have 20-pixel corners and deeper shadows.
+Adjust gaps in **Settings → Personalization → Window layout** and animations in
+**Settings → Personalization → Motion**. Niri also reads custom `layout`, `window-rule`, `overview`, and `animations`
+options from `niri-custom.kdl`.
 
 ## Known limitations
 

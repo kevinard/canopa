@@ -218,7 +218,7 @@ brightness slider.
 The Shell talks to Niri through `niri-ipc`, pinned to the `kevinard/niri` fork in
 the root `Cargo.toml`. `src/niri/subscription.rs` keeps one event-stream
 connection and maintains `NiriState`: workspaces, windows, the focused window,
-output sizes and window layout positions. Consumers:
+overview visibility, output sizes and window layout positions. Consumers:
 
 - `workspaces`, `focused-window`, `minimap` and `taskbar` modules;
 - the launcher's open-windows source and the overview action (`niri msg action
@@ -251,7 +251,9 @@ applications, then other running applications in screen order (output, workspace
 column, tile; floating windows after columns). A click focuses an application or
 cycles its windows in that order; middle-click launches a new instance; right-click
 opens an application menu with Open or New window, the desktop file's actions and
-Pin or Unpin. Pins changed from the bar are Shell state, stored as edits to each
+Pin or Unpin. While Niri's overview is open, the taskbar shows running
+applications with a neutral marker and the compositor highlights the preview
+selection. Pins changed from the bar are Shell state, stored as edits to each
 taskbar's configured `pinned` list in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`;
 the Shell never rewrites the KDL file
 ([Shell ADR 0026](../shell/adr/0026-taskbar-menus-and-saved-pins.md)).
@@ -469,7 +471,6 @@ restarts and must be reopened; queued actions are not replayed.
 
 - Window previews, overview typing and window session restore need the Niri fork.
 - Window session restore does not restore stacked columns after their first window or dialogs.
-- The minimap does not mark which columns are on screen.
 - The launcher's file search is a name index refreshed every minute, not a content index.
 - External monitor brightness (DDC/CI) is not controlled by the brightness keys.
 - Log out uses the `niri msg` CLI rather than `niri-ipc`.
