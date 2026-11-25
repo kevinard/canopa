@@ -279,15 +279,24 @@ impl SessionView {
         height: u32,
     ) -> Result<RgbImage> {
         let bg = settings.for_output(name);
+        // Match a desktop that shows the embedded wallpaper on this output.
+        let built_in = bg.image.is_none() && settings.built_in_wallpaper.contains(name);
         if bg.image.is_none()
+            && !built_in
             && !settings.solid_color
             && settings.color == settings.appearance.palette().background
         {
             return raster::backdrop(&settings.appearance, width, height);
         }
+        background::dimensions(width, height)?;
+        let source = if built_in {
+            Some(background::built_in(&settings.appearance)?)
+        } else {
+            bg.image.as_deref().map(background::load).transpose()?
+        };
         let mut image =
-            background::render(bg.image.as_deref(), bg.fit, settings.color, width, height)?;
-        if bg.image.is_some() {
+            background::render_source(source.as_ref(), bg.fit, settings.color, width, height)?;
+        if source.is_some() {
             for pixel in image.pixels_mut() {
                 for (channel, color) in
                     pixel
@@ -990,6 +999,28 @@ pub fn request_summary(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_matches_a_desktop_showing_the_embedded_wallpaper() {
+        let mut settings = Settings::parse(
+            &kdl::KdlDocument::new(),
+            Default::default(),
+            None,
+            canopa_config::Component::Lockscreen,
+        )
+        .unwrap();
+        let backdrop = SessionView::prepare_background(&settings, "DP-1", 320, 200).unwrap();
+        assert_eq!(
+            backdrop,
+            raster::backdrop(&settings.appearance, 320, 200).unwrap()
+        );
+
+        settings.built_in_wallpaper.insert("DP-1".into());
+        let wallpaper = SessionView::prepare_background(&settings, "DP-1", 320, 200).unwrap();
+        assert_ne!(wallpaper, backdrop);
+        let other = SessionView::prepare_background(&settings, "HDMI-A-1", 320, 200).unwrap();
+        assert_eq!(other, backdrop);
+    }
 
     #[test]
     fn unchanged_identity_refreshes_preserve_the_scene_revision() {

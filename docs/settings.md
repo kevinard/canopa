@@ -436,7 +436,9 @@ A page cannot be combined with a subcommand. The directory defaults to
 `~/.config/canopa`; the shipped defaults come from `--defaults-file`, else
 `/usr/share/canopa/niri-defaults.kdl`, else a private copy written next to `niri.kdl`.
 For uninstalled builds, Settings refreshes its private copy when the current
-file matches an earlier generated version. Keep local overrides in `niri-custom.kdl`.
+file matches an earlier generated version. If the refresh fails, the session
+starts with the existing copy and the next login retries. Keep local overrides in
+`niri-custom.kdl`.
 
 Programs can open pages on the session bus. Settings owns `org.canopa.Settings` and
 serves the `org.canopa.Settings` interface at `/org/canopa/Settings`; the installed

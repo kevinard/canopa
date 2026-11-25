@@ -3090,14 +3090,14 @@ impl State {
                             hinted_field(
                                 "settings-field-clock-format",
                                 fl!("settings-personal-clock-format"),
-                                &fl!("settings-personal-clock-example"),
+                                &fl!("settings-personal-format-default"),
                                 &values.lock.clock_format,
                                 |v| { Message::PersonalText(1, v) }
                             ),
                             hinted_field(
                                 "settings-field-date-format",
                                 fl!("settings-personal-date-format"),
-                                &fl!("settings-personal-date-example"),
+                                &fl!("settings-personal-format-default"),
                                 &values.lock.date_format,
                                 |v| { Message::PersonalText(2, v) }
                             ),

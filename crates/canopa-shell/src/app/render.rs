@@ -1223,7 +1223,7 @@ mod tests {
         let id = ModuleId::new("window-map");
         let mut config = Config {
             modules: vec![ModuleConfig {
-                name: id.display_name().into(),
+                name: id.display_name(),
                 module_type: "button".into(),
                 params: ModuleParams::Button(ButtonConfig {
                     label: "Overview".into(),
@@ -1241,7 +1241,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        config.bars[0].modules.start = vec![id.display_name().into()];
+        config.bars[0].modules.start = vec![id.display_name()];
         let (mut app, _) = App::boot(config, vec![]);
         let _ = app.update(Message::Modules(
             crate::app::messages::ModuleRuntimeEvent::Module(

@@ -325,11 +325,12 @@ fn axis_slots(
         let after_start = start_length + if start_length > 0.0 { gap } else { 0.0 };
         let before_end =
             axis_length - center_length - end_length - if end_length > 0.0 { gap } else { 0.0 };
-        let center_origin = if after_start <= before_end {
-            midpoint.clamp(after_start, before_end)
-        } else {
-            midpoint
-        };
+        // When the zones fit, the center yields to both edges. When they
+        // overflow, it stays between the two positions so that one more pixel
+        // of content clips the edges by one pixel instead of jumping back to
+        // the midpoint.
+        let center_origin =
+            midpoint.clamp(after_start.min(before_end), after_start.max(before_end));
         let center_end = center_origin + center_length;
         let start_limit = (center_origin - gap).max(0.0);
         let end_limit = (axis_length - center_end - gap).max(0.0);
@@ -497,6 +498,17 @@ mod tests {
         assert_eq!(slots[1].origin, 52.0);
         assert_eq!(slots[1].visible_length, 30.0);
         assert_eq!(slots[2].visible_length, 12.0);
+    }
+
+    #[test]
+    fn overflowing_center_clips_the_start_zone_gradually() {
+        let fits = axis_slots(100.0, 48.0, 32.0, 12.0, 4.0, 0.0);
+        let overflows = axis_slots(100.0, 48.0, 33.0, 12.0, 4.0, 0.0);
+
+        assert_eq!(fits[0].visible_length, 48.0);
+        assert_eq!(overflows[1].origin, 51.0);
+        assert_eq!(overflows[0].visible_length, 47.0);
+        assert_eq!(overflows[2].visible_length, 12.0);
     }
 
     #[test]
