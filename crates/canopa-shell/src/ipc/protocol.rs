@@ -53,6 +53,8 @@ pub enum IpcRequest {
     },
     /// A device key (`canopa-shell volume up`); answered when it has run.
     DeviceKey(canopa_shell::device_keys::Request),
+    /// Switch bars between staying on screen and hiding automatically.
+    ToggleBar,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

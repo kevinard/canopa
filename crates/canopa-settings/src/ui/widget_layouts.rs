@@ -21,6 +21,7 @@ pub(super) enum Action {
     Lock(bool),
     Bar(String),
     Edge(String),
+    AutoHide(bool),
     Target(Target),
     Monitor(String),
     Output(String),
@@ -287,6 +288,11 @@ impl State {
                 bar.edge = edge;
                 bar.change();
             }
+            Action::AutoHide(auto_hide) => {
+                let bar = &mut editor.bars[view.bar];
+                bar.auto_hide = auto_hide;
+                bar.change();
+            }
             Action::Target(target) => {
                 let bar = &mut editor.bars[view.bar];
                 bar.target = target;
@@ -462,6 +468,13 @@ impl State {
                     Some(bar.edge.clone()),
                     |edge| message(Action::Edge(edge)),
                 ),
+            ));
+            bar_rows.push(super::described_toggle(
+                "widgets-auto-hide",
+                fl!("settings-widgets-auto-hide"),
+                Some(fl!("settings-widgets-auto-hide-hint")),
+                bar.auto_hide,
+                message(Action::AutoHide(!bar.auto_hide)),
             ));
             bar_rows.push(kit::row(
                 fl!("settings-widgets-shown-on"),

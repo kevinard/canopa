@@ -319,6 +319,9 @@ fn ipc_message_for_request(
         protocol::IpcRequest::DeviceKey(request) => {
             Message::Ipc(crate::app::messages::IpcEvent::DeviceKey { request, responder })
         }
+        protocol::IpcRequest::ToggleBar => {
+            Message::Ipc(crate::app::messages::IpcEvent::ToggleBar { responder })
+        }
     }
 }
 
@@ -446,6 +449,18 @@ mod tests {
             ipc_message_for_bytes(&frame),
             Some(Message::Ipc(crate::app::messages::IpcEvent::ToggleMenu { name, .. }))
                 if name == "Tools ☰"
+        ));
+    }
+
+    #[test]
+    fn framed_toggle_bar_request_decodes_to_ipc_message() {
+        let frame = protocol::encode_frame(&protocol::IpcRequest::ToggleBar).unwrap();
+        assert!(String::from_utf8_lossy(&frame).contains(r#"{"type":"toggle-bar"}"#));
+        assert!(matches!(
+            ipc_message_for_bytes(&frame),
+            Some(Message::Ipc(
+                crate::app::messages::IpcEvent::ToggleBar { .. }
+            ))
         ));
     }
 

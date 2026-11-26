@@ -107,6 +107,13 @@ bar "main" {
         gap 8
     }
 
+    // "auto-hide" keeps the bar out of view and reserves no space: touching
+    // this screen edge slides it in over the windows, and it leaves shortly
+    // after the pointer, once no panel, menu or card of it is open.
+    // Mod+B (canopa-shell --toggle-bar) switches between the two until the
+    // next reload. Accepted values: "always" (default), "auto-hide".
+    // visibility "always"
+
     // Milliseconds of cursor dwell before a module's tooltip appears on hover.
     // Default: 500. Hide is always immediate on hover-exit.
     // tooltip-delay 500
@@ -305,7 +312,8 @@ modules {
     // org.kde.StatusNotifierWatcher name while a tray module is placed.
     // Click focuses an application or launches it; clicking the focused one
     // cycles its windows; middle-click opens another instance and right-click
-    // opens the application menu.
+    // opens the application menu. Hovering a running application shows its
+    // windows; click one to focus it. `tooltip #false` turns that card off.
     // Pinned applications that are not installed are skipped.
     module "taskbar" {
         pinned "org.canopa.Files.desktop" "firefox.desktop" "org.canopa.Settings.desktop"
@@ -358,10 +366,9 @@ modules {
         //     icon  "󰖟"
         // }
         //
-        // Tooltip on hover. Same grammar as `format` (string segments or
-        // styled `segment` block). Use `tooltip #false` to disable.
-        // Omit to use the module's built-in default (none for workspaces).
-        // The shipped tooltip is the built-in text "Workspace {index}".
+        // Hovering a workspace shows a card with its columns drawn to scale
+        // and a thumbnail of each window; click one to focus it.
+        // `tooltip #false` turns the card off.
         tooltip-id "shell-tooltip-workspace"
     }
 

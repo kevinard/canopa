@@ -52,6 +52,9 @@ impl Target {
 pub(crate) struct Bar {
     pub(crate) name: String,
     pub(crate) edge: String,
+    /// `visibility "auto-hide"`: the bar waits out of view until the
+    /// pointer reaches its edge.
+    pub(crate) auto_hide: bool,
     pub(crate) zones: [Vec<String>; 3],
     pub(crate) target: Target,
     pub(crate) outputs: BTreeSet<String>,
@@ -77,6 +80,15 @@ impl Bar {
             .and_then(kdl::KdlValue::as_string)
             .unwrap_or("left");
         ensure!(EDGES.contains(&edge), "unknown bar edge");
+        let auto_hide = match children
+            .and_then(|doc| doc.get("visibility"))
+            .and_then(|node| node.get(0))
+            .and_then(kdl::KdlValue::as_string)
+        {
+            None | Some("always") => false,
+            Some("auto-hide") => true,
+            Some(_) => anyhow::bail!("unknown bar visibility"),
+        };
         let modules = children
             .and_then(|doc| doc.get("modules"))
             .and_then(KdlNode::children);
@@ -87,6 +99,7 @@ impl Bar {
         Ok(Self {
             name: name(&node)?.into(),
             edge: edge.into(),
+            auto_hide,
             target,
             outputs,
             zones,
@@ -134,6 +147,14 @@ impl Bar {
         let doc = node.children_mut().as_mut().unwrap();
         if self.edge != "left" || doc.get("edge").is_some() {
             set_strings(doc, "edge", std::slice::from_ref(&self.edge))?;
+        }
+        if self.auto_hide || doc.get("visibility").is_some() {
+            let visibility = if self.auto_hide {
+                "auto-hide"
+            } else {
+                "always"
+            };
+            set_strings(doc, "visibility", &[visibility.to_owned()])?;
         }
         let output = match self.target {
             Target::All => vec!["all".into()],
@@ -590,6 +611,35 @@ mod tests {
                 .unwrap()
                 .get("panel")
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn bar_auto_hide_round_trips_and_switching_back_keeps_the_key() {
+        let (_directory, mut editor) = edit("schema-version 1\n");
+        assert!(!editor.bars[0].auto_hide);
+        editor.bars[0].auto_hide = true;
+        editor.bars[0].change();
+        let candidate = editor.candidate().unwrap();
+        assert!(
+            candidate.contains("visibility auto-hide")
+                || candidate.contains("visibility \"auto-hide\"")
+        );
+        let (_directory, mut reloaded) = edit(&candidate);
+        assert!(reloaded.bars[0].auto_hide);
+
+        reloaded.bars[0].auto_hide = false;
+        reloaded.bars[0].change();
+        let candidate = reloaded.candidate().unwrap();
+        let (_directory, reloaded) = edit(&candidate);
+        assert!(!reloaded.bars[0].auto_hide);
+        assert!(
+            candidate.contains("visibility always") || candidate.contains("visibility \"always\"")
+        );
+
+        assert!(
+            Bar::load(r#"bar "main" { visibility "sometimes"; }"#.parse::<KdlNode>().unwrap())
+                .is_err()
         );
     }
 

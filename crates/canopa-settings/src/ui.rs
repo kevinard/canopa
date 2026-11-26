@@ -3139,7 +3139,7 @@ impl State {
 impl State {
     /// Gaps, centering and the width of new columns, applied to Niri at once.
     fn window_layout_view(&self) -> Element<'_, Message> {
-        use crate::niri::{CenterColumn, ColumnWidth, WindowLayout};
+        use crate::niri::{CenterColumn, ColumnWidth, WindowBar, WindowLayout};
         let layout = match &self.window_layout {
             None => {
                 return text(fl!("settings-motion-needs-session"))
@@ -3189,6 +3189,17 @@ impl State {
                 (width, label)
             })
             .collect();
+        let bar = WindowBar::ALL
+            .into_iter()
+            .map(|bar| {
+                let label = match bar {
+                    WindowBar::Always => fl!("settings-window-bar-always"),
+                    WindowBar::OnDemand => fl!("settings-window-bar-on-demand"),
+                    WindowBar::Off => fl!("settings-window-bar-off"),
+                };
+                (bar, label)
+            })
+            .collect();
         // Niri takes these at once, unlike the rest of the page.
         let labelled =
             |label: String, control: Element<'static, Message>| kit::row(label, None, control);
@@ -3219,6 +3230,13 @@ impl State {
                     Some(current.width),
                     move |width| Message::WindowLayout(Some(WindowLayout { width, ..current })),
                 ),
+            ),
+            kit::row(
+                fl!("settings-window-bar"),
+                Some(fl!("settings-window-bar-detail")),
+                pick("settings-window-bar", bar, Some(current.bar), move |bar| {
+                    Message::WindowLayout(Some(WindowLayout { bar, ..current }))
+                }),
             ),
         ];
         if layout.is_some() {

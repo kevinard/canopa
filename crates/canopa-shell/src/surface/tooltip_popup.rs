@@ -42,22 +42,12 @@ pub struct RenderedSegment {
     pub style: ResolvedStyle,
 }
 
-/// A window thumbnail shown above the tooltip text, at its logical size.
-#[derive(Debug, Clone)]
-pub struct TooltipPreview {
-    pub handle: iced::widget::image::Handle,
-    pub width: f32,
-    pub height: f32,
-}
-
-/// Space between thumbnails and between them and the text.
-const PREVIEW_SPACING: f32 = 8.0;
-
 #[derive(Debug, Clone)]
 pub struct TooltipTree {
     pub segments: Vec<RenderedSegment>,
-    /// Window thumbnails, such as a taskbar application's windows.
-    pub previews: Vec<TooltipPreview>,
+    /// An interactive card shown instead of the text, such as a taskbar
+    /// application's windows or a workspace's layout.
+    pub card: Option<super::hover_card::HoverCard>,
     /// Module's screen-space anchor point.
     pub anchor: (i32, i32),
     /// Logical size of the bar surface the tooltip points at.
@@ -76,6 +66,14 @@ pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
     } else {
         0.0
     };
+    if let Some(card) = &tree.card {
+        let (width, height) = card.content_size();
+        let padding = 2.0 * super::hover_card::HoverCard::padding() + border;
+        return (
+            (width + padding + ui.margin.horizontal()).ceil() as u32,
+            (height + padding + ui.margin.vertical()).ceil() as u32,
+        );
+    }
     let spans = spans(tree);
     let measure = |width| {
         iced::advanced::graphics::text::Paragraph::with_spans(text::Text {
@@ -94,70 +92,44 @@ pub fn popup_size(tree: &TooltipTree) -> (u32, u32) {
     let natural = measure(
         (MAX_WIDTH as f32 - (ui.padding.horizontal() + border) - ui.margin.horizontal()).max(1.0),
     );
-    let (previews_width, previews_height) = previews_size(tree);
-    let width = ((natural.width.max(previews_width)
-        + (ui.padding.horizontal() + border)
-        + ui.margin.horizontal())
-    .ceil() as u32)
-        .clamp(MIN_WIDTH, MAX_WIDTH.max(previews_width.ceil() as u32 + 64));
+    let width = ((natural.width + (ui.padding.horizontal() + border) + ui.margin.horizontal())
+        .ceil() as u32)
+        .clamp(MIN_WIDTH, MAX_WIDTH);
     // Re-measure at the rounded surface width, including all wrapped lines.
     let measured = measure(
         (width as f32 - (ui.padding.horizontal() + border) - ui.margin.horizontal()).max(1.0),
     );
-    let height = ((measured.height
-        + previews_height
-        + (ui.padding.vertical() + border)
-        + ui.margin.vertical())
-    .ceil() as u32)
-        .max(MIN_HEIGHT);
+    let height =
+        ((measured.height + (ui.padding.vertical() + border) + ui.margin.vertical()).ceil() as u32)
+            .max(MIN_HEIGHT);
     (width, height)
 }
 
-/// The thumbnail row's size, including the space below it.
-fn previews_size(tree: &TooltipTree) -> (f32, f32) {
-    if tree.previews.is_empty() {
-        return (0.0, 0.0);
-    }
-    let width = tree
-        .previews
-        .iter()
-        .map(|preview| preview.width)
-        .sum::<f32>()
-        + PREVIEW_SPACING * (tree.previews.len() - 1) as f32;
-    let height = tree
-        .previews
-        .iter()
-        .map(|preview| preview.height)
-        .fold(0.0, f32::max);
-    (width, height + PREVIEW_SPACING)
-}
-
-/// Render the tooltip element for a popup window.
-pub fn view_tooltip<'a, Message: 'a + Clone>(tree: &'a TooltipTree) -> iced::Element<'a, Message> {
-    use iced::widget::{column, container, image, rich_text, row};
+/// Render the tooltip element for a popup window: its text, or its card.
+pub fn view_tooltip<'a>(tree: &'a TooltipTree) -> iced::Element<'a, crate::app::Message> {
+    use iced::widget::{container, rich_text};
 
     let ui = crate::theme::ui(canopa_theme::UiKind::Tooltip);
+    if let Some(card) = &tree.card {
+        let border = if ui.custom_border {
+            ui.border_width.px()
+        } else {
+            0.0
+        };
+        let frame = container(card.view())
+            .padding(super::hover_card::HoverCard::padding() + border)
+            .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui));
+        return container(frame)
+            .padding(canopa_ui::padding(ui.margin))
+            .into();
+    }
     let text = rich_text(spans(tree))
         .size(crate::theme::title_size())
         .font(crate::theme::font())
         .wrapping(text::Wrapping::WordOrGlyph);
-    let content: iced::Element<'a, Message> = if tree.previews.is_empty() {
-        text.into()
-    } else {
-        let previews = row(tree.previews.iter().map(|preview| {
-            image(preview.handle.clone())
-                .width(preview.width)
-                .height(preview.height)
-                .into()
-        }))
-        .spacing(PREVIEW_SPACING)
-        .align_y(iced::Alignment::End);
-        column![previews, text].spacing(PREVIEW_SPACING).into()
-    };
-    let max_width = (MAX_WIDTH as f32).max(previews_size(tree).0 + 64.0);
-    let frame = container(content)
+    let frame = container(text)
         .padding(canopa_ui::content_padding(ui))
-        .max_width((max_width - ui.margin.horizontal()).max(1.0))
+        .max_width((MAX_WIDTH as f32 - ui.margin.horizontal()).max(1.0))
         .height(iced::Length::Shrink)
         .style(move |_| canopa_ui::frame(&crate::theme::appearance(), ui));
     container(frame)
@@ -187,14 +159,14 @@ mod tests {
                     text: content.clone(),
                     style: Default::default(),
                 }],
-                previews: Vec::new(),
+                card: None,
                 anchor: (24, 500),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),
                 bar_edge: Edge::Left,
             };
             let size = popup_size(&tree);
-            let mut view = view_tooltip::<()>(&tree);
+            let mut view = view_tooltip(&tree);
             let mut state = Tree::new(&view);
             // Constrain width exactly as the compositor does, but allow all the
             // text's height so a too-short popup cannot conceal the failure.
@@ -222,7 +194,7 @@ mod tests {
                 text: "iiii".into(),
                 style: Default::default(),
             }],
-            previews: Vec::new(),
+            card: None,
             anchor: (24, 500),
             bar_size: (48, 1080),
             screen_size: (1920, 1080),

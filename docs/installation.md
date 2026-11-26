@@ -139,6 +139,7 @@ Useful default keys:
 | Super+Comma | Canopa Settings |
 | Super+L | Lock the screen |
 | Super+O | Overview |
+| Super+B | Hide the bar automatically, or keep it ([Hiding the bar](shell.md#hiding-the-bar)) |
 | Super+Q | Close window |
 | Super+arrows / Super+Shift+arrows | Focus / move columns and windows |
 | Super+Shift+E | Quit Niri (with Niri's confirmation) |

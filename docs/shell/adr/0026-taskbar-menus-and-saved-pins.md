@@ -54,3 +54,9 @@ opening order: the output, workspace index, column and tile of their leftmost
 window, with floating windows after their workspace's columns. Clicks cycle an
 application's windows in that order, left to right, instead of by window ID.
 The Shell keeps Niri's `WindowLayoutsChanged` positions for this.
+
+## Update 2026-11-26: hover cards
+
+Hovering a running application now opens a hover card listing its windows, and
+the menu keeps application actions only; see
+[ADR 0028](0028-auto-hiding-bars-and-hover-cards.md).

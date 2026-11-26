@@ -18,6 +18,8 @@ pub enum Command {
     IpcCommand(String),
     OpenMenu(String),
     ToggleMenu(String),
+    /// `--toggle-bar`: switch bars between staying on screen and hiding.
+    ToggleBar,
     /// `--open-template NAME`: open a configured workspace template.
     OpenTemplate(String),
     Dmenu(DmenuOptions),
@@ -85,6 +87,7 @@ Commands:
   --open-menu NAME             Open a named menu
   --open-template NAME         Open a workspace template
   --toggle-panel               Toggle the bar's panel
+  --toggle-bar                 Switch bars between staying and hiding automatically
   volume|microphone|brightness|keyboard-backlight|media ACTION [STEP]
                                Device keys
   --dmenu [-p PROMPT] [-d DELIM] [--json|--entry-format plain|jsonl] [--no-custom]
@@ -166,7 +169,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     _ => Command::OpenMenu(name),
                 });
             }
-            "--version" | "-V" | "--toggle-panel" | "reload" | "--reload" | "lock" => {
+            "--version" | "-V" | "--toggle-panel" | "--toggle-bar" | "reload" | "--reload"
+            | "lock" => {
                 if special_mode.is_some() {
                     return Command::UsageError("choose one command mode".into());
                 }
@@ -180,6 +184,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
                     Command::Reload
                 } else if arg == "--toggle-panel" {
                     Command::IpcCommand("toggle-panel".into())
+                } else if arg == "--toggle-bar" {
+                    Command::ToggleBar
                 } else {
                     Command::PrintVersion
                 });
@@ -308,6 +314,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Command {
             command,
             Command::OpenMenu(_)
                 | Command::ToggleMenu(_)
+                | Command::ToggleBar
                 | Command::OpenTemplate(_)
                 | Command::Reload
                 | Command::Lock { .. }
@@ -497,6 +504,21 @@ mod tests {
             parse_args(["--dmenu", "volume"].map(str::to_string)),
             Command::Dmenu(_)
         ));
+    }
+
+    #[test]
+    fn toggle_bar_is_a_standalone_ipc_command() {
+        assert!(matches!(
+            parse_args(["--toggle-bar".to_string()]),
+            Command::ToggleBar
+        ));
+        assert!(USAGE.contains("--toggle-bar"));
+        for extra in ["--defaults", "--json", "stray"] {
+            assert!(matches!(
+                parse_args(["--toggle-bar".to_string(), extra.to_string()]),
+                Command::UsageError(_)
+            ));
+        }
     }
 
     #[test]

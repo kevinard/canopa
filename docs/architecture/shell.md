@@ -31,7 +31,7 @@ One `canopa-shell` process runs per session, started by
 on failure). The same executable is also:
 
 - an IPC client: `reload`, `--open-menu`, `--toggle-menu`, `--open-template`,
-  `--dmenu`, `--toggle-panel` and the device-key commands (`volume`, `microphone`,
+  `--dmenu`, `--toggle-panel`, `--toggle-bar` and the device-key commands (`volume`, `microphone`,
   `brightness`, `keyboard-backlight`, `media`) connect to the running instance;
 - `canopa-shell lock`, which execs `canopa-lock` (or `loginctl lock-session`), or
   with `--swaylock` Swaylock with the Shell's lock image;
@@ -46,7 +46,8 @@ The CLI is hand-written in `src/cli.rs`, not clap. The instance owns
 `$XDG_RUNTIME_DIR/canopa-shell.sock` (owner-only, guarded by a lock file; a
 second instance cannot take it over and runs without IPC, logging that the
 listener is unavailable). Requests are framed JSON (`src/ipc/protocol.rs`:
-`Reload`, `DmenuSelection`, `OpenMenu`, `ToggleMenu`, `OpenTemplate`, `DeviceKey`);
+`Reload`, `DmenuSelection`, `OpenMenu`, `ToggleMenu`, `OpenTemplate`, `DeviceKey`,
+`ToggleBar`);
 the line command `toggle-panel` is also accepted. At most 64 clients are served at
 once, each with two-second read and write deadlines.
 
@@ -111,12 +112,23 @@ All surfaces are layer-shell surfaces owned by the one Iced daemon:
 
 | Surface | Layer | Namespace | Input |
 | --- | --- | --- | --- |
-| Bar Surface (one per Bar per eligible output) | configured `layer` (default `top`) | `canopa-shell` | Pointer and keyboard; reserves space unless `reserve-space #false` |
+| Bar Surface (one per Bar per eligible output) | configured `layer` (default `top`) | `canopa-shell` | Pointer and keyboard; reserves space unless `reserve-space #false` or `visibility "auto-hide"` |
 | Panel, Panel Menu, drawer | `overlay` | `canopa-shell` | Keyboard on demand |
 | Dismissal surface (one per output while a panel is open) | `top` | `canopa-shell-dismissal` | Pointer only; transparent; consumes the first outside click |
-| Tooltip and menu popups | popups of the bar surface | — | Menus use the popup grab |
+| Tooltips and hover cards | `overlay` | — | Pointer only on hover cards; no keyboard |
+| Menu popups | popups of the bar surface | — | Menus use the popup grab |
 | On-screen display | `overlay` | `canopa-shell-osd` | None (empty input region) |
 | Wallpaper (one per output while a background is selected) | `background` | `canopa-shell-wallpaper` | None |
+
+An auto-hiding Bar Surface (`visibility "auto-hide"`, `src/app/auto_hide.rs`,
+`src/surface/auto_hide.rs`) has no exclusive zone. Its bar is drawn translated
+toward the edge and clipped by its own surface, so a slide only redraws; the input
+region shrinks to a 2-pixel edge strip while it is out of view. A policy pass after
+every update reveals it while the pointer is on it, a button is held, it has
+keyboard focus, or one of its panels, menus, tooltips or hover cards is open, and
+hides it 500 ms after the last of these ends. `--toggle-bar` flips each bar's mode
+at runtime and sends `ExclusiveZoneChange`; a configuration install restores the
+configured mode ([Shell ADR 0028](../shell/adr/0028-auto-hiding-bars-and-hover-cards.md)).
 
 Bar Surfaces open only after Wayland reports named outputs. A Bar is a named
 configuration and a Bar Surface is its instance on one output; output-specific
@@ -236,9 +248,8 @@ them):
   and workspace templates (`--open-template NAME`) start applications at a given
   workspace, column and width (`src/app/session_restore.rs`, record in
   `$XDG_STATE_HOME/canopa/shell/windows.json`).
-- `org.canopa.Niri.WindowPreview1` on the session bus: taskbar tooltip
-  thumbnails, through the same `canopa-services` client used by the portal
-  window pickers.
+- `org.canopa.Niri.WindowPreview1` on the session bus: hover card thumbnails,
+  through the same `canopa-services` client used by the portal window pickers.
 
 Log out (`session "log-out"`, `PanelAction::Compositor`) sends `Action::Quit` with
 `skip_confirmation` over the Shell's Niri IPC socket from the default Power menu, as
@@ -251,7 +262,19 @@ applications, then other running applications in screen order (output, workspace
 column, tile; floating windows after columns). A click focuses an application or
 cycles its windows in that order; middle-click launches a new instance; right-click
 opens an application menu with Open or New window, the desktop file's actions and
-Pin or Unpin. While Niri's overview is open, the taskbar shows running
+Pin or Unpin; window management stays in the compositor's titlebars.
+
+Hover cards (`src/app/hover_card.rs`, `src/surface/hover_card.rs`) are tooltips
+with interactive content, opened after the tooltip dwell in the tooltip's
+layer surface: a running taskbar application's windows, and a workspace
+indicator's columns drawn with the minimap's strip layout (`draw_strip`). A card is
+centered on its module's measured bounds, stays while the pointer moves into it,
+closes 300 ms after the pointer leaves both, and is rebuilt in place when Niri
+reports changes or thumbnails arrive. Clicks send `FocusWindow` or `CloseWindow`
+over the Niri socket
+([Shell ADR 0028](../shell/adr/0028-auto-hiding-bars-and-hover-cards.md)).
+
+While Niri's overview is open, the taskbar shows running
 applications with a neutral marker and the compositor highlights the preview
 selection. Pins changed from the bar are Shell state, stored as edits to each
 taskbar's configured `pinned` list in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`;

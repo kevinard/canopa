@@ -72,6 +72,7 @@ fn parse_single_bar_node(
             "align",
             "margin",
             "reserve-space",
+            "visibility",
             "ui",
             "tooltip-delay",
             "style",
@@ -89,6 +90,7 @@ fn parse_single_bar_node(
             "align",
             "margin",
             "reserve-space",
+            "visibility",
             "ui",
             "tooltip-delay",
             "style",
@@ -213,6 +215,14 @@ fn parse_single_bar_node(
         .optional()
         .bool()
         .unwrap_or(true)?;
+    let visibility = fields::field(children, ctx, "visibility")
+        .optional()
+        .one_of("always, auto-hide", |value| match value {
+            "always" => Some(crate::config::BarVisibility::Always),
+            "auto-hide" => Some(crate::config::BarVisibility::AutoHide),
+            _ => None,
+        })
+        .unwrap_or(defaults.visibility)?;
     let ui = super::parse_ui(children, ctx, canopa_theme::UiKind::Bar)?;
 
     let tooltip_delay_ms = fields::field(children, ctx, "tooltip-delay")
@@ -246,6 +256,7 @@ fn parse_single_bar_node(
         align,
         margin,
         reserve_space,
+        visibility,
         ui,
         tooltip_delay_ms,
         style,

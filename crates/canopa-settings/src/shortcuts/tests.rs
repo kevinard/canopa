@@ -185,7 +185,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
         .replace("gaps 16", "gaps 20")
         .replace(
             "    Print { screenshot; }\n",
-            "    Print { screenshot; }\n    Mod+B { spawn \"canopa-browser\"; }\n    Mod+Shift+Space { spawn \"conflicting-default\"; }\n",
+            "    Print { screenshot; }\n    Mod+G { spawn \"canopa-browser\"; }\n    Mod+Shift+Space { spawn \"conflicting-default\"; }\n",
         );
     assert_ne!(updated, DEFAULTS);
     std::fs::write(&defaults, &updated).unwrap();
@@ -201,7 +201,7 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
     };
     assert_eq!(action("Mod+Y"), Some("close-window"));
     assert_eq!(action("Mod+Q"), None);
-    assert!(action("Mod+B").unwrap().contains("canopa-browser"));
+    assert!(action("Mod+G").unwrap().contains("canopa-browser"));
     assert!(action("Mod+Shift+Space").unwrap().contains("--toggle-menu"));
     assert!(
         !binds
@@ -217,17 +217,17 @@ fn defaults_updates_reach_users_and_user_bindings_win_conflicts() {
 
     let mut editor = Editor::load(&paths).unwrap();
     assert_eq!(editor.rows[row(&editor, "Mod+W")].key, "Mod+W");
-    assert_eq!(editor.rows[row(&editor, "Mod+B")].key, "Mod+B");
+    assert_eq!(editor.rows[row(&editor, "Mod+G")].key, "Mod+G");
     // The new default on the user's key shows as unassigned, not as a duplicate.
     let displaced = row(&editor, "Mod+Shift+Space");
     assert_eq!(editor.rows[displaced].key, "");
-    editor.rows[displaced].key = "Mod+Shift+B".into();
+    editor.rows[displaced].key = "Mod+Shift+G".into();
     commit(&editor, &paths).unwrap();
     let binds = generated(&paths);
     assert!(
         binds
             .iter()
-            .any(|(key, action)| key == "Mod+Shift+B" && action.contains("conflicting"))
+            .any(|(key, action)| key == "Mod+Shift+G" && action.contains("conflicting"))
     );
 }
 
@@ -270,7 +270,7 @@ fn migration_keeps_every_user_change_backs_up_and_inherits_the_rest() {
         &defaults,
         DEFAULTS.replace(
             "    Print { screenshot; }\n",
-            "    Print { screenshot; }\n    Mod+B { spawn \"canopa-browser\"; }\n",
+            "    Print { screenshot; }\n    Mod+G { spawn \"canopa-browser\"; }\n",
         ),
     )
     .unwrap();
@@ -323,7 +323,7 @@ fn migration_keeps_every_user_change_backs_up_and_inherits_the_rest() {
     // Unchanged bindings follow the current defaults again.
     let binds = generated(&paths);
     let bound = |key: &str| binds.iter().any(|(bound, _)| bound == key);
-    assert!(bound("Mod+B") && bound("Mod+Shift+Space") && bound("Mod+T"));
+    assert!(bound("Mod+G") && bound("Mod+Shift+Space") && bound("Mod+T"));
     assert!(!bound("Mod+V") && !bound("Mod+Space"));
     assert_eq!(refresh(&paths, Some(&defaults), check).unwrap(), None);
 
@@ -333,7 +333,7 @@ fn migration_keeps_every_user_change_backs_up_and_inherits_the_rest() {
         "Mod+Shift+Space"
     );
     assert_eq!(editor.rows[row(&editor, "Mod+V")].key, "");
-    assert_eq!(editor.rows[row(&editor, "Mod+B")].key, "Mod+B");
+    assert_eq!(editor.rows[row(&editor, "Mod+G")].key, "Mod+G");
     // The hand-added binding stays in the delta through later edits.
     let close = row(&editor, "Mod+Q");
     editor.rows[close].key = "Mod+T".into();

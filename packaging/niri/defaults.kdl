@@ -9,6 +9,9 @@ layout {
     // These values match the built-in dark appearance.
     titlebar {
         on
+        // The layout button opens a menu for the column width, pinning,
+        // floating and tabs.
+        buttons "layout" "maximize" "close"
         height 36
         font "Inter, sans-serif Medium 14px"
         active-color "#2e483e"
@@ -72,11 +75,7 @@ layer-rule {
 // Canopa Shell opens Applications with it.
 overview {
     emit-typed-text
-    framed-workspaces
-    zoom 0.51
     backdrop-color "#10191d"
-    // Workspace frames are outlined, not raised; the window previews carry the depth.
-    workspace-shadow { off; }
 }
 animations {
     horizontal-view-movement { duration-ms 300; curve "ease-out-cubic"; }
@@ -130,6 +129,9 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 binds {
     Mod+Return { spawn "xdg-terminal-exec"; }
     Mod+Space { spawn "canopa-shell" "--toggle-menu" "Applications"; }
+    Mod+B { spawn "canopa-shell" "--toggle-bar"; }
+    // Shows or hides the window bar when Settings sets it to show on demand.
+    Mod+Shift+B { toggle-window-bar; }
     Mod+E { spawn "canopa-files"; }
     Mod+Comma { spawn "canopa-settings"; }
     Mod+L { spawn "canopa-lock"; }

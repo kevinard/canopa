@@ -136,6 +136,9 @@ pub struct BarConfig {
     pub align: BarAlignment,
     pub margin: canopa_theme::Insets,
     pub reserve_space: bool,
+    /// Whether the bar stays on screen or slides away until the pointer
+    /// touches its screen edge.
+    pub visibility: BarVisibility,
     pub ui: canopa_theme::UiStyle,
     /// Dwell delay (ms) before a module's tooltip appears on hover.
     /// Default 500. Hide is always immediate on hover-exit.
@@ -160,6 +163,7 @@ impl Default for BarConfig {
             align: BarAlignment::Center,
             margin: Default::default(),
             reserve_space: true,
+            visibility: BarVisibility::Always,
             ui: Default::default(),
             tooltip_delay_ms: 500,
             style: Style::default(),
@@ -171,6 +175,11 @@ impl Default for BarConfig {
 }
 
 impl BarConfig {
+    /// Space is reserved only for a bar that stays on screen.
+    pub fn reserves_space(&self) -> bool {
+        self.reserve_space && self.visibility == BarVisibility::Always
+    }
+
     pub fn outer_margins(&self) -> (u32, u32, u32, u32) {
         let m = self.margin;
         match self.edge {
@@ -198,6 +207,24 @@ impl BarConfig {
 
     pub fn matches_output(&self, output_name: &str) -> bool {
         self.output_target.matches(output_name)
+    }
+}
+
+/// Whether a bar stays on screen (`always`) or hides until the pointer
+/// reaches its screen edge (`auto-hide`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BarVisibility {
+    #[default]
+    Always,
+    AutoHide,
+}
+
+impl BarVisibility {
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Always => Self::AutoHide,
+            Self::AutoHide => Self::Always,
+        }
     }
 }
 

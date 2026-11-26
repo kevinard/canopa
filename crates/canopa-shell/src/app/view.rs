@@ -1162,7 +1162,7 @@ fn panel_menu_icon_element<'a>(
 fn render_tooltip_popup<'a>(
     tree: &'a crate::surface::tooltip_popup::TooltipTree,
 ) -> Element<'a, Message> {
-    crate::surface::tooltip_popup::view_tooltip::<Message>(tree)
+    crate::surface::tooltip_popup::view_tooltip(tree)
 }
 
 fn render_popup_model<'a>(
@@ -1361,15 +1361,12 @@ fn render_bar_model<'a>(
     .on_exit(Message::Surface(
         super::messages::SurfaceEvent::BarHoverExit(window),
     ));
-    container(bar)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(iced::Padding {
-            top: frame.y,
-            left: frame.x,
-            right: 0.0,
-            bottom: 0.0,
-        })
+    // An auto-hiding bar slides toward its edge; the surface clips what has left.
+    iced::widget::pin(bar)
+        .position(iced::Point::new(
+            frame.x + model.slide.x,
+            frame.y + model.slide.y,
+        ))
         .into()
 }
 

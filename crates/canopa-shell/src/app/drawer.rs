@@ -2,6 +2,7 @@ use iced::Task;
 use iced_layershell::actions::ActionCallback;
 
 use super::{App, Message};
+use crate::surface::bar_geometry::BarGeometry;
 
 impl App {
     /// Grow the surface around the bar, leaving its exclusive zone unchanged.
@@ -18,7 +19,7 @@ impl App {
             return Task::none();
         }
         let bar = self.bar_for_window(window);
-        let size = crate::surface::bar_geometry::BarGeometry::host_size(bar, width);
+        let size = BarGeometry::host_size(bar, width);
         self.surface_mut(window).drawer_width = width;
         Task::done(Message::SizeChange { id: window, size })
             .chain(self.drawer_bar_input_region(window))
@@ -29,17 +30,29 @@ impl App {
             return Task::none();
         };
         let bar = self.bar_for_window(window);
-        let geometry = crate::surface::bar_geometry::BarGeometry::resolve(
-            bar,
-            surface.screen_size,
-            surface.drawer_width,
-        );
+        let geometry = BarGeometry::resolve(bar, surface.screen_size, surface.drawer_width);
         let style = self
             .config
             .appearance
             .style(canopa_theme::UiKind::Bar)
             .apply(bar.ui);
-        let rectangles = geometry.input_rectangles(style.radius);
+        let host = surface.screen_size;
+        let auto_hides = bar.visibility == crate::config::BarVisibility::AutoHide;
+        let rectangles = if auto_hides && surface.edge_strip_input {
+            // Hidden: only a thin strip on the screen edge wakes the bar.
+            vec![geometry.edge_strip(&bar.edge, host, crate::surface::auto_hide::EDGE_STRIP)]
+        } else {
+            let mut rectangles = geometry.input_rectangles(style.radius);
+            if auto_hides {
+                rectangles.extend(geometry.edge_band(&bar.edge, host));
+                rectangles.push(geometry.edge_strip(
+                    &bar.edge,
+                    host,
+                    crate::surface::auto_hide::EDGE_STRIP,
+                ));
+            }
+            rectangles
+        };
         Task::done(Message::SetInputRegion {
             id: window,
             callback: ActionCallback::new(move |region| {

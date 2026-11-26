@@ -452,6 +452,26 @@ impl App {
         &mut self,
         event: super::messages::SurfaceEvent,
     ) -> Task<Message> {
+        use super::messages::{PointerChange, SurfaceEvent};
+        match &event {
+            SurfaceEvent::Pointer { window, change } => {
+                let (window, change) = (*window, *change);
+                if self.surfaces.surfaces.contains_key(&window) {
+                    match change {
+                        PointerChange::Entered => self.auto_hide_pointer(window, true),
+                        PointerChange::Left => self.auto_hide_pointer(window, false),
+                        PointerChange::Released => self.auto_hide_pressed(window, false),
+                    }
+                } else if self.surfaces.tooltip_popups.contains_key(&window) {
+                    self.hover_card_pointer(window, change);
+                }
+                return Task::none();
+            }
+            SurfaceEvent::PointerPressed(window) if self.surfaces.surfaces.contains_key(window) => {
+                self.auto_hide_pressed(*window, true);
+            }
+            _ => {}
+        }
         let effect = super::surface_input_router::route_for_role(
             |window| self.window_role_for_surface_input(window),
             &event,
@@ -676,8 +696,20 @@ impl App {
             return Task::none();
         }
         let resolved = self.resolved_tooltip_for(window, &id);
+        let has_card = self.module_has_hover_card(&id)
+            && self
+                .visible_module_layout(window)
+                .iter()
+                .any(|(_, visible)| visible == &id);
         let s = self.surface_mut(window);
         s.hovered_module = Some(id.clone());
+
+        // Back from the module's own card: it stays open.
+        let start = match self.hover_card_enter(window, &id) {
+            super::hover_card::HoverCardEnter::Keep => return Task::none(),
+            super::hover_card::HoverCardEnter::Warm(elapsed) => elapsed,
+            super::hover_card::HoverCardEnter::Cold => 0.0,
+        };
 
         let mut tasks = Vec::new();
         let close = self.close_tooltip_popup_if_open(window);
@@ -685,8 +717,8 @@ impl App {
             tasks.extend(close);
         }
 
-        if resolved.is_some() {
-            self.surface_mut(window).tooltip_pending = Some((id, 0.0));
+        if resolved.is_some() || has_card {
+            self.surface_mut(window).tooltip_pending = Some((id, start));
         } else {
             self.surface_mut(window).tooltip_pending = None;
         }
@@ -709,6 +741,10 @@ impl App {
             && pending_id == &id
         {
             s.tooltip_pending = None;
+        }
+        // A card waits a moment, so the pointer can travel into it.
+        if self.defer_hover_card_close(window, &id) {
+            return Task::none();
         }
         let close = self.close_tooltip_popup_if_open_for(window, &id);
         Task::batch(close)
@@ -736,6 +772,24 @@ impl App {
             return Task::none();
         }
 
+        if self.module_has_hover_card(&module) {
+            // Cards center on their module, so measure it first.
+            let target = super::widget_ops::module_widget_id(target_window, &module);
+            let op = super::widget_ops::FindBounds {
+                target,
+                result: None,
+            };
+            return iced::advanced::widget::operate(op).then(move |bounds| {
+                Task::done(Message::HoverCard(
+                    crate::surface::hover_card::Event::Open {
+                        window: target_window,
+                        module: module.clone(),
+                        bounds,
+                    },
+                ))
+            });
+        }
+
         let template = match self.resolved_tooltip_for(target_window, &module) {
             Some(t) => t,
             None => return Task::none(),
@@ -750,54 +804,20 @@ impl App {
 
         let placement = self.tooltip_anchor_for(target_window);
 
-        let (previews, request) = self.taskbar_tooltip_previews(&module);
         let tree = crate::surface::tooltip_popup::TooltipTree {
             segments: rendered,
-            previews,
+            card: None,
             anchor: placement.anchor,
             bar_size: placement.bar_size,
             screen_size: placement.screen_size,
             bar_edge: placement.bar_edge,
         };
 
-        let mut tasks = self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
+        Task::batch(self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
             target_window,
             target_module: module,
             tree,
-        }]);
-        tasks.push(request);
-        Task::batch(tasks)
-    }
-
-    /// Reopen the tooltips of taskbar items whose thumbnails changed, without
-    /// asking for thumbnails again.
-    pub(super) fn refresh_taskbar_tooltips(&mut self) -> Task<Message> {
-        let open: Vec<_> = self
-            .surfaces
-            .tooltip_popups
-            .values()
-            .map(|popup| {
-                (
-                    popup.target_window,
-                    popup.target_module.clone(),
-                    popup.tree.clone(),
-                )
-            })
-            .collect();
-        let mut tasks = Vec::new();
-        for (target_window, module, mut tree) in open {
-            let previews = self.taskbar_cached_previews(&module);
-            if previews.is_empty() || previews.len() == tree.previews.len() {
-                continue;
-            }
-            tree.previews = previews;
-            tasks.extend(self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
-                target_window,
-                target_module: module,
-                tree,
-            }]));
-        }
-        Task::batch(tasks)
+        }]))
     }
 
     fn tooltip_values_for(
@@ -807,6 +827,51 @@ impl App {
     ) -> Vec<(&'static str, String)> {
         let _ = window;
         self.modules.tooltip_values_for(module)
+    }
+
+    /// Open `module`'s card beside it, centered on `bounds` when measured.
+    pub(super) fn open_hover_card(
+        &mut self,
+        target_window: iced::window::Id,
+        module: crate::modules::ModuleId,
+        bounds: Option<iced::Rectangle>,
+    ) -> Task<Message> {
+        let still_hovered = self
+            .surface(target_window)
+            .and_then(|s| s.hovered_module.as_ref())
+            == Some(&module);
+        if !still_hovered
+            || self
+                .foreground
+                .active_panel_origin_for(target_window)
+                .is_some()
+        {
+            return Task::none();
+        }
+        let Some(card) = self.hover_card_for(&module) else {
+            return Task::none();
+        };
+        let mut placement = self.tooltip_anchor_for(target_window);
+        if let Some(bounds) = bounds {
+            let center = bounds.center();
+            placement.anchor = (center.x.round() as i32, center.y.round() as i32);
+        }
+        let request = self.capture_card_previews(&card);
+        let tree = crate::surface::tooltip_popup::TooltipTree {
+            segments: Vec::new(),
+            card: Some(card),
+            anchor: placement.anchor,
+            bar_size: placement.bar_size,
+            screen_size: placement.screen_size,
+            bar_edge: placement.bar_edge,
+        };
+        let mut tasks = self.apply_app_effects(vec![AppEffect::OpenTooltipWindow {
+            target_window,
+            target_module: module,
+            tree,
+        }]);
+        tasks.push(request);
+        Task::batch(tasks)
     }
 
     fn tooltip_anchor_for(&self, window: iced::window::Id) -> TooltipAnchor {
@@ -915,7 +980,7 @@ mod tests {
     fn tooltip_tree(edge: crate::config::Edge) -> crate::surface::tooltip_popup::TooltipTree {
         crate::surface::tooltip_popup::TooltipTree {
             segments: vec![],
-            previews: Vec::new(),
+            card: None,
             anchor: (24, 500),
             bar_size: (48, 1080),
             screen_size: (48, 1080),
@@ -1600,7 +1665,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
-                previews: Vec::new(),
+                card: None,
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (48, 1080),
@@ -1701,7 +1766,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
-                previews: Vec::new(),
+                card: None,
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),
@@ -1725,7 +1790,7 @@ mod tests {
             ModuleId::new("clock"),
             crate::surface::tooltip_popup::TooltipTree {
                 segments: vec![],
-                previews: Vec::new(),
+                card: None,
                 anchor: (0, 0),
                 bar_size: (48, 1080),
                 screen_size: (1920, 1080),

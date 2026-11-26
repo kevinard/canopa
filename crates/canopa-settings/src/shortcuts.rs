@@ -1137,6 +1137,9 @@ fn label(node: &KdlNode) -> Result<String> {
     let label = match node.name().value() {
         "Mod+Return" => fl!("settings-shortcut-open-terminal"),
         "Mod+Space" => fl!("settings-shortcut-open-applications"),
+        "Mod+B" if plain(action).contains("--toggle-bar") => {
+            fl!("settings-shortcut-toggle-bar")
+        }
         "Mod+E" => fl!("settings-shortcut-open-files"),
         "Mod+Comma" => fl!("settings-shortcut-open-settings"),
         "Mod+L" => fl!("settings-shortcut-lock-screen"),

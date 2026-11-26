@@ -102,7 +102,8 @@ impl App {
             iced::Subscription::none()
         };
 
-        let needs_tick = self.surfaces.values().any(|s| s.tooltip_pending.is_some());
+        let needs_tick = self.surfaces.values().any(|s| s.tooltip_pending.is_some())
+            || self.hover_card_closing();
         let tick_sub = if needs_tick {
             iced::time::every(Duration::from_millis(16))
                 .map(|_| Message::Surface(messages::SurfaceEvent::Tick))
@@ -176,6 +177,7 @@ impl App {
             input_sub,
             ipc_sub,
             tick_sub,
+            self.auto_hide_subscription(),
             perf_sub,
         ])
     }

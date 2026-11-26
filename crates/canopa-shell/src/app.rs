@@ -1,6 +1,7 @@
 mod animation;
 mod announcer;
 mod app_effects;
+mod auto_hide;
 mod bar_surface_plan;
 mod canopa_accessibility;
 mod canopa_accessibility_bounds;
@@ -13,6 +14,7 @@ pub(crate) mod eligible_outputs;
 mod external_panel_session;
 mod focus;
 mod foreground;
+mod hover_card;
 mod idle_inhibitor;
 pub(crate) mod launcher;
 mod layer_shell_message;
@@ -92,6 +94,7 @@ pub(crate) struct App {
     osd: osd::OsdRuntime,
     quick_toggles: quick_toggles::QuickToggles,
     taskbar: taskbar::TaskbarRuntime,
+    hover_cards: hover_card::HoverCardRuntime,
     #[cfg(test)]
     external_panel_responses_for_test: std::collections::HashMap<
         String,
@@ -189,6 +192,10 @@ pub enum Message {
     },
     /// Periodic runtime performance report when CANOPA_SHELL_PERF=1 is set.
     PerfReport,
+    /// A frame of an auto-hiding bar's slide, or a check that it may leave.
+    BarAutoHideFrame,
+    /// A window chosen or closed on a taskbar or workspace hover card.
+    HoverCard(crate::surface::hover_card::Event),
 }
 
 impl Message {
@@ -225,6 +232,8 @@ impl Message {
             Message::NiriFocusWorkspace { .. } => "NiriFocusWorkspace",
             Message::PerfReport => "PerfReport",
             Message::Accessibility(_) => "Accessibility",
+            Message::BarAutoHideFrame => "BarAutoHideFrame",
+            Message::HoverCard(_) => "HoverCard",
             _ => "LayerShell",
         }
     }
@@ -288,6 +297,14 @@ impl App {
             }
             messages::IpcEvent::OpenMenu { name, responder } => {
                 self.handle_open_menu_request(name, responder)
+            }
+            messages::IpcEvent::ToggleBar { responder } => {
+                let task = self.toggle_bar_visibility();
+                app_effects::send_ipc_response(
+                    responder,
+                    crate::ipc::protocol::IpcResponse::Accepted,
+                );
+                task
             }
             messages::IpcEvent::ToggleMenu { name, responder } => {
                 self.handle_toggle_menu_request(name, responder)
@@ -374,6 +391,7 @@ impl App {
             session_restore: Default::default(),
             quick_toggles: Default::default(),
             taskbar: Default::default(),
+            hover_cards: Default::default(),
             notices: Default::default(),
             session: Default::default(),
             osd: Default::default(),
@@ -409,7 +427,7 @@ impl App {
             return self.handle_accessibility_event(event);
         }
         let task = self.apply(message);
-        Task::batch([task, self.sync_accessibility()])
+        Task::batch([task, self.sync_accessibility(), self.sync_auto_hide()])
     }
 
     fn apply(&mut self, message: Message) -> Task<Message> {
@@ -546,6 +564,8 @@ impl App {
             ])),
             Message::QuickToggles(event) => self.handle_quick_toggle_event(event),
             Message::Taskbar(event) => self.handle_taskbar_event(event),
+            Message::BarAutoHideFrame => Task::none(),
+            Message::HoverCard(event) => self.handle_hover_card_event(event),
             Message::WindowSessionSave(generation) => {
                 self.save_window_session(generation);
                 Task::none()

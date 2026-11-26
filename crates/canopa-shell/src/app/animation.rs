@@ -121,7 +121,7 @@ impl App {
         const TICK_MS: f32 = 16.0;
 
         let window_ids: Vec<_> = self.surfaces.keys().copied().collect();
-        let mut tasks = vec![];
+        let mut tasks = vec![self.hover_card_tick()];
 
         for wid in window_ids {
             let effective_bar = self.bar_for_window(wid);

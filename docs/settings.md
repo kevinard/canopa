@@ -213,9 +213,11 @@ sounds** writes `notifications { sound enabled=... }` in `config.kdl` at once.
   clock and date formats (empty follows Region & language), font and avatar image,
   written to the `lockscreen` block. **Edit lock screen widgets…** opens Widgets.
 - **Window layout** offers five gap sizes, three ways to center the focused
-  column, and four widths for new windows. **Use the Canopa layout** restores
-  comfortable spacing (16 logical pixels), opens windows at half width and
-  scrolls only as far as needed, so two windows always fill the screen.
+  column, four widths for new windows, and when the **Window bar** shows: always,
+  on demand (it slides in when the pointer touches the top edge or with
+  Super+Shift+B) or never. **Use the Canopa layout** restores comfortable spacing
+  (16 logical pixels), opens windows at half width, scrolls only as far as needed,
+  so two windows always fill the screen, and always shows the window bar.
 
 The `config.kdl` fields are written by Save and validated by every owner
 (`canopa config check`); the Shell, Notify and the Settings portal reload them, and
@@ -402,8 +404,9 @@ or down, choose its **Position**, or remove it; these work from the keyboard too
 what that monitor gets (a bar hidden there, or lock screen widgets hidden there); it
 is not saved, and **Detect** lists monitors connected since the page opened.
 
-- **Bar**: the screen edge and **Show on** all monitors, selected monitors or all
-  except selected ones. Under **More bars**, **Duplicate** a bar to give another
+- **Bar**: the screen edge, **Hide automatically** (the bar gives its space to
+  windows and slides in when the pointer touches its edge; `visibility "auto-hide"`),
+  and **Show on** all monitors, selected monitors or all except selected ones. Under **More bars**, **Duplicate** a bar to give another
   monitor its own layout; the copy starts with no monitors selected. Module styling and actions stay in KDL.
 - **Lock screen**: regions, row flow, and **Hide this widget on the preview monitor**.
   The password field stays on every monitor. Script widgets appear once defined in

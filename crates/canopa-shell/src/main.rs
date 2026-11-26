@@ -56,6 +56,7 @@ fn cli_mode_label(command: &cli::Command) -> &'static str {
         cli::Command::IpcCommand(_) => "ipc",
         cli::Command::OpenMenu(_) => "open-menu",
         cli::Command::ToggleMenu(_) => "toggle-menu",
+        cli::Command::ToggleBar => "toggle-bar",
         cli::Command::OpenTemplate(_) => "open-template",
         cli::Command::Dmenu(_) => "dmenu",
         cli::Command::DeviceKey(_) => "device-key",
@@ -117,6 +118,7 @@ fn main() {
         cli::Command::OpenMenu(name) => std::process::exit(run_menu_cli(name, false)),
         cli::Command::ToggleMenu(name) => std::process::exit(run_menu_cli(name, true)),
         cli::Command::OpenTemplate(name) => std::process::exit(run_template_cli(name)),
+        cli::Command::ToggleBar => std::process::exit(run_toggle_bar_cli()),
         cli::Command::Dmenu(options) => std::process::exit(run_dmenu_cli(options)),
         cli::Command::DeviceKey(request) => std::process::exit(run_device_key_cli(request)),
         cli::Command::UsageError(message) => {
@@ -345,6 +347,25 @@ fn run_menu_cli(name: String, toggle: bool) -> i32 {
         }
         Err(error) => {
             eprintln!("canopa-shell: {operation} request failed: {error}");
+            1
+        }
+    }
+}
+
+fn run_toggle_bar_cli() -> i32 {
+    use ipc::protocol::{IpcRequest, IpcResponse};
+
+    match send_framed_request(
+        &IpcRequest::ToggleBar,
+        Some(std::time::Duration::from_secs(2)),
+    ) {
+        Ok(IpcResponse::Accepted) => 0,
+        Ok(_) => {
+            eprintln!("canopa-shell: unexpected toggle-bar response");
+            1
+        }
+        Err(error) => {
+            eprintln!("canopa-shell: toggle-bar request failed: {error}");
             1
         }
     }

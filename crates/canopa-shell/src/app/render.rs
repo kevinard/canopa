@@ -30,6 +30,8 @@ pub(super) struct ModuleRenderEntry<'a> {
 
 pub(super) struct BarRenderModel<'a> {
     pub(super) geometry: crate::surface::bar_geometry::BarGeometry,
+    /// How far an auto-hiding bar is drawn from its resting place.
+    pub(super) slide: iced::Vector,
     pub(super) ui: canopa_theme::ResolvedStyle,
     pub(super) edge: Edge,
     pub(super) is_horizontal: bool,
@@ -576,6 +578,7 @@ impl App {
                 surface.screen_size,
                 surface.drawer_width,
             ),
+            slide: self.bar_slide(window),
             ui: self
                 .config
                 .appearance

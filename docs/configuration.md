@@ -224,6 +224,7 @@ bar "main" {
 | `align` | `"start"`, `"center"`, `"end"` | `"center"` |
 | `margin` | 1, 2 or 4 values | 0 |
 | `reserve-space` | reserve the bar's space from windows | `#true` |
+| `visibility` | `"always"`, or `"auto-hide"` to slide in over windows from a 2-pixel strip on its edge (needs layer `"top"` or `"overlay"`; reserves no space; Super+B toggles) | `"always"` |
 | `tooltip-delay` | milliseconds before a tooltip appears | 500 |
 | `style` | `color=`, `size=`, `weight=` defaults for every module's text | none |
 | `ui { … }` | frame style (see [theme customization](theme-customization.md)) | appearance `bar` |
@@ -619,9 +620,12 @@ Canopa keeps some settings outside `config.kdl`. Settings is the usual editor.
 ### Compositor titlebars
 
 Canopa's Niri fork enables titlebars for windows that negotiate server-side
-decorations. They show the window title and close and maximize/restore buttons.
-Drag the titlebar to move a window; double-click (or double-tap) it to maximize
-or restore. Buttons highlight under the pointer and act on release over the same
+decorations. They show the window title and layout, maximize/restore and close
+buttons. The layout button opens a menu, also when the pointer rests on it for a
+moment, with tiles that set the column to a third, half, two thirds or the full
+width, pin the column to the left or right edge, float or tile the window, and
+show the column as tabs. Drag the titlebar to move a window; double-click (or
+double-tap) it to maximize or restore. Buttons highlight under the pointer and act on release over the same
 button, with the pointer or by touch. Windows that cannot change size get no
 maximize button. Application-provided headerbars remain intact, and fullscreen
 windows have no titlebar. Canopa's compositor defaults enable `prefer-no-csd`,
@@ -646,7 +650,7 @@ layout {
         height 40                   // 24 to 64 logical pixels
         font "Inter, sans-serif Medium 14px" // a Pango font description
         title-align "left"          // or "center"
-        buttons "maximize" "close"  // order and choice; `buttons` alone hides both
+        buttons "layout" "maximize" "close" // order and choice; `buttons` alone hides them
         buttons-side "right"        // or "left"
         double-click "maximize"     // or "none"
         active-color "#2e3f40"
@@ -678,7 +682,21 @@ the width of the view, and the view scrolls only as far as needed to show the
 focused window, so two windows fill the work area. Tiled windows have 16-pixel
 corners and floating windows have 20-pixel corners and deeper shadows. The
 generated titlebar is at least 36 logical pixels tall and grows with the title
-font. Opening the overview takes 400 ms with an ease-out curve.
+font. Opening the overview takes 400 ms with an ease-out curve. Pinning a column
+keeps the width of the others; a column narrows only when it would not fit beside
+the pinned one.
+
+The window bar above the columns follows `window-bar` in the `layout` block:
+`"always"` (default) keeps it in a row of its own, `"on-demand"` slides it over the
+windows when the pointer touches the top edge of the work area, while keyboard
+navigation moves between windows, or when the `toggle-window-bar` action
+(Super+Shift+B) asks for it, and `"off"` hides it. Without the bar, a slim
+handle appears in the gap at the left or right edge as the pointer nears it;
+moving the pointer into the gap opens it into an arrow naming the next window, so
+it never takes clicks meant for the windows.
+When a panel appears or hides, the leftmost window in view keeps its place beside
+it.
+**Settings → Personalization → Window layout** writes this choice.
 Adjust gaps in **Settings → Personalization → Window layout** and animations in
 **Settings → Personalization → Motion**. Niri also reads custom `layout`, `window-rule`, `overview`, and `animations`
 options from `niri-custom.kdl`.

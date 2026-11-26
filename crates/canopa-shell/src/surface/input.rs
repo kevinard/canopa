@@ -85,6 +85,27 @@ fn surface_input_handler(
         Event::Window(window::Event::Closed) => Some(Message::Surface(
             crate::app::messages::SurfaceEvent::WindowClosed(window),
         )),
+        Event::Mouse(iced::mouse::Event::CursorEntered) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::Pointer {
+                window,
+                change: crate::app::messages::PointerChange::Entered,
+            },
+        )),
+        Event::Mouse(iced::mouse::Event::CursorLeft) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::Pointer {
+                window,
+                change: crate::app::messages::PointerChange::Left,
+            },
+        )),
+        Event::Mouse(iced::mouse::Event::ButtonReleased(_))
+        | Event::Touch(
+            iced::touch::Event::FingerLifted { .. } | iced::touch::Event::FingerLost { .. },
+        ) => Some(Message::Surface(
+            crate::app::messages::SurfaceEvent::Pointer {
+                window,
+                change: crate::app::messages::PointerChange::Released,
+            },
+        )),
         Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(Message::Surface(
             crate::app::messages::SurfaceEvent::CursorMoved(window, position),
         )),
