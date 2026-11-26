@@ -214,8 +214,8 @@ sounds** writes `notifications { sound enabled=... }` in `config.kdl` at once.
   written to the `lockscreen` block. **Edit lock screen widgets…** opens Widgets.
 - **Window layout** offers five gap sizes, three ways to center the focused
   column, and four widths for new windows. **Use the Canopa layout** restores
-  comfortable spacing (16 logical pixels), centers a column when it would
-  overflow, and opens windows at half width.
+  comfortable spacing (16 logical pixels), opens windows at half width and
+  scrolls only as far as needed, so two windows always fill the screen.
 
 The `config.kdl` fields are written by Save and validated by every owner
 (`canopa config check`); the Shell, Notify and the Settings portal reload them, and

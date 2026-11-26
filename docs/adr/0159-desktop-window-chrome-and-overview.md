@@ -1,6 +1,6 @@
 # 0159. Keep window chrome and the overview with the compositor
 
-Status: accepted
+Status: superseded by [0160](0160-window-bar-and-scrolling-presentation.md)
 
 ## Context
 

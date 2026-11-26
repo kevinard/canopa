@@ -144,7 +144,7 @@ Gtk.main()
     session.env["RUST_LOG"] = "canopa_shell::panel=debug,canopa_shell::modules=trace,canopa_shell::idle_inhibitor=debug,canopa_shell::external_panel=debug"
     shell_process = session.start([str(binary)], "shell.log")
     session.wait_for(lambda: len(session.layers()) == 1, "native spine startup", timeout=45)
-    expected = (27, 39, 43) if scheme == "dark" else (247, 249, 244)
+    expected = (27, 39, 43) if scheme == "dark" else (236, 241, 235)
 
     def pixel(frame, x, y):
         return frame.getpixel((round(x * scale), round(y * scale)))
@@ -155,9 +155,9 @@ Gtk.main()
     )
     reserved = session.wait_for(
         lambda: (value if (value := client_layout()) != initial else None),
-        "stable 88px reservation",
+        "stable 76px reservation",
     )
-    assert initial["tile_size"][0] - reserved["tile_size"][0] == 88, (initial, reserved)
+    assert initial["tile_size"][0] - reserved["tile_size"][0] == 76, (initial, reserved)
     pointer = session.build_pointer()
 
     def click(x, y):
@@ -345,7 +345,7 @@ Gtk.main()
     session.capture("closed.png")
     desktop.write_json(session.output / "result.json", {
         "passed": True, "scheme": scheme, "scale": scale,
-        "reservation": 88, "launcher_target_lower_edge": True,
+        "reservation": 76, "launcher_target_lower_edge": True,
         "search_escape_then_close": True, "controls_pointer_activation": True,
         "controls_bar_panel": True, "controls_repeat_click_dismissal": True,
         "clock_target_upper_edge": True,

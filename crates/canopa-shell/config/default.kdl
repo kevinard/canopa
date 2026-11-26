@@ -95,8 +95,10 @@ bar "main" {
     // Bar width in logical pixels when collapsed. Minimum: 2.
     // The compositor multiplies by the output scale factor for physical rendering.
     thickness 64
-    // 12 + 64 + 12 = 88 px of stable reserved space. Hover never resizes it.
-    margin 12
+    // 12 + 64 = 76 px of stable reserved space; the compositor adds the same
+    // gap beside the rail as between windows. Hover never resizes it. The
+    // bottom margin matches the gap below windows, so their bottoms line up.
+    margin 12 0 16 12
     ui {
         background "spine"
         radius 28
@@ -124,12 +126,12 @@ bar "main" {
     // Multiple modules per zone: list them as separate string arguments on one line.
     modules {
         // Start zone: stacks from the leading edge of the bar.
-        start "launcher" "overview" "workspaces"
+        // Running and pinned applications follow the workspaces, a short break apart.
+        start "launcher" "overview" "workspaces" "taskbar"
         // Center zone: centered when it fits between the other zones.
         // Add "media" to a zone for MPRIS now-playing and playback controls.
         // See docs/shell.md; the module hides when no player is open.
         // The taskbar shows pinned applications, then the other open ones.
-        center "taskbar"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
         // The tray shows one icon per StatusNotifierItem application. Network,
@@ -211,15 +213,15 @@ modules {
         label-id "shell-module-overview"
         icon "canopa:overview"
         tooltip-id "shell-tooltip-overview"
-        format { segment "{label}" size=10 weight="bold"; }
         horizontal-format "{icon}" "{label}"
+        // An icon like its neighbors; while the overview is open it takes a quiet
+        // selected fill, so it never competes with the active workspace.
         ui {
             padding 11 0
-            background "surface"
             radius 10
             state "selected" {
-                background "accent"
-                foreground "on-accent"
+                background "accent-surface"
+                foreground "accent"
             }
         }
         actions { click { toggle-overview; } }
@@ -322,7 +324,8 @@ modules {
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
     module "workspaces" {
-        ui { padding 3 0; }
+        // The extra space below sets the workspaces apart from the applications.
+        ui { padding 3 0 15 0; }
         // Optional display templates for workspace items.
         // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
         // format "{icon}{label}"

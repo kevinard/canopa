@@ -673,8 +673,12 @@ setting is `off`. Only windows that negotiate server-side decorations get a
 titlebar either way. These settings reload with Niri's configuration and require
 the Canopa compositor fork.
 
-The shipped layout uses 16 logical pixels between columns. Tiled windows have
-16-pixel corners and floating windows have 20-pixel corners and deeper shadows.
+The shipped layout uses 16 logical pixels between columns. New columns take half
+the width of the view, and the view scrolls only as far as needed to show the
+focused window, so two windows fill the work area. Tiled windows have 16-pixel
+corners and floating windows have 20-pixel corners and deeper shadows. The
+generated titlebar is at least 36 logical pixels tall and grows with the title
+font. Opening the overview takes 400 ms with an ease-out curve.
 Adjust gaps in **Settings → Personalization → Window layout** and animations in
 **Settings → Personalization → Motion**. Niri also reads custom `layout`, `window-rule`, `overview`, and `animations`
 options from `niri-custom.kdl`.

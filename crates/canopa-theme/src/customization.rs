@@ -367,7 +367,7 @@ impl Appearance {
             ColorRole::Focus => p.accent,
             ColorRole::Spine => match self.color_scheme {
                 crate::ColorScheme::Dark => Rgb(0x1b, 0x27, 0x2b),
-                crate::ColorScheme::Light => Rgb(0xf7, 0xf9, 0xf4),
+                crate::ColorScheme::Light => Rgb(0xec, 0xf1, 0xeb),
             },
             ColorRole::AccentSurface => match self.color_scheme {
                 crate::ColorScheme::Dark => Rgb(0x30, 0x4b, 0x41),

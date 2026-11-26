@@ -76,16 +76,17 @@ fn font(appearance: &Appearance, size: u32) -> String {
 pub fn text(appearance: &Appearance) -> String {
     let palette = appearance.palette();
     let size = font_size(appearance);
-    let height = (size + 26).max(40);
+    // Compact, so a titlebar above an application's own toolbar does not read as a second header.
+    let height = (size + 22).max(36);
     let high_contrast = appearance.high_contrast();
     let light = appearance.color_scheme == ColorScheme::Light;
     let (shadow, tile_shadow, inactive_tile_shadow, floating_shadow, inactive_floating_shadow) =
         match appearance.color_scheme {
-            ColorScheme::Dark => (Rgb(0, 0, 0), 0x80, 0x4d, 0xb0, 0x80),
-            ColorScheme::Light => (palette.text, 0x60, 0x3a, 0x54, 0x38),
+            ColorScheme::Dark => (Rgb(0, 0, 0), 0xb3, 0x73, 0x99, 0x6b),
+            ColorScheme::Light => (palette.text, 0x33, 0x1f, 0x47, 0x30),
         };
     let (floating_softness, floating_spread, floating_offset) =
-        if light { (42, 2, 12) } else { (52, 6, 18) };
+        if light { (30, 0, 10) } else { (40, 0, 16) };
     let (active, inactive, muted, leading, trailing, rim) = if high_contrast {
         (
             palette.surface,
@@ -97,12 +98,39 @@ pub fn text(appearance: &Appearance) -> String {
         )
     } else {
         (
-            mix(palette.surface, palette.accent, if light { 20 } else { 10 }),
-            mix(palette.background, palette.surface, 60),
+            // Dark titlebars stay close to neutral window bodies; the border carries focus.
+            if light {
+                mix(palette.surface, palette.accent, 20)
+            } else {
+                // A clear accent tint, as strong as the light scheme's.
+                mix(Rgb(0x1c, 0x34, 0x2c), palette.accent, 12)
+            },
+            // Unfocused titlebars stay distinct from both pale and dark window content.
+            if light {
+                mix(
+                    mix(palette.background, palette.surface, 60),
+                    palette.text,
+                    4,
+                )
+            } else {
+                // Never darker than typical window content below it.
+                mix(
+                    mix(palette.background, palette.surface, 60),
+                    Rgb(0x23, 0x28, 0x26),
+                    80,
+                )
+            },
             palette.muted,
-            mix(palette.surface, palette.accent, if light { 98 } else { 88 }),
-            mix(palette.surface, palette.accent, if light { 88 } else { 48 }),
-            hex_alpha(palette.border, 0x99),
+            // A softer gradient in dark, where full-strength mint outshines everything else.
+            mix(palette.surface, palette.accent, if light { 98 } else { 82 }),
+            mix(palette.surface, palette.accent, if light { 88 } else { 58 }),
+            if light {
+                // Enough to hold an unfocused window's edge against a pale, misty wallpaper.
+                hex_alpha(palette.text, 0x40)
+            } else {
+                // A faint light rim keeps unfocused dark windows apart.
+                hex_alpha(Rgb(0xff, 0xff, 0xff), 0x33)
+            },
         )
     };
     format!(
@@ -133,15 +161,29 @@ window-rule {{
 }}
 overview {{ backdrop-color \"{backdrop}\"; }}
 ",
-        workspace = hex_alpha(palette.background, 0x42),
+        // Workspaces stay clear, so the wallpaper reads as one continuous surface.
+        workspace = hex_alpha(palette.background, 0x00),
         backdrop = hex(palette.background),
         font = quote(&font(appearance, size)),
         active = hex(active),
         inactive = hex(inactive),
         text = hex(palette.text),
-        muted = hex(muted),
+        // Unfocused titles recede to 60% of the title color.
+        muted = if high_contrast {
+            hex(muted)
+        } else {
+            // About 5:1 against the unfocused titlebar in both schemes.
+            hex_alpha(palette.text, if light { 0xb3 } else { 0xa6 })
+        },
         hover = hex_alpha(palette.text, 0x26),
-        close = hex(palette.danger),
+        // A muted red on which the white close glyph reads in both schemes.
+        close = if high_contrast {
+            hex(palette.danger)
+        } else if light {
+            "#c94a44".to_owned()
+        } else {
+            "#d65a54".to_owned()
+        },
         accent = hex(palette.accent),
         leading = hex(leading),
         trailing = hex(trailing),
@@ -209,13 +251,13 @@ mod tests {
     fn the_dark_defaults_match_the_shipped_compositor_defaults() {
         let generated = text(&Appearance::default());
         let defaults = include_str!("../../../packaging/niri/defaults.kdl");
-        for line in generated
+        let missing: Vec<&str> = generated
             .lines()
             .filter(|line| line.starts_with("    background-color") || line.starts_with("        "))
             .map(str::trim)
-        {
-            assert!(defaults.contains(line), "{line}");
-        }
+            .filter(|line| !defaults.contains(line))
+            .collect();
+        assert!(missing.is_empty(), "{}", missing.join("\n"));
     }
 
     #[test]
@@ -235,7 +277,7 @@ mod tests {
         assert!(generated.contains("text-color \"#20342c\""));
         assert!(generated.contains("button-hover-color \"#20342c26\""));
         assert!(generated.contains("font \"Inter, sans-serif Medium 21px\""));
-        assert!(generated.contains("height 47"));
+        assert!(generated.contains("height 43"));
         assert!(generated.contains("backdrop-color \"#e3eae6\""));
         let gradient = generated
             .lines()

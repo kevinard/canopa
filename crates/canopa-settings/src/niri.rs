@@ -225,7 +225,8 @@ impl WindowLayout {
     /// The values in `packaging/niri/defaults.kdl`.
     pub const SHIPPED: Self = Self {
         gaps: 16,
-        center: CenterColumn::OnOverflow,
+        // Half-width columns pair up exactly, so the view only scrolls as far as needed.
+        center: CenterColumn::Never,
         width: ColumnWidth::Half,
     };
 

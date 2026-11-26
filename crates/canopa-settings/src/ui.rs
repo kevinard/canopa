@@ -4124,7 +4124,8 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
     .window(iced::window::Settings {
         size: iced::Size::new(1000., 780.),
         // The navigation and page body scroll independently above the actions.
-        min_size: Some(iced::Size::new(760., 480.)),
+        // Narrow enough to share the screen with another window as a half-width column.
+        min_size: Some(iced::Size::new(640., 480.)),
         platform_specific: iced::window::settings::PlatformSpecific {
             application_id: APPLICATION_ID.into(),
             ..Default::default()

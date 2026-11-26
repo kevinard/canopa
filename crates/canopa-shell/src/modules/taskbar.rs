@@ -634,8 +634,9 @@ impl TaskbarItemModule {
         }
     }
 
-    /// Running windows show as dots on the bar's screen edge; the focused
-    /// application's indicator is a longer accent pill.
+    /// A running application shows as a short stroke on the bar's screen edge,
+    /// several windows as a longer one; the focused application's stroke is the
+    /// longest, in the accent. One shape, three clearly different lengths.
     fn indicator(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
         let colors = crate::theme::palette();
         let count = self.entry.windows.len();
@@ -653,11 +654,11 @@ impl TaskbarItemModule {
             }
         };
         let (long, short) = if self.entry.focused {
-            (18.0, 4.0)
+            (24.0, 4.0)
         } else if count > 1 {
-            (10.0, 5.0)
+            (18.0, 3.0)
         } else {
-            (6.0, 6.0)
+            (9.0, 3.0)
         };
         let (width, height) = if horizontal {
             (long, short)
@@ -702,9 +703,11 @@ impl TaskbarItemModule {
             Edge::Top => (Alignment::Center, Alignment::Start),
             Edge::Bottom => (Alignment::Center, Alignment::End),
         };
+        // Inset a little from the bar's edge, so the marker reads as part of the bar.
         let indicator = iced::widget::container(self.indicator(horizontal))
             .width(iced::Length::Fill)
             .height(CELL)
+            .padding(3)
             .align_x(align_x)
             .align_y(align_y);
         let key = self.entry.key.clone();

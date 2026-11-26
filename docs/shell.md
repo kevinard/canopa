@@ -15,13 +15,14 @@ applies the next valid save.
 
 ## The bar
 
-The default bar is a 64-pixel rounded frame on the left edge of every output, with
-12 pixels of margin (88 pixels reserved from windows). From top to bottom:
+The default bar is a 64-pixel rounded frame on the left edge of every output, 12
+pixels from the left and top screen edges and 16 from the bottom, where it lines up
+with the windows (76 pixels reserved from windows; the compositor adds the same gap
+beside the rail as between windows). From top to bottom:
 
 | Zone | Modules |
 | --- | --- |
-| start | **Search** (opens Applications), **Overview** (Niri's overview), workspaces |
-| center | taskbar |
+| start | **Search** (opens Applications), **Overview** (Niri's overview), workspaces, then the taskbar after a short break |
 | end | tray, network, volume, battery, notifications, clock |
 
 Clicking the empty bar opens Quick settings. Every button has a tooltip and an
@@ -78,8 +79,8 @@ Standalone Nerd Font glyphs use `Symbols Nerd Font Mono` when it is installed.
 
 The taskbar shows the desktop files listed in `pinned`, then the other open
 applications in screen order (by workspace, then column), grouped by desktop file.
-A dot on the bar's edge marks a running application, a longer mark several windows,
-and an accent mark the focused one.
+A short stroke on the bar's edge marks a running application, a longer one several
+windows, and the longest, in the accent color, the focused one.
 
 - **Click** focuses the application's most recent window, or launches it. Click
   again to cycle through its windows from left to right.
@@ -285,22 +286,21 @@ installs.
 The taskbar uses a neutral running-app marker while Overview is open, leaving
 the compositor to highlight the selected preview.
 
-- **Window strip** shows the neighboring columns and floating windows at the
-  top of the work area. It appears when there are multiple tiled columns or a
-  floating window. Tabs keep their layout order and reflect relative window
-  widths. A shared outline labeled **In view** follows the visible tile group
-  as it scrolls.
-  Choose a window name to bring it into view and focus it. The arrows at the
-  ends of the strip share a tint with the window they will focus. Click an
-  arrow to bring that tile into view and focus it. Point to a destination to
-  preview the tiles that will be in view. When windows fill the work area,
-  the strip keeps the **In view** group labeled. A **Next view** row names the
-  windows that will be visible, marks the one that will receive focus, and
-  identifies any window that stays in view.
-  Clicking an arrow dismisses its preview until the pointer leaves the button.
-  The same focus marker remains visible during motion.
-  When floating windows cover the tiles, choose a tiled tab to reveal them.
-  Choose a floating tab or **Show floating windows** to restore the layer.
+- **Window bar** lists the workspace's windows in layout order at the top of
+  the work area, each with its application icon and title. It appears when there
+  are multiple tiled columns or a floating window. A column with stacked windows
+  shows a count. The focused window is filled with the accent; the fill slides
+  when focus moves to a neighbour and fades across when it jumps further. Windows
+  at least half on screen have a faint accent outline. Floating windows form a
+  separate group on the right, with a button that shows or hides them.
+  Choose a window name to bring it into view and focus it. Point to a window that
+  is out of view to see a thumbnail of it. Arrows at the ends of the bar appear
+  when windows lie out of view, with a `+N` badge counting them; point to an
+  arrow to see how many windows lie that way and a thumbnail of the next one, and
+  click it to bring that window into view and focus it. A window that only partly
+  fits beside the focused one slides out of view as scrolling settles.
+  When floating windows cover the tiles, choose a tiled window to reveal the
+  tiles. Choose a floating window or the floating button to restore the layer.
 - **Overview selection** groups window previews by desktop position. The
   Overview button stays highlighted while Overview is open. Point to a preview
   or use the arrow keys to select it, then click or press Enter to open it.

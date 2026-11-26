@@ -86,17 +86,18 @@ mod config_tests {
         let config = parse::parse(defaults::DEFAULT_CONFIG).unwrap();
         assert_eq!(config.bars.len(), 1);
         assert_eq!(config.bars[0].collapsed_width, 64);
-        assert_eq!(config.bars[0].margin, canopa_theme::Insets::all(12));
+        assert_eq!(config.bars[0].margin.left, canopa_theme::Pixels::whole(12));
+        assert_eq!(config.bars[0].margin.right, canopa_theme::Pixels::whole(0));
         assert_eq!(
             crate::surface::bar_geometry::BarGeometry::reservation(&config.bars[0]),
-            88
+            76
         );
         // UX-DR18: zone assignments
         assert_eq!(
             config.bars[0].modules.start,
-            vec!["launcher", "overview", "workspaces"]
+            vec!["launcher", "overview", "workspaces", "taskbar"]
         );
-        assert_eq!(config.bars[0].modules.center, vec!["taskbar"]);
+        assert!(config.bars[0].modules.center.is_empty());
         // The shipped bar shows status at a glance: tray, network, volume and
         // battery (hidden without a battery) sit above the existing controls.
         assert_eq!(
