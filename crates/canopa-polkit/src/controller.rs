@@ -2,8 +2,7 @@ use crate::native::{Event, Runtime};
 use canopa_session_ui::{
     settings::Settings,
     view::{
-        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView,
-        request_summary,
+        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView, request_summary,
     },
 };
 use std::time::{Duration, Instant};
@@ -267,7 +266,11 @@ impl Controller {
                 id: p.id,
                 // PAM's plain "Password:" asks for an administrator's password here.
                 text: if !p.echo
-                    && p.text.trim().trim_end_matches(':').trim().eq_ignore_ascii_case("password")
+                    && p.text
+                        .trim()
+                        .trim_end_matches(':')
+                        .trim()
+                        .eq_ignore_ascii_case("password")
                 {
                     fl!("polkit-admin-password")
                 } else {
@@ -305,10 +308,9 @@ impl Controller {
                 self.subject_pid
                     .map_or_else(String::new, |pid| match &self.subject_name {
                         // The name first; the process on a secondary line.
-                        Some(name) => format!(
-                            "{name}\n{}",
-                            fl!("polkit-process", pid = pid.to_string())
-                        ),
+                        Some(name) => {
+                            format!("{name}\n{}", fl!("polkit-process", pid = pid.to_string()))
+                        }
                         None => fl!("polkit-process", pid = pid.to_string()),
                     });
             // What is asked, by whom and as whom first; identifiers after.
@@ -424,7 +426,8 @@ impl Controller {
                 .insert(0, Control::new(1, account).with_kind(ControlKind::Identity));
         }
         if self.details.is_some() {
-            // Going back is navigation, at the footer's start; Cancel ends the request.
+            // Going back sits where "Request details" was, so the footer keeps
+            // its layout; it has keyboard focus, and Cancel stays at the end.
             let mut back =
                 Control::new(2, fl!("polkit-back-to-authentication")).with_kind(ControlKind::Back);
             back.selected = true;
@@ -655,10 +658,7 @@ mod tests {
         assert_eq!(c.ui.custom["account"], "Compte\u{a0}: Alex Morgan");
         assert_eq!(c.ui.custom["subject-process"], "Processus 2481");
         let labels: Vec<_> = c.ui.controls.iter().map(|c| c.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            ["Autoriser", "Annuler", "Détails de la demande"]
-        );
+        assert_eq!(labels, ["Autoriser", "Annuler", "Détails de la demande"]);
     }
     #[test]
     fn metadata_never_adds_an_identity_or_changes_its_uid() {
@@ -795,7 +795,10 @@ mod tests {
         let generation = c.generation;
         c.event(Event::Failed { generation });
         assert_eq!(c.phase, Phase::Failed);
-        assert!(c.ui.prompt.is_some(), "the field stays for the next attempt");
+        assert!(
+            c.ui.prompt.is_some(),
+            "the field stays for the next attempt"
+        );
         assert!(c.ui.failed);
         c.retry_after = Instant::now();
         c.input("second attempt");

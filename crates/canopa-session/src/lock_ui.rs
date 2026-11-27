@@ -47,7 +47,9 @@ pub fn update_actions(ui: &mut LockUi, can_retry: bool) {
 /// The picture is the configured `avatar`, the account's AccountsService icon or
 /// `~/.face`; each is read through the bounded image loader.
 pub fn identify(ui: &mut LockUi, login: &str) {
-    ui.set_avatar_initials(Some(canopa_session_ui::view::initials(&ui.username)).filter(|s| !s.is_empty()));
+    ui.set_avatar_initials(
+        Some(canopa_session_ui::view::initials(&ui.username)).filter(|s| !s.is_empty()),
+    );
     if ui.has_configured_avatar() {
         return;
     }

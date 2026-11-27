@@ -4,8 +4,8 @@ use canopa_session_ui::{
     secret::Secret,
     settings::Settings,
     view::{
-        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView,
-        request_lines, request_summary,
+        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView, request_lines,
+        request_summary,
     },
 };
 
@@ -48,8 +48,21 @@ fn label(value: &str) -> String {
 fn destructive(text: &str) -> bool {
     let text = text.to_lowercase();
     [
-        "delete", "remove", "erase", "destroy", "permanently", "supprim", "effac",
-        "lösch", "entfern", "elimin", "borrar", "cancella", "rimuov", "excluir", "удал",
+        "delete",
+        "remove",
+        "erase",
+        "destroy",
+        "permanently",
+        "supprim",
+        "effac",
+        "lösch",
+        "entfern",
+        "elimin",
+        "borrar",
+        "cancella",
+        "rimuov",
+        "excluir",
+        "удал",
     ]
     .iter()
     .any(|verb| text.contains(verb))
@@ -84,7 +97,10 @@ fn incorrect_passphrase(error: &str) -> Option<String> {
 fn plain_deletion(text: &str) -> String {
     let trimmed = text.trim();
     let prefix = "Do you really want to permanently delete the ";
-    match trimmed.strip_prefix(prefix).and_then(|rest| rest.strip_suffix('?')) {
+    match trimmed
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_suffix('?'))
+    {
         Some(target) if !target.contains('\n') => {
             format!("The {target} will be deleted from this computer.")
         }
@@ -143,8 +159,8 @@ impl Controller {
         });
         ui.secret = Secret::with_capacity(8193);
         // GnuPG's generic rejection reads as the other surfaces do.
-        ui.message = incorrect_passphrase(&request.error)
-            .unwrap_or_else(|| excerpt(&request.error, 96));
+        ui.message =
+            incorrect_passphrase(&request.error).unwrap_or_else(|| excerpt(&request.error, 96));
         ui.failed = !request.error.is_empty();
         let selected = if request.kind == Kind::Confirm
             && (request.focus_cancel || destructive(&request.description))
@@ -197,7 +213,11 @@ impl Controller {
             && !self.request.description.contains('\n')
             && self.request.description.chars().count() <= 64;
         let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
-        panel.emblem = if destructive { Emblem::Alert } else { Emblem::Key };
+        panel.emblem = if destructive {
+            Emblem::Alert
+        } else {
+            Emblem::Key
+        };
         panel.heading = match (
             self.details.is_some(),
             self.request.kind,
@@ -250,7 +270,10 @@ impl Controller {
         if self.details.is_some() {
             panel.facts = [
                 (fl!("pinentry-fact-key"), self.request.title.clone()),
-                (fl!("pinentry-fact-request"), self.request.description.clone()),
+                (
+                    fl!("pinentry-fact-request"),
+                    self.request.description.clone(),
+                ),
                 (
                     fl!("pinentry-fact-requested-by"),
                     self.request.requester.clone().unwrap_or_default(),
@@ -280,7 +303,8 @@ impl Controller {
         }
         self.ui.controls.clear();
         // As polkit does, the line under an unlock field says where the secret goes.
-        if self.request.kind == Kind::Pin && self.request.repeat.is_none() && self.details.is_none() {
+        if self.request.kind == Kind::Pin && self.request.repeat.is_none() && self.details.is_none()
+        {
             self.ui
                 .custom
                 .insert("field-hint".into(), fl!("pinentry-field-hint"));
@@ -289,10 +313,12 @@ impl Controller {
             Vec::new()
         } else if self.request.kind == Kind::Confirm {
             // A question is read whole; it is the dialog's content.
-            request_lines(&typographic_quotes(&plain_deletion(&self.request.description)))
-                .into_iter()
-                .take(8)
-                .collect()
+            request_lines(&typographic_quotes(&plain_deletion(
+                &self.request.description,
+            )))
+            .into_iter()
+            .take(8)
+            .collect()
         } else {
             request_summary(&self.request.description)
         };
@@ -324,9 +350,9 @@ impl Controller {
             })
         };
         if self.details.is_some() {
-            self.ui.controls.push(
-                Control::new(2, fl!("pinentry-details-back")).with_kind(ControlKind::Back),
-            );
+            self.ui
+                .controls
+                .push(Control::new(2, fl!("pinentry-details-back")).with_kind(ControlKind::Back));
             self.ui
                 .controls
                 .push(Control::new(3, label(&self.request.cancel)));
@@ -722,6 +748,12 @@ impl Controller {
     }
 }
 
+fn panel_disclosure(ui: &mut SessionView, control: Option<usize>) {
+    if let Some(panel) = ui.authentication_panel.as_mut() {
+        panel.disclosure = control;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -976,11 +1008,5 @@ mod tests {
         for line in context {
             assert!(visible.contains(&line), "lost a request context line");
         }
-    }
-}
-
-fn panel_disclosure(ui: &mut SessionView, control: Option<usize>) {
-    if let Some(panel) = ui.authentication_panel.as_mut() {
-        panel.disclosure = control;
     }
 }

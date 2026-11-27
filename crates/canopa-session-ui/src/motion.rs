@@ -13,6 +13,8 @@ const ENTRANCE: Duration = Duration::from_millis(520);
 const STAGE: Duration = Duration::from_millis(320);
 /// The field shaking after a rejected response.
 const SHAKE: Duration = Duration::from_millis(560);
+/// The lock screen settling into its glance view, or waking to the form.
+const REST: Duration = Duration::from_millis(460);
 /// A spinner shows only when waiting lasts long enough to notice.
 const SPINNER_DELAY: Duration = Duration::from_millis(0);
 const SPINNER_TURN: f32 = 0.95;
@@ -34,6 +36,8 @@ pub struct Motion {
     failed: Cell<bool>,
     shake: Cell<Option<Instant>>,
     busy: Cell<Option<Instant>>,
+    /// Whether the surface rests, and when that last changed.
+    rest: Cell<Option<(bool, Instant)>>,
 }
 
 /// The values a scene applies at one moment.
@@ -50,6 +54,8 @@ pub struct Frame {
     pub shake: f32,
     /// Spinner angle in radians, while waiting.
     pub spinner: Option<f32>,
+    /// From 0 (the form) to 1 (the glance view of a resting lock screen).
+    pub rest: f32,
 }
 
 impl Motion {
@@ -76,6 +82,36 @@ impl Motion {
     /// Restart the entrance, as when a surface is shown again.
     pub fn enter(&self) {
         self.entered.set(Some(self.now()));
+    }
+
+    /// Note whether the surface rests; the first state applies at once.
+    pub fn observe_rest(&self, resting: bool) {
+        let now = self.now();
+        match self.rest.get() {
+            Some((previous, _)) if previous == resting => {}
+            Some(_) => self.rest.set(Some((resting, now))),
+            None => self.rest.set(Some((resting, now - REST))),
+        }
+    }
+
+    fn rest_progress(&self, now: Instant) -> (f32, bool) {
+        let Some((resting, since)) = self.rest.get() else {
+            return (0., false);
+        };
+        let target = if resting { 1. } else { 0. };
+        if !self.enabled.get() || self.reduced.get() {
+            return (target, false);
+        }
+        let t =
+            (now.saturating_duration_since(since).as_secs_f32() / REST.as_secs_f32()).clamp(0., 1.);
+        // Waking is quick; settling eases in and out.
+        let eased = if resting {
+            t * t * (3. - 2. * t)
+        } else {
+            ease_out_cubic((t * 1.35).min(1.))
+        };
+        let value = if resting { eased } else { 1. - eased };
+        (value, t < 1.)
     }
 
     /// Note the presented state; starts effects on its transitions.
@@ -111,11 +147,13 @@ impl Motion {
                 shake: 0.,
                 // A still frame still shows that the system is working.
                 spinner: self.busy.get().map(|_| -std::f32::consts::FRAC_PI_4),
+                rest: self.rest_progress(self.now()).0,
             };
         }
         let now = self.now();
         let reduced = self.reduced.get();
-        let since = |start: Option<Instant>| start.map(|start| now.saturating_duration_since(start));
+        let since =
+            |start: Option<Instant>| start.map(|start| now.saturating_duration_since(start));
         let progress = |start: Option<Instant>, length: Duration| {
             since(start).map_or(1., |elapsed| {
                 (elapsed.as_secs_f32() / length.as_secs_f32()).clamp(0., 1.)
@@ -138,6 +176,7 @@ impl Motion {
             spinner: since(self.busy.get())
                 .filter(|elapsed| *elapsed >= SPINNER_DELAY)
                 .map(|elapsed| elapsed.as_secs_f32() / SPINNER_TURN * std::f32::consts::TAU),
+            rest: self.rest_progress(now).0,
         }
     }
 
@@ -154,6 +193,7 @@ impl Motion {
             || running(self.stage.get().map(|(_, at)| at), STAGE)
             || running(self.shake.get(), SHAKE)
             || self.busy.get().is_some()
+            || self.rest_progress(now).1
     }
 
     /// A key that changes with every distinct animated frame.
@@ -185,7 +225,10 @@ mod tests {
         let first = motion.frame();
         assert_eq!(first.opacity, 0.);
         assert!(first.rise > 20.);
-        assert_eq!(first.stage_opacity, 1., "the first step arrives with the entrance");
+        assert_eq!(
+            first.stage_opacity, 1.,
+            "the first step arrives with the entrance"
+        );
         motion.set_clock(Some(start + Duration::from_secs(1)));
         assert!(!motion.animating());
         assert_eq!(motion.frame().opacity, 1.);
@@ -221,5 +264,31 @@ mod tests {
         motion.set_clock(Some(start + Duration::from_millis(100)));
         let frame = motion.frame();
         assert_eq!((frame.opacity, frame.rise, frame.shake), (1., 0., 0.));
+        motion.observe_rest(true);
+        motion.observe_rest(false);
+        assert_eq!(motion.frame().rest, 0., "reduced motion wakes at once");
+    }
+
+    #[test]
+    fn resting_starts_settled_then_wakes_quickly_and_settles_slowly() {
+        let motion = Motion::default();
+        let start = Instant::now();
+        motion.set_clock(Some(start));
+        motion.enable();
+        motion.observe_rest(true);
+        assert_eq!(motion.frame().rest, 1., "a lock screen opens resting");
+        motion.observe_rest(false);
+        motion.set_clock(Some(start + Duration::from_millis(150)));
+        let waking = motion.frame().rest;
+        assert!(waking > 0. && waking < 0.5, "{waking}");
+        motion.set_clock(Some(start + Duration::from_millis(400)));
+        assert_eq!(motion.frame().rest, 0.);
+        motion.observe_rest(true);
+        motion.set_clock(Some(start + Duration::from_millis(550)));
+        assert!(motion.frame().rest < 0.6);
+        assert!(motion.animating());
+        motion.set_clock(Some(start + Duration::from_millis(900)));
+        assert_eq!(motion.frame().rest, 1.);
+        assert!(!motion.animating());
     }
 }

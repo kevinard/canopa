@@ -16,7 +16,7 @@ polkit-retry = Retry
 polkit-authenticate = Authorize
 polkit-cancel = Cancel
 polkit-policy-details = Request details
-polkit-back-to-authentication = Back to authorization
+polkit-back-to-authentication = Back
 # $page of $count pages of request details.
 polkit-next-page = Next page ({ $page }/{ $count })
 polkit-waiting-for-authentication = Waiting for authentication…

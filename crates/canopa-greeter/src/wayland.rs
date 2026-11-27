@@ -438,7 +438,7 @@ impl App {
             self.redraw();
             return;
         }
-        if (20..=24).contains(&id) && self.config.power_controls {
+        if (20..=25).contains(&id) && self.config.power_controls {
             if let Some(action) = self.controller.power_action(id)
                 && !self
                     .power
@@ -473,10 +473,16 @@ impl App {
             }
             2 => self.controller.session_next(&self.config),
             3 => self.controller.submit(),
+            crate::controller::ENTER_USERNAME if self.controller.phase != Phase::User => {
+                self.controller.switch_to(None)
+            }
             crate::controller::ENTER_USERNAME => {
                 self.controller.enter_username();
                 None
             }
+            id if id >= crate::controller::SWITCH_ACCOUNT => self
+                .controller
+                .switch_to(Some(id - crate::controller::SWITCH_ACCOUNT)),
             id if id >= crate::controller::FIRST_ACCOUNT => self
                 .controller
                 .sign_in_as(id - crate::controller::FIRST_ACCOUNT),
@@ -520,10 +526,17 @@ impl App {
         use crate::power::{Action, Menu};
         if self.controller.power_menu != Menu::Closed {
             match event.keysym {
-                Keysym::Escape => self.action(23),
-                Keysym::Return | Keysym::KP_Enter if self.controller.power_focus_back => {
-                    self.action(23)
+                // In the confirmation, going back means its Cancel: one step back.
+                Keysym::Escape if matches!(self.controller.power_menu, Menu::Confirm(_)) => {
+                    self.action(25)
                 }
+                Keysym::Escape => self.action(23),
+                Keysym::Return | Keysym::KP_Enter if self.controller.power_focus_back => self
+                    .action(if matches!(self.controller.power_menu, Menu::Confirm(_)) {
+                        25
+                    } else {
+                        23
+                    }),
                 Keysym::Return | Keysym::KP_Enter => match self.controller.power_menu {
                     Menu::Choose(Action::Shutdown) => self.action(21),
                     Menu::Choose(Action::Restart) => self.action(22),
@@ -543,11 +556,12 @@ impl App {
                     );
                     match self.controller.power_menu {
                         Menu::Choose(action) => {
-                            let mut stops: Vec<Option<Action>> = [Action::Shutdown, Action::Restart]
-                                .into_iter()
-                                .filter(|a| self.controller.power_capabilities.allows(*a))
-                                .map(Some)
-                                .collect();
+                            let mut stops: Vec<Option<Action>> =
+                                [Action::Shutdown, Action::Restart]
+                                    .into_iter()
+                                    .filter(|a| self.controller.power_capabilities.allows(*a))
+                                    .map(Some)
+                                    .collect();
                             stops.push(None);
                             let current = if self.controller.power_focus_back {
                                 None

@@ -48,6 +48,14 @@ pub enum Emblem {
     Spinner,
     /// A ring buoy (troubleshooting sessions).
     Lifebuoy,
+    /// Two beamed notes (media).
+    Music,
+    /// A bell (notifications).
+    Bell,
+    /// Level bars (a player is playing).
+    Playing,
+    /// Two bars (a player is paused).
+    Paused,
 }
 
 fn arc(cx: f32, cy: f32, r: f32, from: f32, to: f32) -> Vec<(f32, f32)> {
@@ -111,6 +119,29 @@ fn dynamic_paths(emblem: Emblem) -> Option<Vec<Vec<(f32, f32)>>> {
             vec![(18.4, 18.4), (14.8, 14.8)],
         ],
         Emblem::Spinner => vec![arc(12., 12., 9., -90., 10.)],
+        Emblem::Music => vec![
+            vec![(9., 17.), (9., 6.), (19., 4.), (19., 15.)],
+            vec![(9., 9.5), (19., 7.5)],
+            arc(6.6, 17., 2.4, 0., 360.),
+            arc(16.6, 15., 2.4, 0., 360.),
+        ],
+        Emblem::Bell => {
+            let mut path = vec![(4.5, 17.), (6.5, 14.5), (6.5, 10.5)];
+            path.extend(arc(12., 10.5, 5.5, 180., 360.));
+            path.extend([(17.5, 14.5), (19.5, 17.), (4.5, 17.)]);
+            vec![
+                path,
+                arc(12., 18.5, 2.2, 0., 180.),
+                vec![(12., 3.), (12., 5.)],
+            ]
+        }
+        Emblem::Playing => vec![
+            vec![(6., 18.), (6., 11.)],
+            vec![(10., 18.), (10., 6.)],
+            vec![(14., 18.), (14., 9.)],
+            vec![(18., 18.), (18., 13.)],
+        ],
+        Emblem::Paused => vec![vec![(9., 6.), (9., 18.)], vec![(15., 6.), (15., 18.)]],
         _ => return None,
     })
 }
@@ -136,6 +167,8 @@ pub(super) fn emblem(
     // Progress strokes are heavier so they read at small sizes.
     let half_width = if matches!(emblem, Emblem::Spinner | Emblem::Ring) {
         1.5
+    } else if matches!(emblem, Emblem::Playing | Emblem::Paused) {
+        1.6
     } else {
         0.95
     };
@@ -149,7 +182,11 @@ pub(super) fn emblem(
         | Emblem::Exit
         | Emblem::Ring
         | Emblem::Spinner
-        | Emblem::Lifebuoy => &[],
+        | Emblem::Lifebuoy
+        | Emblem::Music
+        | Emblem::Bell
+        | Emblem::Playing
+        | Emblem::Paused => &[],
         Emblem::Keyboard => &[
             &[(2., 6.), (22., 6.), (22., 18.), (2., 18.), (2., 6.)],
             &[(6., 10.), (7., 10.)],

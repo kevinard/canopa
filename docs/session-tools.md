@@ -187,6 +187,17 @@ uses the defaults. The configuration is read each time the screen locks.
 
 ### Unlocking
 
+The lock screen opens at rest: a large clock and date, "Press any key or click to
+unlock" under them, then the notification card, and the media card on the bottom
+row, over a clearer wallpaper. A key press, a
+click or a scroll shows the password form as the wallpaper softens; the key that woke
+it is typed into the field, except Enter and Escape. Twenty seconds after the last
+input, with nothing typed and no check in progress, the screen rests again. While a
+PAM module waits without asking anything (a fingerprint reader), its message replaces
+the invitation. The resting view needs the default layout, where the clock, date and
+form share the center column; other layouts keep the form shown. With reduced motion
+the views change without movement.
+
 Type the response and press Enter. Escape clears the field; on an empty field it
 cancels the PAM attempt, and Enter starts a new one. Both PAM authentication and the
 account check must succeed. After a failure, the next attempt waits until two seconds
@@ -257,14 +268,16 @@ Passive widgets, each optional:
 | `avatar` | The `avatar` image, else initials |
 | `keyboard` | The active keyboard layout; F6 or a click cycles layouts when there are several |
 | `battery` | UPower battery state |
-| `media` | The Shell's selected player's title, without controls |
+| `media` | A card with the Shell's selected player: title, artist, player, and level bars while it plays or "Paused"; no controls |
 | `weather` | A local JSON snapshot (below) |
-| `notifications` | Canopa Notify's lock-screen feed |
+| `notifications` | A card with Canopa Notify's lock-screen feed and its count |
 
 `clock`, `date` and `authentication` are placed by `layout`. By default the center
 column shows avatar, clock, date, username, the password field and keyboard, and a
 column at the bottom center shows notifications, battery, media and weather. The enabled
-widgets are `battery`, `media`, `keyboard`, `username` and `notifications`.
+widgets are `battery`, `media`, `keyboard`, `username` and `notifications`. The media card
+sits on the bottom row, level with the corner controls, in both views; at rest the
+notification card sits under the date, and it gives way to the form.
 
 The notifications widget shows only what Notify allows on the lock screen: critical
 notifications, plus alarms and calls that break through Do Not Disturb, as "App — New

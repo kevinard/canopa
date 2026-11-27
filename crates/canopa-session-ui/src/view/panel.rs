@@ -163,6 +163,8 @@ pub(super) struct Plan<'a> {
     footer: Vec<&'a Control>,
     footer_disclosure: Option<&'a Control>,
     system: Vec<SystemItem<'a>>,
+    /// Other accounts, offered under the field in place of the account link.
+    shortcuts: Vec<&'a Control>,
     /// System controls are in the column instead of at the screen corners.
     system_inline: bool,
     /// A form drawn as a card (the start-up account list).
@@ -176,7 +178,7 @@ impl AuthenticationPanel {
     fn control_height(&self, treatment: Treatment) -> f32 {
         match treatment {
             Treatment::Utility => 36.,
-            Treatment::Choice if self.list_actions => 68.,
+            Treatment::Choice if self.list_actions => 64.,
             Treatment::Choice => 44.,
             Treatment::Action if self.dialog => BUTTON,
             Treatment::Action => 44.,
@@ -228,6 +230,7 @@ impl AuthenticationPanel {
             footer: Vec::new(),
             footer_disclosure: None,
             system: Vec::new(),
+            shortcuts: Vec::new(),
             system_inline: false,
             card: false,
             checking: fl!("session-checking"),
@@ -247,6 +250,12 @@ impl AuthenticationPanel {
                 }
                 ControlKind::Power if !self.dialog => {
                     plan.system.push(SystemItem::Power(control));
+                    continue;
+                }
+                ControlKind::AccountShortcut { .. } => {
+                    if mode == Mode::Form {
+                        plan.shortcuts.push(control);
+                    }
                     continue;
                 }
                 ControlKind::AccountChooser { .. } if mode == Mode::Form => {
@@ -371,7 +380,7 @@ impl<'a> Plan<'a> {
                 self.push(
                     Content::Buttons(vec![control], Treatment::Choice),
                     if index == 0 { 20. } else { 8. },
-                    68.,
+                    64.,
                 );
             }
             self.status(view, 46, 14.);
@@ -431,8 +440,20 @@ impl<'a> Plan<'a> {
         let field_end = self.height;
         self.status(view, 46, 12.);
         self.height = self.height.max(field_end + STATUS_RESERVE);
+        if !self.shortcuts.is_empty() {
+            links = std::mem::take(&mut self.shortcuts);
+        }
         if !links.is_empty() {
-            self.push(Content::Links(links), 16., 34.);
+            // Other accounts stand apart from the field's messages.
+            let gap = if links
+                .iter()
+                .any(|c| matches!(c.kind, ControlKind::AccountShortcut { .. }))
+            {
+                26.
+            } else {
+                16.
+            };
+            self.push(Content::Links(links), gap, 36.);
         }
 
         for row in actions.chunks(2) {
@@ -558,7 +579,13 @@ impl<'a> Plan<'a> {
             let height = request.height();
             self.push(Content::Request(request), 22., height);
         } else {
-            self.copy(lines, 18., Tone::Body);
+            // Body text spans the content width, in lines of even length.
+            let text = lines.join(" ");
+            if !text.trim().is_empty() {
+                let count = wrap(&text, 64, usize::MAX).len();
+                let even = text.chars().count().div_ceil(count) + 6;
+                self.copy(wrap(&text, even.min(64), usize::MAX), 18., Tone::Body);
+            }
         }
         self.buttons(&utilities, Treatment::Utility, 10., 36.);
         self.buttons(&choices, Treatment::Choice, 12., 44.);
@@ -594,10 +621,11 @@ impl<'a> Plan<'a> {
         self.status(view, 64, 6.);
         if view.prompt.is_some() && !view.hide_input {
             // A consumer's helper fills the reserved line until something is reported.
-            if self.height == field_end && !view.busy {
-                if let Some(hint) = view.custom.get("field-hint").filter(|s| !s.is_empty()) {
-                    self.copy(vec![hint.clone()], 6., Tone::Muted);
-                }
+            if self.height == field_end
+                && !view.busy
+                && let Some(hint) = view.custom.get("field-hint").filter(|s| !s.is_empty())
+            {
+                self.copy(vec![hint.clone()], 6., Tone::Muted);
             }
             // One status line is always reserved, so a failure never moves the
             // actions; until something is reported it says how to continue.
@@ -615,7 +643,8 @@ impl<'a> Plan<'a> {
     fn titles<'s>(&'s self, view: &'s SessionView) -> (&'s str, &'s str) {
         let panel = self.panel;
         // While a submitted response is checked, the instruction says so.
-        if self.mode == Mode::Form && view.busy && view.prompt.is_none() && view.message.is_empty() {
+        if self.mode == Mode::Form && view.busy && view.prompt.is_none() && view.message.is_empty()
+        {
             let title = if self.username {
                 view.username.as_str()
             } else {
@@ -643,6 +672,11 @@ impl<'a> Plan<'a> {
 
     /// Show a passive status among the system controls when they sit at the
     /// screen corners. Returns false when the status stays a widget.
+    /// Whether this is a full-screen sign-in form, which a lock screen can rest.
+    pub(super) fn rests(&self) -> bool {
+        self.mode == Mode::Form && !self.card
+    }
+
     pub(super) fn add_status(&mut self, icon: Emblem, text: String, level: Option<f32>) -> bool {
         if self.system_inline || self.mode == Mode::Dialog || self.system.is_empty() {
             return false;
@@ -804,6 +838,17 @@ impl<'a> Plan<'a> {
         } else {
             0.
         };
+        // A resting lock screen sinks its form away; its corners stay.
+        let rest = if corners && self.rests() {
+            scene.rest
+        } else {
+            0.
+        };
+        let awake = (scene.alpha, scene.offset);
+        if rest > 0. {
+            scene.alpha *= super::form_presence(rest);
+            scene.offset.1 += rest * 26. * scale;
+        }
         for (index, (offset, content)) in self.rows.iter().enumerate() {
             let top = bounds.y + (offset + if index > 0 { spare } else { 0. }) * scale;
             let shaken = matches!(
@@ -820,9 +865,13 @@ impl<'a> Plan<'a> {
                 width,
                 height: 44. * scale,
             };
-            self.populate_row_content(view, settings, scene, content, row, top, left, width, scale, &look, rtl, title, subtitle);
+            self.populate_row_content(
+                view, settings, scene, content, row, top, left, width, scale, &look, rtl, title,
+                subtitle,
+            );
             scene.offset = resting;
         }
+        (scene.alpha, scene.offset) = awake;
         if has_footer {
             self.populate_footer(
                 view,
@@ -925,7 +974,12 @@ impl<'a> Plan<'a> {
                         height: tile_side,
                     };
                     // A warning heading (a destructive confirmation) uses the danger tone.
-                    let tone = if emblem == Emblem::Alert {
+                    let tone = if emblem == Emblem::Alert
+                        || view
+                            .controls
+                            .iter()
+                            .any(|c| c.kind == ControlKind::Destructive)
+                    {
                         palette.danger
                     } else {
                         palette.accent
@@ -1020,8 +1074,8 @@ impl<'a> Plan<'a> {
                     if let (Some(icon), [only]) = (icon, lines.as_slice()) {
                         let side = 17. * scale;
                         let gap = 7. * scale;
-                        let text_width = (view.text_width(only, size) + 4. * scale)
-                            .min(width - side - gap);
+                        let text_width =
+                            (view.text_width(only, size) + 4. * scale).min(width - side - gap);
                         let total = side + gap + text_width;
                         let start = if self.mode == Mode::Form {
                             left + (width - total) / 2.
@@ -1060,12 +1114,8 @@ impl<'a> Plan<'a> {
                         );
                         return;
                     }
-                    // A dialog's body text starts at its title's column.
-                    let indent = if *tone == Tone::Body && self.mode == Mode::Dialog {
-                        58. * scale
-                    } else {
-                        0.
-                    };
+                    // Body text starts at the content margin, like the cards and fields.
+                    let indent = 0.;
                     scene.lines(
                         lines,
                         Rect {
@@ -1159,9 +1209,17 @@ impl<'a> Plan<'a> {
                                         ..area
                                     },
                                     if index == 0 { 14.5 } else { 13. } * scale,
-                                    if index == 0 { palette.text } else { palette.muted },
+                                    if index == 0 {
+                                        palette.text
+                                    } else {
+                                        palette.muted
+                                    },
                                     false,
-                                    if index == 0 { Weight::Medium } else { Weight::Normal },
+                                    if index == 0 {
+                                        Weight::Medium
+                                    } else {
+                                        Weight::Normal
+                                    },
                                 );
                             }
                         }
@@ -1278,7 +1336,12 @@ impl<'a> Plan<'a> {
                                 look.glass_edge()
                             },
                             iced::Shadow {
-                                color: iced::Color::from_rgba(0., 0., 0., if look.dark { 0.22 } else { 0.07 }),
+                                color: iced::Color::from_rgba(
+                                    0.,
+                                    0.,
+                                    0.,
+                                    if look.dark { 0.22 } else { 0.07 },
+                                ),
                                 offset: iced::Vector::new(0., 4. * scale),
                                 blur_radius: 14. * scale,
                             },
@@ -1315,7 +1378,8 @@ impl<'a> Plan<'a> {
                     let submit_width = match (submit, &held) {
                         (Some(control), _) if form => {
                             // Wide enough for "Checking…" too, so the button never resizes.
-                            let checking = view.text_width(&self.checking, 14. * scale) + 26. * scale;
+                            let checking =
+                                view.text_width(&self.checking, 14. * scale) + 26. * scale;
                             (view.text_width(&control.label, 14. * scale).max(checking)
                                 + 50. * scale)
                                 .max(button_side)
@@ -1323,7 +1387,8 @@ impl<'a> Plan<'a> {
                         }
                         (Some(_), _) => button_side + inset,
                         (None, Some(label)) => {
-                            let checking = view.text_width(&self.checking, 14. * scale) + 26. * scale;
+                            let checking =
+                                view.text_width(&self.checking, 14. * scale) + 26. * scale;
                             (view.text_width(label, 14. * scale).max(checking) + 50. * scale)
                                 .max(button_side)
                                 + inset
@@ -1347,8 +1412,11 @@ impl<'a> Plan<'a> {
                                 + if rtl { trailing } else { 0. }
                                 + if form && !rtl { 6. * scale } else { 0. },
                             y: field.y + 3. * scale,
-                            width: (field.width - trailing - 6. * scale - if form { 6. * scale } else { 0. })
-                                .max(1.),
+                            width: (field.width
+                                - trailing
+                                - 6. * scale
+                                - if form { 6. * scale } else { 0. })
+                            .max(1.),
                             height: field.height - 6. * scale,
                         },
                         scale,
@@ -1427,8 +1495,16 @@ impl<'a> Plan<'a> {
                             },
                             angle,
                             // The button's label colour, at full strength.
-                            if look.dark { look.on_accent } else { canopa_theme::Rgb(255, 255, 255) },
-                            iced::Color::from_rgba(1., 1., 1., if look.dark { 0.2 } else { 0.3 }),
+                            if look.dark {
+                                look.on_accent
+                            } else {
+                                canopa_theme::Rgb(255, 255, 255)
+                            },
+                            if look.dark {
+                                style::rgba(look.on_accent, 0.22)
+                            } else {
+                                iced::Color::from_rgba(1., 1., 1., 0.3)
+                            },
                         );
                         place(8. * scale);
                         if false {
@@ -1574,13 +1650,24 @@ impl<'a> Plan<'a> {
                     }
                 }
                 Content::Links(controls) => {
-                    self.populate_links(view, settings, scene, controls, left, width, top + 2. * scale, scale);
+                    self.populate_links(
+                        view,
+                        settings,
+                        scene,
+                        controls,
+                        left,
+                        width,
+                        top + 2. * scale,
+                        scale,
+                    );
                 }
                 Content::Buttons(controls, treatment) => {
                     let height = self.row_height(controls, *treatment);
                     if *treatment == Treatment::Choice
                         && (self.panel.list_actions || self.card)
-                        && controls.iter().all(|control| control.kind != ControlKind::Back)
+                        && controls
+                            .iter()
+                            .all(|control| control.kind != ControlKind::Back)
                     {
                         for control in controls {
                             self.populate_row(
@@ -1629,18 +1716,134 @@ impl<'a> Plan<'a> {
         scale: f32,
     ) {
         let gap = 8. * scale;
-        let label = |control: &Control| match &control.kind {
+        let full = |control: &Control| match &control.kind {
             ControlKind::AccountChooser { text } => text.clone(),
+            ControlKind::AccountShortcut { name, .. } => name.clone(),
             _ => control.label.clone(),
+        };
+        let measure = |label: &dyn Fn(&Control) -> String| -> f32 {
+            controls
+                .iter()
+                .map(|control| {
+                    let extra = if matches!(control.kind, ControlKind::AccountShortcut { .. }) {
+                        54.
+                    } else {
+                        70.
+                    };
+                    view.text_width(&label(control), 14. * scale) + extra * scale
+                })
+                .sum::<f32>()
+                + gap * controls.len().saturating_sub(1) as f32
+        };
+        // Accounts shorten to first names when their full names would
+        // outgrow the field above them.
+        let short = measure(&full) > width;
+        let label = |control: &Control| match &control.kind {
+            ControlKind::AccountShortcut { name, initials } if short && !initials.is_empty() => {
+                name.split_whitespace().next().unwrap_or(name).to_owned()
+            }
+            _ => full(control),
         };
         let widths: Vec<_> = controls
             .iter()
-            .map(|control| (view.text_width(&label(control), 14. * scale) + 70. * scale).min(width))
+            .map(|control| {
+                let extra = if matches!(control.kind, ControlKind::AccountShortcut { .. }) {
+                    54.
+                } else {
+                    70.
+                };
+                (view.text_width(&label(control), 14. * scale) + extra * scale).min(width)
+            })
             .collect();
         let total = widths.iter().sum::<f32>() + gap * widths.len().saturating_sub(1) as f32;
         let mut x = left + (width - total) / 2.;
         for (control, w) in controls.iter().zip(widths) {
             let text = label(control);
+            if let ControlKind::AccountShortcut { initials, .. } = &control.kind {
+                // Another account: its picture and first name, one click away.
+                let rect = Rect {
+                    x,
+                    y,
+                    width: w,
+                    height: 36. * scale,
+                };
+                let waiting;
+                let control = if view.busy {
+                    waiting = Control {
+                        enabled: false,
+                        ..(*control).clone()
+                    };
+                    &waiting
+                } else {
+                    *control
+                };
+                let staged_button = scene.alpha;
+                if !control.enabled {
+                    scene.alpha *= 0.55;
+                }
+                scene.styled_button(
+                    settings,
+                    control,
+                    rect,
+                    scale,
+                    Kind::Glass,
+                    18. * scale,
+                    ButtonContent::Text {
+                        label: "",
+                        size: 14. * scale,
+                        weight: Weight::Normal,
+                        centered: false,
+                    },
+                );
+                scene.alpha = staged_button;
+                let side = 28. * scale;
+                let rtl = canopa_i18n::direction().is_rtl();
+                // While a response is checked the accounts wait, visibly.
+                let staged = scene.alpha;
+                if !control.enabled {
+                    scene.alpha *= 0.55;
+                }
+                let picture = Rect {
+                    x: if rtl {
+                        rect.x + rect.width - 4. * scale - side
+                    } else {
+                        rect.x + 4. * scale
+                    },
+                    y: rect.y + 4. * scale,
+                    width: side,
+                    height: side,
+                };
+                if initials.is_empty() {
+                    scene.anonymous(picture, settings);
+                } else {
+                    scene.initials(initials, picture, settings);
+                }
+                let look = Look::new(settings);
+                scene.label(
+                    text,
+                    Rect {
+                        x: if rtl {
+                            rect.x + 14. * scale
+                        } else {
+                            picture.x + side + 8. * scale
+                        },
+                        y: rect.y,
+                        width: rect.width - side - 27. * scale,
+                        height: rect.height,
+                    },
+                    14. * scale,
+                    if control.enabled {
+                        look.palette.text
+                    } else {
+                        look.palette.muted
+                    },
+                    false,
+                    Weight::Medium,
+                );
+                scene.alpha = staged;
+                x += w + gap;
+                continue;
+            }
             scene.styled_button(
                 settings,
                 control,
@@ -1666,7 +1869,7 @@ impl<'a> Plan<'a> {
 
     fn row_height(&self, controls: &[&Control], treatment: Treatment) -> f32 {
         if self.card && treatment == Treatment::Choice {
-            return 68.;
+            return 64.;
         }
         if controls
             .iter()
@@ -1699,9 +1902,10 @@ impl<'a> Plan<'a> {
                 detail.clone()
             }
         });
-        let detail = described
-            .as_deref()
-            .or(checked.then_some(current.as_str()));
+        // Long descriptions end with an ellipsis beside the picture and mark.
+        let described = described
+            .map(|detail| view.ellipsize(&detail, 13., (rect.width / scale - 132.).max(40.)));
+        let detail = described.as_deref().or(checked.then_some(current.as_str()));
         let (title, detail, leading) = match &control.kind {
             ControlKind::AccountChooser { text } => {
                 (text.as_str(), None, Some(Leading::Icon(Emblem::Person)))
@@ -1723,7 +1927,8 @@ impl<'a> Plan<'a> {
                 ),
             ),
             _ if self.panel.emblem == Emblem::Accounts => {
-                return self.populate_account_row(settings, scene, control, rect, scale, checked, detail);
+                return self
+                    .populate_account_row(settings, scene, control, rect, scale, checked, detail);
             }
             _ => (
                 control.label.as_str(),
@@ -1900,8 +2105,6 @@ impl<'a> Plan<'a> {
                 Rect {
                     x: if rtl {
                         row.x + row.width - width
-                    } else if back {
-                        row.x
                     } else {
                         row.x
                     },
@@ -2218,7 +2421,14 @@ impl<'a> Plan<'a> {
                 SystemItem::Desktop(c) => {
                     // "Desktop: Canopa" says what the chooser changes.
                     let label = c.label.clone();
-                    (Some(*c), label, Emblem::Display, true, None, Some(Emblem::ChevronDown))
+                    (
+                        Some(*c),
+                        label,
+                        Emblem::Display,
+                        true,
+                        None,
+                        Some(Emblem::ChevronDown),
+                    )
                 }
                 SystemItem::Keyboard(c) => (
                     *c,
@@ -2339,7 +2549,11 @@ impl<'a> Plan<'a> {
 }
 
 /// The colour of a strength rating from -1 (rejected) to 1, in the meter's bands.
-fn strength_color(level: f32, palette: &canopa_theme::Palette, warning: canopa_theme::Rgb) -> canopa_theme::Rgb {
+fn strength_color(
+    level: f32,
+    palette: &canopa_theme::Palette,
+    warning: canopa_theme::Rgb,
+) -> canopa_theme::Rgb {
     match level {
         level if level < 0. => palette.danger,
         level if level <= 0. => palette.muted,
@@ -2354,21 +2568,29 @@ fn strength_color(level: f32, palette: &canopa_theme::Palette, warning: canopa_t
 /// A troubleshooting session, shown with its own icon.
 fn is_recovery(label: &str) -> bool {
     let label = label.to_lowercase();
-    ["recovery", "rescue", "safe", "failsafe", "secours", "dépannage"]
-        .iter()
-        .any(|word| label.contains(word))
+    [
+        "recovery",
+        "rescue",
+        "safe",
+        "failsafe",
+        "secours",
+        "dépannage",
+    ]
+    .iter()
+    .any(|word| label.contains(word))
 }
 
 /// Up to two initials for a display name.
 pub fn initials(name: &str) -> String {
-    let mut words = name.split_whitespace().filter_map(|word| word.chars().next());
-    match (words.next(), words.last()) {
+    let mut words = name
+        .split_whitespace()
+        .filter_map(|word| word.chars().next());
+    match (words.next(), words.next_back()) {
         (Some(first), Some(last)) => [first, last].iter().collect(),
         (Some(first), None) => first.to_string(),
         _ => String::new(),
     }
 }
-
 
 impl Request<'_> {
     fn height(&self) -> f32 {
@@ -2479,6 +2701,7 @@ mod tests {
             footer_disclosure: None,
             system: vec![],
             system_inline: false,
+            shortcuts: Vec::new(),
             card: false,
             checking: String::new(),
             checking_instruction: String::new(),

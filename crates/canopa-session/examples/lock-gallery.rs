@@ -44,6 +44,34 @@ fn main() -> anyhow::Result<()> {
             .save_with_format(output.join(format!("{name}.png")), image::ImageFormat::Png)?;
         Ok(())
     };
+    let now_playing = || canopa_session_ui::view::NowPlaying {
+        title: "Weightless".into(),
+        artist: "Marconi Union".into(),
+        player: "Music".into(),
+        playing: true,
+    };
+    let notices = || {
+        Some(
+            "Calendar — Design review in 15 minutes\nMessages — Sam: Running five minutes late"
+                .to_owned(),
+        )
+    };
+    // At rest: the glance view, with what the Shell plays and Notify allows.
+    let mut ui = fresh()?;
+    ui.resting = true;
+    ui.media = Some(now_playing());
+    ui.notifications = notices();
+    save(&ui, "lock-glance")?;
+    let mut ui = fresh()?;
+    ui.resting = true;
+    save(&ui, "lock-glance-quiet")?;
+    let mut ui = fresh()?;
+    ui.media = Some(canopa_session_ui::view::NowPlaying {
+        playing: false,
+        ..now_playing()
+    });
+    ui.notifications = notices();
+    save(&ui, "lock-cards")?;
     save(&fresh()?, "lock")?;
     let mut ui = fresh()?;
     ui.secret.push("correct horse");
@@ -57,6 +85,7 @@ fn main() -> anyhow::Result<()> {
     save(&ui, "lock-error")?;
     // Motion, as frame sequences at 30 frames per second.
     let background = lock_ui::LockUi::prepare_background(&settings, "gallery", 960, 600)?;
+    let clear = lock_ui::LockUi::prepare_rest_background(&settings, "gallery", 960, 600)?;
     let record = |name: &str,
                   ui: &mut lock_ui::LockUi,
                   frames: usize,
@@ -72,13 +101,36 @@ fn main() -> anyhow::Result<()> {
             ui.motion().set_clock(Some(
                 start + std::time::Duration::from_micros(frame as u64 * 33_333),
             ));
-            ui.render_on_output(&settings, "gallery", background.clone())?
-                .0
-                .save(directory.join(format!("{frame:04}.png")))?;
+            ui.render_on_output(
+                &settings,
+                "gallery",
+                ui.rest_background(background.clone(), clear.as_ref()),
+            )?
+            .0
+            .save(directory.join(format!("{frame:04}.png")))?;
         }
         Ok(())
     };
     record("lock-appear", &mut fresh()?, 24, &mut |_, _| {})?;
+    // Waking: a key press shows the form (and types into it), then the
+    // untouched screen settles back.
+    let mut ui = fresh()?;
+    ui.resting = true;
+    ui.media = Some(now_playing());
+    ui.notifications = notices();
+    record("lock-wake", &mut ui, 60, &mut |frame, ui| {
+        if frame == 6 {
+            ui.resting = false;
+            ui.secret.push("c");
+        }
+        if (8..16).contains(&frame) && frame % 2 == 0 {
+            ui.secret.push("x");
+        }
+        if frame == 34 {
+            ui.secret.clear();
+            ui.resting = true;
+        }
+    })?;
     let mut ui = fresh()?;
     record("lock-failure", &mut ui, 66, &mut |frame, ui| {
         if (2..20).contains(&frame) && frame % 2 == 0 {

@@ -42,3 +42,9 @@ session-choose-account = Choisissez un compte
 session-checking = Vérification…
 # The instruction above the field while a response is checked.
 session-checking-password = Vérification de votre mot de passe…
+session-wake-hint = Appuyez sur une touche ou cliquez pour déverrouiller
+session-media-paused = En pause
+session-notifications-count = { $count ->
+    [one] 1 notification
+   *[other] { $count } notifications
+}

@@ -126,7 +126,7 @@ enum Update {
     Accessibility(canopa_session_ui::accessibility::Request),
     Authentication { generation: u64, event: auth::Event },
     Battery(canopa_widgets::battery::BatteryState),
-    Media(Option<String>),
+    Media(Option<canopa_session_ui::view::NowPlaying>),
     Notifications(Option<String>),
     Custom { name: String, text: Option<String> },
 }
@@ -170,7 +170,12 @@ struct App {
     submit_on_prompt: bool,
     logind: Option<crate::logind::Tracker>,
     widgets: Option<WidgetRuntime>,
+    /// Returns an untouched lock screen to its glance view.
+    rest_timer: Option<calloop::RegistrationToken>,
 }
+
+/// How long an untouched lock screen shows its form before resting again.
+const REST_AFTER: Duration = Duration::from_secs(20);
 fn initialize(
     settings: Settings,
     request: Request,
@@ -301,6 +306,7 @@ fn initialize(
         retry_after: Instant::now(),
         logind: None,
         widgets: None,
+        rest_timer: None,
     };
     for output in app.outputs.outputs() {
         app.add_output(output);
@@ -430,6 +436,8 @@ pub fn lock(
     let mut ui = LockUi::new(&settings, auth::display_name().unwrap_or(username.clone()))?;
     crate::lock_ui::configure(&mut ui);
     crate::lock_ui::identify(&mut ui, &username);
+    // The lock opens on its glance view; a key or a click shows the form.
+    ui.resting = true;
     ui.motion().enable();
     let ready = if let Some(fd) = ready_fd {
         ensure!(
@@ -621,9 +629,19 @@ impl App {
                     // Unavailable wallpaper must not prevent an opaque lock view.
                     let image =
                         match LockUi::prepare_background(&self.settings, &name, width, height) {
-                            Ok(image) => {
-                                Some(canopa_session_ui::presentation::Background::from_rgb(image))
-                            }
+                            Ok(image) => Some(
+                                canopa_session_ui::presentation::Background::from_rgb(image)
+                                    .with_rest(
+                                        LockUi::prepare_rest_background(
+                                            &self.settings,
+                                            &name,
+                                            width,
+                                            height,
+                                        )
+                                        .ok()
+                                        .flatten(),
+                                    ),
+                            ),
                             Err(error) => {
                                 eprintln!("lock background unavailable: {error}");
                                 None
@@ -1131,16 +1149,15 @@ impl App {
             // Pressing Enter during the failure delay starts as soon as it ends.
             if self.retry_prompt.is_some() {
                 let at = self.retry_after;
-                let _ = self.handle.insert_source(
-                    Timer::from_deadline(at),
-                    |_, _, app: &mut App| {
-                        if app.authentication.is_none() && app.retry_prompt.is_some() {
-                            app.begin_authentication();
-                            app.redraw();
-                        }
-                        TimeoutAction::Drop
-                    },
-                );
+                let _ =
+                    self.handle
+                        .insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
+                            if app.authentication.is_none() && app.retry_prompt.is_some() {
+                                app.begin_authentication();
+                                app.redraw();
+                            }
+                            TimeoutAction::Drop
+                        });
             }
             return;
         }
@@ -1291,13 +1308,14 @@ impl App {
                         ui.failed = true;
                         // Keep the field for the next attempt.
                         ui.mask_response();
-                        ui.prompt = self.retry_prompt.as_ref().map(|(text, echo)| {
-                            crate::lock_ui::Prompt {
-                                id: u64::MAX,
-                                text: text.clone(),
-                                echo: *echo,
-                            }
-                        });
+                        ui.prompt =
+                            self.retry_prompt
+                                .as_ref()
+                                .map(|(text, echo)| crate::lock_ui::Prompt {
+                                    id: u64::MAX,
+                                    text: text.clone(),
+                                    echo: *echo,
+                                });
                         ui.secret.clear();
                         ui.message = fl!("lock-failed");
                     }
@@ -1321,6 +1339,7 @@ impl App {
         self.redraw();
     }
     fn control(&mut self, id: usize) {
+        self.wake();
         if id == canopa_session_ui::input::LAYOUT_CONTROL {
             self.input.cycle();
             if let Some(ui) = &mut self.ui {
@@ -1379,6 +1398,16 @@ impl App {
         if !self.confirmed || self.ui.is_none() {
             return;
         }
+        // Waking takes the key that woke it as typing, except one that would
+        // act on the hidden form.
+        if self.wake()
+            && matches!(
+                event.keysym,
+                Keysym::Return | Keysym::KP_Enter | Keysym::Escape
+            )
+        {
+            return;
+        }
         if event.keysym == Keysym::F6 {
             self.input.cycle();
             let ui = self.ui.as_mut().unwrap();
@@ -1410,6 +1439,39 @@ impl App {
             }
         }
         self.redraw();
+    }
+}
+impl App {
+    /// Show the form of a resting lock screen. Returns whether it was resting.
+    /// Any input also postpones the next rest.
+    fn wake(&mut self) -> bool {
+        let Some(ui) = self.ui.as_mut() else {
+            return false;
+        };
+        let was_resting = std::mem::replace(&mut ui.resting, false);
+        if let Some(timer) = self.rest_timer.take() {
+            self.handle.remove(timer);
+        }
+        self.rest_timer = self
+            .handle
+            .insert_source(Timer::from_duration(REST_AFTER), |_, _, app: &mut App| {
+                let Some(ui) = app.ui.as_mut() else {
+                    return TimeoutAction::Drop;
+                };
+                // Never rest over typing or a check in progress.
+                if !ui.secret.is_empty() || ui.busy {
+                    return TimeoutAction::ToDuration(REST_AFTER);
+                }
+                ui.resting = true;
+                app.rest_timer = None;
+                app.redraw();
+                TimeoutAction::Drop
+            })
+            .ok();
+        if was_resting {
+            self.redraw();
+        }
+        was_resting
     }
 }
 impl CompositorHandler for App {
@@ -1800,6 +1862,18 @@ impl PointerHandler for App {
             };
             let presentation_key = record.presentation_key.clone();
             let scale = record.scale as f32;
+            {
+                use smithay_client_toolkit::seat::pointer::PointerEventKind;
+                // A click or scroll wakes a resting lock screen without
+                // reaching the form under it.
+                if matches!(
+                    event.kind,
+                    PointerEventKind::Press { .. } | PointerEventKind::Axis { .. }
+                ) && self.wake()
+                {
+                    continue;
+                }
+            }
             for input in native_pointer(event, scale) {
                 let Some(ui) = &mut self.ui else {
                     break;

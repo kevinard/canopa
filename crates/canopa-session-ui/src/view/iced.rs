@@ -146,6 +146,8 @@ pub(crate) struct Scene {
     pub field_focus: bool,
     /// The light colour scheme (the clock takes a heavier weight).
     pub glass_light: bool,
+    /// From 0 (the form) to 1 (a resting lock screen's glance view).
+    pub rest: f32,
 }
 
 /// What a styled button shows.
@@ -196,6 +198,7 @@ impl Scene {
             spinner: None,
             field_focus: false,
             glass_light: false,
+            rest: 0.,
         }
     }
     pub fn empty(&self) -> Self {
@@ -206,6 +209,8 @@ impl Scene {
         scene.shake = self.shake;
         scene.spinner = self.spinner;
         scene.field_focus = self.field_focus;
+        scene.glass_light = self.glass_light;
+        scene.rest = self.rest;
         scene
     }
     fn fade(&self, mut color: iced::Color) -> iced::Color {
@@ -314,8 +319,311 @@ impl Scene {
                     iced::font::Weight::Light
                 },
             );
-            x += width - 1. + size * 0.1;
+            // A trailing "1" sits at the end of its advance; widen the gap so
+            // the period keeps the same distance whatever the last digit.
+            let narrow = !period && part.ends_with('1');
+            x += width - 1. + size * if narrow { 0.17 } else { 0.1 };
         }
+    }
+    /// The Shell's selected player: what plays, by whom and where.
+    pub fn media_card(
+        &mut self,
+        view: &SessionView,
+        settings: &Settings,
+        now: &super::NowPlaying,
+        rect: Rect,
+        scale: f32,
+    ) {
+        let look = Look::new(settings);
+        let p = look.palette;
+        self.glass_card(&look, rect, scale);
+        let pad = 12. * scale;
+        let tile = Rect {
+            x: rect.x + pad,
+            y: rect.y + (rect.height - 40. * scale) / 2.,
+            width: 40. * scale,
+            height: 40. * scale,
+        };
+        self.raised_surface(
+            tile,
+            10. * scale,
+            iced::Gradient::Linear(
+                iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI * 0.75))
+                    .add_stop(
+                        0.,
+                        style::rgba(raster::mix(p.accent, Rgb(255, 255, 255), 0.18), 1.),
+                    )
+                    .add_stop(
+                        1.,
+                        style::rgba(raster::mix(p.accent, p.background, 0.45), 1.),
+                    ),
+            ),
+            iced::Color::from_rgba(1., 1., 1., 0.14),
+            iced::Shadow::default(),
+        );
+        let glyph = 20. * scale;
+        self.icon(
+            Emblem::Music,
+            Rect {
+                x: tile.x + (tile.width - glyph) / 2.,
+                y: tile.y + (tile.height - glyph) / 2.,
+                width: glyph,
+                height: glyph,
+            },
+            look.on_accent,
+        );
+        // A status, not a control: bars while playing, a word while paused.
+        let paused = fl!("session-media-paused");
+        let status = if now.playing {
+            20. * scale
+        } else {
+            view.text_width(&paused, 12.) * scale + 2. * scale
+        };
+        let text_left = tile.x + tile.width + 12. * scale;
+        let text_width = (rect.x + rect.width - pad - status - 12. * scale - text_left).max(1.);
+        let title = if now.title.is_empty() {
+            &now.player
+        } else {
+            &now.title
+        };
+        let detail = [now.artist.as_str(), now.player.as_str()]
+            .into_iter()
+            .filter(|part| !part.is_empty() && *part != title.as_str())
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let line = |y: f32| Rect {
+            x: text_left,
+            y,
+            width: text_width,
+            height: 20. * scale,
+        };
+        let centre = rect.y + rect.height / 2.;
+        if detail.is_empty() {
+            self.label(
+                view.ellipsize(title, 15., text_width / scale),
+                line(centre - 10. * scale),
+                15. * scale,
+                p.text,
+                false,
+                iced::font::Weight::Medium,
+            );
+        } else {
+            self.label(
+                view.ellipsize(title, 15., text_width / scale),
+                line(centre - 20. * scale),
+                15. * scale,
+                p.text,
+                false,
+                iced::font::Weight::Medium,
+            );
+            self.label(
+                view.ellipsize(&detail, 13., text_width / scale),
+                line(centre),
+                13. * scale,
+                p.muted,
+                false,
+                iced::font::Weight::Normal,
+            );
+        }
+        if now.playing {
+            self.icon(
+                Emblem::Playing,
+                Rect {
+                    x: rect.x + rect.width - pad - status,
+                    y: centre - status / 2.,
+                    width: status,
+                    height: status,
+                },
+                p.accent,
+            );
+        } else {
+            self.label(
+                paused,
+                Rect {
+                    x: rect.x + rect.width - pad - status,
+                    y: centre - 10. * scale,
+                    width: status,
+                    height: 20. * scale,
+                },
+                12. * scale,
+                p.muted,
+                false,
+                iced::font::Weight::Medium,
+            );
+        }
+    }
+    /// Notify's lock-screen entries: the application, then what it says.
+    pub fn notice_card(
+        &mut self,
+        view: &SessionView,
+        settings: &Settings,
+        lines: &[String],
+        rect: Rect,
+        scale: f32,
+    ) {
+        let look = Look::new(settings);
+        let p = look.palette;
+        self.glass_card(&look, rect, scale);
+        let pad = 14. * scale;
+        let glyph = 16. * scale;
+        self.icon(
+            Emblem::Bell,
+            Rect {
+                x: rect.x + pad,
+                y: rect.y + pad + 2. * scale,
+                width: glyph,
+                height: glyph,
+            },
+            p.accent,
+        );
+        let shown = lines.iter().filter(|line| line.contains(" — ")).count();
+        let more: u64 = lines
+            .iter()
+            .filter(|line| !line.contains(" — "))
+            .filter_map(|line| {
+                line.split(|c: char| !c.is_ascii_digit())
+                    .find(|part| !part.is_empty())
+            })
+            .filter_map(|digits| digits.parse::<u64>().ok())
+            .sum::<u64>();
+        let count = shown as u64 + more;
+        self.label(
+            fl!("session-notifications-count", count = count),
+            Rect {
+                x: rect.x + pad + glyph + 8. * scale,
+                y: rect.y + pad,
+                width: rect.width - 2. * pad - glyph,
+                height: 20. * scale,
+            },
+            13. * scale,
+            p.muted,
+            false,
+            iced::font::Weight::Medium,
+        );
+        let width = rect.width - 2. * pad;
+        for (index, line) in lines.iter().enumerate() {
+            let y = rect.y + pad + (28. + 22. * index as f32) * scale;
+            let (app, body) = line.split_once(" — ").unwrap_or(("", line.as_str()));
+            let mut x = rect.x + pad;
+            if !app.is_empty() {
+                let app = view.ellipsize(app, 14., width * 0.4 / scale);
+                let app_width = view.text_width(&app, 14.) * scale + 8. * scale;
+                self.label(
+                    app,
+                    Rect {
+                        x,
+                        y,
+                        width: app_width,
+                        height: 22. * scale,
+                    },
+                    14. * scale,
+                    p.text,
+                    false,
+                    iced::font::Weight::Semibold,
+                );
+                x += app_width;
+            }
+            let remaining = (rect.x + rect.width - pad - x).max(1.);
+            self.label(
+                view.ellipsize(body, 14., remaining / scale),
+                Rect {
+                    x,
+                    y,
+                    width: remaining,
+                    height: 22. * scale,
+                },
+                14. * scale,
+                if app.is_empty() {
+                    p.muted
+                } else {
+                    raster::mix(p.muted, p.text, 0.4)
+                },
+                false,
+                iced::font::Weight::Normal,
+            );
+        }
+    }
+    fn glass_card(&mut self, look: &Look, rect: Rect, scale: f32) {
+        self.raised_surface(
+            rect,
+            18. * scale,
+            if look.dark {
+                style::rgba(look.palette.surface, 0.56)
+            } else {
+                style::rgba(Rgb(255, 255, 255), 0.70)
+            },
+            look.glass_edge(),
+            // A shallow shadow: the cards are secondary, and the media card
+            // sits on the bottom row, where a deep one would not fit.
+            look.shadow(12. * scale),
+        );
+    }
+    /// The resting lock screen's invitation, where the field appears on waking.
+    pub fn wake_hint(
+        &mut self,
+        view: &SessionView,
+        settings: &Settings,
+        centre: (f32, f32),
+        scale: f32,
+    ) {
+        let look = Look::new(settings);
+        // A module waiting without a question (a fingerprint reader) says so here.
+        let text = if view.prompt.is_none() && !view.failed && !view.message.is_empty() {
+            view.ellipsize(view.message.lines().next().unwrap_or_default(), 14., 520.)
+        } else {
+            fl!("session-wake-hint")
+        };
+        let size = 14.;
+        let glyph = 16. * scale;
+        let width = (view.text_width(&text, size) + 16. + 8. + 2. * 18.) * scale;
+        let height = 38. * scale;
+        let rect = Rect {
+            x: centre.0 - width / 2.,
+            y: centre.1 - height / 2.,
+            width,
+            height,
+        };
+        self.surface(
+            rect,
+            height / 2.,
+            look.glass(),
+            look.glass_edge(),
+            1.,
+            iced::Shadow::default(),
+        );
+        let rtl = canopa_i18n::direction().is_rtl();
+        let icon_x = if rtl {
+            rect.x + rect.width - 18. * scale - glyph
+        } else {
+            rect.x + 18. * scale
+        };
+        self.icon(
+            Emblem::Lock,
+            Rect {
+                x: icon_x,
+                y: rect.y + (height - glyph) / 2.,
+                width: glyph,
+                height: glyph,
+            },
+            look.palette.text,
+        );
+        self.label(
+            text,
+            Rect {
+                x: if rtl {
+                    rect.x + 18. * scale
+                } else {
+                    icon_x + glyph + 8. * scale
+                },
+                y: rect.y,
+                width: rect.width - glyph - 44. * scale,
+                height,
+            },
+            size * scale,
+            look.palette.text,
+            false,
+            iced::font::Weight::Medium,
+        );
     }
     pub fn element(self, size: Size) -> Element<'static> {
         stack(self.elements)
@@ -579,7 +887,8 @@ impl Scene {
         self.label(
             initials.to_uppercase(),
             rect,
-            rect.width * 0.34,
+            // Small pictures keep their initials legible.
+            rect.width * if rect.width < 44. { 0.4 } else { 0.34 },
             Rgb(255, 255, 255),
             true,
             iced::font::Weight::Medium,
@@ -626,10 +935,11 @@ impl Scene {
         content: Content<'_>,
     ) {
         let look = Look::new(settings);
+        // Unavailable controls stay legible: quieter, never washed out.
         let color = if control.enabled {
             look.foreground(kind)
         } else {
-            look.palette.disabled
+            look.palette.muted
         };
         let icon_side = 20. * scale;
         let alpha = self.alpha;
@@ -712,12 +1022,13 @@ impl Scene {
                     );
                 }
                 if let Some(emblem) = trailing {
-                    let tone = if matches!(kind, Kind::Primary | Kind::Resting) {
+                    let tone = if matches!(kind, Kind::Primary | Kind::Resting) || !control.enabled
+                    {
                         color
                     } else {
-                        look.palette.muted
+                        raster::mix(look.palette.muted, look.palette.text, 0.5)
                     };
-                    items.push(icon(&mut assets, emblem, icon_side * 0.7, tone).into());
+                    items.push(icon(&mut assets, emblem, icon_side * 0.85, tone).into());
                 }
                 if rtl {
                     items.reverse();
@@ -812,7 +1123,10 @@ impl Scene {
                 .center_y(Length::Fill)
                 .into()
             }
-            Content::Tile { icon: emblem, label } => {
+            Content::Tile {
+                icon: emblem,
+                label,
+            } => {
                 let label = clean(label);
                 let mut assets = self.assets.borrow_mut();
                 container(
@@ -958,7 +1272,11 @@ impl Scene {
             Kind::Primary
         } else if control.kind == ControlKind::Back {
             // One style for going back everywhere: a secondary button with an arrow.
-            if self.glass { Kind::Glass } else { Kind::Secondary }
+            if self.glass {
+                Kind::Glass
+            } else {
+                Kind::Secondary
+            }
         } else if quiet {
             Kind::Quiet
         } else if self.glass {
@@ -998,13 +1316,12 @@ impl Scene {
                 detail: account_detail,
                 initials,
             } => {
-                let leading = if control.selected
-                    && (view.user_avatar.is_some() || view.avatar.is_some())
-                {
-                    Leading::Avatar(view)
-                } else {
-                    Leading::Initials(initials)
-                };
+                let leading =
+                    if control.selected && (view.user_avatar.is_some() || view.avatar.is_some()) {
+                        Leading::Avatar(view)
+                    } else {
+                        Leading::Initials(initials)
+                    };
                 self.styled_button(
                     settings,
                     control,
@@ -1182,28 +1499,27 @@ impl Scene {
                 } else {
                     14. * scale
                 };
-                let origin = (
-                    x,
-                    rect.height / 2. + 6. * scale,
-                );
+                let origin = (x, rect.height / 2. + 6. * scale);
                 // Draw over black and over white, then recover coverage and
                 // colour, so the field's own (translucent) surface shows through.
                 let caret = view.prompt.is_some() && !view.busy && !view.hide_input;
                 let mut draw = |base: u8| {
-                    let mut bitmap = ::image::RgbImage::from_pixel(width, height, ::image::Rgb([base; 3]));
+                    let mut bitmap =
+                        ::image::RgbImage::from_pixel(width, height, ::image::Rgb([base; 3]));
                     if display.is_empty() {
                         text.draw_styled(
                             &mut bitmap,
                             &placeholder,
                             // Leave the caret its own space before the placeholder.
                             (
-                                origin.0 + if !caret {
-                                    0.
-                                } else if rtl {
-                                    -6. * scale
-                                } else {
-                                    6. * scale
-                                },
+                                origin.0
+                                    + if !caret {
+                                        0.
+                                    } else if rtl {
+                                        -6. * scale
+                                    } else {
+                                        6. * scale
+                                    },
                                 origin.1,
                             ),
                             15. * scale,
@@ -1215,8 +1531,7 @@ impl Scene {
                         // An empty field that takes input still shows where typing goes.
                         if caret {
                             let focus = settings.appearance.role(canopa_theme::ColorRole::Focus);
-                            let x = (origin.0 - if rtl { 2. * scale } else { 2. * scale })
-                                .max(0.) as u32;
+                            let x = (origin.0 - 2. * scale).max(0.) as u32;
                             let half = (9. * scale) as u32;
                             let middle = (rect.height / 2.) as u32;
                             for y in middle.saturating_sub(half)..(middle + half).min(height) {
@@ -1255,10 +1570,8 @@ impl Scene {
                 let black = draw(0);
                 let white = draw(255);
                 let mut bitmap = ::image::RgbaImage::new(width, height);
-                for ((target, dark), light) in bitmap
-                    .pixels_mut()
-                    .zip(black.pixels())
-                    .zip(white.pixels())
+                for ((target, dark), light) in
+                    bitmap.pixels_mut().zip(black.pixels()).zip(white.pixels())
                 {
                     let coverage = (0..3)
                         .map(|c| 255 - i32::from(light[c]) + i32::from(dark[c]))

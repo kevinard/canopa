@@ -2,7 +2,7 @@ use crate::settings::Settings;
 use std::time::Duration;
 pub enum Update {
     Battery(canopa_widgets::battery::BatteryState),
-    Media(Option<String>),
+    Media(Option<crate::view::NowPlaying>),
     /// Notify's lock-screen feed, already filtered by its lock-screen policy.
     Notifications(Option<String>),
     Custom {
@@ -182,7 +182,12 @@ pub fn start(
                     let worker = tokio::spawn(canopa_widgets::media::observe(sender));
                     while receiver.changed().await.is_ok() {
                         let snapshot = receiver.borrow_and_update().clone();
-                        let label = snapshot.current().map(|p| p.label());
+                        let label = snapshot.current().map(|p| crate::view::NowPlaying {
+                            title: p.title.clone(),
+                            artist: p.artist.clone(),
+                            player: p.name.clone(),
+                            playing: p.status == "Playing",
+                        });
                         if updates.send(Update::Media(label)).is_err() {
                             break;
                         }

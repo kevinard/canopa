@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     std::fs::write(&source, CONFIG.replace("SCHEME", scheme))?;
     let (mut config, _) = Config::load(&Request::common(source.clone()))?;
     // Desktop entries carry a comment; the sample sessions get theirs here.
-    config.sessions[0].comment = Some("The Canopa desktop".into());
+    config.sessions[0].comment = Some("Shell, Files and Settings".into());
     config.sessions[1].comment = Some("A minimal desktop for troubleshooting".into());
     std::fs::remove_file(&source)?;
     let account = |username: &str, name: &str, uid| Account {
@@ -75,6 +75,7 @@ fn main() -> anyhow::Result<()> {
             vec![
                 account("alex", "Alex Morgan", 1000),
                 account("sam", "Sam Rivera", 1001),
+                account("jordan", "Jordan Lee", 1002),
             ],
         );
         c.ui.layout = "English (US)".into();
@@ -161,8 +162,12 @@ fn main() -> anyhow::Result<()> {
     save(&c, "greeter-power-confirm")?;
 
     // Motion, as frame sequences at 30 frames per second.
-    let background =
-        canopa_session_ui::view::SessionView::prepare_background(&config.view, "gallery", 960, 600)?;
+    let background = canopa_session_ui::view::SessionView::prepare_background(
+        &config.view,
+        "gallery",
+        960,
+        600,
+    )?;
     let record = |name: &str,
                   c: &mut Controller,
                   frames: usize,
@@ -179,19 +184,23 @@ fn main() -> anyhow::Result<()> {
             c.ui.motion().set_clock(Some(
                 start + std::time::Duration::from_micros(frame as u64 * 33_333),
             ));
-            c.ui
-                .render_on_output(&config.view, "gallery", background.clone())?
+            c.ui.render_on_output(&config.view, "gallery", background.clone())?
                 .0
                 .save(directory.join(format!("{frame:04}.png")))?;
         }
         Ok(())
     };
     record("greeter-appear", &mut fresh()?, 24, &mut |_, _| {})?;
-    record("greeter-choose-account", &mut fresh()?, 48, &mut |frame, c| {
-        if frame == 18 {
-            c.open_chooser(Choice::Account);
-        }
-    })?;
+    record(
+        "greeter-choose-account",
+        &mut fresh()?,
+        48,
+        &mut |frame, c| {
+            if frame == 18 {
+                c.open_chooser(Choice::Account);
+            }
+        },
+    )?;
     record("greeter-power-menu", &mut fresh()?, 48, &mut |frame, c| {
         if frame == 18 {
             c.power_action(20);

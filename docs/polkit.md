@@ -43,7 +43,8 @@ dialog shows the request's description, the account being authenticated and
 "Requested by": the name of the requesting program, taken from its command line and
 matching desktop entry. A program chooses its own name, so treat it as context;
 **Request details** lists the request, action ID, account, requesting program with
-its process ID, and policy source; long values scroll.
+its process ID, and policy source; long values scroll. There, **Back** takes the
+place of **Request details** and has keyboard focus.
 
 | Key | Action |
 | --- | --- |

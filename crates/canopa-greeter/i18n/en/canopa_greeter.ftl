@@ -19,6 +19,7 @@ greeter-change-account = Switch account
 greeter-choose-account-for = Choose account · { $account }
 # An account row on the sign-in screen. $account is its name and username.
 greeter-sign-in-as = Sign in as { $account }
+greeter-another-account = Another account
 # Below the account list: type a username that is not listed.
 greeter-not-listed = Use another account
 greeter-change-account-for = Change account · { $account }
@@ -40,10 +41,11 @@ greeter-power-accepted = Power request accepted by the system
 greeter-power-denied = Power action unavailable or denied by system policy
 greeter-shut-down = Shut down
 greeter-restart = Restart
-greeter-confirm-shut-down = Confirm shut down
-greeter-confirm-restart = Confirm restart
-greeter-shut-down-warning = Shut down this computer? Unsaved work in other sessions may be lost.
-greeter-restart-warning = Restart this computer? Unsaved work in other sessions may be lost.
+greeter-shut-down-question = Shut down this computer?
+greeter-restart-question = Restart this computer?
+greeter-shut-down-warning = Unsaved work in other sessions may be lost.
+greeter-cancel = Cancel
+greeter-restart-warning = Unsaved work in other sessions may be lost.
 greeter-invalid-username = Enter a valid username
 greeter-enter-username = Enter a username
 greeter-starting-authentication = Starting authentication…

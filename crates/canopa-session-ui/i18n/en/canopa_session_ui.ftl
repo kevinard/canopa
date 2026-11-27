@@ -61,3 +61,9 @@ session-choose-account = Choose an account
 session-checking = Checking…
 # The instruction above the field while a response is checked.
 session-checking-password = Checking your password…
+session-wake-hint = Press any key or click to unlock
+session-media-paused = Paused
+session-notifications-count = { $count ->
+    [one] 1 notification
+   *[other] { $count } notifications
+}

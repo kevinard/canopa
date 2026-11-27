@@ -49,6 +49,9 @@ pub enum ControlKind {
         detail: Option<String>,
         initials: String,
     },
+    /// An account offered beside the form, which switches to it directly.
+    /// Empty initials draw the generic person (another account).
+    AccountShortcut { name: String, initials: String },
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +80,16 @@ impl Control {
         self.kind = kind;
         self
     }
+}
+
+/// The Shell's selected player, as the lock screen shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NowPlaying {
+    pub title: String,
+    pub artist: String,
+    /// The player's name, such as "Music".
+    pub player: String,
+    pub playing: bool,
 }
 
 pub(crate) type VisualRevision = (u64, (usize, u64), usize, usize, bool, u64);
@@ -138,7 +151,10 @@ pub struct SessionView {
     pub interaction_epoch: (u64, u64),
     pub action_labels: Option<(String, String)>,
     pub battery: Option<canopa_widgets::battery::BatteryState>,
-    pub media: Option<String>,
+    pub media: Option<NowPlaying>,
+    /// A lock screen nobody is using rests: a large clock and the passive
+    /// cards over a clearer wallpaper, until a key or the pointer wakes it.
+    pub resting: bool,
     /// Lock-screen notification lines from Notify, display text only.
     pub notifications: Option<String>,
     pub custom: std::collections::BTreeMap<String, String>,
@@ -192,6 +208,7 @@ impl SessionView {
             action_labels: None,
             battery: None,
             media: None,
+            resting: false,
             notifications: None,
             custom: Default::default(),
             reveal: None,
@@ -228,11 +245,8 @@ impl SessionView {
         }
         self.hide_input.hash(&mut stage);
         self.blank.hash(&mut stage);
-        self.motion.observe(
-            stage.finish(),
-            self.failed,
-            self.busy,
-        );
+        self.motion.observe_rest(self.resting);
+        self.motion.observe(stage.finish(), self.failed, self.busy);
     }
     /// Show or mask the current secret response. Returns false when no masked
     /// response is being entered. A new prompt is always masked again.
@@ -319,7 +333,36 @@ impl SessionView {
         height: u32,
     ) -> Result<RgbImage> {
         let image = Self::prepare_background(settings, name, width, height)?;
+        let clear = Self::prepare_rest_background(settings, name, width, height)?;
+        let image = self.rest_background(image, clear.as_ref());
         Ok(self.render_on_output(settings, name, image)?.0)
+    }
+
+    /// For previews: the wallpaper as a resting surface shows it at this
+    /// moment, blending in the clearer picture. Native hosts fade it instead.
+    pub fn rest_background(&self, mut image: RgbImage, clear: Option<&RgbImage>) -> RgbImage {
+        self.observe_motion();
+        let rest = if self
+            .authentication_panel
+            .as_ref()
+            .is_some_and(|panel| !panel.dialog)
+        {
+            self.motion.frame().rest
+        } else {
+            0.
+        };
+        if let Some(clear) =
+            clear.filter(|clear| rest > 0. && clear.dimensions() == image.dimensions())
+        {
+            for (target, source) in image.pixels_mut().zip(clear.pixels()) {
+                for channel in 0..3 {
+                    target[channel] = (f32::from(target[channel]) * (1. - rest)
+                        + f32::from(source[channel]) * rest)
+                        .round() as u8;
+                }
+            }
+        }
+        image
     }
     pub fn prepare_background(
         settings: &Settings,
@@ -327,6 +370,38 @@ impl SessionView {
         width: u32,
         height: u32,
     ) -> Result<RgbImage> {
+        Self::prepare_softened(settings, name, width, height, settings.blur, settings.dim)
+            .map(|(image, _)| image)
+    }
+
+    /// The wallpaper a resting lock screen shows: barely softened and lifted
+    /// less, so the picture reads before anyone signs in. None when the
+    /// background is not a picture.
+    pub fn prepare_rest_background(
+        settings: &Settings,
+        name: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<RgbImage>> {
+        Self::prepare_softened(
+            settings,
+            name,
+            width,
+            height,
+            settings.blur / 8,
+            settings.dim * 3 / 5,
+        )
+        .map(|(image, picture)| picture.then_some(image))
+    }
+
+    fn prepare_softened(
+        settings: &Settings,
+        name: &str,
+        width: u32,
+        height: u32,
+        blur: u8,
+        dim: u8,
+    ) -> Result<(RgbImage, bool)> {
         let bg = settings.for_output(name);
         // Match a desktop that shows the embedded wallpaper on this output.
         let built_in = bg.image.is_none()
@@ -338,7 +413,10 @@ impl SessionView {
             && !settings.solid_color
             && settings.color == settings.appearance.palette().background
         {
-            return raster::backdrop(&settings.appearance, width, height);
+            return Ok((
+                raster::backdrop(&settings.appearance, width, height)?,
+                false,
+            ));
         }
         background::dimensions(width, height)?;
         let source = if built_in {
@@ -351,7 +429,7 @@ impl SessionView {
         if source.is_some() {
             background::soften(
                 &mut image,
-                f32::from(settings.blur) * (width as f32 / 1280.).min(height as f32 / 800.),
+                f32::from(blur) * (width as f32 / 1280.).min(height as f32 / 800.),
             );
             // A gentle scrim keeps the clock and the bottom controls legible
             // over bright parts of a picture.
@@ -374,13 +452,13 @@ impl SessionView {
                         .iter_mut()
                         .zip([settings.color.0, settings.color.1, settings.color.2])
                 {
-                    *channel = ((u16::from(*channel) * u16::from(100 - settings.dim)
-                        + u16::from(color) * u16::from(settings.dim))
+                    *channel = ((u16::from(*channel) * u16::from(100 - dim)
+                        + u16::from(color) * u16::from(dim))
                         / 100) as u8;
                 }
             }
         }
-        Ok(image)
+        Ok((image, source.is_some()))
     }
     pub fn render_over(&self, settings: &Settings, image: RgbImage) -> Result<RgbImage> {
         Ok(self.render_with_hits(settings, image)?.0)
@@ -529,8 +607,21 @@ impl SessionView {
                         level
                     }
                 }),
-                "media" => self.media.clone(),
-                "notifications" => self.notifications.clone(),
+                "media" => {
+                    if let Some(now) = self.media.clone() {
+                        content.insert(widget.clone(), Content::Media(now));
+                    }
+                    None
+                }
+                "notifications" => {
+                    if let Some(lines) = self.notifications.as_deref() {
+                        let lines: Vec<String> = lines.lines().map(str::to_owned).take(4).collect();
+                        if !lines.is_empty() {
+                            content.insert(widget.clone(), Content::Notices(lines));
+                        }
+                    }
+                    None
+                }
                 "weather" => observed.weather.clone(),
                 "avatar" => {
                     if self.avatar.is_some()
@@ -677,6 +768,8 @@ impl SessionView {
                         (size + 7.) * lines.len() as f32,
                     ),
                     Content::Avatar => (64., 64.),
+                    Content::Media(_) => (CARD_WIDTH, MEDIA_HEIGHT),
+                    Content::Notices(lines) => (CARD_WIDTH, 54. + 22. * lines.len() as f32),
                     Content::Authentication => {
                         panel.as_ref().map_or((400., auth_height), |panel| {
                             panel.size((height / scale - 2. * settings.layout.margin).max(1.))
@@ -707,6 +800,10 @@ impl SessionView {
             scene.offset = (0., motion.rise * scale);
         }
         scene.base = (scene.alpha, scene.offset);
+        // Only the sign-in form stacked under the clock rests; other layouts
+        // and dialogs keep their content in place.
+        let glance_capable = pin_origin && panel.as_ref().is_some_and(|plan| plan.rests());
+        scene.rest = if glance_capable { motion.rest } else { 0. };
         scene.shake = motion.shake * scale;
         scene.spinner = motion.spinner;
         // A chosen account confirms with one action: its list shows focus.
@@ -716,9 +813,57 @@ impl SessionView {
                 .authentication_panel
                 .as_ref()
                 .is_some_and(|panel| panel.confirm_identity);
+        let rest = scene.rest;
+        let mut media_placed = false;
+        let lerp = |a: f32, b: f32| a + (b - a) * rest;
+        let clock_size = settings.clock_size as f32;
+        let rest_clock_top = height * 0.16;
+        let rest_date_top = rest_clock_top + (clock_size * REST_CLOCK + 22.) * scale;
+        let in_form =
+            |name: &str| auth_region.is_some_and(|region| region.widgets.iter().any(|w| w == name));
         for placement in placements {
-            let bounds = placement.bounds;
+            let mut bounds = placement.bounds;
             let scale = scale * placement.scale;
+            let base = (scene.alpha, scene.offset);
+            let mut grow = 1.;
+            if rest > 0. && in_form(&placement.name) {
+                match placement.name.as_str() {
+                    // The clock and date grow and rise into the glance view.
+                    "clock" | "date" => {
+                        let centre = lerp(bounds.x + bounds.width / 2., width / 2.);
+                        let top = if placement.name == "clock" {
+                            rest_clock_top
+                        } else {
+                            rest_date_top
+                        };
+                        grow = lerp(
+                            1.,
+                            if placement.name == "clock" {
+                                REST_CLOCK
+                            } else {
+                                REST_DATE
+                            },
+                        );
+                        bounds = crate::layout::Rect {
+                            x: centre - width * 0.45,
+                            y: lerp(bounds.y, top),
+                            width: width * 0.9,
+                            height: bounds.height * grow,
+                        };
+                    }
+                    "authentication" => {}
+                    _ => scene.alpha *= form_presence(rest),
+                }
+            }
+            // The media card sits on the bottom row, level with the corner
+            // controls, in both views: only the clock and the form move.
+            if glance_capable && placement.name == "media" {
+                bounds.y = height - (settings.layout.margin + 20. + MEDIA_HEIGHT / 2.) * scale;
+                media_placed = true;
+            }
+            if rest > 0. && placement.name == "notifications" {
+                scene.alpha *= form_presence(rest);
+            }
             match &content[&placement.name] {
                 Content::Text {
                     lines,
@@ -753,13 +898,13 @@ impl SessionView {
                     // system chips or the fallback control rows; this widget
                     // only reports the active layout.
                     if placement.name == "clock" && lines.len() == 1 {
-                        scene.clock(self, &lines[0], text_bounds, size * scale, *color);
+                        scene.clock(self, &lines[0], text_bounds, size * grow * scale, *color);
                     } else {
                         scene.lines(
                             lines,
                             text_bounds,
-                            size * scale,
-                            (size + 7.) * scale,
+                            size * grow * scale,
+                            (size + 7.) * grow * scale,
                             *color,
                             true,
                             if *weight == cosmic_text::Weight::LIGHT {
@@ -773,6 +918,8 @@ impl SessionView {
                     }
                 }
                 Content::Avatar => scene.avatar(self, bounds, settings),
+                Content::Media(now) => scene.media_card(self, settings, now, bounds, scale),
+                Content::Notices(lines) => scene.notice_card(self, settings, lines, bounds, scale),
                 Content::Authentication => {
                     if let Some(panel) = &panel {
                         let base = scene.base;
@@ -867,8 +1014,57 @@ impl SessionView {
                     }
                 }
             }
+            (scene.alpha, scene.offset) = base;
+        }
+        if rest > 0. {
+            let base = (scene.alpha, scene.offset);
+            let glance = glance_presence(rest);
+            scene.alpha *= glance;
+            scene.offset.1 += (1. - glance) * 16. * scale;
+            let mut top =
+                rest_date_top + (settings.text_size as f32 * REST_DATE + 7.) * scale + 24. * scale;
+            // The invitation keeps one place under the date; cards follow it.
+            scene.wake_hint(self, settings, (width / 2., top + 19. * scale), scale);
+            top += (38. + 28.) * scale;
+            let card = |top: f32, height: f32| crate::layout::Rect {
+                x: (width - CARD_WIDTH * scale) / 2.,
+                y: top,
+                width: CARD_WIDTH * scale,
+                height: height * scale,
+            };
+            for name in ["notifications", "media"] {
+                match content.get(name) {
+                    Some(Content::Notices(lines)) => {
+                        let height = 54. + 22. * lines.len() as f32;
+                        scene.notice_card(self, settings, lines, card(top, height), scale);
+                        top += (height + 12.) * scale;
+                    }
+                    // Shown here only when the form's layout has no room for it.
+                    Some(Content::Media(now)) if !media_placed => {
+                        scene.media_card(self, settings, now, card(top, MEDIA_HEIGHT), scale);
+                        top += (MEDIA_HEIGHT + 12.) * scale;
+                    }
+                    _ => {}
+                }
+            }
+            (scene.alpha, scene.offset) = base;
         }
         scene
+    }
+    /// Shorten text to fit a logical width, ending it with an ellipsis.
+    pub(crate) fn ellipsize(&self, text: &str, size: f32, width: f32) -> String {
+        if self.text_width(text, size) <= width {
+            return text.to_owned();
+        }
+        let mut chars: Vec<char> = text.chars().collect();
+        while !chars.is_empty() {
+            chars.pop();
+            let candidate: String = chars.iter().collect::<String>().trim_end().to_owned() + "…";
+            if self.text_width(&candidate, size) <= width {
+                return candidate;
+            }
+        }
+        "…".into()
     }
     pub(crate) fn clear_response_images(&self) {
         self.assets.borrow_mut().clear_fields();
@@ -876,7 +1072,10 @@ impl SessionView {
     pub(crate) fn field_placeholder(&self) -> String {
         if self.busy
             && self.secret.is_empty()
-            && !self.authentication_panel.as_ref().is_some_and(|panel| panel.dialog)
+            && !self
+                .authentication_panel
+                .as_ref()
+                .is_some_and(|panel| panel.dialog)
         {
             // The instruction above the field says what is happening.
             String::new()
@@ -1008,7 +1207,7 @@ impl SessionView {
             + gap * parts.len().saturating_sub(1) as f32
     }
 
-    fn text_width(&self, text: &str, size: f32) -> f32 {
+    pub(crate) fn text_width(&self, text: &str, size: f32) -> f32 {
         self.text_renderer.borrow_mut().width(text, size)
     }
     fn text(
@@ -1032,7 +1231,26 @@ impl SessionView {
     }
 }
 
+/// How much larger the clock and date are while a lock screen rests.
+const REST_CLOCK: f32 = 2.;
+const REST_DATE: f32 = 1.2;
+/// The passive cards' width, and the media card's height.
+const CARD_WIDTH: f32 = 380.;
+const MEDIA_HEIGHT: f32 = 56.;
+
+/// How present the form is as a lock screen rests (0 to 1 rest), and how
+/// present the glance view is: each gives way almost fully before the other.
+pub(crate) fn form_presence(rest: f32) -> f32 {
+    (1. - rest / 0.55).clamp(0., 1.)
+}
+pub(crate) fn glance_presence(rest: f32) -> f32 {
+    ((rest - 0.45) / 0.55).clamp(0., 1.)
+}
+
 enum Content {
+    Media(NowPlaying),
+    /// Notify's lines, at most four.
+    Notices(Vec<String>),
     Text {
         lines: Vec<String>,
         size: f32,
@@ -1176,7 +1394,11 @@ mod tests {
             text: "Password".into(),
             echo: false,
         });
-        assert_eq!(view.field_placeholder(), "", "a submitted response is being checked");
+        assert_eq!(
+            view.field_placeholder(),
+            "",
+            "a submitted response is being checked"
+        );
         view.busy = false;
         assert_eq!(
             view.field_placeholder(),

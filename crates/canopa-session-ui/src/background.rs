@@ -243,7 +243,11 @@ mod soften_tests {
     #[test]
     fn soften_spreads_an_edge_and_keeps_flat_areas_and_size() {
         let mut image = RgbImage::from_fn(200, 100, |x, _| {
-            if x < 100 { image::Rgb([0; 3]) } else { image::Rgb([255; 3]) }
+            if x < 100 {
+                image::Rgb([0; 3])
+            } else {
+                image::Rgb([255; 3])
+            }
         });
         soften(&mut image, 12.);
         assert_eq!(image.dimensions(), (200, 100));

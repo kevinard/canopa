@@ -67,8 +67,8 @@ pinentry-fact-requirements = Requirements
 # Passphrase strength reported by the agent.
 pinentry-strength-rejected = Too weak — the agent won’t accept it
 pinentry-strength-weak = Weak — add another unrelated word
-pinentry-strength-fair = Fair — a word or two more makes it good
-pinentry-strength-good = Good — another unrelated word improves it
+pinentry-strength-fair = Fair — add more unrelated words
+pinentry-strength-good = Good — another unrelated word makes it stronger
 pinentry-strength-strong = Strong passphrase
 pinentry-strength-hint = Several unrelated words make a strong passphrase
 pinentry-incorrect-passphrase = Incorrect passphrase. Try again.

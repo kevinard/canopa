@@ -33,19 +33,29 @@ fn software_renderer() -> Renderer {
 pub struct Background {
     handle: iced::widget::image::Handle,
     dimensions: (u32, u32),
+    /// The clearer picture a resting lock screen fades to.
+    rest: Option<iced::widget::image::Handle>,
+}
+fn rgba_handle(image: image::RgbImage) -> iced::widget::image::Handle {
+    let (width, height) = image.dimensions();
+    let rgba = image::DynamicImage::ImageRgb8(image).into_rgba8();
+    iced::widget::image::Handle::from_rgba(width, height, rgba.into_raw())
 }
 impl Background {
     pub fn from_rgb(image: image::RgbImage) -> Self {
         let dimensions = image.dimensions();
-        let rgba = image::DynamicImage::ImageRgb8(image).into_rgba8();
         Self {
-            handle: iced::widget::image::Handle::from_rgba(
-                dimensions.0,
-                dimensions.1,
-                rgba.into_raw(),
-            ),
+            handle: rgba_handle(image),
             dimensions,
+            rest: None,
         }
+    }
+    /// A background with the picture shown while the surface rests.
+    pub fn with_rest(mut self, rest: Option<image::RgbImage>) -> Self {
+        self.rest = rest
+            .filter(|image| image.dimensions() == self.dimensions)
+            .map(rgba_handle);
+        self
     }
     pub fn dimensions(&self) -> (u32, u32) {
         self.dimensions
@@ -388,15 +398,26 @@ impl Surface {
         }
         let scene = view.scene(settings, self.size, self.scale, &self.hidden);
         self.hits = scene.hits.clone();
+        let rest = scene.rest;
         let foreground = scene.element(self.size);
         let element: Element<'static> = if let Some(background) = &self.background {
-            iced::widget::stack![
+            let mut layers = vec![
                 iced::widget::image(background.handle.clone())
                     .width(self.size.width)
-                    .height(self.size.height),
-                foreground
-            ]
-            .into()
+                    .height(self.size.height)
+                    .into(),
+            ];
+            if let Some(clear) = background.rest.as_ref().filter(|_| rest > 0.) {
+                layers.push(
+                    iced::widget::image(clear.clone())
+                        .width(self.size.width)
+                        .height(self.size.height)
+                        .opacity(rest)
+                        .into(),
+                );
+            }
+            layers.push(foreground);
+            iced::widget::Stack::with_children(layers).into()
         } else {
             foreground
         };

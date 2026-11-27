@@ -356,9 +356,12 @@ AccountsService.
 
 With known accounts, the screen opens on a **Choose an account** card listing up to
 four of them; clicking one or pressing Enter on it starts signing in. Typing or
-**Use another account** shows a username field. Below the field, **Switch account**
-(or **Choose an account** while typing a name) opens the full list, which also offers
-**Use another account**; it is unavailable while a response is being checked. After
+**Use another account** shows a username field. With two or three accounts, the
+password step offers the others under the field, each with its picture and name:
+clicking one ends the attempt and signs in as that account, and **Another account**
+shows a username field. With more accounts, **Switch account** below the field (or **Choose an account** while typing a
+name) opens the full list, which also offers **Use another account**. These are
+unavailable while a response is being checked. After
 a rejected password the field stays: type again and press Enter. The desktop chooser
 is in the bottom-left corner; keyboard layout, battery and power are in the
 bottom-right, and they stay in place, unavailable, while a chooser or the power
@@ -366,8 +369,10 @@ options are open. When a layout region uses those corners, they move into the
 sign-in column.
 
 The power options open with keyboard focus on **Back**: Enter returns to sign-in,
-and the arrow keys or Tab move to Shut down and Restart. The confirmation step also
-starts on Back.
+and the arrow keys or Tab move to Shut down and Restart. The confirmation step asks
+"Shut down this computer?" (or "Restart this computer?") in its heading, warns that
+unsaved work in other sessions may be lost, and offers **Cancel** (focused), which returns
+to the power options, beside **Shut down** or **Restart**.
 
 With `remember-selection #true` the greeter saves the last user who logged in and
 each user's last session, only after greetd confirms the session started. At the next

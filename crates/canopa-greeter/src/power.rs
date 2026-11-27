@@ -15,9 +15,13 @@ impl Action {
     }
     /// The confirmation button.
     pub fn confirm_label(self) -> String {
+        self.label()
+    }
+    /// The confirmation's heading: the question itself.
+    pub fn question(self) -> String {
         match self {
-            Self::Shutdown => fl!("greeter-confirm-shut-down"),
-            Self::Restart => fl!("greeter-confirm-restart"),
+            Self::Shutdown => fl!("greeter-shut-down-question"),
+            Self::Restart => fl!("greeter-restart-question"),
         }
     }
     /// The question asked before the action.

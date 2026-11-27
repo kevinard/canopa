@@ -48,7 +48,11 @@ graphics. Rendering, clock and passive-data updates remain event driven.
 Motion (`canopa-session-ui/src/motion.rs`) is a pure function of the time since an
 effect started: full-screen surfaces fade and rise in, a new step (chooser, power
 options, details) cross-fades, the field shakes once when a response is rejected,
-and a spinner turns while the system checks a response. Hosts enable motion; a
+and a spinner turns while the system checks a response. A resting lock screen
+(`SessionView::resting`, set by the locker) morphs between its glance view and the
+form: the clock and date grow and rise, the form and the notification card give way
+to each other while the media card stays on the bottom row, and the presentation fades a clearer copy of the wallpaper
+(`Background::with_rest`) over the softened one. Hosts enable motion; a
 surface asks for the next frame callback only while an effect runs or it waits,
 and stays idle otherwise. Reduced motion keeps the spinner and drops movement.
 Dialogs leave their opening to the compositor. Previews fix the motion clock to

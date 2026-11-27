@@ -35,7 +35,8 @@ impl Look {
         let mut palette = settings.appearance.palette();
         let dark = settings.appearance.color_scheme == canopa_theme::ColorScheme::Dark;
         // Secondary text keeps at least 4.5:1 on the session's cards.
-        palette.muted = super::raster::mix(palette.muted, palette.text, if dark { 0.22 } else { 0.42 });
+        palette.muted =
+            super::raster::mix(palette.muted, palette.text, if dark { 0.22 } else { 0.42 });
         Self {
             palette,
             dark: settings.appearance.color_scheme == canopa_theme::ColorScheme::Dark,
@@ -99,7 +100,10 @@ impl Look {
 
     /// The tinted backing of a heading emblem.
     pub fn tint(&self, strength: f32) -> Color {
-        rgba(self.palette.accent, strength * if self.dark { 0.16 } else { 0.22 })
+        rgba(
+            self.palette.accent,
+            strength * if self.dark { 0.16 } else { 0.22 },
+        )
     }
 
     /// Inset fill for dialog fields.
@@ -173,7 +177,11 @@ pub(crate) fn button_style(
         let (background, border_color, border_width) = match kind {
             Kind::Primary => {
                 let base = canopa_ui::color(p.accent);
-                let toward = if look.dark { Color::WHITE } else { Color::BLACK };
+                let toward = if look.dark {
+                    Color::WHITE
+                } else {
+                    Color::BLACK
+                };
                 let amount = if pressed {
                     0.16
                 } else if hovered {
@@ -194,7 +202,11 @@ pub(crate) fn button_style(
             }
             Kind::Danger => {
                 // A destructive action is unmistakable: a solid, deep danger fill.
-                let toward = if look.dark { Color::WHITE } else { Color::BLACK };
+                let toward = if look.dark {
+                    Color::WHITE
+                } else {
+                    Color::BLACK
+                };
                 let base = if look.dark {
                     // White text keeps at least 4.5:1 on this fill.
                     Color::from_rgb8(0xb8, 0x36, 0x5c)
@@ -241,7 +253,7 @@ pub(crate) fn button_style(
                     0.
                 };
                 (
-                    (alpha > 0.).then(|| Color { a: alpha, ..text }),
+                    (alpha > 0.).then_some(Color { a: alpha, ..text }),
                     if look.dark {
                         Color::from_rgba(1., 1., 1., 0.3)
                     } else {
@@ -259,7 +271,7 @@ pub(crate) fn button_style(
                     0.
                 };
                 (
-                    (alpha > 0.).then(|| Color { a: alpha, ..text }),
+                    (alpha > 0.).then_some(Color { a: alpha, ..text }),
                     Color::TRANSPARENT,
                     0.,
                 )
@@ -329,17 +341,19 @@ pub(crate) fn button_style(
             },
             // Unavailable controls keep their colours at reduced strength, so
             // they still read as present.
-            text_color: fade(if disabled && kind == Kind::Primary || kind == Kind::Resting {
-                let mut label = canopa_ui::color(p.text);
-                label.a = if look.dark { 0.5 } else { 0.8 };
-                label
-            } else {
-                let mut color = canopa_ui::color(foreground);
-                if disabled {
-                    color.a *= 0.6;
-                }
-                color
-            }),
+            text_color: fade(
+                if disabled && kind == Kind::Primary || kind == Kind::Resting {
+                    let mut label = canopa_ui::color(p.text);
+                    label.a = if look.dark { 0.5 } else { 0.8 };
+                    label
+                } else {
+                    let mut color = canopa_ui::color(foreground);
+                    if disabled {
+                        color.a *= 0.6;
+                    }
+                    color
+                },
+            ),
             border: Border {
                 color: fade(if focused && !disabled {
                     // On list rows the ring contrasts with the current choice's tint.
@@ -368,7 +382,8 @@ pub(crate) fn button_style(
 /// so each account keeps its colour.
 pub(crate) fn avatar_tones(seed: &str) -> (Color, Color) {
     // Quiet, nature-derived tones that sit with the green accent.
-    const TONES: [((u8, u8, u8), (u8, u8, u8)); 8] = [
+    type Tone = ((u8, u8, u8), (u8, u8, u8));
+    const TONES: [Tone; 8] = [
         ((0x86, 0xb3, 0x9b), (0x5b, 0x8c, 0x74)),
         ((0x7f, 0xae, 0xb3), (0x55, 0x86, 0x8d)),
         ((0x93, 0xa4, 0xbf), (0x67, 0x7a, 0x99)),

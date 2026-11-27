@@ -31,6 +31,11 @@ pub const ENTER_USERNAME: usize = 5;
 pub const FIRST_ACCOUNT: usize = 200;
 /// The sign-in screen lists at most this many accounts; the chooser has the rest.
 const LISTED_ACCOUNTS: usize = 4;
+/// Other accounts under the field switch to that account directly.
+pub const SWITCH_ACCOUNT: usize = 300;
+/// Other accounts are offered under the field when there are at most this many
+/// accounts; with more, the account link opens the full list.
+const OFFERED_ACCOUNTS: usize = 3;
 
 #[derive(Clone, Copy)]
 pub enum Choice {
@@ -86,6 +91,9 @@ pub struct Controller {
     automatic: bool,
     /// Open the power menu once the current attempt's cancellation completes.
     power_after_cancel: bool,
+    /// After the attempt is cancelled: sign in as this account, or (None)
+    /// enter a username.
+    switch_after_cancel: Option<Option<usize>>,
 }
 impl Controller {
     pub fn new(config: &Config) -> Result<Self> {
@@ -136,6 +144,7 @@ impl Controller {
             remembered: false,
             automatic: false,
             power_after_cancel: false,
+            switch_after_cancel: None,
         };
         this.choose_user(&if config.sessions.is_empty() {
             fl!("greeter-no-sessions-help")
@@ -226,6 +235,11 @@ impl Controller {
                 self.power_menu = Menu::Pending(action);
                 return Some(action);
             }
+            // Cancelling the confirmation steps back to the power options.
+            (25, Menu::Confirm(action)) => {
+                self.power_menu = Menu::Choose(action);
+                self.power_focus_back = false;
+            }
             (23, Menu::Choose(_) | Menu::Confirm(_)) => {
                 self.power_menu = Menu::Closed;
                 self.choose_user("");
@@ -285,6 +299,13 @@ impl Controller {
         (panel.heading, panel.emblem) = match self.chooser.as_ref().map(|chooser| chooser.kind) {
             Some(Choice::Account) => (fl!("greeter-choose-an-account"), Emblem::Accounts),
             Some(Choice::Desktop) => (fl!("greeter-choose-a-desktop"), Emblem::Display),
+            None if matches!(self.power_menu, Menu::Confirm(_)) => (
+                match self.power_menu {
+                    Menu::Confirm(action) => action.question(),
+                    _ => unreachable!(),
+                },
+                Emblem::Power,
+            ),
             None if self.ui.hide_input => (fl!("greeter-power-options"), Emblem::Power),
             None => (fl!("greeter-sign-in"), Emblem::Canopa),
         };
@@ -325,10 +346,9 @@ impl Controller {
                     ),
                 );
             }
-            self.ui.controls.push(
-                Control::new(CLOSE_CHOOSER, self.back_label())
-                    .with_kind(ControlKind::Back),
-            );
+            self.ui
+                .controls
+                .push(Control::new(CLOSE_CHOOSER, self.back_label()).with_kind(ControlKind::Back));
             self.inert_session_controls(config);
             return;
         }
@@ -356,16 +376,21 @@ impl Controller {
                     }
                 }
                 Menu::Confirm(_) => {
+                    // The question's two answers side by side, the safe one first
+                    // and focused, as in every destructive confirmation.
                     self.ui.message = action.warning();
-                    let mut confirm =
-                        Control::new(24, action.confirm_label()).with_kind(ControlKind::Destructive);
+                    let mut cancel = Control::new(25, fl!("greeter-cancel"));
+                    cancel.selected = self.power_focus_back;
+                    let mut confirm = Control::new(24, action.confirm_label())
+                        .with_kind(ControlKind::Destructive);
                     confirm.selected = !self.power_focus_back;
+                    self.ui.controls.push(cancel);
                     self.ui.controls.push(confirm);
                 }
                 Menu::Pending(_) => self.ui.message = fl!("greeter-power-pending"),
                 Menu::Closed => {}
             }
-            if !self.ui.busy {
+            if !self.ui.busy && !matches!(self.power_menu, Menu::Confirm(_)) {
                 let mut back = Control::new(23, self.back_label()).with_kind(ControlKind::Back);
                 back.selected = self.power_focus_back;
                 self.ui.controls.push(back);
@@ -522,6 +547,40 @@ impl Controller {
             controls.append(&mut self.ui.controls);
             self.ui.controls = controls;
             self.ui.primary_control = None;
+        }
+        // With a few accounts, the others are offered under the field during
+        // the password step, so switching is one click; they replace the link.
+        if !chosen
+            && matches!(self.phase, Phase::Prompt | Phase::Failed | Phase::Waiting)
+            && (2..=OFFERED_ACCOUNTS).contains(&self.accounts.len())
+            && self.accounts.iter().any(|a| a.username == self.user)
+        {
+            self.ui.controls.retain(|control| control.id != 1);
+            let enabled = matches!(self.phase, Phase::Prompt | Phase::Failed);
+            for (index, account) in self.accounts.iter().enumerate() {
+                if account.username == self.user {
+                    continue;
+                }
+                let label = account.chooser_label();
+                let mut control = Control::new(
+                    SWITCH_ACCOUNT + index,
+                    fl!("greeter-sign-in-as", account = label.as_str()),
+                )
+                .with_kind(ControlKind::AccountShortcut {
+                    name: account.display_name.clone(),
+                    initials: crate::avatars::initials(&account.display_name),
+                });
+                control.enabled = enabled;
+                self.ui.controls.push(control);
+            }
+            let mut other = Control::new(ENTER_USERNAME, fl!("greeter-not-listed")).with_kind(
+                ControlKind::AccountShortcut {
+                    name: fl!("greeter-another-account"),
+                    initials: String::new(),
+                },
+            );
+            other.enabled = enabled;
+            self.ui.controls.push(other);
         }
         if config.power_controls
             && matches!(
@@ -872,6 +931,41 @@ impl Controller {
         self.submit()
     }
 
+    /// Switch from the password step to another account (or, with None, to
+    /// an empty username), ending the current attempt first.
+    pub fn switch_to(&mut self, target: Option<usize>) -> Option<Command> {
+        if self.power_menu != crate::power::Menu::Closed
+            || target.is_some_and(|index| index >= self.accounts.len())
+        {
+            return None;
+        }
+        match self.phase {
+            Phase::User | Phase::Failed => {
+                self.automatic = false;
+                self.choose_user("");
+                self.finish_switch(target)
+            }
+            Phase::Waiting | Phase::Prompt => {
+                let command = self.cancel();
+                if command.is_some() {
+                    self.switch_after_cancel = Some(target);
+                }
+                command
+            }
+            _ => None,
+        }
+    }
+
+    fn finish_switch(&mut self, target: Option<usize>) -> Option<Command> {
+        match target {
+            Some(index) => self.sign_in_as(index),
+            None => {
+                self.enter_username();
+                None
+            }
+        }
+    }
+
     /// Replace the account list with an empty username field.
     pub fn enter_username(&mut self) {
         if self.phase == Phase::User && self.power_menu == crate::power::Menu::Closed {
@@ -1011,6 +1105,13 @@ impl Controller {
                 if let Some(session) = &self.auth_session {
                     self.preferences.record_success(&self.user, &session.id);
                 }
+            }
+            Kind::Cancelled(_) if self.switch_after_cancel.is_some() => {
+                self.automatic = false;
+                self.power_after_cancel = false;
+                self.choose_user("");
+                let target = self.switch_after_cancel.take().flatten();
+                return self.finish_switch(target);
             }
             Kind::Cancelled(message) => {
                 let restart = self.automatic && !self.power_after_cancel;
@@ -1193,15 +1294,18 @@ mod tests {
         ));
         c.open_chooser(Choice::Account);
         c.refresh(&config);
-        let back = c
-            .ui
-            .controls
-            .iter()
-            .find(|control| control.kind == ControlKind::Back)
-            .unwrap();
+        let back =
+            c.ui.controls
+                .iter()
+                .find(|control| control.kind == ControlKind::Back)
+                .unwrap();
         assert_eq!(back.label, "Retour à la connexion");
         // The desktop control stays in its corner, unavailable under the chooser.
-        assert!(c.ui.controls.iter().any(|control| control.id == 2 && !control.enabled));
+        assert!(
+            c.ui.controls
+                .iter()
+                .any(|control| control.id == 2 && !control.enabled)
+        );
         assert!(c.ui.controls[0].selected);
     }
     #[test]
