@@ -42,7 +42,7 @@ impl Paths {
     pub fn generated_shortcuts(&self) -> PathBuf {
         self.directory.join(crate::shortcuts::GENERATED)
     }
-    /// Titlebar style generated from the shared appearance, for Niri to include.
+    /// Compositor appearance generated from the shared appearance, for Niri to include.
     pub fn titlebar_appearance(&self) -> PathBuf {
         self.directory.join(crate::titlebar::GENERATED)
     }
@@ -120,12 +120,70 @@ impl Paths {
         }
         std::fs::create_dir_all(&self.directory)?;
         let path = self.directory.join("niri-defaults.kdl");
-        create(&path, include_str!("../../../packaging/niri/defaults.kdl"))?;
+        refresh_built_in_defaults(&path)?;
         Ok(path)
     }
 }
 
 pub const SYSTEM_DEFAULTS: &str = "/usr/share/canopa/niri-defaults.kdl";
+
+/// Exact texts of `packaging/niri/defaults.kdl` that earlier builds copied
+/// without a header, from the first private copy (887ec8ae) to 33c74cab.
+/// Add the previous text's hash here whenever that file changes.
+const PREVIOUS_DEFAULTS: &[&str] = &[
+    "a561b27d965526079f261a44f5eea296d39ce629d182fcc88d407a97aa97b23b",
+    "159ff29c3b7ca486dbec326f580e1513216428938208c4a7200e1983355b1c78",
+    "da6ba2d5593522e0fa6af72846e91ada8d1f36f69b587188182440ed4e00cc15",
+    "561acd99404024484caad3d1f972536ab004724f9624897854e375c6f6b655ae",
+    "32cfd9ad6f7f1f445994e0278c97042ccc406858347fc76b8efe4fb7e64620fb",
+    "d4ac13bb2cbf2958a7421453775fb050b17a1bf908782d4579fa1a3a5bd493d8",
+    "e91160fa0f7cb4e8374ae46eb0fe4a5dd6ffd0db9c3cca93ce9d1d6ded2efb90",
+    "a6b853dfbb034f31a330ed458980327ba742f48ca7d45afb18e5f9b0a3fda5b9",
+    "f5832eb0fdfc2a96a268b29ea9dc7086d46040ccdca56a26f3d58fc4fc3be1f4",
+    "65276bd1649b31260cb34c5b5cdbfde7075a0a3563be9e24c6bfcc1af422b5d6",
+    "97b083420f601d4faca0433e7d2224f0a2f03f7337315888d313a7423e1e1ae4",
+    "df8f03a329c64794c4e44044b4d1611897ea51ebcfa108123efb130ca46859ad",
+];
+
+fn refresh_built_in_defaults(path: &Path) -> Result<()> {
+    use canopa_config::fingerprint;
+    use std::os::unix::fs::MetadataExt;
+    const DEFAULTS: &str = include_str!("../../../packaging/niri/defaults.kdl");
+    const HEADER: &str = "// Canopa built-in defaults SHA-256: ";
+
+    // A fallback path managed by a dotfile tool or an administrator is already
+    // a source of defaults. Only consider private regular files for migration.
+    if std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+        !metadata.is_file() || metadata.uid() != rustix::process::geteuid().as_raw()
+    }) {
+        return Ok(());
+    }
+    let current = format!("{HEADER}{}\n{DEFAULTS}", fingerprint(DEFAULTS));
+    let snapshot = Snapshot::load(path)?;
+    if !snapshot.exists() {
+        return create(path, &current);
+    }
+    if snapshot.text == current {
+        return Ok(());
+    }
+    let unchanged = snapshot
+        .text
+        .split_once('\n')
+        .is_some_and(|(header, body)| {
+            header
+                .strip_prefix(HEADER)
+                .is_some_and(|sha| fingerprint(body) == sha)
+        })
+        || PREVIOUS_DEFAULTS.contains(&fingerprint(&snapshot.text).as_str());
+    // The existing copy still starts a session, so a busy lock or a full disk
+    // must not stop the login; the next one retries.
+    if unchanged && let Err(error) = snapshot.save(&current, |_| Ok(())) {
+        eprintln!(
+            "canopa-settings: the built-in compositor defaults were not refreshed: {error:#}"
+        );
+    }
+    Ok(())
+}
 
 fn create(path: &Path, text: &str) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
@@ -151,6 +209,41 @@ fn create(path: &Path, text: &str) -> Result<()> {
 mod tests {
     use super::Paths;
     use std::ffi::OsStr;
+
+    #[test]
+    fn only_refresh_untouched_private_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("niri-defaults.kdl");
+        let previous = "// Previous generated defaults\n";
+        let generated = format!(
+            "// Canopa built-in defaults SHA-256: {}\n{previous}",
+            canopa_config::fingerprint(previous),
+        );
+        std::fs::write(&path, &generated).unwrap();
+        super::refresh_built_in_defaults(&path).unwrap();
+        let refreshed = std::fs::read_to_string(&path).unwrap();
+        assert!(refreshed.ends_with(include_str!("../../../packaging/niri/defaults.kdl")));
+
+        let edited = format!("{generated}// My defaults\n");
+        std::fs::write(&path, &edited).unwrap();
+        super::refresh_built_in_defaults(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+    }
+
+    #[test]
+    fn leave_managed_default_links_intact() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("managed.kdl");
+        let path = directory.path().join("niri-defaults.kdl");
+        let contents = "// Defaults owned by a dotfile tool\n";
+        std::fs::write(&target, contents).unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        super::refresh_built_in_defaults(&path).unwrap();
+
+        assert_eq!(std::fs::read_link(&path).unwrap(), target);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+    }
 
     fn managed() -> (tempfile::TempDir, Paths) {
         let root = tempfile::tempdir().unwrap();

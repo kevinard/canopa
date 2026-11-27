@@ -1,4 +1,6 @@
+pub mod auto_hide;
 pub mod frame;
+pub mod hover_card;
 pub mod identity;
 pub mod input;
 pub mod layout;
@@ -42,6 +44,10 @@ pub struct SurfaceState {
     /// Space before the visible bar while an edge-side drawer is open.
     /// The surface grows, but its exclusive zone remains the collapsed width.
     pub drawer_width: u32,
+    /// Slide state of an auto-hiding bar; at rest on screen otherwise.
+    pub auto_hide: auto_hide::AutoHide,
+    /// Only the edge strip takes the pointer (the hidden bar's input region).
+    pub edge_strip_input: bool,
 }
 
 impl SurfaceState {
@@ -56,6 +62,8 @@ impl SurfaceState {
             last_pointer_position: (0, 0),
             screen_size: (0, 0),
             drawer_width: 0,
+            auto_hide: Default::default(),
+            edge_strip_input: false,
         }
     }
 }

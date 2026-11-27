@@ -591,6 +591,7 @@ mod tests {
             width,
             height,
             scale: 1,
+            built_in: false,
             background: Default::default(),
         }
     }

@@ -240,7 +240,11 @@ where
         edge_offset: {
             let (near, inner, _, _) = input.bar.outer_margins();
             let occupied = near + input.bar.collapsed_width + inner;
-            let reserve = if input.bar.reserve_space { occupied } else { 0 };
+            let reserve = if input.bar.reserves_space() {
+                occupied
+            } else {
+                0
+            };
             let desired = if uses_drawer && input.bar.drawer_pushes_bar() {
                 near
             } else {

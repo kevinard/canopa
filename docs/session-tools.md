@@ -68,6 +68,11 @@ them. A choice for a disconnected output is kept and applied when it reappears.
 `--all` replaces the default image and clears every per-output choice, so monitors
 connected later get it too.
 
+Canopa shows its canopy wallpaper in a light or dark variant when an output has
+no image assignment. An explicit `wallpaper { color "#10191d"; }` uses a solid
+color on unassigned outputs. High contrast also uses a solid background for those
+outputs. Your configured images and saved choices take precedence.
+
 Fit modes: `fill` crops centrally to cover the monitor, `fit` shows the whole image
 with letterboxing in the background color, `stretch` ignores proportions, `center`
 uses the original pixel size and crops if larger. PNG and JPEG are supported, EXIF
@@ -235,8 +240,8 @@ locker is killed, the compositor keeps the session locked.
 The lock background is, per output: the `image` of its `output` block, else the
 `lockscreen` block's `image`, else a lock-screen picture an application set through
 the [Wallpaper portal](portals.md#wallpaper), else, with `use-wallpaper` on (the
-default), the wallpaper daemon's current image. Explicit lock images work without
-the daemon.
+default), the wallpaper daemon's current image, including Canopa's built-in
+wallpaper. Explicit lock images work without the daemon.
 Missing or invalid images fall back to the theme background. `dim` blends the image
 toward the background color.
 

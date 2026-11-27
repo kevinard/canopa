@@ -266,6 +266,10 @@ the overview (`overview { emit-typed-text }`, which opens the launcher), touch
 gestures, window previews and pinned columns. The Shell, Settings and Notify use
 the fork's `niri-ipc` crate, pinned to the same commit as the compositor.
 
+Niri draws window frames and the overview. Settings supplies the palette and title typography through
+`niri-appearance.kdl`. The Session wallpaper sits behind the zooming workspaces,
+and Shell's minimap uses IPC to show the current position in the scrolling strip.
+
 ### Configuration and state
 
 One user file, `$XDG_CONFIG_HOME/canopa/config.kdl`, holds `appearance` and one

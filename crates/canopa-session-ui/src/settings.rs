@@ -3,7 +3,7 @@ use anyhow::{Result, bail, ensure};
 use canopa_config::{Component, Document, Request};
 use canopa_theme::{Appearance, Rgb};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::PathBuf,
 };
 
@@ -45,6 +45,9 @@ pub struct Settings {
     pub clock_size: u32,
     pub text_size: u32,
     pub use_wallpaper: bool,
+    /// Outputs whose desktop shows Canopa's embedded wallpaper. A lock screen
+    /// that follows the wallpaper fills this from the wallpaper daemon.
+    pub built_in_wallpaper: BTreeSet<String>,
     pub auth_timeout: u64,
     pub layout: crate::layout::Layout,
     pub custom: BTreeMap<String, canopa_widgets::script::Script>,
@@ -93,6 +96,7 @@ impl Settings {
             clock_size: 72,
             text_size: 19,
             use_wallpaper: true,
+            built_in_wallpaper: BTreeSet::new(),
             auth_timeout: 120,
             layout: Default::default(),
             custom: BTreeMap::new(),

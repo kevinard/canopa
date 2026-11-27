@@ -12,6 +12,8 @@ pub struct NiriState {
     pub workspaces: Vec<Workspace>,
     /// ID of the currently focused window, or None if no window is focused.
     pub focused_window_id: Option<u64>,
+    /// Whether the compositor is showing its workspace overview.
+    pub overview_open: bool,
     /// Cache of all open windows, keyed by window ID.
     /// Populated by WindowsChanged and WindowOpenedOrChanged events.
     /// Used to look up the title of the currently focused window.
@@ -224,6 +226,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: None,
         }

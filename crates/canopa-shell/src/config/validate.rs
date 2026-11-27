@@ -83,6 +83,22 @@ pub(crate) fn validate_with_source(config: &Config, source: ConfigSource) -> Con
                 ),
             ));
         }
+        if bar.visibility == super::BarVisibility::AutoHide
+            && matches!(
+                bar.layer,
+                super::BarLayer::Background | super::BarLayer::Bottom
+            )
+        {
+            // A revealed bar reserves no space, so below windows it could
+            // not be seen.
+            return Err(validation_error(
+                source.clone(),
+                format!(
+                    "bar {:?}: visibility \"auto-hide\" needs layer \"top\" or \"overlay\", so the revealed bar is drawn over windows.",
+                    bar.name
+                ),
+            ));
+        }
         if let (Some(height), Some(max_height)) = (bar.panel.height, bar.panel.max_height)
             && height > max_height
         {

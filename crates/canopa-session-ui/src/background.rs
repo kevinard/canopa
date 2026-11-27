@@ -56,6 +56,21 @@ pub fn load(path: &Path) -> Result<RgbaImage> {
         .context("invalid image dimensions")
 }
 
+/// Whether an output with no assigned image shows Canopa's embedded wallpaper
+/// rather than a solid backdrop.
+pub fn shows_built_in(solid_color: bool, appearance: &canopa_theme::Appearance) -> bool {
+    !solid_color && !appearance.high_contrast()
+}
+
+/// Decode Canopa's embedded canopy wallpaper for the appearance's color scheme.
+pub fn built_in(appearance: &canopa_theme::Appearance) -> Result<RgbaImage> {
+    let bytes: &[u8] = match appearance.color_scheme {
+        canopa_theme::ColorScheme::Dark => include_bytes!("../assets/canopy-dark.jpg"),
+        canopa_theme::ColorScheme::Light => include_bytes!("../assets/canopy-light.jpg"),
+    };
+    Ok(image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)?.into_rgba8())
+}
+
 pub fn render(
     path: Option<&Path>,
     fit: Fit,

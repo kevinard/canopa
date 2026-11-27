@@ -24,21 +24,8 @@ pub(super) struct TaskbarRuntime {
     pin_writer: Option<std::sync::mpsc::Sender<Vec<u8>>>,
     focus_request: Option<FocusRequest>,
     menu: Option<OpenMenu>,
-    /// Window thumbnails for taskbar tooltips, by window ID.
-    previews: HashMap<u64, Preview>,
 }
 
-/// A window thumbnail from Niri's preview service.
-struct Preview {
-    handle: iced::widget::image::Handle,
-    width: u32,
-    height: u32,
-}
-
-/// Thumbnails fit this square, in logical pixels.
-const PREVIEW_SIZE: u32 = 192;
-/// A tooltip shows at most this many of an application's windows.
-const MAX_PREVIEWS: usize = 4;
 /// A focus change the taskbar asked Niri for and Niri may not have reported.
 struct FocusRequest {
     window: u64,
@@ -52,8 +39,6 @@ struct OpenMenu {
     taskbar: String,
     key: String,
     rows: Vec<MenuRow>,
-    /// The window the layout commands act on.
-    window: Option<u64>,
 }
 
 impl TaskbarRuntime {
@@ -228,8 +213,10 @@ impl App {
             return;
         }
         let pins = self.taskbar.pins().clone();
-        let focused = self.current_taskbar_window();
         let state = self.niri.state();
+        let focused = (!state.overview_open)
+            .then(|| self.current_taskbar_window())
+            .flatten();
         let windows: Vec<_> = state.windows.values().collect();
         let desired: HashMap<_, _> = parents
             .into_iter()
@@ -296,23 +283,6 @@ impl App {
                     }))
                 })
             }
-            TaskbarEvent::Previews(previews) => {
-                let open = &self.niri.state().windows;
-                self.taskbar.previews.retain(|id, _| open.contains_key(id));
-                for (id, width, height, png) in previews {
-                    if open.contains_key(&id) {
-                        self.taskbar.previews.insert(
-                            id,
-                            Preview {
-                                handle: iced::widget::image::Handle::from_bytes(png),
-                                width,
-                                height,
-                            },
-                        );
-                    }
-                }
-                self.refresh_taskbar_tooltips()
-            }
             TaskbarEvent::MenuAt {
                 key,
                 window,
@@ -373,17 +343,7 @@ impl App {
             .desktop_id
             .as_deref()
             .and_then(|id| applications.iter().find(|app| app.id == id));
-        // Layout commands act on the window in front, if it is this
-        // application's, otherwise on its most recent one.
-        let front = self.current_taskbar_window();
-        let target_window = front
-            .filter(|id| entry.windows.contains(id))
-            .or_else(|| entry.windows.first().copied());
-        let state = self.niri.state();
-        let target = target_window
-            .and_then(|id| state.windows.get(&id))
-            .map(|window| taskbar::LayoutTarget::of(window, &state.workspaces));
-        let rows = taskbar::menu(entry, application, target);
+        let rows = taskbar::menu(entry, application);
         if rows.is_empty() {
             return Task::none();
         }
@@ -405,12 +365,7 @@ impl App {
             }
         };
         let tree = taskbar::menu_tree(&rows, anchor, screen_size);
-        self.taskbar.menu = Some(OpenMenu {
-            taskbar,
-            key,
-            rows,
-            window: target_window,
-        });
+        self.taskbar.menu = Some(OpenMenu { taskbar, key, rows });
         self.open_menu_popup(
             taskbar::MENU_SERVICE.to_owned(),
             zbus::zvariant::OwnedObjectPath::try_from(taskbar::MENU_PATH)
@@ -431,12 +386,6 @@ impl App {
         else {
             return;
         };
-        if let MenuCommand::Layout(command) = command {
-            if let Some(window) = menu.window {
-                run_layout_actions(taskbar::layout_actions(*command, window));
-            }
-            return;
-        }
         let Some(desktop_id) = self
             .taskbar
             .entry_in(&menu.taskbar, &menu.key)
@@ -445,8 +394,6 @@ impl App {
             return;
         };
         match command {
-            // Run above: they need a window, not a desktop file.
-            MenuCommand::Layout(_) => {}
             MenuCommand::Launch => launch_application(&desktop_id),
             MenuCommand::DesktopAction(action) => launch_desktop_action(&desktop_id, action),
             MenuCommand::Pin | MenuCommand::Unpin => {
@@ -478,91 +425,15 @@ impl App {
 
 impl App {
     /// The taskbar entry a taskbar item module shows.
-    fn taskbar_entry_for_module(&self, module: &crate::modules::ModuleId) -> Option<&TaskbarEntry> {
+    pub(super) fn taskbar_entry_for_module(
+        &self,
+        module: &crate::modules::ModuleId,
+    ) -> Option<&TaskbarEntry> {
         let taskbar = module.parent_name()?;
         self.taskbar.entries.get(taskbar)?.iter().find(|entry| {
             crate::modules::taskbar::TaskbarItemModule::module_id(taskbar, &entry.key) == *module
         })
     }
-
-    /// The thumbnails known for a taskbar item's windows, in screen order.
-    pub(super) fn taskbar_cached_previews(
-        &self,
-        module: &crate::modules::ModuleId,
-    ) -> Vec<crate::surface::tooltip_popup::TooltipPreview> {
-        let Some(entry) = self.taskbar_entry_for_module(module) else {
-            return Vec::new();
-        };
-        entry
-            .layout_order
-            .iter()
-            .take(MAX_PREVIEWS)
-            .filter_map(|id| self.taskbar.previews.get(id))
-            .map(|preview| {
-                // Fit the square, keeping the window's aspect.
-                let scale = (PREVIEW_SIZE as f32 / preview.width.max(preview.height).max(1) as f32)
-                    .min(1.0);
-                crate::surface::tooltip_popup::TooltipPreview {
-                    handle: preview.handle.clone(),
-                    width: (preview.width as f32 * scale).round(),
-                    height: (preview.height as f32 * scale).round(),
-                }
-            })
-            .collect()
-    }
-
-    /// Thumbnails to show now for a taskbar item's tooltip, and a request for
-    /// fresh ones. Other modules get none.
-    pub(super) fn taskbar_tooltip_previews(
-        &self,
-        module: &crate::modules::ModuleId,
-    ) -> (
-        Vec<crate::surface::tooltip_popup::TooltipPreview>,
-        Task<Message>,
-    ) {
-        let Some(entry) = self.taskbar_entry_for_module(module) else {
-            return (Vec::new(), Task::none());
-        };
-        let windows: Vec<u64> = entry
-            .layout_order
-            .iter()
-            .take(MAX_PREVIEWS)
-            .copied()
-            .collect();
-        let request = match self.shared.dbus.session.clone() {
-            Some(connection) if !windows.is_empty() && !cfg!(test) => {
-                Task::perform(capture_previews(connection, windows), |previews| {
-                    Message::Taskbar(TaskbarEvent::Previews(previews))
-                })
-            }
-            _ => Task::none(),
-        };
-        (self.taskbar_cached_previews(module), request)
-    }
-}
-
-/// Ask Niri's preview service (the Canopa fork's
-/// `org.canopa.Niri.WindowPreview1`) for each window's thumbnail. Windows it
-/// cannot render, or a compositor without the service, give none.
-async fn capture_previews(
-    connection: zbus::Connection,
-    windows: Vec<u64>,
-) -> Vec<(u64, u32, u32, Vec<u8>)> {
-    let Some(client) = canopa_services::window_preview::Client::connect(connection, None).await
-    else {
-        return Vec::new();
-    };
-    let mut previews = Vec::new();
-    // Keep the tooltip responsive even if several previews are slow to render.
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
-        for id in windows {
-            if let Some(preview) = client.capture(id, PREVIEW_SIZE).await {
-                previews.push((id, preview.width, preview.height, preview.png));
-            }
-        }
-    })
-    .await;
-    previews
 }
 
 fn focus_window(id: u64) {
@@ -574,20 +445,6 @@ fn focus_window(id: u64) {
     });
     #[cfg(test)]
     let _ = id;
-}
-
-fn run_layout_actions(actions: Vec<niri_ipc::Action>) {
-    #[cfg(not(test))]
-    tokio::spawn(async move {
-        for action in actions {
-            if let Err(error) = crate::command::niri_action(action).await {
-                tracing::warn!(target: "canopa_shell::modules", %error, "taskbar layout command failed");
-                return;
-            }
-        }
-    });
-    #[cfg(test)]
-    let _ = actions;
 }
 
 fn launch_application(desktop_id: &str) {
@@ -668,65 +525,5 @@ mod tests {
         let bounds = iced::Rectangle::new(iced::Point::new(10.0, 4.0), iced::Size::new(40.0, 40.0));
         assert_eq!(menu_anchor(&crate::config::Edge::Bottom, bounds), (10, 44));
         assert_eq!(menu_anchor(&crate::config::Edge::Left, bounds), (50, 4));
-    }
-
-    #[test]
-    fn tooltip_previews_follow_the_strip_and_forget_closed_windows() {
-        use crate::app::messages::AppNiriEvent;
-        use crate::niri::NiriEvent;
-        let config = crate::config::Config {
-            modules: vec![crate::config::ModuleConfig {
-                name: "taskbar".into(),
-                module_type: "taskbar".into(),
-                params: ModuleParams::Taskbar(Default::default()),
-                actions: Default::default(),
-            }],
-            ..crate::config::Config::default()
-        };
-        let (mut app, _) = App::boot(config, vec![]);
-        let window = |id: u64, column: usize| niri_ipc::Window {
-            id,
-            title: None,
-            app_id: Some("foot".into()),
-            pid: None,
-            parent_id: None,
-            workspace_id: Some(1),
-            is_focused: false,
-            is_floating: false,
-            is_urgent: false,
-            layout: niri_ipc::WindowLayout {
-                pos_in_scrolling_layout: Some((column, 1)),
-                tile_size: (0.0, 0.0),
-                window_size: (0, 0),
-                tile_pos_in_workspace_view: None,
-                window_offset_in_tile: (0.0, 0.0),
-                pinned: None,
-            },
-            focus_timestamp: None,
-        };
-        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
-            niri_ipc::Event::WindowsChanged {
-                windows: (1..=6).map(|id| window(id, 7 - id as usize)).collect(),
-            },
-        ))));
-        let module = taskbar::TaskbarItemModule::module_id("taskbar", "foot");
-
-        let _ = app.update(Message::Taskbar(TaskbarEvent::Previews(
-            [6, 5, 4, 3, 2, 99]
-                .into_iter()
-                .map(|id| (id, 300, 150, vec![0]))
-                .collect(),
-        )));
-
-        let previews = app.taskbar_cached_previews(&module);
-        // Screen order (window 6 is in column 1), at most four, closed
-        // windows dropped, and capped at the preview size.
-        assert_eq!(previews.len(), 4);
-        assert!(
-            previews
-                .iter()
-                .all(|preview| (preview.width, preview.height) == (192.0, 96.0))
-        );
-        assert!(!app.taskbar.previews.contains_key(&99));
     }
 }

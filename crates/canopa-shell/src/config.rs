@@ -11,8 +11,8 @@ pub mod tooltip_defaults;
 mod validate;
 
 pub use bar::{
-    BarAlignment, BarConfig, BarLayer, BarLength, BarModules, DrawerMode, Edge, OutputTarget,
-    PanelAnimationConfig, PanelConfig, PanelModules, PanelPresentation,
+    BarAlignment, BarConfig, BarLayer, BarLength, BarModules, BarVisibility, DrawerMode, Edge,
+    OutputTarget, PanelAnimationConfig, PanelConfig, PanelModules, PanelPresentation,
 };
 pub(crate) use error::{
     ConfigDiagnostic, ConfigDiagnosticKind, ConfigError, ConfigResult, ConfigSource,

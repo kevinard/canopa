@@ -137,6 +137,12 @@ anything is replaced; a failure keeps the current images. Each distinct image is
 decoded once per candidate, shared between outputs and dropped after submission; the
 compositor keeps the shared-memory buffer.
 
+The built-in light and dark wallpapers are embedded through `canopa-session-ui`.
+The daemon resolves them when an output has no configured or saved image and a
+solid color or high-contrast appearance is inactive. It decodes them once per
+candidate, and only when an output shows them. `status` marks those outputs with
+`built_in`, so a lock that follows the wallpaper renders the same image.
+
 One inotify observer (`canopa_file::watch`) covers the configuration, its theme file,
 the discovered `config.kdl` path (even when absent), the images and the slideshow
 folder. It coalesces events while a candidate is being admitted. Automatic reloads keep
@@ -168,7 +174,7 @@ does nothing. The background comes from the configuration, else from the lock-sc
 image the Wallpaper portal stored in the Shell's store
 (`$XDG_STATE_HOME/canopa/shell/wallpaper/selection.json`, read only by
 `canopa_session::portal_lock_image`), else, with `use-wallpaper`, from the wallpaper
-daemon's `status` (300 ms timeout).
+daemon's `status` (300 ms timeout), including its embedded wallpaper.
 
 ### Listener and control endpoint
 

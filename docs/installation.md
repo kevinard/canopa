@@ -105,13 +105,12 @@ To use the Canopa login screen with greetd, install `canopa-login` and follow
 
 The packaged compositor provides titlebars for applications that negotiate
 server-side decorations. Applications with their own headerbars keep them.
-Their colors and font follow the appearance chosen in Settings. See
-[compositor titlebars](configuration.md#compositor-titlebars) for the options and
-the way to disable them. This requires the Canopa compositor; distribution
-Niri does not understand the `titlebar` configuration block.
+Window outlines and titlebars follow the appearance chosen in Settings. See
+[compositor titlebars](configuration.md#compositor-titlebars) for configuration.
 
 `canopa-settings init-session` creates these files in `~/.config/canopa/` (or
-`$XDG_CONFIG_HOME/canopa/`) when they are missing, and never replaces existing ones:
+`$XDG_CONFIG_HOME/canopa/`) when they are missing. Existing personal settings
+and custom compositor configuration are preserved.
 
 | File | Purpose |
 | --- | --- |
@@ -140,6 +139,7 @@ Useful default keys:
 | Super+Comma | Canopa Settings |
 | Super+L | Lock the screen |
 | Super+O | Overview |
+| Super+B | Hide the bar automatically, or keep it ([Hiding the bar](shell.md#hiding-the-bar)) |
 | Super+Q | Close window |
 | Super+arrows / Super+Shift+arrows | Focus / move columns and windows |
 | Super+Shift+E | Quit Niri (with Niri's confirmation) |

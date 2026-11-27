@@ -39,6 +39,10 @@ pub enum IpcEvent {
         request: canopa_shell::device_keys::Request,
         responder: IpcResponder,
     },
+    /// Switch bars between staying on screen and hiding automatically.
+    ToggleBar {
+        responder: IpcResponder,
+    },
 }
 
 impl IpcEvent {
@@ -50,6 +54,7 @@ impl IpcEvent {
             IpcEvent::OpenTemplate { .. } => "Ipc::OpenTemplate",
             IpcEvent::DmenuSelection { .. } => "Ipc::DmenuSelection",
             IpcEvent::DeviceKey { .. } => "Ipc::DeviceKey",
+            IpcEvent::ToggleBar { .. } => "Ipc::ToggleBar",
         }
     }
 }
@@ -190,6 +195,18 @@ pub enum SurfaceEvent {
     CloseTooltip {
         window: iced::window::Id,
     },
+    /// The pointer entered or left a Shell surface, or released a button on it.
+    Pointer {
+        window: iced::window::Id,
+        change: PointerChange,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerChange {
+    Entered,
+    Left,
+    Released,
 }
 
 impl SurfaceEvent {
@@ -220,6 +237,7 @@ impl SurfaceEvent {
             SurfaceEvent::WindowClosed(_) => "Surface::WindowClosed",
             SurfaceEvent::TooltipDwellElapsed { .. } => "Surface::TooltipDwellElapsed",
             SurfaceEvent::CloseTooltip { .. } => "Surface::CloseTooltip",
+            SurfaceEvent::Pointer { .. } => "Surface::Pointer",
         }
     }
 }

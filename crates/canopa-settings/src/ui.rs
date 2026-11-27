@@ -2037,7 +2037,11 @@ impl State {
         );
         semantic(
             Node::window(ACCESSIBILITY_ROOT, fl!("settings-window-title")).busy(self.busy),
-            window,
+            // Include the background in the layer diff for reused software buffers.
+            container(window)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme| container::background(canopa_ui::colors(theme).background)),
         )
     }
     /// Whether the selected file-backed page can save its draft now.
@@ -3083,15 +3087,17 @@ impl State {
                 || {
                     column![
                         row![
-                            field(
+                            hinted_field(
                                 "settings-field-clock-format",
                                 fl!("settings-personal-clock-format"),
+                                &fl!("settings-personal-format-default"),
                                 &values.lock.clock_format,
                                 |v| { Message::PersonalText(1, v) }
                             ),
-                            field(
+                            hinted_field(
                                 "settings-field-date-format",
                                 fl!("settings-personal-date-format"),
+                                &fl!("settings-personal-format-default"),
                                 &values.lock.date_format,
                                 |v| { Message::PersonalText(2, v) }
                             ),
@@ -3133,7 +3139,7 @@ impl State {
 impl State {
     /// Gaps, centering and the width of new columns, applied to Niri at once.
     fn window_layout_view(&self) -> Element<'_, Message> {
-        use crate::niri::{CenterColumn, ColumnWidth, WindowLayout};
+        use crate::niri::{CenterColumn, ColumnWidth, WindowBar, WindowLayout};
         let layout = match &self.window_layout {
             None => {
                 return text(fl!("settings-motion-needs-session"))
@@ -3154,6 +3160,7 @@ impl State {
                     0 => fl!("settings-window-gaps-none"),
                     6 => fl!("settings-window-gaps-small"),
                     12 => fl!("settings-window-gaps-medium"),
+                    16 => fl!("settings-window-gaps-comfortable"),
                     _ => fl!("settings-window-gaps-large"),
                 };
                 (gaps, label)
@@ -3180,6 +3187,17 @@ impl State {
                     ColumnWidth::Full => fl!("settings-window-width-full"),
                 };
                 (width, label)
+            })
+            .collect();
+        let bar = WindowBar::ALL
+            .into_iter()
+            .map(|bar| {
+                let label = match bar {
+                    WindowBar::Always => fl!("settings-window-bar-always"),
+                    WindowBar::OnDemand => fl!("settings-window-bar-on-demand"),
+                    WindowBar::Off => fl!("settings-window-bar-off"),
+                };
+                (bar, label)
             })
             .collect();
         // Niri takes these at once, unlike the rest of the page.
@@ -3212,6 +3230,13 @@ impl State {
                     Some(current.width),
                     move |width| Message::WindowLayout(Some(WindowLayout { width, ..current })),
                 ),
+            ),
+            kit::row(
+                fl!("settings-window-bar"),
+                Some(fl!("settings-window-bar-detail")),
+                pick("settings-window-bar", bar, Some(current.bar), move |bar| {
+                    Message::WindowLayout(Some(WindowLayout { bar, ..current }))
+                }),
             ),
         ];
         if layout.is_some() {
@@ -4116,7 +4141,9 @@ pub fn run(request: Request, instance: Option<Instance>) -> Result<()> {
     })
     .window(iced::window::Settings {
         size: iced::Size::new(1000., 780.),
-        min_size: Some(iced::Size::new(760., 600.)),
+        // The navigation and page body scroll independently above the actions.
+        // Narrow enough to share the screen with another window as a half-width column.
+        min_size: Some(iced::Size::new(640., 480.)),
         platform_specific: iced::window::settings::PlatformSpecific {
             application_id: APPLICATION_ID.into(),
             ..Default::default()

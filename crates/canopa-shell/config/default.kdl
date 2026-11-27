@@ -95,15 +95,24 @@ bar "main" {
     // Bar width in logical pixels when collapsed. Minimum: 2.
     // The compositor multiplies by the output scale factor for physical rendering.
     thickness 64
-    // 12 + 64 + 12 = 88 px of stable reserved space. Hover never resizes it.
-    margin 12
+    // 12 + 64 = 76 px of stable reserved space; the compositor adds the same
+    // gap beside the rail as between windows. Hover never resizes it. The
+    // bottom margin matches the gap below windows, so their bottoms line up.
+    margin 12 0 16 12
     ui {
         background "spine"
         radius 28
         border width=1 color="border"
-        padding 11 6
+        padding 11 4
         gap 8
     }
+
+    // "auto-hide" keeps the bar out of view and reserves no space: touching
+    // this screen edge slides it in over the windows, and it leaves shortly
+    // after the pointer, once no panel, menu or card of it is open.
+    // Mod+B (canopa-shell --toggle-bar) switches between the two until the
+    // next reload. Accepted values: "always" (default), "auto-hide".
+    // visibility "always"
 
     // Milliseconds of cursor dwell before a module's tooltip appears on hover.
     // Default: 500. Hide is always immediate on hover-exit.
@@ -124,12 +133,12 @@ bar "main" {
     // Multiple modules per zone: list them as separate string arguments on one line.
     modules {
         // Start zone: stacks from the leading edge of the bar.
-        start "launcher" "overview" "workspaces"
-        // Center zone: centered on the bar surface midpoint.
+        // Running and pinned applications follow the workspaces, a short break apart.
+        start "launcher" "overview" "workspaces" "taskbar"
+        // Center zone: centered when it fits between the other zones.
         // Add "media" to a zone for MPRIS now-playing and playback controls.
         // See docs/shell.md; the module hides when no player is open.
         // The taskbar shows pinned applications, then the other open ones.
-        center "taskbar"
         // End zone: stacks from the trailing edge of the bar.
         // Multiple modules: list as separate string arguments on the same line.
         // The tray shows one icon per StatusNotifierItem application. Network,
@@ -211,7 +220,17 @@ modules {
         label-id "shell-module-overview"
         icon "canopa:overview"
         tooltip-id "shell-tooltip-overview"
-        ui { padding 11 0; }
+        horizontal-format "{icon}" "{label}"
+        // An icon like its neighbors; while the overview is open it takes a quiet
+        // selected fill, so it never competes with the active workspace.
+        ui {
+            padding 11 0
+            radius 10
+            state "selected" {
+                background "accent-surface"
+                foreground "accent"
+            }
+        }
         actions { click { toggle-overview; } }
     }
     module "system" {
@@ -282,12 +301,19 @@ modules {
         actions { click { open-menu "Power off?"; } }
     }
     module "media"
+    // Add "minimap" to a bar zone to keep the full scrolling strip within reach.
+    module "minimap" {
+        size 30
+        max-length 88
+        ui { padding 6 0; }
+    }
     // tray: StatusNotifierItem icons for background applications. Left click
     // activates an item, right click opens its menu. The Shell owns the
     // org.kde.StatusNotifierWatcher name while a tray module is placed.
     // Click focuses an application or launches it; clicking the focused one
     // cycles its windows; middle-click opens another instance and right-click
-    // opens the application menu.
+    // opens the application menu. Hovering a running application shows its
+    // windows; click one to focus it. `tooltip #false` turns that card off.
     // Pinned applications that are not installed are skipped.
     module "taskbar" {
         pinned "org.canopa.Files.desktop" "firefox.desktop" "org.canopa.Settings.desktop"
@@ -306,7 +332,8 @@ modules {
     // workspaces: Niri workspace indicators. Click or scroll to switch workspace.
     // Optional: assign labels and icons to specific workspace numbers (1-based).
     module "workspaces" {
-        ui { padding 3 0; }
+        // The extra space below sets the workspaces apart from the applications.
+        ui { padding 3 0 15 0; }
         // Optional display templates for workspace items.
         // Placeholders: {icon}, {value}, {index}, {name}, {label}, {state}.
         // format "{icon}{label}"
@@ -339,10 +366,9 @@ modules {
         //     icon  "󰖟"
         // }
         //
-        // Tooltip on hover. Same grammar as `format` (string segments or
-        // styled `segment` block). Use `tooltip #false` to disable.
-        // Omit to use the module's built-in default (none for workspaces).
-        // The shipped tooltip is the built-in text "Workspace {index}".
+        // Hovering a workspace shows a card with its columns drawn to scale
+        // and a thumbnail of each window; click one to focus it.
+        // `tooltip #false` turns the card off.
         tooltip-id "shell-tooltip-workspace"
     }
 

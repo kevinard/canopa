@@ -358,6 +358,10 @@ _Avoid_: Module action
 Supplemental information shown for a **Module** or child **Module Instance** on a **Bar Surface**.
 _Avoid_: Popup action, module display
 
+**Hover Card**:
+An interactive **Tooltip**: a running taskbar application's windows, or a workspace's columns drawn to scale, where a click focuses a window. It opens after the tooltip dwell and stays while the pointer travels into it.
+_Avoid_: Preview popup, thumbnail tooltip
+
 **Menu**:
 An interactive popup exposed by a **Module** or child **Module Instance**.
 _Avoid_: Tooltip, action, launcher

@@ -20,7 +20,7 @@ shell-panel-wifi = Wi-Fi
 ## Built-in bar buttons (config/default.kdl `label-id` and `tooltip-id`)
 
 shell-module-search = Rechercher
-shell-module-overview = Vue d’ensemble
+shell-module-overview = Aperçu
 shell-module-controls = Réglages
 shell-module-bluetooth = Bluetooth
 shell-module-power-and-display = Alimentation et écran
@@ -219,18 +219,12 @@ shell-taskbar-open = Ouvrir
 shell-taskbar-new-window = Nouvelle fenêtre
 shell-taskbar-pin = Épingler à la barre des tâches
 shell-taskbar-unpin = Détacher de la barre des tâches
-shell-taskbar-width-third = Un tiers de la largeur
-shell-taskbar-width-half = Moitié de la largeur
-shell-taskbar-width-two-thirds = Deux tiers de la largeur
-shell-taskbar-toggle-tabs = Afficher la colonne en onglets ou empilée
-shell-taskbar-center = Centrer la colonne
-shell-taskbar-float = Rendre la fenêtre flottante
-shell-taskbar-tile = Remettre la fenêtre en mosaïque
-shell-taskbar-move-up = Déplacer vers l’espace de travail au-dessus
-shell-taskbar-move-down = Déplacer vers l’espace de travail en dessous
-shell-taskbar-pin-left = Épingler la colonne au bord gauche
-shell-taskbar-pin-right = Épingler la colonne au bord droit
-shell-taskbar-unpin-column = Désépingler la colonne
+shell-taskbar-scratchpad = Bloc-notes de fenêtres
+shell-hover-card-more-windows = { $count ->
+    [one] 1 autre fenêtre
+   *[other] { $count } autres fenêtres
+}
+shell-workspace-empty = Vide
 shell-a11y-minimap-pinned-left = épinglée au bord gauche
 shell-a11y-minimap-pinned-right = épinglée au bord droit
 shell-a11y-image = Image

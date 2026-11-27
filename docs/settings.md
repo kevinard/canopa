@@ -61,6 +61,9 @@ so and do not write. Your own Niri configuration is never rewritten.
 | Tab / Shift+Tab | Next / previous control |
 | Ctrl+S | Save the current page |
 
+In a short Settings window, the sidebar and page scroll independently. The
+page actions stay visible below the form.
+
 Only one Settings window runs at a time. Opening Settings again, from the launcher, a
 notification or the command line, brings the window forward at the requested page and
 keeps unsaved edits on other pages. While a change is being applied or a display test
@@ -209,10 +212,12 @@ sounds** writes `notifications { sound enabled=... }` in `config.kdl` at once.
 - **Lock screen**: background dimming, and under **Formats, font and picture** the
   clock and date formats (empty follows Region & language), font and avatar image,
   written to the `lockscreen` block. **Edit lock screen widgets…** opens Widgets.
-- **Window layout**: space around windows (none, small, medium, large), center the
-  focused column (never, when it does not fit, always) and new window width (one
-  third, half, two thirds, full width). **Use the Canopa layout** restores the
-  defaults (medium, when it does not fit, half).
+- **Window layout** offers five gap sizes, three ways to center the focused
+  column, four widths for new windows, and when the **Window bar** shows: always,
+  on demand (it slides in when the pointer touches the top edge or with
+  Super+Shift+B) or never. **Use the Canopa layout** restores comfortable spacing
+  (16 logical pixels), opens windows at half width, scrolls only as far as needed,
+  so two windows always fill the screen, and shows the window bar on demand.
 
 The `config.kdl` fields are written by Save and validated by every owner
 (`canopa config check`); the Shell, Notify and the Settings portal reload them, and
@@ -399,8 +404,9 @@ or down, choose its **Position**, or remove it; these work from the keyboard too
 what that monitor gets (a bar hidden there, or lock screen widgets hidden there); it
 is not saved, and **Detect** lists monitors connected since the page opened.
 
-- **Bar**: the screen edge and **Show on** all monitors, selected monitors or all
-  except selected ones. Under **More bars**, **Duplicate** a bar to give another
+- **Bar**: the screen edge, **Hide automatically** (the bar gives its space to
+  windows and slides in when the pointer touches its edge; `visibility "auto-hide"`),
+  and **Show on** all monitors, selected monitors or all except selected ones. Under **More bars**, **Duplicate** a bar to give another
   monitor its own layout; the copy starts with no monitors selected. Module styling and actions stay in KDL.
 - **Lock screen**: regions, row flow, and **Hide this widget on the preview monitor**.
   The password field stays on every monitor. Script widgets appear once defined in
@@ -432,6 +438,10 @@ canopa-settings outputs
 A page cannot be combined with a subcommand. The directory defaults to
 `~/.config/canopa`; the shipped defaults come from `--defaults-file`, else
 `/usr/share/canopa/niri-defaults.kdl`, else a private copy written next to `niri.kdl`.
+For uninstalled builds, Settings refreshes its private copy when the current
+file matches an earlier generated version. If the refresh fails, the session
+starts with the existing copy and the next login retries. Keep local overrides in
+`niri-custom.kdl`.
 
 Programs can open pages on the session bus. Settings owns `org.canopa.Settings` and
 serves the `org.canopa.Settings` interface at `/org/canopa/Settings`; the installed

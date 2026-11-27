@@ -316,25 +316,28 @@ impl App {
         self.surfaces
             .pending_surface_keys
             .insert(id, (output_name.clone(), bar_name.clone()));
-        self.surfaces
-            .surfaces
-            .insert(id, crate::surface::SurfaceState::new(output_name, bar_name));
+        let (auto_hide, edge_strip_input) =
+            Self::initial_auto_hide(Self::bar_for_surface_name(&self.config.bars, &bar_name));
+        let mut surface = crate::surface::SurfaceState::new(output_name, bar_name);
+        surface.auto_hide = auto_hide;
+        surface.edge_strip_input = edge_strip_input;
+        self.surfaces.surfaces.insert(id, surface);
         task
     }
 
-    fn open_tooltip_window(
-        &mut self,
+    /// The layer settings of a tooltip or card beside `target_window`'s bar.
+    pub(super) fn tooltip_window_settings(
+        &self,
         target_window: iced::window::Id,
-        target_module: crate::modules::ModuleId,
-        tree: crate::surface::tooltip_popup::TooltipTree,
-    ) -> Vec<Task<Message>> {
-        let mut settings = super::surfaces::tooltip_popup_window_settings(&tree);
+        tree: &crate::surface::tooltip_popup::TooltipTree,
+    ) -> iced_layershell::reexport::NewLayerShellSettings {
+        let mut settings = super::surfaces::tooltip_popup_window_settings(tree);
         let offset = self
             .surface(target_window)
             .map_or(0, |surface| surface.drawer_width);
         let bar = self.bar_for_window(target_window);
         let (near, inner, _, _) = bar.outer_margins();
-        let occupied = if bar.reserve_space {
+        let occupied = if bar.reserves_space() {
             0
         } else {
             near + bar.collapsed_width + inner
@@ -348,6 +351,16 @@ impl App {
                 crate::config::Edge::Bottom => margin.2 += offset,
             }
         }
+        settings
+    }
+
+    fn open_tooltip_window(
+        &mut self,
+        target_window: iced::window::Id,
+        target_module: crate::modules::ModuleId,
+        tree: crate::surface::tooltip_popup::TooltipTree,
+    ) -> Vec<Task<Message>> {
+        let settings = self.tooltip_window_settings(target_window, &tree);
         let (popup_wid, open_task) = Message::layershell_open(settings);
         let effects = self
             .surfaces

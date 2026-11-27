@@ -151,8 +151,8 @@ impl crate::file_page::FileModel for Personalization {
         {
             failed.push("canopa-notify");
         }
-        // Compositor titlebars follow the appearance through a generated include.
-        if paths.active() && !refresh_titlebars(paths, &saved) {
+        // The compositor reads appearance through a generated include.
+        if paths.active() && !refresh_compositor_appearance(paths, &saved) {
             failed.push("niri");
         }
         if !failed.is_empty() {
@@ -169,9 +169,9 @@ impl crate::file_page::FileModel for Personalization {
     }
 }
 
-/// Regenerates the compositor titlebar style from the saved appearance and
+/// Regenerates the compositor style from the saved appearance and
 /// reloads Niri when it changed. Returns whether that succeeded.
-fn refresh_titlebars(paths: &crate::session::Paths, saved: &Snapshot) -> bool {
+fn refresh_compositor_appearance(paths: &crate::session::Paths, saved: &Snapshot) -> bool {
     let refreshed = Personal::load(saved).and_then(|personal| {
         crate::titlebar::refresh(paths, &personal.appearance, crate::niri::validate)
     });

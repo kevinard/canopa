@@ -157,7 +157,7 @@ layershellev = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "
 waycrate_xkbkeycode = { git = "https://github.com/kevinard/exwlshelleventloop", rev = "fecb4f1a6462636d7db8ea0da2e26ae1bbe18a18" }
 reis = { git = "https://github.com/kevinard/reis", rev = "c99f5a7195977bec7e4cc06861b7b3b447c75625" }
 uucore = { git = "https://github.com/kevinard/coreutils", rev = "1e4f136e045306ff99dd7387585f42a336a184b2" }
-niri-ipc = { git = "https://github.com/kevinard/niri", rev = "a51196bdb2083dae4bad6f89dca788f46edc08a1" }
+niri-ipc = { git = "https://github.com/kevinard/niri", rev = "7dfb4fa9517ae8b2a808de4f1712d0500f8ca51b" }
 
 # Keep file/line panic backtraces without duplicating full debugger data in
 # every integration-test executable. The test profile inherits these settings.

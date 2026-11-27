@@ -1,6 +1,6 @@
 mod tests {
     use crate::config::parse::parse;
-    use crate::config::{BarLayer, Edge, OutputTarget};
+    use crate::config::{BarLayer, BarVisibility, Edge, OutputTarget};
 
     #[test]
     fn parse_full_bar_section() {
@@ -101,6 +101,53 @@ bar "main" {
         ] {
             let config = parse(&format!(r#"bar "main" {{ layer "{raw}" }}"#)).unwrap();
             assert_eq!(config.bars[0].layer, expected);
+        }
+    }
+
+    #[test]
+    fn parse_bar_visibility_defaults_to_always_and_accepts_auto_hide() {
+        let config = parse(r#"bar "main" {}"#).unwrap();
+        assert_eq!(config.bars[0].visibility, BarVisibility::Always);
+        assert!(config.bars[0].reserves_space());
+
+        let config = parse(r#"bar "main" { visibility "auto-hide" }"#).unwrap();
+        assert_eq!(config.bars[0].visibility, BarVisibility::AutoHide);
+        // An auto-hiding bar never reserves space, whatever reserve-space says.
+        assert!(config.bars[0].reserve_space);
+        assert!(!config.bars[0].reserves_space());
+
+        let config = parse(r#"bar "main" { visibility "always"; reserve-space #false }"#).unwrap();
+        assert!(!config.bars[0].reserves_space());
+    }
+
+    #[test]
+    fn parse_bar_visibility_invalid_value_errors() {
+        let err = parse(r#"bar "main" { visibility "hidden" }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(".visibility:"), "got: {err}");
+        assert!(
+            err.contains("Expected: one of: always, auto-hide"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn auto_hide_bars_must_be_drawn_over_windows() {
+        for layer in ["background", "bottom"] {
+            let config = parse(&format!(
+                r#"bar "main" {{ visibility "auto-hide"; layer "{layer}" }}"#
+            ))
+            .unwrap();
+            let err = crate::config::validate(&config).unwrap_err().to_string();
+            assert!(err.contains("auto-hide"), "got: {err}");
+        }
+        for layer in ["top", "overlay"] {
+            let config = parse(&format!(
+                r#"bar "main" {{ visibility "auto-hide"; layer "{layer}" }}"#
+            ))
+            .unwrap();
+            assert!(crate::config::validate(&config).is_ok());
         }
     }
 

@@ -48,8 +48,6 @@ pub enum TaskbarEvent {
         window: iced::window::Id,
         bounds: Option<iced::Rectangle>,
     },
-    /// Window thumbnails arrived from Niri: window ID, width, height, PNG.
-    Previews(Vec<(u64, u32, u32, Vec<u8>)>),
 }
 
 /// The menu service of taskbar menus. It cannot be a D-Bus bus name, so a
@@ -67,97 +65,17 @@ pub(crate) enum MenuCommand {
     DesktopAction(String),
     Pin,
     Unpin,
-    /// Layout commands for the application's current window.
-    Layout(LayoutCommand),
-}
-
-/// Niri layout commands offered for an application's current window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LayoutCommand {
-    /// Set its column's width to this percentage of the working area.
-    Width(u8),
-    ToggleTabs,
-    Center,
-    ToggleFloating,
-    MoveToWorkspace(u64),
-    /// Keep the column at an edge of the view while the strip scrolls.
-    Pin(niri_ipc::PinSide),
-    Unpin,
-}
-
-/// What the layout commands need to know about the window they act on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LayoutTarget {
-    pub floating: bool,
-    /// The edge the window's column is pinned to.
-    pub pinned: Option<niri_ipc::PinSide>,
-    /// The workspaces above and below the window's, on its output.
-    pub above: Option<u64>,
-    pub below: Option<u64>,
-}
-
-impl LayoutTarget {
-    pub(crate) fn of(window: &niri_ipc::Window, workspaces: &[niri_ipc::Workspace]) -> Self {
-        let current = window
-            .workspace_id
-            .and_then(|id| workspaces.iter().find(|workspace| workspace.id == id));
-        let neighbour = |offset: i16| {
-            let current = current?;
-            let index = i16::from(current.idx) + offset;
-            workspaces
-                .iter()
-                .find(|workspace| {
-                    workspace.output == current.output && i16::from(workspace.idx) == index
-                })
-                .map(|workspace| workspace.id)
-        };
-        Self {
-            floating: window.is_floating,
-            pinned: window.layout.pinned,
-            above: neighbour(-1),
-            below: neighbour(1),
-        }
-    }
-}
-
-/// The Niri actions that run `command` on `window`. Column commands act on
-/// the focused column, so they focus the window first.
-pub(crate) fn layout_actions(command: LayoutCommand, window: u64) -> Vec<niri_ipc::Action> {
-    use niri_ipc::Action;
-    let focus = Action::FocusWindow { id: window };
-    match command {
-        LayoutCommand::Width(percent) => vec![
-            focus,
-            Action::SetColumnWidth {
-                change: niri_ipc::SizeChange::SetProportion(f64::from(percent)),
-            },
-        ],
-        LayoutCommand::ToggleTabs => vec![focus, Action::ToggleColumnTabbedDisplay {}],
-        LayoutCommand::Center => vec![focus, Action::CenterColumn {}],
-        LayoutCommand::ToggleFloating => vec![Action::ToggleWindowFloating { id: Some(window) }],
-        LayoutCommand::Pin(side) => vec![focus, Action::PinColumn { side }],
-        LayoutCommand::Unpin => vec![focus, Action::UnpinColumn {}],
-        LayoutCommand::MoveToWorkspace(workspace) => vec![Action::MoveWindowToWorkspace {
-            window_id: Some(window),
-            reference: niri_ipc::WorkspaceReferenceArg::Id(workspace),
-            focus: false,
-        }],
-    }
 }
 
 /// A row of the menu; `None` is a separator.
 pub(crate) type MenuRow = Option<(String, MenuCommand)>;
 
-/// The menu of `entry`: Open or New window, the desktop entry's actions, the
-/// layout commands for its current window when it runs, then Pin or Unpin. A
-/// running application that declares a single main window gets no New
-/// window. A desktop `new-window` action stands in for a plain launch, which
+/// The menu of `entry`: Open or New window, the desktop entry's actions, then
+/// Pin or Unpin. Window management lives in the compositor's titlebars, so
+/// the menu keeps to the application. A running application that declares a
+/// single main window gets no New window. A desktop `new-window` action stands in for a plain launch, which
 /// a D-Bus-activated application would answer by raising its existing window.
-pub(crate) fn menu(
-    entry: &TaskbarEntry,
-    application: Option<&DesktopApplication>,
-    target: Option<LayoutTarget>,
-) -> Vec<MenuRow> {
+pub(crate) fn menu(entry: &TaskbarEntry, application: Option<&DesktopApplication>) -> Vec<MenuRow> {
     let mut rows = Vec::new();
     let Some(app) = application else {
         return rows;
@@ -184,12 +102,6 @@ pub(crate) fn menu(
             ))
         }));
     }
-    if let Some(target) = target {
-        if !rows.is_empty() {
-            rows.push(None);
-        }
-        rows.extend(layout_rows(target));
-    }
     if !rows.is_empty() {
         rows.push(None);
     }
@@ -198,57 +110,6 @@ pub(crate) fn menu(
     } else {
         (fl!("shell-taskbar-pin"), MenuCommand::Pin)
     }));
-    rows
-}
-
-fn layout_rows(target: LayoutTarget) -> Vec<MenuRow> {
-    let row = |label: String, command| Some((label, MenuCommand::Layout(command)));
-    let mut rows = Vec::new();
-    if !target.floating {
-        rows.extend([
-            row(fl!("shell-taskbar-width-third"), LayoutCommand::Width(33)),
-            row(fl!("shell-taskbar-width-half"), LayoutCommand::Width(50)),
-            row(
-                fl!("shell-taskbar-width-two-thirds"),
-                LayoutCommand::Width(67),
-            ),
-            row(fl!("shell-taskbar-toggle-tabs"), LayoutCommand::ToggleTabs),
-            row(fl!("shell-taskbar-center"), LayoutCommand::Center),
-        ]);
-        match target.pinned {
-            Some(_) => rows.push(row(fl!("shell-taskbar-unpin-column"), LayoutCommand::Unpin)),
-            None => rows.extend([
-                row(
-                    fl!("shell-taskbar-pin-left"),
-                    LayoutCommand::Pin(niri_ipc::PinSide::Left),
-                ),
-                row(
-                    fl!("shell-taskbar-pin-right"),
-                    LayoutCommand::Pin(niri_ipc::PinSide::Right),
-                ),
-            ]),
-        }
-    }
-    rows.push(row(
-        if target.floating {
-            fl!("shell-taskbar-tile")
-        } else {
-            fl!("shell-taskbar-float")
-        },
-        LayoutCommand::ToggleFloating,
-    ));
-    if let Some(workspace) = target.above {
-        rows.push(row(
-            fl!("shell-taskbar-move-up"),
-            LayoutCommand::MoveToWorkspace(workspace),
-        ));
-    }
-    if let Some(workspace) = target.below {
-        rows.push(row(
-            fl!("shell-taskbar-move-down"),
-            LayoutCommand::MoveToWorkspace(workspace),
-        ));
-    }
     rows
 }
 
@@ -592,35 +453,17 @@ impl TaskbarItemModule {
     }
 
     fn icon(&self, size: f32) -> iced::Element<'static, crate::app::Message> {
-        let path = self
-            .entry
-            .icon
-            .as_ref()
-            .and_then(|icon| icon.path.clone())
-            .filter(|path| path.exists())
-            .or_else(|| crate::icon_theme::resolve_icon_path("application-x-executable"));
-        match path {
-            Some(path)
-                if path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) =>
-            {
-                iced::widget::svg(iced::widget::svg::Handle::from_path(path))
-                    .width(size)
-                    .height(size)
-                    .into()
-            }
-            Some(path) => iced::widget::image(iced::widget::image::Handle::from_path(path))
-                .width(size)
-                .height(size)
-                .into(),
-            None => letter_icon(&self.entry.name, size),
-        }
+        application_icon(
+            self.entry.icon.as_ref(),
+            &self.entry.key,
+            &self.entry.name,
+            size,
+        )
     }
 
-    /// Running windows show as dots on the bar's screen edge; the focused
-    /// application's indicator is a longer accent pill.
+    /// A running application shows as a short stroke on the bar's screen edge,
+    /// several windows as a longer one; the focused application's stroke is the
+    /// longest, in the accent. One shape, three clearly different lengths.
     fn indicator(&self, horizontal: bool) -> iced::Element<'static, crate::app::Message> {
         let colors = crate::theme::palette();
         let count = self.entry.windows.len();
@@ -633,16 +476,16 @@ impl TaskbarItemModule {
             colors.accent
         } else {
             iced::Color {
-                a: 0.55,
+                a: 0.68,
                 ..colors.text
             }
         };
         let (long, short) = if self.entry.focused {
-            (16.0, 4.0)
+            (24.0, 4.0)
         } else if count > 1 {
-            (9.0, 4.0)
+            (18.0, 3.0)
         } else {
-            (4.0, 4.0)
+            (9.0, 3.0)
         };
         let (width, height) = if horizontal {
             (long, short)
@@ -653,7 +496,7 @@ impl TaskbarItemModule {
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(color)),
                 border: iced::Border {
-                    radius: 2.0.into(),
+                    radius: (short / 2.0).into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -668,7 +511,17 @@ impl TaskbarItemModule {
         use crate::config::Edge;
         use iced::Alignment;
         let horizontal = matches!(edge, Edge::Top | Edge::Bottom);
+        let focused = self.entry.focused;
+        let accent = crate::theme::palette().accent;
         let icon = iced::widget::container(self.icon(APP_ICON_SIZE))
+            .center_x(iced::Length::Fixed(CELL - 6.0))
+            .center_y(iced::Length::Fixed(CELL - 6.0))
+            .style(move |_| iced::widget::container::Style {
+                background: focused.then_some(accent.scale_alpha(0.14).into()),
+                border: iced::border::rounded(11),
+                ..Default::default()
+            });
+        let icon = iced::widget::container(icon)
             .center_x(iced::Length::Fill)
             .center_y(CELL);
         let (align_x, align_y) = match edge {
@@ -677,9 +530,11 @@ impl TaskbarItemModule {
             Edge::Top => (Alignment::Center, Alignment::Start),
             Edge::Bottom => (Alignment::Center, Alignment::End),
         };
+        // Inset a little from the bar's edge, so the marker reads as part of the bar.
         let indicator = iced::widget::container(self.indicator(horizontal))
             .width(iced::Length::Fill)
             .height(CELL)
+            .padding(3)
             .align_x(align_x)
             .align_y(align_y);
         let key = self.entry.key.clone();
@@ -692,6 +547,53 @@ impl TaskbarItemModule {
         iced::widget::mouse_area(cell)
             .on_middle_press(crate::app::Message::Taskbar(TaskbarEvent::Launch { key }))
             .into()
+    }
+}
+
+/// An application's icon at `size`: its themed icon, Canopa's own glyph for
+/// Files and Settings, or its first letter. Shared with the hover cards.
+pub(crate) fn application_icon(
+    icon: Option<&ApplicationIcon>,
+    key: &str,
+    name: &str,
+    size: f32,
+) -> iced::Element<'static, crate::app::Message> {
+    let installed = icon
+        .and_then(|icon| icon.path.clone())
+        .filter(|path| path.is_file());
+    if installed.is_none() {
+        let glyph: Option<&[u8]> = match key {
+            "org.canopa.Files" | "org.canopa.Files.desktop" => {
+                Some(include_bytes!("../../assets/folder.svg"))
+            }
+            "org.canopa.Settings" | "org.canopa.Settings.desktop" => {
+                Some(include_bytes!("../../assets/controls.svg"))
+            }
+            _ => None,
+        };
+        if let Some(glyph) = glyph {
+            return crate::theme::icon(glyph, size, crate::theme::palette().text);
+        }
+    }
+    let path =
+        installed.or_else(|| crate::icon_theme::resolve_icon_path("application-x-executable"));
+    match path {
+        Some(path)
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) =>
+        {
+            iced::widget::svg(iced::widget::svg::Handle::from_path(path))
+                .width(size)
+                .height(size)
+                .into()
+        }
+        Some(path) => iced::widget::image(iced::widget::image::Handle::from_path(path))
+            .width(size)
+            .height(size)
+            .into(),
+        None => letter_icon(name, size),
     }
 }
 
@@ -879,6 +781,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: Some(niri_ipc::Timestamp {
                 secs: focus_secs,
@@ -1058,7 +961,7 @@ mod tests {
     #[test]
     fn menus_offer_a_new_window_the_desktop_actions_and_pinning() {
         let app = editor(&["new-window", "new-private"], false);
-        let rows = menu(&entry(vec![3], false), Some(&app), None);
+        let rows = menu(&entry(vec![3], false), Some(&app));
         assert_eq!(
             commands(&rows),
             [
@@ -1072,18 +975,14 @@ mod tests {
         );
         assert_eq!(rows[0].as_ref().unwrap().0, fl!("shell-taskbar-new-window"));
 
-        let rows = menu(&entry(vec![], true), Some(&editor(&[], false)), None);
+        let rows = menu(&entry(vec![], true), Some(&editor(&[], false)));
         assert_eq!(
             commands(&rows),
             [Some(MenuCommand::Launch), None, Some(MenuCommand::Unpin)],
             "nothing runs, so the first row opens the application"
         );
 
-        let rows = menu(
-            &entry(vec![3], true),
-            Some(&editor(&["new-window"], true)),
-            None,
-        );
+        let rows = menu(&entry(vec![3], true), Some(&editor(&["new-window"], true)));
         assert_eq!(
             commands(&rows),
             [
@@ -1095,7 +994,7 @@ mod tests {
         );
 
         assert!(
-            menu(&entry(vec![3], false), None, None).is_empty(),
+            menu(&entry(vec![3], false), None).is_empty(),
             "windows without a desktop entry have nothing to launch or pin"
         );
     }
@@ -1127,112 +1026,25 @@ mod tests {
     }
 
     #[test]
-    fn running_windows_get_layout_commands_for_their_place() {
-        let tiled = LayoutTarget {
-            floating: false,
-            pinned: None,
-            above: None,
-            below: Some(12),
-        };
+    fn running_applications_get_no_window_management_rows() {
         let rows = menu(
-            &entry(vec![3], false),
-            Some(&editor(&[], false)),
-            Some(tiled),
+            &entry(vec![3, 4], true),
+            Some(&editor(&["new-window"], false)),
         );
-        let layout: Vec<_> = commands(&rows)
-            .into_iter()
-            .flatten()
-            .filter_map(|command| match command {
-                MenuCommand::Layout(command) => Some(command),
-                _ => None,
-            })
-            .collect();
         assert_eq!(
-            layout,
+            commands(&rows),
             [
-                LayoutCommand::Width(33),
-                LayoutCommand::Width(50),
-                LayoutCommand::Width(67),
-                LayoutCommand::ToggleTabs,
-                LayoutCommand::Center,
-                LayoutCommand::Pin(niri_ipc::PinSide::Left),
-                LayoutCommand::Pin(niri_ipc::PinSide::Right),
-                LayoutCommand::ToggleFloating,
-                LayoutCommand::MoveToWorkspace(12),
-            ]
+                Some(MenuCommand::DesktopAction("new-window".into())),
+                None,
+                Some(MenuCommand::Unpin),
+            ],
+            "titlebars own widths, pinning, floating and tabs"
         );
-        let pinned = LayoutTarget {
-            pinned: Some(niri_ipc::PinSide::Left),
-            ..tiled
-        };
-        let rows = menu(
-            &entry(vec![3], false),
-            Some(&editor(&[], false)),
-            Some(pinned),
-        );
-        assert!(commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Unpin))));
-        assert!(
-            !commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Pin(
-                niri_ipc::PinSide::Left
-            ))))
-        );
-
-        let floating = LayoutTarget {
-            floating: true,
-            pinned: None,
-            above: Some(10),
-            below: Some(12),
-        };
-        let rows = menu(
-            &entry(vec![3], false),
-            Some(&editor(&[], false)),
-            Some(floating),
-        );
-        assert!(!commands(&rows).contains(&Some(MenuCommand::Layout(LayoutCommand::Center))));
-        assert!(commands(&rows).contains(&Some(MenuCommand::Layout(
-            LayoutCommand::MoveToWorkspace(10)
-        ))));
-    }
-
-    #[test]
-    fn layout_targets_find_the_neighbouring_workspaces_on_the_same_output() {
-        let workspaces = [
-            workspace(10, "eDP-1", 1),
-            workspace(11, "eDP-1", 2),
-            workspace(12, "eDP-1", 3),
-            workspace(20, "DP-1", 3),
-        ];
-        let window = placed(1, "foot", 11, 1, 1);
-        let target = LayoutTarget::of(&window, &workspaces);
-        assert_eq!((target.above, target.below), (Some(10), Some(12)));
-        let first = LayoutTarget::of(&placed(2, "foot", 10, 1, 1), &workspaces);
-        assert_eq!((first.above, first.below), (None, Some(11)));
-    }
-
-    #[test]
-    fn column_commands_focus_the_window_first() {
-        use niri_ipc::Action;
-        let actions = layout_actions(LayoutCommand::Width(33), 7);
-        assert!(matches!(actions[0], Action::FocusWindow { id: 7 }));
-        assert!(matches!(
-            actions[1],
-            Action::SetColumnWidth {
-                change: niri_ipc::SizeChange::SetProportion(value)
-            } if value == 33.0
-        ));
-        assert!(matches!(
-            layout_actions(LayoutCommand::MoveToWorkspace(12), 7).as_slice(),
-            [Action::MoveWindowToWorkspace {
-                window_id: Some(7),
-                focus: false,
-                ..
-            }]
-        ));
     }
 
     #[test]
     fn menu_trees_map_item_ids_to_rows_and_separators() {
-        let rows = menu(&entry(vec![], false), Some(&editor(&["a"], false)), None);
+        let rows = menu(&entry(vec![], false), Some(&editor(&["a"], false)));
         let tree = menu_tree(&rows, (5, 6), (800, 600));
         assert_eq!(tree.items.len(), rows.len());
         assert_eq!(tree.items[0].id, "0");

@@ -123,6 +123,17 @@ impl ModuleId {
         }
     }
 
+    /// The Niri workspace a workspace indicator stands for.
+    pub(crate) fn workspace_id(&self) -> Option<u64> {
+        match self.0.as_ref() {
+            ModuleIdentity::Child {
+                key: ModuleChildKey::Workspace(id),
+                ..
+            } => Some(*id),
+            _ => None,
+        }
+    }
+
     pub(crate) fn parent_name(&self) -> Option<&str> {
         match self.0.as_ref() {
             ModuleIdentity::Configured(_) => None,

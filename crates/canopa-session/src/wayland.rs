@@ -400,6 +400,9 @@ pub fn lock(
     {
         for output in snapshot.outputs {
             if settings.background.image.is_none() && !settings.outputs.contains_key(&output.name) {
+                if output.built_in {
+                    settings.built_in_wallpaper.insert(output.name.clone());
+                }
                 settings.outputs.insert(output.name, output.background);
             }
         }
@@ -663,12 +666,16 @@ impl App {
                 Ok(image)
             } else {
                 let bg = self.settings.for_output(&name);
-                background::render(
-                    bg.image.as_deref(),
-                    bg.fit,
-                    self.settings.color,
-                    width,
-                    height,
+                background::wallpaper_source(bg.image.as_deref(), &self.settings).and_then(
+                    |source| {
+                        background::render_source(
+                            source.as_ref(),
+                            bg.fit,
+                            self.settings.color,
+                            width,
+                            height,
+                        )
+                    },
                 )
             };
             let image = match image {
@@ -795,7 +802,11 @@ impl App {
         // Decode each distinct file once. Only this source and the bounded set
         // of prepared output buffers are live together during admission.
         for (path, targets) in groups {
-            let source = path.as_deref().map(background::load).transpose()?;
+            // Decode the embedded wallpaper only when an output shows it.
+            if path.is_none() && targets.is_empty() {
+                continue;
+            }
+            let source = background::wallpaper_source(path.as_deref(), candidate)?;
             for (index, width, height, fit) in targets {
                 prepared[index] = Some(background::render_source(
                     source.as_ref(),
@@ -1087,9 +1098,15 @@ impl App {
                 .iter()
                 .filter_map(|s| {
                     let name = self.outputs.info(&s.output)?.name?;
+                    let background = self.settings.for_output(&name).clone();
                     Some(ipc::Output {
-                        name: name.clone(),
-                        background: self.settings.for_output(&name).clone(),
+                        built_in: background.image.is_none()
+                            && background::shows_built_in(
+                                self.settings.solid_color,
+                                &self.settings.appearance,
+                            ),
+                        name,
+                        background,
                         width: s.width,
                         height: s.height,
                         scale: s.scale.max(1) as u32,

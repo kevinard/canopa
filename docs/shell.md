@@ -15,13 +15,14 @@ applies the next valid save.
 
 ## The bar
 
-The default bar is a 64-pixel rounded frame on the left edge of every output, with
-12 pixels of margin (88 pixels reserved from windows). From top to bottom:
+The default bar is a 64-pixel rounded frame on the left edge of every output, 12
+pixels from the left and top screen edges and 16 from the bottom, where it lines up
+with the windows (76 pixels reserved from windows; the compositor adds the same gap
+beside the rail as between windows). From top to bottom:
 
 | Zone | Modules |
 | --- | --- |
-| start | **Search** (opens Applications), **Overview** (Niri's overview), workspaces |
-| center | taskbar |
+| start | **Search** (opens Applications), **Overview** (Niri's overview), workspaces, then the taskbar after a short break |
 | end | tray, network, volume, battery, notifications, clock |
 
 Clicking the empty bar opens Quick settings. Every button has a tooltip and an
@@ -42,6 +43,26 @@ shell {
 }
 ```
 
+### Hiding the bar
+
+With `visibility "auto-hide"` the bar gives its space to windows and waits out of
+view. Touch its screen edge with the pointer and it slides in over the windows; it
+slides away half a second after the pointer leaves, but stays while one of its
+panels, menus, tooltips or hover cards is open, while a button is held on it, or
+while it has keyboard focus. A panel opened by a shortcut brings the bar along.
+With reduced motion the bar appears and disappears without sliding.
+
+```kdl
+bar "main" {
+    visibility "auto-hide"
+}
+```
+
+**Super+B** (`canopa-shell --toggle-bar`) switches every bar between staying on
+screen and hiding automatically. The switch lasts until the configuration is reloaded
+or the Shell restarts. In Settings, **Widgets** > **Bar** > **Hide automatically** saves
+the choice. An auto-hiding bar needs layer `top` (the default) or `overlay`.
+
 A `shell` block replaces the whole embedded layout, so copy the modules, menus and
 panel you want to keep from
 [`default.kdl`](../crates/canopa-shell/config/default.kdl) (installed as
@@ -51,9 +72,9 @@ panel you want to keep from
 
 | Module | What it shows and does |
 | --- | --- |
-| `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch. Labels and icons per workspace with `workspace N { label; icon; }`. |
+| `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch. Labels and icons per workspace with `workspace N { label; icon; }`. Hover a pill for its card (see [Workspace cards](#workspace-cards)). |
 | `taskbar` | Pinned applications, then the other running ones in screen order (see [Taskbar](#taskbar)). |
-| `minimap` | Niri's scrolling strip for the bar's output: one block per column, split by stacked windows, widths to scale, focused window in the accent color. Click a block to focus it; scroll to move between columns. Pinned columns are outlined. |
+| `minimap` | Optional map of the active workspace's scrolling strip, drawn like the workspace cards. Each column is divided into its stacked windows. The focused window uses the accent, the viewport is outlined when part of the strip lies offscreen, and pinned columns sit apart in an accent-tinted tray with a rail along the edge they are pinned to. Click a window to focus it, or scroll over the map to move between columns. |
 | `focused-window` | Icon and title of the focused window, shortened in the middle to 50 characters (`max-length`). The tooltip has the full title. |
 | `tray` | StatusNotifierItem icons. Click activates, right-click opens the item's menu. The Shell owns `org.kde.StatusNotifierWatcher` while a tray is placed. |
 | `network` | Connectivity icon (Wi-Fi, wired, limited, offline, VPN). Hidden while network status is unavailable. |
@@ -78,18 +99,23 @@ Standalone Nerd Font glyphs use `Symbols Nerd Font Mono` when it is installed.
 
 The taskbar shows the desktop files listed in `pinned`, then the other open
 applications in screen order (by workspace, then column), grouped by desktop file.
-A dot on the bar's edge marks a running application, a longer mark several windows,
-and an accent mark the focused one.
+A short stroke on the bar's edge marks a running application, a longer one several
+windows, and the longest, in the accent color, the focused one.
 
 - **Click** focuses the application's most recent window, or launches it. Click
   again to cycle through its windows from left to right.
 - **Middle-click** starts another instance.
 - **Right-click** opens the application menu: Open (or New window while it runs),
-  the desktop file's own actions, layout commands for its window (one-third, half
-  or two-thirds width, tabs, center, float or tile, move to the workspace above or
-  below, pin the column left or right), and **Pin to taskbar** / **Unpin from
-  taskbar**.
-- **Hover** shows thumbnails of up to four of its windows.
+  the desktop file's own actions, and **Pin to taskbar** / **Unpin from taskbar**.
+  Window sizes, tabs, floating and column pins live in the window titlebars.
+- **Hover** a running application to see its windows in screen order, each with a
+  thumbnail, its title and its workspace (or **Scratchpad** for a window in the
+  scratchpad); the focused one is highlighted. Click a window to focus it, or its
+  **×** to close it. The card stays while you move the pointer into it and closes
+  shortly after the pointer leaves both. Moving to another application switches
+  cards at once. Up to eight windows are listed, then a count of the rest. An
+  application with no open window shows its name instead.
+  `tooltip #false` on the taskbar module turns the card off.
 
 Pins changed from the menu are saved in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`
 as changes to the configured list, so later additions to `pinned` still appear.
@@ -104,6 +130,18 @@ modules {
 
 Launched applications each run in their own systemd user scope,
 `app-canopa-<desktop id>-<random>.scope`.
+
+### Workspace cards
+
+Hovering a workspace pill shows that workspace's columns drawn to scale, like the
+`minimap` module: stacked windows share their column, the focused window has an
+accent ring, a frame marks the part on screen when the strip is wider than it, and
+pinned columns sit apart in the same tinted tray with a rail along their pinned
+edge, and a pin badge on their top window when it has room. Each window shows its
+live thumbnail, or its application's icon until the thumbnail arrives. Floating
+windows are counted below the strip. Click a window to focus it; Niri switches to
+its workspace. An empty workspace says **Empty**. `tooltip #false` on the
+workspaces module turns the cards off.
 
 ## Quick settings
 
@@ -282,15 +320,51 @@ volume, 50 for brightness). Rebind the keys on the Settings **Shortcuts** page.
 These features use the Canopa Niri fork that the `canopa-compositor` package
 installs.
 
+The taskbar uses a neutral running-app marker while Overview is open, leaving
+the compositor to highlight the selected preview.
+
+- **Window bar** lists the workspace's windows in layout order at the top of
+  the work area, each with its application icon and title. It appears when there
+  are multiple tiled columns or a floating window. A column with stacked windows
+  shows a count. The focused window is filled with the accent; the fill slides
+  when focus moves to a neighbour and fades across when it jumps further. Windows
+  at least half on screen have a faint accent outline. Floating windows form a
+  separate group on the right, with a button that shows or hides them.
+  Choose a window name to bring it into view and focus it. Point to a window that
+  is out of view to see a thumbnail of it. Arrows at the ends of the bar appear
+  when windows lie out of view, with a `+N` badge counting them; point to an
+  arrow to see how many windows lie that way and a thumbnail of the next one, and
+  click it to bring that window into view and focus it. A window that only partly
+  fits beside the focused one stays partly in view, cut one gap from the panel.
+  When floating windows cover the tiles, choose a tiled window to reveal the
+  tiles. Choose a floating window or the floating button to restore the layer.
+- **Overview**: Niri's overview zooms the workspaces out and stacks them. The
+  Overview button stays highlighted while it is open. Click a window, or move
+  with the arrow keys and press Enter, to open it.
 - **Overview typing**: typing in Niri's overview (Super+O, or the top-left hot
   corner) opens Applications with that text. Closing the launcher closes the
   overview. This needs `overview { emit-typed-text; }`, which the shipped Niri
   defaults set.
-- **Window thumbnails** in taskbar tooltips and portal window pickers come
-  from Niri's window preview service. `window-previews { off; }` in Niri turns
-  off thumbnails in both places.
-- **Pinned columns**: Super+P and Super+Shift+P (or the taskbar menu) pin a column
-  to the left or right edge of the view while the rest scrolls.
+- **Window thumbnails** in taskbar and workspace cards and portal window pickers
+  come from Niri's window preview service. `window-previews { off; }` in Niri
+  turns off thumbnails in all three; the cards then show application icons.
+- **Pinned columns**: Super+P and Super+Shift+P pin a column to the left or right
+  edge of the view while the rest scrolls. Super+Ctrl+P folds pinned columns past
+  their edges, giving their space to the other windows, and unfolds them. A folded
+  column leaves a slim tab at the middle of its edge: point at it to see the
+  window's name, click it (or focus the window) to bring the column back.
+- **Scratchpad**: a set of floating windows laid over any workspace, like a
+  special workspace. Super+Shift+` moves a window into it, floating and hidden;
+  Super+` brings them all to the current workspace, each where you left it, and
+  hides them again. While one has focus, everything behind the scratchpad dims.
+- **Floating windows** snap to the edges of the work area and of other floating
+  windows, and to its middle, as you drag or resize them.
+  The titlebar layout menu offers both under **Hide**: **Fold** for a pinned column
+  and **Scratchpad** for any window. While the scratchpad holds windows, the window
+  bar ends with a scratchpad button (with their count when there are several);
+  click it to show or hide the scratchpad. The window rule
+  `open-in-scratchpad true` in `niri-custom.kdl` sends an application there when
+  it opens.
 - **Window restore**: with `windows { restore #true; }`, the Shell records open
   applications with their workspace, column and width in
   `$XDG_STATE_HOME/canopa/shell/windows.json`, and reopens them in place at the next
@@ -331,6 +405,7 @@ Applications that set a wallpaper through the Wallpaper portal hand it to the Sh
 | `canopa-shell --open-menu NAME` | Open a named menu; repeating it reopens instead of closing. |
 | `canopa-shell --open-template NAME` | Open a workspace template. |
 | `canopa-shell --toggle-panel` | Toggle the bar's panel. |
+| `canopa-shell --toggle-bar` | Switch bars between staying on screen and hiding automatically, until the configuration is reloaded (Super+B). |
 | `canopa-shell volume …`, `microphone …`, `brightness …`, `keyboard-backlight …`, `media …` | Device keys (above). |
 | `canopa-shell --dmenu [-p PROMPT] [-d DELIM] [--json] [--no-custom]` | Choose from lines on stdin; print the choice. |
 | `canopa-shell lock [--swaylock]` | Lock through Canopa Lock (`canopa-lock`, or `loginctl lock-session` without it), which shows the lock image set through the Wallpaper portal. `--swaylock` runs Swaylock with that image instead. |
@@ -379,7 +454,7 @@ Any program can supply a panel through the panel protocol. Declare it in
 
 | Path | Contents |
 | --- | --- |
-| `$XDG_RUNTIME_DIR/canopa-shell.sock` | Control socket for `reload`, menus, templates and device keys |
+| `$XDG_RUNTIME_DIR/canopa-shell.sock` | Control socket for `reload`, menus, templates, the bar toggle and device keys |
 | `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json` | Taskbar pin changes |
 | `$XDG_STATE_HOME/canopa/shell/windows.json` | Window restore record |
 | `$XDG_STATE_HOME/canopa/shell/launcher-history.json` | Launcher selection history |
@@ -393,10 +468,11 @@ unit drop-in (`systemctl --user edit canopa-shell.service`) for more detail.
 
 ## Known limitations
 
-- The minimap does not mark which columns are currently on screen.
 - Window restore does not restore pinned columns, and D-Bus-activated applications
   may open in Niri's usual place.
 - Window thumbnails, pinned columns, overview typing and window restore need the
   Canopa Niri fork.
+- Hover cards work with the pointer only. From the keyboard, the taskbar and
+  workspace pills and the launcher's window search reach the same windows.
 - The Wi-Fi panel cannot set up new enterprise (802.1X) networks.
 - The media panel has no artwork, seeking or per-player volume.

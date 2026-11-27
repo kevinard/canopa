@@ -113,7 +113,7 @@ reading the snapshot, and only while the page is shown.
 | `Common` | `config.kdl` (`appearance`, `lockscreen`, `shell`, `notifications` sections) | `canopa config check --file CANDIDATE` (every owner) | Shell live reload; `canopa-notify ctl reload`; `systemctl --user reload xdg-desktop-portal-canopa.service`; lock screen at next lock |
 | `Input` | `niri-input.kdl` | `niri validate` | Niri `LoadConfigFile` over IPC |
 | `Niri` | `niri.kdl` (motion override, window layout, shortcut include) | `niri validate` | Niri `LoadConfigFile` |
-| `Common` → generated `niri-appearance.kdl` | titlebar colors and font from `appearance` (written after Personalization saves, never edited) | `niri validate` | Niri `LoadConfigFile` |
+| `Common` → generated `niri-appearance.kdl` | titlebars, window outlines, workspace tint and overview backdrop from `appearance` | `niri validate` | Niri `LoadConfigFile` |
 | `Displays` | `niri-displays.kdl`, `display-profiles.kdl` | `niri validate`, profile schema | display trial helper; profile watcher |
 | `Idle` | `stasis.rune` | Settings' Rune token editor | `canopa-idle reload` (previous file restored on refusal) |
 | `Power` | `power.kdl` (`lid-close`) | Settings | profile watcher holding logind's lid inhibitor |
@@ -179,10 +179,10 @@ see [session architecture](session.md)) creates missing files with mode 0600:
 `niri-shortcuts.kdl`), `niri-input.kdl`, `niri-displays.kdl`, `niri-appearance.kdl`
 and `niri-custom.kdl`, plus those includes and `stasis.rune` (an embedded copy of
 `packaging/stasis/stasis.rune`). It then regenerates `niri-shortcuts.kdl`, migrates a
-copied shortcut block if one is found, regenerates the titlebar style in
+copied shortcut block if one is found, regenerates the compositor appearance in
 `niri-appearance.kdl` from `appearance` in `config.kdl` (adding its include before
 `niri-custom.kdl` to sessions created earlier), validates with Niri and prints the
-path of `niri.kdl`. A shortcut or titlebar style failure keeps the last valid files
+path of `niri.kdl`. A shortcut or compositor appearance failure keeps the last valid files
 and does not block login.
 
 ## Design decisions

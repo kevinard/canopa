@@ -1137,6 +1137,9 @@ fn label(node: &KdlNode) -> Result<String> {
     let label = match node.name().value() {
         "Mod+Return" => fl!("settings-shortcut-open-terminal"),
         "Mod+Space" => fl!("settings-shortcut-open-applications"),
+        "Mod+B" if plain(action).contains("--toggle-bar") => {
+            fl!("settings-shortcut-toggle-bar")
+        }
         "Mod+E" => fl!("settings-shortcut-open-files"),
         "Mod+Comma" => fl!("settings-shortcut-open-settings"),
         "Mod+L" => fl!("settings-shortcut-lock-screen"),
@@ -1155,6 +1158,10 @@ fn label(node: &KdlNode) -> Result<String> {
         "Mod+C" => fl!("settings-shortcut-center-column"),
         "Mod+P" => fl!("settings-shortcut-pin-column-left"),
         "Mod+Shift+P" => fl!("settings-shortcut-pin-column-right"),
+        "Mod+Ctrl+P" => fl!("settings-shortcut-fold-pinned-columns"),
+        "Mod+Grave" => fl!("settings-shortcut-toggle-scratchpad"),
+        "Mod+Shift+Grave" => fl!("settings-shortcut-toggle-window-in-scratchpad"),
+        "Mod+Shift+B" => fl!("settings-shortcut-toggle-window-bar"),
         "Mod+Shift+F" => fl!("settings-shortcut-toggle-fullscreen"),
         "Mod+V" => fl!("settings-shortcut-toggle-floating-window"),
         "Mod+O" => fl!("settings-shortcut-toggle-overview"),

@@ -170,6 +170,8 @@ class UpdateTests(unittest.TestCase):
         self.env['CARGO_HOME'] = str(Path(os.environ.get('CARGO_HOME', '~/.cargo')).expanduser())
         # These tiny fixtures build on /tmp, which can be a small tmpfs.
         self.env['CANOPA_BUILD_MIN_FREE_GIB'] = '0.1'
+        # The assertions read Cargo's messages; CI asks for colored output.
+        self.env['CARGO_TERM_COLOR'] = 'never'
         self.env['RUSTUP_HOME'] = str(Path(os.environ.get('RUSTUP_HOME', '~/.rustup')).expanduser())
         self.env.update(HOME=str(self.root / 'user'), PATH=f"{commands}:{self.env['PATH']}",
                         CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='1',

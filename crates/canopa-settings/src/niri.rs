@@ -177,6 +177,28 @@ pub struct WindowLayout {
     pub gaps: u8,
     pub center: CenterColumn,
     pub width: ColumnWidth,
+    pub bar: WindowBar,
+}
+
+/// When the compositor's window bar shows above the scrolling columns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowBar {
+    Always,
+    /// Revealed from the top edge or with a shortcut, over the windows.
+    OnDemand,
+    Off,
+}
+
+impl WindowBar {
+    pub const ALL: [Self; 3] = [Self::Always, Self::OnDemand, Self::Off];
+    /// The line Settings writes; the shipped default (on demand) writes none.
+    fn kdl(self) -> &'static str {
+        match self {
+            Self::Always => "    window-bar \"always\"\n",
+            Self::OnDemand => "",
+            Self::Off => "    window-bar \"off\"\n",
+        }
+    }
 }
 
 /// Niri's `center-focused-column`.
@@ -221,20 +243,23 @@ impl ColumnWidth {
 
 impl WindowLayout {
     /// Gap sizes offered by Settings.
-    pub const GAPS: [u8; 4] = [0, 6, 12, 20];
+    pub const GAPS: [u8; 5] = [0, 6, 12, 16, 20];
     /// The values in `packaging/niri/defaults.kdl`.
     pub const SHIPPED: Self = Self {
-        gaps: 12,
-        center: CenterColumn::OnOverflow,
+        gaps: 16,
+        // Half-width columns pair up exactly, so the view only scrolls as far as needed.
+        center: CenterColumn::Never,
         width: ColumnWidth::Half,
+        bar: WindowBar::OnDemand,
     };
 
     fn kdl(self) -> String {
         format!(
-            "{LAYOUT_MARKER}\nlayout {{\n    gaps {}\n    center-focused-column \"{}\"\n    default-column-width {{ proportion {}; }}\n}}\n",
+            "{LAYOUT_MARKER}\nlayout {{\n    gaps {}\n    center-focused-column \"{}\"\n    default-column-width {{ proportion {}; }}\n{}}}\n",
             self.gaps,
             self.center.kdl(),
-            self.width.kdl()
+            self.width.kdl(),
+            self.bar.kdl()
         )
     }
 
@@ -243,10 +268,13 @@ impl WindowLayout {
     fn all() -> impl Iterator<Item = Self> {
         Self::GAPS.into_iter().flat_map(|gaps| {
             CenterColumn::ALL.into_iter().flat_map(move |center| {
-                ColumnWidth::ALL.into_iter().map(move |width| Self {
-                    gaps,
-                    center,
-                    width,
+                ColumnWidth::ALL.into_iter().flat_map(move |width| {
+                    WindowBar::ALL.into_iter().map(move |bar| Self {
+                        gaps,
+                        center,
+                        width,
+                        bar,
+                    })
                 })
             })
         })
@@ -372,12 +400,14 @@ mod window_layout_tests {
             gaps: 6,
             center: CenterColumn::Always,
             width: ColumnWidth::TwoThirds,
+            bar: WindowBar::Always,
         };
         let with_motion = format!("{BASE}{MOTION_OVERRIDE}");
         let written = with_window_layout(&with_motion, Some(layout)).unwrap();
         assert!(written.starts_with(BASE));
         assert!(written.ends_with(MOTION_OVERRIDE));
         assert!(written.contains("default-column-width { proportion 0.66667; }"));
+        assert!(written.contains("window-bar \"always\""));
         assert_eq!(split_layout(&written).unwrap().1, Some(layout));
         assert_eq!(with_window_layout(&written, None).unwrap(), with_motion);
 
@@ -403,9 +433,19 @@ mod window_layout_tests {
     }
 
     #[test]
+    fn blocks_without_a_window_bar_line_use_the_shipped_bar() {
+        let earlier = format!(
+            "{BASE}{LAYOUT_MARKER}\nlayout {{\n    gaps 6\n    center-focused-column \"never\"\n    default-column-width {{ proportion 0.5; }}\n}}\n"
+        );
+        let layout = split_layout(&earlier).unwrap().1.unwrap();
+        assert_eq!(layout.bar, WindowBar::OnDemand);
+        assert_eq!(layout.gaps, 6);
+    }
+
+    #[test]
     fn an_edited_block_is_refused() {
         let written = with_window_layout(BASE, Some(WindowLayout::SHIPPED)).unwrap();
-        let edited = written.replace("gaps 12", "gaps 13");
+        let edited = written.replace("gaps 16", "gaps 13");
         assert!(split_layout(&edited).is_err());
     }
 
@@ -430,5 +470,7 @@ mod window_layout_tests {
             "    default-column-width {{ proportion {}; }}\n",
             layout.width.kdl()
         )));
+        assert_eq!(layout.bar, WindowBar::OnDemand);
+        assert!(defaults.contains("    window-bar \"on-demand\"\n"));
     }
 }

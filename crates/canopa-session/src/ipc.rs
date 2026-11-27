@@ -52,6 +52,9 @@ pub struct Output {
     pub height: u32,
     #[serde(default = "default_scale")]
     pub scale: u32,
+    /// The output shows Canopa's embedded wallpaper because no image is assigned.
+    #[serde(default)]
+    pub built_in: bool,
 }
 fn default_scale() -> u32 {
     1

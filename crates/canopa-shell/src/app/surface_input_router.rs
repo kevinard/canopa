@@ -302,6 +302,7 @@ pub(super) fn target_window(event: &super::messages::SurfaceEvent) -> Option<ice
         | SurfaceEvent::WindowSized(window, _, _)
         | SurfaceEvent::WindowClosed(window)
         | SurfaceEvent::CloseTooltip { window }
+        | SurfaceEvent::Pointer { window, .. }
         | SurfaceEvent::TooltipDwellElapsed { window, .. }
         | SurfaceEvent::ModuleHoverEnter(_, window)
         | SurfaceEvent::ModuleHoverExit(_, window)

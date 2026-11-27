@@ -21,7 +21,7 @@ impl BarGeometry {
     }
     pub fn reservation(bar: &BarConfig) -> i32 {
         let (near, inner, _, _) = bar.outer_margins();
-        if bar.reserve_space {
+        if bar.reserves_space() {
             (near + bar.collapsed_width + inner) as i32
         } else {
             0
@@ -70,6 +70,42 @@ impl BarGeometry {
                 }
             },
         }
+    }
+
+    /// The thin strip along the screen edge, beside the bar, that wakes a
+    /// hidden bar. `host` is the bar surface's logical size.
+    pub fn edge_strip(self, edge: &Edge, host: (u32, u32), strip: i32) -> (i32, i32, i32, i32) {
+        let b = self.frame;
+        let (along_start, along_len) = if edge.is_horizontal() {
+            (b.x.floor() as i32, b.width.ceil() as i32)
+        } else {
+            (b.y.floor() as i32, b.height.ceil() as i32)
+        };
+        match edge {
+            Edge::Left => (0, along_start, strip, along_len),
+            Edge::Right => (host.0 as i32 - strip, along_start, strip, along_len),
+            Edge::Top => (along_start, 0, along_len, strip),
+            Edge::Bottom => (along_start, host.1 as i32 - strip, along_len, strip),
+        }
+    }
+
+    /// The space between the screen edge and a revealed bar, so the pointer
+    /// does not leave the bar surface on its way from the edge to the bar.
+    pub fn edge_band(self, edge: &Edge, host: (u32, u32)) -> Option<(i32, i32, i32, i32)> {
+        let b = self.frame;
+        let rect = match edge {
+            Edge::Left => (0, b.y as i32, b.x.ceil() as i32, b.height as i32),
+            Edge::Right => {
+                let x = (b.x + b.width).floor() as i32;
+                (x, b.y as i32, host.0 as i32 - x, b.height as i32)
+            }
+            Edge::Top => (b.x as i32, 0, b.width as i32, b.y.ceil() as i32),
+            Edge::Bottom => {
+                let y = (b.y + b.height).floor() as i32;
+                (b.x as i32, y, b.width as i32, host.1 as i32 - y)
+            }
+        };
+        (rect.2 > 0 && rect.3 > 0).then_some(rect)
     }
 
     /// Rounded rows are coalesced into rectangles; transparent corners and unused
@@ -156,6 +192,32 @@ mod tests {
             assert!(input[0].0 > x as i32);
         }
     }
+    #[test]
+    fn auto_hide_reserves_nothing_and_wakes_from_a_strip_on_the_edge() {
+        let mut bar = BarConfig {
+            collapsed_width: 64,
+            margin: canopa_theme::Insets {
+                top: canopa_theme::Pixels::whole(0),
+                bottom: canopa_theme::Pixels::whole(16),
+                left: canopa_theme::Pixels::whole(12),
+                right: canopa_theme::Pixels::whole(12),
+            },
+            ..Default::default()
+        };
+        assert_eq!(BarGeometry::reservation(&bar), 88);
+        bar.visibility = crate::config::BarVisibility::AutoHide;
+        assert_eq!(BarGeometry::reservation(&bar), 0);
+        let host = BarGeometry::host_size(&bar, 0);
+        let g = BarGeometry::resolve(&bar, (host.0, 800), 0);
+        assert_eq!(g.edge_strip(&Edge::Left, (76, 800), 2), (0, 0, 2, 784));
+        assert_eq!(g.edge_band(&Edge::Left, (76, 800)), Some((0, 0, 12, 784)));
+        bar.edge = Edge::Bottom;
+        let g = BarGeometry::resolve(&bar, (1000, 76), 0);
+        assert_eq!(g.edge_strip(&Edge::Bottom, (1000, 76), 2).1, 74);
+        let band = g.edge_band(&Edge::Bottom, (1000, 76)).unwrap();
+        assert_eq!(band.1 + band.3, 76);
+    }
+
     #[test]
     fn all_edges_fit_small_hosts_and_percentages() {
         for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {

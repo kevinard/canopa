@@ -920,7 +920,7 @@ fn titlebar_style_is_generated_and_included_before_custom_options() {
     assert!(canopa_settings::titlebar::refresh(&paths, &appearance, accept).unwrap());
     let generated = std::fs::read_to_string(paths.titlebar_appearance()).unwrap();
     assert!(
-        generated.contains("active-color \"#fbfcf8\""),
+        generated.contains("active-color \"#d0dfd5\""),
         "{generated}"
     );
     let niri = std::fs::read_to_string(paths.niri()).unwrap();

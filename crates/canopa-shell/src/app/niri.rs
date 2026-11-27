@@ -301,6 +301,9 @@ impl App {
                     Event::OverviewTyped { text } => {
                         task = self.search_from_overview(&text);
                     }
+                    Event::OverviewOpenedOrClosed { is_open } => {
+                        self.niri.state_mut().overview_open = is_open;
+                    }
                     Event::ConfigLoaded { .. } => {
                         // Output modes and scales live in the configuration.
                         task = self.refresh_niri_output_sizes();
@@ -391,7 +394,13 @@ impl App {
 
     /// Ask Niri for output sizes, which set the minimap's scale.
     pub(super) fn refresh_niri_output_sizes(&self) -> Task<Message> {
-        if cfg!(test) || self.modules.count_by_kind(ModuleKind::Minimap) == 0 {
+        // The minimap and the workspace hover cards draw to the output's scale.
+        if cfg!(test)
+            || self.modules.count_by_kind(ModuleKind::Minimap)
+                + self.modules.count_by_kind(ModuleKind::Workspaces)
+                + self.modules.count_by_kind(ModuleKind::WorkspaceItem)
+                == 0
+        {
             return Task::none();
         }
         Task::perform(crate::niri::output_sizes(), |sizes| {
@@ -406,7 +415,10 @@ impl App {
         event: super::messages::AppNiriEvent,
     ) -> Task<Message> {
         match event {
-            super::messages::AppNiriEvent::Ipc(event) => self.handle_niri_event(event),
+            super::messages::AppNiriEvent::Ipc(event) => {
+                let task = self.handle_niri_event(event);
+                Task::batch([task, self.refresh_hover_cards()])
+            }
             super::messages::AppNiriEvent::OutputSizes(sizes) => {
                 self.niri.state_mut().output_sizes = sizes;
                 self.sync_window_session()
@@ -840,6 +852,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: None,
         }
