@@ -1,6 +1,7 @@
 //! Render representative lock-screen states to PNG files for design review.
 //!
-//! `cargo run -p canopa-session --example lock-gallery -- OUTPUT_DIR [light]`
+//! `cargo run -p canopa-session --example lock-gallery -- OUTPUT_DIR [light|dark] [CONFIG]`
+//! A CONFIG file (appearance and lockscreen blocks) replaces the built-in look.
 //! Locks nothing and starts no authentication.
 use canopa_config::{Component, Request};
 use canopa_session::{lock_ui, settings::Settings};
@@ -11,8 +12,11 @@ fn main() -> anyhow::Result<()> {
     let mut args = std::env::args_os().skip(1);
     let output = PathBuf::from(args.next().expect("output directory"));
     let light = args.next().is_some_and(|a| a == "light");
+    let config = args.next().map(PathBuf::from);
     std::fs::create_dir_all(&output)?;
-    let request = if light {
+    let request = if let Some(config) = &config {
+        Request::common(config.clone())
+    } else if light {
         let source = output.join(".lock-light.kdl");
         std::fs::write(
             &source,
@@ -24,7 +28,9 @@ fn main() -> anyhow::Result<()> {
     };
     let (mut settings, _) = Settings::load(&request, Component::Lockscreen)?;
     // A default session shows the embedded wallpaper, which the lock follows.
-    settings.built_in_wallpaper.insert("gallery".into());
+    if config.is_none() {
+        settings.built_in_wallpaper.insert("gallery".into());
+    }
     let fresh = || -> anyhow::Result<lock_ui::LockUi> {
         let mut ui = lock_ui::LockUi::preview(&settings, "Alex Morgan".into())?;
         lock_ui::configure(&mut ui);
@@ -50,12 +56,7 @@ fn main() -> anyhow::Result<()> {
         player: "Music".into(),
         playing: true,
     };
-    let notices = || {
-        Some(
-            "Calendar — Design review in 15 minutes\nMessages — Sam: Running five minutes late"
-                .to_owned(),
-        )
-    };
+    let notices = || Some("Calendar — New notification\nMessages — New notification".to_owned());
     // At rest: the glance view, with what the Shell plays and Notify allows.
     let mut ui = fresh()?;
     ui.resting = true;
@@ -161,7 +162,7 @@ fn main() -> anyhow::Result<()> {
             lock_ui::update_actions(ui, true);
         }
     })?;
-    if light {
+    if light && config.is_none() {
         std::fs::remove_file(output.join(".lock-light.kdl"))?;
     }
     Ok(())

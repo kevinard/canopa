@@ -56,7 +56,7 @@ pinentry-length-limit = Passphrase limit: { $limit } characters. Input was rejec
 
 # Headings and lines for new passphrases and destructive confirmations.
 pinentry-create-passphrase = Create a passphrase
-pinentry-subtitle-new = Needed to use the key — it can’t be recovered if forgotten
+pinentry-subtitle-new = Protects your key. A forgotten passphrase can’t be recovered.
 pinentry-confirm-deletion = Confirm deletion
 pinentry-unlock = Unlock
 # Captions in the request details card.

@@ -3,7 +3,7 @@
 //! Full-screen surfaces (sign-in and unlock) float translucent "glass" over a
 //! softened wallpaper; dialogs use the opaque application surface. Both share
 //! one set of button treatments so a control reads the same everywhere.
-use canopa_theme::{ColorRole, Palette, Rgb};
+use canopa_theme::{ColorRole, Palette, Rgb, UiKind};
 use iced::widget::button;
 use iced::{Background, Border, Color, Shadow, Vector};
 
@@ -22,12 +22,24 @@ fn lift(color: Color, toward: Color, amount: f32) -> Color {
     }
 }
 
+/// Corner radii from the theme's `ui` element kinds, in logical pixels, so
+/// the session surfaces share the shapes of the rest of the desktop.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Radii {
+    pub button: f32,
+    pub input: f32,
+    pub row: f32,
+    pub card: f32,
+    pub panel: f32,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Look {
     pub palette: Palette,
     pub dark: bool,
     pub focus: Rgb,
     pub on_accent: Rgb,
+    pub radius: Radii,
 }
 
 impl Look {
@@ -43,7 +55,22 @@ impl Look {
             // One focus colour for fields, buttons and rows: the accent.
             focus: settings.appearance.palette().accent,
             on_accent: settings.appearance.role(ColorRole::OnAccent),
+            radius: {
+                let radius = |kind| settings.appearance.style(kind).radius[0].px();
+                Radii {
+                    button: radius(UiKind::Button),
+                    input: radius(UiKind::Input),
+                    row: radius(UiKind::MenuRow),
+                    card: radius(UiKind::Card),
+                    panel: radius(UiKind::Panel),
+                }
+            },
         }
+    }
+
+    /// A control's corner radius at this scale, never past a pill.
+    pub fn button_radius(&self, height: f32, scale: f32) -> f32 {
+        (self.radius.button * scale).min(height / 2.)
     }
 
     /// A control or field floating over the wallpaper.
@@ -129,7 +156,6 @@ impl Look {
             Kind::Primary => self.on_accent,
             // Text set below with the same strength as a disabled default action.
             Kind::Resting => self.palette.text,
-            Kind::Outline => self.palette.muted,
             Kind::Danger => self.palette.danger,
             _ => self.palette.text,
         }
@@ -145,8 +171,6 @@ pub(crate) enum Kind {
     Glass,
     /// No resting background (links, back, utilities).
     Quiet,
-    /// No fill, a thin outline: a visible but light secondary action.
-    Outline,
     /// The default action before there is anything to submit: its accent, faded.
     Resting,
     /// An outlined control in a dialog footer.
@@ -193,7 +217,7 @@ pub(crate) fn button_style(
                 (
                     Some(lift(base, toward, amount)),
                     if look.dark {
-                        Color::from_rgba(1., 0.85, 0.9, 0.35)
+                        rgba(super::raster::mix(p.accent, Rgb(255, 255, 255), 0.6), 0.35)
                     } else {
                         Color::TRANSPARENT
                     },
@@ -208,8 +232,16 @@ pub(crate) fn button_style(
                     Color::BLACK
                 };
                 let base = if look.dark {
-                    // White text keeps at least 4.5:1 on this fill.
-                    Color::from_rgb8(0xb8, 0x36, 0x5c)
+                    // The theme's danger hue, saturated and deepened until white
+                    // text keeps 5:1: unmistakable, never muddy.
+                    let (hue, saturation, mut light) = hsl(p.danger);
+                    let saturation = saturation.clamp(0.5, 0.62);
+                    let mut fill = from_hsl_rgb(hue, saturation, light);
+                    while fill.contrast(Rgb(255, 255, 255)) < 4.6 && light > 0.2 {
+                        light -= 0.02;
+                        fill = from_hsl_rgb(hue, saturation, light);
+                    }
+                    canopa_ui::color(fill)
                 } else {
                     canopa_ui::color(p.danger)
                 };
@@ -243,24 +275,6 @@ pub(crate) fn button_style(
                     0.28
                 };
                 (Some(rgba(p.accent, alpha)), Color::TRANSPARENT, 0.)
-            }
-            Kind::Outline => {
-                let alpha = if pressed {
-                    0.12
-                } else if hovered {
-                    0.08
-                } else {
-                    0.
-                };
-                (
-                    (alpha > 0.).then_some(Color { a: alpha, ..text }),
-                    if look.dark {
-                        Color::from_rgba(1., 1., 1., 0.3)
-                    } else {
-                        Color::from_rgba(0., 0., 0., 0.26)
-                    },
-                    1.,
-                )
             }
             Kind::Quiet => {
                 let alpha = if pressed {
@@ -329,7 +343,7 @@ pub(crate) fn button_style(
                 // border; the label stays readable in the text colour.
                 Some(Background::Color(fade(rgba(
                     p.accent,
-                    if look.dark { 0.18 } else { 0.28 },
+                    if look.dark { 0.36 } else { 0.18 },
                 ))))
             } else {
                 background.map(|mut color| {
@@ -344,7 +358,7 @@ pub(crate) fn button_style(
             text_color: fade(
                 if disabled && kind == Kind::Primary || kind == Kind::Resting {
                     let mut label = canopa_ui::color(p.text);
-                    label.a = if look.dark { 0.5 } else { 0.8 };
+                    label.a = if look.dark { 0.62 } else { 0.6 };
                     label
                 } else {
                     let mut color = canopa_ui::color(foreground);
@@ -380,27 +394,68 @@ pub(crate) fn button_style(
 
 /// Two harmonious tones for an avatar without a picture, chosen from `seed`
 /// so each account keeps its colour.
-pub(crate) fn avatar_tones(seed: &str) -> (Color, Color) {
-    // Quiet, nature-derived tones that sit with the green accent.
-    type Tone = ((u8, u8, u8), (u8, u8, u8));
-    const TONES: [Tone; 8] = [
-        ((0x86, 0xb3, 0x9b), (0x5b, 0x8c, 0x74)),
-        ((0x7f, 0xae, 0xb3), (0x55, 0x86, 0x8d)),
-        ((0x93, 0xa4, 0xbf), (0x67, 0x7a, 0x99)),
-        ((0x7c, 0xb8, 0xb0), (0x3f, 0x7d, 0x78)),
-        ((0xc4, 0x9e, 0x98), (0x9b, 0x74, 0x6e)),
-        ((0xc4, 0xab, 0x84), (0x9a, 0x81, 0x5b)),
-        ((0x9f, 0xb3, 0x82), (0x75, 0x8a, 0x58)),
-        ((0x8f, 0xa8, 0xa1), (0x65, 0x7f, 0x78)),
-    ];
+pub(crate) fn avatar_tones(seed: &str, accent: Rgb) -> (Color, Color) {
+    // Quiet tones around the theme's accent: each account keeps its own hue
+    // step, so pictures differ while sitting with the accent.
+    const STEPS: [f32; 8] = [0., 18., -18., 36., -36., 9., -27., 27.];
     let hash = seed
         .chars()
         .flat_map(char::to_lowercase)
         .fold(2166136261u32, |hash, c| {
             (hash ^ c as u32).wrapping_mul(16777619)
         });
-    let ((r1, g1, b1), (r2, g2, b2)) = TONES[hash as usize % TONES.len()];
-    (Color::from_rgb8(r1, g1, b1), Color::from_rgb8(r2, g2, b2))
+    let (hue, saturation, _) = hsl(accent);
+    let hue = (hue + STEPS[hash as usize % STEPS.len()]).rem_euclid(360.);
+    // An accent without colour (a grey theme) gives grey pictures.
+    let saturation = if saturation < 0.08 {
+        saturation
+    } else {
+        saturation.clamp(0.22, 0.42)
+    };
+    (
+        from_hsl(hue, saturation, 0.62),
+        from_hsl(hue, saturation, 0.40),
+    )
+}
+
+fn hsl(Rgb(r, g, b): Rgb) -> (f32, f32, f32) {
+    let (r, g, b) = (r as f32 / 255., g as f32 / 255., b as f32 / 255.);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let light = (max + min) / 2.;
+    let delta = max - min;
+    if delta < f32::EPSILON {
+        return (0., 0., light);
+    }
+    let saturation = delta / (1. - (2. * light - 1.).abs());
+    let hue = if max == r {
+        60. * ((g - b) / delta).rem_euclid(6.)
+    } else if max == g {
+        60. * ((b - r) / delta + 2.)
+    } else {
+        60. * ((r - g) / delta + 4.)
+    };
+    (hue, saturation, light)
+}
+
+fn from_hsl_rgb(hue: f32, saturation: f32, light: f32) -> Rgb {
+    let color = from_hsl(hue, saturation, light);
+    let channel = |value: f32| (value.clamp(0., 1.) * 255.).round() as u8;
+    Rgb(channel(color.r), channel(color.g), channel(color.b))
+}
+
+fn from_hsl(hue: f32, saturation: f32, light: f32) -> Color {
+    let chroma = (1. - (2. * light - 1.).abs()) * saturation;
+    let x = chroma * (1. - ((hue / 60.).rem_euclid(2.) - 1.).abs());
+    let (r, g, b) = match (hue / 60.) as u32 {
+        0 => (chroma, x, 0.),
+        1 => (x, chroma, 0.),
+        2 => (0., chroma, x),
+        3 => (0., x, chroma),
+        4 => (x, 0., chroma),
+        _ => (chroma, 0., x),
+    };
+    let m = light - chroma / 2.;
+    Color::from_rgb(r + m, g + m, b + m)
 }
 
 #[cfg(test)]
@@ -409,11 +464,20 @@ mod tests {
 
     #[test]
     fn avatar_tones_are_stable_per_account_and_ignore_case() {
-        assert_eq!(avatar_tones("Alex Morgan"), avatar_tones("alex morgan"));
+        let accent = Rgb(0x25, 0x69, 0x48);
+        assert_eq!(
+            avatar_tones("Alex Morgan", accent),
+            avatar_tones("alex morgan", accent)
+        );
         let distinct: std::collections::BTreeSet<_> = ["AM", "SR", "JD", "KO", "LP", "QX"]
             .iter()
-            .map(|seed| format!("{:?}", avatar_tones(seed)))
+            .map(|seed| format!("{:?}", avatar_tones(seed, accent)))
             .collect();
         assert!(distinct.len() > 2);
+        // Another accent moves every picture with it.
+        assert_ne!(
+            avatar_tones("AM", accent),
+            avatar_tones("AM", Rgb(0x3b, 0x5b, 0xdb))
+        );
     }
 }

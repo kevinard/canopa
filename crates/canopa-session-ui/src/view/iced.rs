@@ -346,7 +346,7 @@ impl Scene {
         };
         self.raised_surface(
             tile,
-            10. * scale,
+            (look.radius.card * scale * 0.6).min(tile.height / 2.),
             iced::Gradient::Linear(
                 iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI * 0.75))
                     .add_stop(
@@ -496,12 +496,13 @@ impl Scene {
                 height: 20. * scale,
             },
             13. * scale,
-            p.muted,
+            p.text,
             false,
             iced::font::Weight::Medium,
         );
         let width = rect.width - 2. * pad;
-        for (index, line) in lines.iter().enumerate() {
+        let rows = super::notice_rows(lines);
+        for (index, line) in rows.iter().enumerate() {
             let y = rect.y + pad + (28. + 22. * index as f32) * scale;
             let (app, body) = line.split_once(" — ").unwrap_or(("", line.as_str()));
             let mut x = rect.x + pad;
@@ -546,7 +547,7 @@ impl Scene {
     fn glass_card(&mut self, look: &Look, rect: Rect, scale: f32) {
         self.raised_surface(
             rect,
-            18. * scale,
+            (look.radius.card * scale).min(rect.height / 2.),
             if look.dark {
                 style::rgba(look.palette.surface, 0.56)
             } else {
@@ -583,14 +584,9 @@ impl Scene {
             width,
             height,
         };
-        self.surface(
-            rect,
-            height / 2.,
-            look.glass(),
-            look.glass_edge(),
-            1.,
-            iced::Shadow::default(),
-        );
+        // Helper text, not a button: no fill or border to aim at, in the
+        // full text colour so it reads over any wallpaper.
+        let staged = self.alpha;
         let rtl = canopa_i18n::direction().is_rtl();
         let icon_x = if rtl {
             rect.x + rect.width - 18. * scale - glyph
@@ -624,6 +620,7 @@ impl Scene {
             false,
             iced::font::Weight::Medium,
         );
+        self.alpha = staged;
     }
     pub fn element(self, size: Size) -> Element<'static> {
         stack(self.elements)
@@ -867,8 +864,8 @@ impl Scene {
     }
     /// A monogram on a gradient chosen from the initials.
     pub fn initials(&mut self, initials: &str, rect: Rect, settings: &Settings) {
-        let (light, deep) = style::avatar_tones(initials);
         let look = Look::new(settings);
+        let (light, deep) = style::avatar_tones(initials, look.palette.accent);
         self.raised_surface(
             rect,
             rect.width / 2.,
@@ -908,7 +905,11 @@ impl Scene {
                     .add_stop(1., style::rgba(raster::mix(p.raised, p.accent, 0.15), 1.)),
             ),
             iced::Color::from_rgba(1., 1., 1., 0.16),
-            look.shadow(rect.width * 0.16),
+            if rect.width < 40. {
+                iced::Shadow::default()
+            } else {
+                look.shadow(rect.width * 0.16)
+            },
         );
         let side = rect.width * 0.5;
         self.icon(
@@ -942,7 +943,7 @@ impl Scene {
             look.palette.muted
         };
         let icon_side = 20. * scale;
-        let alpha = self.alpha;
+        let alpha = self.alpha * if control.enabled { 1. } else { 0.7 };
         let icon = |assets: &mut Assets, emblem: Emblem, side: f32, color: Rgb| {
             image(assets.icon(emblem, side.ceil().max(1.) as u32, color, None))
                 .width(side)
@@ -1163,7 +1164,7 @@ impl Scene {
             // reads as the current choice.
             .style(style::button_style(look, kind, radius, false, alpha));
         if focused && control.enabled && !self.field_focus {
-            let gap = 2.5 * scale;
+            let gap = 2. * scale;
             let ring = 2. * scale;
             self.surface(
                 Rect {
@@ -1284,11 +1285,7 @@ impl Scene {
         } else {
             Kind::Secondary
         };
-        let radius = if self.glass {
-            rect.height.min(40. * scale) / 2.
-        } else {
-            10. * scale
-        };
+        let radius = Look::new(settings).button_radius(rect.height, scale);
         match &control.kind {
             ControlKind::Back => {
                 let label = clean(&control.label);
@@ -1328,7 +1325,7 @@ impl Scene {
                     rect,
                     scale,
                     if self.glass { Kind::Glass } else { kind },
-                    16. * scale,
+                    (Look::new(settings).radius.row * scale).min(rect.height / 2.),
                     Content::Row {
                         leading: Some(leading),
                         title: name,
@@ -1418,7 +1415,7 @@ impl Scene {
             rect,
             scale,
             kind,
-            rect.width.min(rect.height) / 2.,
+            Look::new(settings).button_radius(rect.width.min(rect.height), scale),
             Content::Icon(icon, if primary { 22. } else { 20. }),
         );
     }

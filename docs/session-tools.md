@@ -191,8 +191,9 @@ The lock screen opens at rest: a large clock and date, "Press any key or click t
 unlock" under them, then the notification card, and the media card on the bottom
 row, over a clearer wallpaper. A key press, a
 click or a scroll shows the password form as the wallpaper softens; the key that woke
-it is typed into the field, except Enter and Escape. Twenty seconds after the last
-input, with nothing typed and no check in progress, the screen rests again. While a
+it is typed into the field, except Enter and Escape. After `rest-after` seconds
+(20 by default) without input, with nothing typed and no check in progress, the screen rests
+again; `rest-after 0` keeps the form shown and never rests. While a
 PAM module waits without asking anything (a fingerprint reader), its message replaces
 the invitation. The resting view needs the default layout, where the clock, date and
 form share the center column; other layouts keep the form shown. With reduced motion
@@ -259,6 +260,14 @@ blends it toward the background color.
 
 Without an `avatar` image the lock shows the account's AccountsService icon or
 `~/.face`, else the initials of the account's full name.
+
+The lock screen, login screen and the polkit and pinentry dialogs follow the
+[`appearance`](configuration.md#appearance) block: colour scheme, accent and palette
+roles, fonts, text scale, high contrast and reduced motion. Their shapes come from the
+theme's `ui` kinds: `button` for buttons and chips, `input` for fields, `menu-row` for
+chooser rows, `card` for the notification, media and request cards and `panel` for
+choosers and power options. Initials pictures take tones around the accent, and
+destructive actions use the `danger` role.
 
 Passive widgets, each optional:
 
@@ -492,6 +501,7 @@ lockscreen {
 | `clock-format`, `date-format` | strftime pattern; empty follows the language | empty |
 | `clock-size`, `text-size` | 8–160 | 64, 19 |
 | `auth-timeout` | 5–600 seconds | 120 |
+| `rest-after` | 0, or 5–3600 seconds before an untouched screen rests; 0 keeps the form shown | 20 |
 | `avatar`, `weather-file` | path | none |
 | `widgets` | widget names; `widgets;` hides all | `battery media keyboard username notifications` |
 | `layout { margin; gap; REGION ... }` | see [Layout](#layout-and-custom-widgets); margin and gap 0–256 | 42 and 18, also inside an explicit `layout` that does not set them |

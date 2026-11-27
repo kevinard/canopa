@@ -769,7 +769,9 @@ impl SessionView {
                     ),
                     Content::Avatar => (64., 64.),
                     Content::Media(_) => (CARD_WIDTH, MEDIA_HEIGHT),
-                    Content::Notices(lines) => (CARD_WIDTH, 54. + 22. * lines.len() as f32),
+                    Content::Notices(lines) => {
+                        (CARD_WIDTH, 54. + 22. * notice_rows(lines).len() as f32)
+                    }
                     Content::Authentication => {
                         panel.as_ref().map_or((400., auth_height), |panel| {
                             panel.size((height / scale - 2. * settings.layout.margin).max(1.))
@@ -817,7 +819,8 @@ impl SessionView {
         let mut media_placed = false;
         let lerp = |a: f32, b: f32| a + (b - a) * rest;
         let clock_size = settings.clock_size as f32;
-        let rest_clock_top = height * 0.16;
+        // One anchor whatever the cards: notifications appear below it.
+        let rest_clock_top = height * 0.2;
         let rest_date_top = rest_clock_top + (clock_size * REST_CLOCK + 22.) * scale;
         let in_form =
             |name: &str| auth_region.is_some_and(|region| region.widgets.iter().any(|w| w == name));
@@ -1035,7 +1038,7 @@ impl SessionView {
             for name in ["notifications", "media"] {
                 match content.get(name) {
                     Some(Content::Notices(lines)) => {
-                        let height = 54. + 22. * lines.len() as f32;
+                        let height = 54. + 22. * notice_rows(lines).len() as f32;
                         scene.notice_card(self, settings, lines, card(top, height), scale);
                         top += (height + 12.) * scale;
                     }
@@ -1235,8 +1238,32 @@ impl SessionView {
 const REST_CLOCK: f32 = 2.;
 const REST_DATE: f32 = 1.2;
 /// The passive cards' width, and the media card's height.
-const CARD_WIDTH: f32 = 380.;
+const CARD_WIDTH: f32 = 420.;
 const MEDIA_HEIGHT: f32 = 56.;
+
+/// The rows a notification card shows. When the lock-screen policy hides
+/// what every entry says, the entries collapse into one row of applications.
+pub(crate) fn notice_rows(lines: &[String]) -> Vec<String> {
+    let entries: Vec<(&str, &str)> = lines
+        .iter()
+        .filter_map(|line| line.split_once(" — "))
+        .collect();
+    if entries.len() < 2 || entries.iter().any(|(_, text)| *text != entries[0].1) {
+        return lines.to_vec();
+    }
+    let mut apps: Vec<&str> = Vec::new();
+    for (app, _) in &entries {
+        if !apps.contains(app) {
+            apps.push(app);
+        }
+    }
+    let mut row = apps.join(", ");
+    for more in lines.iter().filter(|line| !line.contains(" — ")) {
+        row.push_str(" · ");
+        row.push_str(more);
+    }
+    vec![row]
+}
 
 /// How present the form is as a lock screen rests (0 to 1 rest), and how
 /// present the glance view is: each gives way almost fully before the other.
@@ -1325,6 +1352,22 @@ pub fn request_summary(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_notifications_collapse_into_one_row_of_applications() {
+        let hidden = [
+            "Calendar — New notification",
+            "Messages — New notification",
+            "+2 more",
+        ]
+        .map(String::from);
+        assert_eq!(
+            notice_rows(&hidden),
+            vec!["Calendar, Messages · +2 more".to_owned()]
+        );
+        let shown = ["Calendar — Review at 3", "Messages — New notification"].map(String::from);
+        assert_eq!(notice_rows(&shown), shown.to_vec());
+    }
 
     #[test]
     fn lock_matches_a_desktop_showing_the_embedded_wallpaper() {

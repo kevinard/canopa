@@ -580,6 +580,7 @@ Startup diagnostics report the selected backend and adapter.
 | `clock-format`, `date-format` | strftime patterns; empty follows the language | empty |
 | `clock-size`, `text-size` | 8–160 | 64, 19 |
 | `auth-timeout` | seconds, 5–600 | 120 |
+| `rest-after` | seconds before an untouched lock screen shows its glance view again, 0 or 5–3600; 0 never rests | 20 |
 | `avatar`, `weather-file` | paths, relative to this file | none |
 | `widgets "NAME"…` | `username`, `avatar`, `keyboard`, `battery`, `media`, `weather`, `notifications`, or custom names | `battery media keyboard username notifications` |
 | `layout { margin; gap; REGION "widget"… flow= x= y=; }` | regions `top-left` … `bottom-right` | see [session tools](session-tools.md) |
@@ -592,7 +593,7 @@ Read from `/etc/canopa/greeter.kdl` only. Keys include `discover-users`,
 `user-source` (`"auto"`, `"accountsservice"`, `"nss"`), `users`, `default-user`,
 `remember-selection`, `user-avatars`, `avatar-dir`, `user-avatar`, `power-controls`,
 `discover-sessions`, `session-dirs`, `xsession-dirs`, `x11-wrapper`, `session` and
-`view` (the lock screen presentation keys). See [the login screen guide](greeter.md).
+`view` (the lock screen presentation keys, except `rest-after`). See [the login screen guide](greeter.md).
 
 ## polkit and pinentry
 

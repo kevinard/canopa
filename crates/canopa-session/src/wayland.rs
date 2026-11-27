@@ -174,8 +174,6 @@ struct App {
     rest_timer: Option<calloop::RegistrationToken>,
 }
 
-/// How long an untouched lock screen shows its form before resting again.
-const REST_AFTER: Duration = Duration::from_secs(20);
 fn initialize(
     settings: Settings,
     request: Request,
@@ -437,7 +435,7 @@ pub fn lock(
     crate::lock_ui::configure(&mut ui);
     crate::lock_ui::identify(&mut ui, &username);
     // The lock opens on its glance view; a key or a click shows the form.
-    ui.resting = true;
+    ui.resting = settings.rest_after > 0;
     ui.motion().enable();
     let ready = if let Some(fd) = ready_fd {
         ensure!(
@@ -1452,21 +1450,28 @@ impl App {
         if let Some(timer) = self.rest_timer.take() {
             self.handle.remove(timer);
         }
+        if self.settings.rest_after == 0 {
+            return was_resting;
+        }
+        let rest_after = Duration::from_secs(self.settings.rest_after);
         self.rest_timer = self
             .handle
-            .insert_source(Timer::from_duration(REST_AFTER), |_, _, app: &mut App| {
-                let Some(ui) = app.ui.as_mut() else {
-                    return TimeoutAction::Drop;
-                };
-                // Never rest over typing or a check in progress.
-                if !ui.secret.is_empty() || ui.busy {
-                    return TimeoutAction::ToDuration(REST_AFTER);
-                }
-                ui.resting = true;
-                app.rest_timer = None;
-                app.redraw();
-                TimeoutAction::Drop
-            })
+            .insert_source(
+                Timer::from_duration(rest_after),
+                move |_, _, app: &mut App| {
+                    let Some(ui) = app.ui.as_mut() else {
+                        return TimeoutAction::Drop;
+                    };
+                    // Never rest over typing or a check in progress.
+                    if !ui.secret.is_empty() || ui.busy {
+                        return TimeoutAction::ToDuration(rest_after);
+                    }
+                    ui.resting = true;
+                    app.rest_timer = None;
+                    app.redraw();
+                    TimeoutAction::Drop
+                },
+            )
             .ok();
         if was_resting {
             self.redraw();

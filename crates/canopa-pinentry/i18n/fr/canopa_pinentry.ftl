@@ -43,7 +43,7 @@ pinentry-check-failed = Impossible de vérifier les exigences de l’agent pour 
 pinentry-length-limit = Limite de la phrase secrète : { $limit } caractères. La saisie a été refusée.
 
 pinentry-create-passphrase = Créer une phrase secrète
-pinentry-subtitle-new = Nécessaire pour utiliser la clé — irrécupérable en cas d’oubli
+pinentry-subtitle-new = Protège votre clé. Une phrase secrète oubliée est irrécupérable.
 pinentry-confirm-deletion = Confirmer la suppression
 pinentry-unlock = Déverrouiller
 pinentry-fact-key = Clé
@@ -55,7 +55,7 @@ pinentry-strength-weak = Faible — ajoutez un autre mot sans rapport
 pinentry-strength-fair = Moyenne — ajoutez d’autres mots sans rapport
 pinentry-strength-good = Bonne — un mot sans rapport de plus la renforce
 pinentry-strength-strong = Phrase secrète robuste
-pinentry-strength-hint = Plusieurs mots sans rapport font une phrase secrète robuste
+pinentry-strength-hint = Plusieurs mots sans rapport font une phrase secrète solide
 pinentry-incorrect-passphrase = Phrase secrète incorrecte. Réessayez.
 pinentry-subtitle-permanent = Cette action est irréversible
 pinentry-delete-key = Supprimer la clé secrète ?

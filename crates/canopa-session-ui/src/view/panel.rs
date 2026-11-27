@@ -19,7 +19,7 @@ pub const DIALOG_SIZE: (u32, u32) = (560, 416);
 pub const AUTHORIZATION_DIALOG_SIZE: (u32, u32) = (560, 392);
 pub const DIALOG_MARGIN: f32 = 16.;
 /// Dialog windows fit their content between these logical heights.
-pub const DIALOG_MIN_HEIGHT: u32 = 280;
+pub const DIALOG_MIN_HEIGHT: u32 = 232;
 pub const DIALOG_MAX_HEIGHT: u32 = 560;
 
 #[derive(Debug)]
@@ -579,12 +579,31 @@ impl<'a> Plan<'a> {
             let height = request.height();
             self.push(Content::Request(request), 22., height);
         } else {
-            // Body text spans the content width, in lines of even length.
+            // Body text fills the content width, measured in the body font.
             let text = lines.join(" ");
             if !text.trim().is_empty() {
-                let count = wrap(&text, 64, usize::MAX).len();
-                let even = text.chars().count().div_ceil(count) + 6;
-                self.copy(wrap(&text, even.min(64), usize::MAX), 18., Tone::Body);
+                let width = self.width - 2. * DIALOG_PADDING - 4.;
+                let mut rows: Vec<String> = Vec::new();
+                for word in text.split_whitespace() {
+                    match rows.last_mut() {
+                        Some(row) if view.text_width(&format!("{row} {word}"), 14.) <= width => {
+                            row.push(' ');
+                            row.push_str(word);
+                        }
+                        _ => rows.push(word.to_owned()),
+                    }
+                }
+                // No word alone on the last line: it takes its neighbour along.
+                if rows.len() >= 2
+                    && !rows[rows.len() - 1].contains(' ')
+                    && let Some((rest, moved)) = rows[rows.len() - 2].rsplit_once(' ')
+                {
+                    let (rest, moved) = (rest.to_owned(), moved.to_owned());
+                    let last = rows.len() - 1;
+                    rows[last] = format!("{moved} {}", rows[last]);
+                    rows[last - 1] = rest;
+                }
+                self.copy(rows, 18., Tone::Body);
             }
         }
         self.buttons(&utilities, Treatment::Utility, 10., 36.);
@@ -791,7 +810,7 @@ impl<'a> Plan<'a> {
                     height: (self.height - SHEET_OFFSET) * scale,
                     ..bounds
                 },
-                28. * scale,
+                (look.radius.panel * scale).min(self.height * scale / 2.),
                 look.glass_card(),
                 look.glass_edge(),
                 look.shadow(40. * scale),
@@ -986,7 +1005,7 @@ impl<'a> Plan<'a> {
                     };
                     scene.surface(
                         tile,
-                        if sheet { tile_side / 2. } else { 12. * scale },
+                        look.button_radius(tile_side, scale),
                         style::rgba(tone, look.tint(1.).a),
                         iced::Color::TRANSPARENT,
                         0.,
@@ -1302,7 +1321,8 @@ impl<'a> Plan<'a> {
                         height: if form { FIELD } else { BUTTON } * scale,
                         ..row
                     };
-                    let radius = if form { FIELD / 2. } else { 10. } * scale;
+                    let radius = (look.radius.input * scale)
+                        .min(if form { FIELD } else { BUTTON } * scale / 2.);
                     let active = view.prompt.is_some() && !view.busy;
                     let ring = if view.failed && view.secret.is_empty() {
                         palette.danger
@@ -1455,8 +1475,10 @@ impl<'a> Plan<'a> {
                         };
                         scene.surface(
                             circle,
-                            button_side / 2.,
-                            style::rgba(palette.accent, 1.),
+                            // Concentric with the field's corners; while the system
+                            // checks, the action stays the accent, a step quieter.
+                            (radius - inset).max(2. * scale).min(button_side / 2.),
+                            style::rgba(palette.accent, 0.72),
                             iced::Color::TRANSPARENT,
                             0.,
                             iced::Shadow::default(),
@@ -1494,17 +1516,9 @@ impl<'a> Plan<'a> {
                                 height: side,
                             },
                             angle,
-                            // The button's label colour, at full strength.
-                            if look.dark {
-                                look.on_accent
-                            } else {
-                                canopa_theme::Rgb(255, 255, 255)
-                            },
-                            if look.dark {
-                                style::rgba(look.on_accent, 0.22)
-                            } else {
-                                iced::Color::from_rgba(1., 1., 1., 0.3)
-                            },
+                            // The button's label colour.
+                            look.on_accent,
+                            style::rgba(look.on_accent, 0.25),
                         );
                         place(8. * scale);
                         if false {
@@ -1549,7 +1563,7 @@ impl<'a> Plan<'a> {
                                 } else {
                                     Kind::Primary
                                 },
-                                button_side / 2.,
+                                (radius - inset).max(2. * scale).min(button_side / 2.),
                                 ButtonContent::Chip {
                                     icon: None,
                                     label: &control.label,
@@ -1715,7 +1729,7 @@ impl<'a> Plan<'a> {
         y: f32,
         scale: f32,
     ) {
-        let gap = 8. * scale;
+        let gap = 6. * scale;
         let full = |control: &Control| match &control.kind {
             ControlKind::AccountChooser { text } => text.clone(),
             ControlKind::AccountShortcut { name, .. } => name.clone(),
@@ -1726,7 +1740,7 @@ impl<'a> Plan<'a> {
                 .iter()
                 .map(|control| {
                     let extra = if matches!(control.kind, ControlKind::AccountShortcut { .. }) {
-                        54.
+                        48.
                     } else {
                         70.
                     };
@@ -1748,11 +1762,12 @@ impl<'a> Plan<'a> {
             .iter()
             .map(|control| {
                 let extra = if matches!(control.kind, ControlKind::AccountShortcut { .. }) {
-                    54.
+                    48.
                 } else {
                     70.
                 };
-                (view.text_width(&label(control), 14. * scale) + extra * scale).min(width)
+                let size = 14.;
+                (view.text_width(&label(control), size * scale) + extra * scale).min(width)
             })
             .collect();
         let total = widths.iter().sum::<f32>() + gap * widths.len().saturating_sub(1) as f32;
@@ -1787,7 +1802,7 @@ impl<'a> Plan<'a> {
                     rect,
                     scale,
                     Kind::Glass,
-                    18. * scale,
+                    Look::new(settings).button_radius(rect.height, scale),
                     ButtonContent::Text {
                         label: "",
                         size: 14. * scale,
@@ -1828,7 +1843,7 @@ impl<'a> Plan<'a> {
                             picture.x + side + 8. * scale
                         },
                         y: rect.y,
-                        width: rect.width - side - 27. * scale,
+                        width: rect.width - side - 20. * scale,
                         height: rect.height,
                     },
                     14. * scale,
@@ -1854,9 +1869,9 @@ impl<'a> Plan<'a> {
                     height: 32. * scale,
                 },
                 scale,
-                // A ghost pill: plainly a button, quieter than the field above it.
+                // A ghost button: plainly a button, quieter than the field above it.
                 Kind::Glass,
-                16. * scale,
+                Look::new(settings).button_radius(32. * scale, scale),
                 ButtonContent::Chip {
                     icon: Some(Emblem::Accounts),
                     label: &text,
@@ -1948,7 +1963,7 @@ impl<'a> Plan<'a> {
             rect,
             scale,
             Kind::Row { checked },
-            14. * scale,
+            (Look::new(settings).radius.row * scale).min(rect.height / 2.),
             ButtonContent::Row {
                 leading,
                 title,
@@ -1976,7 +1991,7 @@ impl<'a> Plan<'a> {
             rect,
             scale,
             Kind::Row { checked },
-            14. * scale,
+            (Look::new(settings).radius.row * scale).min(rect.height / 2.),
             ButtonContent::Row {
                 leading: Some(Leading::Initials(&monogram)),
                 title: &control.label,
@@ -2103,10 +2118,14 @@ impl<'a> Plan<'a> {
                 settings,
                 control,
                 Rect {
+                    // A link-like action keeps its text, not its padding, on the
+                    // content edge.
                     x: if rtl {
-                        row.x + row.width - width
-                    } else {
+                        row.x + row.width - width + if back { 0. } else { 12. * scale }
+                    } else if back {
                         row.x
+                    } else {
+                        row.x - 12. * scale
                     },
                     width,
                     ..row
@@ -2114,8 +2133,10 @@ impl<'a> Plan<'a> {
                 scale,
                 // Going back weighs the same as Cancel; details are an outlined
                 // secondary action, lighter than the footer's buttons.
-                if back { Kind::Secondary } else { Kind::Outline },
-                10. * scale,
+                // Details are a quiet link-like action, so only Cancel and the
+                // main action read as buttons.
+                if back { Kind::Secondary } else { Kind::Quiet },
+                Look::new(settings).button_radius(row.height, scale),
                 if control.kind == ControlKind::Back {
                     ButtonContent::Chip {
                         icon: Some(Emblem::ArrowBack),
@@ -2150,7 +2171,7 @@ impl<'a> Plan<'a> {
         let height = request.height() * scale;
         scene.surface(
             Rect { height, ..row },
-            14. * scale,
+            (look.radius.card * scale).min(height / 2.),
             style::rgba(palette.raised, if look.dark { 0.75 } else { 0.7 }),
             look.hairline(),
             scale,
@@ -2345,6 +2366,8 @@ impl<'a> Plan<'a> {
     ) {
         let staged = (scene.alpha, scene.offset);
         (scene.alpha, scene.offset) = scene.base;
+        // At rest the corner controls recede; waking brings them back.
+        scene.alpha *= 1. - 0.15 * scene.rest;
         if !self.system_inline && !self.system.is_empty() {
             let margin = settings.layout.margin * scale;
             self.populate_system(
@@ -2500,7 +2523,7 @@ impl<'a> Plan<'a> {
                         } else {
                             Kind::Glass
                         },
-                        rect.height / 2.,
+                        look.button_radius(rect.height, scale),
                         ButtonContent::Chip {
                             icon: Some(icon),
                             label: &label,
@@ -2510,6 +2533,11 @@ impl<'a> Plan<'a> {
                 }
             } else {
                 // A passive status reads as status, not as a control: no pill.
+                // It steps back with the controls beside it.
+                let staged = scene.alpha;
+                if view.layout_unavailable || (view.busy && self.mode == Mode::Form) {
+                    scene.alpha *= 0.7;
+                }
                 let side = 20. * scale;
                 let inner = Rect {
                     x: rect.x + 14. * scale,
@@ -2543,6 +2571,7 @@ impl<'a> Plan<'a> {
                     false,
                     Weight::Medium,
                 );
+                scene.alpha = staged;
             }
         }
     }

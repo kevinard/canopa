@@ -45,6 +45,11 @@ only a display connection, so retired windows and outputs release their roles.
 The wallpaper daemon submits static images directly without initializing Iced
 graphics. Rendering, clock and passive-data updates remain event driven.
 
+Visual tokens (`canopa-session-ui/src/view/style.rs`) derive from the appearance:
+`Look` reads the palette and the theme's `ui` radii (button, input, menu-row, card,
+panel), so the session surfaces share the desktop's shapes; nothing in the view
+hard-codes a colour beyond white and black overlays.
+
 Motion (`canopa-session-ui/src/motion.rs`) is a pure function of the time since an
 effect started: full-screen surfaces fade and rise in, a new step (chooser, power
 options, details) cross-fades, the field shakes once when a response is rejected,

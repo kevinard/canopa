@@ -102,7 +102,7 @@ fn plain_deletion(text: &str) -> String {
         .and_then(|rest| rest.strip_suffix('?'))
     {
         Some(target) if !target.contains('\n') => {
-            format!("The {target} will be deleted from this computer.")
+            format!("The {target} will be removed from this computer.")
         }
         _ => text.to_owned(),
     }

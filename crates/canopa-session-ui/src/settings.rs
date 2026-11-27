@@ -55,6 +55,9 @@ pub struct Settings {
     /// screen, which has no desktop to follow).
     pub built_in_everywhere: bool,
     pub auth_timeout: u64,
+    /// Seconds before an untouched lock screen returns to its glance view;
+    /// 0 keeps the password form shown.
+    pub rest_after: u64,
     pub layout: crate::layout::Layout,
     pub custom: BTreeMap<String, canopa_widgets::script::Script>,
 }
@@ -111,6 +114,7 @@ impl Settings {
             built_in_wallpaper: BTreeSet::new(),
             built_in_everywhere: false,
             auth_timeout: 120,
+            rest_after: 20,
             layout: Default::default(),
             custom: BTreeMap::new(),
         };
@@ -220,6 +224,20 @@ impl Settings {
                         as u64;
                 }
 
+                "rest-after" if component == Component::Lockscreen => {
+                    ensure!(
+                        node.entries().len() == 1
+                            && node.entries()[0].name().is_none()
+                            && node.entries()[0].ty().is_none(),
+                        "rest-after requires an integer"
+                    );
+                    value.rest_after = node.entries()[0]
+                        .value()
+                        .as_integer()
+                        .filter(|n| *n == 0 || (5..=3600).contains(n))
+                        .ok_or_else(|| anyhow::anyhow!("rest-after must be 0 or 5..3600 seconds"))?
+                        as u64;
+                }
                 "avatar" | "weather-file" if component != Component::Wallpaper => {
                     let path = path(&string(node)?, source)?;
                     if name == "avatar" {
