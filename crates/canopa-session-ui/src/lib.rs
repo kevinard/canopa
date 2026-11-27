@@ -6,6 +6,7 @@ pub mod background;
 pub mod helper;
 pub mod input;
 pub mod layout;
+pub mod motion;
 pub mod presentation;
 pub mod process;
 pub mod secret;

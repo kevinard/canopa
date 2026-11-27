@@ -6,13 +6,13 @@
 lock-title = Canopa Lock
 lock-heading = Unlock session
 # Shown below the person's name.
-lock-subtitle = Session locked
+lock-subtitle = Enter your password to unlock
 lock-unlock = Unlock
 lock-try-again = Try again
 lock-starting-authentication = Starting authentication…
 lock-timed-out = Authentication timed out. Enter to retry.
 lock-could-not-start = Authentication could not start. Enter to retry.
-lock-failed = Authentication failed. Enter to retry.
+lock-failed = Incorrect password. Try again.
 lock-cancelled = Authentication cancelled. Enter to retry.
 lock-password-change-required = Password change required
 lock-password-expired = Your password has expired. Change it to unlock, or cancel to remain locked.

@@ -159,3 +159,97 @@ mod tests {
         assert!(dimensions(0, 1).is_err());
     }
 }
+
+/// Soften an image with three box passes (a close Gaussian approximation).
+/// `radius` is in pixels; large radii blur a reduced copy, then enlarge it.
+pub fn soften(image: &mut RgbImage, radius: f32) {
+    if radius < 1. {
+        return;
+    }
+    let (width, height) = image.dimensions();
+    let factor = (radius / 6.).floor().clamp(1., 8.) as u32;
+    let mut work = if factor > 1 {
+        imageops::resize(
+            image,
+            (width / factor).max(1),
+            (height / factor).max(1),
+            FilterType::Triangle,
+        )
+    } else {
+        image.clone()
+    };
+    let radius = ((radius / factor as f32).round() as usize).max(1);
+    for _ in 0..3 {
+        box_pass(&mut work, radius, true);
+        box_pass(&mut work, radius, false);
+    }
+    *image = if factor > 1 {
+        imageops::resize(&work, width, height, FilterType::Triangle)
+    } else {
+        work
+    };
+}
+
+fn box_pass(image: &mut RgbImage, radius: usize, horizontal: bool) {
+    let (width, height) = (image.width() as usize, image.height() as usize);
+    let (lines, length) = if horizontal {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    let stride = if horizontal { 3 } else { width * 3 };
+    let step = if horizontal { width * 3 } else { 3 };
+    let data: &mut [u8] = image;
+    let mut line = vec![[0u32; 3]; length];
+    let window = (2 * radius + 1) as u32;
+    for index in 0..lines {
+        let base = index * step;
+        for (i, value) in line.iter_mut().enumerate() {
+            let at = base + i * stride;
+            *value = [
+                u32::from(data[at]),
+                u32::from(data[at + 1]),
+                u32::from(data[at + 2]),
+            ];
+        }
+        let sample = |i: isize| line[i.clamp(0, length as isize - 1) as usize];
+        let mut sum = [0u32; 3];
+        for i in -(radius as isize)..=(radius as isize) {
+            let value = sample(i);
+            for c in 0..3 {
+                sum[c] += value[c];
+            }
+        }
+        for i in 0..length {
+            let at = base + i * stride;
+            for c in 0..3 {
+                data[at + c] = ((sum[c] + window / 2) / window) as u8;
+            }
+            let (add, remove) = (
+                sample(i as isize + radius as isize + 1),
+                sample(i as isize - radius as isize),
+            );
+            for c in 0..3 {
+                sum[c] = sum[c] + add[c] - remove[c];
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod soften_tests {
+    use super::*;
+
+    #[test]
+    fn soften_spreads_an_edge_and_keeps_flat_areas_and_size() {
+        let mut image = RgbImage::from_fn(200, 100, |x, _| {
+            if x < 100 { image::Rgb([0; 3]) } else { image::Rgb([255; 3]) }
+        });
+        soften(&mut image, 12.);
+        assert_eq!(image.dimensions(), (200, 100));
+        assert!(image.get_pixel(2, 50)[0] < 8);
+        assert!(image.get_pixel(197, 50)[0] > 247);
+        let middle = image.get_pixel(100, 50)[0];
+        assert!((60..200).contains(&middle), "edge stays sharp: {middle}");
+    }
+}

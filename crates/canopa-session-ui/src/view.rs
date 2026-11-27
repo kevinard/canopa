@@ -6,9 +6,10 @@ use image::RgbImage;
 mod iced;
 mod panel;
 mod raster;
+mod style;
 pub use panel::{
     AUTHORIZATION_DIALOG_SIZE, AuthenticationPanel, DIALOG_MARGIN, DIALOG_MAX_HEIGHT,
-    DIALOG_MIN_HEIGHT, DIALOG_SIZE, account_label,
+    DIALOG_MIN_HEIGHT, DIALOG_SIZE, account_label, initials,
 };
 pub use raster::Emblem;
 
@@ -37,6 +38,10 @@ pub enum ControlKind {
     Identity,
     /// Opens the power menu; drawn as a round button with the power symbol.
     Power,
+    /// A large choice drawn with its icon above the label (power actions).
+    Tile(Emblem),
+    /// An action that cannot be undone, drawn in the danger colour.
+    Destructive,
     /// Signs in as a listed account; `selected` marks the current one, which
     /// shows the consumer's avatar.
     Account {
@@ -74,7 +79,7 @@ impl Control {
     }
 }
 
-pub(crate) type VisualRevision = (u64, (usize, u64), usize, usize, bool);
+pub(crate) type VisualRevision = (u64, (usize, u64), usize, usize, bool, u64);
 #[derive(PartialEq)]
 struct Observed {
     clock: String,
@@ -139,6 +144,13 @@ pub struct SessionView {
     pub custom: std::collections::BTreeMap<String, String>,
     /// The prompt whose secret response is shown; any other prompt is masked.
     reveal: Option<u64>,
+    motion: crate::motion::Motion,
+    /// The full-screen submit action's last label, kept while the system checks
+    /// so the button keeps its size with a spinner in it.
+    pub(crate) last_submit: std::cell::RefCell<Option<String>>,
+    /// The keyboard layout control is shown but unavailable (a consumer's
+    /// panel covers the form).
+    pub layout_unavailable: bool,
 }
 impl SessionView {
     pub fn new(settings: &Settings, username: String) -> Result<Self> {
@@ -183,7 +195,44 @@ impl SessionView {
             notifications: None,
             custom: Default::default(),
             reveal: None,
+            last_submit: Default::default(),
+            layout_unavailable: false,
+            motion: {
+                let motion = crate::motion::Motion::default();
+                motion.set_reduced(settings.appearance.reduced_motion());
+                motion
+            },
         })
+    }
+    /// Whether the settings name a picture for this surface.
+    pub fn has_configured_avatar(&self) -> bool {
+        self.avatar.is_some()
+    }
+    /// The surface's motion: hosts render while it animates; previews fix its clock.
+    pub fn motion(&self) -> &crate::motion::Motion {
+        &self.motion
+    }
+    /// Whether the next frame differs from the current one by motion alone.
+    pub fn animating(&self) -> bool {
+        self.observe_motion();
+        self.motion.animating()
+    }
+    fn observe_motion(&self) {
+        use std::hash::{Hash, Hasher};
+        let mut stage = std::collections::hash_map::DefaultHasher::new();
+        if let Some(panel) = &self.authentication_panel {
+            panel.heading.hash(&mut stage);
+            panel.list_actions.hash(&mut stage);
+            panel.facts.is_empty().hash(&mut stage);
+            panel.confirm_identity.hash(&mut stage);
+        }
+        self.hide_input.hash(&mut stage);
+        self.blank.hash(&mut stage);
+        self.motion.observe(
+            stage.finish(),
+            self.failed,
+            self.busy,
+        );
     }
     /// Show or mask the current secret response. Returns false when no masked
     /// response is being entered. A new prompt is always masked again.
@@ -280,7 +329,10 @@ impl SessionView {
     ) -> Result<RgbImage> {
         let bg = settings.for_output(name);
         // Match a desktop that shows the embedded wallpaper on this output.
-        let built_in = bg.image.is_none() && settings.built_in_wallpaper.contains(name);
+        let built_in = bg.image.is_none()
+            && (settings.built_in_wallpaper.contains(name)
+                || settings.built_in_everywhere
+                    && background::shows_built_in(settings.solid_color, &settings.appearance));
         if bg.image.is_none()
             && !built_in
             && !settings.solid_color
@@ -297,6 +349,24 @@ impl SessionView {
         let mut image =
             background::render_source(source.as_ref(), bg.fit, settings.color, width, height)?;
         if source.is_some() {
+            background::soften(
+                &mut image,
+                f32::from(settings.blur) * (width as f32 / 1280.).min(height as f32 / 800.),
+            );
+            // A gentle scrim keeps the clock and the bottom controls legible
+            // over bright parts of a picture.
+            let dark = settings.appearance.color_scheme == canopa_theme::ColorScheme::Dark;
+            let shade = if dark { 0. } else { 255. };
+            for (y, row) in image.rows_mut().enumerate() {
+                let t = y as f32 / height as f32;
+                let weight = 0.22 * (1. - t / 0.35).max(0.).powi(2)
+                    + 0.30 * ((t - 0.72) / 0.28).max(0.).powi(2);
+                for pixel in row {
+                    for channel in pixel.0.iter_mut() {
+                        *channel = (f32::from(*channel) * (1. - weight) + shade * weight) as u8;
+                    }
+                }
+            }
             for pixel in image.pixels_mut() {
                 for (channel, color) in
                     pixel
@@ -622,6 +692,30 @@ impl SessionView {
             .collect();
         let placements = settings.layout.plan(width, height, scale, &items);
         let mut scene = iced::Scene::new(self.assets.clone());
+        let dialog = self
+            .authentication_panel
+            .as_ref()
+            .is_some_and(|panel| panel.dialog);
+        scene.glass = !dialog;
+        scene.glass_light = settings.appearance.color_scheme == canopa_theme::ColorScheme::Light;
+        self.observe_motion();
+        let motion = self.motion.frame();
+        // The compositor animates dialog windows opening; full-screen surfaces
+        // bring their own content in.
+        if !dialog {
+            scene.alpha = motion.opacity;
+            scene.offset = (0., motion.rise * scale);
+        }
+        scene.base = (scene.alpha, scene.offset);
+        scene.shake = motion.shake * scale;
+        scene.spinner = motion.spinner;
+        // A chosen account confirms with one action: its list shows focus.
+        scene.field_focus = self.prompt.is_some()
+            && !self.hide_input
+            && !self
+                .authentication_panel
+                .as_ref()
+                .is_some_and(|panel| panel.confirm_identity);
         for placement in placements {
             let bounds = placement.bounds;
             let scale = scale * placement.scale;
@@ -681,7 +775,11 @@ impl SessionView {
                 Content::Avatar => scene.avatar(self, bounds, settings),
                 Content::Authentication => {
                     if let Some(panel) = &panel {
+                        let base = scene.base;
+                        scene.alpha = base.0 * motion.stage_opacity;
+                        scene.offset = (base.1.0, base.1.1 + motion.stage_rise * scale);
                         panel.populate(self, settings, &mut scene, bounds, scale, size);
+                        (scene.alpha, scene.offset) = base;
                     } else {
                         let mut y = bounds.y;
                         if let Some(lines) = &label {
@@ -775,15 +873,21 @@ impl SessionView {
     pub(crate) fn clear_response_images(&self) {
         self.assets.borrow_mut().clear_fields();
     }
-    fn field_placeholder(&self) -> String {
-        if let Some(prompt) = &self.prompt {
+    pub(crate) fn field_placeholder(&self) -> String {
+        if self.busy
+            && self.secret.is_empty()
+            && !self.authentication_panel.as_ref().is_some_and(|panel| panel.dialog)
+        {
+            // The instruction above the field says what is happening.
+            String::new()
+        } else if let Some(prompt) = &self.prompt {
             if prompt.echo {
                 fl!("session-placeholder-type-response")
             } else {
                 fl!("session-placeholder-enter-response")
             }
         } else if self.busy {
-            fl!("session-waiting-for-authentication")
+            fl!("session-verifying")
         } else {
             fl!("session-placeholder-authenticate")
         }
@@ -807,20 +911,24 @@ impl SessionView {
         true
     }
     pub(crate) fn visual_revision(&self) -> VisualRevision {
+        self.observe_motion();
         (
             self.scene_revision.get(),
             self.secret.revision(),
             self.secret.anchor(),
             self.secret.cursor(),
             self.revealed(),
+            self.motion.revision(),
         )
     }
     fn layout_control(&self) -> Option<Control> {
         self.can_select_layout.then(|| {
-            Control::new(
+            let mut control = Control::new(
                 crate::input::LAYOUT_CONTROL,
                 fl!("session-keyboard-control", layout = self.layout.as_str()),
-            )
+            );
+            control.enabled = !self.layout_unavailable;
+            control
         })
     }
 
@@ -983,7 +1091,7 @@ pub fn request_lines(text: &str) -> Vec<String> {
     if text.trim().is_empty() {
         return Vec::new();
     }
-    wrap(text, 52, usize::MAX)
+    wrap(text, 54, usize::MAX)
 }
 
 /// Keep the summary short enough for the credentials and actions to remain full size.
@@ -1060,16 +1168,16 @@ mod tests {
             view.field_placeholder(),
             fl!("session-placeholder-authenticate")
         );
+        // While checking, the instruction above a full-screen field says so.
         view.busy = true;
-        assert_eq!(
-            view.field_placeholder(),
-            fl!("session-waiting-for-authentication")
-        );
+        assert_eq!(view.field_placeholder(), "");
         view.prompt = Some(Prompt {
             id: 1,
             text: "Password".into(),
             echo: false,
         });
+        assert_eq!(view.field_placeholder(), "", "a submitted response is being checked");
+        view.busy = false;
         assert_eq!(
             view.field_placeholder(),
             fl!("session-placeholder-enter-response")
@@ -1159,6 +1267,7 @@ output "DP-1" { hide-widgets "username"; }
             choice_details: Default::default(),
             account: None,
             confirm_identity: false,
+            facts: Vec::new(),
         });
         view.controls = vec![
             Control::new(1, "Alice"),

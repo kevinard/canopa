@@ -2,8 +2,8 @@ use crate::native::{Event, Runtime};
 use canopa_session_ui::{
     settings::Settings,
     view::{
-        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
-        request_lines, request_summary,
+        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView,
+        request_summary,
     },
 };
 use std::time::{Duration, Instant};
@@ -34,6 +34,10 @@ pub struct Controller {
     notice: String,
     prompt: Option<Prompt>,
     details: Option<usize>,
+    /// After a failure the field stays open: a response typed there is kept
+    /// across the restarted conversation and sent when its prompt arrives.
+    carry: bool,
+    submit_on_prompt: bool,
 }
 impl Controller {
     pub fn new(settings: &Settings) -> anyhow::Result<Self> {
@@ -52,6 +56,7 @@ impl Controller {
             choice_details: Default::default(),
             account: None,
             confirm_identity: false,
+            facts: Vec::new(),
         });
         Ok(Self {
             ui,
@@ -70,6 +75,8 @@ impl Controller {
             notice: String::new(),
             prompt: None,
             details: None,
+            carry: false,
+            submit_on_prompt: false,
         })
     }
     pub fn selected_uid(&self) -> Option<u32> {
@@ -121,6 +128,8 @@ impl Controller {
                     .map(|c| if c.is_control() { ' ' } else { c })
                     .collect();
                 self.details = None;
+                self.carry = false;
+                self.submit_on_prompt = false;
                 self.phase = Phase::Waiting;
                 self.notice = fl!("polkit-waiting-for-authentication");
                 self.ui.failed = false;
@@ -137,10 +146,12 @@ impl Controller {
                 self.serial = serial;
                 self.selected = selected.min(self.uids.len().saturating_sub(1));
                 self.phase = Phase::Waiting;
-                self.ui.secret.clear();
-                self.prompt = None;
-                self.notice = fl!("polkit-waiting-for-authentication");
-                self.ui.failed = false;
+                if !self.carry {
+                    self.ui.secret.clear();
+                    self.prompt = None;
+                    self.notice = fl!("polkit-waiting-for-authentication");
+                    self.ui.failed = false;
+                }
             }
             Event::Prompt {
                 generation,
@@ -154,15 +165,22 @@ impl Controller {
             {
                 self.serial = serial;
                 self.ui.mask_response();
-                self.ui.secret.clear();
+                let carried = std::mem::take(&mut self.carry);
+                if !carried {
+                    self.ui.secret.clear();
+                    self.notice.clear();
+                    self.ui.failed = false;
+                }
                 self.prompt = Some(Prompt {
                     id: serial,
                     text,
                     echo,
                 });
                 self.phase = Phase::Prompt;
-                self.notice.clear();
-                self.ui.failed = false;
+                if std::mem::take(&mut self.submit_on_prompt) {
+                    self.submit();
+                    return;
+                }
             }
             Event::Info {
                 generation,
@@ -181,7 +199,9 @@ impl Controller {
                     && self.phase != Phase::Cancelling =>
             {
                 self.ui.secret.clear();
-                self.prompt = None;
+                self.ui.mask_response();
+                self.carry = false;
+                self.submit_on_prompt = false;
                 self.phase = Phase::Failed;
                 self.retry_after = Instant::now() + Duration::from_secs(2);
                 self.notice = fl!("polkit-failed");
@@ -204,6 +224,8 @@ impl Controller {
     }
     fn clear(&mut self) {
         self.phase = Phase::Idle;
+        self.carry = false;
+        self.submit_on_prompt = false;
         self.ui.secret.clear();
         self.prompt = None;
         self.ui.custom.clear();
@@ -223,71 +245,83 @@ impl Controller {
         self.ui.interaction_epoch = (self.generation, self.serial);
         let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
         panel.disclosure = self.details.is_none().then_some(4);
-        panel.heading = if self.details.is_some() {
+        // The decision stays the heading in the details; they are its subtitle.
+        panel.heading = if self.details.is_some() && !self.description.is_empty() {
+            self.description.clone()
+        } else if self.details.is_some() {
             fl!("polkit-request-details")
         } else {
             fl!("polkit-heading")
         };
         panel.account = None;
+        // Who asked comes first, under what is asked.
+        panel.subtitle = match (&self.subject_name, self.details.is_some()) {
+            // The details keep the decision in view; the requester is a row there.
+            (_, true) => fl!("polkit-request-details"),
+            (Some(name), _) => fl!("polkit-requested-by", name = name.as_str()),
+            _ => fl!("polkit-subtitle"),
+        };
         self.ui.custom.clear();
         self.ui.prompt = if self.details.is_none() {
             self.prompt.as_ref().map(|p| Prompt {
                 id: p.id,
-                text: p.text.clone(),
+                // PAM's plain "Password:" asks for an administrator's password here.
+                text: if !p.echo
+                    && p.text.trim().trim_end_matches(':').trim().eq_ignore_ascii_case("password")
+                {
+                    fl!("polkit-admin-password")
+                } else {
+                    p.text.clone()
+                },
                 echo: p.echo,
             })
         } else {
             None
         };
-        let (display, page_count) = if let Some(page) = self.details {
+        panel.facts.clear();
+        let selected_uid = self.selected_uid();
+        let mut facts = Vec::new();
+        let display = if self.details.is_some() {
             let account = self
                 .identity
                 .as_ref()
-                .filter(|i| Some(i.uid) == self.selected_uid())
-                .map(crate::identity::Identity::label)
-                .or_else(|| {
-                    self.selected_uid()
-                        .map(|uid| fl!("polkit-uid", uid = uid.to_string()))
+                .filter(|i| Some(i.uid) == selected_uid)
+                // The person first; the login name and UID on a secondary line.
+                .map(|identity| {
+                    let secondary = fl!(
+                        "polkit-identity",
+                        username = identity.username.as_str(),
+                        uid = identity.uid.to_string()
+                    );
+                    if identity.name.is_empty() || identity.name == identity.username {
+                        secondary
+                    } else {
+                        format!("{}\n{secondary}", identity.name)
+                    }
                 })
+                .or_else(|| selected_uid.map(|uid| fl!("polkit-uid", uid = uid.to_string())))
                 .unwrap_or_default();
             let process =
                 self.subject_pid
                     .map_or_else(String::new, |pid| match &self.subject_name {
-                        Some(name) => fl!(
-                            "polkit-request-subject-named",
-                            name = name.as_str(),
-                            pid = pid.to_string()
+                        // The name first; the process on a secondary line.
+                        Some(name) => format!(
+                            "{name}\n{}",
+                            fl!("polkit-process", pid = pid.to_string())
                         ),
-                        None => fl!("polkit-request-subject", pid = pid.to_string()),
+                        None => fl!("polkit-process", pid = pid.to_string()),
                     });
-            let publisher = if self.policy_publisher.is_empty() {
-                String::new()
-            } else {
-                fl!(
-                    "polkit-policy-publisher",
-                    publisher = self.policy_publisher.as_str()
-                )
-            };
-            let full = format!(
-                "{}\n{}\n{}\n{}\n{}\n{}\n{}",
-                self.action,
-                self.description,
-                account,
-                publisher,
-                process,
-                self.prompt.as_ref().map(|p| p.text.as_str()).unwrap_or(""),
-                self.notice
-            );
-            let lines = request_lines(&full);
-            let count = lines.len().div_ceil(REQUEST_PAGE_LINES).max(1);
-            (
-                lines
-                    .into_iter()
-                    .skip((page % count) * REQUEST_PAGE_LINES)
-                    .take(REQUEST_PAGE_LINES)
-                    .collect::<Vec<_>>(),
-                count,
-            )
+            // What is asked, by whom and as whom first; identifiers after.
+            facts = [
+                (fl!("polkit-fact-requester"), process),
+                (fl!("polkit-fact-account"), account),
+                (fl!("polkit-fact-action"), self.action.clone()),
+                (fl!("polkit-fact-publisher"), self.policy_publisher.clone()),
+            ]
+            .into_iter()
+            .filter(|(_, value)| !value.trim().is_empty())
+            .collect();
+            Vec::new()
         } else {
             self.ui.custom.insert("action".into(), self.action.clone());
             if !self.description.is_empty()
@@ -297,18 +331,21 @@ impl Controller {
                 self.ui
                     .custom
                     .insert("request-title".into(), self.description.clone());
-                (Vec::new(), 1)
+                Vec::new()
             } else {
-                (request_summary(&self.description), 1)
+                request_summary(&self.description)
             }
         };
+        if let Some(panel) = self.ui.authentication_panel.as_mut() {
+            panel.facts = facts;
+        }
         for (index, part) in display.chunks(4).enumerate() {
             self.ui
                 .custom
                 .insert(format!("message-{index}"), part.join("\n"));
         }
         self.ui.message = if self.details.is_some() {
-            fl!("polkit-details-hint")
+            String::new()
         } else {
             self.notice.clone()
         };
@@ -349,59 +386,84 @@ impl Controller {
             if let Some(name) = &self.subject_name {
                 self.ui.custom.insert("subject-name".into(), name.clone());
             }
+            self.ui
+                .custom
+                .insert("account-caption".into(), fl!("polkit-admin-required"));
+            self.ui
+                .custom
+                .insert("field-hint".into(), fl!("polkit-password-hint"));
             if !self.policy_publisher.is_empty() {
                 self.ui
                     .custom
                     .insert("policy-publisher".into(), self.policy_publisher.clone());
             }
         }
-        self.ui.busy = self.phase == Phase::Waiting || self.details.is_some();
-        self.ui.primary_control = (matches!(self.phase, Phase::Prompt | Phase::Failed)
-            && self.details.is_none())
-        .then_some(2);
+        self.ui.busy = self.phase == Phase::Waiting && self.details.is_none();
+        // The default action keeps its place while polkit checks a response.
+        self.ui.primary_control = (self.phase != Phase::Cancelling).then_some(2);
         self.ui.controls = vec![
             Control::new(
                 2,
-                if self.phase == Phase::Failed {
+                if self.phase == Phase::Failed && self.prompt.is_none() {
                     fl!("polkit-retry")
-                } else if self.phase == Phase::Prompt && self.details.is_none() {
-                    fl!("polkit-authenticate")
+                } else if self.phase == Phase::Waiting && self.prompt.is_some() {
+                    fl!("polkit-checking")
                 } else {
-                    fl!("polkit-waiting")
+                    fl!("polkit-authenticate")
                 },
             ),
             Control::new(3, fl!("polkit-cancel")),
             Control::new(4, fl!("polkit-policy-details")),
         ];
+        if let Some(accept) = self.ui.controls.first_mut() {
+            accept.enabled = matches!(self.phase, Phase::Prompt | Phase::Failed);
+        }
         if self.uids.len() > 1 && self.details.is_none() {
             self.ui
                 .controls
                 .insert(0, Control::new(1, account).with_kind(ControlKind::Identity));
         }
-        if let Some(page) = self.details {
-            let (shown, total) = ((page % page_count + 1) as u64, page_count as u64);
-            self.ui.controls = vec![
-                Control::new(2, fl!("polkit-back-to-authentication")),
-                Control::new(4, fl!("polkit-next-page", page = shown, count = total)),
-                Control::new(3, fl!("polkit-cancel")),
-            ];
+        if self.details.is_some() {
+            // Going back is navigation, at the footer's start; Cancel ends the request.
+            let mut back =
+                Control::new(2, fl!("polkit-back-to-authentication")).with_kind(ControlKind::Back);
+            back.selected = true;
+            self.ui.controls = vec![back, Control::new(3, fl!("polkit-cancel"))];
+            self.ui.primary_control = None;
+            if let Some(panel) = self.ui.authentication_panel.as_mut() {
+                panel.disclosure = Some(2);
+            }
         }
     }
+    /// The field accepts a response while prompted, and after a failure for
+    /// the restarted conversation.
+    fn accepts_input(&self) -> bool {
+        self.details.is_none()
+            && (self.phase == Phase::Prompt
+                || self.phase == Phase::Failed
+                || self.phase == Phase::Waiting && self.carry)
+    }
     pub fn input(&mut self, text: &str) {
-        if self.phase == Phase::Prompt && self.details.is_none() {
+        if self.accepts_input() {
             self.ui.secret.push(text);
+            if self.phase == Phase::Failed {
+                // The new attempt starts now; the error has been read.
+                self.ui.failed = false;
+                self.notice.clear();
+                self.refresh();
+            }
         }
     }
     pub fn backspace(&mut self) {
         self.edit(canopa_session_ui::secret::Edit::Backspace);
     }
     pub fn select_input(&mut self, anchor: usize, cursor: usize) {
-        if self.phase == Phase::Prompt && self.details.is_none() {
+        if self.accepts_input() {
             self.ui.secret.set_selection(anchor, cursor);
         }
     }
     pub fn edit(&mut self, edit: canopa_session_ui::secret::Edit) {
-        if self.phase == Phase::Prompt && self.details.is_none() {
+        if self.accepts_input() {
             self.ui.secret.edit(edit);
         }
     }
@@ -416,14 +478,23 @@ impl Controller {
         if self.phase == Phase::Prompt && self.details.is_none() {
             let secret = std::mem::take(&mut self.ui.secret);
             Runtime::command(self.generation, self.serial, 3, 0, Some(&secret));
+            // The field keeps as many (meaningless) masked characters while
+            // polkit checks, so the response does not seem to vanish.
+            self.ui
+                .secret
+                .push(&"x".repeat(secret.text().chars().count().min(64)));
+            // The field stays, quiet, with a spinner, until polkit answers.
             self.phase = Phase::Waiting;
-            self.prompt = None;
-            self.notice = fl!("polkit-authenticating");
+            self.notice.clear();
+            self.ui.failed = false;
         } else if self.phase == Phase::Failed && Instant::now() >= self.retry_after {
+            // Restart the conversation and send what was typed when it asks.
+            self.carry = !self.ui.secret.is_empty();
+            self.submit_on_prompt = self.carry;
             Runtime::command(self.generation, self.serial, 2, self.selected, None);
             self.serial += 1;
             self.phase = Phase::Waiting;
-            self.notice = fl!("polkit-authenticating");
+            self.notice.clear();
             self.ui.failed = false;
         }
         self.refresh();
@@ -453,6 +524,8 @@ impl Controller {
         self.ui.secret.clear();
         self.prompt = None;
         self.details = None;
+        self.carry = false;
+        self.submit_on_prompt = false;
         self.phase = Phase::Cancelling;
         self.notice = fl!("polkit-cancelling");
         Runtime::command(self.generation, self.serial, 1, 0, None);
@@ -463,7 +536,7 @@ impl Controller {
             return;
         }
         self.ui.secret.clear();
-        self.details = Some(self.details.map(|p| p + 1).unwrap_or(0));
+        self.details = Some(0);
         self.refresh();
     }
     pub fn previous_page(&mut self) {
@@ -584,7 +657,7 @@ mod tests {
         let labels: Vec<_> = c.ui.controls.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(
             labels,
-            ["S\u{2019}authentifier", "Annuler", "Détails de la règle"]
+            ["Autoriser", "Annuler", "Détails de la demande"]
         );
     }
     #[test]
@@ -688,7 +761,7 @@ mod tests {
         assert_eq!(c.phase, Phase::Prompt);
     }
     #[test]
-    fn request_details_are_paged_without_secret_content_or_authentication_submission() {
+    fn request_details_are_listed_without_secret_content_or_authentication_submission() {
         let mut c = controller();
         c.description = "a".repeat(512);
         c.action = "org.test.action".into();
@@ -702,15 +775,50 @@ mod tests {
                 .values()
                 .all(|v| !v.contains("private password"))
         );
-        let first = c.ui.custom.clone();
-        c.details();
-        assert_ne!(first, c.ui.custom);
+        let facts = &c.ui.authentication_panel.as_ref().unwrap().facts;
+        assert!(facts.iter().any(|(_, value)| value == "org.test.action"));
+        assert!(
+            facts
+                .iter()
+                .all(|(_, value)| !value.contains("private password") && !value.contains("bbbb"))
+        );
         c.input("cannot enter a password in details");
         assert!(c.ui.secret.is_empty());
         c.submit();
         assert_eq!(c.phase, Phase::Prompt);
         assert!(c.ui.secret.is_empty());
         assert!(c.ui.prompt.is_some());
+    }
+    #[test]
+    fn a_failure_keeps_the_field_and_sends_the_next_response_when_asked_again() {
+        let mut c = controller();
+        let generation = c.generation;
+        c.event(Event::Failed { generation });
+        assert_eq!(c.phase, Phase::Failed);
+        assert!(c.ui.prompt.is_some(), "the field stays for the next attempt");
+        assert!(c.ui.failed);
+        c.retry_after = Instant::now();
+        c.input("second attempt");
+        assert!(!c.ui.failed, "typing starts a new attempt");
+        c.submit();
+        assert_eq!(c.phase, Phase::Waiting);
+        assert_eq!(c.ui.secret.text(), "second attempt");
+        let serial = c.serial;
+        c.event(Event::Waiting {
+            generation,
+            serial,
+            selected: 0,
+        });
+        assert_eq!(c.ui.secret.text(), "second attempt");
+        c.event(Event::Prompt {
+            generation,
+            serial: serial + 1,
+            text: "Password:".into(),
+            echo: false,
+        });
+        assert_eq!(c.phase, Phase::Waiting, "the kept response was sent");
+        // Only a same-length mask placeholder remains while polkit checks.
+        assert_eq!(c.ui.secret.text(), "x".repeat("second attempt".len()));
     }
     #[test]
     fn requesters_are_named_by_their_desktop_entry_or_program() {

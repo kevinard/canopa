@@ -574,10 +574,11 @@ Startup diagnostics report the selected backend and adapter.
 | --- | --- | --- |
 | `image`, `fit`, `color` | as in `wallpaper` | none, `"fill"`, palette background |
 | `use-wallpaper` | use the desktop wallpaper when no lock image is set | `#true` |
-| `dim` | background dimming, 0–100 | 65 |
+| `dim` | background dimming, 0–100 | 40 (62 in the light color scheme) |
+| `blur` | softening of a background image, 0–64 logical pixels | 24 |
 | `font` | font family | the first `appearance` family |
 | `clock-format`, `date-format` | strftime patterns; empty follows the language | empty |
-| `clock-size`, `text-size` | 8–160 | 72, 19 |
+| `clock-size`, `text-size` | 8–160 | 64, 19 |
 | `auth-timeout` | seconds, 5–600 | 120 |
 | `avatar`, `weather-file` | paths, relative to this file | none |
 | `widgets "NAME"…` | `username`, `avatar`, `keyboard`, `battery`, `media`, `weather`, `notifications`, or custom names | `battery media keyboard username notifications` |

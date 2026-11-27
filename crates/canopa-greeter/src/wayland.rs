@@ -137,6 +137,7 @@ pub fn run(config: Config, socket: PathBuf, ready_socket: Option<PathBuf>) -> Re
         sender.send(Update::Widget(event)).is_ok()
     });
     let mut controller = Controller::new(&config)?;
+    controller.ui.motion().enable();
     let preference_path = config
         .remember_selection
         .then(crate::preferences::Preferences::path)
@@ -520,22 +521,57 @@ impl App {
         if self.controller.power_menu != Menu::Closed {
             match event.keysym {
                 Keysym::Escape => self.action(23),
+                Keysym::Return | Keysym::KP_Enter if self.controller.power_focus_back => {
+                    self.action(23)
+                }
                 Keysym::Return | Keysym::KP_Enter => match self.controller.power_menu {
                     Menu::Choose(Action::Shutdown) => self.action(21),
                     Menu::Choose(Action::Restart) => self.action(22),
                     Menu::Confirm(_) => self.action(24),
                     _ => {}
                 },
-                Keysym::Up | Keysym::Down | Keysym::Tab => {
-                    if let Menu::Choose(action) = self.controller.power_menu {
-                        let other = if action == Action::Shutdown {
-                            Action::Restart
-                        } else {
-                            Action::Shutdown
-                        };
-                        if self.controller.power_capabilities.allows(other) {
-                            self.controller.power_menu = Menu::Choose(other);
+                Keysym::Up
+                | Keysym::Down
+                | Keysym::Left
+                | Keysym::Right
+                | Keysym::Tab
+                | Keysym::ISO_Left_Tab => {
+                    // Focus moves through the actions and Back, starting on Back.
+                    let backward = matches!(
+                        event.keysym,
+                        Keysym::Up | Keysym::Left | Keysym::ISO_Left_Tab
+                    );
+                    match self.controller.power_menu {
+                        Menu::Choose(action) => {
+                            let mut stops: Vec<Option<Action>> = [Action::Shutdown, Action::Restart]
+                                .into_iter()
+                                .filter(|a| self.controller.power_capabilities.allows(*a))
+                                .map(Some)
+                                .collect();
+                            stops.push(None);
+                            let current = if self.controller.power_focus_back {
+                                None
+                            } else {
+                                Some(action)
+                            };
+                            let at = stops.iter().position(|s| *s == current).unwrap_or(0);
+                            let next = if backward {
+                                (at + stops.len() - 1) % stops.len()
+                            } else {
+                                (at + 1) % stops.len()
+                            };
+                            match stops[next] {
+                                Some(action) => {
+                                    self.controller.power_focus_back = false;
+                                    self.controller.power_menu = Menu::Choose(action);
+                                }
+                                None => self.controller.power_focus_back = true,
+                            }
                         }
+                        Menu::Confirm(_) => {
+                            self.controller.power_focus_back = !self.controller.power_focus_back;
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}

@@ -334,7 +334,9 @@ impl App {
                 if begin {
                     self.remove_watchdog();
                     if self.controller.is_none() {
-                        self.controller = Some(Controller::new(&self.settings)?);
+                        let controller = Controller::new(&self.settings)?;
+                        controller.ui.motion().enable();
+                        self.controller = Some(controller);
                     }
                     if self.window.is_none() {
                         let window = self.shell.create_window(

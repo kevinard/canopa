@@ -44,7 +44,7 @@ them); an owner from another host is ignored.
 | Enter | Activate the highlighted button |
 | Tab | Next button |
 | Escape, closing the window | Cancel |
-| Page Down / Page Up | Open and page through the full request details |
+| Page Down | Open the request details (when there is more to show) |
 | F6 | Next keyboard layout |
 
 Editing keys are the shared ones, see
@@ -53,7 +53,9 @@ Opening details clears both passphrase fields. Holding a key does not repeat it.
 
 - **New passphrases** ask twice; a mismatch clears both.
 - **Quality**: when the agent sends `SETQUALITYBAR`, the dialog asks the agent for a
-  score while you type and shows it.
+  score while you type and shows it as a four-step strength meter with a rating.
+- **Confirmations** that delete or remove something show the accept button in the
+  danger color and start with Cancel highlighted.
 - **Constraints**: with `OPTION constraints-enforce`, the passphrase is accepted only
   after the agent's `CHECKPIN` check succeeds. Checked passphrases are limited to
   300 bytes; otherwise passphrases can be up to 2048 characters.

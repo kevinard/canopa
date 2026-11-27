@@ -42,14 +42,15 @@ Nothing is shown while idle. A request opens an `org.canopa.Polkit` window title
 dialog shows the request's description, the account being authenticated and
 "Requested by": the name of the requesting program, taken from its command line and
 matching desktop entry. A program chooses its own name, so treat it as context;
-**Request details** also shows the action ID and process ID.
+**Request details** lists the request, action ID, account, requesting program with
+its process ID, and policy source; long values scroll.
 
 | Key | Action |
 | --- | --- |
 | Enter | Submit, or go back from details |
 | Escape | Cancel the request |
 | Tab | Next permitted account (clears the field and starts over) |
-| Page Down / Page Up | Open and page through request details |
+| Page Down | Open request details |
 | F6 | Next keyboard layout |
 
 Only the accounts polkit offers can be chosen; there is no free username field. They
@@ -58,9 +59,11 @@ as a fallback). The UID is what polkit authenticates.
 
 Secret prompts are masked; visible prompts (one-time codes) follow polkit's echo flag.
 Messages from PAM modules are shown, and device factors such as fingerprints can
-complete without typing. After a failed attempt, **Retry** becomes available after
-two seconds. How many attempts are allowed is up to polkit and PAM. Opening request
-details clears unsent input.
+complete without typing. While polkit checks a response the field stays in place
+with a spinner. After a failed attempt the field stays open: type again and press
+Enter, and the dialog restarts authentication and sends the new response when polkit
+asks, no sooner than two seconds after the failure. How many attempts are allowed is
+up to polkit and PAM. Opening request details clears unsent input.
 
 One request is handled at a time; overlapping requests are refused. Cancelling,
 timing out or logging out cancels the request. If the native library hangs while

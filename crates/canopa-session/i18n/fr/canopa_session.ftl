@@ -5,13 +5,13 @@
 
 lock-title = Verrouillage Canopa
 lock-heading = Déverrouiller la session
-lock-subtitle = Session verrouillée
+lock-subtitle = Saisissez votre mot de passe pour déverrouiller
 lock-unlock = Déverrouiller
 lock-try-again = Réessayer
 lock-starting-authentication = Démarrage de l’authentification…
 lock-timed-out = Le délai d’authentification est dépassé. Appuyez sur Entrée pour réessayer.
 lock-could-not-start = Impossible de démarrer l’authentification. Appuyez sur Entrée pour réessayer.
-lock-failed = Échec de l’authentification. Appuyez sur Entrée pour réessayer.
+lock-failed = Mot de passe incorrect. Réessayez.
 lock-cancelled = Authentification annulée. Appuyez sur Entrée pour réessayer.
 lock-password-change-required = Changement de mot de passe requis
 lock-password-expired = Votre mot de passe a expiré. Changez-le pour déverrouiller, ou annulez pour rester verrouillé.

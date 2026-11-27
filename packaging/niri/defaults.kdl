@@ -69,6 +69,15 @@ window-rule {
     match app-id="^org\\.canopa\\.(Pinentry|Keyring|Polkit|Portal)$"
     open-floating true
 }
+// Authentication and passphrase prompts take focus. A bright focus border would
+// compete with their default action: a faint neutral edge and a deeper shadow
+// separate them from the desktop instead.
+window-rule {
+    match app-id="^org\\.canopa\\.(Pinentry|Keyring|Polkit)$"
+    open-focused true
+    border { on; width 1; active-color "#ffffff24"; inactive-color "#ffffff14"; }
+    shadow { on; softness 48; spread 2; offset x=0 y=20; color "#000000a6"; inactive-color "#00000073"; }
+}
 // The wallpaper stays behind the zoomed-out workspaces in the overview.
 layer-rule {
     match namespace="^canopa(-shell)?-wallpaper$"

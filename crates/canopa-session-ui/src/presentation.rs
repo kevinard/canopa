@@ -676,6 +676,10 @@ impl Host {
             Ok(()) => {
                 surface.gate.submitted();
                 surface.retry_at = None;
+                // Motion continues on the next frame callback, and only while it runs.
+                if view.animating() {
+                    surface.gate.dirty = true;
+                }
                 match redraw_request {
                     iced::window::RedrawRequest::NextFrame => surface.gate.dirty = true,
                     iced::window::RedrawRequest::At(at) => {
@@ -1279,6 +1283,8 @@ mod tests {
 
     #[test]
     fn disabled_controls_cancel_existing_presses_and_oversized_choosers_scroll() {
+        // The footer places its default action by its label width and text direction.
+        let _english = crate::i18n::english();
         let (settings, mut view) = fixture();
         let rect = frame(&view, &settings, "").1[0].1;
         move_to(&view, &settings, "", rect);
@@ -1310,6 +1316,7 @@ mod tests {
             choice_details: Default::default(),
             account: None,
             confirm_identity: false,
+            facts: Vec::new(),
         });
         view.controls = (0..30)
             .map(|id| Control::new(id, format!("Account {id}")))
@@ -1337,7 +1344,8 @@ mod tests {
         view.pointer(&settings, "", Pointer::Move { x: 320., y: 200. });
         view.pointer(&settings, "", Pointer::Scroll { x: 0., y: -10000. });
         frame(&view, &settings, "");
-        view.pointer(&settings, "", Pointer::Move { x: 320., y: 360. });
+        // The default action sits at the footer's trailing edge.
+        view.pointer(&settings, "", Pointer::Move { x: 417., y: 372. });
         view.pointer(&settings, "", Pointer::Press);
         assert_eq!(
             view.pointer(&settings, "", Pointer::Release).controls,
@@ -1363,6 +1371,7 @@ mod tests {
             choice_details: Default::default(),
             account: None,
             confirm_identity: false,
+            facts: Vec::new(),
         });
         view.primary_control = None;
         view.can_select_layout = true;

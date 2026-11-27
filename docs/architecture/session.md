@@ -43,8 +43,18 @@ output re-arms its retry after an earlier wakeup. Presentation failures leave
 authentication conversations and the compositor's lock intact. The shared compositor retains
 only a display connection, so retired windows and outputs release their roles.
 The wallpaper daemon submits static images directly without initializing Iced
-graphics. Rendering, clock and passive-data updates remain event driven; there is
-no animation frame timer. Public labels strip controls, cap length, fit their
+graphics. Rendering, clock and passive-data updates remain event driven.
+
+Motion (`canopa-session-ui/src/motion.rs`) is a pure function of the time since an
+effect started: full-screen surfaces fade and rise in, a new step (chooser, power
+options, details) cross-fades, the field shakes once when a response is rejected,
+and a spinner turns while the system checks a response. Hosts enable motion; a
+surface asks for the next frame callback only while an effect runs or it waits,
+and stays idle otherwise. Reduced motion keeps the spinner and drops movement.
+Dialogs leave their opening to the compositor. Previews fix the motion clock to
+render any moment. After a rejected response the lock, login and polkit surfaces
+keep the field: a response typed there is kept while the conversation restarts
+and answers its first secret prompt. Public labels strip controls, cap length, fit their
 available width and clip to their bounds. Fingerprints retain monospace hex groups
 and their key-identity caption, and 12-hour clocks mirror part order in RTL.
 `canopa-session` re-exports the presentation modules of `canopa-session-ui` under its old paths.

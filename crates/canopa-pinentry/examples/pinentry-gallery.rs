@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         &Controller::new(
             &settings,
             Pin {
-                error: "Bad passphrase".into(),
+                error: "Bad Passphrase (try 2 of 3)".into(),
                 ..unlock()
             },
         )?,
@@ -66,12 +66,73 @@ fn main() -> anyhow::Result<()> {
                 kind: Kind::Pin,
                 description: "Please enter the passphrase to protect your new key".into(),
                 repeat: Some("Repeat:".into()),
+                // GnuPG asks for a quality bar for new passphrases.
+                quality: Some("Quality:".into()),
                 ok: "OK".into(),
                 ..Default::default()
             },
         )?,
         "pinentry-new",
     )?;
+    let mut c = Controller::new(
+        &settings,
+        Pin {
+            kind: Kind::Pin,
+            description: "Please enter the passphrase to protect your new key".into(),
+            repeat: Some("Repeat:".into()),
+            quality: Some("Quality:".into()),
+            ok: "OK".into(),
+            ..Default::default()
+        },
+    )?;
+    c.input("correct horse battery");
+    c.quality_query();
+    c.inquiry_result(
+        c.revision(),
+        canopa_pinentry::agent::Answer::Quality(Some(72)),
+    );
+    c.refresh();
+    save(&c, "pinentry-strength")?;
+    // Motion: strength feedback while a new passphrase is typed (30 fps frames).
+    let mut c = Controller::new(
+        &settings,
+        Pin {
+            kind: Kind::Pin,
+            description: "Please enter the passphrase to protect your new key".into(),
+            repeat: Some("Repeat:".into()),
+            quality: Some("Quality:".into()),
+            ..Default::default()
+        },
+    )?;
+    let directory = output.join("frames-pinentry-strength");
+    std::fs::create_dir_all(&directory)?;
+    let start = std::time::Instant::now();
+    c.ui.motion().enable();
+    let phrase = "correct horse battery staple";
+    for frame in 0..66usize {
+        // The empty dialog first, with its meter already in place.
+        let step = frame.wrapping_sub(6);
+        if frame >= 6 && step % 2 == 0 && step / 2 < phrase.len() {
+            c.input(&phrase[step / 2..step / 2 + 1]);
+            c.quality_query();
+            let typed = (step / 2 + 1) as i16;
+            c.inquiry_result(
+                c.revision(),
+                canopa_pinentry::agent::Answer::Quality(Some((typed * 4).min(100))),
+            );
+            c.refresh();
+        }
+        c.ui.motion().set_clock(Some(
+            start + std::time::Duration::from_micros(frame as u64 * 33_333),
+        ));
+        let (width, height) = (
+            DIALOG_SIZE.0,
+            c.ui.dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT),
+        );
+        c.ui.render_dialog(&settings, width, height, 1.)?
+            .0
+            .save(directory.join(format!("{frame:04}.png")))?;
+    }
     save(
         &Controller::new(
             &settings,

@@ -4,7 +4,7 @@ use canopa_session_ui::{
     secret::Secret,
     settings::Settings,
     view::{
-        AuthenticationPanel, Control, Emblem, Prompt, REQUEST_PAGE_LINES, SessionView,
+        AuthenticationPanel, Control, ControlKind, Emblem, Prompt, SessionView,
         request_lines, request_summary,
     },
 };
@@ -21,6 +21,9 @@ pub struct Controller {
     pub pending: Option<crate::agent::Query>,
     checking: bool,
     quality: Option<i16>,
+    /// The last rating shown, kept while the next answer is pending so the
+    /// meter does not flicker between keystrokes.
+    shown_quality: Option<i16>,
     generated: bool,
     revealed: bool,
     generated_seen: bool,
@@ -40,6 +43,70 @@ fn label(value: &str) -> String {
     }
     result
 }
+/// Whether a confirmation asks to destroy something. GnuPG sends its own
+/// (translated) text, so this recognises the common verbs.
+fn destructive(text: &str) -> bool {
+    let text = text.to_lowercase();
+    [
+        "delete", "remove", "erase", "destroy", "permanently", "supprim", "effac",
+        "lösch", "entfern", "elimin", "borrar", "cancella", "rimuov", "excluir", "удал",
+    ]
+    .iter()
+    .any(|verb| text.contains(verb))
+}
+/// GnuPG's generic rejection, "Bad Passphrase (try 2 of 3)", reads as the other
+/// surfaces do, with the attempts left.
+fn incorrect_passphrase(error: &str) -> Option<String> {
+    let lower = error.trim().to_lowercase();
+    let rest = lower
+        .strip_prefix("bad passphrase")
+        .or_else(|| lower.strip_prefix("bad pin"))?
+        .trim();
+    if rest.is_empty() {
+        return Some(fl!("pinentry-incorrect-passphrase"));
+    }
+    let numbers: Vec<u32> = rest
+        .trim_matches(|c| c == '(' || c == ')')
+        .split_whitespace()
+        .filter_map(|word| word.parse().ok())
+        .collect();
+    match numbers.as_slice() {
+        [attempt, total] if attempt <= total => {
+            let left = i64::from(total - attempt + 1);
+            Some(fl!("pinentry-incorrect-passphrase-left", count = left))
+        }
+        _ => Some(fl!("pinentry-incorrect-passphrase")),
+    }
+}
+
+/// GnuPG's English "Do you really want to permanently delete the X?" reads as a
+/// statement under the "Delete secret key?" heading.
+fn plain_deletion(text: &str) -> String {
+    let trimmed = text.trim();
+    let prefix = "Do you really want to permanently delete the ";
+    match trimmed.strip_prefix(prefix).and_then(|rest| rest.strip_suffix('?')) {
+        Some(target) if !target.contains('\n') => {
+            format!("The {target} will be deleted from this computer.")
+        }
+        _ => text.to_owned(),
+    }
+}
+
+/// Pair straight double quotes as typographic ones for display.
+fn typographic_quotes(text: &str) -> String {
+    let mut open = true;
+    text.chars()
+        .map(|c| {
+            if c == '"' {
+                let quote = if open { '“' } else { '”' };
+                open = !open;
+                quote
+            } else {
+                c
+            }
+        })
+        .collect()
+}
 fn excerpt(text: &str, limit: usize) -> String {
     let mut out: String = text.chars().take(limit).collect();
     if text.chars().count() > limit {
@@ -49,7 +116,7 @@ fn excerpt(text: &str, limit: usize) -> String {
 }
 impl Controller {
     pub fn new(settings: &Settings, request: Request) -> Result<Self> {
-        Self::new_named(settings, request, fl!("pinentry-secure-input"))
+        Self::new_named(settings, request, String::new())
     }
 
     pub(crate) fn new_named(
@@ -72,11 +139,16 @@ impl Controller {
             choice_details: Default::default(),
             account: None,
             confirm_identity: false,
+            facts: Vec::new(),
         });
         ui.secret = Secret::with_capacity(8193);
-        ui.message = excerpt(&request.error, 96);
+        // GnuPG's generic rejection reads as the other surfaces do.
+        ui.message = incorrect_passphrase(&request.error)
+            .unwrap_or_else(|| excerpt(&request.error, 96));
         ui.failed = !request.error.is_empty();
-        let selected = if request.focus_cancel && request.kind == Kind::Confirm {
+        let selected = if request.kind == Kind::Confirm
+            && (request.focus_cancel || destructive(&request.description))
+        {
             3
         } else {
             2
@@ -93,6 +165,7 @@ impl Controller {
             pending: None,
             checking: false,
             quality: None,
+            shown_quality: None,
             generated: false,
             revealed: false,
             generated_seen: false,
@@ -105,17 +178,26 @@ impl Controller {
         self.ui.interaction_epoch = (self.revision, u64::from(self.checking));
         self.ui.busy = self.checking;
         self.ui.custom.clear();
-        self.ui
-            .custom
-            .insert("heading".into(), self.heading.clone());
         let fingerprint = self.request.description.lines().any(|line| {
             line.trim()
                 .trim_end_matches(':')
                 .eq_ignore_ascii_case("fingerprint")
         });
         let openpgp = fingerprint && self.request.title.to_ascii_lowercase().contains("openpgp");
+        let destructive =
+            self.request.kind == Kind::Confirm && destructive(&self.request.description);
+        let description = self.request.description.to_lowercase();
+        let names_key = description.contains("secret key") || description.contains("openpgp");
+        let creating = self.request.kind == Kind::Pin
+            && self.request.repeat.is_some()
+            && self.first.is_none()
+            && self.details.is_none();
+        // A short request line becomes the subtitle instead of repeating the heading.
+        let brief = creating
+            && !self.request.description.contains('\n')
+            && self.request.description.chars().count() <= 64;
         let panel = self.ui.authentication_panel.as_mut().expect("dialog panel");
-        panel.disclosure = self.details.is_none().then_some(4);
+        panel.emblem = if destructive { Emblem::Alert } else { Emblem::Key };
         panel.heading = match (
             self.details.is_some(),
             self.request.kind,
@@ -124,7 +206,12 @@ impl Controller {
             (true, _, _) => fl!("pinentry-request-details"),
             (false, Kind::Pin, true) => fl!("pinentry-confirm-passphrase"),
             (false, Kind::Pin, false) if openpgp => fl!("pinentry-unlock-openpgp-key"),
+            (false, Kind::Pin, false) if self.request.repeat.is_some() => {
+                fl!("pinentry-create-passphrase")
+            }
             (false, Kind::Pin, false) => fl!("pinentry-passphrase-required"),
+            (false, Kind::Confirm, _) if destructive && names_key => fl!("pinentry-delete-key"),
+            (false, Kind::Confirm, _) if destructive => fl!("pinentry-confirm-deletion"),
             (false, Kind::Confirm, _) => fl!("pinentry-confirmation-required"),
             (false, Kind::Message, _) => fl!("pinentry-message"),
         };
@@ -137,6 +224,7 @@ impl Controller {
         ) {
             (true, _, _) => String::new(),
             (false, Kind::Pin, true) => fl!("pinentry-subtitle-repeat"),
+            (false, Kind::Confirm, _) if destructive => fl!("pinentry-subtitle-permanent"),
             (false, _, false) if requester.is_some() => {
                 fl!(
                     "pinentry-requested-by",
@@ -144,20 +232,66 @@ impl Controller {
                 )
             }
             (false, Kind::Pin, false) if openpgp => fl!("pinentry-subtitle-unlock"),
+            (false, Kind::Pin, false) if self.request.repeat.is_some() => {
+                fl!("pinentry-subtitle-new")
+            }
             (false, Kind::Confirm, _) => fl!("pinentry-subtitle-confirm"),
-            _ => String::new(),
+            // A named frontend (the keyring) says who is asking.
+            _ => self.heading.clone(),
         };
+        // The fingerprint card already shows the key; details add only hints.
+        let has_more = request_lines(&self.request.description).len() > 2
+            || !self.request.title.is_empty() && !fingerprint
+            || !self.request.quality_hint.is_empty()
+            || !self.request.constraints_hint.is_empty()
+            || !self.request.generate_hint.is_empty();
+        panel.disclosure = (self.details.is_none() && has_more).then_some(4);
+        panel.facts.clear();
+        if self.details.is_some() {
+            panel.facts = [
+                (fl!("pinentry-fact-key"), self.request.title.clone()),
+                (fl!("pinentry-fact-request"), self.request.description.clone()),
+                (
+                    fl!("pinentry-fact-requested-by"),
+                    self.request.requester.clone().unwrap_or_default(),
+                ),
+                (
+                    fl!("pinentry-fact-requirements"),
+                    [
+                        self.request.constraints_hint.as_str(),
+                        self.request.quality_hint.as_str(),
+                        self.request.generate_hint.as_str(),
+                    ]
+                    .iter()
+                    .filter(|s| !s.trim().is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, value)| !value.trim().is_empty())
+            .collect();
+        }
         if self.details.is_none() && !self.request.title.is_empty() {
             self.ui
                 .custom
                 .insert("subject".into(), excerpt(&self.request.title, 96));
         }
         self.ui.controls.clear();
-        let description: Vec<_> = if let Some(page) = self.details {
-            request_lines(&self.details_text())
+        // As polkit does, the line under an unlock field says where the secret goes.
+        if self.request.kind == Kind::Pin && self.request.repeat.is_none() && self.details.is_none() {
+            self.ui
+                .custom
+                .insert("field-hint".into(), fl!("pinentry-field-hint"));
+        }
+        let description: Vec<_> = if self.details.is_some() || brief {
+            Vec::new()
+        } else if self.request.kind == Kind::Confirm {
+            // A question is read whole; it is the dialog's content.
+            request_lines(&typographic_quotes(&plain_deletion(&self.request.description)))
                 .into_iter()
-                .skip(page * REQUEST_PAGE_LINES)
-                .take(REQUEST_PAGE_LINES)
+                .take(8)
                 .collect()
         } else {
             request_summary(&self.request.description)
@@ -189,40 +323,48 @@ impl Controller {
                 echo: self.generated && self.revealed,
             })
         };
-        if let Some(page) = self.details {
-            let (shown, total) = ((page + 1) as u64, self.pages() as u64);
+        if self.details.is_some() {
+            self.ui.controls.push(
+                Control::new(2, fl!("pinentry-details-back")).with_kind(ControlKind::Back),
+            );
             self.ui
                 .controls
-                .push(Control::new(2, fl!("pinentry-details-back")));
-            self.ui.controls.push(Control::new(
-                4,
-                fl!("pinentry-details-next", page = shown, count = total),
-            ));
-            self.ui
-                .controls
-                .push(Control::new(5, fl!("pinentry-details-previous")));
+                .push(Control::new(3, label(&self.request.cancel)));
+            panel_disclosure(&mut self.ui, Some(2));
         } else {
-            self.ui
-                .controls
-                .push(Control::new(2, label(&self.request.ok)));
-            if self.request.kind == Kind::Confirm && !self.request.notok.is_empty() {
-                self.ui
-                    .controls
-                    .push(Control::new(6, label(&self.request.notok)));
-            }
+            // The default action sits last, at the trailing edge; Cancel before it.
             if self.request.kind != Kind::Message {
                 self.ui
                     .controls
                     .push(Control::new(3, label(&self.request.cancel)));
             }
-            self.ui.controls.push(Control::new(
-                4,
-                if fingerprint {
-                    fl!("pinentry-key-details")
-                } else {
-                    fl!("pinentry-request-details")
-                },
-            ));
+            if self.request.kind == Kind::Confirm && !self.request.notok.is_empty() {
+                self.ui
+                    .controls
+                    .push(Control::new(6, label(&self.request.notok)));
+            }
+            let ok = label(&self.request.ok);
+            let generic = ok.trim().eq_ignore_ascii_case("ok");
+            let ok = match self.request.kind {
+                Kind::Pin if generic && openpgp => fl!("pinentry-unlock"),
+                Kind::Pin if generic => fl!("pinentry-default-ok"),
+                _ => ok,
+            };
+            let mut accept = Control::new(2, ok);
+            if destructive {
+                accept = accept.with_kind(ControlKind::Destructive);
+            }
+            self.ui.controls.push(accept);
+            if has_more {
+                self.ui.controls.push(Control::new(
+                    4,
+                    if fingerprint {
+                        fl!("pinentry-key-details")
+                    } else {
+                        fl!("pinentry-request-details")
+                    },
+                ));
+            }
         }
         if self.details.is_none() && self.request.kind == Kind::Pin && self.first.is_none() {
             if let Some(label) = &self.request.generate {
@@ -243,49 +385,59 @@ impl Controller {
             if control.id == 2 || control.id == 7 || control.id == 8 {
                 control.enabled = !self.checking;
             }
+            // A new passphrase cannot be empty.
+            if control.id == 2
+                && self.request.kind == Kind::Pin
+                && self.request.repeat.is_some()
+                && self.details.is_none()
+                && self.ui.secret.is_empty()
+                && !self.generated
+            {
+                control.enabled = false;
+            }
         }
-        if let Some(quality) = self.quality
+        if self.ui.secret.is_empty() {
+            self.shown_quality = None;
+        }
+        let rated = self.quality.or(self.shown_quality);
+        let rating = self.request.quality.is_some()
+            && self.request.kind == Kind::Pin
+            && self.first.is_none()
+            && self.details.is_none()
             && !self.ui.failed
             && !self.checking
-            && !self.generated
-        {
+            && !self.generated;
+        if rating && rated.is_none() {
+            // Reserve the meter and its line before typing, so nothing moves.
+            self.ui.custom.insert("strength".into(), "0".into());
+            if self.ui.message.is_empty() || self.ui.message == fl!("pinentry-strength-hint") {
+                self.ui.message = fl!("pinentry-strength-hint");
+            }
+        }
+        if let Some(quality) = rated.filter(|_| rating) {
             let name = self
                 .request
                 .quality
                 .clone()
                 .unwrap_or_else(|| fl!("pinentry-quality-name"));
-            let value = canopa_i18n::format::percent(f64::from(quality));
-            self.ui.message = if quality < 0 {
-                fl!("pinentry-quality-rejected", name = name, value = value)
-            } else {
-                fl!("pinentry-quality", name = name, value = value)
+            let _ = name;
+            self.ui.message = match quality {
+                ..0 => fl!("pinentry-strength-rejected"),
+                0..30 => fl!("pinentry-strength-weak"),
+                30..60 => fl!("pinentry-strength-fair"),
+                60..85 => fl!("pinentry-strength-good"),
+                _ => fl!("pinentry-strength-strong"),
             };
+            self.ui.custom.insert(
+                "strength".into(),
+                format!("{}", (f32::from(quality) / 100.).clamp(-1., 1.)),
+            );
         }
         for control in &mut self.ui.controls {
             if control.id == self.selected {
                 control.selected = true;
             }
         }
-    }
-    fn details_text(&self) -> String {
-        [
-            self.request.title.as_str(),
-            self.request.description.as_str(),
-            self.request.prompt.as_str(),
-            self.request.error.as_str(),
-            self.request.repeat.as_deref().unwrap_or(""),
-            self.request.quality_hint.as_str(),
-            self.request.generate_hint.as_str(),
-            self.request.constraints_hint_short.as_str(),
-            self.request.constraints_hint.as_str(),
-        ]
-        .join("\n")
-    }
-    fn pages(&self) -> usize {
-        request_lines(&self.details_text())
-            .len()
-            .div_ceil(REQUEST_PAGE_LINES)
-            .max(1)
     }
     pub fn cycle(&mut self) {
         let index = self
@@ -332,12 +484,12 @@ impl Controller {
             4 => {
                 self.clear_input();
                 self.first = None;
-                self.details = Some(self.details.map_or(0, |page| (page + 1) % self.pages()));
+                self.details = Some(0);
                 self.selected = 2;
             }
             5 => {
                 if let Some(page) = self.details {
-                    self.details = Some((page + self.pages() - 1) % self.pages());
+                    self.details = Some(page);
                 }
             }
             _ => {}
@@ -409,6 +561,10 @@ impl Controller {
         copy.push(secret.text());
         copy
     }
+    /// The current input revision, which agent answers must match.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
     pub fn quality_query(&mut self) {
         if self.request.quality.is_some()
             && !self.checking
@@ -451,6 +607,9 @@ impl Controller {
         match answer {
             crate::agent::Answer::Quality(quality) => {
                 self.quality = quality;
+                if quality.is_some() {
+                    self.shown_quality = quality;
+                }
                 if quality.is_none() {
                     self.ui.message = fl!("pinentry-quality-unavailable");
                 }
@@ -578,6 +737,12 @@ mod tests {
             canopa_i18n::select(canopa_i18n::Selection::default());
         }
     }
+    /// English, serialized with the French tests that change the selection.
+    fn english_guard() -> French {
+        let guard = french();
+        canopa_i18n::select(canopa_i18n::Selection::default());
+        guard
+    }
     fn french() -> French {
         static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let guard = SERIAL.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -597,15 +762,20 @@ mod tests {
         let c = controller(Request::default());
         assert_eq!(c.ui.prompt.as_ref().unwrap().text, "Phrase secrète\u{a0}:");
         let labels: Vec<_> = c.ui.controls.iter().map(|c| c.label.as_str()).collect();
-        assert_eq!(labels, ["Continuer", "Annuler", "Détails de la demande"]);
-        assert!(c.ui.controls[0].selected);
+        // Cancel, then the default action at the trailing edge. A bare request
+        // has no further details to offer.
+        assert_eq!(labels, ["Annuler", "Continuer"]);
+        assert!(c.ui.controls[1].selected);
         let c = controller(Request {
             prompt: "Passphrase:".into(),
             ok: "_Unlock".into(),
             ..Request::default()
         });
         assert_eq!(c.ui.prompt.as_ref().unwrap().text, "Passphrase:");
-        assert_eq!(c.ui.controls[0].label, "Unlock");
+        assert_eq!(
+            c.ui.controls.iter().find(|c| c.id == 2).unwrap().label,
+            "Unlock"
+        );
         assert_eq!(
             c.ui.authentication_panel.as_ref().unwrap().heading,
             "Phrase secrète requise"
@@ -753,6 +923,19 @@ mod tests {
         assert!(c.ui.secret.is_empty());
     }
     #[test]
+    fn rejections_read_as_incorrect_with_the_attempts_left() {
+        let _english = english_guard();
+        assert_eq!(
+            incorrect_passphrase("Bad Passphrase (try 2 of 3)").as_deref(),
+            Some("Incorrect passphrase. 2 attempts left.")
+        );
+        assert_eq!(
+            incorrect_passphrase("Bad Passphrase").as_deref(),
+            Some("Incorrect passphrase. Try again.")
+        );
+        assert_eq!(incorrect_passphrase("No secret key"), None);
+    }
+    #[test]
     fn confirmation_default_focus_and_details_cannot_submit_hidden_input() {
         let mut c = controller(Request {
             kind: Kind::Confirm,
@@ -786,15 +969,18 @@ mod tests {
         });
         c.action(4);
         let mut visible = String::new();
-        for _ in 0..c.pages() {
-            for text in c.ui.custom.values() {
-                visible.push_str(text);
-                visible.push('\n');
-            }
-            c.action(4);
+        for (_, text) in &c.ui.authentication_panel.as_ref().unwrap().facts {
+            visible.push_str(text);
+            visible.push('\n');
         }
         for line in context {
             assert!(visible.contains(&line), "lost a request context line");
         }
+    }
+}
+
+fn panel_disclosure(ui: &mut SessionView, control: Option<usize>) {
+    if let Some(panel) = ui.authentication_panel.as_mut() {
+        panel.disclosure = control;
     }
 }

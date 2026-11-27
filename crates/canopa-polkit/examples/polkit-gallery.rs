@@ -46,6 +46,46 @@ fn main() -> anyhow::Result<()> {
     let mut c = Controller::preview(&settings)?;
     c.details();
     save(&c, "polkit-details")?;
+    // Motion, as frame sequences at 30 frames per second.
+    let record = |name: &str,
+                  c: &mut Controller,
+                  frames: usize,
+                  script: &mut dyn FnMut(usize, &mut Controller)|
+     -> anyhow::Result<()> {
+        let directory = output.join(format!("frames-{name}"));
+        std::fs::create_dir_all(&directory)?;
+        let start = std::time::Instant::now();
+        c.ui.motion().set_clock(Some(start));
+        c.ui.motion().enable();
+        for frame in 0..frames {
+            script(frame, c);
+            c.ui.motion().set_clock(Some(
+                start + std::time::Duration::from_micros(frame as u64 * 33_333),
+            ));
+            c.ui.render_dialog(
+                &settings,
+                AUTHORIZATION_DIALOG_SIZE.0,
+                c.ui.dialog_height(DIALOG_MIN_HEIGHT, DIALOG_MAX_HEIGHT),
+                1.,
+            )?
+            .0
+            .save(directory.join(format!("{frame:04}.png")))?;
+        }
+        Ok(())
+    };
+    let mut c = Controller::preview(&settings)?;
+    record("polkit-failure", &mut c, 72, &mut |frame, c| {
+        if (2..20).contains(&frame) && frame % 2 == 0 {
+            c.input("x");
+        }
+        if frame == 22 {
+            c.submit();
+        }
+        if frame == 46 {
+            let generation = c.generation;
+            c.event(Event::Failed { generation });
+        }
+    })?;
     if light {
         std::fs::remove_file(output.join(".polkit-light.kdl"))?;
     }

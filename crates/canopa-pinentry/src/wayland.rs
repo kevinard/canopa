@@ -123,14 +123,12 @@ fn run_inner(
     } else {
         ("org.canopa.Pinentry", fl!("pinentry-title"))
     };
-    let heading = if keyring {
-        name.clone()
-    } else {
-        fl!("pinentry-secure-input")
-    };
+    // The keyring names itself under the heading; GnuPG's prompts name their requester.
+    let heading = if keyring { name.clone() } else { String::new() };
     let mut request = request.clone();
     request.requester = request.owner.and_then(requester);
     let controller = Controller::new_named(settings, request.clone(), heading)?;
+    controller.ui.motion().enable();
     let window = shell.create_window(
         compositor.create_surface(&qh),
         WindowDecorations::RequestServer,

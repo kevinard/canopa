@@ -242,8 +242,12 @@ The lock background is, per output: the `image` of its `output` block, else the
 the [Wallpaper portal](portals.md#wallpaper), else, with `use-wallpaper` on (the
 default), the wallpaper daemon's current image, including Canopa's built-in
 wallpaper. Explicit lock images work without the daemon.
-Missing or invalid images fall back to the theme background. `dim` blends the image
-toward the background color.
+Missing or invalid images fall back to the theme background. `blur` softens the
+image, a gentle shade keeps the clock and the bottom controls legible, and `dim`
+blends it toward the background color.
+
+Without an `avatar` image the lock shows the account's AccountsService icon or
+`~/.face`, else the initials of the account's full name.
 
 Passive widgets, each optional:
 
@@ -445,7 +449,7 @@ wallpaper {
     output "DP-1" { image "wallpapers/mountains.png"; fit "fit"; }
 }
 lockscreen {
-    dim 65
+    dim 40
     clock-format "%H:%M"
     date-format "%A, %B %-d"
     widgets "username" "keyboard" "battery" "notifications" "avatar"
@@ -469,10 +473,11 @@ lockscreen {
 | `image`, `fit`, `color` | as for `wallpaper` | none, `fill`, theme background |
 | `output "NAME" { image; fit; hide-widgets ...; }` | per-monitor override | — |
 | `use-wallpaper` | boolean | `#true` |
-| `dim` | 0–100 | 65 |
+| `dim` | 0–100 | 40 (62 in the light color scheme) |
+| `blur` | 0–64 logical pixels; 0 keeps the image sharp | 24 |
 | `font` | family name | the first `appearance` typography family |
 | `clock-format`, `date-format` | strftime pattern; empty follows the language | empty |
-| `clock-size`, `text-size` | 8–160 | 72, 19 |
+| `clock-size`, `text-size` | 8–160 | 64, 19 |
 | `auth-timeout` | 5–600 seconds | 120 |
 | `avatar`, `weather-file` | path | none |
 | `widgets` | widget names; `widgets;` hides all | `battery media keyboard username notifications` |

@@ -9,8 +9,6 @@ pinentry-keyring-title = Canopa Keyring
 # Window title with the request's title. $name is pinentry-title or
 # pinentry-keyring-title.
 pinentry-window-title = { $name } · { $title }
-# Shown below the heading.
-pinentry-secure-input = Canopa Secure Input
 pinentry-passphrase-required = Passphrase required
 pinentry-request-details = Request details
 pinentry-key-details = Key details
@@ -32,7 +30,7 @@ pinentry-default-repeat-error = Passphrases do not match. Try again.
 pinentry-repeat-passphrase = Repeat passphrase:
 pinentry-repeat-password = Repeat password:
 # Buttons in the request details, with their keys.
-pinentry-details-back = Back (Enter)
+pinentry-details-back = Back to the request
 # $page of $count pages.
 pinentry-details-next = Next page (Page Down) · { $page } / { $count }
 pinentry-details-previous = Previous page (Page Up)
@@ -55,3 +53,30 @@ pinentry-checking-requirements = Checking the agent's passphrase requirements…
 pinentry-check-failed = Could not verify the agent's passphrase requirements. Try again or cancel.
 # $limit is a number of characters.
 pinentry-length-limit = Passphrase limit: { $limit } characters. Input was rejected.
+
+# Headings and lines for new passphrases and destructive confirmations.
+pinentry-create-passphrase = Create a passphrase
+pinentry-subtitle-new = Needed to use the key — it can’t be recovered if forgotten
+pinentry-confirm-deletion = Confirm deletion
+pinentry-unlock = Unlock
+# Captions in the request details card.
+pinentry-fact-key = Key
+pinentry-fact-request = Request
+pinentry-fact-requested-by = Requested by
+pinentry-fact-requirements = Requirements
+# Passphrase strength reported by the agent.
+pinentry-strength-rejected = Too weak — the agent won’t accept it
+pinentry-strength-weak = Weak — add another unrelated word
+pinentry-strength-fair = Fair — a word or two more makes it good
+pinentry-strength-good = Good — another unrelated word improves it
+pinentry-strength-strong = Strong passphrase
+pinentry-strength-hint = Several unrelated words make a strong passphrase
+pinentry-incorrect-passphrase = Incorrect passphrase. Try again.
+pinentry-subtitle-permanent = This can’t be undone
+pinentry-delete-key = Delete secret key?
+# $count is the number of attempts left.
+pinentry-incorrect-passphrase-left = { $count ->
+    [one] Incorrect passphrase. 1 attempt left.
+   *[other] Incorrect passphrase. { $count } attempts left.
+}
+pinentry-field-hint = Your passphrase stays on this computer

@@ -30,6 +30,89 @@ pub enum Emblem {
     Eye,
     /// Mask the typed secret again.
     EyeOff,
+    /// A circular arrow (restart).
+    Restart,
+    /// Caps Lock is engaged.
+    CapsLock,
+    /// A notice in a circle (errors).
+    Alert,
+    /// A crescent (suspend).
+    Moon,
+    /// A circle with a check mark (selected choice).
+    Selected,
+    /// Out-going arrow from a door (log out, switch user).
+    Exit,
+    /// A full circle: the track under a spinner.
+    Ring,
+    /// A quarter arc that turns while waiting.
+    Spinner,
+    /// A ring buoy (troubleshooting sessions).
+    Lifebuoy,
+}
+
+fn arc(cx: f32, cy: f32, r: f32, from: f32, to: f32) -> Vec<(f32, f32)> {
+    let steps = (((to - from).abs() / 12.).ceil() as usize).max(2);
+    (0..=steps)
+        .map(|i| {
+            let a = (from + (to - from) * i as f32 / steps as f32).to_radians();
+            (cx + r * a.cos(), cy + r * a.sin())
+        })
+        .collect()
+}
+
+/// Paths drawn from arcs, in the 24-unit emblem grid.
+fn dynamic_paths(emblem: Emblem) -> Option<Vec<Vec<(f32, f32)>>> {
+    Some(match emblem {
+        Emblem::Restart => vec![
+            arc(12., 12., 7.5, -60., 250.),
+            vec![(15.2, 2.9), (15.75, 5.5), (13.2, 6.4)],
+        ],
+        Emblem::CapsLock => vec![
+            vec![
+                (12., 4.),
+                (19., 11.),
+                (15.5, 11.),
+                (15.5, 15.),
+                (8.5, 15.),
+                (8.5, 11.),
+                (5., 11.),
+                (12., 4.),
+            ],
+            vec![(8.5, 19.), (15.5, 19.)],
+        ],
+        Emblem::Alert => vec![
+            arc(12., 12., 9., 0., 360.),
+            vec![(12., 7.5), (12., 13.)],
+            vec![(12., 16.4), (12., 16.6)],
+        ],
+        Emblem::Moon => {
+            let mut path = arc(12., 12., 8.5, 55., 335.);
+            let mut inner = arc(15.2, 8.6, 7., 135., 252.);
+            inner.reverse();
+            path.extend(inner);
+            vec![path]
+        }
+        Emblem::Selected => vec![
+            arc(12., 12., 9., 0., 360.),
+            vec![(8., 12.2), (10.8, 15.), (16.2, 9.4)],
+        ],
+        Emblem::Exit => vec![
+            vec![(10., 4.), (5., 4.), (5., 20.), (10., 20.)],
+            vec![(9., 12.), (20., 12.)],
+            vec![(16., 8.), (20., 12.), (16., 16.)],
+        ],
+        Emblem::Ring => vec![arc(12., 12., 9., 0., 360.)],
+        Emblem::Lifebuoy => vec![
+            arc(12., 12., 9., 0., 360.),
+            arc(12., 12., 4., 0., 360.),
+            vec![(5.6, 5.6), (9.2, 9.2)],
+            vec![(18.4, 5.6), (14.8, 9.2)],
+            vec![(5.6, 18.4), (9.2, 14.8)],
+            vec![(18.4, 18.4), (14.8, 14.8)],
+        ],
+        Emblem::Spinner => vec![arc(12., 12., 9., -90., 10.)],
+        _ => return None,
+    })
 }
 
 pub(super) fn blend(target: &mut image::Rgb<u8>, color: Rgb, alpha: f32) {
@@ -49,7 +132,24 @@ pub(super) fn emblem(
     emblem: Emblem,
     color: Rgb,
 ) {
+    let owned = dynamic_paths(emblem);
+    // Progress strokes are heavier so they read at small sizes.
+    let half_width = if matches!(emblem, Emblem::Spinner | Emblem::Ring) {
+        1.5
+    } else {
+        0.95
+    };
     let paths: &[&[(f32, f32)]] = match emblem {
+        _ if owned.is_some() => &[],
+        Emblem::Restart
+        | Emblem::CapsLock
+        | Emblem::Alert
+        | Emblem::Moon
+        | Emblem::Selected
+        | Emblem::Exit
+        | Emblem::Ring
+        | Emblem::Spinner
+        | Emblem::Lifebuoy => &[],
         Emblem::Keyboard => &[
             &[(2., 6.), (22., 6.), (22., 18.), (2., 18.), (2., 6.)],
             &[(6., 10.), (7., 10.)],
@@ -323,6 +423,8 @@ pub(super) fn emblem(
             let p = ((px as f32 + 0.5 - x) / scale, (py as f32 + 0.5 - y) / scale);
             let distance = paths
                 .iter()
+                .copied()
+                .chain(owned.iter().flatten().map(Vec::as_slice))
                 .flat_map(|path| path.windows(2))
                 .map(|line| {
                     let (a, b) = (line[0], line[1]);
@@ -335,7 +437,7 @@ pub(super) fn emblem(
             blend(
                 image.get_pixel_mut(px, py),
                 color,
-                ((0.95 - distance) * scale + 0.5).clamp(0., 1.),
+                ((half_width - distance) * scale + 0.5).clamp(0., 1.),
             );
         }
     }

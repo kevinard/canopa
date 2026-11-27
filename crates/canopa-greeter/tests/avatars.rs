@@ -147,6 +147,7 @@ fn preview_renders_only_explicit_user_assets_without_discovery_or_commands() {
             .pixels()
             .filter(|p| p.0 == [255, 0, 0])
             .count()
-            > 2000
+            // A 48-pixel round picture in the account row.
+            > 1500
     );
 }

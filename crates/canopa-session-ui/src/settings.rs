@@ -40,6 +40,9 @@ pub struct Settings {
     pub date_format: String,
     pub widgets: Vec<String>,
     pub dim: u8,
+    /// Softening of a wallpaper image behind the session controls, in logical
+    /// pixels (0 keeps it sharp).
+    pub blur: u8,
     pub avatar: Option<PathBuf>,
     pub weather_file: Option<PathBuf>,
     pub clock_size: u32,
@@ -48,6 +51,9 @@ pub struct Settings {
     /// Outputs whose desktop shows Canopa's embedded wallpaper. A lock screen
     /// that follows the wallpaper fills this from the wallpaper daemon.
     pub built_in_wallpaper: BTreeSet<String>,
+    /// Show the embedded wallpaper on every output without an image (the login
+    /// screen, which has no desktop to follow).
+    pub built_in_everywhere: bool,
     pub auth_timeout: u64,
     pub layout: crate::layout::Layout,
     pub custom: BTreeMap<String, canopa_widgets::script::Script>,
@@ -90,13 +96,20 @@ impl Settings {
                 "keyboard".into(),
                 "username".into(),
             ],
-            dim: 65,
+            // A light wallpaper is lifted further toward the light background.
+            dim: if appearance.color_scheme == canopa_theme::ColorScheme::Light {
+                62
+            } else {
+                40
+            },
+            blur: 24,
             avatar: None,
             weather_file: None,
-            clock_size: 72,
+            clock_size: 64,
             text_size: 19,
             use_wallpaper: true,
             built_in_wallpaper: BTreeSet::new(),
+            built_in_everywhere: false,
             auth_timeout: 120,
             layout: Default::default(),
             custom: BTreeMap::new(),
@@ -132,6 +145,7 @@ impl Settings {
             ];
             value.widgets = vec!["keyboard".into(), "battery".into()];
             value.use_wallpaper = false;
+            value.built_in_everywhere = true;
         }
         if component == Component::Lockscreen {
             // The same geometry as the login screen, so locking and signing in match.
@@ -281,6 +295,20 @@ impl Settings {
                         .filter(|n| (0..=100).contains(n))
                         .ok_or_else(|| anyhow::anyhow!("dim must be 0..100"))?;
                     value.dim = n as u8;
+                }
+                "blur" if component != Component::Wallpaper => {
+                    ensure!(node.entries().len() == 1, "blur requires one integer");
+                    let entry = &node.entries()[0];
+                    ensure!(
+                        entry.name().is_none() && entry.ty().is_none(),
+                        "invalid blur entry"
+                    );
+                    value.blur = entry
+                        .value()
+                        .as_integer()
+                        .filter(|n| (0..=64).contains(n))
+                        .ok_or_else(|| anyhow::anyhow!("blur must be 0..64"))?
+                        as u8;
                 }
                 "widgets" if component != Component::Wallpaper => {
                     value.widgets = widget_names(node)?;

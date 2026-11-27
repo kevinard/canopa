@@ -53,7 +53,10 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&output)?;
     let source = output.join(format!(".greeter-{scheme}.kdl"));
     std::fs::write(&source, CONFIG.replace("SCHEME", scheme))?;
-    let (config, _) = Config::load(&Request::common(source.clone()))?;
+    let (mut config, _) = Config::load(&Request::common(source.clone()))?;
+    // Desktop entries carry a comment; the sample sessions get theirs here.
+    config.sessions[0].comment = Some("The Canopa desktop".into());
+    config.sessions[1].comment = Some("A minimal desktop for troubleshooting".into());
     std::fs::remove_file(&source)?;
     let account = |username: &str, name: &str, uid| Account {
         username: username.into(),
@@ -120,20 +123,25 @@ fn main() -> anyhow::Result<()> {
     c.input("correct horse");
     c.refresh(&config);
     save(&c, "greeter-typing")?;
+    // Submitting waits for the authentication service, which rejects the
+    // password and asks again.
+    c.submit();
+    c.refresh(&config);
+    save(&c, "greeter-verifying")?;
+    // greetd reports the rejection; the field stays for the next attempt.
     c.event(
         Event {
             generation,
-            kind: Kind::Message {
-                text: "Authentication failed".into(),
-                error: true,
-            },
+            kind: Kind::Failed("Incorrect password. Try again.".into()),
         },
         &config,
     );
-    prompt(&mut c);
-    c.ui.caps = true;
     c.refresh(&config);
     save(&c, "greeter-error")?;
+    c.ui.caps = true;
+    c.input("correct h");
+    c.refresh(&config);
+    save(&c, "greeter-caps")?;
 
     let mut c = fresh()?;
     c.open_chooser(Choice::Account);
@@ -147,5 +155,76 @@ fn main() -> anyhow::Result<()> {
     c.power_action(20);
     c.refresh(&config);
     save(&c, "greeter-power")?;
+    // Choosing an action asks once more, with Back focused.
+    c.power_action(21);
+    c.refresh(&config);
+    save(&c, "greeter-power-confirm")?;
+
+    // Motion, as frame sequences at 30 frames per second.
+    let background =
+        canopa_session_ui::view::SessionView::prepare_background(&config.view, "gallery", 960, 600)?;
+    let record = |name: &str,
+                  c: &mut Controller,
+                  frames: usize,
+                  script: &mut dyn FnMut(usize, &mut Controller)|
+     -> anyhow::Result<()> {
+        let directory = output.join(format!("frames-{name}"));
+        std::fs::create_dir_all(&directory)?;
+        let start = std::time::Instant::now();
+        c.ui.motion().set_clock(Some(start));
+        c.ui.motion().enable();
+        for frame in 0..frames {
+            script(frame, c);
+            c.refresh(&config);
+            c.ui.motion().set_clock(Some(
+                start + std::time::Duration::from_micros(frame as u64 * 33_333),
+            ));
+            c.ui
+                .render_on_output(&config.view, "gallery", background.clone())?
+                .0
+                .save(directory.join(format!("{frame:04}.png")))?;
+        }
+        Ok(())
+    };
+    record("greeter-appear", &mut fresh()?, 24, &mut |_, _| {})?;
+    record("greeter-choose-account", &mut fresh()?, 48, &mut |frame, c| {
+        if frame == 18 {
+            c.open_chooser(Choice::Account);
+        }
+    })?;
+    record("greeter-power-menu", &mut fresh()?, 48, &mut |frame, c| {
+        if frame == 18 {
+            c.power_action(20);
+        }
+    })?;
+    let mut c = fresh()?;
+    let generation = match c.submit() {
+        Some(canopa_greeter::protocol::Command::Begin { generation, .. }) => generation,
+        _ => anyhow::bail!("sample sign-in did not begin"),
+    };
+    record("greeter-failure", &mut c, 72, &mut |frame, c| {
+        let event = |kind| Event { generation, kind };
+        if frame == 0 {
+            c.event(
+                event(Kind::Prompt {
+                    text: "Password:".into(),
+                    echo: false,
+                }),
+                &config,
+            );
+        }
+        if (2..20).contains(&frame) && frame % 2 == 0 {
+            c.input("x");
+        }
+        if frame == 22 {
+            c.submit();
+        }
+        if frame == 48 {
+            c.event(
+                event(Kind::Failed("Incorrect password. Try again.".into())),
+                &config,
+            );
+        }
+    })?;
     Ok(())
 }

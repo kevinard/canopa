@@ -15,7 +15,6 @@ session-keyboard-layout = Keyboard: { $layout }
 session-placeholder-type-response = Type response
 session-placeholder-enter-response = Enter response
 session-placeholder-authenticate = Enter to authenticate
-session-waiting-for-authentication = Waiting for authentication…
 session-caps-lock-on = Caps Lock is on
 # Button in a secret field that shows or masks what was typed.
 session-show-response = Show typed text
@@ -44,9 +43,6 @@ session-current-selection-detail = Current selection. { $detail }
 # The account that authenticates. $name is a person's name or username.
 session-account = Account: { $name }
 # Request card in authorization dialogs.
-session-policy-source = Policy source
-session-requested-for = Requested for
-session-requested-by = Requested by
 session-authenticating-as = Authenticating as
 session-fingerprint = Fingerprint
 session-key-identity = Key identity
@@ -56,3 +52,12 @@ session-back-label = { $arrow } { $label }
 session-current = Current
 # Keyboard help in choice lists.
 session-chooser-shortcuts = ↑ ↓ to move · Enter to select
+
+# Inside the field while the system checks a response.
+session-verifying = Checking…
+# Title of the account list on the sign-in screen.
+session-choose-account = Choose an account
+# Inside the submit button while the system checks a response.
+session-checking = Checking…
+# The instruction above the field while a response is checked.
+session-checking-password = Checking your password…

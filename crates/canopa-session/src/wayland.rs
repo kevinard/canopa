@@ -164,6 +164,10 @@ struct App {
     /// The status still shows "Starting authentication…".
     starting: bool,
     retry_after: Instant,
+    /// After a rejected password the field stays open. What is typed there is
+    /// kept while authentication restarts and answers its first secret prompt.
+    retry_prompt: Option<(String, bool)>,
+    submit_on_prompt: bool,
     logind: Option<crate::logind::Tracker>,
     widgets: Option<WidgetRuntime>,
 }
@@ -292,6 +296,8 @@ fn initialize(
         auth_generation: 0,
         auth_timeout: None,
         starting: false,
+        retry_prompt: None,
+        submit_on_prompt: false,
         retry_after: Instant::now(),
         logind: None,
         widgets: None,
@@ -421,8 +427,10 @@ pub fn lock(
         }
     }
     // The lock shows the person's full name; PAM uses the login name.
-    let mut ui = LockUi::new(&settings, auth::display_name().unwrap_or(username))?;
+    let mut ui = LockUi::new(&settings, auth::display_name().unwrap_or(username.clone()))?;
     crate::lock_ui::configure(&mut ui);
+    crate::lock_ui::identify(&mut ui, &username);
+    ui.motion().enable();
     let ready = if let Some(fd) = ready_fd {
         ensure!(
             fd > 2,
@@ -1116,9 +1124,29 @@ impl App {
         })
     }
     fn begin_authentication(&mut self) {
-        if !self.confirmed || self.authentication.is_some() || Instant::now() < self.retry_after {
+        if !self.confirmed || self.authentication.is_some() {
             return;
         }
+        if Instant::now() < self.retry_after {
+            // Pressing Enter during the failure delay starts as soon as it ends.
+            if self.retry_prompt.is_some() {
+                let at = self.retry_after;
+                let _ = self.handle.insert_source(
+                    Timer::from_deadline(at),
+                    |_, _, app: &mut App| {
+                        if app.authentication.is_none() && app.retry_prompt.is_some() {
+                            app.begin_authentication();
+                            app.redraw();
+                        }
+                        TimeoutAction::Drop
+                    },
+                );
+            }
+            return;
+        }
+        let carried = self.retry_prompt.take().is_some()
+            && self.ui.as_ref().is_some_and(|ui| !ui.secret.is_empty());
+        self.submit_on_prompt = carried;
         self.auth_generation = self.auth_generation.wrapping_add(1);
         if let Some(ui) = &mut self.ui {
             ui.interaction_epoch = (self.auth_generation, 0);
@@ -1134,7 +1162,9 @@ impl App {
                     ui.busy = true;
                     ui.failed = false;
                     ui.prompt = None;
-                    ui.secret.clear();
+                    if !carried {
+                        ui.secret.clear();
+                    }
                     ui.message = fl!("lock-starting-authentication");
                     self.starting = true;
                 }
@@ -1173,6 +1203,7 @@ impl App {
     }
     fn cancel_authentication(&mut self, message: &str) {
         self.starting = false;
+        self.submit_on_prompt = false;
         self.auth_generation = self.auth_generation.wrapping_add(1);
         self.stop_authentication();
         if let Some(ui) = &mut self.ui {
@@ -1191,16 +1222,30 @@ impl App {
         let starting = std::mem::take(&mut self.starting);
         match event {
             auth::Event::Prompt { id, text, echo } => {
+                let carried = std::mem::take(&mut self.submit_on_prompt) && !echo;
                 if let Some(ui) = &mut self.ui {
+                    ui.busy = false;
                     ui.mask_response();
-                    ui.secret.clear();
+                    if !carried {
+                        ui.secret.clear();
+                    }
                     ui.hide_input = false;
                     ui.controls.clear();
                     ui.action_labels = None;
                     if starting {
                         ui.message.clear();
                     }
-                    ui.prompt = Some(crate::lock_ui::Prompt { id, text, echo });
+                    ui.prompt = Some(crate::lock_ui::Prompt {
+                        id,
+                        text: text.clone(),
+                        echo,
+                    });
+                }
+                if !echo {
+                    self.retry_prompt = Some((text, echo));
+                }
+                if carried {
+                    self.submit_authentication();
                 }
             }
             auth::Event::PasswordExpired { id } => {
@@ -1244,7 +1289,15 @@ impl App {
                     if let Some(ui) = &mut self.ui {
                         ui.busy = false;
                         ui.failed = true;
-                        ui.prompt = None;
+                        // Keep the field for the next attempt.
+                        ui.mask_response();
+                        ui.prompt = self.retry_prompt.as_ref().map(|(text, echo)| {
+                            crate::lock_ui::Prompt {
+                                id: u64::MAX,
+                                text: text.clone(),
+                                echo: *echo,
+                            }
+                        });
                         ui.secret.clear();
                         ui.message = fl!("lock-failed");
                     }
@@ -1299,7 +1352,14 @@ impl App {
             ui.hide_input = false;
             ui.controls.clear();
             ui.action_labels = None;
+            // Until PAM answers, the field shows that the response is being checked.
+            ui.busy = true;
+            ui.message.clear();
             let answer = std::mem::take(&mut ui.secret);
+            // The field keeps as many meaningless masked characters while PAM
+            // checks, so the response does not seem to vanish.
+            ui.secret
+                .push(&"x".repeat(answer.text().chars().count().min(64)));
             if self
                 .authentication
                 .as_mut()
@@ -1342,6 +1402,11 @@ impl App {
                 ui.secret.edit(edit);
             } else {
                 ui.secret.push(&text);
+                // A new attempt replaces the previous failure.
+                if ui.failed && !text.is_empty() {
+                    ui.failed = false;
+                    ui.message.clear();
+                }
             }
         }
         self.redraw();

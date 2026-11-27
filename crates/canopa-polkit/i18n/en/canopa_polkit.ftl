@@ -13,16 +13,14 @@ polkit-subtitle = This change needs administrator permission
 polkit-request-details = Request details
 polkit-details-hint = Details · Page Up/Down: page · Enter: back
 polkit-retry = Retry
-polkit-authenticate = Authenticate
-polkit-waiting = Waiting…
+polkit-authenticate = Authorize
 polkit-cancel = Cancel
-polkit-policy-details = Policy details
-polkit-back-to-authentication = Back to authentication
+polkit-policy-details = Request details
+polkit-back-to-authentication = Back to authorization
 # $page of $count pages of request details.
 polkit-next-page = Next page ({ $page }/{ $count })
 polkit-waiting-for-authentication = Waiting for authentication…
-polkit-failed = Authentication failed. Try again.
-polkit-authenticating = Authenticating…
+polkit-failed = Incorrect password. Try again.
 polkit-cancelling = Cancelling authentication…
 # The authenticating account when it is the person's own.
 polkit-your-account = Your account
@@ -41,3 +39,17 @@ polkit-policy-publisher = Policy publisher: { $publisher }
 # Sample request in rendered previews, standing in for polkit's own text.
 polkit-preview-message = Change DNS servers
 polkit-preview-prompt = Password:
+
+# Captions in the request details card.
+polkit-fact-description = Request
+polkit-fact-action = Policy action ID
+polkit-fact-account = Account
+polkit-fact-requester = Requested by
+polkit-fact-publisher = Policy source
+# A requesting process with its application name.
+polkit-checking = Checking…
+polkit-requested-by = Requested by { $name }
+polkit-admin-required = Administrator account
+# Label of the password field when PAM asks for a plain password.
+polkit-admin-password = Administrator password
+polkit-password-hint = Your password is used only to approve this change

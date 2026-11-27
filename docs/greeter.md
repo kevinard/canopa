@@ -238,7 +238,7 @@ greeter {
 | `view { ... }` | presentation | see below |
 
 `view` takes the lock screen's presentation keys (`image`, `fit`, `color`, `output`,
-`dim`, `font`, `clock-format`, `date-format`, `clock-size`, `text-size`,
+`dim`, `blur`, `font`, `clock-format`, `date-format`, `clock-size`, `text-size`,
 `auth-timeout`, `avatar`, `weather-file`, `widgets`, `layout`, `widget`); see the
 [`lockscreen` reference](session-tools.md#lockscreen). Differences from the lock
 screen:
@@ -247,6 +247,9 @@ screen:
   clock, date, username, avatar, the password field and keyboard, with battery (and
   weather, when enabled) in a row at the bottom.
 - `media` is refused and `use-wallpaper #true` is refused; set an explicit `image`.
+  Without one, the login screen shows Canopa's built-in light or dark wallpaper,
+  softened like the lock screen's; an explicit `color` or a high-contrast
+  appearance shows a solid background.
 - Custom script widgets run as the greeter account, without greetd's socket or
   authentication descriptors. Treat them as administrator configuration.
 - `clock-format` and `date-format` default to the system language's formats.
@@ -351,11 +354,20 @@ AccountsService.
 | F6 | Next keyboard layout |
 | F10 | Power menu (shut down, restart) |
 
-With known accounts, the screen lists up to four of them; clicking one or pressing
-Enter on it starts signing in. Typing or **Not listed?** shows a username field;
-**Change account** opens the full list. The desktop chooser is in the bottom-left
-corner; keyboard layout, battery and power are in the bottom-right. When a layout
-region uses those corners, they move into the sign-in column.
+With known accounts, the screen opens on a **Choose an account** card listing up to
+four of them; clicking one or pressing Enter on it starts signing in. Typing or
+**Use another account** shows a username field. Below the field, **Switch account**
+(or **Choose an account** while typing a name) opens the full list, which also offers
+**Use another account**; it is unavailable while a response is being checked. After
+a rejected password the field stays: type again and press Enter. The desktop chooser
+is in the bottom-left corner; keyboard layout, battery and power are in the
+bottom-right, and they stay in place, unavailable, while a chooser or the power
+options are open. When a layout region uses those corners, they move into the
+sign-in column.
+
+The power options open with keyboard focus on **Back**: Enter returns to sign-in,
+and the arrow keys or Tab move to Shut down and Restart. The confirmation step also
+starts on Back.
 
 With `remember-selection #true` the greeter saves the last user who logged in and
 each user's last session, only after greetd confirms the session started. At the next

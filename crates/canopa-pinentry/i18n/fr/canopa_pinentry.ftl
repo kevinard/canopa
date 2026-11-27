@@ -7,7 +7,6 @@
 pinentry-title = Pinentry Canopa
 pinentry-keyring-title = Trousseau Canopa
 pinentry-window-title = { $name } · { $title }
-pinentry-secure-input = Saisie sécurisée Canopa
 pinentry-passphrase-required = Phrase secrète requise
 pinentry-request-details = Détails de la demande
 pinentry-key-details = Détails de la clé
@@ -25,7 +24,7 @@ pinentry-default-cancel = Annuler
 pinentry-default-repeat-error = Les phrases secrètes ne correspondent pas. Réessayez.
 pinentry-repeat-passphrase = Répétez la phrase secrète :
 pinentry-repeat-password = Répétez le mot de passe :
-pinentry-details-back = Retour (Entrée)
+pinentry-details-back = Retour à la demande
 pinentry-details-next = Page suivante (Page suiv.) · { $page } / { $count }
 pinentry-details-previous = Page précédente (Page préc.)
 pinentry-hide-generated = Masquer la phrase secrète générée
@@ -42,3 +41,26 @@ pinentry-constraint-limit = La phrase secrète dépasse la limite de { $limit } 
 pinentry-checking-requirements = Vérification des exigences de l’agent pour la phrase secrète…
 pinentry-check-failed = Impossible de vérifier les exigences de l’agent pour la phrase secrète. Réessayez ou annulez.
 pinentry-length-limit = Limite de la phrase secrète : { $limit } caractères. La saisie a été refusée.
+
+pinentry-create-passphrase = Créer une phrase secrète
+pinentry-subtitle-new = Nécessaire pour utiliser la clé — irrécupérable en cas d’oubli
+pinentry-confirm-deletion = Confirmer la suppression
+pinentry-unlock = Déverrouiller
+pinentry-fact-key = Clé
+pinentry-fact-request = Demande
+pinentry-fact-requested-by = Demandé par
+pinentry-fact-requirements = Exigences
+pinentry-strength-rejected = Trop faible — l’agent la refusera
+pinentry-strength-weak = Faible — ajoutez un autre mot sans rapport
+pinentry-strength-fair = Moyenne — un ou deux mots de plus la rendront bonne
+pinentry-strength-good = Bonne — un mot sans rapport de plus l’améliore
+pinentry-strength-strong = Phrase secrète robuste
+pinentry-strength-hint = Plusieurs mots sans rapport font une phrase secrète robuste
+pinentry-incorrect-passphrase = Phrase secrète incorrecte. Réessayez.
+pinentry-subtitle-permanent = Cette action est irréversible
+pinentry-delete-key = Supprimer la clé secrète ?
+pinentry-incorrect-passphrase-left = { $count ->
+    [one] Phrase secrète incorrecte. 1 essai restant.
+   *[other] Phrase secrète incorrecte. { $count } essais restants.
+}
+pinentry-field-hint = Votre phrase secrète reste sur cet ordinateur

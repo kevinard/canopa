@@ -1,4 +1,5 @@
 //! The interactive session view uses the same Iced controls as the applications.
+use super::style::{self, Kind, Look};
 use super::{Control, ControlKind, Emblem, SessionView, raster};
 use crate::{
     layout::Rect,
@@ -132,6 +133,54 @@ pub(crate) struct Scene {
     elements: Vec<Element<'static>>,
     assets: std::rc::Rc<std::cell::RefCell<Assets>>,
     pub hits: Vec<(usize, Rect)>,
+    /// Controls float over the wallpaper (full-screen surfaces).
+    pub glass: bool,
+    /// Motion: opacity and offset applied to everything placed, the values
+    /// outside the authentication content, the field's shake and the spinner.
+    pub alpha: f32,
+    pub offset: (f32, f32),
+    pub base: (f32, (f32, f32)),
+    pub shake: f32,
+    pub spinner: Option<f32>,
+    /// A response field has keyboard focus; buttons then show no focus ring.
+    pub field_focus: bool,
+    /// The light colour scheme (the clock takes a heavier weight).
+    pub glass_light: bool,
+}
+
+/// What a styled button shows.
+#[derive(Clone, Copy)]
+pub(crate) enum Content<'a> {
+    /// A centred icon of the given logical size.
+    Icon(Emblem, f32),
+    Text {
+        label: &'a str,
+        size: f32,
+        weight: iced::font::Weight,
+        centered: bool,
+    },
+    /// Optional icon, label and trailing indicator, centred.
+    Chip {
+        icon: Option<Emblem>,
+        label: &'a str,
+        trailing: Option<Emblem>,
+    },
+    /// A list row: leading picture, title and detail, and a trailing mark.
+    Row {
+        leading: Option<Leading<'a>>,
+        title: &'a str,
+        detail: Option<&'a str>,
+        checked: bool,
+    },
+    /// A large icon above its label.
+    Tile { icon: Emblem, label: &'a str },
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Leading<'a> {
+    Initials(&'a str),
+    Avatar(&'a SessionView),
+    Icon(Emblem),
 }
 impl Scene {
     pub(super) fn new(assets: std::rc::Rc<std::cell::RefCell<Assets>>) -> Self {
@@ -139,10 +188,71 @@ impl Scene {
             elements: Vec::new(),
             assets,
             hits: Vec::new(),
+            glass: false,
+            alpha: 1.,
+            offset: (0., 0.),
+            base: (1., (0., 0.)),
+            shake: 0.,
+            spinner: None,
+            field_focus: false,
+            glass_light: false,
         }
     }
     pub fn empty(&self) -> Self {
-        Self::new(self.assets.clone())
+        let mut scene = Self::new(self.assets.clone());
+        scene.glass = self.glass;
+        scene.alpha = self.alpha;
+        scene.base = (self.alpha, (0., 0.));
+        scene.shake = self.shake;
+        scene.spinner = self.spinner;
+        scene.field_focus = self.field_focus;
+        scene
+    }
+    fn fade(&self, mut color: iced::Color) -> iced::Color {
+        color.a *= self.alpha;
+        color
+    }
+    fn fade_background(&self, background: iced::Background) -> iced::Background {
+        match background {
+            iced::Background::Color(color) => iced::Background::Color(self.fade(color)),
+            iced::Background::Gradient(iced::Gradient::Linear(mut linear)) => {
+                for stop in linear.stops.iter_mut().flatten() {
+                    stop.color = self.fade(stop.color);
+                }
+                iced::Background::Gradient(iced::Gradient::Linear(linear))
+            }
+        }
+    }
+    /// A turning arc, while waiting on the system.
+    pub fn spinner(&mut self, rect: Rect, angle: f32, color: Rgb, track: iced::Color) {
+        let side = rect.width.max(rect.height).ceil().max(1.) as u32;
+        let (ring, arc) = {
+            let mut assets = self.assets.borrow_mut();
+            (
+                assets.icon(
+                    Emblem::Ring,
+                    side,
+                    Rgb(
+                        (track.r * 255.).round() as u8,
+                        (track.g * 255.).round() as u8,
+                        (track.b * 255.).round() as u8,
+                    ),
+                    None,
+                ),
+                assets.icon(Emblem::Spinner, side, color, None),
+            )
+        };
+        let mut track_image = image(ring).width(rect.width).height(rect.height);
+        track_image = track_image.opacity(track.a * self.alpha);
+        self.place(track_image, rect);
+        self.place(
+            image(arc)
+                .width(rect.width)
+                .height(rect.height)
+                .opacity(self.alpha)
+                .rotation(iced::Rotation::Floating(iced::Radians(angle))),
+            rect,
+        );
     }
     /// Draw one label per line. `size` and `advance` are physical: callers
     /// scale both, so the rows match the height their layout reserved.
@@ -189,14 +299,20 @@ impl Scene {
                 part,
                 Rect {
                     x,
-                    y: rect.y + if period { size * 0.54 } else { 0. },
+                    // The day period sits on the digits' baseline.
+                    y: rect.y + if period { size * 0.665 } else { 0. },
                     width,
                     height: part_size * 1.3,
                 },
                 part_size,
                 color,
                 true,
-                iced::font::Weight::Light,
+                // Light is too thin on a light wallpaper.
+                if self.glass_light {
+                    iced::font::Weight::Normal
+                } else {
+                    iced::font::Weight::Light
+                },
             );
             x += width - 1. + size * 0.1;
         }
@@ -208,6 +324,11 @@ impl Scene {
             .into()
     }
     pub fn place(&mut self, element: impl Into<Element<'static>>, rect: Rect) {
+        let rect = Rect {
+            x: rect.x + self.offset.0,
+            y: rect.y + self.offset.1,
+            ..rect
+        };
         self.elements.push(
             pin(container(element)
                 .clip(true)
@@ -308,7 +429,7 @@ impl Scene {
         let label = text(value)
             .wrapping(iced::widget::text::Wrapping::None)
             .size(size)
-            .color(canopa_ui::color(color))
+            .color(style::rgba(color, self.alpha))
             .font(Font {
                 weight,
                 family: if monospace {
@@ -329,51 +450,478 @@ impl Scene {
             .width(Length::Fill);
         self.place(container(label).clip(true).center_y(Length::Fill), rect);
     }
-    pub fn frame(&mut self, rect: Rect, radius: f32, fill: Rgb, border: Rgb, scale: f32) {
-        self.place(
-            container(iced::widget::space())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_| container::Style {
-                    background: Some(canopa_ui::color(fill).into()),
-                    border: iced::Border {
-                        color: canopa_ui::color(border),
-                        width: scale,
-                        radius: radius.into(),
-                    },
-                    ..Default::default()
-                }),
-            rect,
-        );
-    }
     pub fn icon(&mut self, icon: Emblem, rect: Rect, color: Rgb) {
         self.status_icon(icon, rect, color, None);
     }
     pub fn status_icon(&mut self, icon: Emblem, rect: Rect, color: Rgb, level: Option<f32>) {
         let side = rect.width.max(rect.height).ceil().max(1.) as u32;
         let handle = self.assets.borrow_mut().icon(icon, side, color, level);
-        self.place(image(handle).width(rect.width).height(rect.height), rect);
+        self.place(
+            image(handle)
+                .width(rect.width)
+                .height(rect.height)
+                .opacity(self.alpha),
+            rect,
+        );
+    }
+    /// A rounded surface with an optional gradient fill, border and shadow.
+    #[allow(clippy::too_many_arguments)]
+    pub fn surface(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        fill: impl Into<iced::Background>,
+        border: iced::Color,
+        border_width: f32,
+        shadow: iced::Shadow,
+    ) {
+        let fill = self.fade_background(fill.into());
+        let border = self.fade(border);
+        let shadow = iced::Shadow {
+            color: self.fade(shadow.color),
+            ..shadow
+        };
+        self.place(
+            container(iced::widget::space())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(fill),
+                    border: iced::Border {
+                        color: border,
+                        width: border_width,
+                        radius: radius.into(),
+                    },
+                    shadow,
+                    ..Default::default()
+                }),
+            Rect {
+                // Shadows extend past the placed bounds; the pin clips them,
+                // so place the shadowed node with room around it.
+                ..rect
+            },
+        );
+    }
+    /// A surface whose shadow is drawn around it, outside its own bounds.
+    pub fn raised_surface(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        fill: impl Into<iced::Background>,
+        border: iced::Color,
+        shadow: iced::Shadow,
+    ) {
+        let fill = self.fade_background(fill.into());
+        let border = self.fade(border);
+        let shadow = iced::Shadow {
+            color: self.fade(shadow.color),
+            ..shadow
+        };
+        let room = shadow.blur_radius * 1.5 + shadow.offset.y.abs();
+        self.place(
+            container(
+                container(iced::widget::space())
+                    .width(rect.width.max(1.))
+                    .height(rect.height.max(1.))
+                    .style(move |_| container::Style {
+                        background: Some(fill),
+                        border: iced::Border {
+                            color: border,
+                            width: if border.a > 0. { 1. } else { 0. },
+                            radius: radius.into(),
+                        },
+                        shadow,
+                        ..Default::default()
+                    }),
+            )
+            .padding(room),
+            Rect {
+                x: rect.x - room,
+                y: rect.y - room,
+                width: rect.width + 2. * room,
+                height: rect.height + 2. * room,
+            },
+        );
     }
     pub fn avatar(&mut self, view: &SessionView, rect: Rect, settings: &Settings) {
         if let Some(source) = view.user_avatar.as_deref().or(view.avatar.as_ref()) {
             let handle = self.assets.borrow_mut().avatar(source);
-            self.place(image(handle).width(rect.width).height(rect.height), rect);
+            self.place(
+                image(handle)
+                    .width(rect.width)
+                    .height(rect.height)
+                    .opacity(self.alpha),
+                rect,
+            );
         } else if let Some(initials) = view.avatar_initials.as_ref() {
-            self.frame(
-                rect,
-                rect.width / 2.,
-                settings.appearance.palette().surface,
-                settings.appearance.palette().border,
-                0.,
+            self.initials(initials, rect, settings);
+        }
+    }
+    /// A monogram on a gradient chosen from the initials.
+    pub fn initials(&mut self, initials: &str, rect: Rect, settings: &Settings) {
+        let (light, deep) = style::avatar_tones(initials);
+        let look = Look::new(settings);
+        self.raised_surface(
+            rect,
+            rect.width / 2.,
+            iced::Gradient::Linear(
+                iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI * 0.75))
+                    .add_stop(0., light)
+                    .add_stop(1., deep),
+            ),
+            iced::Color::from_rgba(1., 1., 1., 0.14),
+            iced::Shadow {
+                color: iced::Color::from_rgba(0., 0., 0., if look.dark { 0.22 } else { 0.10 }),
+                offset: iced::Vector::new(0., rect.width * 0.03),
+                blur_radius: (rect.width * 0.12).min(12.),
+            },
+        );
+        self.label(
+            initials.to_uppercase(),
+            rect,
+            rect.width * 0.34,
+            Rgb(255, 255, 255),
+            true,
+            iced::font::Weight::Medium,
+        );
+    }
+    /// An account without a picture or initials.
+    pub fn anonymous(&mut self, rect: Rect, settings: &Settings) {
+        let look = Look::new(settings);
+        let p = look.palette;
+        self.raised_surface(
+            rect,
+            rect.width / 2.,
+            // Someone not yet identified: the accent, quietly, not a disabled grey.
+            iced::Gradient::Linear(
+                iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI * 0.75))
+                    .add_stop(0., style::rgba(raster::mix(p.raised, p.accent, 0.45), 1.))
+                    .add_stop(1., style::rgba(raster::mix(p.raised, p.accent, 0.15), 1.)),
+            ),
+            iced::Color::from_rgba(1., 1., 1., 0.16),
+            look.shadow(rect.width * 0.16),
+        );
+        let side = rect.width * 0.5;
+        self.icon(
+            Emblem::Person,
+            Rect {
+                x: rect.x + (rect.width - side) / 2.,
+                y: rect.y + (rect.height - side) / 2.,
+                width: side,
+                height: side,
+            },
+            p.text,
+        );
+    }
+    /// A button whose look is chosen by the caller.
+    #[allow(clippy::too_many_arguments)]
+    pub fn styled_button(
+        &mut self,
+        settings: &Settings,
+        control: &Control,
+        rect: Rect,
+        scale: f32,
+        kind: Kind,
+        radius: f32,
+        content: Content<'_>,
+    ) {
+        let look = Look::new(settings);
+        let color = if control.enabled {
+            look.foreground(kind)
+        } else {
+            look.palette.disabled
+        };
+        let icon_side = 20. * scale;
+        let alpha = self.alpha;
+        let icon = |assets: &mut Assets, emblem: Emblem, side: f32, color: Rgb| {
+            image(assets.icon(emblem, side.ceil().max(1.) as u32, color, None))
+                .width(side)
+                .height(side)
+                .opacity(alpha)
+        };
+        let rtl = canopa_i18n::direction().is_rtl();
+        let element: Element<'static> = match content {
+            Content::Icon(emblem, side) => {
+                let side = side * scale;
+                container(icon(&mut self.assets.borrow_mut(), emblem, side, color))
+                    .center(Length::Fill)
+                    .into()
+            }
+            Content::Text {
+                label,
+                size,
+                weight,
+                centered,
+            } => {
+                let label = clean(label);
+                let size = self.fit_size(
+                    &label,
+                    Rect {
+                        width: (rect.width - 24. * scale).max(1.),
+                        height: (rect.height - 8. * scale).max(1.),
+                        ..rect
+                    },
+                    size * scale,
+                    weight,
+                    false,
+                );
+                container(
+                    text(label)
+                        .wrapping(iced::widget::text::Wrapping::None)
+                        .size(size)
+                        .font(Font {
+                            weight,
+                            ..Font::DEFAULT
+                        })
+                        .shaping(iced::advanced::text::Shaping::Advanced)
+                        .width(Length::Fill)
+                        .align_x(if centered {
+                            iced::alignment::Horizontal::Center
+                        } else if rtl {
+                            iced::alignment::Horizontal::Right
+                        } else {
+                            iced::alignment::Horizontal::Left
+                        }),
+                )
+                .clip(true)
+                .center_y(Length::Fill)
+                .into()
+            }
+            Content::Chip {
+                icon: leading,
+                label,
+                trailing,
+            } => {
+                let label = clean(label);
+                let mut assets = self.assets.borrow_mut();
+                let mut items: Vec<Element<'static>> = Vec::new();
+                if let Some(emblem) = leading {
+                    items.push(icon(&mut assets, emblem, icon_side * 0.9, color).into());
+                }
+                if !label.is_empty() {
+                    items.push(
+                        text(label)
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .size(15. * scale)
+                            .font(Font {
+                                weight: iced::font::Weight::Medium,
+                                ..Font::DEFAULT
+                            })
+                            .shaping(iced::advanced::text::Shaping::Advanced)
+                            .into(),
+                    );
+                }
+                if let Some(emblem) = trailing {
+                    let tone = if matches!(kind, Kind::Primary | Kind::Resting) {
+                        color
+                    } else {
+                        look.palette.muted
+                    };
+                    items.push(icon(&mut assets, emblem, icon_side * 0.7, tone).into());
+                }
+                if rtl {
+                    items.reverse();
+                }
+                container(
+                    iced::widget::Row::with_children(items)
+                        .spacing(8. * scale)
+                        .align_y(iced::alignment::Vertical::Center),
+                )
+                .clip(true)
+                .center(Length::Fill)
+                .into()
+            }
+            Content::Row {
+                leading,
+                title,
+                detail,
+                checked,
+            } => {
+                let mut items: Vec<Element<'static>> = Vec::new();
+                // Sign-in account rows show larger pictures than list rows.
+                // Account and choice rows share one picture size.
+                let lead = if rect.height >= 60. * scale { 48. } else { 40. } * scale;
+                if leading.is_some() {
+                    items.push(iced::widget::space().width(lead).height(lead).into());
+                }
+                let mut lines = vec![
+                    text(clean(title))
+                        .wrapping(iced::widget::text::Wrapping::None)
+                        .size(15. * scale)
+                        .font(Font {
+                            weight: iced::font::Weight::Semibold,
+                            ..Font::DEFAULT
+                        })
+                        .shaping(iced::advanced::text::Shaping::Advanced)
+                        .into(),
+                ];
+                if let Some(detail) = detail.filter(|d| !d.is_empty()) {
+                    lines.push(
+                        text(clean(detail))
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .size(13. * scale)
+                            .color(style::rgba(look.palette.muted, alpha))
+                            .shaping(iced::advanced::text::Shaping::Advanced)
+                            .into(),
+                    );
+                }
+                items.push(
+                    container(iced::widget::Column::with_children(lines).spacing(1. * scale))
+                        .clip(true)
+                        .width(Length::Fill)
+                        .align_x(if rtl {
+                            iced::alignment::Horizontal::Right
+                        } else {
+                            iced::alignment::Horizontal::Left
+                        })
+                        .into(),
+                );
+                if checked {
+                    items.push(
+                        icon(
+                            &mut self.assets.borrow_mut(),
+                            Emblem::Selected,
+                            22. * scale,
+                            look.palette.accent,
+                        )
+                        .into(),
+                    );
+                } else if matches!(
+                    leading,
+                    Some(Leading::Initials(_) | Leading::Avatar(_) | Leading::Icon(Emblem::Person))
+                ) {
+                    // Account rows lead on to that account's sign-in step.
+                    items.push(
+                        icon(
+                            &mut self.assets.borrow_mut(),
+                            Emblem::Chevron,
+                            16. * scale,
+                            look.palette.muted,
+                        )
+                        .into(),
+                    );
+                }
+                if rtl {
+                    items.reverse();
+                }
+                container(
+                    iced::widget::Row::with_children(items)
+                        .spacing(14. * scale)
+                        .align_y(iced::alignment::Vertical::Center),
+                )
+                .center_y(Length::Fill)
+                .into()
+            }
+            Content::Tile { icon: emblem, label } => {
+                let label = clean(label);
+                let mut assets = self.assets.borrow_mut();
+                container(
+                    iced::widget::column![
+                        icon(&mut assets, emblem, 30. * scale, color),
+                        text(label)
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .size(14. * scale)
+                            .font(Font {
+                                weight: iced::font::Weight::Medium,
+                                ..Font::DEFAULT
+                            })
+                            .shaping(iced::advanced::text::Shaping::Advanced),
+                    ]
+                    .spacing(10. * scale)
+                    .align_x(iced::alignment::Horizontal::Center),
+                )
+                .clip(true)
+                .center(Length::Fill)
+                .into()
+            }
+        };
+        let focused = control.selected;
+        let widget = button(element)
+            .width(rect.width)
+            .height(rect.height)
+            .padding(match content {
+                Content::Row { .. } => iced::Padding::from([6. * scale, 14. * scale]),
+                Content::Icon(..) => iced::Padding::new(0.),
+                _ => iced::Padding::from([4. * scale, 12. * scale]),
+            })
+            .on_press_maybe(control.enabled.then_some(Message::Control(control.id)))
+            // Keyboard focus is a separate ring outside the control, so it never
+            // reads as the current choice.
+            .style(style::button_style(look, kind, radius, false, alpha));
+        if focused && control.enabled && !self.field_focus {
+            let gap = 2.5 * scale;
+            let ring = 2. * scale;
+            self.surface(
+                Rect {
+                    x: rect.x - gap - ring,
+                    y: rect.y - gap - ring,
+                    width: rect.width + 2. * (gap + ring),
+                    height: rect.height + 2. * (gap + ring),
+                },
+                radius + gap + ring,
+                iced::Color::TRANSPARENT,
+                style::rgba(look.focus, 0.95),
+                ring,
+                iced::Shadow::default(),
             );
-            self.label(
-                initials.clone(),
+        }
+        self.hits.push((control.id, rect));
+        if matches!(content, Content::Icon(..)) {
+            self.place(
+                tooltip(
+                    widget,
+                    container(text(clean(&control.label)).size(13. * scale))
+                        .padding(8. * scale)
+                        .style(canopa_ui::surface),
+                    tooltip::Position::Top,
+                )
+                .snap_within_viewport(true),
                 rect,
-                rect.width * 0.36,
-                settings.appearance.palette().text,
-                true,
-                iced::font::Weight::Semibold,
             );
+        } else {
+            self.place(widget, rect);
+        }
+        if let Content::Row {
+            leading: Some(leading),
+            ..
+        } = content
+        {
+            let side = if rect.height >= 60. * scale { 48. } else { 40. } * scale;
+            let avatar = Rect {
+                x: if rtl {
+                    rect.x + rect.width - 14. * scale - side
+                } else {
+                    rect.x + 14. * scale
+                },
+                y: rect.y + (rect.height - side) / 2.,
+                width: side,
+                height: side,
+            };
+            match leading {
+                Leading::Initials(initials) => self.initials(initials, avatar, settings),
+                Leading::Avatar(view) => self.avatar(view, avatar, settings),
+                Leading::Icon(emblem) => {
+                    self.surface(
+                        avatar,
+                        side / 2.,
+                        look.tint(1.),
+                        iced::Color::TRANSPARENT,
+                        0.,
+                        iced::Shadow::default(),
+                    );
+                    let inner = 22. * scale;
+                    self.icon(
+                        emblem,
+                        Rect {
+                            x: avatar.x + (side - inner) / 2.,
+                            y: avatar.y + (side - inner) / 2.,
+                            width: inner,
+                            height: inner,
+                        },
+                        look.palette.accent,
+                    );
+                }
+            }
         }
     }
     pub fn button(
@@ -398,119 +946,134 @@ impl Scene {
         quiet: bool,
         detail: Option<&str>,
     ) {
-        let available_width = rect.width;
-        let mut label = clean(&control.label);
-        if let ControlKind::AccountChooser { text } = &control.kind {
-            label = clean(text);
-        }
-        if let ControlKind::Account { name, detail, .. } = &control.kind {
-            label = clean(name);
-            if let Some(detail) = detail {
-                label.push('\n');
-                label.push_str(&clean(detail));
-            }
-        }
-        if control.kind == ControlKind::Back {
-            rect.width = (view.text_width(&label, 14. * scale) + 44. * scale).min(rect.width);
-            if canopa_i18n::direction().is_rtl() {
-                rect.x += available_width - rect.width;
-            }
-            label = fl!(
-                "session-back-label",
-                arrow = if canopa_i18n::direction().is_rtl() {
-                    "→"
-                } else {
-                    "←"
-                },
-                label = label.as_str()
-            );
-        }
-        if let Some(detail) = detail {
-            label.push('\n');
-            label.push_str(&clean(detail));
-        }
         let primary = view.primary_control == Some(control.id) && !view.busy;
-        let action = if primary {
-            canopa_ui::Action::Primary
+        let kind = if primary
+            && view.prompt.as_ref().is_some_and(|p| !p.echo)
+            && !view.hide_input
+            && view.secret.is_empty()
+        {
+            // Nothing typed yet: the default action rests until there is.
+            Kind::Resting
+        } else if primary {
+            Kind::Primary
+        } else if control.kind == ControlKind::Back {
+            // One style for going back everywhere: a secondary button with an arrow.
+            if self.glass { Kind::Glass } else { Kind::Secondary }
         } else if quiet {
-            canopa_ui::Action::Quiet
+            Kind::Quiet
+        } else if self.glass {
+            Kind::Glass
         } else {
-            canopa_ui::Action::Normal
+            Kind::Secondary
         };
-        let focused = control.selected;
-        let account = matches!(control.kind, ControlKind::Account { .. });
-        let label_size = self.fit_size(
-            &label,
-            Rect {
-                width: (rect.width - if account { 92. } else { 16. } * scale).max(1.),
-                height: (rect.height - 16. * scale).max(1.),
-                ..rect
-            },
-            14. * scale,
-            iced::font::Weight::Normal,
-            false,
-        );
-        let content = text(label)
-            .wrapping(iced::widget::text::Wrapping::None)
-            .size(label_size)
-            .shaping(iced::advanced::text::Shaping::Advanced)
-            .width(Length::Fill)
-            .align_x(if account {
+        let radius = if self.glass {
+            rect.height.min(40. * scale) / 2.
+        } else {
+            10. * scale
+        };
+        match &control.kind {
+            ControlKind::Back => {
+                let label = clean(&control.label);
+                let available_width = rect.width;
+                rect.width = (view.text_width(&label, 14. * scale) + 64. * scale).min(rect.width);
                 if canopa_i18n::direction().is_rtl() {
-                    iced::alignment::Horizontal::Right
-                } else {
-                    iced::alignment::Horizontal::Left
+                    rect.x += available_width - rect.width;
                 }
-            } else {
-                iced::alignment::Horizontal::Center
-            });
-        let enabled = control.enabled;
-        let widget = button(container(content).clip(true).center_y(Length::Fill))
-            .width(rect.width)
-            .height(rect.height)
-            .padding(if account {
-                let mut padding = iced::Padding::new(8. * scale);
-                if canopa_i18n::direction().is_rtl() {
-                    padding.right = 84. * scale;
-                } else {
-                    padding.left = 84. * scale;
-                }
-                padding
-            } else {
-                iced::Padding::new(8. * scale)
-            })
-            .on_press_maybe(enabled.then_some(Message::Control(control.id)))
-            .style(move |theme, status| canopa_ui::action_style(theme, status, action, focused));
-        self.hits.push((control.id, rect));
-        self.place(widget, rect);
-        if let ControlKind::Account { initials, .. } = &control.kind {
-            let avatar = Rect {
-                x: if canopa_i18n::direction().is_rtl() {
-                    rect.x + rect.width - 72. * scale
-                } else {
-                    rect.x + 12. * scale
-                },
-                y: rect.y + (rect.height - 60. * scale) / 2.,
-                width: 60. * scale,
-                height: 60. * scale,
-            };
-            if control.selected && (view.user_avatar.is_some() || view.avatar.is_some()) {
-                self.avatar(view, avatar, settings);
-            } else {
-                self.frame(
-                    avatar,
-                    30. * scale,
-                    settings.appearance.palette().raised,
-                    settings.appearance.palette().border,
+                self.styled_button(
+                    settings,
+                    control,
+                    rect,
                     scale,
+                    kind,
+                    radius,
+                    Content::Chip {
+                        icon: Some(Emblem::ArrowBack),
+                        label: &label,
+                        trailing: None,
+                    },
                 );
-                self.label(
-                    initials.clone(),
-                    avatar,
-                    20. * scale,
-                    settings.appearance.palette().text,
-                    true,
-                    iced::font::Weight::Semibold,
+            }
+            ControlKind::Account {
+                name,
+                detail: account_detail,
+                initials,
+            } => {
+                let leading = if control.selected
+                    && (view.user_avatar.is_some() || view.avatar.is_some())
+                {
+                    Leading::Avatar(view)
+                } else {
+                    Leading::Initials(initials)
+                };
+                self.styled_button(
+                    settings,
+                    control,
+                    rect,
+                    scale,
+                    if self.glass { Kind::Glass } else { kind },
+                    16. * scale,
+                    Content::Row {
+                        leading: Some(leading),
+                        title: name,
+                        detail: account_detail.as_deref().or(detail),
+                        checked: false,
+                    },
+                );
+            }
+            ControlKind::Tile(emblem) => self.styled_button(
+                settings,
+                control,
+                rect,
+                scale,
+                // Keyboard selection is the focus ring alone: no choice is preselected.
+                kind,
+                18. * scale,
+                Content::Tile {
+                    icon: *emblem,
+                    label: &control.label,
+                },
+            ),
+            ControlKind::AccountChooser { text } => self.styled_button(
+                settings,
+                control,
+                rect,
+                scale,
+                kind,
+                radius,
+                Content::Text {
+                    label: text,
+                    size: 14.,
+                    weight: iced::font::Weight::Medium,
+                    centered: true,
+                },
+            ),
+            _ => {
+                let mut label = clean(&control.label);
+                if let Some(detail) = detail {
+                    label.push_str(" · ");
+                    label.push_str(&clean(detail));
+                }
+                self.styled_button(
+                    settings,
+                    control,
+                    rect,
+                    scale,
+                    if control.kind == ControlKind::Destructive {
+                        Kind::Danger
+                    } else {
+                        kind
+                    },
+                    radius,
+                    Content::Text {
+                        label: &label,
+                        size: 14.,
+                        weight: if kind == Kind::Primary {
+                            iced::font::Weight::Semibold
+                        } else {
+                            iced::font::Weight::Medium
+                        },
+                        centered: true,
+                    },
                 );
             }
         }
@@ -524,38 +1087,22 @@ impl Scene {
         rect: Rect,
         scale: f32,
     ) {
-        let side = (24. * scale).ceil().max(1.) as u32;
         let primary = view.primary_control == Some(control.id) && !view.busy;
-        let color = if primary {
-            settings.appearance.role(canopa_theme::ColorRole::OnAccent)
+        let kind = if primary {
+            Kind::Primary
+        } else if self.glass && control.kind == ControlKind::Power {
+            Kind::Glass
         } else {
-            settings.appearance.palette().text
+            Kind::Quiet
         };
-        let handle = self.assets.borrow_mut().icon(icon, side, color, None);
-        let content = image(handle).width(24. * scale).height(24. * scale);
-        let focused = control.selected;
-        let action = if primary {
-            canopa_ui::Action::Primary
-        } else {
-            canopa_ui::Action::Quiet
-        };
-        let widget = button(container(content).center(Length::Fill))
-            .width(rect.width)
-            .height(rect.height)
-            .padding(4. * scale)
-            .on_press_maybe(control.enabled.then_some(Message::Control(control.id)))
-            .style(move |theme, status| canopa_ui::action_style(theme, status, action, focused));
-        self.hits.push((control.id, rect));
-        self.place(
-            tooltip(
-                widget,
-                container(text(clean(&control.label)).size(13. * scale))
-                    .padding(8. * scale)
-                    .style(canopa_ui::surface),
-                tooltip::Position::Top,
-            )
-            .snap_within_viewport(true),
+        self.styled_button(
+            settings,
+            control,
             rect,
+            scale,
+            kind,
+            rect.width.min(rect.height) / 2.,
+            Content::Icon(icon, if primary { 22. } else { 20. }),
         );
     }
     pub fn field(
@@ -605,11 +1152,6 @@ impl Scene {
                 let (display, selection, cursor) = view.secret.presentation(reveal, maximum);
                 let width = rect.width.ceil().max(1.) as u32;
                 let height = rect.height.ceil().max(1.) as u32;
-                let mut bitmap = ::image::RgbImage::from_pixel(
-                    width,
-                    height,
-                    ::image::Rgb([palette.surface.0, palette.surface.1, palette.surface.2]),
-                );
                 let available = (rect.width - 28. * scale).max(1.);
                 let mut text = view.text_renderer.borrow_mut();
                 let carets = text.carets(&display, 17. * scale, available);
@@ -630,73 +1172,109 @@ impl Scene {
                         )
                     })
                     .collect();
-                if display.is_empty() {
-                    text.draw_styled(
-                        &mut bitmap,
-                        &placeholder,
-                        (
-                            if rtl {
-                                rect.width - 14. * scale
-                            } else {
-                                14. * scale
-                            },
-                            rect.height / 2. + 6. * scale,
-                        ),
-                        15. * scale,
-                        available,
-                        if view.caps {
-                            palette.warning
-                        } else {
-                            palette.muted
-                        },
-                        None,
-                        if rtl {
-                            crate::text::Style::Leading(cosmic_text::Weight::NORMAL).mirrored()
-                        } else {
-                            crate::text::Style::Leading(cosmic_text::Weight::NORMAL)
-                        },
-                    );
+                let style = if rtl {
+                    crate::text::Style::Leading(cosmic_text::Weight::NORMAL).mirrored()
                 } else {
-                    text.draw_styled(
-                        &mut bitmap,
-                        &display,
-                        (
-                            if rtl {
-                                rect.width - 14. * scale
-                            } else {
-                                14. * scale
-                            },
-                            rect.height / 2. + 6. * scale,
-                        ),
-                        17. * scale,
-                        available,
-                        if view.caps {
-                            palette.warning
-                        } else {
-                            palette.text
-                        },
-                        Some((
-                            selection,
-                            cursor,
-                            settings.appearance.role(canopa_theme::ColorRole::Focus),
-                        )),
-                        if rtl {
-                            crate::text::Style::Leading(cosmic_text::Weight::NORMAL).mirrored()
-                        } else {
-                            crate::text::Style::Leading(cosmic_text::Weight::NORMAL)
-                        },
-                    );
-                }
-                // tiny-skia's raster path does not clip an image to rounded corners.
-                // Keep the response bitmap inside its pill instead of covering the
-                // surrounding Iced frame with a rectangular background.
-                let mut bitmap = ::image::DynamicImage::ImageRgb8(bitmap).to_rgba8();
-                let radius = height.min(width) as f32 / 2.;
-                for (x, y, pixel) in bitmap.enumerate_pixels_mut() {
-                    let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
-                    let dx = x - x.clamp(radius, width as f32 - radius);
-                    let dy = y - y.clamp(radius, height as f32 - radius);
-                    pixel[3] = ((radius + 0.5 - dx.hypot(dy)).clamp(0., 1.) * 255.).round() as u8;
+                    crate::text::Style::Leading(cosmic_text::Weight::NORMAL)
+                };
+                let x = if rtl {
+                    rect.width - 14. * scale
+                } else {
+                    14. * scale
+                };
+                let origin = (
+                    x,
+                    rect.height / 2. + 6. * scale,
+                );
+                // Draw over black and over white, then recover coverage and
+                // colour, so the field's own (translucent) surface shows through.
+                let caret = view.prompt.is_some() && !view.busy && !view.hide_input;
+                let mut draw = |base: u8| {
+                    let mut bitmap = ::image::RgbImage::from_pixel(width, height, ::image::Rgb([base; 3]));
+                    if display.is_empty() {
+                        text.draw_styled(
+                            &mut bitmap,
+                            &placeholder,
+                            // Leave the caret its own space before the placeholder.
+                            (
+                                origin.0 + if !caret {
+                                    0.
+                                } else if rtl {
+                                    -6. * scale
+                                } else {
+                                    6. * scale
+                                },
+                                origin.1,
+                            ),
+                            15. * scale,
+                            available,
+                            palette.muted,
+                            None,
+                            style,
+                        );
+                        // An empty field that takes input still shows where typing goes.
+                        if caret {
+                            let focus = settings.appearance.role(canopa_theme::ColorRole::Focus);
+                            let x = (origin.0 - if rtl { 2. * scale } else { 2. * scale })
+                                .max(0.) as u32;
+                            let half = (9. * scale) as u32;
+                            let middle = (rect.height / 2.) as u32;
+                            for y in middle.saturating_sub(half)..(middle + half).min(height) {
+                                for dx in 0..(1.5 * scale).ceil().max(1.) as u32 {
+                                    if x + dx < width {
+                                        bitmap.put_pixel(
+                                            x + dx,
+                                            y,
+                                            ::image::Rgb([focus.0, focus.1, focus.2]),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        text.draw_styled(
+                            &mut bitmap,
+                            &display,
+                            origin,
+                            17. * scale,
+                            available,
+                            palette.text,
+                            // A read-only field (being checked) shows no caret.
+                            (!view.busy).then(|| {
+                                (
+                                    selection.clone(),
+                                    cursor,
+                                    settings.appearance.role(canopa_theme::ColorRole::Focus),
+                                )
+                            }),
+                            style,
+                        );
+                    }
+                    bitmap
+                };
+                let black = draw(0);
+                let white = draw(255);
+                let mut bitmap = ::image::RgbaImage::new(width, height);
+                for ((target, dark), light) in bitmap
+                    .pixels_mut()
+                    .zip(black.pixels())
+                    .zip(white.pixels())
+                {
+                    let coverage = (0..3)
+                        .map(|c| 255 - i32::from(light[c]) + i32::from(dark[c]))
+                        .max()
+                        .unwrap_or(0)
+                        .clamp(0, 255);
+                    if coverage == 0 {
+                        continue;
+                    }
+                    let alpha = coverage as f32 / 255.;
+                    *target = ::image::Rgba([
+                        (f32::from(dark[0]) / alpha).round().min(255.) as u8,
+                        (f32::from(dark[1]) / alpha).round().min(255.) as u8,
+                        (f32::from(dark[2]) / alpha).round().min(255.) as u8,
+                        coverage as u8,
+                    ]);
                 }
                 let handle = image::Handle::from_rgba(width, height, bitmap.into_raw());
                 PreparedField { handle, positions }
@@ -715,6 +1293,7 @@ impl Scene {
                 positions: prepared.positions,
                 anchor: view.secret.anchor(),
                 enabled: view.prompt.is_some() && !view.hide_input,
+                opacity: self.alpha,
             }),
             rect,
         );
@@ -728,6 +1307,7 @@ struct SecureInput {
     positions: Vec<(usize, f32)>,
     anchor: usize,
     enabled: bool,
+    opacity: f32,
 }
 #[derive(Default)]
 struct Selection {
@@ -825,7 +1405,7 @@ impl Widget<Message, Theme, Renderer> for SecureInput {
     ) {
         let bounds = layout.bounds();
         renderer.draw_image(
-            iced::advanced::image::Image::new(self.image.clone()),
+            iced::advanced::image::Image::new(self.image.clone()).opacity(self.opacity),
             bounds,
             bounds,
         );
@@ -1136,7 +1716,7 @@ pub(super) mod tests {
         );
     }
     #[test]
-    fn caps_lock_uses_the_warning_colour_in_the_response_bitmap() {
+    fn caps_lock_leaves_the_response_bitmap_in_the_text_colour() {
         let (settings, mut view) = fixture();
         view.prompt = Some(super::super::Prompt {
             id: 1,
@@ -1169,8 +1749,10 @@ pub(super) mod tests {
                 .count()
         };
         assert_eq!(count(&view), 0);
+        // The warning is a message below the field; the typed text keeps its
+        // colour, so it never reads as an error.
         view.caps = true;
-        assert!(count(&view) > 5);
+        assert_eq!(count(&view), 0);
     }
 
     #[test]
