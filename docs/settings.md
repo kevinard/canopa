@@ -217,7 +217,7 @@ sounds** writes `notifications { sound enabled=... }` in `config.kdl` at once.
   on demand (it slides in when the pointer touches the top edge or with
   Super+Shift+B) or never. **Use the Canopa layout** restores comfortable spacing
   (16 logical pixels), opens windows at half width, scrolls only as far as needed,
-  so two windows always fill the screen, and always shows the window bar.
+  so two windows always fill the screen, and shows the window bar on demand.
 
 The `config.kdl` fields are written by Save and validated by every owner
 (`canopa config check`); the Shell, Notify and the Settings portal reload them, and

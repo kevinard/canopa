@@ -204,7 +204,7 @@ The topics that make up the pin, each a tracking PR in the fork:
 | `canopa/window-preview` (#19) | `canopa/base` | Taskbar tooltip thumbnails (`org.canopa.Niri.WindowPreview1`) |
 | `canopa/pinned-columns` (#20) | `canopa/base` | Pinned columns in the minimap, workspace hover cards and `Mod+P` defaults |
 | `canopa/titlebars` ([#22](https://github.com/kevinard/niri/pull/22)) | `canopa/base` | Negotiated SSD titlebars: compositor-owned close/maximize controls, dragging and double-click maximize, configurable style and layout, `draw-titlebar` rule |
-| `canopa/framed-overview` ([#23](https://github.com/kevinard/niri/pull/23)) | `canopa/base` | Work-area clipping, the window bar and the titlebar layout menu; the framed Overview it introduced has been removed in favour of Niri's own. The current pin is the tested candidate on `canopa/window-navigation-preview`, which is `canopa/main` plus later revisions of this topic that #23 does not have yet |
+| `canopa/framed-overview` ([#23](https://github.com/kevinard/niri/pull/23)) | `canopa/base` | Work-area clipping, the window bar and the titlebar layout menu; the framed Overview it introduced has been removed in favour of Niri's own. The current pin is the tested candidate on `canopa/window-navigation-preview` ([#24](https://github.com/kevinard/niri/pull/24)), which is `canopa/main` plus later revisions of this topic that #23 does not have yet |
 | `canopa/keep-last-frame` (#21, with Smithay `canopa/keep-last-frame`, kevinard/smithay#5) | `canopa/base` | `NIRI_KEEP_LAST_FRAME_ON_EXIT=1` leaves the login screen's last frame on screen for the desktop session (`DRM_IOCTL_MODE_CLOSEFB`) |
 
 The std-only checks `scripts/test-remote-touch-core.py` (workspace gate) and

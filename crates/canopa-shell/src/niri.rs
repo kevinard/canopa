@@ -226,6 +226,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: None,
         }

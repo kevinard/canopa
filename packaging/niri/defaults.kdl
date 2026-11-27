@@ -23,6 +23,9 @@ layout {
     }
     gaps 16
     clip-scroll-to-work-area
+    // The window bar slides in from the top edge, during keyboard navigation and with
+    // Super+Shift+B, rather than keeping a row of its own.
+    window-bar "on-demand"
     center-focused-column "never"
     default-column-width { proportion 0.5; }
     // Mod+R cycles the focused column through these widths.
@@ -161,6 +164,11 @@ binds {
     Mod+C { center-column; }
     Mod+P { toggle-pinned-column "left"; }
     Mod+Shift+P { toggle-pinned-column "right"; }
+    // Folds pinned columns past their edges to give their space back, or unfolds them.
+    Mod+Ctrl+P { toggle-pinned-column-folded; }
+    // The scratchpad: a floating window shown and hidden on demand, on any workspace.
+    Mod+Grave { toggle-scratchpad; }
+    Mod+Shift+Grave { toggle-window-in-scratchpad; }
     Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
     Mod+WheelScrollUp cooldown-ms=150 { focus-workspace-up; }
     Mod+WheelScrollRight { focus-column-right; }

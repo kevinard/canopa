@@ -241,6 +241,7 @@ shell-taskbar-open = Open
 shell-taskbar-new-window = New window
 shell-taskbar-pin = Pin to taskbar
 shell-taskbar-unpin = Unpin from taskbar
+shell-taskbar-scratchpad = Scratchpad
 shell-hover-card-more-windows = { $count ->
     [one] 1 more window
    *[other] { $count } more windows

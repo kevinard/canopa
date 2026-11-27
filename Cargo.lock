@@ -4820,7 +4820,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "niri-ipc"
 version = "26.4.0"
-source = "git+https://github.com/kevinard/niri?rev=be9d6c1e994bb22c96c835c49ae987da4c19937f#be9d6c1e994bb22c96c835c49ae987da4c19937f"
+source = "git+https://github.com/kevinard/niri?rev=7dfb4fa9517ae8b2a808de4f1712d0500f8ca51b#7dfb4fa9517ae8b2a808de4f1712d0500f8ca51b"
 dependencies = [
  "serde",
  "serde_json",

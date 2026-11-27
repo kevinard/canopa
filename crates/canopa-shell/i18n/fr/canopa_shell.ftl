@@ -219,6 +219,7 @@ shell-taskbar-open = Ouvrir
 shell-taskbar-new-window = Nouvelle fenêtre
 shell-taskbar-pin = Épingler à la barre des tâches
 shell-taskbar-unpin = Détacher de la barre des tâches
+shell-taskbar-scratchpad = Bloc-notes de fenêtres
 shell-hover-card-more-windows = { $count ->
     [one] 1 autre fenêtre
    *[other] { $count } autres fenêtres

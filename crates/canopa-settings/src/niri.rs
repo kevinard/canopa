@@ -191,12 +191,11 @@ pub enum WindowBar {
 
 impl WindowBar {
     pub const ALL: [Self; 3] = [Self::Always, Self::OnDemand, Self::Off];
-    /// The line Settings writes; the shipped default writes none, so blocks from
-    /// earlier versions keep their meaning.
+    /// The line Settings writes; the shipped default (on demand) writes none.
     fn kdl(self) -> &'static str {
         match self {
-            Self::Always => "",
-            Self::OnDemand => "    window-bar \"on-demand\"\n",
+            Self::Always => "    window-bar \"always\"\n",
+            Self::OnDemand => "",
             Self::Off => "    window-bar \"off\"\n",
         }
     }
@@ -251,7 +250,7 @@ impl WindowLayout {
         // Half-width columns pair up exactly, so the view only scrolls as far as needed.
         center: CenterColumn::Never,
         width: ColumnWidth::Half,
-        bar: WindowBar::Always,
+        bar: WindowBar::OnDemand,
     };
 
     fn kdl(self) -> String {
@@ -401,14 +400,14 @@ mod window_layout_tests {
             gaps: 6,
             center: CenterColumn::Always,
             width: ColumnWidth::TwoThirds,
-            bar: WindowBar::OnDemand,
+            bar: WindowBar::Always,
         };
         let with_motion = format!("{BASE}{MOTION_OVERRIDE}");
         let written = with_window_layout(&with_motion, Some(layout)).unwrap();
         assert!(written.starts_with(BASE));
         assert!(written.ends_with(MOTION_OVERRIDE));
         assert!(written.contains("default-column-width { proportion 0.66667; }"));
-        assert!(written.contains("window-bar \"on-demand\""));
+        assert!(written.contains("window-bar \"always\""));
         assert_eq!(split_layout(&written).unwrap().1, Some(layout));
         assert_eq!(with_window_layout(&written, None).unwrap(), with_motion);
 
@@ -434,12 +433,12 @@ mod window_layout_tests {
     }
 
     #[test]
-    fn blocks_from_before_the_window_bar_choice_keep_their_meaning() {
+    fn blocks_without_a_window_bar_line_use_the_shipped_bar() {
         let earlier = format!(
             "{BASE}{LAYOUT_MARKER}\nlayout {{\n    gaps 6\n    center-focused-column \"never\"\n    default-column-width {{ proportion 0.5; }}\n}}\n"
         );
         let layout = split_layout(&earlier).unwrap().1.unwrap();
-        assert_eq!(layout.bar, WindowBar::Always);
+        assert_eq!(layout.bar, WindowBar::OnDemand);
         assert_eq!(layout.gaps, 6);
     }
 
@@ -471,5 +470,7 @@ mod window_layout_tests {
             "    default-column-width {{ proportion {}; }}\n",
             layout.width.kdl()
         )));
+        assert_eq!(layout.bar, WindowBar::OnDemand);
+        assert!(defaults.contains("    window-bar \"on-demand\"\n"));
     }
 }

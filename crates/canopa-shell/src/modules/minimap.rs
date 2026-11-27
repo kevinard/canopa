@@ -1,8 +1,9 @@
 //! Minimap: the scrolling strip of the workspace shown on the bar's output,
 //! drawn to scale. Each column is a bar of its tiled windows; the focused
-//! window is accented and its column stands out. A click focuses a window,
-//! and scrolling over the strip moves focus between columns. Niri owns the
-//! layout; the Shell only draws what Niri reports.
+//! window is accented and its column stands out. A pinned column stands apart
+//! in a tinted tray with a rail along the edge of the view it is pinned to. A
+//! click focuses a window, and scrolling over the strip moves focus between
+//! columns. Niri owns the layout; the Shell only draws what Niri reports.
 //!
 //! When Niri reports where tiled windows sit in the view (the Canopa fork's
 //! `canopa/viewport-ipc`; upstream Niri 26.04 reports it for floating windows
@@ -115,6 +116,9 @@ pub(crate) fn workspace_strip(niri: &NiriState, workspace: &niri_ipc::Workspace)
         }
         match window.layout.pos_in_scrolling_layout {
             Some((column, tile)) => tiled.push((column, tile, window)),
+            // Scratchpad windows belong to no workspace in particular; the window bar's
+            // scratchpad button counts them.
+            None if window.layout.in_scratchpad => {}
             None => floating += 1,
         }
     }
@@ -183,6 +187,13 @@ pub(crate) struct StripMetrics {
     /// A pinned column stands further apart from the strip it does not
     /// scroll with.
     pub pin_gap: f32,
+    /// A pinned column's tiles sit this far inside its tray.
+    pub pin_inset: f32,
+    /// The thickness of the rail along the tray's pinned edge, standing for
+    /// the edge of the view the column is fastened to.
+    pub pin_rail: f32,
+    /// Space between the rail and the column's tiles.
+    pub pin_rail_gap: f32,
     /// Space between the tiles of a column.
     pub tile_gap: f32,
     /// The smallest extent of a column or tile.
@@ -197,6 +208,9 @@ pub(crate) struct StripMetrics {
 pub(crate) const BAR_STRIP: StripMetrics = StripMetrics {
     column_gap: 2.0,
     pin_gap: 6.0,
+    pin_inset: 2.0,
+    pin_rail: 2.0,
+    pin_rail_gap: 2.0,
     tile_gap: 1.0,
     min_extent: 2.0,
     frame_inset: 2.0,
@@ -204,6 +218,26 @@ pub(crate) const BAR_STRIP: StripMetrics = StripMetrics {
 };
 
 impl StripMetrics {
+    /// The tray of a pinned column in a strip `size` pixels across, or `None`
+    /// for unpinned columns. Its tiles keep their length and give up the
+    /// inset across, so even a narrow column shrunk to fit keeps its tray.
+    pub(crate) fn pin_tray(&self, column: &MinimapColumn, size: f32) -> Option<PinTray> {
+        Some(PinTray {
+            side: column.pinned?,
+            tile_size: (size - 2.0 * self.pin_inset).max(self.min_extent),
+        })
+    }
+
+    /// How much longer a column is drawn than its tiles: the inset and rail
+    /// of a pinned column's tray.
+    fn tray_length(&self, column: &MinimapColumn) -> f32 {
+        if column.pinned.is_some() {
+            2.0 * self.pin_inset + self.pin_rail + self.pin_rail_gap
+        } else {
+            0.0
+        }
+    }
+
     /// The space after column `index`.
     fn gap_after(&self, columns: &[MinimapColumn], index: usize) -> f32 {
         let pinned_boundary = columns[index].pinned == Some(niri_ipc::PinSide::Left)
@@ -217,10 +251,16 @@ impl StripMetrics {
         }
     }
 
-    fn total_gaps(&self, columns: &[MinimapColumn]) -> f32 {
-        (0..columns.len().saturating_sub(1))
+    /// The strip's length besides its tiles: the gaps between columns and
+    /// the trays of pinned ones. It stays when the strip shrinks to fit.
+    fn fixed_length(&self, columns: &[MinimapColumn]) -> f32 {
+        let gaps: f32 = (0..columns.len().saturating_sub(1))
             .map(|index| self.gap_after(columns, index))
-            .sum()
+            .sum();
+        gaps + columns
+            .iter()
+            .map(|column| self.tray_length(column))
+            .sum::<f32>()
     }
 
     /// Column lengths along the strip, in pixels: to scale with the
@@ -244,10 +284,10 @@ impl StripMetrics {
             .iter()
             .map(|column| (column.width as f32 * scale).max(self.min_extent + 1.0))
             .collect();
-        let gaps = self.total_gaps(&state.columns);
-        let total: f32 = lengths.iter().sum::<f32>() + gaps;
+        let fixed = self.fixed_length(&state.columns);
+        let total: f32 = lengths.iter().sum::<f32>() + fixed;
         if max_length > 0.0 && total > max_length {
-            let factor = ((max_length - gaps).max(0.0)) / (total - gaps);
+            let factor = ((max_length - fixed).max(0.0)) / (total - fixed);
             for length in &mut lengths {
                 *length = (*length * factor).max(self.min_extent);
             }
@@ -255,9 +295,9 @@ impl StripMetrics {
         lengths
     }
 
-    /// The strip's length: columns and the gaps between them.
+    /// The strip's length: columns, pin trays and the gaps between them.
     pub(crate) fn strip_length(&self, state: &MinimapState, lengths: &[f32]) -> f32 {
-        lengths.iter().sum::<f32>() + self.total_gaps(&state.columns)
+        lengths.iter().sum::<f32>() + self.fixed_length(&state.columns)
     }
 
     /// Tile extents across the strip: the column's tiles share `size` by height.
@@ -294,6 +334,8 @@ impl StripMetrics {
         let mut span: Option<(f32, f32)> = None;
         let mut clipped = false;
         for (index, (column, length)) in state.columns.iter().zip(lengths).enumerate() {
+            // A pinned column's tray goes with it.
+            let length = length + self.tray_length(column);
             match column.visible_range(state.view_width) {
                 Some((from, to)) => {
                     clipped |= from > 0.0 || to < 1.0;
@@ -319,21 +361,58 @@ pub(crate) struct TilePlace {
     pub active_column: bool,
     /// Part of its column is on screen.
     pub on_screen: bool,
-    /// Its column is pinned to an edge of the view.
-    pub pinned: bool,
+    /// The edge of the view its column is pinned to.
+    pub pinned: Option<niri_ipc::PinSide>,
+    /// It is the top tile of its column.
+    pub first: bool,
+}
+
+/// A pinned column's tiles sit in a tinted tray with a rail along the edge it
+/// is pinned to, so it reads apart from the scrolling columns at any size.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PinTray {
+    /// The edge the rail runs along.
+    pub side: niri_ipc::PinSide,
+    /// The space the tiles share across the strip, inside the tray.
+    pub tile_size: f32,
+}
+
+/// Colors a drawn strip uses besides its tiles'.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StripColors {
+    /// The frame around the part on screen.
+    pub frame: iced::Color,
+    /// The tray behind a pinned column.
+    pub pin_tray: iced::Color,
+    /// The rail along a pinned column's pinned edge.
+    pub pin_rail: iced::Color,
+}
+
+impl StripColors {
+    /// The strip colors of the current palette: the pin tray and rail take the
+    /// accent, softened enough that a focused window inside stays brightest.
+    pub(crate) fn themed(frame: iced::Color, tray_alpha: f32) -> Self {
+        let colors = crate::theme::palette();
+        Self {
+            frame,
+            pin_tray: colors.accent.scale_alpha(tray_alpha),
+            pin_rail: colors.accent,
+        }
+    }
 }
 
 /// Draw `state` as a strip `size` pixels across: columns of tiles to scale,
-/// shrunk to `max_length`, with a frame around the part on screen. Each tile
-/// is drawn by `tile`. The bar's minimap and the workspace hover card share
-/// this layout and differ only in their metrics and tiles.
+/// shrunk to `max_length`, with a frame around the part on screen and each
+/// pinned column in its tray. Each tile is drawn by `tile`. The bar's minimap
+/// and the workspace hover card share this layout and differ only in their
+/// metrics and tiles.
 pub(crate) fn draw_strip<'a, Message: 'a>(
     state: &MinimapState,
     metrics: StripMetrics,
     size: f32,
     max_length: f32,
     horizontal: bool,
-    frame_color: iced::Color,
+    colors: StripColors,
     mut tile: impl FnMut(&MinimapTile, TilePlace) -> iced::Element<'a, Message>,
 ) -> iced::Element<'a, Message> {
     use iced::widget::{Space, column, container, row};
@@ -355,11 +434,14 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
             });
         }
         let on_screen = column_state.visible_range(state.view_width).is_some();
+        let tray = metrics.pin_tray(column_state, size);
+        let tile_size = tray.map_or(size, |tray| tray.tile_size);
         let tiles = column_state
             .tiles
             .iter()
-            .zip(metrics.tile_extents(column_state, size))
-            .map(|(item, extent)| {
+            .zip(metrics.tile_extents(column_state, tile_size))
+            .enumerate()
+            .map(|(position, (item, extent))| {
                 let (width, height) = if horizontal {
                     (length, extent)
                 } else {
@@ -371,16 +453,24 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
                         size: iced::Size::new(width, height),
                         active_column: column_state.active,
                         on_screen,
-                        pinned: column_state.pinned.is_some(),
+                        pinned: column_state.pinned,
+                        first: position == 0,
                     },
                 )
             })
             .collect::<Vec<iced::Element<'a, Message>>>();
-        strip.push(if horizontal {
+        let tiles: iced::Element<'a, Message> = if horizontal {
             column(tiles).spacing(metrics.tile_gap).into()
         } else {
             row(tiles).spacing(metrics.tile_gap).into()
-        });
+        };
+        let Some(tray) = tray else {
+            strip.push(tiles);
+            continue;
+        };
+        strip.push(pin_tray(
+            tray, metrics, colors, horizontal, on_screen, tiles,
+        ));
     }
     let strip: iced::Element<'a, Message> = if horizontal {
         row(strip).align_y(iced::Alignment::Center).into()
@@ -395,6 +485,7 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
     let inset = metrics.frame_inset;
     let across = size + 2.0 * inset;
     let radius = metrics.radius + inset;
+    let frame_color = colors.frame;
     let frame = container(Space::new()).style(move |_| container::Style {
         border: iced::Border {
             color: frame_color,
@@ -420,6 +511,54 @@ pub(crate) fn draw_strip<'a, Message: 'a>(
         ]
         .into()
     }
+}
+
+/// A pinned column's `tiles` in their tray, with the rail on the pinned
+/// side. A folded column, off screen, keeps a fainter tray.
+fn pin_tray<'a, Message: 'a>(
+    tray: PinTray,
+    metrics: StripMetrics,
+    colors: StripColors,
+    horizontal: bool,
+    on_screen: bool,
+    tiles: iced::Element<'a, Message>,
+) -> iced::Element<'a, Message> {
+    use iced::widget::{Space, column, container, row};
+    let fade = if on_screen { 1.0 } else { 0.5 };
+    let (rail_color, tray_color) = (
+        colors.pin_rail.scale_alpha(fade),
+        colors.pin_tray.scale_alpha(fade),
+    );
+    let (rail_width, rail_height) = if horizontal {
+        (metrics.pin_rail, tray.tile_size)
+    } else {
+        (tray.tile_size, metrics.pin_rail)
+    };
+    let rail: iced::Element<'a, Message> =
+        container(Space::new().width(rail_width).height(rail_height))
+            .style(move |_| container::Style {
+                background: Some(rail_color.into()),
+                border: iced::border::rounded(metrics.pin_rail / 2.0),
+                ..Default::default()
+            })
+            .into();
+    let parts = match tray.side {
+        niri_ipc::PinSide::Left => [rail, tiles],
+        niri_ipc::PinSide::Right => [tiles, rail],
+    };
+    let content: iced::Element<'a, Message> = if horizontal {
+        row(parts).spacing(metrics.pin_rail_gap).into()
+    } else {
+        column(parts).spacing(metrics.pin_rail_gap).into()
+    };
+    container(content)
+        .padding(metrics.pin_inset)
+        .style(move |_| container::Style {
+            background: Some(tray_color.into()),
+            border: iced::border::rounded(metrics.radius + metrics.pin_inset),
+            ..Default::default()
+        })
+        .into()
 }
 
 pub(crate) struct MinimapModule {
@@ -478,17 +617,14 @@ impl MinimapModule {
                 .into();
         }
 
-        let frame = iced::Color {
-            a: 0.75,
-            ..colors.text
-        };
+        let strip_colors = StripColors::themed(colors.text.scale_alpha(0.75), 0.3);
         draw_strip(
             state,
             BAR_STRIP,
             size,
             self.config.max_length as f32,
             horizontal,
-            frame,
+            strip_colors,
             |tile, place| {
                 let color = if tile.urgent {
                     colors.warning
@@ -510,7 +646,6 @@ impl MinimapModule {
                         ..colors.text
                     }
                 };
-                let pinned = place.pinned;
                 let block = container(
                     Space::new()
                         .width(place.size.width)
@@ -518,15 +653,7 @@ impl MinimapModule {
                 )
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(color)),
-                    border: iced::Border {
-                        radius: BAR_STRIP.radius.into(),
-                        // A pinned column is outlined.
-                        width: if pinned { 1.0 } else { 0.0 },
-                        color: iced::Color {
-                            a: 0.85,
-                            ..colors.text
-                        },
-                    },
+                    border: iced::border::rounded(BAR_STRIP.radius),
                     ..Default::default()
                 });
                 mouse_area(block)
@@ -693,6 +820,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: None,
         }
@@ -859,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn pinned_columns_stand_apart_from_the_strip() {
+    fn pinned_columns_stand_apart_with_a_rail_on_their_edge() {
         let column = |pinned| MinimapColumn {
             width: 500.0,
             pinned,
@@ -874,10 +1002,35 @@ mod tests {
         assert_eq!(BAR_STRIP.gap_after(&columns, 0), BAR_STRIP.pin_gap);
         assert_eq!(BAR_STRIP.gap_after(&columns, 1), BAR_STRIP.column_gap);
         assert_eq!(BAR_STRIP.gap_after(&columns, 2), BAR_STRIP.pin_gap);
+
+        // Pinned columns hold their tiles in a tray, inset across, with a
+        // rail on their pinned side.
+        let inset = 2.0 * BAR_STRIP.pin_inset;
+        let tray = inset + BAR_STRIP.pin_rail + BAR_STRIP.pin_rail_gap;
         assert_eq!(
-            BAR_STRIP.total_gaps(&columns),
-            2.0 * BAR_STRIP.pin_gap + BAR_STRIP.column_gap
+            BAR_STRIP.pin_tray(&columns[0], 18.0),
+            Some(PinTray {
+                side: niri_ipc::PinSide::Left,
+                tile_size: 18.0 - inset,
+            })
         );
+        assert_eq!(
+            BAR_STRIP.pin_tray(&columns[3], 18.0).map(|tray| tray.side),
+            Some(niri_ipc::PinSide::Right)
+        );
+        assert_eq!(BAR_STRIP.pin_tray(&columns[1], 18.0), None);
+        // Trays and gaps keep their length while a long strip shrinks, so a
+        // narrow pinned column still shows its tray.
+        let fixed = 2.0 * BAR_STRIP.pin_gap + BAR_STRIP.column_gap + 2.0 * tray;
+        assert_eq!(BAR_STRIP.fixed_length(&columns), fixed);
+        let state = MinimapState {
+            columns: columns.to_vec(),
+            workspace_height: 1000.0,
+            ..Default::default()
+        };
+        let lengths = BAR_STRIP.column_lengths(&state, 20.0, 60.0);
+        assert_eq!(BAR_STRIP.strip_length(&state, &lengths), 60.0);
+        assert_eq!(lengths[0], (60.0 - fixed) / 4.0);
 
         let mut state = niri(vec![window(12, 1, Some((1, 1)), (500.0, 1000.0))]);
         state.windows.get_mut(&12).unwrap().layout.pinned = Some(niri_ipc::PinSide::Left);

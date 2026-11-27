@@ -132,13 +132,19 @@ impl App {
                 let workspace = window
                     .workspace_id
                     .and_then(|id| state.workspaces.iter().find(|w| w.id == id));
-                let detail = workspace.map(|workspace| {
-                    let title = self.workspace_title(workspace);
-                    match workspace.output.as_deref() {
-                        Some(output) if outputs > 1 => format!("{title} · {output}"),
-                        _ => title,
-                    }
-                });
+                // A scratchpad window keeps a workspace while hidden, but
+                // the scratchpad is where the person finds it again.
+                let detail = if window.layout.in_scratchpad {
+                    Some(fl!("shell-taskbar-scratchpad"))
+                } else {
+                    workspace.map(|workspace| {
+                        let title = self.workspace_title(workspace);
+                        match workspace.output.as_deref() {
+                            Some(output) if outputs > 1 => format!("{title} · {output}"),
+                            _ => title,
+                        }
+                    })
+                };
                 WindowRow {
                     id: window.id,
                     title: window
@@ -493,6 +499,7 @@ mod tests {
                 tile_pos_in_workspace_view: None,
                 window_offset_in_tile: (0.0, 0.0),
                 pinned: None,
+                in_scratchpad: false,
             },
             focus_timestamp: None,
         }
@@ -585,6 +592,30 @@ mod tests {
             config.tooltip = crate::config::TooltipSetting::Disabled;
         }
         assert!(!app.module_has_hover_card(&module));
+    }
+
+    #[test]
+    fn taskbar_cards_name_the_scratchpad_instead_of_the_workspace() {
+        let mut app = app();
+        let mut hidden = window(5, 1, 4, "foot");
+        hidden.is_floating = true;
+        hidden.layout.pos_in_scrolling_layout = None;
+        hidden.layout.in_scratchpad = true;
+        let _ = app.update(Message::Niri(AppNiriEvent::Ipc(NiriEvent::Event(
+            niri_ipc::Event::WindowOpenedOrChanged { window: hidden },
+        ))));
+        let module = crate::modules::taskbar::TaskbarItemModule::module_id("taskbar", "foot");
+        let Some(HoverCard::Windows(list)) = app.hover_card_for(&module) else {
+            panic!("a window list");
+        };
+        let detail = |id| {
+            list.rows
+                .iter()
+                .find(|row| row.id == id)
+                .and_then(|row| row.detail.clone())
+        };
+        assert_eq!(detail(5), Some(fl!("shell-taskbar-scratchpad")));
+        assert_eq!(detail(1), Some(fl!("shell-tooltip-workspace", index = 1)));
     }
 
     #[test]

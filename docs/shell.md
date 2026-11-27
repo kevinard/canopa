@@ -74,7 +74,7 @@ panel you want to keep from
 | --- | --- |
 | `workspaces` | One pill per Niri workspace: accent for the focused one, filled when occupied, outlined when empty. Click or scroll to switch. Labels and icons per workspace with `workspace N { label; icon; }`. Hover a pill for its card (see [Workspace cards](#workspace-cards)). |
 | `taskbar` | Pinned applications, then the other running ones in screen order (see [Taskbar](#taskbar)). |
-| `minimap` | Optional map of the active workspace's scrolling strip, drawn like the workspace cards. Each column is divided into its stacked windows. The focused window uses the accent, the viewport is outlined when part of the strip lies offscreen, and pinned columns have their own outline. Click a window to focus it, or scroll over the map to move between columns. |
+| `minimap` | Optional map of the active workspace's scrolling strip, drawn like the workspace cards. Each column is divided into its stacked windows. The focused window uses the accent, the viewport is outlined when part of the strip lies offscreen, and pinned columns sit apart in an accent-tinted tray with a rail along the edge they are pinned to. Click a window to focus it, or scroll over the map to move between columns. |
 | `focused-window` | Icon and title of the focused window, shortened in the middle to 50 characters (`max-length`). The tooltip has the full title. |
 | `tray` | StatusNotifierItem icons. Click activates, right-click opens the item's menu. The Shell owns `org.kde.StatusNotifierWatcher` while a tray is placed. |
 | `network` | Connectivity icon (Wi-Fi, wired, limited, offline, VPN). Hidden while network status is unavailable. |
@@ -109,11 +109,12 @@ windows, and the longest, in the accent color, the focused one.
   the desktop file's own actions, and **Pin to taskbar** / **Unpin from taskbar**.
   Window sizes, tabs, floating and column pins live in the window titlebars.
 - **Hover** a running application to see its windows in screen order, each with a
-  thumbnail, its title and its workspace; the focused one is highlighted. Click a
-  window to focus it, or its **×** to close it. The card stays while you move the
-  pointer into it and closes shortly after the pointer leaves both. Moving to
-  another application switches cards at once. Up to eight windows are listed, then
-  a count of the rest. An application with no open window shows its name instead.
+  thumbnail, its title and its workspace (or **Scratchpad** for a window in the
+  scratchpad); the focused one is highlighted. Click a window to focus it, or its
+  **×** to close it. The card stays while you move the pointer into it and closes
+  shortly after the pointer leaves both. Moving to another application switches
+  cards at once. Up to eight windows are listed, then a count of the rest. An
+  application with no open window shows its name instead.
   `tooltip #false` on the taskbar module turns the card off.
 
 Pins changed from the menu are saved in `$XDG_STATE_HOME/canopa/shell/taskbar-pins.json`
@@ -135,11 +136,12 @@ Launched applications each run in their own systemd user scope,
 Hovering a workspace pill shows that workspace's columns drawn to scale, like the
 `minimap` module: stacked windows share their column, the focused window has an
 accent ring, a frame marks the part on screen when the strip is wider than it, and
-pinned columns stand apart. Each window shows its live thumbnail, or its
-application's icon until the thumbnail arrives. Floating windows are counted below
-the strip. Click a window to focus it; Niri switches to its workspace. An empty
-workspace says **Empty**. `tooltip #false` on the workspaces module turns the cards
-off.
+pinned columns sit apart in the same tinted tray with a rail along their pinned
+edge, and a pin badge on their top window when it has room. Each window shows its
+live thumbnail, or its application's icon until the thumbnail arrives. Floating
+windows are counted below the strip. Click a window to focus it; Niri switches to
+its workspace. An empty workspace says **Empty**. `tooltip #false` on the
+workspaces module turns the cards off.
 
 ## Quick settings
 
@@ -347,7 +349,22 @@ the compositor to highlight the selected preview.
   come from Niri's window preview service. `window-previews { off; }` in Niri
   turns off thumbnails in all three; the cards then show application icons.
 - **Pinned columns**: Super+P and Super+Shift+P pin a column to the left or right
-  edge of the view while the rest scrolls.
+  edge of the view while the rest scrolls. Super+Ctrl+P folds pinned columns past
+  their edges, giving their space to the other windows, and unfolds them. A folded
+  column leaves a slim tab at the middle of its edge: point at it to see the
+  window's name, click it (or focus the window) to bring the column back.
+- **Scratchpad**: a set of floating windows laid over any workspace, like a
+  special workspace. Super+Shift+` moves a window into it, floating and hidden;
+  Super+` brings them all to the current workspace, each where you left it, and
+  hides them again. While one has focus, everything behind the scratchpad dims.
+- **Floating windows** snap to the edges of the work area and of other floating
+  windows, and to its middle, as you drag or resize them.
+  The titlebar layout menu offers both under **Hide**: **Fold** for a pinned column
+  and **Scratchpad** for any window. While the scratchpad holds windows, the window
+  bar ends with a scratchpad button (with their count when there are several);
+  click it to show or hide the scratchpad. The window rule
+  `open-in-scratchpad true` in `niri-custom.kdl` sends an application there when
+  it opens.
 - **Window restore**: with `windows { restore #true; }`, the Shell records open
   applications with their workspace, column and width in
   `$XDG_STATE_HOME/canopa/shell/windows.json`, and reopens them in place at the next

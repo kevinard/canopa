@@ -6,7 +6,9 @@ use iced::widget::{Space, button, column, container, image, row, text};
 use iced::{Alignment, Element, Length};
 
 use crate::focused_window_icons::ApplicationIcon;
-use crate::modules::minimap::{MinimapState, MinimapTile, StripMetrics, TilePlace, draw_strip};
+use crate::modules::minimap::{
+    MinimapState, MinimapTile, StripColors, StripMetrics, TilePlace, draw_strip,
+};
 
 /// What a hover card asks of the app.
 #[derive(Debug, Clone)]
@@ -106,6 +108,9 @@ const WORKSPACE_MIN_WIDTH: f32 = 220.0;
 pub(crate) const CARD_STRIP: StripMetrics = StripMetrics {
     column_gap: 6.0,
     pin_gap: 14.0,
+    pin_inset: 4.0,
+    pin_rail: 3.0,
+    pin_rail_gap: 4.0,
     tile_gap: 4.0,
     min_extent: 12.0,
     frame_inset: 3.0,
@@ -503,14 +508,14 @@ fn workspace(card: &WorkspaceCard) -> Element<'_, crate::app::Message> {
             .width(WORKSPACE_MIN_WIDTH)
             .into();
     }
-    let frame = colors.text.scale_alpha(0.45);
+    let strip_colors = StripColors::themed(colors.text.scale_alpha(0.45), 0.22);
     let strip = draw_strip(
         &card.strip,
         CARD_STRIP,
         STRIP_SIZE,
         STRIP_MAX_LENGTH,
         true,
-        frame,
+        strip_colors,
         |tile, place| workspace_tile(tile, place, card.faces.iter().find(|f| f.id == tile.id)),
     );
     content = content.push(container(strip).center_x(Length::Fill));
@@ -578,7 +583,11 @@ fn workspace_tile<'a>(
             }
         })
     };
-    let face = iced::widget::hover(iced::widget::stack![inner, ring(false)], ring(true));
+    let mut layers = iced::widget::stack![inner, ring(false)];
+    if let Some(side) = pin_badge_side(place) {
+        layers = layers.push(pin_badge(side));
+    }
+    let face = iced::widget::hover(layers, ring(true));
     button(face)
         .padding(0)
         .width(width)
@@ -590,6 +599,50 @@ fn workspace_tile<'a>(
             ..Default::default()
         })
         .into()
+}
+
+const PIN_BADGE: f32 = 18.0;
+const PIN_BADGE_INSET: f32 = 4.0;
+
+/// The corner of a pinned column's top tile that shows the pin badge, on the
+/// side of the edge it is pinned to; tiles too small to spare the corner show
+/// only the column's tray.
+fn pin_badge_side(place: TilePlace) -> Option<niri_ipc::PinSide> {
+    let room = PIN_BADGE + 2.0 * PIN_BADGE_INSET + 8.0;
+    place
+        .pinned
+        .filter(|_| place.first && place.size.width >= room && place.size.height >= room)
+}
+
+/// A round pin over the tile's top corner on `side`.
+fn pin_badge<'a>(side: niri_ipc::PinSide) -> Element<'a, crate::app::Message> {
+    let colors = crate::theme::palette();
+    let badge = container(crate::theme::icon(
+        include_bytes!("../../assets/pin.svg"),
+        12.0,
+        colors.accent,
+    ))
+    .center_x(PIN_BADGE)
+    .center_y(PIN_BADGE)
+    .style(move |_| container::Style {
+        background: Some(colors.surface.scale_alpha(0.92).into()),
+        border: iced::Border {
+            radius: (PIN_BADGE / 2.0).into(),
+            width: 1.0,
+            color: colors.accent.scale_alpha(0.5),
+        },
+        ..Default::default()
+    });
+    let placed = container(badge)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(PIN_BADGE_INSET)
+        .align_top(Length::Fill);
+    match side {
+        niri_ipc::PinSide::Left => placed.align_left(Length::Fill),
+        niri_ipc::PinSide::Right => placed.align_right(Length::Fill),
+    }
+    .into()
 }
 
 #[cfg(test)]
@@ -606,6 +659,23 @@ mod tests {
             urgent: false,
             thumbnail: None,
         }
+    }
+
+    #[test]
+    fn pin_badges_mark_the_top_tile_of_pinned_columns_on_their_side() {
+        let place = |pinned, first, width| TilePlace {
+            size: iced::Size::new(width, 80.0),
+            active_column: false,
+            on_screen: true,
+            pinned,
+            first,
+        };
+        let right = Some(niri_ipc::PinSide::Right);
+        assert_eq!(pin_badge_side(place(right, true, 120.0)), right);
+        assert_eq!(pin_badge_side(place(right, false, 120.0)), None);
+        assert_eq!(pin_badge_side(place(None, true, 120.0)), None);
+        // Too narrow to spare a corner: the rail alone marks it.
+        assert_eq!(pin_badge_side(place(right, true, 24.0)), None);
     }
 
     #[test]
